@@ -1,0 +1,390 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Release Notes for Your Version Number - a daily version-number email whose replies are kept as notes
+
+Parameters:
+  CodeBucket:
+    Type: String
+  CodeKey:
+    Type: String
+  Domain:
+    Type: String
+    Default: yourversionnumber.com
+  InboundDomain:
+    Type: String
+    Default: in.yourversionnumber.com
+    Description: MX points at SES; every reply address lives here.
+  MailFromDomain:
+    Type: String
+    Default: bounce.yourversionnumber.com
+  FromAddress:
+    Type: String
+    Default: notes@yourversionnumber.com
+  OpsQueueName:
+    Type: String
+    Default: projects-ops-alerts
+    Description: The account's alerts queue. Its policy must list this stack's alarm topic.
+
+Resources:
+  # --- storage ------------------------------------------------------------
+
+  Table:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Ref AWS::StackName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  # Raw inbound mail. Filed replies are kept: their photos and audio live
+  # only here until a later phase extracts them. Ignored mail expires.
+  MailBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-mail-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-ignored-mail
+            Status: Enabled
+            TagFilters:
+              - { Key: outcome, Value: ignored }
+            ExpirationInDays: 30
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+
+  MailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MailBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SesWritesInboundMail
+            Effect: Allow
+            Principal: { Service: ses.amazonaws.com }
+            Action: s3:PutObject
+            Resource: !Sub "${MailBucket.Arn}/raw/*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/${AWS::StackName}:receipt-rule/*"
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt MailBucket.Arn
+              - !Sub "${MailBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # --- sending --------------------------------------------------------------
+
+  ConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Ref AWS::StackName
+      ReputationOptions:
+        ReputationMetricsEnabled: true
+      SuppressionOptions:
+        SuppressedReasons: [BOUNCE, COMPLAINT]
+
+  # Delivery problems go to the ops queue. No open or click events, by policy.
+  ConfigurationSetEvents:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref ConfigurationSet
+      EventDestination:
+        Name: ops-alerts
+        Enabled: true
+        MatchingEventTypes: [bounce, complaint, reject, renderingFailure, deliveryDelay]
+        SnsDestination:
+          TopicARN: !Ref AlarmTopic
+
+  EmailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref Domain
+      ConfigurationSetAttributes:
+        ConfigurationSetName: !Ref ConfigurationSet
+      DkimSigningAttributes:
+        NextSigningKeyLength: RSA_2048_BIT
+      MailFromAttributes:
+        MailFromDomain: !Ref MailFromDomain
+        BehaviorOnMxFailure: USE_DEFAULT_VALUE
+
+  # --- receiving ------------------------------------------------------------
+
+  ReceiptRuleSet:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: !Ref AWS::StackName
+
+  ReceiptRule:
+    Type: AWS::SES::ReceiptRule
+    DependsOn: [MailBucketPolicy, InboundInvokePermission]
+    Properties:
+      RuleSetName: !Ref ReceiptRuleSet
+      Rule:
+        Name: replies
+        Enabled: true
+        ScanEnabled: true
+        TlsPolicy: Optional
+        Recipients: [!Ref InboundDomain]
+        Actions:
+          - S3Action:
+              BucketName: !Ref MailBucket
+              ObjectKeyPrefix: raw/
+          - LambdaAction:
+              FunctionArn: !GetAtt InboundFunction.Arn
+              InvocationType: Event
+
+  # --- functions ------------------------------------------------------------
+
+  SenderLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-sender"
+      RetentionInDays: 90
+
+  InboundLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-inbound"
+      RetentionInDays: 90
+
+  SenderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: sender
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:Scan, dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+                Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                Action: ses:SendEmail
+                Resource:
+                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${Domain}"
+                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSet}"
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt SenderLogs.Arn
+
+  InboundRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: inbound
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObjectTagging]
+                Resource: !Sub "${MailBucket.Arn}/raw/*"
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem]
+                Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt InboundLogs.Arn
+
+  SenderFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-sender"
+      Description: Sends the daily version-number email
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: release_notes.send.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt SenderRole.Arn
+      MemorySize: 256
+      Timeout: 120
+      LoggingConfig:
+        LogGroup: !Ref SenderLogs
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          FROM_ADDRESS: !Ref FromAddress
+          INBOUND_DOMAIN: !Ref InboundDomain
+          CONFIG_SET: !Ref ConfigurationSet
+
+  InboundFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-inbound"
+      Description: Files email replies as release notes
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: release_notes.inbound.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt InboundRole.Arn
+      MemorySize: 512
+      Timeout: 60
+      LoggingConfig:
+        LogGroup: !Ref InboundLogs
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          BUCKET: !Ref MailBucket
+          INBOUND_DOMAIN: !Ref InboundDomain
+
+  InboundInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InboundFunction
+      Action: lambda:InvokeFunction
+      Principal: ses.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/${AWS::StackName}:receipt-rule/replies"
+
+  # Quarter hours, so a 20:00 send time lands at 20:00.
+  SenderSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Run the Release Notes sender every 15 minutes
+      ScheduleExpression: cron(0/15 * * * ? *)
+      State: ENABLED
+      Targets:
+        - Id: sender
+          Arn: !GetAtt SenderFunction.Arn
+
+  SenderSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SenderFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SenderSchedule.Arn
+
+  # --- alarms -----------------------------------------------------------------
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-alarms"
+
+  AlarmTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlarmTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SesEvents
+            Effect: Allow
+            Principal: { Service: ses.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref AlarmTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+          - Sid: CloudWatchAlarms
+            Effect: Allow
+            Principal: { Service: cloudwatch.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref AlarmTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  AlarmQueueSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlarmTopic
+      Protocol: sqs
+      Endpoint: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${OpsQueueName}"
+      RawMessageDelivery: true
+
+  SenderErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-sender-errors"
+      AlarmDescription: The daily sender failed. Someone may not have had today's email.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref SenderFunction }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  InboundErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-inbound-errors"
+      AlarmDescription: A reply failed to file. The raw message is still in the mail bucket.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref InboundFunction }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+Outputs:
+  TableName:
+    Value: !Ref Table
+  MailBucketName:
+    Value: !Ref MailBucket
+  ReceiptRuleSetName:
+    Value: !Ref ReceiptRuleSet
+  AlarmTopicArn:
+    Value: !Ref AlarmTopic
+  DkimRecord1:
+    Value: !Sub "${EmailIdentity.DkimDNSTokenName1} CNAME ${EmailIdentity.DkimDNSTokenValue1}"
+  DkimRecord2:
+    Value: !Sub "${EmailIdentity.DkimDNSTokenName2} CNAME ${EmailIdentity.DkimDNSTokenValue2}"
+  DkimRecord3:
+    Value: !Sub "${EmailIdentity.DkimDNSTokenName3} CNAME ${EmailIdentity.DkimDNSTokenValue3}"

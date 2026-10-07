@@ -2,8 +2,11 @@
 # Deploy the Release Notes stack. Runs as the host's cloud-engineer identity;
 # never needs a console or SSO login.
 #
-#   ./deploy.sh
+#   ./deploy.sh                 deploy origin/main, once `validate` is green on it
+#   ./deploy.sh --break-glass   skip the GitHub check (GitHub down, never a red check)
 #
+# 0. Refuse anything but a clean checkout of origin/main with a green
+#    `validate` check: production runs only what main's gate passed.
 # 1. Package src/ (standard library only, nothing to install) and upload it
 #    to the code bucket, keyed by content hash.
 # 2. Deploy infra/template.yaml as stack yvn-release-notes.
@@ -19,6 +22,17 @@ ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 ARN=$(aws sts get-caller-identity --query Arn --output text)
 [[ "$ACCOUNT" == 999153317627 && "$ARN" == *assumed-role/ProjectsCloudEngineer/* ]] \
   || { echo "refusing: caller is $ARN" >&2; exit 1; }
+
+if [[ "${1:-}" != --break-glass ]]; then
+  git fetch -q origin main
+  HEAD_SHA=$(git rev-parse HEAD)
+  [[ -z "$(git status --porcelain)" ]] || { echo "refusing: uncommitted changes" >&2; exit 1; }
+  [[ "$HEAD_SHA" == "$(git rev-parse origin/main)" ]] \
+    || { echo "refusing: HEAD is not origin/main; land it through a pull request" >&2; exit 1; }
+  GREEN=$(gh api "repos/jthingelstad/yvn-release-notes/commits/$HEAD_SHA/check-runs?check_name=validate" \
+    --jq '[.check_runs[] | select(.conclusion == "success")] | length')
+  [[ "$GREEN" -gt 0 ]] || { echo "refusing: validate is not green on $HEAD_SHA" >&2; exit 1; }
+fi
 
 # The handlers' JSON log lines go to stdout; the test report goes to stderr.
 PYTHONPATH=src python3 -m unittest discover -s tests -q >/dev/null \

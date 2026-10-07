@@ -77,10 +77,30 @@ runtime and is imported lazily so the tests run without it.
 - Never verify with a write against live data. `sender` takes
   `{"dry_run": true, "now": "<ISO UTC>"}` and writes nothing.
 
+## Landing changes
+
+- **Work reaches `main` only through a pull request** (2026-10-07, the same
+  model as the clash-royale repos): a branch, `gh pr create --fill`,
+  `gh pr merge --auto --rebase --delete-branch`. GitHub merges it once the
+  `validate` check is green on a branch up to date with main. The `main`
+  ruleset requires that check, rebase merges and linear history, with 0
+  approvals and no bypass, Jamie's account included (agents push as it).
+- `validate` (`.github/workflows/validate.yml`) runs the workflow lint, the
+  unit tests and cfn-lint. Workflows stay SHA-pinned with `permissions: {}`,
+  per-job grants and `persist-credentials: false`;
+  `sh scripts/test-workflows.sh` checks that. Dependabot moves the pins
+  monthly in one PR, which is reviewed like any other: it does not
+  auto-merge, because a merged action runs with the repository's token.
+- The repository is public. Never commit subscriber data, note text, DNS
+  values or anything from the live table or bucket, including in tests and
+  fixtures (the tests use a fictional subscriber at example.com).
+
 ## Operating
 
-- Deploy: `./deploy.sh` (cloud-engineer profile, us-east-1). It runs the tests
-  first.
+- Deploy: `./deploy.sh` (cloud-engineer profile, us-east-1), from a clean
+  checkout of `origin/main` with a green `validate`; it refuses anything
+  else (`--break-glass` is for GitHub being down, never a red check). It
+  runs the tests again first.
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests`
 - Add a subscriber (phase 1 has no sign-up): `scripts/add_subscriber.py EMAIL YYYY-MM-DD`
 - Alarms go to SNS `yvn-release-notes-alarms`, which is subscribed to the sysadmin

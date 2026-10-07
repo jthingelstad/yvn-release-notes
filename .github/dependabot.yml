@@ -1,0 +1,13 @@
+# The code is standard library only, so the one thing to keep current is the
+# pinned actions in .github/workflows. Monthly, one grouped PR.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

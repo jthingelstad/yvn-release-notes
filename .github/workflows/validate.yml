@@ -1,0 +1,44 @@
+name: validate
+
+# The merge gate. main takes changes only through a pull request whose
+# `validate` check is green on a branch up to date with main, and deploy.sh
+# refuses a HEAD without a green `validate`. The job's name IS the required
+# check's name in the main ruleset and in deploy.sh: rename all three
+# together or merges and deploys stop.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to a PR supersedes its running check; main's runs finish.
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# No default token permissions; each job asks for its own. Actions are pinned
+# to commit SHAs (Dependabot's monthly github-actions run moves them) and
+# checkout leaves no token behind. scripts/test-workflows.sh holds every
+# workflow here to that, as the first step below.
+permissions: {}
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: workflow lint
+        run: sh scripts/test-workflows.sh
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      # The handlers' JSON log lines go to stdout; the test report to stderr.
+      - name: unit tests
+        run: PYTHONPATH=src python -m unittest discover -s tests -q > /dev/null
+      - name: lint template
+        run: pipx run cfn-lint infra/template.yaml

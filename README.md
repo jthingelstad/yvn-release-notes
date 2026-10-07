@@ -44,3 +44,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 
 `infra/template.yaml` is the whole stack (CloudFormation) and `deploy.sh`
 deploys it. `AGENTS.md` has the design rules and the operating notes.
+
+## License
+
+MIT. See `LICENSE`.

@@ -52,6 +52,13 @@ runtime and is imported lazily so the tests run without it.
 
 - **A note belongs to the day of the email it answers**, not the day it
   arrived. A Thursday reply to Tuesday's email is Tuesday's note.
+- **Reply as often as you like.** Each reply is its own note
+  (`NOTE#<day>#<messageId>`); together, oldest first, they are that day's
+  release notes (Jamie, 2026-10-08: "keep them in the database as separate
+  things" but "treated as one day's release notes"). Read a day with
+  `Store.day_notes` and join it with `notes.combine`. Message ids are random,
+  so sort by `received_at`, never by key. A day with any note counts once for
+  the streak.
 - **Raw mail is the source of truth.** Phase 1 stores text only. Photos, audio
   and any other attachments stay inside the raw message in S3 (tagged
   `outcome=note`, kept indefinitely) and are listed on the note so a later
@@ -116,6 +123,9 @@ runtime and is imported lazily so the tests run without it.
   runs the tests again first.
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests`
 - Add a subscriber (phase 1 has no sign-up): `scripts/add_subscriber.py EMAIL YYYY-MM-DD`
+- Read someone's release notes (phase 1 has no reader):
+  `scripts/read_notes.py EMAIL [YYYY-MM-DD]`. It prints note text, so run it
+  only for the subscriber's own notes; agents do not run it to check things.
 - Send someone today's email now, outside their window: invoke the sender
   with `{"send_now": "<user id>"}` (add `"dry_run": true` first to see it).
   Still once per local day; never fake the clock with `now` to do it.

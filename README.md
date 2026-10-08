@@ -26,6 +26,8 @@ reply email
   address only their inbox has seen.
 - **A note belongs to the day of the email it answers.** Reply to Tuesday's
   email on Thursday and it is still Tuesday's note.
+- **Reply as often as you like.** Every reply to a day's email is kept, and
+  together, in the order they arrived, they are that day's release notes.
 - **Streaks.** The email shows how many days in a row you have replied.
   Replying late to an earlier email still counts for that day; a missed day
   starts the count over and the email shows your longest instead.

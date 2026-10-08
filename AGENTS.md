@@ -53,10 +53,16 @@ notes.yourversionnumber.com (CloudFront)
 **Standard library only.** No `requirements.txt`; `boto3` comes from the Lambda
 runtime and is imported lazily so the tests run without it.
 
-- `web.py`: the web app's API, routed by method and path. `web/` is the
-  static site, synced to the web bucket by `deploy.sh`. Pages load only their
-  own files (the CSP is `'self'`), so no inline script or style, nothing
-  remote; anything another service answers goes through `/api`.
+- `web.py`: the web app's API, routed by method and path. `auth.py`: sign-in
+  by link and code, sessions, the limits and the sign-in email (its docstring
+  is the design). `export.py`: everything a subscriber has, as JSON and
+  Markdown. `web/` is the static site, synced to the web bucket by
+  `deploy.sh`: one `assets/app.js` for every page (`<body data-page>`),
+  `assets/site.css`, and the two fonts served from here. Pages load only
+  their own files (the CSP is `'self'`), so no inline script or style,
+  nothing remote; anything another service answers goes through `/api`.
+- `tests/fakes.py`: an in-memory table and SES for the web tests, also used
+  by `scripts/dev_server.py`.
 - Python stays the language for the web API too (decided 2026-10-08): one
   language, one copy of the version arithmetic, nothing to install.
 
@@ -134,6 +140,11 @@ runtime and is imported lazily so the tests run without it.
   else (`--break-glass` is for GitHub being down, never a red check). It
   runs the tests again first.
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests`
+- The web app locally: `scripts/dev_server.py` serves `web/` and the real API
+  against in-memory fakes, prints sign-in emails instead of sending them, and
+  starts with a fictional subscriber, ada@example.com. Use it (and Playwright
+  from a sibling project's `node_modules`) to see pages; never sign in on
+  live to check something.
 - Add a subscriber (phase 1 has no sign-up): `scripts/add_subscriber.py EMAIL YYYY-MM-DD`
 - Read someone's release notes (phase 1 has no reader):
   `scripts/read_notes.py EMAIL [YYYY-MM-DD]`. It prints note text, so run it

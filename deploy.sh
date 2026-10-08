@@ -45,7 +45,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -q >/dev/null \
   || { echo "tests failed; not deploying" >&2; exit 1; }
 
 CODE_BUCKET="$STACK-code-$ACCOUNT"
-if ! aws s3api head-bucket --bucket "$CODE_BUCKET" 2>/dev/null; then
+if ! aws s3api head-bucket --bucket "$CODE_BUCKET" >/dev/null 2>&1; then
   aws s3api create-bucket --bucket "$CODE_BUCKET" >/dev/null
   aws s3api put-public-access-block --bucket "$CODE_BUCKET" --public-access-block-configuration \
     BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true

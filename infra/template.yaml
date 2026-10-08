@@ -449,6 +449,24 @@ Resources:
             Preload: false
             Override: true
 
+  # What the API sees of a request: only what it reads. The viewer's address
+  # (for the sign-in email limits) is a CloudFront header, which the managed
+  # AllViewer policies leave out; Host stays out so API Gateway gets its own.
+  WebApiRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub "${AWS::StackName}-api"
+        Comment: Release Notes API - origin, content type, viewer address, session cookie
+        HeadersConfig:
+          HeaderBehavior: whitelist
+          Headers: [Origin, Content-Type, Accept, CloudFront-Viewer-Address]
+        CookiesConfig:
+          CookieBehavior: whitelist
+          Cookies: [__Host-rn]
+        QueryStringsConfig:
+          QueryStringBehavior: all
+
   WebDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -490,7 +508,8 @@ Resources:
             - EventType: viewer-request
               FunctionARN: !GetAtt WebIndexFunction.FunctionMetadata.FunctionARN
         CacheBehaviors:
-          # Managed policies: CachingDisabled, AllViewerExceptHostHeader.
+          # The managed CachingDisabled policy, and our own origin request
+          # policy below.
           - PathPattern: /api/*
             TargetOriginId: api
             ViewerProtocolPolicy: redirect-to-https
@@ -498,7 +517,7 @@ Resources:
             CachedMethods: [GET, HEAD]
             Compress: true
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
-            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+            OriginRequestPolicyId: !Ref WebApiRequestPolicy
             ResponseHeadersPolicyId: !Ref WebHeadersPolicy
 
   WebApi:
@@ -565,6 +584,15 @@ Resources:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query]
+                Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                # The sign-in email, as raw MIME through SESv2 (see SenderRole).
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource:
+                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSet}"
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt WebLogs.Arn
 
@@ -586,6 +614,8 @@ Resources:
         Variables:
           TABLE: !Ref Table
           WEB_ORIGIN: !Sub "https://${WebDomain}"
+          FROM_ADDRESS: !Ref FromAddress
+          CONFIG_SET: !Ref ConfigurationSet
 
   # --- alarms -----------------------------------------------------------------
 

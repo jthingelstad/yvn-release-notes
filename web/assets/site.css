@@ -1,20 +1,96 @@
-/* Placeholder until the design canvas lands: the email's type on paper.
-   Colours are the email's (compose.py), light then dark. No boxes. */
+/* Release Notes: the design canvas, type on paper. Colours are the email's
+   (compose.py), light then dark. No borders around things, no boxes, no
+   shadows: rules under inputs and the tangerine button are the only marks.
+   Fonts are served from here (OFL, see fonts/), since the CSP is 'self'. */
+
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url(fonts/bricolage-grotesque-latin.woff2) format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Martian Mono';
+  src: url(fonts/martian-mono-latin.woff2) format('woff2');
+  font-weight: 100 800;
+  font-display: swap;
+}
+
 :root {
-  --paper: #fffbf2; --ink: #14163a; --ink-2: #3b3d63;
-  --blue: #1a4fe0; --orange-ink: #c43c00;
+  --paper: #fffbf2; --ink: #14163a; --ink-2: #3b3d63; --ink-3: #8a8ca8;
+  --blue: #1a4fe0; --blue-hover: #123aa8; --orange: #ff5a1f; --orange-ink: #c43c00;
+  --on-orange: #14163a;
   --font: 'Bricolage Grotesque', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --mono: 'Martian Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --paper: #14163a; --ink: #fffbf2; --ink-2: #c9cbe6; --blue: #8fb0ff; --orange-ink: #ff8a5c; }
+  :root {
+    --paper: #14163a; --ink: #fffbf2; --ink-2: #c9cbe6; --ink-3: #8a8ca8;
+    --blue: #8fb0ff; --blue-hover: #b8ccff; --orange-ink: #ff8a5c;
+  }
 }
+
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--paper); color: var(--ink); font: 18px/1.55 var(--font); }
-main { max-width: 34rem; margin: 0 auto; padding: 4rem 1rem; }
-.eyebrow { color: var(--orange-ink); font-weight: 700; margin: 0 0 .5rem; }
-h1 { font-size: clamp(2rem, 6vw, 2.75rem); line-height: 1.1; margin: 0 0 1.25rem; }
-p { color: var(--ink-2); }
-a { color: var(--blue); font-weight: 700; }
-.soon { color: var(--ink); font-weight: 700; }
-.foot { margin-top: 3rem; font-size: .9rem; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 18px/1.5 var(--font); }
+main { max-width: 36rem; min-height: 100vh; margin: 0 auto; padding: 28px 24px 40px; display: flex; flex-direction: column; }
+a { color: var(--blue); font-weight: 600; }
+a:hover { color: var(--blue-hover); }
+strong { color: var(--ink); }
+
+/* the bar along the top */
+.bar { display: flex; align-items: baseline; gap: 18px; font-size: 15px; font-weight: 600; }
+.brand { font-weight: 800; font-size: 18px; margin-right: auto; color: var(--ink); text-decoration: none; }
+.bar a:not(.brand) { text-decoration: none; }
+.bar a[aria-current="page"] { color: var(--ink); text-decoration: underline; text-decoration-color: var(--orange); text-decoration-thickness: 3px; text-underline-offset: 6px; }
+
+/* type */
+h1 { margin: 48px 0 0; font-size: 34px; line-height: 1.08; font-weight: 800; letter-spacing: -0.01em; }
+.top { margin-top: 88px; }
+h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+h2.big { font-size: 22px; font-weight: 800; color: var(--ink); }
+.lede { margin: 16px 0 0; font-size: 18px; color: var(--ink-2); }
+.sub { margin: 14px 0 0; font-size: 15px; color: var(--ink-2); }
+.hint { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink-2); }
+.foot { margin: auto 0 0; padding-top: 48px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.value { margin: 0; font-size: 18px; }
+.aside { color: var(--ink-2); font-size: 15px; }
+
+/* the version number: cobalt digits, tangerine dots */
+.vnum { font-family: var(--mono); font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: var(--blue); margin: 0; }
+.vnum .dot { color: var(--orange); }
+.vnum.huge { margin-top: 88px; font-size: 56px; min-height: 56px; }
+.vnum.big { font-size: 48px; }
+.vnum.small { font-size: 20px; }
+
+/* forms */
+form, .stack { display: flex; flex-direction: column; gap: 20px; }
+form { margin-top: 40px; }
+label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; }
+input, select, textarea {
+  font: inherit; font-size: 20px; font-weight: 400; color: var(--ink); background: transparent;
+  border: 0; border-bottom: 2px solid var(--ink); border-radius: 0; padding: 8px 0; outline: none; width: 100%;
+}
+input:focus, select:focus, textarea:focus { border-bottom-color: var(--orange); }
+input::placeholder, textarea::placeholder { color: var(--ink-3); }
+input.code { font-family: var(--mono); font-size: 32px; font-weight: 700; letter-spacing: 0.35em; color: var(--blue); }
+
+.go {
+  align-self: flex-start; background: var(--orange); color: var(--on-orange); border: 0; cursor: pointer;
+  font: inherit; font-weight: 800; font-size: 17px; padding: 14px 22px; border-radius: 999px; text-decoration: none;
+}
+.go:hover { color: var(--on-orange); filter: brightness(1.05); }
+.go:disabled { opacity: .6; cursor: progress; }
+.quiet {
+  align-self: flex-start; background: transparent; border: 0; padding: 12px 0; min-height: 44px; cursor: pointer;
+  font: inherit; font-size: 15px; font-weight: 700; color: var(--blue); text-decoration: underline;
+}
+.quiet.danger { color: var(--orange-ink); }
+.row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.error { margin: 0; font-size: 15px; font-weight: 600; color: var(--orange-ink); }
+
+/* settings */
+.section { margin-top: 28px; display: flex; flex-direction: column; gap: 6px; }
+.section.wide { margin-top: 40px; gap: 12px; }
+form + .hint { margin-top: 32px; }

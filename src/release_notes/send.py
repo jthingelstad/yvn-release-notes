@@ -103,7 +103,8 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, now: datetime) -> 
         )
     except Exception as e:
         store.release_day(sub.user_id, day, previous)
-        log(event="error", user=sub.user_id, date=day, error=type(e).__name__)
+        code = getattr(e, "response", {}).get("Error", {}).get("Code")
+        log(event="error", user=sub.user_id, date=day, error=type(e).__name__, code=code)
         raise
     store.set_day_message_id(sub.user_id, day, resp["MessageId"])
     log(event="sent", user=sub.user_id, date=day, version=str(v))

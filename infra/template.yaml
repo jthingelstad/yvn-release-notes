@@ -424,7 +424,7 @@ Resources:
 
   # Pages load only their own files: no inline script or style, nothing
   # remote. Lookups that need another service (the city search) go through
-  # /api, so connect-src stays 'self'.
+  # /api. connect-src adds only Tinylytics, for app.js's page count.
   WebHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
@@ -433,7 +433,7 @@ Resources:
         Comment: Security headers for notes.yourversionnumber.com
         SecurityHeadersConfig:
           ContentSecurityPolicy:
-            ContentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+            ContentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://tinylytics.app; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
             Override: true
           ContentTypeOptions:
             Override: true

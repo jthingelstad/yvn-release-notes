@@ -121,7 +121,7 @@ def main():
                 self.send_header(
                     "content-security-policy",
                     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-                    "font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'",
+                    "font-src 'self'; connect-src 'self' https://tinylytics.app; form-action 'self'; frame-ancestors 'none'",
                 )
                 self.send_header("cache-control", "no-store")
             super().end_headers()

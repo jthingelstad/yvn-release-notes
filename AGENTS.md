@@ -107,6 +107,11 @@ runtime and is imported lazily so the tests run without it.
 - **No note text or email addresses in logs.** Log user ids, dates and
   outcomes only.
 - **No open or click tracking**, consistent with Jamie's email tracking policy.
+- **The web app counts pages in Tinylytics** (site 3816, Jamie 2026-10-08),
+  from the bottom of `app.js` rather than the embed script, so script-src
+  stays `'self'` and only connect-src names `https://tinylytics.app`. Send
+  the path only, never a query string (sign-in and unsubscribe tokens live
+  there), no cookies, nothing that names a person. No other analytics.
 - **The email is plain text plus HTML** (`compose.py`). The HTML is type on
   paper in the site's colours: cobalt digits, tangerine dots, its own dark
   mode. No borders, boxes, shadows or filled panels (Jamie, 2026-10-07:

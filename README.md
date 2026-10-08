@@ -34,7 +34,7 @@ reply email
   starts the count over and the email shows your longest instead.
 - **Raw mail is kept.** For now only the text of a reply is filed. Photos,
   audio and other attachments stay in the original message, to be handled later.
-- **Nothing is tracked.** No open or click tracking, and the HTML email loads
+- **The email tracks nothing.** No open or click tracking, and the HTML email loads
   nothing remote: no images, fonts or stylesheets.
 - **The arithmetic is the site's.** `version.py` is a port of the site's
   `computeVersion`, checked against thousands of cases generated from the

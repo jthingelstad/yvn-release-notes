@@ -44,7 +44,9 @@ there links here until this is up and done.
   bucket is versioned, so the old version lingers 30 days, then expires.
 - The birthday is locked after sign-up, because changing it renumbers every
   day you have kept.
-- No analytics on the app.
+- Page counts go to Tinylytics site 3816, its own site beside the main
+  site's 3343 (Jamie, 2026-10-08), sent by `app.js` without the embed
+  script. Path only, no cookies, nothing per person.
 
 ## Shape
 

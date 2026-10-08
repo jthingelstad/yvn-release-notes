@@ -18,10 +18,11 @@ import os
 import re
 from email.utils import getaddresses
 
-from .parse import attachments, note_text, parse_message
+from . import links
+from .parse import anchors, attachments, note_text, parse_message
 from .store import Store
 
-PARSER_VERSION = 1
+PARSER_VERSION = 2  # 2: HTML-only replies keep link addresses; links named
 _AUTH_DKIM = re.compile(r"\bdkim=pass\b[^;]*?\bheader\.[id]=@?([A-Za-z0-9.-]+)", re.IGNORECASE)
 
 
@@ -67,18 +68,18 @@ def handler(event, context, *, store: Store | None = None, s3=None):
         process(record["ses"], store, s3)
 
 
-def process(ses: dict, store: Store, s3) -> str:
+def process(ses: dict, store: Store, s3, fetch=None) -> str:
     mail, receipt = ses["mail"], ses["receipt"]
     message_id = mail["messageId"]
     bucket, key = os.environ["BUCKET"], f"raw/{message_id}"
 
-    outcome, detail = _file(mail, receipt, store, s3, bucket, key)
+    outcome, detail = _file(mail, receipt, store, s3, bucket, key, fetch)
     s3.put_object_tagging(Bucket=bucket, Key=key, Tagging={"TagSet": [{"Key": "outcome", "Value": outcome}]})
     log(event="inbound", message=message_id, outcome=outcome, **detail)
     return outcome
 
 
-def _file(mail, receipt, store, s3, bucket, key) -> tuple[str, dict]:
+def _file(mail, receipt, store, s3, bucket, key, fetch=None) -> tuple[str, dict]:
     if receipt.get("virusVerdict", {}).get("status") == "FAIL" or receipt.get("spamVerdict", {}).get("status") == "FAIL":
         return "ignored", {"reason": "spam-or-virus"}
 
@@ -109,6 +110,7 @@ def _file(mail, receipt, store, s3, bucket, key) -> tuple[str, dict]:
         return "ignored", {"reason": "empty", "user": sub.user_id}
 
     day = tok["date"]
+    found = links.collect(text, anchors(msg), fetch=fetch) if text else []
     stored = store.put_note(
         sub.user_id,
         day,
@@ -121,6 +123,7 @@ def _file(mail, receipt, store, s3, bucket, key) -> tuple[str, dict]:
             "subject": (mail.get("commonHeaders", {}).get("subject") or "")[:300],
             "raw_key": key,
             "parser_version": PARSER_VERSION,
+            **({"links": found} if found else {}),
         },
     )
     return "note", {
@@ -128,5 +131,6 @@ def _file(mail, receipt, store, s3, bucket, key) -> tuple[str, dict]:
         "date": day,
         "chars": len(text),
         "attachments": len(files),
+        "links": len(found),
         "duplicate": not stored,
     }

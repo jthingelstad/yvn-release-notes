@@ -8,6 +8,7 @@
     USER#<id>        DAY#<YYYY-MM-DD>           the email sent that day: version, token, message id
     USER#<id>        NOTE#<YYYY-MM-DD>#<msgid>  one reply: text, attachment list, raw S3 key
     USER#<id>        NOTE#<YYYY-MM-DD>#w-<id>   one note written on the web: text, source=web
+                                                (either kind: links, named once when written; links.py)
     TOKEN#<token>    TOKEN                      reply address -> user and day
     EMAIL#<address>  EMAIL                      address -> user (one subscriber per address)
     LOGIN#<hash>     LOGIN                      a sign-in's link and code (auth.py), 15 minutes
@@ -211,15 +212,18 @@ class Store:
                 return False
             raise
 
-    def update_note(self, user_id: str, day: str, note_id: str, text: str, at: str) -> dict | None:
-        """Change a note's text. Returns the note, or None if there is none."""
+    def update_note(self, user_id: str, day: str, note_id: str, text: str, at: str, links: list[dict] | None = None) -> dict | None:
+        """Change a note's text and its links. Returns the note, or None if
+        there is none."""
+        expr = "SET #t = :t, updated_at = :at, links = :l" if links else "SET #t = :t, updated_at = :at REMOVE links"
+        values = {":t": text, ":at": at, **({":l": links} if links else {})}
         try:
             return self.table.update_item(
                 Key={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}"},
-                UpdateExpression="SET #t = :t, updated_at = :at",
+                UpdateExpression=expr,
                 ConditionExpression="attribute_exists(pk)",
                 ExpressionAttributeNames={"#t": "text"},
-                ExpressionAttributeValues={":t": text, ":at": at},
+                ExpressionAttributeValues=values,
                 ReturnValues="ALL_NEW",
             )["Attributes"]
         except Exception as e:

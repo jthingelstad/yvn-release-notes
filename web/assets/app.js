@@ -192,21 +192,38 @@ function noteText(n) {
   return n.text || 'Attachments only. They are in the original email.';
 }
 
-// A note's text as a paragraph, with bare web addresses as links (the same
-// rule as the email's, compose.linked). Built from text nodes, never HTML.
+// A note's text as a paragraph, links by name: the API's `parts` (strings
+// and {url, label, site}), the same as the email's (links.segments). Bare
+// web addresses still link if `parts` is missing. Built from text nodes,
+// never HTML.
 const URL_RE = /https?:\/\/[^\s<>"]+/gi;
+function linkTo(url, label) {
+  const a = el('a', '', label);
+  a.href = url;
+  a.rel = 'noopener noreferrer';
+  a.target = '_blank';
+  return a;
+}
+
 function noteBody(n, cls = 'text') {
   const p = el('p', cls);
+  if (n.text && Array.isArray(n.parts)) {
+    for (const part of n.parts) {
+      if (typeof part === 'string') {
+        p.append(part);
+      } else if (/^https?:\/\//i.test(part.url || '')) {
+        p.append(linkTo(part.url, part.label || part.url));
+        if (part.site) p.append(el('span', 'site', ` · ${part.site}`));
+      }
+    }
+    return p;
+  }
   const text = noteText(n);
   let last = 0;
   for (const m of text.matchAll(URL_RE)) {
     const url = m[0].replace(/[.,;:!?'")\]}]+$/, '');
     p.append(text.slice(last, m.index));
-    const a = el('a', '', url.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, ''));
-    a.href = url;
-    a.rel = 'noopener noreferrer';
-    a.target = '_blank';
-    p.append(a);
+    p.append(linkTo(url, url.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '')));
     last = m.index + url.length;
   }
   p.append(text.slice(last));

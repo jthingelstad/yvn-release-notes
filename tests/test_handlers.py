@@ -225,6 +225,18 @@ class Sending(unittest.TestCase):
         self.assertIn("A year ago you were 4.9.0 (Tuesday, October 7, 2025):", msg.get_body(("plain",)).get_content())
         self.assertIn('href="https://example.com/post/"', msg.get_body(("html",)).get_content())
 
+    def test_last_years_links_show_by_name(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2025-10-07", "m1")] = {
+            "text": "Birthday dinner. https://example.com/post/",
+            "links": [{"url": "https://example.com/post/", "title": "Fifty candles", "site": "Example"}],
+        }
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        self.assertIn("Birthday dinner. Fifty candles <https://example.com/post/>", msg.get_body(("plain",)).get_content())
+        self.assertIn('href="https://example.com/post/" style="color:#1a4fe0;">Fifty candles</a>'
+                      '<span class="ink-2"', msg.get_body(("html",)).get_content())
+
     def test_no_notes_a_year_ago_no_section(self):
         store, ses = FakeStore([ada()]), FakeSES()
         store.notes[("u1", "2025-10-06", "m1")] = {"text": "The day before."}
@@ -311,10 +323,15 @@ class Inbound(unittest.TestCase):
     def setUp(self):
         self.store = FakeStore([ada()])
         self.store.tokens[TOKEN] = {"user_id": "u1", "date": "2026-10-07", "version": "5.0.0"}
+        self.titles, self.fetched = {}, []
+
+    def fetch(self, url):
+        self.fetched.append(url)
+        return self.titles.get(url)
 
     def run_one(self, ses, raw=None):
         s3 = FakeS3(raw or reply_raw())
-        return inbound.process(ses, self.store, s3), s3
+        return inbound.process(ses, self.store, s3, fetch=self.fetch), s3
 
     def test_files_note_under_the_emails_day(self):
         outcome, s3 = self.run_one(ses_event())
@@ -323,6 +340,24 @@ class Inbound(unittest.TestCase):
         note = self.store.notes[("u1", "2026-10-07", "m1")]
         self.assertEqual(note["text"], "Fifty. Cake with the family.")
         self.assertEqual(note["version"], "5.0.0")
+
+    def test_links_are_named_and_titled(self):
+        msg = message_from_bytes(reply_raw(), policy=default)
+        msg.clear_content()
+        msg.set_content('<p>Fifty. Wrote it up in <a href="https://example.com/p">my post</a>, '
+                        'and this was good: https://example.com/q</p>', subtype="html")
+        self.titles["https://example.com/q"] = {"title": "A good page", "site": "example.com"}
+        self.run_one(ses_event(), msg.as_bytes())
+        note = self.store.notes[("u1", "2026-10-07", "m1")]
+        self.assertEqual(note["text"], "Fifty. Wrote it up in my post <https://example.com/p>, and this was good: https://example.com/q")
+        self.assertEqual(note["links"], [{"url": "https://example.com/p", "title": "my post", "named": True},
+                                         {"url": "https://example.com/q", "title": "A good page", "site": "example.com"}])
+        self.assertEqual(self.fetched, ["https://example.com/q"])
+
+    def test_a_note_without_links_fetches_nothing(self):
+        self.run_one(ses_event())
+        self.assertNotIn("links", self.store.notes[("u1", "2026-10-07", "m1")])
+        self.assertEqual(self.fetched, [])
 
     def test_retry_is_idempotent(self):
         self.run_one(ses_event())

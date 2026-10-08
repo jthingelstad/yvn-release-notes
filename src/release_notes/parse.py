@@ -64,6 +64,10 @@ class _HTMLText(HTMLParser):
         self.out: list[str] = []
         self.skip_depth = 0
         self.stack: list[tuple[str, bool]] = []
+        # Links as mail apps write them into plain text, `words <url>`, so an
+        # HTML-only reply keeps its addresses; `anchors` maps url -> words.
+        self.open_links: list[tuple[int, str]] = []
+        self.anchors: dict[str, str] = {}
 
     def _skips(self, tag, attrs) -> bool:
         if tag in self.SKIP:
@@ -79,6 +83,8 @@ class _HTMLText(HTMLParser):
         )
 
     def handle_starttag(self, tag, attrs):
+        if tag == "a" and not self.skip_depth:
+            self.open_links.append((len(self.out), (dict(attrs).get("href") or "").strip()))
         if tag in ("br", "hr", "img", "meta", "link", "input"):
             if not self.skip_depth and tag in self.BLOCK:
                 self.out.append("\n")
@@ -91,6 +97,12 @@ class _HTMLText(HTMLParser):
             self.out.append("\n")
 
     def handle_endtag(self, tag):
+        if tag == "a" and self.open_links and not self.skip_depth:
+            start, href = self.open_links.pop()
+            words = re.sub(r"\s+", " ", "".join(self.out[start:]).replace("\xa0", " ")).strip()
+            if re.match(r"https?://", href, re.IGNORECASE) and words and not re.match(r"https?://", words, re.IGNORECASE):
+                self.anchors.setdefault(href, words)
+                self.out.append(f" <{href}>")
         while self.stack:
             open_tag, skipped = self.stack.pop()
             if skipped:
@@ -105,11 +117,15 @@ class _HTMLText(HTMLParser):
             self.out.append(data)
 
 
-def html_to_text(html: str) -> str:
+def _html(html: str) -> "_HTMLText":
     p = _HTMLText()
     p.feed(html)
     p.close()
-    text = "".join(p.out).replace("\xa0", " ")
+    return p
+
+
+def html_to_text(html: str) -> str:
+    text = "".join(_html(html).out).replace("\xa0", " ")
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
@@ -169,6 +185,22 @@ def strip_reply(text: str) -> str:
 
 def note_text(msg: EmailMessage) -> str:
     return strip_reply(body_text(msg))
+
+
+def anchors(msg: EmailMessage) -> dict[str, str]:
+    """The words each address was linked from in the reply's HTML, for
+    links.collect. Quoted text is skipped with everything else."""
+    found: dict[str, str] = {}
+    for part in msg.walk():
+        if part.get_content_type() != "text/html" or _is_attachment(part):
+            continue
+        try:
+            html = part.get_content()
+        except (LookupError, UnicodeDecodeError):
+            html = (part.get_payload(decode=True) or b"").decode("utf-8", errors="replace")
+        for url, words in _html(html).anchors.items():
+            found.setdefault(url, words)
+    return found
 
 
 # --- attachments (listed, not stored, in phase 1) --------------------------

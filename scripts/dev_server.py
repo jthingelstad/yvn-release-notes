@@ -10,7 +10,8 @@ sent, link and code included. A fictional subscriber, ada@example.com
 made-up notes, a past four-day pause and one reply token for trying
 /unsubscribe/; any other address is new. Deleting a note or the account
 deletes nothing real. City search asks the real Open-Meteo unless
---fake-places. Everything is forgotten when it stops.
+--fake-places, and a link's page for its title unless --fake-links.
+Everything is forgotten when it stops.
 """
 
 import argparse
@@ -29,7 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
 from fakes import FakeS3, FakeSES, FakeStore  # noqa: E402
-from release_notes import places, web  # noqa: E402
+from release_notes import links, places, web  # noqa: E402
 
 FAKE_PLACES = [
     {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
@@ -49,6 +50,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--fake-places", action="store_true", help="answer city searches from a fixed list")
+    ap.add_argument("--fake-links", action="store_true", help="title every link 'A page at <host>', fetching nothing")
     args = ap.parse_args()
     origin = f"http://localhost:{args.port}"
     os.environ.update(WEB_ORIGIN=origin, FROM_ADDRESS="notes@yourversionnumber.com", CONFIG_SET="dev", TABLE="dev",
@@ -79,6 +81,7 @@ def main():
     store.items["u1"].append({"pk": "USER#u1", "sk": f"PAUSE#{today - timedelta(days=12)}",
                               "through": (today - timedelta(days=9)).isoformat()})
     store.tokens["abcdefghijklmnopqrstuvwx"] = {"user_id": "u1", "date": "2026-10-01", "version": "4.5.109"}
+    fetch = (lambda u: {"title": f"A page at {urlsplit(u).hostname}", "site": urlsplit(u).hostname}) if args.fake_links else links.fetch_title
     geocode = (lambda q: [p for p in FAKE_PLACES if p["name"].lower().startswith(q.lower())]) if args.fake_places else places.search
 
     class Handler(SimpleHTTPRequestHandler):
@@ -97,7 +100,7 @@ def main():
                 "queryStringParameters": dict(parse_qsl(url.query)) or None,
                 "body": self.rfile.read(length).decode() if length else None,
             }
-            r = web.handler(event, None, store=store, ses=ses, s3=s3, geocode=geocode)
+            r = web.handler(event, None, store=store, ses=ses, s3=s3, geocode=geocode, fetch=fetch)
             body = r["body"].encode()
             self.send_response(r["statusCode"])
             for k, v in r["headers"].items():

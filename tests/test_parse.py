@@ -1,7 +1,7 @@
 import unittest
 from email.message import EmailMessage
 
-from release_notes.parse import attachments, html_to_text, note_text, parse_message, strip_reply
+from release_notes.parse import anchors, attachments, html_to_text, note_text, parse_message, strip_reply
 
 
 def plain(text: str) -> EmailMessage:
@@ -103,3 +103,24 @@ class Bodies(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_html_only_reply_keeps_link_addresses(self):
+        msg = EmailMessage()
+        msg.set_content(
+            '<div>Wrote it up in <a href="https://example.com/p">my\n post</a>. '
+            '<a href="https://example.com/bare">https://example.com/bare</a> '
+            '<a href="mailto:x@example.com">mail me</a></div>'
+            '<div class="gmail_quote"><a href="https://example.com/quoted">quoted link</a></div>',
+            subtype="html",
+        )
+        parsed = parse_message(msg.as_bytes())
+        self.assertEqual(note_text(parsed), "Wrote it up in my\n post <https://example.com/p>. https://example.com/bare mail me")
+        self.assertEqual(anchors(parsed), {"https://example.com/p": "my post"})
+
+    def test_anchors_read_the_html_beside_a_plain_part(self):
+        msg = EmailMessage()
+        msg.set_content("See my post <https://example.com/p>.\n")
+        msg.add_alternative('<p>See <a href="https://example.com/p">my post</a>.</p>', subtype="html")
+        parsed = parse_message(msg.as_bytes())
+        self.assertEqual(note_text(parsed), "See my post <https://example.com/p>.")
+        self.assertEqual(anchors(parsed), {"https://example.com/p": "my post"})

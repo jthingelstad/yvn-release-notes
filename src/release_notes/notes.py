@@ -16,3 +16,12 @@ def combine(notes: list[dict]) -> str:
         if text and text not in parts:
             parts.append(text)
     return "\n\n".join(parts)
+
+
+def day_links(notes: list[dict]) -> list[dict]:
+    """Every note's links (links.py), for showing the combined text."""
+    out: dict[str, dict] = {}
+    for note in notes:
+        for link in note.get("links") or []:
+            out.setdefault(link["url"], link)
+    return list(out.values())

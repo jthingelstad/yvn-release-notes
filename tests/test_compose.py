@@ -45,6 +45,14 @@ class Email(unittest.TestCase):
         for href in re.findall(r'href="([^"]+)"', html):
             self.assertTrue(href.startswith("https://yourversionnumber.com/"), href)
 
+    def test_type_on_paper_no_boxes(self):
+        # Jamie, 2026-10-07: no borders, boxes or shadows. Birthday version too.
+        for day in (date(2026, 10, 8), date(2027, 6, 20)):
+            html = html_body(compute_version(BIRTHDAY, day), BIRTHDAY, day)
+            for banned in ("border:", "border-radius", "box-shadow"):
+                self.assertNotIn(banned, html)
+            self.assertEqual(html.count("background:"), 3, "only the page paper, light and dark")
+
     def test_birthday_and_countdown(self):
         v = compute_version(BIRTHDAY, date(2027, 6, 20))
         self.assertIn("Happy birthday: a new release.", html_body(v, BIRTHDAY, date(2027, 6, 20)))

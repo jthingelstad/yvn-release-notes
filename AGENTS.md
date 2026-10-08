@@ -60,9 +60,10 @@ runtime and is imported lazily so the tests run without it.
 - **No note text or email addresses in logs.** Log user ids, dates and
   outcomes only.
 - **No open or click tracking**, consistent with Jamie's email tracking policy.
-- **The email is plain text plus HTML** (`compose.py`). The HTML wears the
-  site's birthday front door: cobalt digits, tangerine dots, the three part
-  tiles, the ask on a sun-yellow sticky note, its own dark mode. It loads
+- **The email is plain text plus HTML** (`compose.py`). The HTML is type on
+  paper in the site's colours: cobalt digits, tangerine dots, its own dark
+  mode. No borders, boxes, shadows or filled panels (Jamie, 2026-10-07:
+  "obsessed with borders and boxes"); `tests/test_compose.py` holds the line. It loads
   **nothing remote**: no images, no web fonts, no stylesheets
   (`tests/test_compose.py` enforces it). Preview by writing `html_body()` to a
   file and screenshotting it; for phone width use a 390px iframe in a wider

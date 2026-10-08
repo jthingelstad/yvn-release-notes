@@ -42,6 +42,10 @@ class FakeTable:
         self.calls.append(("get_item", kw))
         return {}
 
+    def query(self, **kw):
+        self.calls.append(("query", kw))
+        return {"Items": [{"pk": "USER#u1", "sk": "WEATHER#2026-10-07", "code": 3}]}
+
 
 class ConditionFailed(Exception):
     response = {"Error": {"Code": "ConditionalCheckFailedException"}}
@@ -92,6 +96,25 @@ class ExportItem(unittest.TestCase):
         self.assertFalse(Store(FakeTable(fail=ConditionFailed())).finish_export("u1", "e1", {"status": "ready"}))
         with self.assertRaises(ValueError):
             Store(FakeTable(fail=ValueError())).finish_export("u1", "e1", {"status": "ready"})
+
+
+class WeatherItem(unittest.TestCase):
+    def test_floats_go_as_decimals_and_the_first_reading_stands(self):
+        table = FakeTable()
+        Store(table).put_weather("u1", "2026-10-07", {"high_c": 19.0, "low_c": -2.5, "code": 3, "lat": Decimal("44.98")})
+        _, kw = table.calls[0]
+        self.assertEqual(kw["Item"], {"pk": "USER#u1", "sk": "WEATHER#2026-10-07", "high_c": Decimal("19.0"),
+                                      "low_c": Decimal("-2.5"), "code": 3, "lat": Decimal("44.98")})
+        self.assertEqual(kw["ConditionExpression"], "attribute_not_exists(sk)")
+
+    def test_between_reads_one_range(self):
+        table = FakeTable()
+        self.assertEqual(Store(table).weather_between("u1", "2026-10-01", "2026-10-07"),
+                         {"2026-10-07": {"pk": "USER#u1", "sk": "WEATHER#2026-10-07", "code": 3}})
+        _, kw = table.calls[0]
+        self.assertEqual(kw["KeyConditionExpression"], "pk = :u AND sk BETWEEN :a AND :b")
+        self.assertEqual(kw["ExpressionAttributeValues"],
+                         {":u": "USER#u1", ":a": "WEATHER#2026-10-01", ":b": "WEATHER#2026-10-07"})
 
 
 if __name__ == "__main__":

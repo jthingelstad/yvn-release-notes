@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Another day: Release Notes</title>
-<link rel="stylesheet" href="/assets/site.css?v=7">
-<script src="/assets/app.js?v=9" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=8">
+<script src="/assets/app.js?v=10" defer></script>
 </head>
 <body data-page="day">
 <main>
@@ -24,6 +24,7 @@
   <div id="day" hidden>
     <p class="dateline" id="date"></p>
     <p class="vnum big tight" id="v"></p>
+    <p class="weather" id="weather" hidden></p>
     <div class="notes" id="notes"></div>
     <p class="hint" id="none" hidden>No notes for this release yet.</p>
   <form id="note-form" class="note-form" novalidate>
@@ -35,7 +36,7 @@
   </form>
   </div>
 
-  <p class="foot">Any day from your birthday to today. Days before you signed up count too, all the way back to <span class="mono">0.0.0</span>. A day you fill in later counts toward your streak.</p>
+  <p class="foot">Any day from your birthday to today. Days before you signed up count too, all the way back to <span class="mono">0.0.0</span>. A day you fill in later counts toward your streak.<span id="weather-credit" hidden> Weather from <a href="https://open-meteo.com/">Open-Meteo</a>.</span></p>
 </main>
 </body>
 </html>

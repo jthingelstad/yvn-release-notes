@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from . import auth, export, export_job, links, media, places
+from . import auth, export, export_job, links, media, places, weather
 from .compose import DOTS, from_header, next_release
 from .streak import ONE_DAY, compute_streak, pause_days
 from .version import compute_version
@@ -615,9 +615,13 @@ def note_view(item: dict, tz: str) -> dict:
     return view
 
 
-def day_view(p: dict, day: str, notes: list[dict]) -> dict:
+def day_view(p: dict, day: str, notes: list[dict], sky: dict | None = None) -> dict:
     v = compute_version(date.fromisoformat(p["birthday"]), date.fromisoformat(day))
-    return {"date": day, "version": str(v), "notes": [note_view(n, p["tz"]) for n in notes]}
+    view = {"date": day, "version": str(v), "notes": [note_view(n, p["tz"]) for n in notes]}
+    if sky:
+        # As words, in the subscriber's units: "Partly cloudy, 61° / 44° in Minneapolis".
+        view["weather"] = weather.day_line(sky, weather.fahrenheit(weather.place_of(p) or sky))
+    return view
 
 
 def today(app: App, req: Request) -> dict:
@@ -660,15 +664,17 @@ def days(app: App, req: Request) -> dict:
     picked = sorted((d for d in dated if p["birthday"] <= d <= day and (before is None or d < before)), reverse=True)
     page = picked[:limit]
     by_day: dict[str, list[dict]] = {d: [] for d in page}
+    skies: dict[str, dict] = {}
     if page:
         for n in app.store.notes_between(user_id, page[-1], page[0]):
             by_day.setdefault(n["sk"].split("#")[1], []).append(n)
+        skies = app.store.weather_between(user_id, page[-1], page[0])
     return respond(
         200,
         {
             "today": day,
             "tz": p["tz"],
-            "days": [{**day_view(p, d, by_day[d]), **({"paused": True} if d in paused else {})} for d in page],
+            "days": [{**day_view(p, d, by_day[d], skies.get(d)), **({"paused": True} if d in paused else {})} for d in page],
             "before": page[-1] if len(picked) > limit else None,
         },
     )
@@ -677,7 +683,7 @@ def days(app: App, req: Request) -> dict:
 def one_day(app: App, req: Request, value: str) -> dict:
     user_id, p = app.account(req)
     day = day_from(p, value, app.now).isoformat()
-    view = day_view(p, day, app.store.notes_between(user_id, day, day))
+    view = day_view(p, day, app.store.notes_between(user_id, day, day), app.store.weather_between(user_id, day, day).get(day))
     view.update(tz=p["tz"], today=day == local_today(p, app.now).isoformat())
     return respond(200, view)
 
@@ -698,7 +704,25 @@ def add_note(app: App, req: Request, value: str) -> dict:
         item["links"] = found
     app.store.put_note(user_id, day.isoformat(), note_id, item)
     log(event="note-added", user=user_id, date=day.isoformat())
+    keep_weather(app, user_id, p, day)
     return respond(201, note_view({"sk": f"NOTE#{day.isoformat()}#{note_id}", **item}, p["tz"]))
+
+
+def keep_weather(app: App, user_id: str, p: dict, day: date) -> None:
+    """A day filled in later gets its weather from history, once, where the
+    subscriber is now. Today's is kept by tomorrow's email. Never fails the
+    note."""
+    place = weather.place_of(p)
+    if not place or day >= local_today(p, app.now):
+        return
+    try:
+        if app.store.weather_between(user_id, day.isoformat(), day.isoformat()):
+            return
+        found = weather.history(place, day, local_today(p, app.now), app.weather_fetch)
+        if found:
+            app.store.put_weather(user_id, day.isoformat(), weather.record(found, place, iso(app.now)))
+    except Exception as e:
+        log(event="weather-error", user=user_id, date=day.isoformat(), error=type(e).__name__)
 
 
 def edit_note(app: App, req: Request, value: str, note_id: str) -> dict:
@@ -898,7 +922,7 @@ def match(method: str, path: str):
 
 
 def handler(event, context, *, store=None, ses=None, s3=None, lam=None, geocode=places.search, fetch=links.fetch_title,
-            clock=time.time):
+            weather_fetch=weather.fetch_json, clock=time.time):
     req = Request(event)
     pattern, route, args = match(req.method, req.path)
     if not route:
@@ -908,7 +932,7 @@ def handler(event, context, *, store=None, ses=None, s3=None, lam=None, geocode=
     else:
         try:
             app = App(store, ses, int(clock()), s3, lam)
-            app.geocode, app.fetch = geocode, fetch
+            app.geocode, app.fetch, app.weather_fetch = geocode, fetch, weather_fetch
             response = route(app, req, *args)
         except Reject as r:
             response = r.response

@@ -2,7 +2,9 @@
 
 It comes before deleting, so that deleting never means losing anything.
 Kept out of it: the reply tokens (each is an address that files notes) and
-the SES and S3 bookkeeping. The JSON lists each note's attachments.
+the SES and S3 bookkeeping. The JSON lists each note's attachments, and
+each day's weather where it was kept (weather.py); the Markdown gives it a
+line under the day, and credits Open-Meteo.
 
 Two ways out. The words alone, Markdown or JSON, come straight back from
 the API. Everything, photos and recordings included, is a zip that
@@ -14,7 +16,7 @@ zip, so it reads with its pictures in any Markdown viewer.
 from datetime import date
 from decimal import Decimal
 
-from . import links
+from . import links, weather
 from .notes import combine
 from .version import compute_version
 
@@ -55,7 +57,7 @@ def file_paths(items: list[dict]) -> dict[str, list[dict]]:
 def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | None = None) -> dict:
     """Everything, as data. With `files` (file_paths), each note lists its
     photos and recordings by their path in the zip."""
-    profile, days, notes, pauses = {}, [], [], []
+    profile, days, notes, pauses, skies = {}, [], [], [], []
     for item in items:
         sk = item["sk"]
         if sk == "PROFILE":
@@ -81,6 +83,8 @@ def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | No
             )
         elif sk.startswith("PAUSE#"):
             pauses.append({"from": sk[6:], "through": item.get("through")})
+        elif sk.startswith("WEATHER#"):
+            skies.append({"date": sk[8:], **weather.plain(item)})
     if profile.get("birthday"):
         born = date.fromisoformat(profile["birthday"])
         for n in notes:
@@ -96,6 +100,7 @@ def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | No
         "notes": notes,
         "days_sent": sorted(days, key=lambda d: d["date"]),
         "pauses": sorted(pauses, key=lambda p: p["from"]),
+        "weather": sorted(skies, key=lambda w: w["date"]),
     }
 
 
@@ -113,15 +118,21 @@ def markdown(data: dict) -> str:
     lines.append(" ".join(about) + ".")
     if profile.get("birthday"):
         lines += ["", f"Born {long_date(profile['birthday'])}: that day was 0.0.0."]
-    if not data["notes"]:
-        lines += ["", "No notes yet."]
+    skies = {w["date"]: w for w in data.get("weather", [])}
+    fahrenheit = weather.fahrenheit(profile)
     by_day: dict[str, list[dict]] = {}
     for n in data["notes"]:
         by_day.setdefault(n["date"], []).append(n)
+    if any(d in skies for d in by_day):
+        lines += ["", f"{weather.CREDIT} ({weather.CREDIT_URL}), CC BY 4.0."]
+    if not data["notes"]:
+        lines += ["", "No notes yet."]
     for day, notes in by_day.items():
         # Links by name, as Markdown links; the raw address stays the target.
         text = combine([{"text": links.markdown(n["text"], n.get("links"))} for n in notes])
         lines += ["", f"## {notes[0]['version']} · {long_date(day)}"]
+        if day in skies:
+            lines += ["", weather.day_line(skies[day], fahrenheit) + "."]
         shown = [f for n in notes for f in n.get("files", [])]
         if text or not shown:
             lines += ["", text or "(Attachments only. They are in the original email.)"]

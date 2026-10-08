@@ -14,8 +14,8 @@ there links here until this is up and done.
    read the mail on the phone. A new address then picks:
    - **Birthday.**
    - **Location, to the city.** It is chosen from a search, and gives the
-     time zone and coordinates rounded to the city (for weather later; the
-     email does not use it yet). No street address, no device location.
+     time zone and coordinates rounded to the city (for the day's weather
+     and the morning forecast, `weather.py`). No street address, no device location.
    - **Send time**, on a quarter hour. The default is 06:00.
 
    The first email comes the next morning. An address that already subscribes
@@ -160,7 +160,7 @@ notes.yourversionnumber.com
 | `GET /api/export/zip/file` | the built zip: a redirect to a five-minute signed link |
 | `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
-| `GET /api/days/{date}` | one day: version and notes (each note's `parts` is its text split into strings and links by name) |
+| `GET /api/days/{date}` | one day: version, notes (each note's `parts` is its text split into strings and links by name) and `weather`, the day's recorded weather as a line, when kept |
 | `POST /api/days/{date}/notes` | write for today or a past day |
 | `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete (an emailed note's email and files go with it) |
 | `GET /api/days/{date}/notes/{id}/media/{n}` | a photo or recording: a redirect to a ten-minute signed link, for its owner |

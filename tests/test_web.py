@@ -50,13 +50,16 @@ class WebCase(unittest.TestCase):
         with redirect_stdout(self.out):
             r = web.handler(
                 request(*args, **kw), None, store=self.store, ses=self.ses, s3=self.s3, lam=self.lam, geocode=self.geocode,
-                fetch=self.fetch, clock=lambda: self.now,
+                fetch=self.fetch, weather_fetch=self.weather_fetch, clock=lambda: self.now,
             )
         return r, json.loads(r["body"]) if r["headers"]["content-type"] == "application/json" else r["body"]
 
     def fetch(self, url):
         self.fetched.append(url)
         return self.titles.get(url)
+
+    def weather_fetch(self, url):
+        raise AssertionError("no weather in this test")  # WeatherTest gives its own
 
     def geocode(self, q):
         if self.places is None:

@@ -147,6 +147,8 @@ textarea { font-size: 17px; line-height: 1.5; resize: vertical; }
 .tday-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; text-decoration: none; }
 .tday-head .when { font-size: 14px; font-weight: 400; color: var(--ink-2); }
 .tday .text { font-size: 16px; }
+.weather { margin: 10px 0 0; font-size: 14px; color: var(--ink-2); }
+.tday .weather { margin: 0; }
 #earlier { margin-top: 36px; }
 .pick-day { margin-top: 48px; }
 #day #none { margin-top: 20px; font-size: 16px; }

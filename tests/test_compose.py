@@ -35,6 +35,12 @@ class Email(unittest.TestCase):
         self.assertIn("Thursday, October 8", html)
         self.assertEqual(msg["Subject"], "You're 4.5.110 today")
 
+    def test_says_reply_as_often_as_you_like(self):
+        # Jamie, 2026-10-08: every reply to a day's email adds to its notes.
+        msg = message(date(2026, 10, 8))
+        self.assertIn("Reply as often as you like", msg.get_body(("plain",)).get_content())
+        self.assertIn("Reply as often as you like", msg.get_body(("html",)).get_content())
+
     def test_nothing_remote(self):
         # No images, fonts, stylesheets or anything else fetched on open.
         html = html_body(compute_version(BIRTHDAY, date(2026, 10, 8)), BIRTHDAY, date(2026, 10, 8))

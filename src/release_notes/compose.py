@@ -115,6 +115,7 @@ def body(v: Version, birthday: date, streak: Streak | None = None) -> str:
         "\n"
         "Reply any time today: what happened, what you made, who you saw.\n"
         f"Whatever you send back becomes the release notes for {v}.\n"
+        "Reply as often as you like; it all adds up to today's notes.\n"
         "\n"
         f"{streak_text}"
         f"{countdown(v)}\n"
@@ -253,7 +254,7 @@ def html_body(v: Version, birthday: date, day: date, streak: Streak | None = Non
 What happened, what you made, who you saw. Whatever you send back becomes the release notes for
 <span class="vnum" style="font-family:{MONO};font-weight:700;letter-spacing:-0.03em;color:{BLUE};white-space:nowrap;">{inline_v}</span>.
 </p>
-<p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">Just hit reply. A line is plenty.</p>
+<p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">Just hit reply. A line is plenty. Reply as often as you like; it all adds up to today&rsquo;s notes.</p>
 </td></tr>
 
 {streak_html(v, birthday, streak) if streak else ""}

@@ -6,6 +6,14 @@
     USER#<id>        NOTE#<YYYY-MM-DD>#<msgid>  one reply: text, attachment list, raw S3 key
     TOKEN#<token>    TOKEN                      reply address -> user and day
     EMAIL#<address>  EMAIL                      address -> user (one subscriber per address)
+    LOGIN#<hash>     LOGIN                      a sign-in's link and code (auth.py), 15 minutes
+    LOGINFOR#<hash>  LOGIN                      an address's newest sign-in, the one a code is checked against
+    SESSION#<hash>   SESSION                    a signed-in browser: user, or the address of one signing up
+    RATE#<key>#<hr>  RATE                       a counter for one hour of sign-in emails
+
+expires_at (epoch seconds) is the table's TTL. DynamoDB deletes late, up to
+a couple of days, so every read checks it as well. Hashes are SHA-256 of
+the secret (or, for LOGINFOR and RATE, of the address or network).
 
 A note is filed under the day of the email it answers, not the day it
 arrived, so a reply to Tuesday's email sent on Thursday is Tuesday's note.
@@ -16,6 +24,17 @@ the key is random, so key order is not arrival order: sort by received_at.
 
 from dataclasses import dataclass
 from datetime import date
+
+
+def _failed_condition(e: Exception) -> bool:
+    # A botocore ClientError, read by shape so the tests need no boto.
+    code = (getattr(e, "response", None) or {}).get("Error", {}).get("Code")
+    return code == "ConditionalCheckFailedException"
+
+
+def _number(item: dict, key: str, default: int = 0) -> int:
+    # DynamoDB hands numbers back as Decimal.
+    return int(item.get(key, default))
 
 
 @dataclass
@@ -71,8 +90,6 @@ class Store:
     def claim_day(self, user_id: str, day: str) -> bool:
         """Mark today's email as sent before sending it, so a retry or an
         overlapping run cannot send twice. Returns False if already claimed."""
-        from botocore.exceptions import ClientError
-
         try:
             self.table.update_item(
                 Key={"pk": f"USER#{user_id}", "sk": "PROFILE"},
@@ -81,8 +98,8 @@ class Store:
                 ExpressionAttributeValues={":d": day},
             )
             return True
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+        except Exception as e:
+            if _failed_condition(e):
                 return False
             raise
 
@@ -149,15 +166,131 @@ class Store:
     def put_note(self, user_id: str, day: str, message_id: str, note: dict) -> bool:
         """Store one reply. SES retries a failed Lambda, so the message id
         makes this idempotent. Returns False if the note already exists."""
-        from botocore.exceptions import ClientError
-
         try:
             self.table.put_item(
                 Item={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{message_id}", **note},
                 ConditionExpression="attribute_not_exists(pk)",
             )
             return True
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+        except Exception as e:
+            if _failed_condition(e):
                 return False
             raise
+
+    def user_for_email(self, email: str) -> str | None:
+        item = self.table.get_item(Key={"pk": f"EMAIL#{email}", "sk": "EMAIL"}).get("Item")
+        return item["user_id"] if item else None
+
+    def profile(self, user_id: str) -> dict | None:
+        return self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": "PROFILE"}).get("Item")
+
+    def user_items(self, user_id: str) -> list[dict]:
+        """Everything filed under one subscriber: the export reads this."""
+        items, kwargs = [], {
+            "KeyConditionExpression": "pk = :u",
+            "ExpressionAttributeValues": {":u": f"USER#{user_id}"},
+        }
+        while True:
+            page = self.table.query(**kwargs)
+            items.extend(page.get("Items", []))
+            if "LastEvaluatedKey" not in page:
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        return items
+
+    # sign-in ---------------------------------------------------------------
+
+    def put_login(self, token_hash: str, email: str, email_hash: str, code_hash: str, now: int, ttl: int) -> None:
+        expires = now + ttl
+        self.table.put_item(
+            Item={
+                "pk": f"LOGIN#{token_hash}",
+                "sk": "LOGIN",
+                "email": email,
+                "email_hash": email_hash,
+                "code_hash": code_hash,
+                "attempts": 0,
+                "created_at": now,
+                "expires_at": expires,
+            }
+        )
+        self.table.put_item(
+            Item={"pk": f"LOGINFOR#{email_hash}", "sk": "LOGIN", "token_hash": token_hash, "expires_at": expires}
+        )
+
+    def newest_login(self, email_hash: str) -> str | None:
+        item = self.table.get_item(Key={"pk": f"LOGINFOR#{email_hash}", "sk": "LOGIN"}).get("Item")
+        return item["token_hash"] if item else None
+
+    def spend_attempt(self, token_hash: str, now: int, max_attempts: int) -> dict | str:
+        """Count a code attempt before the code is compared. Returns the
+        sign-in, or why it cannot take a code: gone, used or attempts."""
+        try:
+            return self.table.update_item(
+                Key={"pk": f"LOGIN#{token_hash}", "sk": "LOGIN"},
+                UpdateExpression="SET attempts = attempts + :one",
+                ConditionExpression=(
+                    "attribute_exists(pk) AND attribute_not_exists(used_at) AND expires_at > :now AND attempts < :max"
+                ),
+                ExpressionAttributeValues={":one": 1, ":now": now, ":max": max_attempts},
+                ReturnValues="ALL_NEW",
+            )["Attributes"]
+        except Exception as e:
+            if not _failed_condition(e):
+                raise
+        item = self.table.get_item(Key={"pk": f"LOGIN#{token_hash}", "sk": "LOGIN"}).get("Item")
+        if not item or _number(item, "expires_at") <= now:
+            return "gone"
+        if "used_at" in item:
+            return "used"
+        return "attempts"
+
+    def burn_login(self, token_hash: str, now: int) -> dict | None:
+        """Use a sign-in, once. The link and the code both end here, so
+        whichever comes first wins and the other finds it used."""
+        try:
+            return self.table.update_item(
+                Key={"pk": f"LOGIN#{token_hash}", "sk": "LOGIN"},
+                UpdateExpression="SET used_at = :now",
+                ConditionExpression="attribute_exists(pk) AND attribute_not_exists(used_at) AND expires_at > :now",
+                ExpressionAttributeValues={":now": now},
+                ReturnValues="ALL_NEW",
+            )["Attributes"]
+        except Exception as e:
+            if _failed_condition(e):
+                return None
+            raise
+
+    def count(self, key: str, hour: int) -> int:
+        """Add one to an hour's counter and return the new total."""
+        item = self.table.update_item(
+            Key={"pk": f"RATE#{key}#{hour}", "sk": "RATE"},
+            UpdateExpression="ADD n :one SET expires_at = :exp",
+            ExpressionAttributeValues={":one": 1, ":exp": (hour + 2) * 3600},
+            ReturnValues="UPDATED_NEW",
+        )["Attributes"]
+        return _number(item, "n")
+
+    # sessions --------------------------------------------------------------
+
+    def put_session(self, session_hash: str, *, user_id: str | None, email: str | None, now: int, expires: int) -> None:
+        item = {"pk": f"SESSION#{session_hash}", "sk": "SESSION", "created_at": now, "seen_at": now, "expires_at": expires}
+        if user_id:
+            item["user_id"] = user_id
+        else:
+            item["email"] = email  # signing up: no account yet
+        self.table.put_item(Item=item)
+
+    def get_session(self, session_hash: str) -> dict | None:
+        return self.table.get_item(Key={"pk": f"SESSION#{session_hash}", "sk": "SESSION"}).get("Item")
+
+    def touch_session(self, session_hash: str, now: int, expires: int) -> None:
+        self.table.update_item(
+            Key={"pk": f"SESSION#{session_hash}", "sk": "SESSION"},
+            UpdateExpression="SET seen_at = :now, expires_at = :exp",
+            ConditionExpression="attribute_exists(pk)",
+            ExpressionAttributeValues={":now": now, ":exp": expires},
+        )
+
+    def delete_session(self, session_hash: str) -> None:
+        self.table.delete_item(Key={"pk": f"SESSION#{session_hash}", "sk": "SESSION"})

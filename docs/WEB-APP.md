@@ -88,8 +88,21 @@ notes.yourversionnumber.com
 
   SES production access is account-wide and shared with Elixir's sign-in
   mail, so these limits protect both.
+  The limits are 5 sign-in emails per address, 20 per network (an IPv4
+  address or an IPv6 /64) and 200 in all, each per hour; past one, the
+  answer is 429. The network comes from CloudFront's `CloudFront-Viewer-Address`,
+  which the API's own origin request policy passes on. Someone calling the
+  API's execute-api URL directly can forge that header, so the total is the
+  limit that holds; a shared origin secret would close the gap, and is not
+  worth a secret yet.
 - **Session**: an `__Host-` cookie, Secure, HttpOnly, SameSite=Lax. Every
-  write must carry `Origin: https://notes.yourversionnumber.com`.
+  write must carry `Origin: https://notes.yourversionnumber.com`. The API
+  receives only the headers it reads (Origin, Content-Type, Accept, the
+  viewer address) and only that cookie.
+- **Pages**: `/` (sign in, with a live example number from `/api/sample`),
+  `/signin/` (the link lands here, token in the fragment), `/settings/`.
+  PR 4 adds `/today/`, `/timeline/` and `/day/`, and moves where sign-in
+  lands from settings to today.
 - **The sender** skips a paused subscriber.
 - **Logs**: ids, routes and outcomes. Never note text, addresses or cities.
 
@@ -98,12 +111,13 @@ notes.yourversionnumber.com
 | | |
 |---|---|
 | `GET /api/health` | |
+| `GET /api/sample` | the front page's example: someone born 1981-06-14, today |
 | `POST /api/auth/start` `{email}` | always 202; mails a link and code when the limits allow |
 | `POST /api/auth/verify` `{email, code}` or `{token}` | sets the cookie; says whether the account is new |
 | `POST /api/auth/signout` | |
 | `GET /api/places?q=` | city search, through Open-Meteo |
 | `GET/PUT /api/me` | profile: onboarding and settings |
-| `GET /api/export` | everything, as Markdown or JSON |
+| `GET /api/export?format=md\|json` | everything, as a download (JSON by default) |
 | `GET /api/days?before=&limit=` | the timeline |
 | `GET /api/days/{date}` | one day: version and notes |
 | `POST /api/days/{date}/notes` | write for today or a past day |

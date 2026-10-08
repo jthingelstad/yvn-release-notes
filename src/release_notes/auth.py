@@ -1,0 +1,164 @@
+"""Sign-in by email: a link and a six-digit code, then a session cookie.
+
+Elixir's design (elixir-mcp packages/auth/src/magic.mjs), on DynamoDB:
+
+- One sign-in serves both the link and the code. Whichever is used first
+  burns it, with a conditional update, so a race has one winner.
+- Code attempts are counted before comparing, at most MAX_CODE_ATTEMPTS, and
+  compared in constant time. Only the newest sign-in for an address takes a
+  code; an older email's link still works until it expires.
+- Secrets are stored only as SHA-256 hashes: the link token, the code and the
+  session token. The address itself sits on the sign-in row for its 15
+  minutes, because a new address needs it to sign up.
+- Limits on sign-in emails, per address, per network and in total, all per
+  hour (web.py). The total is what bounds the shared SES account: the network
+  limit trusts CloudFront's viewer address, which a caller going straight to
+  the API's own URL can set to anything.
+- The answer to "send me a link" is the same whether or not the address has
+  an account, and so is the email.
+- The link opens a page with a "Sign in" button, because mail scanners open
+  links. The token rides in the fragment, which never reaches a server log.
+
+The session is a random token in an __Host- cookie (Secure, HttpOnly,
+SameSite=Lax, Path=/). It lasts 30 days from last use and 90 days at most.
+"""
+
+import hashlib
+import hmac
+import re
+import secrets
+from email.message import EmailMessage
+from email.utils import make_msgid
+from html import escape
+
+from .compose import BLUE, FONT, INK, INK_2, MONO, PAPER, from_header
+
+LOGIN_TTL = 15 * 60
+MAX_CODE_ATTEMPTS = 5
+SESSION_IDLE = 30 * 86400
+SESSION_MAX = 90 * 86400
+SESSION_TOUCH = 86400  # rewrite a session's expiry at most once a day
+COOKIE = "__Host-rn"
+
+# Sign-in emails per hour.
+LIMIT_PER_ADDRESS = 5
+LIMIT_PER_NETWORK = 20
+LIMIT_TOTAL = 200
+
+_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
+_CODE = re.compile(r"[0-9]{6}")
+
+
+def digest(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def same(a: str, b: str) -> bool:
+    return hmac.compare_digest(a.encode(), b.encode())
+
+
+def normal_email(raw) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    email = raw.strip().lower()
+    return email if len(email) <= 254 and _EMAIL.fullmatch(email) else None
+
+
+def new_token() -> str:
+    return secrets.token_urlsafe(32)  # 256 bits, 43 characters
+
+
+def new_code() -> str:
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def valid_token(raw) -> str | None:
+    return raw if isinstance(raw, str) and _TOKEN.fullmatch(raw) else None
+
+
+def valid_code(raw) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    code = re.sub(r"\s", "", raw)
+    return code if _CODE.fullmatch(code) else None
+
+
+def network(viewer: str) -> str:
+    """The rate-limit key for a viewer address: the IPv4 address, or the
+    IPv6 /64, which is what one household or phone is handed."""
+    if ":" in viewer:
+        return ":".join((viewer.split(":") + ["0"] * 4)[:4]) + "::/64"
+    return viewer
+
+
+def session_cookie(token: str) -> str:
+    return f"{COOKIE}={token}; Path=/; Max-Age={SESSION_MAX}; Secure; HttpOnly; SameSite=Lax"
+
+
+def clear_cookie() -> str:
+    return f"{COOKIE}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax"
+
+
+def cookie_token(cookies: list[str]) -> str | None:
+    for c in cookies or []:
+        name, _, value = c.strip().partition("=")
+        if name == COOKIE:
+            return valid_token(value)
+    return None
+
+
+def session_expiry(created: int, now: int) -> int:
+    return min(now + SESSION_IDLE, created + SESSION_MAX)
+
+
+# --- the email ---------------------------------------------------------------
+
+
+def signin_subject(code: str) -> str:
+    return f"{code} is your Release Notes code"
+
+
+def signin_text(link: str, code: str) -> str:
+    return f"""Sign in to Release Notes:
+
+{link}
+
+Or type this code where you asked: {code}
+
+The link and the code work once, for 15 minutes. If you didn't ask, you can
+ignore this email: nothing happens without the link or the code.
+
+This comes from the same address as the morning email. Adding it to your
+contacts keeps both out of junk.
+"""
+
+
+def signin_html(link: str, code: str) -> str:
+    p = f"margin:0 0 18px;font:16px/1.55 {FONT};color:{INK_2}"
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"></head>
+<body style="margin:0;padding:0;background:{PAPER}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PAPER}"><tr><td style="padding:32px 20px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto"><tr><td>
+<p style="margin:0 0 24px;font:800 18px/1.3 {FONT};color:{INK}">Release Notes</p>
+<p style="margin:0 0 18px;font:800 26px/1.2 {FONT};color:{INK}"><a href="{escape(link)}" style="color:{BLUE}">Sign in to Release Notes</a></p>
+<p style="{p}">Or type this code where you asked:</p>
+<p style="margin:0 0 24px;font:700 30px/1 {MONO};letter-spacing:.2em;color:{BLUE}">{escape(code)}</p>
+<p style="{p}">The link and the code work once, for 15 minutes. If you didn&rsquo;t ask, you can ignore this email: nothing happens without the link or the code.</p>
+<p style="margin:0;font:14px/1.55 {FONT};color:{INK_2}">This comes from the same address as the morning email. Adding it to your contacts keeps both out of junk.</p>
+</td></tr></table>
+</td></tr></table>
+</body></html>
+"""
+
+
+def signin_message(*, to: str, from_addr: str, link: str, code: str) -> EmailMessage:
+    msg = EmailMessage()
+    msg["From"] = from_header(from_addr)
+    msg["To"] = to
+    msg["Subject"] = signin_subject(code)
+    msg["Message-ID"] = make_msgid(domain=from_addr.split("@", 1)[1])
+    msg.set_content(signin_text(link, code))
+    msg.add_alternative(signin_html(link, code), subtype="html")
+    return msg

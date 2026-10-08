@@ -53,7 +53,7 @@ class FakeStore:
 
     def put_day(self, user_id, day, version, token, sent_at):
         self.tokens[token] = {"user_id": user_id, "date": day, "version": version}
-        self.days[(user_id, day)] = {"version": version, "token": token}
+        self.days[(user_id, day)] = {"version": version, "token": token, "sent_at": sent_at}
 
     def set_day_message_id(self, user_id, day, message_id):
         self.days[(user_id, day)]["ses_message_id"] = message_id
@@ -93,8 +93,13 @@ class FakeS3:
         self.tags[Key] = Tagging["TagSet"][0]["Value"]
 
 
+def clock(iso):
+    return lambda: datetime.fromisoformat(iso)
+
+
 # 20:00 in Chicago on 2026-10-07 (CDT, UTC-5) is 01:00 UTC on 10-08.
-AT_8PM = {"now": "2026-10-08T01:00:00+00:00"}
+AT_8PM = clock("2026-10-08T01:00:00+00:00")
+AT_8_15PM = clock("2026-10-08T01:15:00+00:00")
 
 
 class Sending(unittest.TestCase):
@@ -115,7 +120,7 @@ class Sending(unittest.TestCase):
 
     def test_sends_once_per_day(self):
         store, ses = FakeStore([ada()]), FakeSES()
-        out = send.handler(AT_8PM, None, store=store, ses=ses)
+        out = send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         self.assertEqual(out["results"][0]["version"], "5.0.0")
         self.assertEqual(len(ses.sent), 1)
         raw = ses.sent[0]["Content"]["Raw"]["Data"].decode()
@@ -123,26 +128,61 @@ class Sending(unittest.TestCase):
         token = store.days[("u1", "2026-10-07")]["token"]
         self.assertIn(f"n-{token}@in.yourversionnumber.com", raw)
         self.assertIn("Happy birthday: a major release.", raw)
-        send.handler({"now": "2026-10-08T01:15:00+00:00"}, None, store=store, ses=ses)
+        send.handler({}, None, store=store, ses=ses, clock=AT_8_15PM)
         self.assertEqual(len(ses.sent), 1)
 
     def test_failed_send_is_released_for_retry(self):
         store = FakeStore([ada(last_sent_date="2026-10-06")])
         with self.assertRaises(RuntimeError):
-            send.handler(AT_8PM, None, store=store, ses=FakeSES(fail=True))
+            send.handler({}, None, store=store, ses=FakeSES(fail=True), clock=AT_8PM)
         self.assertEqual(store.subs["u1"].last_sent_date, "2026-10-06")
-        send.handler({"now": "2026-10-08T01:15:00+00:00"}, None, store=store, ses=FakeSES())
+        send.handler({}, None, store=store, ses=FakeSES(), clock=AT_8_15PM)
         self.assertEqual(store.subs["u1"].last_sent_date, "2026-10-07")
+
+    def test_sent_at_is_the_real_send_time(self):
+        store = FakeStore([ada()])
+        send.handler({}, None, store=store, ses=FakeSES(), clock=AT_8_15PM)
+        self.assertEqual(store.days[("u1", "2026-10-07")]["sent_at"], "2026-10-08T01:15:00+00:00")
+
+    def test_now_is_refused_on_a_real_send(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        with self.assertRaises(ValueError):
+            send.handler({"now": "2026-10-08T01:00:00+00:00"}, None, store=store, ses=ses)
+        self.assertEqual(ses.sent, [])
+        self.assertIsNone(store.subs["u1"].last_sent_date)
+
+    def test_send_now_sends_outside_the_window_once(self):
+        # 15:00 in Chicago, five hours before Ada's 20:00 send time.
+        store, ses = FakeStore([ada()]), FakeSES()
+        three_pm = clock("2026-10-07T20:00:00+00:00")
+        out = send.handler({"send_now": "u1"}, None, store=store, ses=ses, clock=three_pm)
+        self.assertEqual(out["results"][0]["outcome"], "sent")
+        self.assertEqual(store.days[("u1", "2026-10-07")]["sent_at"], "2026-10-07T20:00:00+00:00")
+        again = send.handler({"send_now": "u1"}, None, store=store, ses=ses, clock=three_pm)
+        self.assertEqual(again["results"][0]["outcome"], "already-sent")
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual(len(ses.sent), 1)
+
+    def test_send_now_only_sends_to_the_named_subscriber(self):
+        store, ses = FakeStore([ada(), ada(user_id="u2", email="bea@example.com")]), FakeSES()
+        send.handler({"send_now": "u2"}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual([m["Destination"]["ToAddresses"] for m in ses.sent], [["bea@example.com"]])
+
+    def test_send_now_refuses_an_unknown_or_paused_subscriber(self):
+        store = FakeStore([ada(status="paused")])
+        for who in ("u1", "nobody"):
+            with self.assertRaises(ValueError):
+                send.handler({"send_now": who}, None, store=store, ses=FakeSES(), clock=AT_8PM)
 
     def test_dry_run_writes_nothing(self):
         store = FakeStore([ada()])
-        out = send.handler({**AT_8PM, "dry_run": True}, None, store=store)
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
         self.assertEqual(out["results"][0]["date"], "2026-10-07")
         self.assertIsNone(store.subs["u1"].last_sent_date)
 
     def test_local_date_not_utc_date(self):
         # 01:00 UTC is already the 8th in UTC but still the 7th in Chicago.
-        out = send.handler({**AT_8PM, "dry_run": True}, None, store=FakeStore([ada()]))
+        out = send.handler({"dry_run": True}, None, store=FakeStore([ada()]), clock=AT_8PM)
         self.assertEqual(out["results"][0]["date"], "2026-10-07")
 
 

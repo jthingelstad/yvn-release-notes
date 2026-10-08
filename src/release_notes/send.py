@@ -5,7 +5,12 @@ today and who has not had today's email yet. The window is three hours, so a
 missed run catches up but an outage never sends a 3 a.m. email.
 
 Invoke with {"dry_run": true} (and optionally {"now": "<ISO 8601 UTC>"}) to
-see who would get what without writing or sending anything.
+see who would get what without writing or sending anything. "now" is for dry
+runs only: a real send always uses the real clock, so sent_at is when the
+email actually went.
+
+Invoke with {"send_now": "<user id>"} to send that subscriber today's email
+straight away, outside their send window. It is still once per local day.
 """
 
 import json
@@ -43,10 +48,17 @@ def log(**fields):
     print(json.dumps(fields, separators=(",", ":")))
 
 
-def handler(event, context, *, store: Store | None = None, ses=None):
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_now):
     event = event or {}
     dry_run = bool(event.get("dry_run"))
-    now = datetime.fromisoformat(event["now"]) if event.get("now") else datetime.now(timezone.utc)
+    if event.get("now") and not dry_run:
+        raise ValueError('"now" is for dry runs only; use "send_now" to send outside the window')
+    now = datetime.fromisoformat(event["now"]) if event.get("now") else clock()
+    send_now = event.get("send_now")
     if store is None:
         import boto3
 
@@ -56,36 +68,49 @@ def handler(event, context, *, store: Store | None = None, ses=None):
 
         ses = boto3.client("sesv2")
 
+    if send_now:
+        sub = store.get_subscriber(send_now)
+        if sub is None or sub.status != "active":
+            raise ValueError("send_now: no active subscriber with that id")
+        subs = [sub]
+    else:
+        subs = store.active_subscribers()
+
     results, failed = [], 0
-    for sub in store.active_subscribers():
+    for sub in subs:
         here = local_now(now, sub.tz)
         day = here.date().isoformat()
         v = compute_version(sub.birthday, here.date())
-        if not is_due(sub, here):
+        if send_now:
+            if sub.last_sent_date and sub.last_sent_date >= day:
+                log(event="skip", user=sub.user_id, date=day, reason="already-sent")
+                results.append({"user": sub.user_id, "date": day, "outcome": "already-sent"})
+                continue
+        elif not is_due(sub, here):
             continue
         if dry_run:
             results.append({"user": sub.user_id, "date": day, "version": str(v), "local": here.isoformat()})
             continue
         try:
-            results.append(send_one(store, ses, sub, day, v, now))
+            results.append(send_one(store, ses, sub, day, v, clock))
         except Exception:
             # One bad address must not hold up everyone else. The run still
             # fails at the end so the Errors alarm sees it.
             failed += 1
-    log(event="run", now=now.isoformat(), dry_run=dry_run, due=len(results) + failed, failed=failed)
+    log(event="run", now=now.isoformat(), dry_run=dry_run, send_now=bool(send_now), due=len(results) + failed, failed=failed)
     if failed:
         raise RuntimeError(f"{failed} send(s) failed")
     return {"dry_run": dry_run, "now": now.isoformat(), "results": results}
 
 
-def send_one(store: Store, ses, sub: Subscriber, day: str, v, now: datetime) -> dict:
+def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock) -> dict:
     previous = sub.last_sent_date
     if not store.claim_day(sub.user_id, day):
         log(event="skip", user=sub.user_id, date=day, reason="already-claimed")
         return {"user": sub.user_id, "date": day, "outcome": "already-claimed"}
     token = new_token()
     try:
-        store.put_day(sub.user_id, day, str(v), token, now.isoformat())
+        store.put_day(sub.user_id, day, str(v), token, clock().isoformat())
         msg = build_message(
             to=sub.email,
             from_addr=os.environ["FROM_ADDRESS"],

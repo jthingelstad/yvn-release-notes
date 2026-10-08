@@ -75,7 +75,8 @@ runtime and is imported lazily so the tests run without it.
   come in through it). The field is per subscriber already; letting people pick
   their own hour is phase 2. The day and the version are computed in their zone.
 - Never verify with a write against live data. `sender` takes
-  `{"dry_run": true, "now": "<ISO UTC>"}` and writes nothing.
+  `{"dry_run": true, "now": "<ISO UTC>"}` and writes nothing. `now` is
+  refused on a real send: stored times are always the real clock.
 
 ## Landing changes
 
@@ -103,6 +104,9 @@ runtime and is imported lazily so the tests run without it.
   runs the tests again first.
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests`
 - Add a subscriber (phase 1 has no sign-up): `scripts/add_subscriber.py EMAIL YYYY-MM-DD`
+- Send someone today's email now, outside their window: invoke the sender
+  with `{"send_now": "<user id>"}` (add `"dry_run": true` first to see it).
+  Still once per local day; never fake the clock with `now` to do it.
 - Alarms go to SNS `yvn-release-notes-alarms`, which is subscribed to the sysadmin
   `projects-ops-alerts` queue. The queue's policy must list the topic.
 - DNS for `yourversionnumber.com` is at Namecheap; Jamie applies records by

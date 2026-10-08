@@ -129,6 +129,12 @@ runtime and is imported lazily so the tests run without it.
   day resets the count quietly and the email shows the longest instead; never
   call a break out. If the streak cannot be read, the email goes without it.
   The design canvas: https://claude.ai/artifact/C9AZwHtrMBVzyRZrrrZSKm
+- **A year ago** (Jamie, 2026-10-08): the email shows the notes from the
+  same patch number one release back (`version.a_year_before`: 5.3.279 for
+  5.4.279, by version, not calendar), after the streak, only when there are
+  some, cut near 1000 characters with a link to that day. Bare web addresses
+  in note text are links, in the email (`compose.linked`) and on the web
+  (`noteBody`), shown without the scheme. Nothing is fetched from them.
 - **No rotating prompts or nudges** for now (Jamie, 2026-10-07: "keep it
   simple"). The ask is the same every day.
 - **No model processing of notes** (summaries, prompts, anything) without an
@@ -202,8 +208,7 @@ runtime and is imported lazily so the tests run without it.
 2. **The web app** (`docs/WEB-APP.md`): sign-up and sign-in by email link or
    code, export, notes for today and past days, pause, settings,
    `List-Unsubscribe`, bounces pause a subscriber.
-3. **Around it:** photos and audio from the raw mail; "on this version last
-   year" (5.2.113 is exactly a year after 5.1.113); a yearly "release notes
+3. **Around it:** photos and audio from the raw mail; a yearly "release notes
    for 5.2" collection on the birthday; weather from the subscriber's city
    (Open-Meteo, no key, CC BY 4.0). The city is collected in phase 2; using
    it in the email is ON HOLD (Jamie 2026-10-07: "Let's wait to do anything

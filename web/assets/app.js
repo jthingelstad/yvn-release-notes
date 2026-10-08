@@ -192,6 +192,27 @@ function noteText(n) {
   return n.text || 'Attachments only. They are in the original email.';
 }
 
+// A note's text as a paragraph, with bare web addresses as links (the same
+// rule as the email's, compose.linked). Built from text nodes, never HTML.
+const URL_RE = /https?:\/\/[^\s<>"]+/gi;
+function noteBody(n, cls = 'text') {
+  const p = el('p', cls);
+  const text = noteText(n);
+  let last = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    const url = m[0].replace(/[.,;:!?'")\]}]+$/, '');
+    p.append(text.slice(last, m.index));
+    const a = el('a', '', url.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, ''));
+    a.href = url;
+    a.rel = 'noopener noreferrer';
+    a.target = '_blank';
+    p.append(a);
+    last = m.index + url.length;
+  }
+  p.append(text.slice(last));
+  return p;
+}
+
 function noteMeta(n, tz) {
   const when = n.at ? (n.late ? `${zoneShortDate(n.at, tz)}, ${zoneTime(n.at, tz)}` : zoneTime(n.at, tz)) : '';
   const parts = [when, n.source === 'web' ? 'on the web' : 'by email'];
@@ -206,7 +227,7 @@ function renderNotes(root, day, notes, tz, onChange) {
   for (const n of notes) {
     const item = el('article', 'note');
     const meta = el('p', 'meta', noteMeta(n, tz));
-    const text = el('p', 'text', noteText(n));
+    const text = noteBody(n);
     const actions = el('div', 'actions');
     const path = `/api/days/${day}/notes/${encodeURIComponent(n.id)}`;
 
@@ -583,7 +604,7 @@ const pages = {
         sec.append(p);
         return sec;
       }
-      for (const n of d.notes) sec.append(el('p', 'text', noteText(n)));
+      for (const n of d.notes) sec.append(noteBody(n));
       let count = d.notes.length === 1 ? '1 note' : `${d.notes.length} notes`;
       if (d.notes.every((n) => n.late)) count += ', added later';
       sec.append(el('p', 'count', count));

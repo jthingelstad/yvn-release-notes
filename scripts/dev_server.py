@@ -9,15 +9,22 @@ sent, link and code included. A fictional subscriber, ada@example.com
 (born 1981-06-14), exists from the start, with a week of emails, a few
 made-up notes, a past four-day pause and one reply token for trying
 /unsubscribe/; any other address is new. Deleting a note or the account
-deletes nothing real. City search asks the real Open-Meteo unless
+deletes nothing real. Three days back, Ada replied with a made-up photo
+and a two-second recording, served from memory at /dev-media/ in place of
+the bucket's signed links. City search asks the real Open-Meteo unless
 --fake-places, and a link's page for its title unless --fake-links.
 Everything is forgotten when it stops.
 """
 
 import argparse
+import io
 import json
+import math
 import os
+import struct
 import sys
+import wave
+import zlib
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from email import message_from_bytes
@@ -30,13 +37,31 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
 from fakes import FakeS3, FakeSES, FakeStore  # noqa: E402
-from release_notes import links, places, web  # noqa: E402
+from release_notes import links, media, places, web  # noqa: E402
 
 FAKE_PLACES = [
     {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
     {"name": "Minneapolis", "region": "Kansas", "country": "United States", "tz": "America/Chicago", "lat": 39.12, "lon": -97.71},
     {"name": "Paris", "region": "Ile-de-France", "country": "France", "tz": "Europe/Paris", "lat": 48.85, "lon": 2.35},
 ]
+
+
+def sample_png(w=1200, h=800) -> bytes:
+    """A lake at dusk, more or less: a made-up photo for the dev data."""
+    rows = b"".join(b"\x00" + bytes(c for x in range(w) for c in (20 + y * 120 // h, 60 + y * 100 // h, 140 - y * 60 // h + x * 40 // w))
+                    for y in range(h))
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+
+def sample_wav() -> bytes:
+    """Two seconds of a quiet A, as a made-up voice memo."""
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1), w.setsampwidth(2), w.setframerate(8000)
+        w.writeframes(b"".join(struct.pack("<h", int(3000 * math.sin(2 * math.pi * 440 * i / 8000))) for i in range(16000)))
+    return out.getvalue()
 
 
 class PrintingSES(FakeSES):
@@ -78,6 +103,11 @@ def main():
         store.add_note("u1", day.isoformat(), note_id, text=text, source="web" if note_id.startswith("w-") else "email",
                        received_at=at.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ"),
                        **({} if note_id.startswith("w-") else {"raw_key": f"raw/{note_id}"}))
+    photo_day = (today - timedelta(days=3)).isoformat()
+    kept = media.store(s3, "dev", "u1", photo_day, "dev-3", [("image/png", sample_png()), ("audio/wav", sample_wav())])
+    lake = next(i for i in store.items["u1"] if i["sk"] == f"NOTE#{photo_day}#dev-3")
+    lake["media"] = kept
+    lake["attachments"] = [{"content_type": e["type"], "filename": "", "size": e["size"]} for e in kept]
     store.items["u1"].append({"pk": "USER#u1", "sk": f"PAUSE#{today - timedelta(days=12)}",
                               "through": (today - timedelta(days=9)).isoformat()})
     store.tokens["abcdefghijklmnopqrstuvwx"] = {"user_id": "u1", "date": "2026-10-01", "version": "4.5.109"}
@@ -114,6 +144,15 @@ def main():
         def do_GET(self):
             if self.path.startswith("/api/"):
                 return self.api()
+            if self.path.startswith("/dev-media/"):
+                obj = s3.objects.get(self.path.split("?")[0][len("/dev-media/"):])
+                if not obj:
+                    return self.send_error(404)
+                self.send_response(200)
+                self.send_header("content-type", obj["ContentType"])
+                self.send_header("content-length", str(len(obj["Body"])))
+                self.end_headers()
+                return self.wfile.write(obj["Body"])
             return super().do_GET()
 
         do_POST = do_PUT = do_DELETE = api
@@ -123,7 +162,7 @@ def main():
                 # The same CSP CloudFront adds, so a page that breaks it breaks here.
                 self.send_header(
                     "content-security-policy",
-                    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+                    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; "
                     "font-src 'self'; connect-src 'self' https://tinylytics.app; form-action 'self'; frame-ancestors 'none'",
                 )
                 self.send_header("cache-control", "no-store")

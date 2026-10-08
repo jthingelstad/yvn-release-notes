@@ -9,8 +9,9 @@ A reply is filed only when all of these hold:
   - SES did not flag it as spam or a virus.
 
 Everything else is tagged outcome=ignored and expires from S3 in 30 days.
-Filed messages are tagged outcome=note and kept: their attachments (photos,
-audio) are not extracted in phase 1 and the raw message is where they live.
+Filed messages are tagged outcome=note and kept. Their photos and recordings
+are copied out to media/ and listed on the note (media.py); anything else
+attached lives in the raw message only.
 """
 
 import json
@@ -18,11 +19,11 @@ import os
 import re
 from email.utils import getaddresses
 
-from . import links
+from . import links, media
 from .parse import anchors, attachments, note_text, parse_message
 from .store import Store
 
-PARSER_VERSION = 2  # 2: HTML-only replies keep link addresses; links named
+PARSER_VERSION = 3  # 2: HTML-only replies keep link addresses; links named. 3: photos and audio copied out
 _AUTH_DKIM = re.compile(r"\bdkim=pass\b[^;]*?\bheader\.[id]=@?([A-Za-z0-9.-]+)", re.IGNORECASE)
 
 
@@ -111,6 +112,9 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None) -> tuple[str, dict]
 
     day = tok["date"]
     found = links.collect(text, anchors(msg), fetch=fetch) if text else []
+    # Files first: if a copy fails, SES retries the whole reply, and the
+    # keys are fixed, so nothing is doubled.
+    kept = media.store(s3, bucket, sub.user_id, day, mail["messageId"], media.found(msg))
     stored = store.put_note(
         sub.user_id,
         day,
@@ -124,6 +128,7 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None) -> tuple[str, dict]
             "raw_key": key,
             "parser_version": PARSER_VERSION,
             **({"links": found} if found else {}),
+            **({"media": kept} if kept else {}),
         },
     )
     return "note", {
@@ -132,5 +137,6 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None) -> tuple[str, dict]
         "chars": len(text),
         "attachments": len(files),
         "links": len(found),
+        "media": len(kept),
         "duplicate": not stored,
     }

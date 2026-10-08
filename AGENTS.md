@@ -48,7 +48,7 @@ notes.yourversionnumber.com (CloudFront)
   checkout). If the site's arithmetic changes, regenerate and re-test.
 - `parse.py`: MIME to note text, quote and signature stripping. Standard
   library only. `links.py`: addresses in notes, their saved titles, and the
-  guarded fetch.
+  guarded fetch. `media.py`: photos and recordings out of a reply.
 - `send.py`, `inbound.py`, `events.py`: the mail handlers. `store.py`: the one table and its
   key layout (documented at the top of the file).
 - `infra/template.yaml`: the whole stack. `deploy.sh` packages, deploys and
@@ -65,6 +65,8 @@ runtime and is imported lazily so the tests run without it.
   `assets/site.css`, and the two fonts served from here. Pages load only
   their own files (the CSP is `'self'`), so no inline script or style,
   nothing remote; anything another service answers goes through `/api`.
+  The exceptions are named in the CSP: Tinylytics (connect) and the mail
+  bucket's host for signed photo links (img, media).
 - `tests/fakes.py`: an in-memory table and SES for the web tests, also used
   by `scripts/dev_server.py`. The fakes do not check DynamoDB's request
   shapes, so a new kind of table call also gets a test of the exact request
@@ -85,13 +87,25 @@ runtime and is imported lazily so the tests run without it.
   `Store.day_notes` and join it with `notes.combine`. Message ids are random,
   so sort by `received_at`, never by key. A day with any note counts once for
   the streak.
-- **Raw mail is the source of truth.** Phase 1 stores text only. Photos, audio
-  and any other attachments stay inside the raw message in S3 (tagged
-  `outcome=note`, kept indefinitely) and are listed on the note so a later
-  phase can extract them. Never expire `outcome=note` objects. Ignored mail is
-  tagged `outcome=ignored` and expires in 30 days. The one exception: a
-  subscriber who deletes an emailed note deletes its message too (the web
-  function may delete `raw/*`; the old version expires 30 days later).
+- **Raw mail is the source of truth.** Every filed reply stays whole in S3
+  (`raw/`, tagged `outcome=note`, kept indefinitely); never expire those.
+  Ignored mail is tagged `outcome=ignored` and expires in 30 days.
+- **Photos and recordings** (Jamie, 2026-10-08) arrive by email only, never
+  uploaded on the web. Inbound copies each one to
+  `media/<user>/<day>/<message id>/<n>.<ext>` in the same bucket and lists it
+  on the note as `media` (`media.py`); signature logos (longest side under
+  200 px) are left out. Video, PDFs and the rest stay in the raw message and
+  show as "in the original email". The page asks
+  `/api/days/<day>/notes/<id>/media/<n>`, which checks the session and the
+  key's owner and redirects to a ten-minute signed link on the bucket's own
+  host, the one host the CSP adds (`img-src`, `media-src`). Never a public
+  URL, never a key in an API answer. The email's "A year ago" links to the
+  day ("See 2 photos") and carries no file. Transcribing a recording is
+  model processing: it needs each subscriber's opt-in.
+  `scripts/extract_media.py` fills in notes filed before this.
+- A subscriber who deletes an emailed note deletes its message and its
+  files too (the web function may delete `raw/*` and `media/*`; old
+  versions expire 30 days later).
 - **Notes written on the web** are `NOTE#<day>#w-<id>` with `source=web`,
   for today or any day back to the birthday. Every note, emailed or not,
   can be edited (`updated_at`) or deleted by its owner.
@@ -102,8 +116,8 @@ runtime and is imported lazily so the tests run without it.
   settings. Pauses are dated (`PAUSE#<from>`, at most 60 days) and end on
   their own; stopping does not. The sender skips a paused day, and paused
   days neither break a streak nor add to it (`streak.py`).
-- **Deleting an account deletes it**: raw emails, tokens, every `USER#`
-  item, the address and the profile, after a code mailed to the address.
+- **Deleting an account deletes it**: raw emails, photos and recordings,
+  tokens, every `USER#` item, the address and the profile, after a code mailed to the address.
   Nothing is kept; the export is offered first.
 - **No note text or email addresses in logs.** Log user ids, dates and
   outcomes only.
@@ -156,8 +170,8 @@ runtime and is imported lazily so the tests run without it.
   note. Any privacy copy must say so plainly.
 - **Times:** each subscriber has an IANA `tz` and a `send_time` on a quarter
   hour (default 06:00, Jamie 2026-10-07: the email opens the day and replies
-  come in through it). The field is per subscriber already; letting people pick
-  their own hour is phase 2. The day and the version are computed in their zone.
+  come in through it), picked in settings. The day and the version are
+  computed in their zone.
 - Never verify with a write against live data. `sender` takes
   `{"dry_run": true, "now": "<ISO UTC>"}` and writes nothing. `now` is
   refused on a real send: stored times are always the real clock.
@@ -219,11 +233,13 @@ runtime and is imported lazily so the tests run without it.
 
 1. **Jamie only, text only** (done 2026-10-07): sender, inbound, storage,
    subscribers added by hand.
-2. **The web app** (`docs/WEB-APP.md`): sign-up and sign-in by email link or
-   code, export, notes for today and past days, pause, settings,
-   `List-Unsubscribe`, bounces pause a subscriber.
-3. **Around it:** photos and audio from the raw mail; a yearly "release notes
-   for 5.2" collection on the birthday; weather from the subscriber's city
-   (Open-Meteo, no key, CC BY 4.0). The city is collected in phase 2; using
-   it in the email is ON HOLD (Jamie 2026-10-07: "Let's wait to do anything
-   with weather").
+2. **The web app** (`docs/WEB-APP.md`, done 2026-10-08): sign-up and sign-in
+   by email link or code, export, notes for today and past days, pause,
+   settings (the send time included), `List-Unsubscribe`, bounces stop a
+   subscriber.
+3. **Around it** (started 2026-10-08): photos and audio from replies
+   (built); the export as a zip with the files; weather from the
+   subscriber's city (Open-Meteo, no key, CC BY 4.0), each day's actual
+   weather recorded with its city plus one forecast line in the morning
+   email (Jamie, 2026-10-08); a yearly "release notes for 5.2" collection on
+   the birthday.

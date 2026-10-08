@@ -1,9 +1,8 @@
 """Turn a reply email into the text of a release note.
 
 Standard library only. The raw message stays in S3 untouched, so anything
-this gets wrong can be re-parsed later. Phase 1 keeps text and lists the
-attachments without opening them; images and audio are a later phase that
-will read the same raw objects.
+this gets wrong can be re-parsed later. This keeps the text and lists the
+attachments; media.py copies out the photos and recordings.
 """
 
 import re
@@ -203,7 +202,7 @@ def anchors(msg: EmailMessage) -> dict[str, str]:
     return found
 
 
-# --- attachments (listed, not stored, in phase 1) --------------------------
+# --- attachments (every part listed; media.py keeps the photos and audio) ---
 
 def attachments(msg: EmailMessage) -> list[dict]:
     found = []

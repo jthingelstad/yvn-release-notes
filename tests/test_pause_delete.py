@@ -105,7 +105,8 @@ class DeleteTest(PauseCase):
         super().setUp()
         self.store.add_day_token("u1", "2026-10-07", "abcdefghijklmnopqrstuvwx")
         self.store.add_note("u1", "2026-10-07", "0100abc", text="Kept.", received_at="2026-10-07T12:00:00Z",
-                            raw_key="raw/0100abc")
+                            raw_key="raw/0100abc", media=[{"n": 1, "kind": "image", "type": "image/jpeg", "size": 9,
+                                                           "key": "media/u1/2026-10-07/0100abc/1.jpg"}])
         self.store.add_note("u1", "2026-10-06", "w-1", text="Web.", source="web", received_at="2026-10-06T12:00:00Z")
         self.store.put_pause("u1", "2026-10-01", "2026-10-02", "x")
 
@@ -130,7 +131,8 @@ class DeleteTest(PauseCase):
         self.assertIn("Max-Age=0", r["cookies"][0])
         self.assertEqual((self.store.profiles, self.store.emails, self.store.tokens), ({}, {}, {}))
         self.assertEqual(self.store.items["u1"], [])
-        self.assertEqual(self.s3.deleted, [{"Bucket": "mail-bucket", "Key": "raw/0100abc"}])
+        self.assertEqual(self.s3.deleted, [{"Bucket": "mail-bucket", "Key": "raw/0100abc"},
+                                           {"Bucket": "mail-bucket", "Key": "media/u1/2026-10-07/0100abc/1.jpg"}])
         r, _ = self.call("GET", "/api/me", cookies=self.cookies)
         self.assertEqual(r["statusCode"], 401)
         self.assertNotIn("ada@example.com", self.out.getvalue())

@@ -1,5 +1,7 @@
 import os
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from datetime import date, datetime, timezone
 from email import message_from_bytes
 from email.message import EmailMessage
@@ -108,6 +110,10 @@ class FakeS3:
 
     def put_object_tagging(self, Bucket, Key, Tagging):
         self.tags[Key] = Tagging["TagSet"][0]["Value"]
+
+    def put_object(self, Bucket, Key, Body, **kw):
+        self.objects = getattr(self, "objects", {})
+        self.objects[Key] = {"Body": Body, **kw}
 
 
 def clock(iso):
@@ -224,6 +230,20 @@ class Sending(unittest.TestCase):
         msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
         self.assertIn("A year ago you were 4.9.0 (Tuesday, October 7, 2025):", msg.get_body(("plain",)).get_content())
         self.assertIn('href="https://example.com/post/"', msg.get_body(("html",)).get_content())
+
+    def test_last_years_photos_are_a_link(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2025-10-07", "m1")] = {"text": "", "media": [
+            {"n": 1, "kind": "image", "type": "image/jpeg", "size": 9, "key": "media/u1/2025-10-07/m1/1.jpg"},
+            {"n": 2, "kind": "image", "type": "image/jpeg", "size": 9, "key": "media/u1/2025-10-07/m1/2.jpg"}]}
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        self.assertIn("A year ago you were 4.9.0 (Tuesday, October 7, 2025):\n\n"
+                      "See 2 photos: https://notes.yourversionnumber.com/day/?d=2025-10-07\n", msg.get_body(("plain",)).get_content())
+        html = msg.get_body(("html",)).get_content()
+        self.assertIn(">See 2 photos</a>", html)
+        self.assertNotIn("media/", html)
+        self.assertNotIn("<img", html)
 
     def test_last_years_links_show_by_name(self):
         store, ses = FakeStore([ada()]), FakeSES()
@@ -353,6 +373,37 @@ class Inbound(unittest.TestCase):
         self.assertEqual(note["links"], [{"url": "https://example.com/p", "title": "my post", "named": True},
                                          {"url": "https://example.com/q", "title": "A good page", "site": "example.com"}])
         self.assertEqual(self.fetched, ["https://example.com/q"])
+
+    def test_photos_and_recordings_are_copied_out(self):
+        from test_media import jpeg, png
+        msg = message_from_bytes(reply_raw(), policy=default)
+        msg.add_attachment(jpeg(3024, 4032, pad=5000), maintype="image", subtype="jpeg", filename="image0.jpeg", disposition="inline")
+        msg.add_attachment(png(48, 48, pad=100), maintype="image", subtype="png", filename="sig.png", disposition="inline")
+        msg.add_attachment(b"\x00" * 2048, maintype="audio", subtype="x-m4a", filename="Memo.m4a")
+        out = StringIO()
+        with redirect_stdout(out):
+            outcome, s3 = self.run_one(ses_event(), msg.as_bytes())
+        self.assertEqual(outcome, "note")
+        note = self.store.notes[("u1", "2026-10-07", "m1")]
+        self.assertEqual(note["media"], [
+            {"n": 1, "kind": "image", "type": "image/jpeg", "size": len(jpeg(3024, 4032, pad=5000)), "key": "media/u1/2026-10-07/m1/1.jpg"},
+            {"n": 2, "kind": "audio", "type": "audio/mp4", "size": 2048, "key": "media/u1/2026-10-07/m1/2.m4a"},
+        ])
+        self.assertEqual(len(note["attachments"]), 3)  # every part is still listed
+        self.assertEqual(sorted(s3.objects), ["media/u1/2026-10-07/m1/1.jpg", "media/u1/2026-10-07/m1/2.m4a"])
+        self.assertEqual(s3.objects["media/u1/2026-10-07/m1/2.m4a"]["ContentType"], "audio/mp4")
+        self.assertEqual(s3.tags["raw/m1"], "note")
+        self.assertIn('"media":2', out.getvalue())
+
+    def test_a_photo_alone_is_a_note(self):
+        from test_media import jpeg
+        msg = EmailMessage()
+        msg["From"], msg["To"] = "ada@example.com", f"n-{TOKEN}@in.yourversionnumber.com"
+        msg["Authentication-Results"] = "amazonses.com; dmarc=pass header.from=example.com"
+        msg.add_attachment(jpeg(1200, 900, pad=100), maintype="image", subtype="jpeg", filename="image0.jpeg")
+        outcome, s3 = self.run_one(ses_event(), msg.as_bytes())
+        note = self.store.notes[("u1", "2026-10-07", "m1")]
+        self.assertEqual((outcome, note["text"], len(note["media"])), ("note", "", 1))
 
     def test_a_note_without_links_fetches_nothing(self):
         self.run_one(ses_event())

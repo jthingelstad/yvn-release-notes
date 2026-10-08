@@ -44,6 +44,9 @@ there links here until this is up and done.
   bucket is versioned, so the old version lingers 30 days, then expires.
 - The birthday is locked after sign-up, because changing it renumbers every
   day you have kept.
+- Photos and recordings from emailed replies show with their note, by a
+  signed link that lasts ten minutes, for their owner only (`media.py`).
+  There is no upload on the web.
 - A link in a note shows by name: the words you linked, or the page's
   title, fetched once when the note is saved (`links.py`; AGENTS.md has the
   guards). The text keeps the address as written, and the exports carry
@@ -155,7 +158,8 @@ notes.yourversionnumber.com
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
 | `GET /api/days/{date}` | one day: version and notes (each note's `parts` is its text split into strings and links by name) |
 | `POST /api/days/{date}/notes` | write for today or a past day |
-| `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete |
+| `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete (an emailed note's email and files go with it) |
+| `GET /api/days/{date}/notes/{id}/media/{n}` | a photo or recording: a redirect to a ten-minute signed link, for its owner |
 | `PUT /api/pause` `{days}` or `{through}` | pause, or change the pause |
 | `DELETE /api/pause` | resume now |
 | `POST /api/me/delete-code` | mails the account's address a code to confirm deleting |

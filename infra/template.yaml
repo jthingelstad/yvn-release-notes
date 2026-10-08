@@ -62,8 +62,9 @@ Resources:
         AttributeName: expires_at
         Enabled: true
 
-  # Raw inbound mail. Filed replies are kept: their photos and audio live
-  # only here until a later phase extracts them. Ignored mail expires.
+  # Raw inbound mail under raw/. Filed replies are kept; their photos and
+  # recordings are copied to media/ (media.py) and kept too. Ignored mail
+  # expires.
   MailBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -247,6 +248,10 @@ Resources:
                 Action: [s3:GetObject, s3:PutObjectTagging]
                 Resource: !Sub "${MailBucket.Arn}/raw/*"
               - Effect: Allow
+                # A reply's photos and recordings, copied out of it.
+                Action: s3:PutObject
+                Resource: !Sub "${MailBucket.Arn}/media/*"
+              - Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:PutItem]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
@@ -424,7 +429,9 @@ Resources:
 
   # Pages load only their own files: no inline script or style, nothing
   # remote. Lookups that need another service (the city search) go through
-  # /api. connect-src adds only Tinylytics, for app.js's page count.
+  # /api. connect-src adds only Tinylytics, for app.js's page count. Photos
+  # and recordings come from the mail bucket's own host, by a link the API
+  # signs for their owner (img-src and media-src name only that host).
   WebHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
@@ -433,7 +440,7 @@ Resources:
         Comment: Security headers for notes.yourversionnumber.com
         SecurityHeadersConfig:
           ContentSecurityPolicy:
-            ContentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://tinylytics.app; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+            ContentSecurityPolicy: !Sub "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://${MailBucket.RegionalDomainName}; media-src 'self' https://${MailBucket.RegionalDomainName}; font-src 'self'; connect-src 'self' https://tinylytics.app; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
             Override: true
           ContentTypeOptions:
             Override: true
@@ -606,7 +613,14 @@ Resources:
                 # behind it. The bucket is versioned: old versions expire 30
                 # days on. DeleteObjects is authorized per object as this.
                 Action: s3:DeleteObject
-                Resource: !Sub "${MailBucket.Arn}/raw/*"
+                Resource:
+                  - !Sub "${MailBucket.Arn}/raw/*"
+                  - !Sub "${MailBucket.Arn}/media/*"
+              - Effect: Allow
+                # Signs the ten-minute link to a photo or recording for its
+                # owner (web.media_file). Nothing under raw/.
+                Action: s3:GetObject
+                Resource: !Sub "${MailBucket.Arn}/media/*"
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt WebLogs.Arn

@@ -211,3 +211,61 @@ class LinksTest(NotesCase):
         self.add(TODAY, "Cake.")
         self.assertEqual(self.fetched, [])
         self.assertNotIn("links", self.store.notes_between("u1", TODAY, TODAY)[0])
+
+
+PHOTO = {"n": 1, "kind": "image", "type": "image/jpeg", "size": 2324894, "key": "media/u1/2026-10-07/0100abc-1/1.jpg"}
+MEMO = {"n": 2, "kind": "audio", "type": "audio/mp4", "size": 4096, "key": "media/u1/2026-10-07/0100abc-1/2.m4a"}
+
+
+class MediaTest(NotesCase):
+    def setUp(self):
+        super().setUp()
+        self.emailed("2026-10-07", text="", raw_key="raw/0100abc-1", media=[PHOTO, MEMO],
+                     attachments=[{"content_type": "image/jpeg", "filename": "image0.jpeg", "size": 2324894},
+                                  {"content_type": "audio/x-m4a", "filename": "Memo.m4a", "size": 4096},
+                                  {"content_type": "video/quicktime", "filename": "IMG_0003.MOV", "size": 9000000}])
+
+    def file(self, n, day="2026-10-07", note="0100abc-1", **kw):
+        kw.setdefault("cookies", self.cookies)
+        return self.call("GET", f"/api/days/{day}/notes/{note}/media/{n}", **kw)
+
+    def test_the_day_lists_files_without_their_keys(self):
+        _, day = self.get("/api/days/2026-10-07")
+        note = day["notes"][0]
+        self.assertEqual(note["media"], [{"n": 1, "kind": "image", "type": "image/jpeg"},
+                                         {"n": 2, "kind": "audio", "type": "audio/mp4"}])
+        self.assertEqual(note["attachments"], 1)  # the video, still in the email
+        _, days = self.get("/api/days")
+        self.assertNotIn("media/u1", str(days))
+
+    def test_a_file_is_a_short_lived_redirect_for_its_owner(self):
+        r, _ = self.file(1)
+        self.assertEqual(r["statusCode"], 302)
+        self.assertEqual(r["headers"]["location"], "/dev-media/media/u1/2026-10-07/0100abc-1/1.jpg")
+        self.assertEqual(r["headers"]["cache-control"], "private, max-age=300")
+        self.assertEqual(self.s3.signed["ExpiresIn"], 600)
+        self.assertEqual(self.s3.signed["Params"]["ResponseContentType"], "image/jpeg")
+        self.assertEqual(self.s3.signed["Params"]["Bucket"], "mail-bucket")
+        r, _ = self.file(2)
+        self.assertEqual(self.s3.signed["Params"]["Key"], MEMO["key"])
+
+    def test_nobody_else_gets_one(self):
+        for n, kw in [(3, {}), (1, {"note": "nope"}), (1, {"day": "2026-10-06"}), (1, {"cookies": None})]:
+            r, _ = self.file(n, **kw)
+            self.assertIn(r["statusCode"], (401, 404), (n, kw))
+        self.subscribe("bob@example.com", "u2")
+        r, _ = self.file(1, cookies=[self.signed_in("bob@example.com")])
+        self.assertEqual(r["statusCode"], 404)
+        r, _ = self.call("GET", "/api/days/2026-10-07/notes/0100abc-1/media/0", cookies=self.cookies)
+        self.assertEqual(r["statusCode"], 404)
+
+    def test_a_key_outside_the_owners_files_is_never_signed(self):
+        self.emailed("2026-10-06", note_id="odd", media=[{**PHOTO, "key": "raw/0100abc-1"}])
+        r, _ = self.file(1, day="2026-10-06", note="odd")
+        self.assertEqual(r["statusCode"], 404)
+        self.assertFalse(hasattr(self.s3, "signed"))
+
+    def test_deleting_the_note_deletes_its_files(self):
+        r, _ = self.call("DELETE", "/api/days/2026-10-07/notes/0100abc-1", cookies=self.cookies)
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual([d["Key"] for d in self.s3.deleted], ["raw/0100abc-1", PHOTO["key"], MEMO["key"]])

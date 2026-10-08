@@ -198,7 +198,7 @@ Resources:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action: [dynamodb:Scan, dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+                Action: [dynamodb:Scan, dynamodb:Query, dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
                 # The sender passes Content.Raw to SESv2 SendEmail, which SES

@@ -26,6 +26,9 @@ reply email
   address only their inbox has seen.
 - **A note belongs to the day of the email it answers.** Reply to Tuesday's
   email on Thursday and it is still Tuesday's note.
+- **Streaks.** The email shows how many days in a row you have replied.
+  Replying late to an earlier email still counts for that day; a missed day
+  starts the count over and the email shows your longest instead.
 - **Raw mail is kept.** For now only the text of a reply is filed. Photos,
   audio and other attachments stay in the original message, to be handled later.
 - **Nothing is tracked.** No open or click tracking, and the HTML email loads

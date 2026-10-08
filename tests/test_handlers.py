@@ -34,6 +34,7 @@ class FakeStore:
     def __init__(self, subs):
         self.subs = {s.user_id: s for s in subs}
         self.days, self.tokens, self.notes = {}, {}, {}
+        self.note_days_fail = False
 
     def active_subscribers(self):
         return [s for s in self.subs.values() if s.status == "active"]
@@ -60,6 +61,11 @@ class FakeStore:
 
     def get_token(self, token):
         return self.tokens.get(token)
+
+    def note_days(self, user_id):
+        if self.note_days_fail:
+            raise ConnectionError("boom")
+        return {date.fromisoformat(d) for (u, d, _) in self.notes if u == user_id}
 
     def put_note(self, user_id, day, message_id, note):
         key = (user_id, day, message_id)
@@ -187,6 +193,27 @@ class Sending(unittest.TestCase):
         out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
         self.assertEqual(out["results"][0]["date"], "2026-10-07")
         self.assertIsNone(store.subs["u1"].last_sent_date)
+
+    def test_email_carries_the_streak(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        for day in ("2026-10-05", "2026-10-06"):
+            store.notes[("u1", day, f"m-{day}")] = {"text": "x"}
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        raw = ses.sent[0]["Content"]["Raw"]["Data"].decode()
+        self.assertIn("2 days in a row, your longest yet.", raw)
+
+    def test_streak_read_failure_still_sends(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.note_days_fail = True
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual(len(ses.sent), 1)
+        self.assertNotIn("in a row", ses.sent[0]["Content"]["Raw"]["Data"].decode())
+
+    def test_dry_run_reports_the_streak(self):
+        store = FakeStore([ada()])
+        store.notes[("u1", "2026-10-06", "m1")] = {"text": "x"}
+        out = send.handler({"dry_run": True}, None, store=store, clock=AT_8PM)
+        self.assertEqual((out["results"][0]["streak"], out["results"][0]["longest"]), (1, 1))
 
     def test_local_date_not_utc_date(self):
         # 01:00 UTC is already the 8th in UTC but still the 7th in Chicago.

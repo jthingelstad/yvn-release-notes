@@ -7,9 +7,10 @@ Serves web/ and hands /api/* to web.handler with the in-memory fakes from
 tests/fakes.py: no AWS, no mail. A sign-in email is printed here instead of
 sent, link and code included. A fictional subscriber, ada@example.com
 (born 1981-06-14), exists from the start, with a week of emails, a few
-made-up notes and one reply token for trying /unsubscribe/; any other
-address is new. Deleting an emailed note "deletes" its email here only. City search asks the real
-Open-Meteo unless --fake-places. Everything is forgotten when it stops.
+made-up notes, a past four-day pause and one reply token for trying
+/unsubscribe/; any other address is new. Deleting a note or the account
+deletes nothing real. City search asks the real Open-Meteo unless
+--fake-places. Everything is forgotten when it stops.
 """
 
 import argparse
@@ -58,6 +59,7 @@ def main():
     store.profiles["u1"] = {
         "email": "ada@example.com", "birthday": "1981-06-14", "tz": "America/Chicago",
         "send_time": "06:00", "status": "active", "created_at": "2026-10-01T12:00:00Z",
+        "last_sent_date": datetime.now(ZoneInfo("America/Chicago")).date().isoformat(),
         "city": "Minneapolis", "region": "Minnesota", "country": "United States",
     }
     today = datetime.now(ZoneInfo("America/Chicago")).date()
@@ -74,6 +76,8 @@ def main():
         store.add_note("u1", day.isoformat(), note_id, text=text, source="web" if note_id.startswith("w-") else "email",
                        received_at=at.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ"),
                        **({} if note_id.startswith("w-") else {"raw_key": f"raw/{note_id}"}))
+    store.items["u1"].append({"pk": "USER#u1", "sk": f"PAUSE#{today - timedelta(days=12)}",
+                              "through": (today - timedelta(days=9)).isoformat()})
     store.tokens["abcdefghijklmnopqrstuvwx"] = {"user_id": "u1", "date": "2026-10-01", "version": "4.5.109"}
     geocode = (lambda q: [p for p in FAKE_PLACES if p["name"].lower().startswith(q.lower())]) if args.fake_places else places.search
 

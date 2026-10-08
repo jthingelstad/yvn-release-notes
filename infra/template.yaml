@@ -585,8 +585,15 @@ Resources:
             Statement:
               - Effect: Allow
                 # Sign-up writes the EMAIL and PROFILE items in one transaction,
-                # which IAM authorizes as a PutItem for each.
-                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query]
+                # which IAM authorizes as a PutItem for each. Deleting an
+                # account deletes its items in batches.
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:BatchWriteItem
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
                 # The sign-in email, as raw MIME through SESv2 (see SenderRole).
@@ -595,8 +602,9 @@ Resources:
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSet}"
               - Effect: Allow
-                # Deleting an emailed note deletes the email it came in. The
-                # bucket is versioned, so the old version expires 30 days on.
+                # Deleting an emailed note (or the account) deletes the emails
+                # behind it. The bucket is versioned: old versions expire 30
+                # days on. DeleteObjects is authorized per object as this.
                 Action: s3:DeleteObject
                 Resource: !Sub "${MailBucket.Arn}/raw/*"
               - Effect: Allow
@@ -614,7 +622,8 @@ Resources:
       Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
       Role: !GetAtt WebRole.Arn
       MemorySize: 256
-      Timeout: 10
+      # Under the HTTP API's 30 seconds, for deleting a long-kept account.
+      Timeout: 28
       LoggingConfig:
         LogGroup: !Ref WebLogs
       Environment:

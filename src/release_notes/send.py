@@ -11,6 +11,9 @@ email actually went.
 
 Invoke with {"send_now": "<user id>"} to send that subscriber today's email
 straight away, outside their send window. It is still once per local day.
+
+A paused subscriber gets nothing on the days of the pause (pause_from through
+pause_through, in their own zone), send_now included.
 """
 
 import json
@@ -20,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 from .compose import build_message, from_header, new_token
 from .store import Store, Subscriber
-from .streak import Streak, compute_streak
+from .streak import Streak, compute_streak, pause_days
 from .version import compute_version
 
 WINDOW = timedelta(hours=3)
@@ -56,7 +59,7 @@ def utc_now() -> datetime:
 def read_streak(store: Store, user_id: str, day: date) -> Streak | None:
     # The streak is a nicety. If it cannot be read, the day's email still goes.
     try:
-        return compute_streak(store.note_days(user_id), day)
+        return compute_streak(store.note_days(user_id), day, pause_days(store.pauses(user_id), day))
     except Exception as e:
         log(event="streak-error", user=user_id, date=day.isoformat(), error=type(e).__name__)
         return None
@@ -97,6 +100,12 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
                 results.append({"user": sub.user_id, "date": day, "outcome": "already-sent"})
                 continue
         elif not is_due(sub, here):
+            continue
+        if sub.paused_on(day):
+            # Not logged on a schedule run: it would repeat every quarter hour.
+            if send_now:
+                log(event="skip", user=sub.user_id, date=day, reason="paused")
+                results.append({"user": sub.user_id, "date": day, "outcome": "paused"})
             continue
         if dry_run:
             streak = read_streak(store, sub.user_id, here.date())

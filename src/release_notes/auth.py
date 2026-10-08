@@ -31,7 +31,7 @@ from email.message import EmailMessage
 from email.utils import make_msgid
 from html import escape
 
-from .compose import BLUE, FONT, INK, INK_2, MONO, PAPER, from_header
+from .compose import APP, BLUE, FONT, INK, INK_2, MONO, PAPER, from_header
 
 LOGIN_TTL = 15 * 60
 MAX_CODE_ATTEMPTS = 5
@@ -161,4 +161,46 @@ def signin_message(*, to: str, from_addr: str, link: str, code: str) -> EmailMes
     msg["Message-ID"] = make_msgid(domain=from_addr.split("@", 1)[1])
     msg.set_content(signin_text(link, code))
     msg.add_alternative(signin_html(link, code), subtype="html")
+    return msg
+
+
+def delete_text(code: str, settings: str) -> str:
+    return f"""Someone signed in to your Release Notes asked to delete the account:
+every note, the emails behind them, and your settings.
+
+To go ahead, type this code on the page that asked: {code}
+
+It works once, for 15 minutes. If you didn't ask, ignore this email and
+nothing is deleted. To keep a copy first, export from {settings}
+"""
+
+
+def delete_html(code: str, settings: str) -> str:
+    p = f"margin:0 0 18px;font:16px/1.55 {FONT};color:{INK_2}"
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"></head>
+<body style="margin:0;padding:0;background:{PAPER}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PAPER}"><tr><td style="padding:32px 20px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto"><tr><td>
+<p style="margin:0 0 24px;font:800 18px/1.3 {FONT};color:{INK}">Release Notes</p>
+<p style="margin:0 0 18px;font:800 26px/1.2 {FONT};color:{INK}">Delete your Release Notes?</p>
+<p style="{p}">Someone signed in to your account asked to delete it: every note, the emails behind them, and your settings. To go ahead, type this code on the page that asked:</p>
+<p style="margin:0 0 24px;font:700 30px/1 {MONO};letter-spacing:.2em;color:{BLUE}">{escape(code)}</p>
+<p style="{p}">It works once, for 15 minutes. If you didn&rsquo;t ask, ignore this email and nothing is deleted.</p>
+<p style="margin:0;font:14px/1.55 {FONT};color:{INK_2}">To keep a copy first, <a href="{escape(settings)}" style="color:{BLUE}">export from settings</a>.</p>
+</td></tr></table>
+</td></tr></table>
+</body></html>
+"""
+
+
+def delete_message(*, to: str, from_addr: str, code: str) -> EmailMessage:
+    settings = f"{APP}/settings/"
+    msg = EmailMessage()
+    msg["From"] = from_header(from_addr)
+    msg["To"] = to
+    msg["Subject"] = f"{code} confirms deleting your Release Notes"
+    msg["Message-ID"] = make_msgid(domain=from_addr.split("@", 1)[1])
+    msg.set_content(delete_text(code, settings))
+    msg.add_alternative(delete_html(code, settings), subtype="html")
     return msg

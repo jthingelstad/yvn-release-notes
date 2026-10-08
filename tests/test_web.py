@@ -96,7 +96,7 @@ class WebTest(WebCase):
             self.assertEqual(self.call("GET", "/api/sample", query=q)[0]["statusCode"], 400, q)
 
     def test_unknown_route_is_404(self):
-        for method, path in [("GET", "/api/nope"), ("POST", "/api/health"), ("GET", "/"), ("DELETE", "/api/me")]:
+        for method, path in [("GET", "/api/nope"), ("POST", "/api/health"), ("GET", "/"), ("PATCH", "/api/me")]:
             r, _ = self.call(method, path)
             self.assertEqual(r["statusCode"], 404, (method, path))
 

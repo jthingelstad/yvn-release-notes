@@ -94,7 +94,12 @@ runtime and is imported lazily so the tests run without it.
   `stopped_reason`: `unsubscribed` (the email's one-click
   `List-Unsubscribe`, or the page it opens), `bounce` (a hard bounce) or
   `complaint`. Nothing is deleted; the person starts the emails again in
-  settings. Pauses (PR 5) are dated and end on their own; stopping does not.
+  settings. Pauses are dated (`PAUSE#<from>`, at most 60 days) and end on
+  their own; stopping does not. The sender skips a paused day, and paused
+  days neither break a streak nor add to it (`streak.py`).
+- **Deleting an account deletes it**: raw emails, tokens, every `USER#`
+  item, the address and the profile, after a code mailed to the address.
+  Nothing is kept; the export is offered first.
 - **No note text or email addresses in logs.** Log user ids, dates and
   outcomes only.
 - **No open or click tracking**, consistent with Jamie's email tracking policy.

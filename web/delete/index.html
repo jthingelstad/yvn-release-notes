@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Delete account: Release Notes</title>
+<link rel="stylesheet" href="/assets/site.css?v=5">
+<script src="/assets/app.js?v=4" defer></script>
+</head>
+<body data-page="delete">
+<main>
+  <header class="bar">
+    <a class="brand" href="/">Release Notes</a>
+    <a href="/today/">Today</a>
+    <a href="/timeline/">Timeline</a>
+    <a href="/settings/">Settings</a>
+  </header>
+
+  <section id="ask-delete" hidden>
+    <h1>Delete your account?</h1>
+    <p class="lede">This deletes every note, the original emails behind them, and your settings. It can&rsquo;t be undone.</p>
+
+    <div class="section wide">
+      <h2 class="big">Keep a copy first</h2>
+      <p class="hint">Every note you&rsquo;ve kept, with its day and version, and your settings.</p>
+      <div class="row">
+        <a class="go" href="/api/export?format=md" download>Export as Markdown</a>
+        <a class="quiet" href="/api/export?format=json" download>or JSON</a>
+      </div>
+    </div>
+
+    <form id="code-ask" class="stack tight spaced-lg" novalidate>
+      <p class="hint">To make sure it&rsquo;s you, we&rsquo;ll email a code to <strong id="to"></strong>.</p>
+      <div class="row">
+        <button class="quiet danger" type="submit">Email me a code to delete my account</button>
+        <a href="/settings/">Not now</a>
+      </div>
+      <p class="error" role="alert" hidden></p>
+    </form>
+
+    <form id="code-confirm" class="spaced-lg" novalidate hidden>
+      <label>The six digits from the email
+        <input class="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*">
+      </label>
+      <div class="row">
+        <button class="go danger" type="submit">Delete everything</button>
+        <a href="/settings/">Keep my account</a>
+      </div>
+      <p class="error" role="alert" hidden></p>
+    </form>
+  </section>
+
+  <section id="deleted" hidden>
+    <h1 class="top">Deleted.</h1>
+    <p class="lede">Your notes, settings and reply addresses are gone. The original emails sit in a backup for 30 days, then they&rsquo;re gone too. Thank you for keeping release notes.</p>
+    <p class="hint spaced"><a href="/">Start again</a></p>
+  </section>
+</main>
+</body>
+</html>

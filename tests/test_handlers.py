@@ -35,6 +35,7 @@ class FakeStore:
         self.subs = {s.user_id: s for s in subs}
         self.days, self.tokens, self.notes = {}, {}, {}
         self.note_days_fail = False
+        self.paused = []
 
     def active_subscribers(self):
         return [s for s in self.subs.values() if s.status == "active"]
@@ -66,6 +67,9 @@ class FakeStore:
         if self.note_days_fail:
             raise ConnectionError("boom")
         return {date.fromisoformat(d) for (u, d, _) in self.notes if u == user_id}
+
+    def pauses(self, user_id):
+        return self.paused
 
     def put_note(self, user_id, day, message_id, note):
         key = (user_id, day, message_id)
@@ -208,6 +212,25 @@ class Sending(unittest.TestCase):
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         self.assertEqual(len(ses.sent), 1)
         self.assertNotIn("in a row", ses.sent[0]["Content"]["Raw"]["Data"].decode())
+
+    def test_a_pause_skips_its_days_only(self):
+        # The day in Chicago at 8 PM is 2026-10-07.
+        for start, through, sent in [("2026-10-07", "2026-10-09", 0), ("2026-10-01", "2026-10-06", 1), ("2026-10-08", "2026-10-09", 1)]:
+            store, ses = FakeStore([ada(pause_from=start, pause_through=through)]), FakeSES()
+            send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+            self.assertEqual(len(ses.sent), sent, (start, through))
+        store, ses = FakeStore([ada(pause_from="2026-10-07", pause_through="2026-10-07")]), FakeSES()
+        out = send.handler({"send_now": "u1"}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual((out["results"][0]["outcome"], ses.sent), ("paused", []))
+        self.assertIsNone(store.subs["u1"].last_sent_date)
+
+    def test_the_streak_waits_through_a_pause(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2026-10-02", "m1")] = {"text": "x"}
+        store.notes[("u1", "2026-10-03", "m2")] = {"text": "x"}
+        store.paused = [("2026-10-04", "2026-10-06")]
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertIn("2 days in a row, your longest yet.", ses.sent[0]["Content"]["Raw"]["Data"].decode())
 
     def test_dry_run_reports_the_streak(self):
         store = FakeStore([ada()])

@@ -202,8 +202,11 @@ Resources:
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
                 Action: ses:SendEmail
+                # SES also authorizes the recipient when the recipient's address
+                # is itself a verified identity in this account, so the grant
+                # covers every identity here, not just the sending domain.
                 Resource:
-                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${Domain}"
+                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSet}"
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]

@@ -103,7 +103,13 @@ notes.yourversionnumber.com
   `/signin/` (the link lands here, token in the fragment), `/settings/`.
   PR 4 adds `/today/`, `/timeline/` and `/day/`, and moves where sign-in
   lands from settings to today.
-- **The sender** skips a paused subscriber.
+- **The sender** skips a paused subscriber, and a stopped one: `status` is
+  `active` or `stopped`, with `stopped_reason` `unsubscribed`, `bounce` or
+  `complaint`. Hard bounces and complaints arrive through the alarms topic
+  (which the configuration set already publishes to) at
+  `yvn-release-notes-events`.
+- **Sign-up's first email** is the next send time to come in the chosen
+  city: today's if it is still ahead, otherwise tomorrow's.
 - **Logs**: ids, routes and outcomes. Never note text, addresses or cities.
 
 ## API
@@ -111,12 +117,13 @@ notes.yourversionnumber.com
 | | |
 |---|---|
 | `GET /api/health` | |
-| `GET /api/sample` | the front page's example: someone born 1981-06-14, today |
+| `GET /api/sample?birthday=&tz=` | a version number today: the front page's example (1981-06-14), or the birthday being typed at sign-up |
 | `POST /api/auth/start` `{email}` | always 202; mails a link and code when the limits allow |
 | `POST /api/auth/verify` `{email, code}` or `{token}` | sets the cookie; says whether the account is new |
 | `POST /api/auth/signout` | |
-| `GET /api/places?q=` | city search, through Open-Meteo |
-| `GET/PUT /api/me` | profile: onboarding and settings |
+| `GET /api/places?q=` | city search, through Open-Meteo; needs a session |
+| `GET /api/me` | the profile, or `{new: true}` for an address signing up |
+| `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `status: "active"` to start again); the birthday cannot change |
 | `GET /api/export?format=md\|json` | everything, as a download (JSON by default) |
 | `GET /api/days?before=&limit=` | the timeline |
 | `GET /api/days/{date}` | one day: version and notes |
@@ -124,7 +131,8 @@ notes.yourversionnumber.com
 | `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete |
 | `PUT/DELETE /api/pause` | |
 | `DELETE /api/me` | needs a fresh code |
-| `POST /api/unsubscribe?t=` | the email's one-click unsubscribe |
+| `POST /api/unsubscribe?t=` | the email's one-click unsubscribe (RFC 8058); the token is the day's reply token, and this is the one write without an Origin |
+| `GET /api/unsubscribe?t=` | redirects to `/unsubscribe/`, a page with a button, for mail apps that open the link |
 
 ## Order
 

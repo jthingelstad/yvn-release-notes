@@ -1,0 +1,197 @@
+import json
+import unittest
+from contextlib import redirect_stdout
+from decimal import Decimal
+from io import StringIO
+
+from fakes import FakeStore
+from release_notes import events, places
+from test_web import NOW, WebCase
+
+MINNEAPOLIS = {
+    "name": "Minneapolis", "region": "Minnesota", "country": "United States",
+    "tz": "America/Chicago", "lat": 44.97997, "lon": -93.26384,
+}
+
+
+class SignUpTest(WebCase):
+    # NOW is 17:53 in Chicago on 2026-10-08.
+
+    def new_session(self, email="new@example.com"):
+        return [self.signed_in(email)]
+
+    def put_me(self, body, cookies, **kw):
+        return self.call("PUT", "/api/me", body, cookies=cookies, **kw)
+
+    def test_sign_up_creates_the_account_and_keeps_the_session(self):
+        cookies = self.new_session()
+        r, body = self.put_me({"birthday": "1981-06-14", "place": MINNEAPOLIS, "send_time": "06:00"}, cookies)
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual((body["new"], body["version"], body["city"]), (False, "4.5.116", "Minneapolis"))
+        user_id = self.store.emails["new@example.com"]
+        p = self.store.profiles[user_id]
+        self.assertEqual((p["lat"], p["lon"]), (Decimal("44.98"), Decimal("-93.26")))
+        self.assertEqual(p["status"], "active")
+        # 06:00 has passed in Chicago, so the first email is tomorrow's.
+        self.assertEqual(p["last_sent_date"], "2026-10-08")
+        _, again = self.call("GET", "/api/me", cookies=cookies)
+        self.assertFalse(again["new"])
+        self.assertNotIn("new@example.com", self.out.getvalue())
+        self.assertNotIn("Minneapolis", self.out.getvalue())
+
+    def test_first_email_is_today_when_the_send_time_is_still_ahead(self):
+        cookies = self.new_session()
+        self.put_me({"birthday": "1981-06-14", "place": MINNEAPOLIS, "send_time": "20:00"}, cookies)
+        self.assertNotIn("last_sent_date", self.store.profiles[self.store.emails["new@example.com"]])
+
+    def test_sign_up_checks_everything(self):
+        cookies = self.new_session()
+        good = {"birthday": "1981-06-14", "place": MINNEAPOLIS, "send_time": "06:00"}
+        for change, error in [
+            ({"birthday": "2026-10-09"}, "birthday"),
+            ({"birthday": "1899-12-31"}, "birthday"),
+            ({"birthday": "June 14"}, "birthday"),
+            ({"birthday": None}, "birthday"),
+            ({"send_time": "06:10"}, "send-time"),
+            ({"send_time": "24:00"}, "send-time"),
+            ({"place": {**MINNEAPOLIS, "tz": "Mars/Olympus"}}, "place"),
+            ({"place": {**MINNEAPOLIS, "lat": 91}}, "place"),
+            ({"place": {**MINNEAPOLIS, "name": ""}}, "place"),
+            ({"place": "Minneapolis"}, "place"),
+        ]:
+            r, body = self.put_me({**good, **change}, cookies)
+            self.assertEqual((r["statusCode"], body["error"]), (400, error), change)
+        self.assertEqual(self.store.emails.get("new@example.com"), None)
+
+    def test_a_second_tab_joins_the_account_the_first_made(self):
+        first, second = self.new_session(), self.new_session()
+        body = {"birthday": "1981-06-14", "place": MINNEAPOLIS, "send_time": "06:00"}
+        self.put_me(body, first)
+        r, again = self.put_me(body, second)
+        self.assertEqual((r["statusCode"], again["new"]), (200, False))
+        self.assertEqual(len(self.store.profiles), 1)
+
+    def test_settings_change_send_time_and_city(self):
+        self.subscribe()
+        cookies = [self.signed_in()]
+        r, body = self.put_me({"send_time": "07:15"}, cookies)
+        self.assertEqual((r["statusCode"], body["send_time"]), (200, "07:15"))
+        r, body = self.put_me({"place": {**MINNEAPOLIS, "name": "Paris", "tz": "Europe/Paris"}}, cookies)
+        self.assertEqual((body["tz"], body["city"]), ("Europe/Paris", "Paris"))
+        r, body = self.put_me({}, cookies)
+        self.assertEqual(body["error"], "nothing-to-change")
+
+    def test_birthday_is_locked(self):
+        self.subscribe()
+        cookies = [self.signed_in()]
+        r, body = self.put_me({"birthday": "1990-01-01"}, cookies)
+        self.assertEqual((r["statusCode"], body["error"]), (400, "birthday-locked"))
+        r, _ = self.put_me({"birthday": "1981-06-14", "send_time": "06:15"}, cookies)
+        self.assertEqual(r["statusCode"], 200)
+
+    def test_put_me_needs_a_session_and_our_origin(self):
+        r, _ = self.put_me({"send_time": "07:00"}, [])
+        self.assertEqual(r["statusCode"], 401)
+        self.subscribe()
+        r, _ = self.put_me({"send_time": "07:00"}, [self.signed_in()], origin="https://evil.example")
+        self.assertEqual(r["statusCode"], 403)
+
+    # --- places ---------------------------------------------------------------
+
+    def test_places_needs_a_session_and_a_query(self):
+        r, _ = self.call("GET", "/api/places", query={"q": "Minneapolis"})
+        self.assertEqual(r["statusCode"], 401)
+        cookies = self.new_session()
+        r, body = self.call("GET", "/api/places", cookies=cookies, query={"q": "M"})
+        self.assertEqual(body["error"], "query")
+        self.places = [MINNEAPOLIS]
+        r, body = self.call("GET", "/api/places", cookies=cookies, query={"q": "Minneap"})
+        self.assertEqual(body, {"places": [MINNEAPOLIS]})
+        self.places = None
+        r, body = self.call("GET", "/api/places", cookies=cookies, query={"q": "Minneap"})
+        self.assertEqual((r["statusCode"], body["error"]), (502, "places-failed"))
+
+    # --- stopping and starting -------------------------------------------------
+
+    def test_one_click_unsubscribe(self):
+        self.subscribe()
+        self.store.tokens["abcdefghijklmnopqrstuvwx"] = {"user_id": "u1", "date": "2026-10-08"}
+        # A mail app's POST: no cookie, no Origin.
+        r, _ = self.call("POST", "/api/unsubscribe", origin=None, query={"t": "abcdefghijklmnopqrstuvwx"})
+        self.assertEqual(r["statusCode"], 200)
+        p = self.store.profiles["u1"]
+        self.assertEqual((p["status"], p["stopped_reason"]), ("stopped", "unsubscribed"))
+        r, _ = self.call("POST", "/api/unsubscribe", origin=None, query={"t": "bbbbbbbbbbbbbbbbbbbbbbbb"})
+        self.assertEqual(r["statusCode"], 404)
+        r, _ = self.call("POST", "/api/unsubscribe", origin=None, query={"t": "../../etc"})
+        self.assertEqual(r["statusCode"], 400)
+
+    def test_opening_the_unsubscribe_link_shows_a_page(self):
+        r, _ = self.call("GET", "/api/unsubscribe", query={"t": "abcdefghijklmnopqrstuvwx"})
+        self.assertEqual((r["statusCode"], r["headers"]["location"]), (302, "/unsubscribe/#t=abcdefghijklmnopqrstuvwx"))
+        self.assertEqual(self.store.profiles, {})
+
+    def test_start_the_emails_again(self):
+        self.subscribe()
+        self.store.stop("u1", "unsubscribed", "x")
+        cookies = [self.signed_in()]
+        _, body = self.call("GET", "/api/me", cookies=cookies)
+        self.assertEqual((body["status"], body["stopped_reason"]), ("stopped", "unsubscribed"))
+        r, body = self.put_me({"status": "active"}, cookies)
+        self.assertEqual((body["status"], "stopped_reason" in body), ("active", False))
+        self.assertNotIn("stopped_reason", self.store.profiles["u1"])
+        r, body = self.put_me({"status": "stopped"}, cookies)
+        self.assertEqual(body["error"], "status")
+
+
+class PlacesTest(unittest.TestCase):
+    def test_search_keeps_the_city_and_rounds(self):
+        def fetch(url):
+            self.assertIn("name=Minneap", url)
+            return {
+                "results": [
+                    {"name": "Minneapolis", "admin1": "Minnesota", "country": "United States",
+                     "timezone": "America/Chicago", "latitude": 44.97997, "longitude": -93.26384, "population": 410939},
+                    {"name": "Nowhere", "latitude": 1, "longitude": 1},  # no time zone: dropped
+                ]
+            }
+
+        found = places.search("Minneap", fetch=fetch)
+        self.assertEqual(found, [{**MINNEAPOLIS, "lat": 44.98, "lon": -93.26}])
+        self.assertEqual(places.search("zzz", fetch=lambda url: {}), [])
+
+
+class BounceTest(unittest.TestCase):
+    def run_events(self, *messages):
+        store = FakeStore()
+        store.emails["ada@example.com"] = "u1"
+        store.profiles["u1"] = {"email": "ada@example.com", "status": "active"}
+        out = StringIO()
+        with redirect_stdout(out):
+            events.handler(
+                {"Records": [{"Sns": {"Message": json.dumps(m)}} for m in messages]}, None, store=store, clock=lambda: NOW
+            )
+        self.assertNotIn("ada@example.com", out.getvalue())
+        return store.profiles["u1"]
+
+    def test_hard_bounce_stops_the_emails(self):
+        p = self.run_events(
+            {"eventType": "Bounce", "bounce": {"bounceType": "Permanent", "bouncedRecipients": [{"emailAddress": "Ada@Example.com"}]}}
+        )
+        self.assertEqual((p["status"], p["stopped_reason"]), ("stopped", "bounce"))
+
+    def test_complaint_stops_the_emails(self):
+        p = self.run_events({"eventType": "Complaint", "complaint": {"complainedRecipients": [{"emailAddress": "ada@example.com"}]}})
+        self.assertEqual((p["status"], p["stopped_reason"]), ("stopped", "complaint"))
+
+    def test_soft_bounces_and_strangers_change_nothing(self):
+        p = self.run_events(
+            {"eventType": "Bounce", "bounce": {"bounceType": "Transient", "bouncedRecipients": [{"emailAddress": "ada@example.com"}]}},
+            {"eventType": "Bounce", "bounce": {"bounceType": "Permanent", "bouncedRecipients": [{"emailAddress": "nobody@example.com"}]}},
+            {"eventType": "Delivery"},
+        )
+        self.assertEqual(p["status"], "active")
+
+
+if __name__ == "__main__":
+    unittest.main()

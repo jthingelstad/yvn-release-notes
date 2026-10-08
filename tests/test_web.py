@@ -35,15 +35,25 @@ def request(method, path, body=None, *, origin=ORIGIN, cookies=None, query=None,
     }
 
 
-class WebTest(unittest.TestCase):
+class WebCase(unittest.TestCase):
+    """Helpers for driving web.handler over the fakes; no tests here."""
+
     def setUp(self):
         self.store, self.ses, self.now = FakeStore(), FakeSES(), NOW
+        self.places = []
         self.out = StringIO()
 
     def call(self, *args, **kw):
         with redirect_stdout(self.out):
-            r = web.handler(request(*args, **kw), None, store=self.store, ses=self.ses, clock=lambda: self.now)
+            r = web.handler(
+                request(*args, **kw), None, store=self.store, ses=self.ses, geocode=self.geocode, clock=lambda: self.now
+            )
         return r, json.loads(r["body"]) if r["headers"]["content-type"] == "application/json" else r["body"]
+
+    def geocode(self, q):
+        if self.places is None:
+            raise TimeoutError("geocoder down")
+        return self.places
 
     def subscribe(self, email="ada@example.com", user_id="u1"):
         self.store.emails[email] = user_id
@@ -66,6 +76,8 @@ class WebTest(unittest.TestCase):
         r, _ = self.call("POST", "/api/auth/verify", {"token": token})
         return r["cookies"][0].split(";")[0]
 
+
+class WebTest(WebCase):
     # --- basics -------------------------------------------------------------
 
     def test_health(self):
@@ -76,6 +88,10 @@ class WebTest(unittest.TestCase):
     def test_sample(self):
         r, body = self.call("GET", "/api/sample")
         self.assertEqual(body, {"birthday": "1981-06-14", "version": "4.5.116"})
+        _, body = self.call("GET", "/api/sample", query={"birthday": "1976-10-07", "tz": "Asia/Tokyo"})
+        self.assertEqual(body["version"], "5.0.2")  # already Friday in Tokyo
+        for q in ({"birthday": "2027-01-01"}, {"birthday": "x"}, {"tz": "Nowhere/Else"}):
+            self.assertEqual(self.call("GET", "/api/sample", query=q)[0]["statusCode"], 400, q)
 
     def test_unknown_route_is_404(self):
         for method, path in [("GET", "/api/nope"), ("POST", "/api/health"), ("GET", "/"), ("DELETE", "/api/me")]:

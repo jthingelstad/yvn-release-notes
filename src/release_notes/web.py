@@ -16,11 +16,13 @@ import json
 import os
 import re
 import time
+import uuid
 from base64 import b64decode
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from . import auth, export
+from . import auth, export, places
 from .compose import from_header
 from .version import compute_version
 
@@ -147,9 +149,22 @@ SAMPLE_BIRTHDAY = date(1981, 6, 14)  # the design canvas's someone
 
 
 def sample(app: App, req: Request) -> dict:
-    """The front page's example: someone's version number today."""
-    today = datetime.fromtimestamp(app.now, ZoneInfo("America/Chicago")).date()
-    return respond(200, {"birthday": SAMPLE_BIRTHDAY.isoformat(), "version": str(compute_version(SAMPLE_BIRTHDAY, today))})
+    """A version number today: the front page's example, or (with
+    ?birthday= and ?tz=) the one sign-up shows as a birthday is typed.
+    The arithmetic stays in version.py, not in the page."""
+    tz = req.query.get("tz") or "America/Chicago"
+    if not places.valid_tz(tz):
+        raise Reject(400, "tz")
+    today = datetime.fromtimestamp(app.now, ZoneInfo(tz)).date()
+    birthday = SAMPLE_BIRTHDAY
+    if "birthday" in req.query:
+        try:
+            birthday = date.fromisoformat(req.query["birthday"])
+        except ValueError:
+            raise Reject(400, "birthday") from None
+        if not date(1900, 1, 1) <= birthday <= today:
+            raise Reject(400, "birthday")
+    return respond(200, {"birthday": birthday.isoformat(), "version": str(compute_version(birthday, today))})
 
 
 def auth_start(app: App, req: Request) -> dict:
@@ -243,6 +258,24 @@ def auth_signout(app: App, req: Request) -> dict:
     return respond(200, {"ok": True}, cookies=[auth.clear_cookie()])
 
 
+def profile_view(p: dict, now: int) -> dict:
+    today = datetime.fromtimestamp(now, ZoneInfo(p["tz"])).date()
+    view = {
+        "new": False,
+        "email": p["email"],
+        "birthday": p["birthday"],
+        "tz": p["tz"],
+        "send_time": p.get("send_time", "06:00"),
+        "status": p.get("status", "active"),
+        "today": today.isoformat(),
+        "version": str(compute_version(date.fromisoformat(p["birthday"]), today)),
+    }
+    for k in ("city", "region", "country", "stopped_reason"):
+        if p.get(k):
+            view[k] = p[k]
+    return view
+
+
 def me(app: App, req: Request) -> dict:
     s = app.signed_in(req)
     if "user_id" not in s:
@@ -250,21 +283,134 @@ def me(app: App, req: Request) -> dict:
     p = app.store.profile(s["user_id"])
     if not p:
         raise Reject(403, "no-account")
-    today = datetime.fromtimestamp(app.now, ZoneInfo(p["tz"])).date()
-    birthday = date.fromisoformat(p["birthday"])
-    return respond(
-        200,
-        {
-            "new": False,
-            "email": p["email"],
-            "birthday": p["birthday"],
-            "tz": p["tz"],
-            "send_time": p.get("send_time", "06:00"),
-            "status": p.get("status", "active"),
-            "today": today.isoformat(),
-            "version": str(compute_version(birthday, today)),
-        },
-    )
+    return respond(200, profile_view(p, app.now))
+
+
+_SEND_TIME = re.compile(r"([01][0-9]|2[0-3]):(00|15|30|45)")
+
+
+def send_time_from(body: dict) -> str:
+    v = body.get("send_time")
+    if not isinstance(v, str) or not _SEND_TIME.fullmatch(v):
+        raise Reject(400, "send-time")
+    return v
+
+
+def place_fields(body: dict) -> dict:
+    place = places.clean(body.get("place"))
+    if not place:
+        raise Reject(400, "place")
+    return {
+        "tz": place["tz"],
+        "city": place["name"],
+        "region": place["region"],
+        "country": place["country"],
+        "lat": Decimal(str(place["lat"])),
+        "lon": Decimal(str(place["lon"])),
+    }
+
+
+def iso(now: int) -> str:
+    return datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def update_me(app: App, req: Request) -> dict:
+    s = app.signed_in(req)
+    body = req.json()
+    if "user_id" not in s:
+        return sign_up(app, s, body)
+    user_id = s["user_id"]
+    p = app.store.profile(user_id)
+    if not p:
+        raise Reject(403, "no-account")
+    if "birthday" in body and body["birthday"] != p["birthday"]:
+        # Changing it would renumber every day already kept.
+        raise Reject(400, "birthday-locked")
+    fields = {}
+    if "send_time" in body:
+        fields["send_time"] = send_time_from(body)
+    if "place" in body:
+        fields.update(place_fields(body))
+    if "status" in body:
+        if body["status"] != "active":
+            raise Reject(400, "status")
+        fields.update(status="active", restarted_at=iso(app.now))
+    if not fields:
+        raise Reject(400, "nothing-to-change")
+    remove = ("stopped_reason", "stopped_at") if "status" in fields else ()
+    app.store.update_profile(user_id, fields, remove)
+    log(event="settings", user=user_id, changed=sorted(k for k in fields if k in ("send_time", "tz", "status")))
+    p = {k: v for k, v in {**p, **fields}.items() if k not in remove}
+    return respond(200, profile_view(p, app.now))
+
+
+def sign_up(app: App, s: dict, body: dict) -> dict:
+    fields = place_fields(body)
+    send_time = send_time_from(body)
+    local = datetime.fromtimestamp(app.now, ZoneInfo(fields["tz"]))
+    try:
+        birthday = date.fromisoformat(body.get("birthday") or "")
+    except (TypeError, ValueError):
+        raise Reject(400, "birthday") from None
+    if not date(1900, 1, 1) <= birthday <= local.date():
+        raise Reject(400, "birthday")
+    profile = {
+        "birthday": birthday.isoformat(),
+        "send_time": send_time,
+        "status": "active",
+        "created_at": iso(app.now),
+        **fields,
+    }
+    # The first email is the next send time to come: today's if it is still
+    # ahead, otherwise tomorrow's. The sender's window would otherwise send
+    # today's late, minutes after sign-up.
+    if local.strftime("%H:%M") >= send_time:
+        profile["last_sent_date"] = local.date().isoformat()
+    email = s["email"]
+    user_id = uuid.uuid4().hex
+    if not app.store.create_subscriber(user_id, email, profile):
+        # Signed up in another tab a moment ago: this session joins it.
+        user_id = app.store.user_for_email(email)
+        if not user_id:
+            raise Reject(409, "try-again")
+        profile = app.store.profile(user_id) or {}
+    app.store.claim_session(s["hash"], user_id)
+    log(event="signup", user=user_id)
+    return respond(200, profile_view({"email": email, **profile}, app.now))
+
+
+def find_places(app: App, req: Request) -> dict:
+    app.signed_in(req)
+    q = (req.query.get("q") or "").strip()
+    if not 2 <= len(q) <= 80:
+        raise Reject(400, "query")
+    try:
+        found = app.geocode(q)
+    except Exception as e:
+        log(event="places-failed", error=type(e).__name__)
+        raise Reject(502, "places-failed") from None
+    return respond(200, {"places": found})
+
+
+_REPLY_TOKEN = re.compile(r"[a-z2-7]{24}")
+
+
+def unsubscribe(app: App, req: Request) -> dict:
+    """The daily email's List-Unsubscribe. A mail app POSTs it (RFC 8058,
+    one click, no cookie, no Origin); a person who opens it gets a page
+    with a button. The token is that day's reply token: whoever holds the
+    email can stop it, which is what unsubscribe links are."""
+    token = req.query.get("t", "")
+    if not _REPLY_TOKEN.fullmatch(token):
+        raise Reject(400, "token")
+    if req.method == "GET":
+        return respond(302, {}, headers={"location": f"/unsubscribe/#t={token}"})
+    found = app.store.get_token(token)
+    if not found:
+        raise Reject(404, "token")
+    app.store.stop(found["user_id"], "unsubscribed", iso(app.now))
+    log(event="unsubscribe", user=found["user_id"])
+    return respond(200, {"ok": True})
 
 
 def export_data(app: App, req: Request) -> dict:
@@ -290,8 +436,15 @@ ROUTES = [
     ("POST", "/api/auth/verify", auth_verify),
     ("POST", "/api/auth/signout", auth_signout),
     ("GET", "/api/me", me),
+    ("PUT", "/api/me", update_me),
+    ("GET", "/api/places", find_places),
     ("GET", "/api/export", export_data),
+    ("GET", "/api/unsubscribe", unsubscribe),
+    ("POST", "/api/unsubscribe", unsubscribe),
 ]
+# Writes that carry their own proof (a token) and come from mail apps,
+# which send no Origin.
+NO_ORIGIN = {"/api/unsubscribe"}
 _COMPILED = [(m, re.compile(p.replace("{date}", r"(\d{4}-\d{2}-\d{2})").replace("{id}", r"([A-Za-z0-9_-]{1,80})")), p, f) for m, p, f in ROUTES]
 
 
@@ -303,16 +456,18 @@ def match(method: str, path: str):
     return None, None, ()
 
 
-def handler(event, context, *, store=None, ses=None, clock=time.time):
+def handler(event, context, *, store=None, ses=None, geocode=places.search, clock=time.time):
     req = Request(event)
     pattern, route, args = match(req.method, req.path)
     if not route:
         response = respond(404, {"error": "not-found"})
-    elif req.method != "GET" and req.headers.get("origin") != os.environ["WEB_ORIGIN"]:
+    elif req.method != "GET" and pattern not in NO_ORIGIN and req.headers.get("origin") != os.environ["WEB_ORIGIN"]:
         response = respond(403, {"error": "origin"})
     else:
         try:
-            response = route(App(store, ses, int(clock())), req, *args)
+            app = App(store, ses, int(clock()))
+            app.geocode = geocode
+            response = route(app, req, *args)
         except Reject as r:
             response = r.response
     log(event="web", method=req.method, path=pattern or "unmatched", status=response["statusCode"])

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Set up: Release Notes</title>
+<link rel="stylesheet" href="/assets/site.css?v=3">
+<script src="/assets/app.js?v=2" defer></script>
+</head>
+<body data-page="setup">
+<main>
+  <header class="bar">
+    <a class="brand" href="/">Release Notes</a>
+  </header>
+
+  <h1>Three things, then you&rsquo;re set.</h1>
+
+  <form id="setup-form" class="roomy" novalidate>
+    <div class="stack tight">
+      <label>Your birthday
+        <input type="date" name="birthday" min="1900-01-01" required>
+      </label>
+      <p class="aside" id="that-makes" hidden>That makes you <span class="vnum inline" id="setup-v"></span> today.</p>
+    </div>
+
+    <div class="stack tight place-picker">
+      <label>Where you are, to the city
+        <input type="search" name="city" autocomplete="off" placeholder="Start typing a city" required>
+      </label>
+      <div class="places" role="listbox" aria-label="Places"></div>
+      <p class="aside picked" hidden>Time zone: <strong class="picked-tz"></strong></p>
+      <p class="hint">Only the city. It sets your time zone and, later, the weather in your email. Places from <a href="https://open-meteo.com/">Open-Meteo</a>.</p>
+    </div>
+
+    <label>Send my email at
+      <select name="send_time" class="send-times"></select>
+    </label>
+
+    <div class="stack tight">
+      <button class="go" type="submit">Start my release notes</button>
+      <p class="error" role="alert" hidden></p>
+      <p class="hint" id="first-email"></p>
+    </div>
+  </form>
+</main>
+</body>
+</html>

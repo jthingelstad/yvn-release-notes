@@ -8,12 +8,32 @@ class FakeStore:
     def __init__(self):
         self.emails, self.profiles, self.items = {}, {}, {}
         self.logins, self.newest, self.sessions, self.counts = {}, {}, {}, {}
+        self.tokens = {}
 
     def user_for_email(self, email):
         return self.emails.get(email)
 
     def profile(self, user_id):
         return self.profiles.get(user_id)
+
+    def create_subscriber(self, user_id, email, profile):
+        if email in self.emails or user_id in self.profiles:
+            return False
+        self.emails[email] = user_id
+        self.profiles[user_id] = {"email": email, **profile}
+        return True
+
+    def update_profile(self, user_id, fields, remove=()):
+        p = self.profiles[user_id]
+        p.update(fields)
+        for k in remove:
+            p.pop(k, None)
+
+    def stop(self, user_id, reason, at):
+        self.update_profile(user_id, {"status": "stopped", "stopped_reason": reason, "stopped_at": at})
+
+    def get_token(self, token):
+        return self.tokens.get(token)
 
     def user_items(self, user_id):
         return [{"pk": f"USER#{user_id}", "sk": "PROFILE", **self.profiles[user_id]}] + self.items.get(user_id, [])
@@ -58,6 +78,11 @@ class FakeStore:
 
     def touch_session(self, session_hash, now, expires):
         self.sessions[session_hash].update(seen_at=now, expires_at=expires)
+
+    def claim_session(self, session_hash, user_id):
+        s = self.sessions[session_hash]
+        s.pop("email", None)
+        s["user_id"] = user_id
 
     def delete_session(self, session_hash):
         self.sessions.pop(session_hash, None)

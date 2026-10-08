@@ -6,8 +6,9 @@
 Serves web/ and hands /api/* to web.handler with the in-memory fakes from
 tests/fakes.py: no AWS, no mail. A sign-in email is printed here instead of
 sent, link and code included. A fictional subscriber, ada@example.com
-(born 1981-06-14), exists from the start; any other address is new.
-Everything is forgotten when it stops.
+(born 1981-06-14), exists from the start, with one reply token for trying
+/unsubscribe/; any other address is new. City search asks the real
+Open-Meteo unless --fake-places. Everything is forgotten when it stops.
 """
 
 import argparse
@@ -24,7 +25,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
 from fakes import FakeSES, FakeStore  # noqa: E402
-from release_notes import web  # noqa: E402
+from release_notes import places, web  # noqa: E402
+
+FAKE_PLACES = [
+    {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
+    {"name": "Minneapolis", "region": "Kansas", "country": "United States", "tz": "America/Chicago", "lat": 39.12, "lon": -97.71},
+    {"name": "Paris", "region": "Ile-de-France", "country": "France", "tz": "Europe/Paris", "lat": 48.85, "lon": 2.35},
+]
 
 
 class PrintingSES(FakeSES):
@@ -37,6 +44,7 @@ class PrintingSES(FakeSES):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--fake-places", action="store_true", help="answer city searches from a fixed list")
     args = ap.parse_args()
     origin = f"http://localhost:{args.port}"
     os.environ.update(WEB_ORIGIN=origin, FROM_ADDRESS="notes@yourversionnumber.com", CONFIG_SET="dev", TABLE="dev")
@@ -46,7 +54,10 @@ def main():
     store.profiles["u1"] = {
         "email": "ada@example.com", "birthday": "1981-06-14", "tz": "America/Chicago",
         "send_time": "06:00", "status": "active", "created_at": "2026-10-01T12:00:00Z",
+        "city": "Minneapolis", "region": "Minnesota", "country": "United States",
     }
+    store.tokens["abcdefghijklmnopqrstuvwx"] = {"user_id": "u1", "date": "2026-10-01", "version": "4.5.109"}
+    geocode = (lambda q: [p for p in FAKE_PLACES if p["name"].lower().startswith(q.lower())]) if args.fake_places else places.search
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
@@ -64,7 +75,7 @@ def main():
                 "queryStringParameters": dict(parse_qsl(url.query)) or None,
                 "body": self.rfile.read(length).decode() if length else None,
             }
-            r = web.handler(event, None, store=store, ses=ses)
+            r = web.handler(event, None, store=store, ses=ses, geocode=geocode)
             body = r["body"].encode()
             self.send_response(r["statusCode"])
             for k, v in r["headers"].items():
@@ -93,7 +104,8 @@ def main():
                 self.send_header("cache-control", "no-store")
             super().end_headers()
 
-    print(f"Release Notes, locally: {origin}/  (ada@example.com is a subscriber)", flush=True)
+    print(f"Release Notes, locally: {origin}/  (ada@example.com is a subscriber;", flush=True)
+    print(f"  {origin}/unsubscribe/#t=abcdefghijklmnopqrstuvwx stops Ada's emails)", flush=True)
     ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
 
 

@@ -34,6 +34,9 @@ SES inbound (in.yourversionnumber.com MX)
 EventBridge, every quarter hour
   -> Lambda yvn-release-notes-sender   anyone whose local send time has come -> one email
 
+SES delivery events, via the alarms topic (filtered to Bounce, Complaint)
+  -> Lambda yvn-release-notes-events   hard bounce or complaint -> that subscriber stopped
+
 notes.yourversionnumber.com (CloudFront)
   default -> S3 web bucket              web/: static HTML, CSS, vanilla JS
   /api/*  -> HTTP API -> Lambda yvn-release-notes-web
@@ -45,7 +48,7 @@ notes.yourversionnumber.com (CloudFront)
   checkout). If the site's arithmetic changes, regenerate and re-test.
 - `parse.py`: MIME to note text, quote and signature stripping. Standard
   library only.
-- `send.py`, `inbound.py`: the two handlers. `store.py`: the one table and its
+- `send.py`, `inbound.py`, `events.py`: the mail handlers. `store.py`: the one table and its
   key layout (documented at the top of the file).
 - `infra/template.yaml`: the whole stack. `deploy.sh` packages, deploys and
   activates the receipt rule set.
@@ -55,7 +58,7 @@ runtime and is imported lazily so the tests run without it.
 
 - `web.py`: the web app's API, routed by method and path. `auth.py`: sign-in
   by link and code, sessions, the limits and the sign-in email (its docstring
-  is the design). `export.py`: everything a subscriber has, as JSON and
+  is the design). `places.py`: city search through Open-Meteo. `export.py`: everything a subscriber has, as JSON and
   Markdown. `web/` is the static site, synced to the web bucket by
   `deploy.sh`: one `assets/app.js` for every page (`<body data-page>`),
   `assets/site.css`, and the two fonts served from here. Pages load only
@@ -82,6 +85,11 @@ runtime and is imported lazily so the tests run without it.
   `outcome=note`, kept indefinitely) and are listed on the note so a later
   phase can extract them. Never expire `outcome=note` objects. Ignored mail is
   tagged `outcome=ignored` and expires in 30 days.
+- **A subscriber is `active` or `stopped`.** Stopped means no email, with
+  `stopped_reason`: `unsubscribed` (the email's one-click
+  `List-Unsubscribe`, or the page it opens), `bounce` (a hard bounce) or
+  `complaint`. Nothing is deleted; the person starts the emails again in
+  settings. Pauses (PR 5) are dated and end on their own; stopping does not.
 - **No note text or email addresses in logs.** Log user ids, dates and
   outcomes only.
 - **No open or click tracking**, consistent with Jamie's email tracking policy.

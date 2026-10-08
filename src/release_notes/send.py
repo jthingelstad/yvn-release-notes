@@ -18,7 +18,7 @@ import os
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from .compose import build_message, new_token
+from .compose import build_message, from_header, new_token
 from .store import Store, Subscriber
 from .version import compute_version
 
@@ -121,7 +121,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock) -> dict:
             day=date.fromisoformat(day),
         )
         resp = ses.send_email(
-            FromEmailAddress=os.environ["FROM_ADDRESS"],
+            FromEmailAddress=from_header(os.environ["FROM_ADDRESS"]),
             Destination={"ToAddresses": [sub.email]},
             Content={"Raw": {"Data": msg.as_bytes()}},
             ConfigurationSetName=os.environ["CONFIG_SET"],

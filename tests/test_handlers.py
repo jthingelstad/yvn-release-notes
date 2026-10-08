@@ -139,6 +139,14 @@ class Sending(unittest.TestCase):
         send.handler({}, None, store=store, ses=FakeSES(), clock=AT_8_15PM)
         self.assertEqual(store.subs["u1"].last_sent_date, "2026-10-07")
 
+    def test_ses_from_keeps_the_display_name(self):
+        # SES writes FromEmailAddress over the message's From header; a bare
+        # address there delivered 2026-10-07's email without "Release Notes".
+        ses = FakeSES()
+        send.handler({}, None, store=FakeStore([ada()]), ses=ses, clock=AT_8PM)
+        self.assertEqual(ses.sent[0]["FromEmailAddress"], "Release Notes <notes@yourversionnumber.com>")
+        self.assertIn("From: Release Notes <notes@yourversionnumber.com>", ses.sent[0]["Content"]["Raw"]["Data"].decode())
+
     def test_sent_at_is_the_real_send_time(self):
         store = FakeStore([ada()])
         send.handler({}, None, store=store, ses=FakeSES(), clock=AT_8_15PM)

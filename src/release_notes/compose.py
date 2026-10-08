@@ -40,6 +40,13 @@ def new_token() -> str:
     return b32encode(secrets.token_bytes(15)).decode().lower()
 
 
+def from_header(from_addr: str) -> str:
+    # The one From every email carries; subscribers' mail rules match it.
+    # send.py hands the same string to SES, which writes its FromEmailAddress
+    # over the message's own From, so a bare address there drops the name.
+    return formataddr(("Release Notes", from_addr))
+
+
 def reply_address(token: str, inbound_domain: str) -> str:
     return f"n-{token}@{inbound_domain}"
 
@@ -210,7 +217,7 @@ def build_message(
     *, to: str, from_addr: str, token: str, inbound_domain: str, v: Version, birthday: date, day: date
 ) -> EmailMessage:
     msg = EmailMessage()
-    msg["From"] = formataddr(("Release Notes", from_addr))
+    msg["From"] = from_header(from_addr)
     msg["To"] = to
     msg["Reply-To"] = formataddr(("Release Notes", reply_address(token, inbound_domain)))
     msg["Subject"] = subject(v)

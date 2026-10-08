@@ -8,7 +8,11 @@
     USER#<id>        DAY#<YYYY-MM-DD>           the email sent that day: version, token, message id
     USER#<id>        NOTE#<YYYY-MM-DD>#<msgid>  one reply: text, attachment list, raw S3 key
     USER#<id>        NOTE#<YYYY-MM-DD>#w-<id>   one note written on the web: text, source=web
-                                                (either kind: links, named once when written; links.py)
+                                                (either kind: links, named once when written; links.py;
+                                                an emailed one: media, its photos and recordings; media.py)
+    USER#<id>        EXPORT                     the latest zip export (export_job.py): id, status
+                                                building|ready|failed, started_at; when ready, export_key,
+                                                size, files; gone a day after it is built
     TOKEN#<token>    TOKEN                      reply address -> user and day
     EMAIL#<address>  EMAIL                      address -> user (one subscriber per address)
     LOGIN#<hash>     LOGIN                      a sign-in's link and code (auth.py), 15 minutes
@@ -331,6 +335,35 @@ class Store:
         with self.table.batch_writer() as batch:
             for key in keys:
                 batch.delete_item(Key=key)
+
+    # the zip export ---------------------------------------------------------
+
+    def export(self, user_id: str) -> dict | None:
+        return self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": "EXPORT"}).get("Item")
+
+    def start_export(self, user_id: str, export_id: str, now: int, expires: int) -> None:
+        """A new build, in place of any earlier one."""
+        self.table.put_item(Item={"pk": f"USER#{user_id}", "sk": "EXPORT", "id": export_id, "status": "building",
+                                  "started_at": now, "expires_at": expires})
+
+    def finish_export(self, user_id: str, export_id: str, fields: dict) -> bool:
+        """Record how build export_id ended. False if a newer build, or
+        deleting the account, has replaced it."""
+        names = {"#id": "id", "#s": "status", **{f"#f{i}": k for i, k in enumerate(fields)}}
+        values = {":id": export_id, ":b": "building", **{f":v{i}": v for i, v in enumerate(fields.values())}}
+        try:
+            self.table.update_item(
+                Key={"pk": f"USER#{user_id}", "sk": "EXPORT"},
+                UpdateExpression="SET " + ", ".join(f"#f{i} = :v{i}" for i in range(len(fields))),
+                ConditionExpression="#id = :id AND #s = :b",
+                ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
+            )
+            return True
+        except Exception as e:
+            if _failed_condition(e):
+                return False
+            raise
 
     def user_items(self, user_id: str) -> list[dict]:
         """Everything filed under one subscriber: the export reads this."""

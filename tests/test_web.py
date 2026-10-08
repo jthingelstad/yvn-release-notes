@@ -8,7 +8,7 @@ from email.policy import default
 from decimal import Decimal
 from io import StringIO
 
-from fakes import FakeS3, FakeSES, FakeStore
+from fakes import FakeLambda, FakeS3, FakeSES, FakeStore
 from release_notes import auth, export, web
 
 ORIGIN = "https://notes.yourversionnumber.com"
@@ -18,6 +18,7 @@ os.environ.update(
     CONFIG_SET="yvn-release-notes",
     TABLE="t",
     MAIL_BUCKET="mail-bucket",
+    EXPORT_FUNCTION="yvn-release-notes-export",
 )
 NOW = 1_791_500_000  # 2026-10-08, mid-afternoon Central
 
@@ -40,7 +41,7 @@ class WebCase(unittest.TestCase):
     """Helpers for driving web.handler over the fakes; no tests here."""
 
     def setUp(self):
-        self.store, self.ses, self.s3, self.now = FakeStore(), FakeSES(), FakeS3(), NOW
+        self.store, self.ses, self.s3, self.lam, self.now = FakeStore(), FakeSES(), FakeS3(), FakeLambda(), NOW
         self.places = []
         self.titles, self.fetched = {}, []  # url -> {"title", "site"}; urls asked for
         self.out = StringIO()
@@ -48,7 +49,7 @@ class WebCase(unittest.TestCase):
     def call(self, *args, **kw):
         with redirect_stdout(self.out):
             r = web.handler(
-                request(*args, **kw), None, store=self.store, ses=self.ses, s3=self.s3, geocode=self.geocode,
+                request(*args, **kw), None, store=self.store, ses=self.ses, s3=self.s3, lam=self.lam, geocode=self.geocode,
                 fetch=self.fetch, clock=lambda: self.now,
             )
         return r, json.loads(r["body"]) if r["headers"]["content-type"] == "application/json" else r["body"]

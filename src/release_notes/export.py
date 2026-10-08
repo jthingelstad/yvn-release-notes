@@ -2,8 +2,13 @@
 
 It comes before deleting, so that deleting never means losing anything.
 Kept out of it: the reply tokens (each is an address that files notes) and
-the SES and S3 bookkeeping. The original emails behind the notes, with any
-photos, are not in it yet; the JSON lists each one's attachments.
+the SES and S3 bookkeeping. The JSON lists each note's attachments.
+
+Two ways out. The words alone, Markdown or JSON, come straight back from
+the API. Everything, photos and recordings included, is a zip that
+export_job.py builds in the background (Jamie, 2026-10-08): the same two
+files plus files/, with the Markdown showing each photo by its path in the
+zip, so it reads with its pictures in any Markdown viewer.
 """
 
 from datetime import date
@@ -30,7 +35,26 @@ def _plain(value):
     return value
 
 
-def build(items: list[dict], exported_at: str) -> dict:
+def file_paths(items: list[dict]) -> dict[str, list[dict]]:
+    """Note id -> [{"path", "kind", "type", "key"}] for the zip: files/<day>-<n>.<ext>,
+    numbered through each day in the order its notes arrived."""
+    notes = sorted((i for i in items if i["sk"].startswith("NOTE#") and i.get("media")),
+                   key=lambda i: (i["sk"].split("#")[1], i.get("received_at", ""), i["sk"]))
+    out: dict[str, list[dict]] = {}
+    count: dict[str, int] = {}
+    for item in notes:
+        day, note_id = item["sk"].split("#")[1], item["sk"].split("#", 2)[2]
+        for m in item["media"]:
+            count[day] = count.get(day, 0) + 1
+            ext = str(m["key"]).rsplit(".", 1)[-1]
+            out.setdefault(note_id, []).append(
+                {"path": f"files/{day}-{count[day]}.{ext}", "kind": m["kind"], "type": m["type"], "key": m["key"]})
+    return out
+
+
+def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | None = None) -> dict:
+    """Everything, as data. With `files` (file_paths), each note lists its
+    photos and recordings by their path in the zip."""
     profile, days, notes, pauses = {}, [], [], []
     for item in items:
         sk = item["sk"]
@@ -51,6 +75,8 @@ def build(items: list[dict], exported_at: str) -> dict:
                     "subject": item.get("subject"),
                     "attachments": _plain(item.get("attachments", [])),
                     "links": _plain(item.get("links", [])),
+                    "files": [{"path": x["path"], "kind": x["kind"], "type": x["type"]}
+                              for x in (files or {}).get(sk.split("#", 2)[2], [])],
                 }
             )
         elif sk.startswith("PAUSE#"):
@@ -61,7 +87,7 @@ def build(items: list[dict], exported_at: str) -> dict:
             n["version"] = n["version"] or str(compute_version(born, date.fromisoformat(n["date"])))
     notes.sort(key=lambda n: (n["date"], n["received_at"] or "", n["id"]))
     for n in notes:
-        for k in ("updated_at", "subject", "links"):
+        for k in ("updated_at", "subject", "links", "files"):
             if not n[k]:
                 del n[k]
     return {
@@ -95,6 +121,12 @@ def markdown(data: dict) -> str:
     for day, notes in by_day.items():
         # Links by name, as Markdown links; the raw address stays the target.
         text = combine([{"text": links.markdown(n["text"], n.get("links"))} for n in notes])
-        lines += ["", f"## {notes[0]['version']} · {long_date(day)}", ""]
-        lines.append(text or "(Attachments only. They are in the original email.)")
+        lines += ["", f"## {notes[0]['version']} · {long_date(day)}"]
+        shown = [f for n in notes for f in n.get("files", [])]
+        if text or not shown:
+            lines += ["", text or "(Attachments only. They are in the original email.)"]
+        for f in shown:
+            # Paths inside the zip, so the Markdown reads with its pictures.
+            label = "Photo" if f["kind"] == "image" else "Recording"
+            lines += ["", f"{'!' if f['kind'] == 'image' else ''}[{label}, {notes[0]['version']}]({f['path']})"]
     return "\n".join(lines) + "\n"

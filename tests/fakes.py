@@ -1,5 +1,5 @@
-"""In-memory stand-ins for the table and SES, shared by the web tests and
-scripts/dev_server.py."""
+"""In-memory stand-ins for the table, SES, S3 and Lambda, shared by the web
+tests and scripts/dev_server.py."""
 
 
 class FakeStore:
@@ -118,6 +118,23 @@ class FakeStore:
                 rows = self.items.get(pk[5:], [])
                 rows[:] = [i for i in rows if i["sk"] != sk]
 
+    def export(self, user_id):
+        found = self._rows(user_id, "EXPORT")
+        return dict(found[0]) if found else None
+
+    def start_export(self, user_id, export_id, now, expires):
+        rows = self.items.setdefault(user_id, [])
+        rows[:] = [i for i in rows if i["sk"] != "EXPORT"]
+        rows.append({"pk": f"USER#{user_id}", "sk": "EXPORT", "id": export_id, "status": "building",
+                     "started_at": now, "expires_at": expires})
+
+    def finish_export(self, user_id, export_id, fields):
+        found = self._rows(user_id, "EXPORT")
+        if not found or found[0]["id"] != export_id or found[0]["status"] != "building":
+            return False
+        found[0].update(fields)
+        return True
+
     def user_items(self, user_id):
         return [{"pk": f"USER#{user_id}", "sk": "PROFILE", **self.profiles[user_id]}] + self.items.get(user_id, [])
 
@@ -183,8 +200,8 @@ class FakeSES:
 
 
 class FakeS3:
-    """Deletes, puts and signed links. `objects` holds what was put, by key;
-    a signed link is /dev-media/<key>, which scripts/dev_server.py serves."""
+    """Puts, gets, deletes and signed links. `objects` holds what was put, by
+    key; a signed link is /dev-media/<key>, which scripts/dev_server.py serves."""
 
     def __init__(self, fail=False):
         self.deleted, self.fail = [], fail
@@ -196,6 +213,19 @@ class FakeS3:
         self.objects[Key] = {"Body": Body, **kw}
         return {}
 
+    def get_object(self, Bucket, Key):
+        from io import BytesIO
+
+        if Key not in self.objects:
+            e = KeyError(Key)
+            e.response = {"Error": {"Code": "NoSuchKey"}}
+            raise e
+        return {"Body": BytesIO(self.objects[Key]["Body"])}
+
+    def upload_file(self, Filename, Bucket, Key, ExtraArgs=None):
+        with open(Filename, "rb") as f:
+            self.put_object(Bucket, Key, f.read(), **(ExtraArgs or {}))
+
     def generate_presigned_url(self, op, Params, ExpiresIn):
         self.signed = {"op": op, "Params": Params, "ExpiresIn": ExpiresIn}
         return f"/dev-media/{Params['Key']}"
@@ -204,10 +234,31 @@ class FakeS3:
         if self.fail:
             raise ConnectionError("down")
         self.deleted.append(kw)
+        self.objects.pop(kw["Key"], None)
         return {}
 
     def delete_objects(self, Bucket, Delete):
         if self.fail:
             return {"Errors": [{"Key": o["Key"], "Code": "InternalError"} for o in Delete["Objects"]]}
         self.deleted.extend({"Bucket": Bucket, "Key": o["Key"]} for o in Delete["Objects"])
+        for o in Delete["Objects"]:
+            self.objects.pop(o["Key"], None)
         return {}
+
+
+class FakeLambda:
+    """Async invokes, recorded; `then` runs each one (the dev server builds
+    the zip export in a thread)."""
+
+    def __init__(self, fail=False, then=None):
+        self.invoked, self.fail, self.then = [], fail, then
+
+    def invoke(self, FunctionName, InvocationType, Payload):
+        import json
+
+        if self.fail:
+            raise ConnectionError("down")
+        self.invoked.append({"FunctionName": FunctionName, "InvocationType": InvocationType, "Payload": json.loads(Payload)})
+        if self.then:
+            self.then(json.loads(Payload))
+        return {"StatusCode": 202}

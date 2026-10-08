@@ -114,6 +114,21 @@ class Store:
     def get_token(self, token: str) -> dict | None:
         return self.table.get_item(Key={"pk": f"TOKEN#{token}", "sk": "TOKEN"}).get("Item")
 
+    def note_days(self, user_id: str) -> set[date]:
+        """The days this subscriber has a note for. Keys only: no note text."""
+        days, kwargs = set(), {
+            "KeyConditionExpression": "pk = :u AND begins_with(sk, :n)",
+            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":n": "NOTE#"},
+            "ProjectionExpression": "sk",
+        }
+        while True:
+            page = self.table.query(**kwargs)
+            days.update(date.fromisoformat(i["sk"].split("#")[1]) for i in page.get("Items", []))
+            if "LastEvaluatedKey" not in page:
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        return days
+
     def put_note(self, user_id: str, day: str, message_id: str, note: dict) -> bool:
         """Store one reply. SES retries a failed Lambda, so the message id
         makes this idempotent. Returns False if the note already exists."""

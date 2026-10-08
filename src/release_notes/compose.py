@@ -11,6 +11,10 @@ Rules for it:
 - Tables and inline styles, because that is what mail clients render. The
   <style> block only adds dark mode and the narrow-screen tweaks; the email
   must read correctly without it (Gmail strips some of it).
+- The number stands alone: no decades/years/days breakdown under it (Jamie,
+  2026-10-07: "super redundant"). Below it, a row of dots for how far through
+  the year this release is, then the ask, then the reply streak (streak.py).
+- Non-ASCII goes in as entities, so the HTML part stays 7-bit.
 - The plain-text part says the same thing. Replies are parsed from the
   replier's own plain text, never from this HTML.
 """
@@ -22,7 +26,8 @@ from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 from html import escape
 
-from .version import Version
+from .streak import Streak
+from .version import Version, compute_version
 
 SITE = "https://yourversionnumber.com"
 
@@ -69,13 +74,29 @@ def next_release(v: Version) -> str:
     return f"{nxt // 10}.{nxt % 10}.0"
 
 
+def ships(v: Version) -> str:
+    return "tomorrow" if v.days_until == 1 else f"in {v.days_until} days"
+
+
 def countdown(v: Version) -> str:
-    days = "tomorrow" if v.days_until == 1 else f"in {v.days_until} days"
-    return f"{next_release(v)} ships {days}."
+    return f"{next_release(v)} ships {ships(v)}."
 
 
-def plural(n: int, one: str, many: str) -> str:
-    return one if n == 1 else many
+def days_phrase(n: int) -> str:
+    return f"{n} day" if n == 1 else f"{n} days"
+
+
+def streak_lines(v: Version, s: Streak) -> tuple[str, str]:
+    """The streak as a bold head and a quiet tail. A missed day is never
+    called out: the count starts over and the longest is shown instead."""
+    if s.current == 0:
+        tail = f"Your longest so far is {days_phrase(s.longest)}." if s.longest else "Today's can be the first."
+        return "Every reply starts a streak.", tail
+    ask = f"Reply today and {v} makes it {s.current + 1}."
+    if s.current >= s.longest and s.current > 1:
+        return f"{days_phrase(s.current)} in a row, your longest yet.", ask
+    longest = f"Your longest is {days_phrase(s.longest)}. " if s.longest > s.current else ""
+    return f"{days_phrase(s.current)} in a row.", longest + ask
 
 
 def long_date(day: date) -> str:
@@ -84,16 +105,18 @@ def long_date(day: date) -> str:
 
 # --- plain text ---------------------------------------------------------------
 
-def body(v: Version, birthday: date) -> str:
+def body(v: Version, birthday: date, streak: Streak | None = None) -> str:
     opening = f"You're {v} today."
     if line := birthday_line(v):
         opening = f"{opening} {line}"
+    streak_text = " ".join(streak_lines(v, streak)) + "\n\n" if streak else ""
     return (
         f"{opening}\n"
         "\n"
         "Reply any time today: what happened, what you made, who you saw.\n"
         f"Whatever you send back becomes the release notes for {v}.\n"
         "\n"
+        f"{streak_text}"
         f"{countdown(v)}\n"
         f"{SITE}/birthday/?p={birthday.isoformat()}\n"
         "\n"
@@ -104,11 +127,11 @@ def body(v: Version, birthday: date) -> str:
 
 # --- HTML -------------------------------------------------------------------------
 
-def vnum_html(v: Version, size: int) -> str:
+def vnum_html(v: Version, size: int, sep_color: str = ORANGE) -> str:
     out = []
     for ch in str(v):
         if ch == ".":
-            out.append(f'<span class="sep" style="color:{ORANGE};">.</span>')
+            out.append(f'<span class="sep" style="color:{sep_color};">.</span>')
         else:
             out.append(ch)
     return (
@@ -117,46 +140,80 @@ def vnum_html(v: Version, size: int) -> str:
     )
 
 
-def part(kind: str, n: int, label: str, num_color: str) -> str:
+DOTS = 24
+DOT = "&#9679;"  # a filled circle, as type: the year shown as a row of dots
+MIDDOT = "&middot;"
+DOT_OFF = "#e3e8f7"
+STREAK_SHOWN = 6  # days of the current run spelled out before today's number
+
+
+def year_dots(v: Version) -> str:
+    on = round(v.patch / v.cycle_days * DOTS)
     return (
-        f'<td class="part part-{kind}" width="33%" valign="top" style="padding:0 8px 0 0;">'
-        f'<div class="part-n" style="font-family:{MONO};font-weight:700;font-size:26px;line-height:1.1;'
-        f'letter-spacing:-0.04em;color:{num_color};">{n}</div>'
-        f'<div class="part-l ink-2" style="font-family:{FONT};font-size:13px;line-height:1.3;color:{INK_2};padding-top:3px;">'
-        f"{escape(label)}</div></td>"
+        f'<p aria-hidden="true" style="margin:0;font-family:{MONO};font-size:11px;line-height:1;letter-spacing:4px;white-space:nowrap;">'
+        f'<span class="dot-on" style="color:{ORANGE};">{DOT * on}</span>'
+        f'<span class="dot-off" style="color:{DOT_OFF};">{DOT * (DOTS - on)}</span></p>'
     )
+
+
+def streak_html(v: Version, birthday: date, s: Streak) -> str:
+    # Each day in the run by its patch number, then today's, still open.
+    past = "".join(
+        f'<span class="vnum" style="font-weight:700;color:{BLUE};">{compute_version(birthday, d).patch}</span>'
+        f'<span class="sep" style="color:{ORANGE};"> {MIDDOT} </span>'
+        for d in s.days[-STREAK_SHOWN:]
+    )
+    today = (
+        f'<span class="today" style="font-weight:700;color:{ORANGE_INK};text-decoration:underline;'
+        f'text-decoration-style:dotted;text-underline-offset:5px;">{v.patch}</span>'
+    )
+    # With no run going, a lone "today" number says nothing: the sentence alone.
+    row = (
+        f'<p class="streak-row" style="margin:0 0 8px;font-family:{MONO};font-size:17px;line-height:1.5;'
+        f'letter-spacing:-0.02em;">{past}{today}</p>\n'
+        if s.days
+        else ""
+    )
+    head, tail = streak_lines(v, s)
+    return f"""<tr><td style="padding:36px 0 0;">
+{row}<p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
+<strong class="ink" style="color:{INK};">{escape(head)}</strong> {"&nbsp;".join(escape(tail).rsplit(" ", 1))}
+</p>
+</td></tr>
+"""
 
 
 DARK_CSS = f"""
 :root {{ color-scheme: light dark; supported-color-schemes: light dark; }}
 @media (max-width: 480px) {{
-  .vnum-hero .vnum {{ font-size: 54px !important; }}
-  .part-n {{ font-size: 22px !important; }}
+  .vnum-hero .vnum {{ font-size: 58px !important; }}
+  .streak-row {{ font-size: 15px !important; }}
 }}
 @media (prefers-color-scheme: dark) {{
   body, .paper {{ background: #131634 !important; }}
   .ink {{ color: #fdf6e8 !important; }}
   .ink-2 {{ color: #b9bede !important; }}
   .vnum {{ color: #8fb4ff !important; }}
-  .sep {{ color: #ff8a4d !important; }}
-  .part-major .part-n {{ color: #8fb4ff !important; }}
-  .part-minor .part-n {{ color: #ffab6b !important; }}
-  .part-patch .part-n, .party {{ color: #ff9ecb !important; }}
+  .sep, .dot-on {{ color: #ff8a4d !important; }}
+  .dot-off {{ color: #2b3062 !important; }}
+  .today {{ color: #ffab6b !important; }}
+  .party {{ color: #ff9ecb !important; }}
   .link {{ color: #8fb4ff !important; }}
 }}
 """
 
 
-def html_body(v: Version, birthday: date, day: date) -> str:
+def html_body(v: Version, birthday: date, day: date, streak: Streak | None = None) -> str:
     vs = escape(str(v))
     party = birthday_line(v)
     party_html = (
-        f'<p class="party" style="margin:12px 0 0;font-family:{FONT};font-size:18px;font-weight:700;color:{PINK_INK};">'
+        f'<p class="party" style="margin:16px 0 0;font-family:{FONT};font-size:20px;font-weight:800;color:{PINK_INK};">'
         f"{escape(party)}</p>"
         if party
         else ""
     )
     link = f"{SITE}/birthday/?p={birthday.isoformat()}"
+    inline_v = vs.replace(".", f'<span class="sep" style="color:{ORANGE_INK};">.</span>')
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -170,38 +227,37 @@ def html_body(v: Version, birthday: date, day: date) -> str:
 <body class="paper" style="margin:0;padding:0;background:{PAPER};">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Reply with anything about today, and it becomes the release notes for {vs}.</div>
 <table role="presentation" class="paper" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{PAPER};">
-<tr><td align="center" style="padding:32px 22px 40px;">
+<tr><td align="center" style="padding:40px 22px 48px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
 
-<tr><td class="ink-2" style="padding:0 0 22px;font-family:{FONT};font-size:14px;color:{INK_2};">
+<tr><td class="ink-2" style="padding:0 0 40px;font-family:{FONT};font-size:14px;color:{INK_2};">
 <strong class="ink" style="color:{INK};">Release notes</strong> &middot; {escape(long_date(day))}
 </td></tr>
 
 <tr><td>
-<p class="ink" style="margin:0 0 8px;font-family:{FONT};font-size:17px;color:{INK};">Today you&rsquo;re</p>
-<div class="vnum-hero" role="heading" aria-level="1" aria-label="{vs}">{vnum_html(v, 64)}</div>
+<p class="ink" style="margin:0 0 10px;font-family:{FONT};font-size:18px;color:{INK};">Today you&rsquo;re</p>
+<div class="vnum-hero" role="heading" aria-level="1" aria-label="{vs}">{vnum_html(v, 76)}</div>
 {party_html}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;">
-<tr>
-{part("major", v.major, plural(v.major, "decade", "decades"), BLUE)}
-{part("minor", v.minor, plural(v.minor, "year in", "years in"), ORANGE_INK)}
-{part("patch", v.patch, "days since your birthday" if v.patch != 1 else "day since your birthday", PINK_INK)}
-</tr>
-</table>
-<p class="ink-2" style="margin:18px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
-{escape(countdown(v))} <a class="link" href="{escape(link)}" style="color:{BLUE};font-weight:700;text-decoration:underline;">See your number</a>
+</td></tr>
+
+<tr><td style="padding:36px 0 0;">
+{year_dots(v)}
+<p class="ink-2" style="margin:8px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
+<span class="ink" style="font-family:{MONO};font-weight:700;color:{INK};">{escape(next_release(v))}</span> ships {escape(ships(v))}. <a class="link" href="{escape(link)}" style="color:{BLUE};font-weight:700;text-decoration:underline;">See your number</a>
 </p>
 </td></tr>
 
-<tr><td style="padding:30px 0 0;">
-<p class="ink" style="margin:0;font-family:{FONT};font-size:18px;line-height:1.5;color:{INK};">
-<strong>Reply any time today:</strong> what happened, what you made, who you saw.
-Whatever you send back becomes the release notes for
-<span class="vnum" style="font-family:{MONO};font-weight:700;letter-spacing:-0.03em;color:{BLUE};white-space:nowrap;">{vs.replace(".", f'<span class="sep" style="color:{ORANGE_INK};">.</span>')}</span>.
+<tr><td style="padding:48px 0 0;">
+<p class="ink" style="margin:0 0 12px;font-family:{FONT};font-size:28px;line-height:1.15;font-weight:800;letter-spacing:-0.01em;color:{INK};">Reply any time today.</p>
+<p class="ink" style="margin:0 0 12px;font-family:{FONT};font-size:19px;line-height:1.5;color:{INK};">
+What happened, what you made, who you saw. Whatever you send back becomes the release notes for
+<span class="vnum" style="font-family:{MONO};font-weight:700;letter-spacing:-0.03em;color:{BLUE};white-space:nowrap;">{inline_v}</span>.
 </p>
+<p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">Just hit reply. A line is plenty.</p>
 </td></tr>
 
-<tr><td class="ink-2" style="padding:30px 0 0;font-family:{FONT};font-size:13px;line-height:1.5;color:{INK_2};">
+{streak_html(v, birthday, streak) if streak else ""}
+<tr><td class="ink-2" style="padding:48px 0 0;font-family:{FONT};font-size:13px;line-height:1.5;color:{INK_2};">
 Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>.
 </td></tr>
 
@@ -214,7 +270,15 @@ Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Ve
 
 
 def build_message(
-    *, to: str, from_addr: str, token: str, inbound_domain: str, v: Version, birthday: date, day: date
+    *,
+    to: str,
+    from_addr: str,
+    token: str,
+    inbound_domain: str,
+    v: Version,
+    birthday: date,
+    day: date,
+    streak: Streak | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = from_header(from_addr)
@@ -222,6 +286,6 @@ def build_message(
     msg["Reply-To"] = formataddr(("Release Notes", reply_address(token, inbound_domain)))
     msg["Subject"] = subject(v)
     msg["Message-ID"] = make_msgid(domain=from_addr.split("@", 1)[1])
-    msg.set_content(body(v, birthday))
-    msg.add_alternative(html_body(v, birthday, day), subtype="html")
+    msg.set_content(body(v, birthday, streak))
+    msg.add_alternative(html_body(v, birthday, day, streak), subtype="html")
     return msg

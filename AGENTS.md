@@ -68,6 +68,17 @@ runtime and is imported lazily so the tests run without it.
   (`tests/test_compose.py` enforces it). Preview by writing `html_body()` to a
   file and screenshotting it; for phone width use a 390px iframe in a wider
   window, since headless Chrome will not lay out below ~500px.
+- **The number stands alone.** No decades/years/days breakdown under it
+  (Jamie, 2026-10-07: "super redundant"). Below it: a row of 24 text dots for
+  how far through the year, the ask, then the reply streak.
+- **Streaks** (`streak.py`) count days in a row with a note, up to yesterday,
+  from the NOTE keys alone (no new storage). A late reply fills its own day in,
+  so streaks can be mended (Jamie: "we don't need to be obsessive"). A missed
+  day resets the count quietly and the email shows the longest instead; never
+  call a break out. If the streak cannot be read, the email goes without it.
+  The design canvas: https://claude.ai/artifact/C9AZwHtrMBVzyRZrrrZSKm
+- **No rotating prompts or nudges** for now (Jamie, 2026-10-07: "keep it
+  simple"). The ask is the same every day.
 - **No model processing of notes** (summaries, prompts, anything) without an
   explicit opt-in from each subscriber. Jamie, as the operator, can read every
   note. Any privacy copy must say so plainly.

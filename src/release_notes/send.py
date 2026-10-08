@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from .compose import build_message, from_header, new_token
 from .store import Store, Subscriber
+from .streak import Streak, compute_streak
 from .version import compute_version
 
 WINDOW = timedelta(hours=3)
@@ -50,6 +51,15 @@ def log(**fields):
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def read_streak(store: Store, user_id: str, day: date) -> Streak | None:
+    # The streak is a nicety. If it cannot be read, the day's email still goes.
+    try:
+        return compute_streak(store.note_days(user_id), day)
+    except Exception as e:
+        log(event="streak-error", user=user_id, date=day.isoformat(), error=type(e).__name__)
+        return None
 
 
 def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_now):
@@ -89,7 +99,17 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
         elif not is_due(sub, here):
             continue
         if dry_run:
-            results.append({"user": sub.user_id, "date": day, "version": str(v), "local": here.isoformat()})
+            streak = read_streak(store, sub.user_id, here.date())
+            results.append(
+                {
+                    "user": sub.user_id,
+                    "date": day,
+                    "version": str(v),
+                    "local": here.isoformat(),
+                    "streak": streak.current if streak else None,
+                    "longest": streak.longest if streak else None,
+                }
+            )
             continue
         try:
             results.append(send_one(store, ses, sub, day, v, clock))
@@ -109,6 +129,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock) -> dict:
         log(event="skip", user=sub.user_id, date=day, reason="already-claimed")
         return {"user": sub.user_id, "date": day, "outcome": "already-claimed"}
     token = new_token()
+    streak = read_streak(store, sub.user_id, date.fromisoformat(day))
     try:
         store.put_day(sub.user_id, day, str(v), token, clock().isoformat())
         msg = build_message(
@@ -119,6 +140,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock) -> dict:
             v=v,
             birthday=sub.birthday,
             day=date.fromisoformat(day),
+            streak=streak,
         )
         resp = ses.send_email(
             FromEmailAddress=from_header(os.environ["FROM_ADDRESS"]),

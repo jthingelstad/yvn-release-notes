@@ -398,6 +398,53 @@ function pauseLine(p) {
   return `Paused through ${dayName(through)}. They start again ${dayName(addDays(through, 1))} at ${clock(p.send_time)}.`;
 }
 
+// --- the zip export ------------------------------------------------------------
+// Everything, photos and recordings too, built in the background
+// (export_job.py): start it, ask every few seconds, then offer the link.
+
+function megabytes(n) {
+  if (n < 1e6) return `${Math.max(1, Math.round(n / 1e3))} KB`;
+  return n < 1e9 ? `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB` : `${(n / 1e9).toFixed(1)} GB`;
+}
+
+function zipExport(root) {
+  const start = $('[data-zip-start]', root), file = $('[data-zip-file]', root), status = $('[data-zip-status]', root);
+  let timer;
+  const show = (z) => {
+    clearTimeout(timer);
+    start.hidden = z.status === 'building';
+    file.hidden = z.status !== 'ready';
+    start.className = z.status === 'ready' ? 'quiet' : 'go';
+    start.textContent = z.status === 'ready' ? 'Make a fresh one' : z.status === 'failed' ? 'Try again' : 'Export everything';
+    status.hidden = z.status === 'none';
+    if (z.status === 'building') {
+      status.textContent = 'Putting it together. With lots of photos it can take a few minutes, and you can leave this page and come back.';
+      timer = setTimeout(check, 3000);
+    } else if (z.status === 'ready') {
+      const t = new Date(z.until);
+      const until = `${t.toLocaleDateString('en-US', { weekday: 'long' })} at ${t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+      const files = z.files ? `, with ${z.files} ${z.files === 1 ? 'photo or recording' : 'photos and recordings'}` : '';
+      status.textContent = `Ready: ${megabytes(z.size)}${files}. The download is here until ${until}.`;
+    } else if (z.status === 'failed') {
+      status.textContent = 'That export didn’t finish.';
+    }
+  };
+  const check = async () => {
+    const r = await api('GET', '/api/export/zip');
+    if (r.ok) show(r.data);
+    else timer = setTimeout(check, 10000);
+  };
+  start.addEventListener('click', async () => {
+    start.disabled = true;
+    const r = await api('POST', '/api/export/zip');
+    start.disabled = false;
+    if (r.status === 202) return show(r.data);
+    status.hidden = false;
+    status.textContent = 'Couldn’t start the export just now. Try again in a minute.';
+  });
+  check();
+}
+
 const STOPPED = {
   unsubscribed: 'Stopped, because you unsubscribed.',
   bounce: 'Stopped, because an email to this address bounced.',
@@ -575,6 +622,7 @@ const pages = {
       $('#delete-link').hidden = $('#delete-hint').hidden = false;
       $('#account').hidden = false;
     };
+    zipExport($('#your-data'));
     const save = async (change) => {
       const r = await api('PUT', '/api/me', change);
       if (r.ok) { p = r.data; fill(); }
@@ -823,6 +871,7 @@ const pages = {
     const ask = $('#code-ask'), confirm = $('#code-confirm');
     $('#to').textContent = me.data.email;
     $('#ask-delete').hidden = false;
+    zipExport($('#keep-copy'));
 
     ask.addEventListener('submit', (e) => {
       e.preventDefault();

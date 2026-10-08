@@ -35,6 +35,8 @@ reply email
 - **Photos and voice memos.** Reply with them and they are kept with that
   day's notes, for your eyes only. Other attachments stay in the original
   message, which is kept too.
+- **Yours to keep.** Export everything any time: a zip with every note, as
+  Markdown and JSON, and every photo and recording.
 - **Links show by name.** When a note has a web address, its page is visited
   once, as the note is saved, to keep its title; a phrase you linked in your
   mail app keeps your words. Nothing is fetched when a note is shown.

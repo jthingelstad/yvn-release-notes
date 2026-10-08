@@ -40,6 +40,7 @@ SES delivery events, via the alarms topic (filtered to Bounce, Complaint)
 notes.yourversionnumber.com (CloudFront)
   default -> S3 web bucket              web/: static HTML, CSS, vanilla JS
   /api/*  -> HTTP API -> Lambda yvn-release-notes-web
+                            -> Lambda yvn-release-notes-export   (async) the zip export -> S3 exports/
 ```
 
 - `src/release_notes/version.py`: the version arithmetic, ported from the site's
@@ -60,14 +61,15 @@ runtime and is imported lazily so the tests run without it.
 - `web.py`: the web app's API, routed by method and path. `auth.py`: sign-in
   by link and code, sessions, the limits and the sign-in email (its docstring
   is the design). `places.py`: city search through Open-Meteo. `export.py`: everything a subscriber has, as JSON and
-  Markdown. `web/` is the static site, synced to the web bucket by
+  Markdown; `export_job.py` builds the zip with every photo and recording,
+  in the background. `web/` is the static site, synced to the web bucket by
   `deploy.sh`: one `assets/app.js` for every page (`<body data-page>`),
   `assets/site.css`, and the two fonts served from here. Pages load only
   their own files (the CSP is `'self'`), so no inline script or style,
   nothing remote; anything another service answers goes through `/api`.
   The exceptions are named in the CSP: Tinylytics (connect) and the mail
   bucket's host for signed photo links (img, media).
-- `tests/fakes.py`: an in-memory table and SES for the web tests, also used
+- `tests/fakes.py`: an in-memory table, SES, S3 and Lambda for the web tests, also used
   by `scripts/dev_server.py`. The fakes do not check DynamoDB's request
   shapes, so a new kind of table call also gets a test of the exact request
   (`tests/test_store.py`). `table.meta.client` takes plain Python values like
@@ -117,8 +119,17 @@ runtime and is imported lazily so the tests run without it.
   their own; stopping does not. The sender skips a paused day, and paused
   days neither break a streak nor add to it (`streak.py`).
 - **Deleting an account deletes it**: raw emails, photos and recordings,
-  tokens, every `USER#` item, the address and the profile, after a code mailed to the address.
+  any zip export, tokens, every `USER#` item, the address and the profile, after a code mailed to the address.
   Nothing is kept; the export is offered first.
+- **The export is a zip** (Jamie, 2026-10-08): the Markdown and JSON plus
+  every photo and recording under `files/`, the Markdown showing each photo
+  by its path in the zip. Settings starts a build (`POST /api/export/zip`);
+  the web function invokes `yvn-release-notes-export` without waiting, and
+  the page asks every few seconds. One build at a time, and only the newest
+  zip is kept (`exports/<user>/<build id>.zip`, offered for a day, expired
+  by the bucket after two; a build that finds itself replaced deletes its
+  own). The download is a redirect to a five-minute signed link. The words
+  alone, Markdown or JSON, still come straight from `/api/export`.
 - **No note text or email addresses in logs.** Log user ids, dates and
   outcomes only.
 - **No open or click tracking**, consistent with Jamie's email tracking policy.
@@ -238,7 +249,7 @@ runtime and is imported lazily so the tests run without it.
    settings (the send time included), `List-Unsubscribe`, bounces stop a
    subscriber.
 3. **Around it** (started 2026-10-08): photos and audio from replies
-   (built); the export as a zip with the files; weather from the
+   (built); the export as a zip with the files (built); weather from the
    subscriber's city (Open-Meteo, no key, CC BY 4.0), each day's actual
    weather recorded with its city plus one forecast line in the morning
    email (Jamie, 2026-10-08); a yearly "release notes for 5.2" collection on

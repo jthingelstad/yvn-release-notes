@@ -64,7 +64,7 @@ Resources:
 
   # Raw inbound mail under raw/. Filed replies are kept; their photos and
   # recordings are copied to media/ (media.py) and kept too. Ignored mail
-  # expires.
+  # expires, and so do zip exports (exports/, offered for a day).
   MailBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -96,6 +96,14 @@ Resources:
             Status: Enabled
             NoncurrentVersionExpiration:
               NoncurrentDays: 30
+          - Id: expire-exports
+            Status: Enabled
+            Prefix: exports/
+            ExpirationInDays: 2
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
 
   MailBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -618,9 +626,21 @@ Resources:
                   - !Sub "${MailBucket.Arn}/media/*"
               - Effect: Allow
                 # Signs the ten-minute link to a photo or recording for its
-                # owner (web.media_file). Nothing under raw/.
+                # owner (web.media_file), and the link to a built zip export.
+                # Nothing under raw/.
                 Action: s3:GetObject
-                Resource: !Sub "${MailBucket.Arn}/media/*"
+                Resource:
+                  - !Sub "${MailBucket.Arn}/media/*"
+                  - !Sub "${MailBucket.Arn}/exports/*"
+              - Effect: Allow
+                # A new zip export replaces the last; deleting the account
+                # deletes it.
+                Action: s3:DeleteObject
+                Resource: !Sub "${MailBucket.Arn}/exports/*"
+              - Effect: Allow
+                # Starts a zip export, without waiting for it.
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt ExportFunction.Arn
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt WebLogs.Arn
@@ -647,6 +667,80 @@ Resources:
           FROM_ADDRESS: !Ref FromAddress
           CONFIG_SET: !Ref ConfigurationSet
           MAIL_BUCKET: !Ref MailBucket
+          EXPORT_FUNCTION: !Ref ExportFunction
+
+  # --- the zip export ---------------------------------------------------------
+  # Every note, photo and recording in one zip, built in the background
+  # (export_job.py) because it can outgrow an API answer. The web function
+  # invokes it and the page asks how it is going.
+
+  ExportLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-export"
+      RetentionInDays: 90
+
+  ExportRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: export
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem]
+                Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                # The photos and recordings that go in. Nothing under raw/.
+                Action: s3:GetObject
+                Resource: !Sub "${MailBucket.Arn}/media/*"
+              - Effect: Allow
+                # The zip, uploaded in parts when large; a replaced build
+                # deletes its own.
+                Action: [s3:PutObject, s3:AbortMultipartUpload, s3:DeleteObject]
+                Resource: !Sub "${MailBucket.Arn}/exports/*"
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt ExportLogs.Arn
+
+  ExportFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-export"
+      Description: Builds a subscriber's zip export with every photo and recording
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: release_notes.export_job.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt ExportRole.Arn
+      MemorySize: 1024
+      Timeout: 900
+      # The zip is written to local disk before it is uploaded. Billed only
+      # while a build runs.
+      EphemeralStorage:
+        Size: 10240
+      LoggingConfig:
+        LogGroup: !Ref ExportLogs
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          MAIL_BUCKET: !Ref MailBucket
+
+  # A failed build is marked failed and the person starts another; Lambda's
+  # own retries would only race the new one.
+  ExportInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref ExportFunction
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 0
 
   # --- bounces and complaints -----------------------------------------------
   # The configuration set already publishes delivery events to the alarms
@@ -795,6 +889,22 @@ Resources:
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions: [{ Name: FunctionName, Value: !Ref EventsFunction }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  ExportErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-export-errors"
+      AlarmDescription: A zip export failed to build. The page says so and offers to try again.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref ExportFunction }]
       Statistic: Sum
       Period: 900
       EvaluationPeriods: 1

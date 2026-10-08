@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>Settings: Release Notes</title>
 <link rel="stylesheet" href="/assets/site.css?v=7">
-<script src="/assets/app.js?v=8" defer></script>
+<script src="/assets/app.js?v=9" defer></script>
 </head>
 <body data-page="settings">
 <main>
@@ -59,14 +59,16 @@
       <button class="quiet" type="button" id="resume" hidden>Start them again now</button>
     </section>
 
-    <section class="section wide">
+    <section class="section wide" id="your-data">
       <h2 class="big">Your data</h2>
-      <p class="hint">Every note you&rsquo;ve kept, with its day and version, and your settings. Yours to keep.</p>
-      <p class="hint">When a note has a link, we visit the page once, as the note is saved, to keep its title. Nothing else is fetched.</p>
+      <p class="hint">Every note you&rsquo;ve kept, with its day and version, every photo and recording, and your settings, in one zip. Yours to keep.</p>
       <div class="row">
-        <a class="go" href="/api/export?format=md" download>Export as Markdown</a>
-        <a class="quiet" href="/api/export?format=json" download>or JSON</a>
+        <a class="go" href="/api/export/zip/file" data-zip-file hidden>Download the zip</a>
+        <button class="go" type="button" data-zip-start>Export everything</button>
       </div>
+      <p class="hint" data-zip-status role="status" hidden></p>
+      <p class="hint">Or the words alone: <a href="/api/export?format=md" download>Markdown</a> or <a href="/api/export?format=json" download>JSON</a>.</p>
+      <p class="hint">When a note has a link, we visit the page once, as the note is saved, to keep its title. Nothing else is fetched.</p>
     </section>
   </div>
 

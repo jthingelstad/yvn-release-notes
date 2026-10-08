@@ -28,7 +28,8 @@ there links here until this is up and done.
 5. **Pause**: no emails for N days (1-60) or until a date. Resume any time;
    otherwise the emails start again on their own.
 6. **Export your data**: every note, its day and version, plus the profile,
-   as Markdown and JSON. It arrives with sign-in, before anything else, so
+   as Markdown and JSON; since phase 3, a zip with those and every photo
+   and recording, built in the background (`export_job.py`). It arrives with sign-in, before anything else, so
    deleting an account never means losing what was in it.
 7. **Settings**: send time and location, sign out, delete account (after an
    export is offered, and with a fresh code).
@@ -153,7 +154,10 @@ notes.yourversionnumber.com
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |
 | `GET /api/me` | the profile, or `{new: true}` for an address signing up |
 | `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `status: "active"` to start again); the birthday cannot change |
-| `GET /api/export?format=md\|json` | everything, as a download (JSON by default) |
+| `GET /api/export?format=md\|json` | the words alone, as a download (JSON by default) |
+| `POST /api/export/zip` | start a zip of everything, photos and recordings too (202); answers with the build already going, if one is |
+| `GET /api/export/zip` | how it is going: `none`, `building`, `failed`, or `ready` with size, files and until |
+| `GET /api/export/zip/file` | the built zip: a redirect to a five-minute signed link |
 | `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
 | `GET /api/days/{date}` | one day: version and notes (each note's `parts` is its text split into strings and links by name) |

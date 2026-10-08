@@ -11,7 +11,8 @@ made-up notes, a past four-day pause and one reply token for trying
 /unsubscribe/; any other address is new. Deleting a note or the account
 deletes nothing real. Three days back, Ada replied with a made-up photo
 and a two-second recording, served from memory at /dev-media/ in place of
-the bucket's signed links. City search asks the real Open-Meteo unless
+the bucket's signed links. A zip export builds in a thread, two seconds
+after it is asked for, and downloads from /dev-media/ too. City search asks the real Open-Meteo unless
 --fake-places, and a link's page for its title unless --fake-links.
 Everything is forgotten when it stops.
 """
@@ -23,6 +24,7 @@ import math
 import os
 import struct
 import sys
+import threading
 import wave
 import zlib
 from datetime import datetime, timedelta
@@ -36,8 +38,8 @@ from urllib.parse import parse_qsl, urlsplit
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
-from fakes import FakeS3, FakeSES, FakeStore  # noqa: E402
-from release_notes import links, media, places, web  # noqa: E402
+from fakes import FakeLambda, FakeS3, FakeSES, FakeStore  # noqa: E402
+from release_notes import export_job, links, media, places, web  # noqa: E402
 
 FAKE_PLACES = [
     {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
@@ -79,9 +81,13 @@ def main():
     args = ap.parse_args()
     origin = f"http://localhost:{args.port}"
     os.environ.update(WEB_ORIGIN=origin, FROM_ADDRESS="notes@yourversionnumber.com", CONFIG_SET="dev", TABLE="dev",
-                      MAIL_BUCKET="dev")
+                      MAIL_BUCKET="dev", EXPORT_FUNCTION="dev-export")
 
     store, ses, s3 = FakeStore(), PrintingSES(), FakeS3()
+
+    def build_later(payload):  # the export function, as Lambda would run it
+        threading.Timer(2, export_job.handler, (payload, None), {"store": store, "s3": s3}).start()
+    lam = FakeLambda(then=build_later)
     store.emails["ada@example.com"] = "u1"
     store.profiles["u1"] = {
         "email": "ada@example.com", "birthday": "1981-06-14", "tz": "America/Chicago",
@@ -130,7 +136,7 @@ def main():
                 "queryStringParameters": dict(parse_qsl(url.query)) or None,
                 "body": self.rfile.read(length).decode() if length else None,
             }
-            r = web.handler(event, None, store=store, ses=ses, s3=s3, geocode=geocode, fetch=fetch)
+            r = web.handler(event, None, store=store, ses=ses, s3=s3, lam=lam, geocode=geocode, fetch=fetch)
             body = r["body"].encode()
             self.send_response(r["statusCode"])
             for k, v in r["headers"].items():
@@ -150,6 +156,8 @@ def main():
                     return self.send_error(404)
                 self.send_response(200)
                 self.send_header("content-type", obj["ContentType"])
+                if self.path.startswith("/dev-media/exports/"):
+                    self.send_header("content-disposition", 'attachment; filename="release-notes.zip"')
                 self.send_header("content-length", str(len(obj["Body"])))
                 self.end_headers()
                 return self.wfile.write(obj["Body"])

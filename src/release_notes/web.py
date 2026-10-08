@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from . import auth, export, links, media, places
+from . import auth, export, export_job, links, media, places
 from .compose import DOTS, from_header, next_release
 from .streak import ONE_DAY, compute_streak, pause_days
 from .version import compute_version
@@ -87,8 +87,8 @@ _clients: dict = {}  # kept across warm invocations
 
 
 class App:
-    def __init__(self, store, ses, now: int, s3=None):
-        self._store, self._ses, self._s3, self.now = store, ses, s3, now
+    def __init__(self, store, ses, now: int, s3=None, lam=None):
+        self._store, self._ses, self._s3, self._lam, self.now = store, ses, s3, lam, now
         self.origin = os.environ["WEB_ORIGIN"]
 
     @property
@@ -129,6 +129,16 @@ class App:
                 )
             self._s3 = _clients["s3"]
         return self._s3
+
+    @property
+    def lam(self):
+        if self._lam is None:
+            if "lambda" not in _clients:
+                import boto3
+
+                _clients["lambda"] = boto3.client("lambda")
+            self._lam = _clients["lambda"]
+        return self._lam
 
     def session(self, req: Request) -> dict | None:
         token = auth.cookie_token(req.cookies)
@@ -483,6 +493,69 @@ def export_data(app: App, req: Request) -> dict:
     return respond(200, body, headers={"content-type": ctype, "content-disposition": f'attachment; filename="{name}"'})
 
 
+# The zip, with every photo and recording, is built in the background
+# (export_job.py): start it, ask how it is going, then fetch it.
+
+ZIP_LINK = 300  # seconds the zip's signed link lasts
+
+
+def zip_view(item: dict | None, now: int) -> dict:
+    """none, building, ready (with size, files and until) or failed. A build
+    that has run past the function's limit failed, whatever it says."""
+    if not item or int(item.get("expires_at", 0)) <= now:
+        return {"status": "none"}
+    status = item.get("status")
+    if status == "building" and now - int(item["started_at"]) > export_job.BUILDING_FOR:
+        status = "failed"
+    if status == "ready":
+        return {"status": "ready", "size": int(item["size"]), "files": int(item.get("files", 0)),
+                "built_at": iso(int(item["finished_at"])), "until": iso(int(item["expires_at"]))}
+    return {"status": status}
+
+
+def export_zip(app: App, req: Request) -> dict:
+    user_id, _ = app.account(req)
+    return respond(200, zip_view(app.store.export(user_id), app.now))
+
+
+def export_zip_start(app: App, req: Request) -> dict:
+    """Start a build, or answer with the one already going."""
+    user_id, _ = app.account(req)
+    found = app.store.export(user_id)
+    if zip_view(found, app.now)["status"] == "building":
+        return respond(202, {"status": "building"})
+    if found and found.get("export_key"):
+        app.s3.delete_object(Bucket=os.environ["MAIL_BUCKET"], Key=found["export_key"])  # only the newest is kept
+    export_id = uuid.uuid4().hex
+    app.store.start_export(user_id, export_id, app.now, app.now + export_job.READY_FOR)
+    try:
+        app.lam.invoke(FunctionName=os.environ["EXPORT_FUNCTION"], InvocationType="Event",
+                       Payload=json.dumps({"user_id": user_id, "id": export_id}).encode())
+    except Exception:
+        app.store.finish_export(user_id, export_id, {"status": "failed", "finished_at": app.now})
+        log(event="export-start-failed", user=user_id)
+        raise Reject(502, "export-failed") from None
+    log(event="export-started", user=user_id)
+    return respond(202, {"status": "building"})
+
+
+def export_zip_file(app: App, req: Request) -> dict:
+    """The built zip: a redirect to a link that lasts five minutes."""
+    user_id, _ = app.account(req)
+    found = app.store.export(user_id)
+    if zip_view(found, app.now)["status"] != "ready":
+        raise Reject(404, "export")
+    name = f"release-notes-{datetime.fromtimestamp(int(found['finished_at']), timezone.utc):%Y-%m-%d}.zip"
+    url = app.s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": os.environ["MAIL_BUCKET"], "Key": found["export_key"], "ResponseContentType": "application/zip",
+                "ResponseContentDisposition": f'attachment; filename="{name}"'},
+        ExpiresIn=ZIP_LINK,
+    )
+    log(event="export-download", user=user_id)
+    return respond(302, {}, headers={"location": url})
+
+
 # --- notes --------------------------------------------------------------------
 # A note is filed under its day (store.py). The web writes its own,
 # NOTE#<day>#w-<id> with source=web, for today or any day back to the
@@ -765,6 +838,7 @@ def delete_me(app: App, req: Request) -> dict:
     items = app.store.user_items(user_id)
     raw = [i["raw_key"] for i in items if str(i.get("raw_key", "")).startswith("raw/")]
     files = raw + [k for i in items for k in media.keys(i)]
+    files += [i["export_key"] for i in items if str(i.get("export_key", "")).startswith("exports/")]
     for n in range(0, len(files), 1000):
         out = app.s3.delete_objects(
             Bucket=os.environ["MAIL_BUCKET"], Delete={"Objects": [{"Key": k} for k in files[n : n + 1000]], "Quiet": True}
@@ -794,6 +868,9 @@ ROUTES = [
     ("POST", "/api/me/delete-code", delete_code),
     ("GET", "/api/places", find_places),
     ("GET", "/api/export", export_data),
+    ("GET", "/api/export/zip", export_zip),
+    ("POST", "/api/export/zip", export_zip_start),
+    ("GET", "/api/export/zip/file", export_zip_file),
     ("GET", "/api/today", today),
     ("GET", "/api/days", days),
     ("GET", "/api/days/{date}", one_day),
@@ -820,7 +897,8 @@ def match(method: str, path: str):
     return None, None, ()
 
 
-def handler(event, context, *, store=None, ses=None, s3=None, geocode=places.search, fetch=links.fetch_title, clock=time.time):
+def handler(event, context, *, store=None, ses=None, s3=None, lam=None, geocode=places.search, fetch=links.fetch_title,
+            clock=time.time):
     req = Request(event)
     pattern, route, args = match(req.method, req.path)
     if not route:
@@ -829,7 +907,7 @@ def handler(event, context, *, store=None, ses=None, s3=None, geocode=places.sea
         response = respond(403, {"error": "origin"})
     else:
         try:
-            app = App(store, ses, int(clock()), s3)
+            app = App(store, ses, int(clock()), s3, lam)
             app.geocode, app.fetch = geocode, fetch
             response = route(app, req, *args)
         except Reject as r:

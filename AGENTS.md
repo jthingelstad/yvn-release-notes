@@ -65,7 +65,11 @@ runtime and is imported lazily so the tests run without it.
   their own files (the CSP is `'self'`), so no inline script or style,
   nothing remote; anything another service answers goes through `/api`.
 - `tests/fakes.py`: an in-memory table and SES for the web tests, also used
-  by `scripts/dev_server.py`.
+  by `scripts/dev_server.py`. The fakes do not check DynamoDB's request
+  shapes, so a new kind of table call also gets a test of the exact request
+  (`tests/test_store.py`). `table.meta.client` takes plain Python values like
+  the table does; typed values are typed twice (sign-up failed on live
+  until 2026-10-08 because of it).
 - Python stays the language for the web API too (decided 2026-10-08): one
   language, one copy of the version arithmetic, nothing to install.
 

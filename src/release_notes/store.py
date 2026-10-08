@@ -243,19 +243,13 @@ class Store:
 
     def create_subscriber(self, user_id: str, email: str, profile: dict) -> bool:
         """The EMAIL and PROFILE items in one transaction, so an address
-        signs up once. Returns False if the address already has an account."""
-        from boto3.dynamodb.types import TypeSerializer
+        signs up once. Returns False if the address already has an account.
 
-        ser = TypeSerializer()
+        The table's client takes plain Python values, as the table does: the
+        resource serializes them. Typed values would be typed twice."""
 
         def put(item):
-            return {
-                "Put": {
-                    "TableName": self.table.name,
-                    "Item": {k: ser.serialize(v) for k, v in item.items()},
-                    "ConditionExpression": "attribute_not_exists(pk)",
-                }
-            }
+            return {"Put": {"TableName": self.table.name, "Item": item, "ConditionExpression": "attribute_not_exists(pk)"}}
 
         try:
             self.table.meta.client.transact_write_items(
@@ -266,8 +260,8 @@ class Store:
             )
             return True
         except Exception as e:
-            code = (getattr(e, "response", None) or {}).get("Error", {}).get("Code")
-            if code == "TransactionCanceledException":
+            reasons = (getattr(e, "response", None) or {}).get("CancellationReasons") or []
+            if any(r.get("Code") == "ConditionalCheckFailed" for r in reasons):
                 return False
             raise
 

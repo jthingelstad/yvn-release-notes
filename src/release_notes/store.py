@@ -5,6 +5,7 @@
                                                 city, region, country, lat, lon; stopped_reason when stopped
     USER#<id>        DAY#<YYYY-MM-DD>           the email sent that day: version, token, message id
     USER#<id>        NOTE#<YYYY-MM-DD>#<msgid>  one reply: text, attachment list, raw S3 key
+    USER#<id>        NOTE#<YYYY-MM-DD>#w-<id>   one note written on the web: text, source=web
     TOKEN#<token>    TOKEN                      reply address -> user and day
     EMAIL#<address>  EMAIL                      address -> user (one subscriber per address)
     LOGIN#<hash>     LOGIN                      a sign-in's link and code (auth.py), 15 minutes
@@ -135,20 +136,43 @@ class Store:
     def get_token(self, token: str) -> dict | None:
         return self.table.get_item(Key={"pk": f"TOKEN#{token}", "sk": "TOKEN"}).get("Item")
 
-    def note_days(self, user_id: str) -> set[date]:
-        """The days this subscriber has a note for. Keys only: no note text."""
+    def _dates(self, user_id: str, prefix: str) -> set[str]:
+        # Keys only: no note text.
         days, kwargs = set(), {
             "KeyConditionExpression": "pk = :u AND begins_with(sk, :n)",
-            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":n": "NOTE#"},
+            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":n": prefix},
             "ProjectionExpression": "sk",
         }
         while True:
             page = self.table.query(**kwargs)
-            days.update(date.fromisoformat(i["sk"].split("#")[1]) for i in page.get("Items", []))
+            days.update(i["sk"].split("#")[1] for i in page.get("Items", []))
             if "LastEvaluatedKey" not in page:
                 break
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
         return days
+
+    def note_days(self, user_id: str) -> set[date]:
+        """The days this subscriber has a note for."""
+        return {date.fromisoformat(d) for d in self._dates(user_id, "NOTE#")}
+
+    def sent_days(self, user_id: str) -> set[str]:
+        """The days an email went out, as ISO dates."""
+        return self._dates(user_id, "DAY#")
+
+    def notes_between(self, user_id: str, first: str, last: str) -> list[dict]:
+        """Every note from one day through another, oldest first. '$'
+        sorts just after '#', so the range ends after the last day's notes."""
+        items, kwargs = [], {
+            "KeyConditionExpression": "pk = :u AND sk BETWEEN :a AND :b",
+            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":a": f"NOTE#{first}#", ":b": f"NOTE#{last}$"},
+        }
+        while True:
+            page = self.table.query(**kwargs)
+            items.extend(page.get("Items", []))
+            if "LastEvaluatedKey" not in page:
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        return sorted(items, key=lambda i: (i["sk"].split("#")[1], i.get("received_at", ""), i["sk"]))
 
     def day_notes(self, user_id: str, day: str) -> list[dict]:
         """Every note filed for one day, oldest first."""
@@ -177,6 +201,29 @@ class Store:
             if _failed_condition(e):
                 return False
             raise
+
+    def update_note(self, user_id: str, day: str, note_id: str, text: str, at: str) -> dict | None:
+        """Change a note's text. Returns the note, or None if there is none."""
+        try:
+            return self.table.update_item(
+                Key={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}"},
+                UpdateExpression="SET #t = :t, updated_at = :at",
+                ConditionExpression="attribute_exists(pk)",
+                ExpressionAttributeNames={"#t": "text"},
+                ExpressionAttributeValues={":t": text, ":at": at},
+                ReturnValues="ALL_NEW",
+            )["Attributes"]
+        except Exception as e:
+            if _failed_condition(e):
+                return None
+            raise
+
+    def delete_note(self, user_id: str, day: str, note_id: str) -> dict | None:
+        """Delete a note. Returns what it was (the caller deletes its raw
+        email), or None if there was none."""
+        return self.table.delete_item(
+            Key={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}"}, ReturnValues="ALL_OLD"
+        ).get("Attributes")
 
     def user_for_email(self, email: str) -> str | None:
         item = self.table.get_item(Key={"pk": f"EMAIL#{email}", "sk": "EMAIL"}).get("Item")

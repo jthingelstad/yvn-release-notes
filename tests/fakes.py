@@ -35,6 +35,49 @@ class FakeStore:
     def get_token(self, token):
         return self.tokens.get(token)
 
+    # notes and days live in items[user_id], as the table's rows
+
+    def _rows(self, user_id, prefix):
+        return [i for i in self.items.get(user_id, []) if i["sk"].startswith(prefix)]
+
+    def add_note(self, user_id, day, note_id, **fields):
+        self.items.setdefault(user_id, []).append({"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}", **fields})
+
+    def add_day(self, user_id, day, version="0.0.0"):
+        self.items.setdefault(user_id, []).append({"pk": f"USER#{user_id}", "sk": f"DAY#{day}", "version": version})
+
+    def note_days(self, user_id):
+        from datetime import date
+
+        return {date.fromisoformat(i["sk"].split("#")[1]) for i in self._rows(user_id, "NOTE#")}
+
+    def sent_days(self, user_id):
+        return {i["sk"].split("#")[1] for i in self._rows(user_id, "DAY#")}
+
+    def notes_between(self, user_id, first, last):
+        rows = [dict(i) for i in self._rows(user_id, "NOTE#") if first <= i["sk"].split("#")[1] <= last]
+        return sorted(rows, key=lambda i: (i["sk"].split("#")[1], i.get("received_at", ""), i["sk"]))
+
+    def put_note(self, user_id, day, note_id, note):
+        if any(i["sk"] == f"NOTE#{day}#{note_id}" for i in self.items.get(user_id, [])):
+            return False
+        self.add_note(user_id, day, note_id, **note)
+        return True
+
+    def update_note(self, user_id, day, note_id, text, at):
+        for i in self._rows(user_id, f"NOTE#{day}#{note_id}"):
+            if i["sk"] == f"NOTE#{day}#{note_id}":
+                i.update(text=text, updated_at=at)
+                return dict(i)
+        return None
+
+    def delete_note(self, user_id, day, note_id):
+        rows = self.items.get(user_id, [])
+        for n, i in enumerate(rows):
+            if i["sk"] == f"NOTE#{day}#{note_id}":
+                return rows.pop(n)
+        return None
+
     def user_items(self, user_id):
         return [{"pk": f"USER#{user_id}", "sk": "PROFILE", **self.profiles[user_id]}] + self.items.get(user_id, [])
 
@@ -97,3 +140,14 @@ class FakeSES:
             raise ConnectionError("down")
         self.sent.append(kw)
         return {"MessageId": "m1"}
+
+
+class FakeS3:
+    def __init__(self, fail=False):
+        self.deleted, self.fail = [], fail
+
+    def delete_object(self, **kw):
+        if self.fail:
+            raise ConnectionError("down")
+        self.deleted.append(kw)
+        return {}

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Today: Release Notes</title>
+<link rel="stylesheet" href="/assets/site.css?v=4">
+<script src="/assets/app.js?v=3" defer></script>
+</head>
+<body data-page="today">
+<main>
+  <header class="bar">
+    <a class="brand" href="/">Release Notes</a>
+    <a href="/today/" aria-current="page">Today</a>
+    <a href="/timeline/">Timeline</a>
+    <a href="/settings/">Settings</a>
+  </header>
+
+  <div id="day" hidden>
+    <p class="dateline" id="date"></p>
+    <p class="vnum huge tight" id="v"></p>
+    <p class="dots" id="dots" aria-hidden="true"></p>
+    <p class="hint" id="next"></p>
+
+    <h2 class="big notes-head">Today&rsquo;s release notes</h2>
+    <div class="notes" id="notes"></div>
+  <form id="note-form" class="note-form" novalidate>
+    <label>Add to today
+      <textarea name="text" rows="3" placeholder="Anything about the day"></textarea>
+    </label>
+    <button class="go" type="submit">Add note</button>
+    <p class="error" role="alert" hidden></p>
+  </form>
+
+    <p class="streak" id="streak"></p>
+    <p class="hint"><a href="/day/">Add notes for another day</a></p>
+  </div>
+</main>
+</body>
+</html>

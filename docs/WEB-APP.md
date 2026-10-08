@@ -40,7 +40,8 @@ there links here until this is up and done.
 - A backfilled day counts toward the streak, the same as a late reply.
 - Paused days neither break the streak nor add to it.
 - Any of your own notes can be edited or deleted, emailed ones included.
-  Deleting an emailed note deletes its raw message from S3 as well.
+  Deleting an emailed note deletes its raw message from S3 as well. The
+  bucket is versioned, so the old version lingers 30 days, then expires.
 - The birthday is locked after sign-up, because changing it renumbers every
   day you have kept.
 - No analytics on the app.
@@ -100,9 +101,13 @@ notes.yourversionnumber.com
   receives only the headers it reads (Origin, Content-Type, Accept, the
   viewer address) and only that cookie.
 - **Pages**: `/` (sign in, with a live example number from `/api/sample`),
-  `/signin/` (the link lands here, token in the fragment), `/settings/`.
-  PR 4 adds `/today/`, `/timeline/` and `/day/`, and moves where sign-in
-  lands from settings to today.
+  `/signin/` (the link lands here, token in the fragment), `/setup/` (a new
+  address's three questions), `/today/` (where sign-in lands), `/timeline/`,
+  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/settings/`, `/unsubscribe/`.
+- **The timeline** lists every day with an email or a note, newest first,
+  and today. Days with neither (before sign-up, or while stopped) are left
+  out unless a note is written for them. A note written or replied after
+  its day is "added later".
 - **The sender** skips a paused subscriber, and a stopped one: `status` is
   `active` or `stopped`, with `stopped_reason` `unsubscribed`, `bounce` or
   `complaint`. Hard bounces and complaints arrive through the alarms topic
@@ -125,7 +130,8 @@ notes.yourversionnumber.com
 | `GET /api/me` | the profile, or `{new: true}` for an address signing up |
 | `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `status: "active"` to start again); the birthday cannot change |
 | `GET /api/export?format=md\|json` | everything, as a download (JSON by default) |
-| `GET /api/days?before=&limit=` | the timeline |
+| `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
+| `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
 | `GET /api/days/{date}` | one day: version and notes |
 | `POST /api/days/{date}/notes` | write for today or a past day |
 | `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete |

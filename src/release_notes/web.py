@@ -18,12 +18,13 @@ import re
 import time
 import uuid
 from base64 import b64decode
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from . import auth, export, places
-from .compose import from_header
+from .compose import DOTS, from_header, next_release
+from .streak import ONE_DAY, compute_streak
 from .version import compute_version
 
 MAX_BODY = 64 * 1024
@@ -86,8 +87,8 @@ _clients: dict = {}  # kept across warm invocations
 
 
 class App:
-    def __init__(self, store, ses, now: int):
-        self._store, self._ses, self.now = store, ses, now
+    def __init__(self, store, ses, now: int, s3=None):
+        self._store, self._ses, self._s3, self.now = store, ses, s3, now
         self.origin = os.environ["WEB_ORIGIN"]
 
     @property
@@ -111,6 +112,16 @@ class App:
                 _clients["ses"] = boto3.client("sesv2")
             self._ses = _clients["ses"]
         return self._ses
+
+    @property
+    def s3(self):
+        if self._s3 is None:
+            if "s3" not in _clients:
+                import boto3
+
+                _clients["s3"] = boto3.client("s3")
+            self._s3 = _clients["s3"]
+        return self._s3
 
     def session(self, req: Request) -> dict | None:
         token = auth.cookie_token(req.cookies)
@@ -136,6 +147,13 @@ class App:
         if "user_id" not in s:
             raise Reject(403, "no-account")
         return s
+
+    def account(self, req: Request) -> tuple[str, dict]:
+        s = self.subscriber(req)
+        p = self.store.profile(s["user_id"])
+        if not p:
+            raise Reject(403, "no-account")
+        return s["user_id"], p
 
 
 # --- routes ------------------------------------------------------------------
@@ -429,6 +447,165 @@ def export_data(app: App, req: Request) -> dict:
     return respond(200, body, headers={"content-type": ctype, "content-disposition": f'attachment; filename="{name}"'})
 
 
+# --- notes --------------------------------------------------------------------
+# A note is filed under its day (store.py). The web writes its own,
+# NOTE#<day>#w-<id> with source=web, for today or any day back to the
+# birthday; an emailed note can be edited or deleted the same way, and
+# deleting one deletes the email it came in.
+
+MAX_NOTE = 20_000
+DAYS_PAGE, DAYS_MAX = 30, 100
+
+
+def local_today(p: dict, now: int) -> date:
+    return datetime.fromtimestamp(now, ZoneInfo(p["tz"])).date()
+
+
+def day_from(p: dict, value: str, now: int) -> date:
+    """A day this subscriber can have notes for: birthday to today."""
+    try:
+        day = date.fromisoformat(value)
+    except ValueError:
+        raise Reject(400, "date") from None
+    if not date.fromisoformat(p["birthday"]) <= day <= local_today(p, now):
+        raise Reject(400, "date")
+    return day
+
+
+def text_from(body: dict) -> str:
+    text = body.get("text")
+    if not isinstance(text, str):
+        raise Reject(400, "text")
+    text = text.replace("\r\n", "\n").strip()
+    if not text:
+        raise Reject(400, "text")
+    if len(text) > MAX_NOTE:
+        raise Reject(400, "too-long")
+    return text
+
+
+def note_view(item: dict, tz: str) -> dict:
+    _, day, note_id = item["sk"].split("#", 2)
+    at = item.get("received_at") or ""
+    view = {"id": note_id, "source": item.get("source", "email"), "text": item.get("text", ""), "at": at}
+    if item.get("updated_at"):
+        view["edited_at"] = item["updated_at"]
+    if item.get("attachments"):
+        view["attachments"] = len(item["attachments"])
+    try:
+        # Written or sent after its day was over: "added later".
+        local = datetime.fromisoformat(at.replace("Z", "+00:00")).astimezone(ZoneInfo(tz)).date()
+        view["late"] = local.isoformat() > day
+    except ValueError:
+        pass
+    return view
+
+
+def day_view(p: dict, day: str, notes: list[dict]) -> dict:
+    v = compute_version(date.fromisoformat(p["birthday"]), date.fromisoformat(day))
+    return {"date": day, "version": str(v), "notes": [note_view(n, p["tz"]) for n in notes]}
+
+
+def today(app: App, req: Request) -> dict:
+    """Today's page: the number, the year so far, today's notes, the streak."""
+    user_id, p = app.account(req)
+    day = local_today(p, app.now)
+    v = compute_version(date.fromisoformat(p["birthday"]), day)
+    have = app.store.note_days(user_id)
+    # Today counts once it has a note; until then the run ends yesterday.
+    s = compute_streak(have, day + ONE_DAY if day in have else day)
+    view = day_view(p, day.isoformat(), app.store.notes_between(user_id, day.isoformat(), day.isoformat()))
+    view.update(
+        tz=p["tz"],
+        dots=round(v.patch / v.cycle_days * DOTS),
+        next={"version": next_release(v), "date": (day + timedelta(days=v.days_until)).isoformat()},
+        streak={"current": s.current, "longest": s.longest, "today": day in have},
+    )
+    return respond(200, view)
+
+
+def days(app: App, req: Request) -> dict:
+    """The timeline, newest first: every day with an email or a note, and
+    today. ?before= pages back from a day."""
+    user_id, p = app.account(req)
+    day = local_today(p, app.now).isoformat()
+    try:
+        limit = min(max(int(req.query.get("limit") or DAYS_PAGE), 1), DAYS_MAX)
+    except ValueError:
+        raise Reject(400, "limit") from None
+    before = req.query.get("before")
+    if before is not None:
+        before = day_from(p, before, app.now).isoformat()
+    dated = app.store.sent_days(user_id) | {d.isoformat() for d in app.store.note_days(user_id)}
+    if before is None:
+        dated.add(day)
+    picked = sorted((d for d in dated if p["birthday"] <= d <= day and (before is None or d < before)), reverse=True)
+    page = picked[:limit]
+    by_day: dict[str, list[dict]] = {d: [] for d in page}
+    if page:
+        for n in app.store.notes_between(user_id, page[-1], page[0]):
+            by_day.setdefault(n["sk"].split("#")[1], []).append(n)
+    return respond(
+        200,
+        {
+            "today": day,
+            "tz": p["tz"],
+            "days": [day_view(p, d, by_day[d]) for d in page],
+            "before": page[-1] if len(picked) > limit else None,
+        },
+    )
+
+
+def one_day(app: App, req: Request, value: str) -> dict:
+    user_id, p = app.account(req)
+    day = day_from(p, value, app.now).isoformat()
+    view = day_view(p, day, app.store.notes_between(user_id, day, day))
+    view.update(tz=p["tz"], today=day == local_today(p, app.now).isoformat())
+    return respond(200, view)
+
+
+def add_note(app: App, req: Request, value: str) -> dict:
+    user_id, p = app.account(req)
+    day = day_from(p, value, app.now)
+    text = text_from(req.json())
+    note_id = "w-" + uuid.uuid4().hex[:20]
+    item = {
+        "version": str(compute_version(date.fromisoformat(p["birthday"]), day)),
+        "text": text,
+        "source": "web",
+        "received_at": iso(app.now),
+    }
+    app.store.put_note(user_id, day.isoformat(), note_id, item)
+    log(event="note-added", user=user_id, date=day.isoformat())
+    return respond(201, note_view({"sk": f"NOTE#{day.isoformat()}#{note_id}", **item}, p["tz"]))
+
+
+def edit_note(app: App, req: Request, value: str, note_id: str) -> dict:
+    user_id, p = app.account(req)
+    day = day_from(p, value, app.now).isoformat()
+    item = app.store.update_note(user_id, day, note_id, text_from(req.json()), iso(app.now))
+    if not item:
+        raise Reject(404, "note")
+    log(event="note-edited", user=user_id, date=day)
+    return respond(200, note_view(item, p["tz"]))
+
+
+def delete_note(app: App, req: Request, value: str, note_id: str) -> dict:
+    user_id, p = app.account(req)
+    day = day_from(p, value, app.now).isoformat()
+    note = next((n for n in app.store.notes_between(user_id, day, day) if n["sk"].split("#", 2)[2] == note_id), None)
+    if not note:
+        raise Reject(404, "note")
+    raw = note.get("raw_key", "")
+    if raw.startswith("raw/"):
+        # The email goes first, so a failure leaves the note to try again.
+        # The bucket is versioned: the old version expires 30 days later.
+        app.s3.delete_object(Bucket=os.environ["MAIL_BUCKET"], Key=raw)
+    app.store.delete_note(user_id, day, note_id)
+    log(event="note-deleted", user=user_id, date=day, source=note.get("source", "email"))
+    return respond(200, {"ok": True})
+
+
 ROUTES = [
     ("GET", "/api/health", health),
     ("GET", "/api/sample", sample),
@@ -439,6 +616,12 @@ ROUTES = [
     ("PUT", "/api/me", update_me),
     ("GET", "/api/places", find_places),
     ("GET", "/api/export", export_data),
+    ("GET", "/api/today", today),
+    ("GET", "/api/days", days),
+    ("GET", "/api/days/{date}", one_day),
+    ("POST", "/api/days/{date}/notes", add_note),
+    ("PUT", "/api/days/{date}/notes/{id}", edit_note),
+    ("DELETE", "/api/days/{date}/notes/{id}", delete_note),
     ("GET", "/api/unsubscribe", unsubscribe),
     ("POST", "/api/unsubscribe", unsubscribe),
 ]
@@ -456,7 +639,7 @@ def match(method: str, path: str):
     return None, None, ()
 
 
-def handler(event, context, *, store=None, ses=None, geocode=places.search, clock=time.time):
+def handler(event, context, *, store=None, ses=None, s3=None, geocode=places.search, clock=time.time):
     req = Request(event)
     pattern, route, args = match(req.method, req.path)
     if not route:
@@ -465,7 +648,7 @@ def handler(event, context, *, store=None, ses=None, geocode=places.search, cloc
         response = respond(403, {"error": "origin"})
     else:
         try:
-            app = App(store, ses, int(clock()))
+            app = App(store, ses, int(clock()), s3)
             app.geocode = geocode
             response = route(app, req, *args)
         except Reject as r:

@@ -62,6 +62,10 @@ const SAY = {
   'send-time': 'Pick a time for your email.',
   'places-failed': 'The city search isn’t answering. Try again in a minute.',
   token: 'This link isn’t one we sent. Sign in to manage your emails.',
+  date: 'Pick a day between your birthday and today.',
+  text: 'Write something first.',
+  'too-long': 'That’s longer than one note can hold. Split it in two.',
+  note: 'That note isn’t here any more. Reload the page.',
 };
 
 function say(form, data) {
@@ -80,7 +84,7 @@ function quiet(form) {
 
 // Where a signed-in person lands.
 function home(isNew) {
-  return isNew ? '/setup/' : '/settings/';
+  return isNew ? '/setup/' : '/today/';
 }
 
 // Every quarter hour, as the sender allows.
@@ -145,6 +149,157 @@ function placePicker(root, onPick) {
       show(r.data.places, null);
     }, 300);
   });
+}
+
+// --- notes -------------------------------------------------------------------
+
+// "Thursday, October 8", with the year when it isn't this one.
+function dayName(iso, thisYear) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const opts = { weekday: 'long', month: 'long', day: 'numeric' };
+  if (thisYear && y !== thisYear) opts.year = 'numeric';
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', opts);
+}
+
+// A stored UTC time, read in the subscriber's zone.
+function zoneTime(at, tz) {
+  return new Date(at).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
+}
+function zoneShortDate(at, tz) {
+  return new Date(at).toLocaleDateString('en-US', { timeZone: tz, month: 'short', day: 'numeric' });
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function button(text, cls, onClick) {
+  const b = el('button', cls, text);
+  b.type = 'button';
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function noteText(n) {
+  return n.text || 'Attachments only. They are in the original email.';
+}
+
+function noteMeta(n, tz) {
+  const when = n.at ? (n.late ? `${zoneShortDate(n.at, tz)}, ${zoneTime(n.at, tz)}` : zoneTime(n.at, tz)) : '';
+  const parts = [when, n.source === 'web' ? 'on the web' : 'by email'];
+  if (n.attachments) parts.push(n.attachments === 1 ? '1 attachment in the email' : `${n.attachments} attachments in the email`);
+  if (n.edited_at) parts.push('edited');
+  return parts.filter(Boolean).join(' · ');
+}
+
+// A day's notes, each with Edit and Delete. onChange() runs after either.
+function renderNotes(root, day, notes, tz, onChange) {
+  root.textContent = '';
+  for (const n of notes) {
+    const item = el('article', 'note');
+    const meta = el('p', 'meta', noteMeta(n, tz));
+    const text = el('p', 'text', noteText(n));
+    const actions = el('div', 'actions');
+    const path = `/api/days/${day}/notes/${encodeURIComponent(n.id)}`;
+
+    const edit = () => {
+      const form = el('form', 'edit');
+      form.noValidate = true;
+      const area = el('textarea');
+      area.name = 'text';
+      area.rows = Math.min(12, Math.max(3, n.text.split('\n').length + 1));
+      area.value = n.text;
+      area.setAttribute('aria-label', 'Edit this note');
+      const save = el('button', 'go small', 'Save');
+      save.type = 'submit';
+      const row = el('div', 'row');
+      row.append(save, button('Cancel', 'quiet', () => renderNotes(root, day, notes, tz, onChange)));
+      const err = el('p', 'error');
+      err.setAttribute('role', 'alert');
+      err.hidden = true;
+      form.append(area, row, err);
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        busy(form, async () => {
+          quiet(form);
+          const r = await api('PUT', path, { text: area.value });
+          if (!r.ok) return say(form, r.data);
+          onChange();
+        });
+      });
+      text.replaceWith(form);
+      actions.hidden = true;
+      area.focus();
+    };
+
+    const ask = () => {
+      actions.textContent = '';
+      const q = el('span', 'confirm', n.source === 'web' ? 'Delete this note?' : 'Delete this note and the email it came in?');
+      const yes = button('Delete', 'quiet danger', async () => {
+        yes.disabled = true;
+        const r = await api('DELETE', path);
+        if (!r.ok && r.status !== 404) {
+          yes.disabled = false;
+          q.textContent = SAY[r.data.error] || 'That didn’t work. Try again.';
+          return;
+        }
+        onChange();
+      });
+      actions.append(q, yes, button('Keep it', 'quiet', () => renderNotes(root, day, notes, tz, onChange)));
+    };
+
+    actions.append(button('Edit', 'quiet', edit), button('Delete', 'quiet', ask));
+    item.append(meta, text, actions);
+    root.append(item);
+  }
+}
+
+// The form that adds a note to a day. onAdded() runs after.
+function noteForm(form, getDay, onAdded) {
+  form.text.addEventListener('input', () => quiet(form));
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    busy(form, async () => {
+      quiet(form);
+      if (!form.text.value.trim()) return say(form, { error: 'text' });
+      const r = await api('POST', `/api/days/${getDay()}/notes`, { text: form.text.value });
+      if (!r.ok) return say(form, r.data);
+      form.text.value = '';
+      onAdded();
+    });
+  });
+}
+
+function streakLine(root, s) {
+  root.textContent = '';
+  const days = (n) => (n === 1 ? '1 day' : `${n} days`);
+  let head, tail = '';
+  if (!s.current) {
+    head = 'Every note starts a streak.';
+    if (s.longest) tail = `Your longest is ${days(s.longest)}.`;
+  } else if (s.current >= s.longest && s.current > 1 && s.today) {
+    head = `${days(s.current)} in a row, your longest yet.`;
+  } else {
+    head = `${days(s.current)} in a row.`;
+    if (s.longest > s.current) tail = `Your longest is ${days(s.longest)}.`;
+    if (!s.today) tail = (tail ? tail + ' ' : '') + `A note today makes it ${s.current + 1}.`;
+  }
+  root.append(el('strong', '', head));
+  if (tail) root.append(' ', el('span', 'aside', tail));
+}
+
+// Send anyone without an account where they belong. Returns true if sent.
+function bounce(r) {
+  if (r.status === 401) { location.replace('/'); return true; }
+  if (r.status === 403 && r.data.error === 'no-account') { location.replace(home(true)); return true; }
+  return false;
+}
+
+function failed(root) {
+  root.textContent = 'Couldn’t load this just now. Reload to try again.';
 }
 
 const STOPPED = {
@@ -351,6 +506,115 @@ const pages = {
       location.replace('/');
     });
     fill();
+  },
+
+  async today() {
+    const view = $('#day');
+    const load = async () => {
+      const r = await api('GET', '/api/today');
+      if (bounce(r)) return;
+      if (!r.ok) return failed(view.parentNode.appendChild(el('p', 'hint spaced')));
+      const t = r.data;
+      $('#date').textContent = dayName(t.date);
+      vnum($('#v'), t.version);
+      const dots = $('#dots');
+      dots.textContent = '';
+      for (let i = 0; i < 24; i++) dots.append(el('span', i < t.dots ? 'on' : ''));
+      const next = $('#next');
+      next.textContent = '';
+      const [, nm, nd] = t.next.date.split('-').map(Number);
+      const on = new Date(2000, nm - 1, nd).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+      next.append(el('span', 'mono', t.next.version), ` ships ${on}.`);
+      renderNotes($('#notes'), t.date, t.notes, t.tz, load);
+      streakLine($('#streak'), t.streak);
+      view.hidden = false;
+      return t;
+    };
+    const t = await load();
+    if (t) noteForm($('#note-form'), () => t.date, load);
+  },
+
+  async timeline() {
+    const list = $('#days'), more = $('#earlier');
+    let before = null, thisYear = null;
+
+    const day = (d, today) => {
+      const sec = el('section', 'tday');
+      const head = el('a', 'tday-head');
+      head.href = d.date === today ? '/today/' : `/day/?d=${d.date}`;
+      const v = el('span', 'vnum small');
+      vnum(v, d.version);
+      head.append(v, el('span', 'when', (d.date === today ? 'Today, ' : '') + dayName(d.date, thisYear)));
+      sec.append(head);
+      if (!d.notes.length) {
+        const p = el('p', 'hint', 'No notes. ');
+        const add = el('a', '', 'Add some');
+        add.href = head.href;
+        p.append(add);
+        sec.append(p);
+        return sec;
+      }
+      for (const n of d.notes) sec.append(el('p', 'text', noteText(n)));
+      let count = d.notes.length === 1 ? '1 note' : `${d.notes.length} notes`;
+      if (d.notes.every((n) => n.late)) count += ', added later';
+      sec.append(el('p', 'count', count));
+      return sec;
+    };
+
+    const load = async () => {
+      more.disabled = true;
+      const r = await api('GET', '/api/days' + (before ? `?before=${before}` : ''));
+      if (bounce(r)) return;
+      more.disabled = false;
+      if (!r.ok) return failed(list.appendChild(el('p', 'hint')));
+      thisYear = thisYear || Number(r.data.today.slice(0, 4));
+      for (const d of r.data.days) list.append(day(d, r.data.today));
+      before = r.data.before;
+      more.hidden = !before;
+    };
+    more.addEventListener('click', load);
+    await load();
+  },
+
+  async day() {
+    const me = await api('GET', '/api/me');
+    if (bounce(me)) return;
+    if (me.data.new) return location.replace(home(true));
+    const pick = $('#pick'), view = $('#day'), form = $('#note-form');
+    pick.min = me.data.birthday;
+    pick.max = me.data.today;
+    const asked = new URLSearchParams(location.search).get('d');
+    const yesterday = (() => {
+      const [y, m, d] = me.data.today.split('-').map(Number);
+      const t = new Date(Date.UTC(y, m - 1, d - 1));
+      return t.toISOString().slice(0, 10);
+    })();
+    let current = asked && asked >= pick.min && asked <= pick.max ? asked : yesterday;
+    if (current < pick.min) current = pick.min;
+    pick.value = current;
+
+    const load = async () => {
+      const r = await api('GET', `/api/days/${current}`);
+      if (bounce(r)) return;
+      if (!r.ok) { view.hidden = true; return; }
+      const d = r.data;
+      $('#date').textContent = dayName(d.date, Number(me.data.today.slice(0, 4)));
+      vnum($('#v'), d.version);
+      vnum($('#for-v'), d.version);
+      $('#save-v').textContent = d.version;
+      renderNotes($('#notes'), d.date, d.notes, d.tz, load);
+      $('#none').hidden = d.notes.length > 0;
+      view.hidden = false;
+    };
+    pick.addEventListener('change', () => {
+      if (!pick.value || pick.value < pick.min || pick.value > pick.max) return;
+      current = pick.value;
+      history.replaceState(null, '', `/day/?d=${current}`);
+      quiet(form);
+      load();
+    });
+    noteForm(form, () => current, load);
+    load();
   },
 
   unsubscribe() {

@@ -23,6 +23,17 @@ Parameters:
     Type: String
     Default: projects-ops-alerts
     Description: The account's alerts queue. Its policy must list this stack's alarm topic.
+  WebDomain:
+    Type: String
+    Default: notes.yourversionnumber.com
+  WebCertificateArn:
+    Type: String
+    Default: ""
+    AllowedPattern: ^$|^arn:aws:acm:us-east-1:[0-9]{12}:certificate/[0-9a-f-]+$
+    Description: The us-east-1 ACM certificate for WebDomain, issued outside the stack (as Drop's is). deploy.sh passes it once ACM says ISSUED; until then the distribution answers on its cloudfront.net name only.
+
+Conditions:
+  HasWebCertificate: !Not [!Equals [!Ref WebCertificateArn, ""]]
 
 Resources:
   # --- storage ------------------------------------------------------------
@@ -45,6 +56,11 @@ Resources:
       DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
+      # Sign-in links, sessions and rate-limit counters carry expires_at
+      # (epoch seconds) and clear themselves. Nothing kept for good sets it.
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
 
   # Raw inbound mail. Filed replies are kept: their photos and audio live
   # only here until a later phase extracts them. Ignored mail expires.
@@ -306,6 +322,271 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt SenderSchedule.Arn
 
+  # --- web app: notes.yourversionnumber.com -----------------------------------
+  #
+  # The same shape as Drop and Thingy: CloudFront in front, a private S3
+  # bucket of static pages as the default origin, and an HTTP API for /api/*.
+  # Same origin for both, so there is no CORS and the session cookie is
+  # host-only.
+
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-web-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # ListBucket so a missing page is an honest 404, not S3's 403.
+          - Sid: CloudFrontReads
+            Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: [s3:GetObject, s3:ListBucket]
+            Resource:
+              - !GetAtt WebBucket.Arn
+              - !Sub "${WebBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${WebDistribution}"
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt WebBucket.Arn
+              - !Sub "${WebBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  WebOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-web"
+        Description: Private access from the Release Notes distribution to its web bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # /settings/ -> /settings/index.html. Static pages only; /api/* never runs it.
+  WebIndexFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-index"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Resolve directory indexes for the static pages
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+          if (uri.charAt(uri.length - 1) === '/') {
+            request.uri = uri + 'index.html';
+          } else if (uri.lastIndexOf('.') < uri.lastIndexOf('/')) {
+            request.uri = uri + '/index.html';
+          }
+          return request;
+        }
+
+  WebCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "${AWS::StackName}-static"
+        Comment: Static pages, honouring the Cache-Control deploy.sh sets
+        DefaultTTL: 300
+        MinTTL: 0
+        MaxTTL: 86400
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig: { CookieBehavior: none }
+          HeadersConfig: { HeaderBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+
+  # Pages load only their own files: no inline script or style, nothing
+  # remote. Lookups that need another service (the city search) go through
+  # /api, so connect-src stays 'self'.
+  WebHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "${AWS::StackName}-web"
+        Comment: Security headers for notes.yourversionnumber.com
+        SecurityHeadersConfig:
+          ContentSecurityPolicy:
+            ContentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+            Override: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: same-origin
+            Override: true
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 63072000
+            IncludeSubdomains: false
+            Preload: false
+            Override: true
+
+  WebDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: Release Notes web app and its same-origin API
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        Aliases: !If [HasWebCertificate, [!Ref WebDomain], !Ref AWS::NoValue]
+        ViewerCertificate: !If
+          - HasWebCertificate
+          - AcmCertificateArn: !Ref WebCertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: web
+            DomainName: !GetAtt WebBucket.RegionalDomainName
+            OriginAccessControlId: !Ref WebOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: api
+            DomainName: !Sub "${WebApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}"
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: web
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: !Ref WebCachePolicy
+          ResponseHeadersPolicyId: !Ref WebHeadersPolicy
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt WebIndexFunction.FunctionMetadata.FunctionARN
+        CacheBehaviors:
+          # Managed policies: CachingDisabled, AllViewerExceptHostHeader.
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+            ResponseHeadersPolicyId: !Ref WebHeadersPolicy
+
+  WebApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-web"
+      Description: The Release Notes web app's API, reached through CloudFront at /api/*
+      ProtocolType: HTTP
+
+  WebApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt WebFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  WebApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebApi
+      RouteKey: ANY /api/{proxy+}
+      Target: !Sub "integrations/${WebApiIntegration}"
+
+  # A ceiling for the whole API, well above one person's use. Per-address
+  # and per-IP limits on sign-in mail live in the function.
+  WebApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebApi
+      StageName: $default
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+
+  WebInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WebApi}/*"
+
+  WebLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-web"
+      RetentionInDays: 90
+
+  # Logs only for now. Table access arrives with the sign-in that needs it.
+  WebRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: web
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt WebLogs.Arn
+
+  WebFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-web"
+      Description: The Release Notes web app's API
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: release_notes.web.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt WebRole.Arn
+      MemorySize: 256
+      Timeout: 10
+      LoggingConfig:
+        LogGroup: !Ref WebLogs
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          WEB_ORIGIN: !Sub "https://${WebDomain}"
+
   # --- alarms -----------------------------------------------------------------
 
   AlarmTopic:
@@ -361,6 +642,22 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlarmTopic]
 
+  WebErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-web-errors"
+      AlarmDescription: The web app's API failed a request.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref WebFunction }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
   InboundErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -386,6 +683,13 @@ Outputs:
     Value: !Ref ReceiptRuleSet
   AlarmTopicArn:
     Value: !Ref AlarmTopic
+  WebBucketName:
+    Value: !Ref WebBucket
+  WebDistributionId:
+    Value: !Ref WebDistribution
+  WebDistributionDomain:
+    Description: Where the notes CNAME points
+    Value: !GetAtt WebDistribution.DomainName
   DkimRecord1:
     Value: !Sub "${EmailIdentity.DkimDNSTokenName1} CNAME ${EmailIdentity.DkimDNSTokenValue1}"
   DkimRecord2:

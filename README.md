@@ -21,9 +21,10 @@ reply email
                        DMARC, then files the text as that day's note in DynamoDB
 ```
 
-- **Email is the whole interface.** There is no web app and no sign-up form.
-  Every note arrives by email, from the subscriber's own address, to a reply
-  address only their inbox has seen.
+- **Email first, with a web app on the way.** Every day starts with the
+  email, and replies are filed from the subscriber's own address only. A web
+  app at notes.yourversionnumber.com (sign-up, past days, pause, export) is
+  being built; `docs/WEB-APP.md` is the plan.
 - **A note belongs to the day of the email it answers.** Reply to Tuesday's
   email on Thursday and it is still Tuesday's note.
 - **Reply as often as you like.** Every reply to a day's email is kept, and

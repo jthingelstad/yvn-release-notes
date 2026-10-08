@@ -231,11 +231,12 @@ def reply_raw(from_addr="ada@example.com", auth="amazonses.com; spf=pass; dkim=p
     return msg.as_bytes()
 
 
-def ses_event(from_addr="ada@example.com", recipient=f"n-{TOKEN}@in.yourversionnumber.com", dmarc="PASS", dkim="PASS", spam="PASS"):
+def ses_event(from_addr="ada@example.com", recipient=f"n-{TOKEN}@in.yourversionnumber.com", dmarc="PASS", dkim="PASS", spam="PASS",
+              message_id="m1", timestamp="2026-10-08T02:10:00.000Z"):
     return {
         "mail": {
-            "messageId": "m1",
-            "timestamp": "2026-10-08T02:10:00.000Z",
+            "messageId": message_id,
+            "timestamp": timestamp,
             "commonHeaders": {"from": [f"Ada <{from_addr}>"], "subject": "Re: You're 5.0.0 today"},
         },
         "receipt": {
@@ -271,6 +272,13 @@ class Inbound(unittest.TestCase):
         outcome, _ = self.run_one(ses_event())
         self.assertEqual(outcome, "note")
         self.assertEqual(len(self.store.notes), 1)
+
+    def test_every_reply_to_a_days_email_is_kept(self):
+        self.run_one(ses_event())
+        later = ses_event(message_id="m2", timestamp="2026-10-08T04:30:00.000Z")
+        self.assertEqual(self.run_one(later)[0], "note")
+        self.assertEqual(sorted(self.store.notes), [("u1", "2026-10-07", "m1"), ("u1", "2026-10-07", "m2")])
+        self.assertEqual(self.store.note_days("u1"), {date(2026, 10, 7)})
 
     def test_from_mismatch_ignored(self):
         outcome, s3 = self.run_one(ses_event(from_addr="someone@example.com"), reply_raw("someone@example.com"))

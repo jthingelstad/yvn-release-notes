@@ -9,6 +9,9 @@
 
 A note is filed under the day of the email it answers, not the day it
 arrived, so a reply to Tuesday's email sent on Thursday is Tuesday's note.
+A day can have any number of notes, one per reply; together, in the order
+they arrived, they are that day's release notes (notes.py). The message id in
+the key is random, so key order is not arrival order: sort by received_at.
 """
 
 from dataclasses import dataclass
@@ -128,6 +131,20 @@ class Store:
                 break
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
         return days
+
+    def day_notes(self, user_id: str, day: str) -> list[dict]:
+        """Every note filed for one day, oldest first."""
+        items, kwargs = [], {
+            "KeyConditionExpression": "pk = :u AND begins_with(sk, :n)",
+            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":n": f"NOTE#{day}#"},
+        }
+        while True:
+            page = self.table.query(**kwargs)
+            items.extend(page.get("Items", []))
+            if "LastEvaluatedKey" not in page:
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        return sorted(items, key=lambda i: (i.get("received_at", ""), i["sk"]))
 
     def put_note(self, user_id: str, day: str, message_id: str, note: dict) -> bool:
         """Store one reply. SES retries a failed Lambda, so the message id

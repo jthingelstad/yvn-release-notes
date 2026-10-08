@@ -57,6 +57,11 @@ const SAY = {
   'code-used': 'That code has been used. Send yourself a new one.',
   'link-used-or-expired': 'This link has been used or has expired. Links work once, for 15 minutes.',
   network: 'Couldn’t reach Release Notes. Check your connection and try again.',
+  birthday: 'Pick your birthday: a real date, not in the future.',
+  place: 'Pick your city from the list.',
+  'send-time': 'Pick a time for your email.',
+  'places-failed': 'The city search isn’t answering. Try again in a minute.',
+  token: 'This link isn’t one we sent. Sign in to manage your emails.',
 };
 
 function say(form, data) {
@@ -75,8 +80,78 @@ function quiet(form) {
 
 // Where a signed-in person lands.
 function home(isNew) {
-  return isNew ? '/settings/' : '/settings/';
+  return isNew ? '/setup/' : '/settings/';
 }
+
+// Every quarter hour, as the sender allows.
+function sendTimes(select, value) {
+  for (let m = 0; m < 24 * 60; m += 15) {
+    const v = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    select.add(new Option(clock(v), v, false, v === value));
+  }
+  select.value = value;
+}
+
+// The time now in a zone, as "HH:MM", and that zone's date.
+function zoneNow(tz) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date()).map((p) => [p.type, p.value]),
+  );
+  return { hhmm: `${parts.hour}:${parts.minute}`, date: `${parts.year}-${parts.month}-${parts.day}` };
+}
+
+// A city search over /api/places. Calls onPick(place) with the choice.
+function placePicker(root, onPick) {
+  const input = $('input[type=search]', root), list = $('.places', root);
+  let timer = null, asked = 0;
+
+  const show = (places, picked) => {
+    list.textContent = '';
+    for (const p of places) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'place';
+      b.setAttribute('role', 'option');
+      b.setAttribute('aria-selected', String(p === picked));
+      const mark = document.createElement('span');
+      mark.className = 'mark';
+      mark.textContent = p === picked ? '\u2022' : '';
+      const text = document.createElement('span');
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = p.name;
+      const where = document.createElement('span');
+      where.className = 'where';
+      where.textContent = [p.region, p.country].filter(Boolean).join(', ');
+      text.append(name, where);
+      b.append(mark, text);
+      b.addEventListener('click', () => { show(places, p); onPick(p); });
+      list.append(b);
+    }
+  };
+
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2) { list.textContent = ''; return; }
+    timer = setTimeout(async () => {
+      const mine = ++asked;
+      const r = await api('GET', '/api/places?q=' + encodeURIComponent(q));
+      if (mine !== asked) return; // a later search has gone out
+      if (!r.ok) { list.textContent = SAY[r.data.error] || SAY['places-failed']; return; }
+      if (!r.data.places.length) { list.textContent = 'No city by that name. Try the nearest larger one.'; return; }
+      show(r.data.places, null);
+    }, 300);
+  });
+}
+
+const STOPPED = {
+  unsubscribed: 'Stopped, because you unsubscribed.',
+  bounce: 'Stopped, because an email to this address bounced.',
+  complaint: 'Stopped, because an email was marked as spam.',
+};
 
 async function busy(form, fn) {
   const button = $('button[type=submit]', form);
@@ -177,26 +252,125 @@ const pages = {
     });
   },
 
+  async setup() {
+    const me = await api('GET', '/api/me');
+    if (!me.ok) return location.replace('/');
+    if (!me.data.new) return location.replace(home(false));
+
+    const form = $('#setup-form');
+    let place = null;
+    sendTimes(form.send_time, '06:00');
+    form.birthday.max = zoneNow(Intl.DateTimeFormat().resolvedOptions().timeZone).date;
+
+    const firstEmail = () => {
+      const at = clock(form.send_time.value);
+      if (!place) { $('#first-email').textContent = ''; return; }
+      const when = zoneNow(place.tz).hhmm < form.send_time.value ? 'today' : 'tomorrow';
+      $('#first-email').textContent = `Your first email arrives ${when} at ${at}.`;
+    };
+    const version = async () => {
+      if (!form.birthday.value) { $('#that-makes').hidden = true; return; }
+      const tz = place ? place.tz : Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const r = await api('GET', `/api/sample?birthday=${form.birthday.value}&tz=${encodeURIComponent(tz)}`);
+      $('#that-makes').hidden = !r.ok;
+      if (r.ok) vnum($('#setup-v'), r.data.version);
+    };
+
+    placePicker($('.place-picker', form), (p) => {
+      place = p;
+      $('.picked-tz', form).textContent = p.tz;
+      $('.picked', form).hidden = false;
+      firstEmail();
+      version();
+    });
+    form.birthday.addEventListener('change', version);
+    form.addEventListener('input', () => quiet(form));
+    form.addEventListener('click', (e) => { if (e.target.closest('.place')) quiet(form); });
+    form.send_time.addEventListener('change', firstEmail);
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      busy(form, async () => {
+        quiet(form);
+        if (!form.birthday.value) return say(form, { error: 'birthday' });
+        if (!place) return say(form, { error: 'place' });
+        const r = await api('PUT', '/api/me', { birthday: form.birthday.value, place, send_time: form.send_time.value });
+        if (!r.ok) return say(form, r.data);
+        location.replace(home(false));
+      });
+    });
+  },
+
   async settings() {
     const me = await api('GET', '/api/me');
     if (!me.ok) return location.replace('/');
-    const p = me.data;
-    const fill = (root) => {
-      for (const el of root.querySelectorAll('[data-field]')) {
+    if (me.data.new) return location.replace(home(true));
+    let p = me.data;
+
+    const fill = () => {
+      for (const el of document.querySelectorAll('[data-field]')) {
         const k = el.dataset.field, v = p[k];
         if (v === undefined) continue;
-        if (k === 'version') vnum(el, v);
-        else if (k === 'birthday') el.textContent = longDate(v);
-        else if (k === 'send_time') el.textContent = clock(v);
-        else el.textContent = v;
+        el.textContent = k === 'birthday' ? longDate(v) : v;
       }
-      root.hidden = false;
+      const stopped = p.status === 'stopped';
+      $('#email-status').textContent = stopped
+        ? (STOPPED[p.stopped_reason] || 'Stopped.')
+        : `Arriving every morning at ${clock(p.send_time)}.`;
+      $('#restart').hidden = !stopped;
+      $('#account').hidden = false;
     };
-    fill(p.new ? $('#newcomer') : $('#account'));
+    const save = async (change) => {
+      const r = await api('PUT', '/api/me', change);
+      if (r.ok) { p = r.data; fill(); }
+      return r.ok;
+    };
 
+    const sendTime = $('#send-time');
+    sendTimes(sendTime, p.send_time);
+    sendTime.addEventListener('change', async () => {
+      $('#send-time-saved').hidden = true;
+      $('#send-time-saved').hidden = !(await save({ send_time: sendTime.value }));
+    });
+
+    $('#change-city').addEventListener('click', () => {
+      $('#city-picker').hidden = false;
+      $('#change-city').hidden = true;
+      $('#city-picker input').focus();
+    });
+    placePicker($('#city-picker'), async (place) => {
+      if (await save({ place })) {
+        $('#city-picker').hidden = true;
+        $('#change-city').hidden = false;
+      }
+    });
+
+    $('#restart').addEventListener('click', () => save({ status: 'active' }));
     $('#signout').addEventListener('click', async () => {
       await api('POST', '/api/auth/signout');
       location.replace('/');
+    });
+    fill();
+  },
+
+  unsubscribe() {
+    const form = $('#stop-form');
+    const token = new URLSearchParams(location.hash.slice(1)).get('t');
+    history.replaceState(null, '', location.pathname);
+    if (!token) {
+      say(form, { error: 'token' });
+      $('button', form).hidden = true;
+      return;
+    }
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      busy(form, async () => {
+        quiet(form);
+        const r = await api('POST', '/api/unsubscribe?t=' + encodeURIComponent(token));
+        if (!r.ok) return say(form, r.data);
+        $('#ask-stop').hidden = true;
+        $('#stopped').hidden = false;
+      });
     });
   },
 };

@@ -94,3 +94,20 @@ input.code { font-family: var(--mono); font-size: 32px; font-weight: 700; letter
 .section { margin-top: 28px; display: flex; flex-direction: column; gap: 6px; }
 .section.wide { margin-top: 40px; gap: 12px; }
 form + .hint { margin-top: 32px; }
+
+/* sign-up and settings */
+form.roomy { margin-top: 32px; gap: 36px; }
+.stack.tight { gap: 10px; }
+.vnum.inline { display: inline; font-size: inherit; letter-spacing: -0.03em; }
+.places { display: flex; flex-direction: column; gap: 2px; }
+.place {
+  font: inherit; text-align: left; background: transparent; border: 0; padding: 10px 0; min-height: 44px;
+  cursor: pointer; display: flex; gap: 10px; align-items: baseline; color: var(--ink);
+}
+.place .mark { width: 10px; flex: none; color: var(--orange); font-weight: 800; }
+.place .name { display: block; font-size: 17px; }
+.place .where { display: block; font-size: 13px; color: var(--ink-2); }
+.place[aria-selected="true"] .name { font-weight: 800; }
+.saved { margin: 0; }
+select { appearance: none; -webkit-appearance: none; cursor: pointer; }
+.section label { color: var(--ink-2); }

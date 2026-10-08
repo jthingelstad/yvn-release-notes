@@ -35,6 +35,15 @@ class Email(unittest.TestCase):
         self.assertIn("Thursday, October 8", html)
         self.assertEqual(msg["Subject"], "You're 4.5.110 today")
 
+    def test_pause_or_manage_and_one_click_unsubscribe(self):
+        msg = message(date(2026, 10, 8))
+        self.assertIn("Pause or manage: https://notes.yourversionnumber.com/settings/", msg.get_body(("plain",)).get_content())
+        self.assertIn('href="https://notes.yourversionnumber.com/settings/"', msg.get_body(("html",)).get_content())
+        self.assertEqual(
+            msg["List-Unsubscribe"], "<https://notes.yourversionnumber.com/api/unsubscribe?t=abcdefghijklmnopqrstuvwx>"
+        )
+        self.assertEqual(msg["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click")
+
     def test_says_reply_as_often_as_you_like(self):
         # Jamie, 2026-10-08: every reply to a day's email adds to its notes.
         msg = message(date(2026, 10, 8))
@@ -50,7 +59,7 @@ class Email(unittest.TestCase):
         self.assertNotIn("<link", html)
         self.assertNotRegex(html, r"\ssrc=")
         for href in re.findall(r'href="([^"]+)"', html):
-            self.assertTrue(href.startswith("https://yourversionnumber.com/"), href)
+            self.assertTrue(href.startswith(("https://yourversionnumber.com/", "https://notes.yourversionnumber.com/")), href)
 
     def test_type_on_paper_no_boxes(self):
         # Jamie, 2026-10-07: no borders, boxes or shadows. Birthday version too.

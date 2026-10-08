@@ -584,6 +584,8 @@ Resources:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
+                # Sign-up writes the EMAIL and PROFILE items in one transaction,
+                # which IAM authorizes as a PutItem for each.
                 Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
@@ -616,6 +618,74 @@ Resources:
           WEB_ORIGIN: !Sub "https://${WebDomain}"
           FROM_ADDRESS: !Ref FromAddress
           CONFIG_SET: !Ref ConfigurationSet
+
+  # --- bounces and complaints -----------------------------------------------
+  # The configuration set already publishes delivery events to the alarms
+  # topic for the ops queue. This function takes the hard bounces and
+  # complaints from the same topic and stops that subscriber's emails.
+
+  EventsLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-events"
+      RetentionInDays: 90
+
+  EventsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: events
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt EventsLogs.Arn
+
+  EventsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-events"
+      Description: Stops a subscriber's emails after a hard bounce or a complaint
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: release_notes.events.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt EventsRole.Arn
+      MemorySize: 128
+      Timeout: 30
+      LoggingConfig:
+        LogGroup: !Ref EventsLogs
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+
+  EventsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlarmTopic
+      Protocol: lambda
+      Endpoint: !GetAtt EventsFunction.Arn
+      FilterPolicyScope: MessageBody
+      FilterPolicy:
+        eventType: [Bounce, Complaint]
+
+  EventsInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref EventsFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref AlarmTopic
 
   # --- alarms -----------------------------------------------------------------
 
@@ -680,6 +750,22 @@ Resources:
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions: [{ Name: FunctionName, Value: !Ref WebFunction }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  EventsErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-events-errors"
+      AlarmDescription: A bounce or complaint could not be applied to its subscriber.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref EventsFunction }]
       Statistic: Sum
       Period: 900
       EvaluationPeriods: 1

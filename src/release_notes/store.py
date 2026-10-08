@@ -1,7 +1,8 @@
 """The one DynamoDB table.
 
     pk               sk                         what
-    USER#<id>        PROFILE                    email, birthday, tz, send_time, status, last_sent_date
+    USER#<id>        PROFILE                    email, birthday, tz, send_time, status, last_sent_date,
+                                                city, region, country, lat, lon; stopped_reason when stopped
     USER#<id>        DAY#<YYYY-MM-DD>           the email sent that day: version, token, message id
     USER#<id>        NOTE#<YYYY-MM-DD>#<msgid>  one reply: text, attachment list, raw S3 key
     TOKEN#<token>    TOKEN                      reply address -> user and day
@@ -184,6 +185,55 @@ class Store:
     def profile(self, user_id: str) -> dict | None:
         return self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": "PROFILE"}).get("Item")
 
+    def create_subscriber(self, user_id: str, email: str, profile: dict) -> bool:
+        """The EMAIL and PROFILE items in one transaction, so an address
+        signs up once. Returns False if the address already has an account."""
+        from boto3.dynamodb.types import TypeSerializer
+
+        ser = TypeSerializer()
+
+        def put(item):
+            return {
+                "Put": {
+                    "TableName": self.table.name,
+                    "Item": {k: ser.serialize(v) for k, v in item.items()},
+                    "ConditionExpression": "attribute_not_exists(pk)",
+                }
+            }
+
+        try:
+            self.table.meta.client.transact_write_items(
+                TransactItems=[
+                    put({"pk": f"EMAIL#{email}", "sk": "EMAIL", "user_id": user_id}),
+                    put({"pk": f"USER#{user_id}", "sk": "PROFILE", "email": email, **profile}),
+                ]
+            )
+            return True
+        except Exception as e:
+            code = (getattr(e, "response", None) or {}).get("Error", {}).get("Code")
+            if code == "TransactionCanceledException":
+                return False
+            raise
+
+    def update_profile(self, user_id: str, fields: dict, remove: tuple = ()) -> None:
+        names = {f"#f{i}": k for i, k in enumerate(fields)}
+        names.update({f"#r{i}": k for i, k in enumerate(remove)})
+        values = {f":v{i}": v for i, v in enumerate(fields.values())}
+        expr = "SET " + ", ".join(f"#f{i} = :v{i}" for i in range(len(fields)))
+        if remove:
+            expr += " REMOVE " + ", ".join(f"#r{i}" for i in range(len(remove)))
+        self.table.update_item(
+            Key={"pk": f"USER#{user_id}", "sk": "PROFILE"},
+            UpdateExpression=expr,
+            ConditionExpression="attribute_exists(pk)",
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+        )
+
+    def stop(self, user_id: str, reason: str, at: str) -> None:
+        """No more emails until the subscriber starts them again."""
+        self.update_profile(user_id, {"status": "stopped", "stopped_reason": reason, "stopped_at": at})
+
     def user_items(self, user_id: str) -> list[dict]:
         """Everything filed under one subscriber: the export reads this."""
         items, kwargs = [], {
@@ -290,6 +340,15 @@ class Store:
             UpdateExpression="SET seen_at = :now, expires_at = :exp",
             ConditionExpression="attribute_exists(pk)",
             ExpressionAttributeValues={":now": now, ":exp": expires},
+        )
+
+    def claim_session(self, session_hash: str, user_id: str) -> None:
+        """A signing-up session becomes the new subscriber's."""
+        self.table.update_item(
+            Key={"pk": f"SESSION#{session_hash}", "sk": "SESSION"},
+            UpdateExpression="SET user_id = :u REMOVE email",
+            ConditionExpression="attribute_exists(pk)",
+            ExpressionAttributeValues={":u": user_id},
         )
 
     def delete_session(self, session_hash: str) -> None:

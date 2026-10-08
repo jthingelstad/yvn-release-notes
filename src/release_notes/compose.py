@@ -30,6 +30,7 @@ from .streak import Streak
 from .version import Version, compute_version
 
 SITE = "https://yourversionnumber.com"
+APP = "https://notes.yourversionnumber.com"
 
 # The birthday face's tokens, light then dark (site.css section 1).
 PAPER, INK, INK_2 = "#fffbf2", "#14163a", "#3b3d63"
@@ -123,6 +124,7 @@ def body(v: Version, birthday: date, streak: Streak | None = None) -> str:
         "\n"
         "-- \n"
         "Release Notes, from Your Version Number\n"
+        f"Pause or manage: {APP}/settings/\n"
     )
 
 
@@ -259,7 +261,7 @@ What happened, what you made, who you saw. Whatever you send back becomes the re
 
 {streak_html(v, birthday, streak) if streak else ""}
 <tr><td class="ink-2" style="padding:48px 0 0;font-family:{FONT};font-size:13px;line-height:1.5;color:{INK_2};">
-Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>.
+Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>. <a class="link" href="{APP}/settings/" style="color:{BLUE};">Pause or manage</a>
 </td></tr>
 
 </table>
@@ -287,6 +289,10 @@ def build_message(
     msg["Reply-To"] = formataddr(("Release Notes", reply_address(token, inbound_domain)))
     msg["Subject"] = subject(v)
     msg["Message-ID"] = make_msgid(domain=from_addr.split("@", 1)[1])
+    # One-click unsubscribe (RFC 8058): the mail app POSTs this; web.py stops
+    # the emails. The day's reply token names the person.
+    msg["List-Unsubscribe"] = f"<{APP}/api/unsubscribe?t={token}>"
+    msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     msg.set_content(body(v, birthday, streak))
     msg.add_alternative(html_body(v, birthday, day, streak), subtype="html")
     return msg

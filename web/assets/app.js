@@ -1,5 +1,6 @@
 // Release Notes: one script for every page, chosen by <body data-page>.
-// Vanilla, no build step, nothing remote. The API is same-origin at /api.
+// Vanilla, no build step. The API is same-origin at /api; the one other
+// request is the page count at the bottom.
 'use strict';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -799,3 +800,26 @@ const pages = {
 
 const page = pages[document.body.dataset.page];
 if (page) page();
+
+// Page counts for Tinylytics site 3816 (Jamie, 2026-10-08), sent from here
+// so no remote script runs (Tinylytics' own route for strict CSPs). Only the
+// path goes: query strings carry sign-in tokens and dates. No cookies, and
+// another site's referrer goes as its origin only. ?tiny_ignore=true stops
+// counting in this browser; ?tiny_ignore=false starts it again.
+(function count() {
+  if (location.hostname !== 'notes.yourversionnumber.com') return;
+  try {
+    const ignore = new URLSearchParams(location.search).get('tiny_ignore');
+    if (ignore === 'true') localStorage.setItem('tiny_ignore', '1');
+    if (ignore === 'false') localStorage.removeItem('tiny_ignore');
+    if (localStorage.getItem('tiny_ignore')) return;
+  } catch (e) { /* storage blocked: count anyway */ }
+  let referrer = '';
+  try {
+    const r = new URL(document.referrer);
+    if (r.origin !== location.origin) referrer = r.origin + '/';
+  } catch (e) { /* no referrer */ }
+  const q = new URLSearchParams({ url: location.origin + location.pathname, path: location.pathname, referrer });
+  fetch('https://tinylytics.app/collector/sGuEB7xpDqmsxbCyVK-B?' + q,
+    { method: 'POST', mode: 'no-cors', credentials: 'omit', keepalive: true }).catch(() => {});
+})();

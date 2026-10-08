@@ -8,7 +8,7 @@ from email.policy import default
 from decimal import Decimal
 from io import StringIO
 
-from fakes import FakeSES, FakeStore
+from fakes import FakeS3, FakeSES, FakeStore
 from release_notes import auth, export, web
 
 ORIGIN = "https://notes.yourversionnumber.com"
@@ -17,6 +17,7 @@ os.environ.update(
     FROM_ADDRESS="notes@yourversionnumber.com",
     CONFIG_SET="yvn-release-notes",
     TABLE="t",
+    MAIL_BUCKET="mail-bucket",
 )
 NOW = 1_791_500_000  # 2026-10-08, mid-afternoon Central
 
@@ -39,14 +40,15 @@ class WebCase(unittest.TestCase):
     """Helpers for driving web.handler over the fakes; no tests here."""
 
     def setUp(self):
-        self.store, self.ses, self.now = FakeStore(), FakeSES(), NOW
+        self.store, self.ses, self.s3, self.now = FakeStore(), FakeSES(), FakeS3(), NOW
         self.places = []
         self.out = StringIO()
 
     def call(self, *args, **kw):
         with redirect_stdout(self.out):
             r = web.handler(
-                request(*args, **kw), None, store=self.store, ses=self.ses, geocode=self.geocode, clock=lambda: self.now
+                request(*args, **kw), None, store=self.store, ses=self.ses, s3=self.s3, geocode=self.geocode,
+                clock=lambda: self.now,
             )
         return r, json.loads(r["body"]) if r["headers"]["content-type"] == "application/json" else r["body"]
 

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Another day: Release Notes</title>
+<link rel="stylesheet" href="/assets/site.css?v=4">
+<script src="/assets/app.js?v=3" defer></script>
+</head>
+<body data-page="day">
+<main>
+  <header class="bar">
+    <a class="brand" href="/">Release Notes</a>
+    <a href="/today/">Today</a>
+    <a href="/timeline/">Timeline</a>
+    <a href="/settings/">Settings</a>
+  </header>
+
+  <label class="pick-day">Which day?
+    <input type="date" name="day" id="pick">
+  </label>
+
+  <div id="day" hidden>
+    <p class="dateline" id="date"></p>
+    <p class="vnum big tight" id="v"></p>
+    <div class="notes" id="notes"></div>
+    <p class="hint" id="none" hidden>No notes for this release yet.</p>
+  <form id="note-form" class="note-form" novalidate>
+    <label>Release notes for <span class="vnum inline" id="for-v"></span>
+      <textarea name="text" rows="3" placeholder="What happened that day"></textarea>
+    </label>
+    <button class="go" type="submit">Save to <span id="save-v"></span></button>
+    <p class="error" role="alert" hidden></p>
+  </form>
+  </div>
+
+  <p class="foot">Any day from your birthday to today. Days before you signed up count too, all the way back to <span class="mono">0.0.0</span>. A day you fill in later counts toward your streak.</p>
+</main>
+</body>
+</html>

@@ -84,7 +84,12 @@ runtime and is imported lazily so the tests run without it.
   and any other attachments stay inside the raw message in S3 (tagged
   `outcome=note`, kept indefinitely) and are listed on the note so a later
   phase can extract them. Never expire `outcome=note` objects. Ignored mail is
-  tagged `outcome=ignored` and expires in 30 days.
+  tagged `outcome=ignored` and expires in 30 days. The one exception: a
+  subscriber who deletes an emailed note deletes its message too (the web
+  function may delete `raw/*`; the old version expires 30 days later).
+- **Notes written on the web** are `NOTE#<day>#w-<id>` with `source=web`,
+  for today or any day back to the birthday. Every note, emailed or not,
+  can be edited (`updated_at`) or deleted by its owner.
 - **A subscriber is `active` or `stopped`.** Stopped means no email, with
   `stopped_reason`: `unsubscribed` (the email's one-click
   `List-Unsubscribe`, or the page it opens), `bounce` (a hard bounce) or

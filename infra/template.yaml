@@ -595,6 +595,11 @@ Resources:
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSet}"
               - Effect: Allow
+                # Deleting an emailed note deletes the email it came in. The
+                # bucket is versioned, so the old version expires 30 days on.
+                Action: s3:DeleteObject
+                Resource: !Sub "${MailBucket.Arn}/raw/*"
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt WebLogs.Arn
 
@@ -618,6 +623,7 @@ Resources:
           WEB_ORIGIN: !Sub "https://${WebDomain}"
           FROM_ADDRESS: !Ref FromAddress
           CONFIG_SET: !Ref ConfigurationSet
+          MAIL_BUCKET: !Ref MailBucket
 
   # --- bounces and complaints -----------------------------------------------
   # The configuration set already publishes delivery events to the alarms

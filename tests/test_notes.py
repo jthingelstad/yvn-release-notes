@@ -11,8 +11,12 @@ class FakeTable:
         self.items = sorted(items, key=lambda i: (i["pk"], i["sk"]))
 
     def query(self, KeyConditionExpression, ExpressionAttributeValues, ExclusiveStartKey=None, **_):
-        pk, prefix = ExpressionAttributeValues[":u"], ExpressionAttributeValues[":n"]
-        hits = [i for i in self.items if i["pk"] == pk and i["sk"].startswith(prefix)]
+        v = ExpressionAttributeValues
+        if ":n" in v:
+            keep = lambda sk: sk.startswith(v[":n"])  # noqa: E731
+        else:
+            keep = lambda sk: v[":a"] <= sk <= v[":b"]  # noqa: E731
+        hits = [i for i in self.items if i["pk"] == v[":u"] and keep(i["sk"])]
         start = hits.index(ExclusiveStartKey) + 1 if ExclusiveStartKey else 0
         page = hits[start : start + 2]
         out = {"Items": page}
@@ -37,6 +41,17 @@ class DayNotes(unittest.TestCase):
         ])
         got = Store(table).day_notes("u1", "2026-10-08")
         self.assertEqual([n["text"] for n in got], ["Morning run.", "Coffee.", "Lunch with Grace.", "Finished the shelf."])
+
+    def test_a_range_of_days_takes_in_the_last_days_notes(self):
+        table = FakeTable([
+            note("2026-10-06", "zz", "2026-10-06T13:00:00Z", "Before."),
+            note("2026-10-07", "zz", "2026-10-07T13:00:00Z", "First."),
+            note("2026-10-08", "w-1", "2026-10-08T18:00:00Z", "Web, later."),
+            note("2026-10-08", "aa", "2026-10-08T13:00:00Z", "Email, earlier."),
+            note("2026-10-09", "aa", "2026-10-09T13:00:00Z", "After."),
+        ])
+        got = Store(table).notes_between("u1", "2026-10-07", "2026-10-08")
+        self.assertEqual([n["text"] for n in got], ["First.", "Email, earlier.", "Web, later."])
 
 
 class Combine(unittest.TestCase):

@@ -700,6 +700,10 @@ const pages = {
       vnum(v, d.version);
       head.append(v, el('span', 'when', (d.date === today ? 'Today, ' : '') + dayName(d.date, thisYear)));
       sec.append(head);
+      if (d.weather) {
+        sec.append(el('p', 'weather', d.weather));
+        $('#weather-credit').hidden = false;
+      }
       if (!d.notes.length) {
         const p = el('p', 'hint', 'No notes. ');
         const add = el('a', '', 'Add some');
@@ -786,6 +790,8 @@ const pages = {
       const d = r.data;
       $('#date').textContent = dayName(d.date, Number(me.data.today.slice(0, 4)));
       vnum($('#v'), d.version);
+      $('#weather').hidden = $('#weather-credit').hidden = !d.weather;
+      $('#weather').textContent = d.weather || '';
       vnum($('#for-v'), d.version);
       $('#save-v').textContent = d.version;
       renderNotes($('#notes'), d.date, d.notes, d.tz, load);

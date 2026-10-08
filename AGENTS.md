@@ -60,7 +60,8 @@ runtime and is imported lazily so the tests run without it.
 
 - `web.py`: the web app's API, routed by method and path. `auth.py`: sign-in
   by link and code, sessions, the limits and the sign-in email (its docstring
-  is the design). `places.py`: city search through Open-Meteo. `export.py`: everything a subscriber has, as JSON and
+  is the design). `places.py`: city search through Open-Meteo. `weather.py`: each day's
+  weather and the morning forecast, from Open-Meteo (its docstring is the design). `export.py`: everything a subscriber has, as JSON and
   Markdown; `export_job.py` builds the zip with every photo and recording,
   in the background. `web/` is the static site, synced to the web bucket by
   `deploy.sh`: one `assets/app.js` for every page (`<body data-page>`),
@@ -174,6 +175,18 @@ runtime and is imported lazily so the tests run without it.
   note, drawn by `noteBody`) and the Markdown export. Tests never fetch:
   pass a fake `fetch` to `web.handler` and `inbound.process`.
   `scripts/fill_link_titles.py` fills in notes written before this.
+- **Weather** (Jamie, 2026-10-08: "Record + today's forecast"). Each
+  finished day's high, low and conditions are kept as `WEATHER#<day>` with
+  the city they are for, so a move never rewrites the past. The sender keeps
+  yesterday's and puts one forecast line in the email, from one Open-Meteo
+  call; a note written for an earlier day fetches that day's history. Shown
+  on day pages, in "A year ago" and in the export, in Fahrenheit for
+  places that use it. Open-Meteo is CC BY 4.0: credit it wherever weather
+  shows. Weather is a nicety: a failure is no weather, never a held email
+  or a failed note. Only the city's rounded coordinates and time zone go to
+  Open-Meteo. Tests never fetch: pass `fetch` to the sender and
+  `weather_fetch` to `web.handler`. `scripts/fill_weather.py` fills in days
+  with notes written before this.
 - **No rotating prompts or nudges** for now (Jamie, 2026-10-07: "keep it
   simple"). The ask is the same every day.
 - **No model processing of notes** (summaries, prompts, anything) without an
@@ -214,7 +227,8 @@ runtime and is imported lazily so the tests run without it.
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests`
 - The web app locally: `scripts/dev_server.py` serves `web/` and the real API
   against in-memory fakes, prints sign-in emails instead of sending them, and
-  starts with a fictional subscriber, ada@example.com. Use it (and Playwright
+  starts with a fictional subscriber, ada@example.com. `--fake-places`
+  answers city search and weather without Open-Meteo. Use it (and Playwright
   from a sibling project's `node_modules`) to see pages; never sign in on
   live to check something.
 - Add a subscriber (phase 1 has no sign-up): `scripts/add_subscriber.py EMAIL YYYY-MM-DD`
@@ -252,5 +266,5 @@ runtime and is imported lazily so the tests run without it.
    (built); the export as a zip with the files (built); weather from the
    subscriber's city (Open-Meteo, no key, CC BY 4.0), each day's actual
    weather recorded with its city plus one forecast line in the morning
-   email (Jamie, 2026-10-08); a yearly "release notes for 5.2" collection on
+   email (Jamie, 2026-10-08; built); a yearly "release notes for 5.2" collection on
    the birthday.

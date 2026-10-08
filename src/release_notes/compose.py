@@ -21,6 +21,10 @@ Rules for it:
   (version.a_year_before), after the streak, only when there are some.
   Links in them show by name (links.py): the words the writer linked, or
   the page title saved when the note was written, else the short address.
+- Weather (weather.py) is one quiet line of today's forecast under the
+  date, and that day's weather in "A year ago", both as text; the footer
+  credits Open-Meteo whenever either shows. Without it, the email is the
+  same as ever.
 """
 
 import re
@@ -31,7 +35,7 @@ from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 from html import escape
 
-from . import links
+from . import links, weather
 from .streak import Streak
 from .version import Version, compute_version
 
@@ -144,9 +148,10 @@ def linked(text: str, found: list[dict] | None = None) -> str:
     return "".join(out)
 
 
-# The day, its notes' text, their links, and how many photos and recordings
-# (media.counts). The email never carries a file: it links to the day.
-LastYear = tuple[date, str, list, dict]
+# The day, its notes' text, their links, how many photos and recordings
+# (media.counts), and that day's weather as a line, if it was kept. The
+# email never carries a file: it links to the day.
+LastYear = tuple[date, str, list, dict, str | None]
 
 
 def files_phrase(files: dict | None) -> str:
@@ -173,12 +178,14 @@ def past_more(cut: bool, files: dict | None) -> str:
     return f"{verb} {phrase}"
 
 
-def past_body(birthday: date, then: date, text: str, found: list | None = None, files: dict | None = None) -> str:
+def past_body(birthday: date, then: date, text: str, found: list | None = None, files: dict | None = None,
+              sky: str | None = None) -> str:
     shown, cut = past_text(text)
     shown = links.plain(shown, found)
     notes = f"{shown}{' ...' if cut else ''}\n\n" if shown else ""
     return (
         f"A year ago you were {compute_version(birthday, then)} ({long_date(then)}, {then.year}):\n"
+        f"{sky + '.' + chr(10) if sky else ''}"
         "\n"
         f"{notes}"
         f"{past_more(cut, files)}: {past_link(then)}\n"
@@ -186,10 +193,17 @@ def past_body(birthday: date, then: date, text: str, found: list | None = None, 
     )
 
 
-def body(v: Version, birthday: date, streak: Streak | None = None, last_year: LastYear | None = None) -> str:
+def credited(forecast: str | None, last_year: LastYear | None) -> bool:
+    return bool(forecast or (last_year and len(last_year) > 4 and last_year[4]))
+
+
+def body(v: Version, birthday: date, streak: Streak | None = None, last_year: LastYear | None = None,
+         forecast: str | None = None) -> str:
     opening = f"You're {v} today."
     if line := birthday_line(v):
         opening = f"{opening} {line}"
+    if forecast:
+        opening = f"{opening}\n{forecast}"
     streak_text = " ".join(streak_lines(v, streak)) + "\n\n" if streak else ""
     if last_year:
         streak_text += past_body(birthday, *last_year)
@@ -207,6 +221,7 @@ def body(v: Version, birthday: date, streak: Streak | None = None, last_year: La
         "-- \n"
         "Release Notes, from Your Version Number\n"
         f"Pause or manage: {APP}/settings/\n"
+        + (f"{weather.CREDIT}: {weather.CREDIT_URL}\n" if credited(forecast, last_year) else "")
     )
 
 
@@ -268,8 +283,15 @@ def streak_html(v: Version, birthday: date, s: Streak) -> str:
 """
 
 
-def past_html(birthday: date, then: date, text: str, found: list | None = None, files: dict | None = None) -> str:
+def past_html(birthday: date, then: date, text: str, found: list | None = None, files: dict | None = None,
+              sky: str | None = None) -> str:
     v = compute_version(birthday, then)
+    sky_html = (
+        f'<p class="ink-2" style="margin:0 0 16px;font-family:{FONT};font-size:14px;line-height:1.45;color:{INK_2};">'
+        f"{ascii_html(sky)}</p>\n"
+        if sky
+        else ""
+    )
     shown, cut = past_text(text)
     paras = [p.strip() for p in re.split(r"\n\s*\n", shown) if p.strip()]
     if cut:
@@ -285,8 +307,8 @@ def past_html(birthday: date, then: date, text: str, found: list | None = None, 
 <p class="ink-2" style="margin:0 0 6px;font-family:{FONT};font-size:14px;color:{INK_2};">
 <strong class="ink" style="color:{INK};">A year ago</strong> &middot; {escape(long_date(then))}, {then.year}
 </p>
-<p style="margin:0 0 16px;">{vnum_html(v, 30)}</p>
-{notes}
+<p style="margin:0 0 {10 if sky else 16}px;">{vnum_html(v, 30)}</p>
+{sky_html}{notes}
 <p class="ink-2" style="margin:4px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
 <a class="link" href="{escape(past_link(then))}" style="color:{BLUE};font-weight:700;text-decoration:underline;">{more}</a>
 </p>
@@ -315,7 +337,8 @@ DARK_CSS = f"""
 
 
 def html_body(
-    v: Version, birthday: date, day: date, streak: Streak | None = None, last_year: LastYear | None = None
+    v: Version, birthday: date, day: date, streak: Streak | None = None, last_year: LastYear | None = None,
+    forecast: str | None = None,
 ) -> str:
     vs = escape(str(v))
     party = birthday_line(v)
@@ -327,6 +350,12 @@ def html_body(
     )
     link = f"{SITE}/birthday/?p={birthday.isoformat()}"
     inline_v = vs.replace(".", f'<span class="sep" style="color:{ORANGE_INK};">.</span>')
+    forecast_html = f'<br><span class="ink-2" style="color:{INK_2};">{ascii_html(forecast)}</span>' if forecast else ""
+    credit_html = (
+        f' &middot; <a class="link" href="{weather.CREDIT_URL}" style="color:{BLUE};">{weather.CREDIT}</a>'
+        if credited(forecast, last_year)
+        else ""
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -344,7 +373,7 @@ def html_body(
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
 
 <tr><td class="ink-2" style="padding:0 0 40px;font-family:{FONT};font-size:14px;color:{INK_2};">
-<strong class="ink" style="color:{INK};">Release notes</strong> &middot; {escape(long_date(day))}
+<strong class="ink" style="color:{INK};">Release notes</strong> &middot; {escape(long_date(day))}{forecast_html}
 </td></tr>
 
 <tr><td>
@@ -372,7 +401,7 @@ What happened, what you made, who you saw. Whatever you send back becomes the re
 {streak_html(v, birthday, streak) if streak else ""}
 {past_html(birthday, *last_year) if last_year else ""}
 <tr><td class="ink-2" style="padding:48px 0 0;font-family:{FONT};font-size:13px;line-height:1.5;color:{INK_2};">
-Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>. <a class="link" href="{APP}/settings/" style="color:{BLUE};">Pause or manage</a>
+Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>. <a class="link" href="{APP}/settings/" style="color:{BLUE};">Pause or manage</a>{credit_html}
 </td></tr>
 
 </table>
@@ -394,6 +423,7 @@ def build_message(
     day: date,
     streak: Streak | None = None,
     last_year: LastYear | None = None,
+    forecast: str | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = from_header(from_addr)
@@ -405,6 +435,6 @@ def build_message(
     # the emails. The day's reply token names the person.
     msg["List-Unsubscribe"] = f"<{APP}/api/unsubscribe?t={token}>"
     msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
-    msg.set_content(body(v, birthday, streak, last_year))
-    msg.add_alternative(html_body(v, birthday, day, streak, last_year), subtype="html")
+    msg.set_content(body(v, birthday, streak, last_year, forecast))
+    msg.add_alternative(html_body(v, birthday, day, streak, last_year, forecast), subtype="html")
     return msg

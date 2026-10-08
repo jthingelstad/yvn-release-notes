@@ -12,8 +12,9 @@ made-up notes, a past four-day pause and one reply token for trying
 deletes nothing real. Three days back, Ada replied with a made-up photo
 and a two-second recording, served from memory at /dev-media/ in place of
 the bucket's signed links. A zip export builds in a thread, two seconds
-after it is asked for, and downloads from /dev-media/ too. City search asks the real Open-Meteo unless
---fake-places, and a link's page for its title unless --fake-links.
+after it is asked for, and downloads from /dev-media/ too. City search and weather ask the real Open-Meteo
+unless --fake-places (the week of emails comes with made-up weather either
+way), and a link's page for its title unless --fake-links.
 Everything is forgotten when it stops.
 """
 
@@ -39,7 +40,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
 from fakes import FakeLambda, FakeS3, FakeSES, FakeStore  # noqa: E402
-from release_notes import export_job, links, media, places, web  # noqa: E402
+from release_notes import export_job, links, media, places, weather, web  # noqa: E402
 
 FAKE_PLACES = [
     {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
@@ -66,6 +67,18 @@ def sample_wav() -> bytes:
     return out.getvalue()
 
 
+def fake_weather(url: str) -> dict:
+    """Open-Meteo's daily answer for whatever days were asked: mild and partly cloudy."""
+    q = dict(parse_qsl(urlsplit(url).query))
+    if "start_date" in q:
+        days = [q["start_date"]]
+    else:
+        today = datetime.now(ZoneInfo(q["timezone"])).date()
+        days = [(today - timedelta(days=1)).isoformat(), today.isoformat()]
+    return {"daily": {"time": days, "weather_code": [2] * len(days),
+                      "temperature_2m_max": [17.5] * len(days), "temperature_2m_min": [8.0] * len(days)}}
+
+
 class PrintingSES(FakeSES):
     def send_email(self, **kw):
         msg = message_from_bytes(kw["Content"]["Raw"]["Data"], policy=default)
@@ -76,7 +89,7 @@ class PrintingSES(FakeSES):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8000)
-    ap.add_argument("--fake-places", action="store_true", help="answer city searches from a fixed list")
+    ap.add_argument("--fake-places", action="store_true", help="answer city searches and weather without Open-Meteo")
     ap.add_argument("--fake-links", action="store_true", help="title every link 'A page at <host>', fetching nothing")
     args = ap.parse_args()
     origin = f"http://localhost:{args.port}"
@@ -94,10 +107,14 @@ def main():
         "send_time": "06:00", "status": "active", "created_at": "2026-10-01T12:00:00Z",
         "last_sent_date": datetime.now(ZoneInfo("America/Chicago")).date().isoformat(),
         "city": "Minneapolis", "region": "Minnesota", "country": "United States",
+        "lat": 44.98, "lon": -93.26,
     }
     today = datetime.now(ZoneInfo("America/Chicago")).date()
     for n in range(1, 8):
         store.add_day("u1", (today - timedelta(days=n)).isoformat())
+        store.put_weather("u1", (today - timedelta(days=n)).isoformat(), weather.record(
+            {"high_c": 14.0 + n, "low_c": 4.0 + n / 2, "code": [0, 2, 3, 61, 1, 45, 80][n - 1]},
+            weather.place_of(store.profiles["u1"]), "2026-10-01T12:00:00Z"))
     for back, note_id, late, text in [
         (0, "dev-1", 0, "Walked before the rain came in. Coffee on the porch."),
         (1, "dev-2", 0, "Long day of meetings.\nDinner with the neighbours, who brought the good bread."),
@@ -119,6 +136,7 @@ def main():
     store.tokens["abcdefghijklmnopqrstuvwx"] = {"user_id": "u1", "date": "2026-10-01", "version": "4.5.109"}
     fetch = (lambda u: {"title": f"A page at {urlsplit(u).hostname}", "site": urlsplit(u).hostname}) if args.fake_links else links.fetch_title
     geocode = (lambda q: [p for p in FAKE_PLACES if p["name"].lower().startswith(q.lower())]) if args.fake_places else places.search
+    weather_fetch = fake_weather if args.fake_places else weather.fetch_json
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
@@ -136,7 +154,8 @@ def main():
                 "queryStringParameters": dict(parse_qsl(url.query)) or None,
                 "body": self.rfile.read(length).decode() if length else None,
             }
-            r = web.handler(event, None, store=store, ses=ses, s3=s3, lam=lam, geocode=geocode, fetch=fetch)
+            r = web.handler(event, None, store=store, ses=ses, s3=s3, lam=lam, geocode=geocode, fetch=fetch,
+                            weather_fetch=weather_fetch)
             body = r["body"].encode()
             self.send_response(r["statusCode"])
             for k, v in r["headers"].items():

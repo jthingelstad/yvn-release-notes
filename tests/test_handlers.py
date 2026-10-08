@@ -40,6 +40,16 @@ class FakeStore:
         self.days, self.tokens, self.notes = {}, {}, {}
         self.note_days_fail = self.day_notes_fail = False
         self.paused = []
+        self.weather = {}
+
+    def put_weather(self, user_id, day, fields):
+        if (user_id, day) in self.weather:
+            return False
+        self.weather[(user_id, day)] = fields
+        return True
+
+    def weather_between(self, user_id, first, last):
+        return {d: w for (u, d), w in self.weather.items() if u == user_id and first <= d <= last}
 
     def active_subscribers(self):
         return [s for s in self.subs.values() if s.status == "active"]

@@ -17,6 +17,12 @@ The email carries the notes from a year ago, by version (5.3.279 for
 
 A paused subscriber gets nothing on the days of the pause (pause_from through
 pause_through, in their own zone), send_now included.
+
+For a subscriber with a city, one call to Open-Meteo (weather.py) brings
+yesterday's weather, which is kept, and today's forecast, which goes in the
+email as one line. A dry run fetches it too but keeps nothing. If the call
+fails, the email goes without, and so does the rest of that run's mail
+(`one_run`), so a slow Open-Meteo never holds the sender.
 """
 
 import json
@@ -24,7 +30,7 @@ import os
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import media
+from . import media, weather
 from .compose import build_message, from_header, new_token
 from .notes import combine, day_links
 from .store import Store, Subscriber
@@ -70,25 +76,66 @@ def read_streak(store: Store, user_id: str, day: date) -> Streak | None:
         return None
 
 
-def read_last_year(store: Store, sub: Subscriber, day: date) -> tuple[date, str, list, dict] | None:
+def read_last_year(store: Store, sub: Subscriber, day: date) -> tuple[date, str, list, dict, str | None] | None:
     # Also a nicety: if last year's notes cannot be read, the email goes without.
     try:
         then = a_year_before(sub.birthday, day)
         notes = store.day_notes(sub.user_id, then.isoformat()) if then else []
         text, files = combine(notes), media.counts(notes)
-        return (then, text, day_links(notes), files) if text or any(files.values()) else None
+        if not (text or any(files.values())):
+            return None
+        kept = store.weather_between(sub.user_id, then.isoformat(), then.isoformat()).get(then.isoformat())
+        sky = weather.day_line(kept, weather.fahrenheit(sub.place or kept)) if kept else None
+        return then, text, day_links(notes), files, sky
     except Exception as e:
         log(event="last-year-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
         return None
 
 
-def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_now):
+def read_weather(store: Store, sub: Subscriber, day: date, fetch, keep: bool, clock) -> str | None:
+    """Today's forecast as the email's line; yesterday's weather is kept
+    (unless `keep` is False, for a dry run). None without a city or on any
+    failure."""
+    if not sub.place:
+        return None
+    try:
+        yesterday, today = weather.morning(sub.place, day, fetch)
+        if keep and yesterday:
+            store.put_weather(sub.user_id, (day - timedelta(days=1)).isoformat(),
+                              weather.record(yesterday, sub.place, clock().isoformat()))
+        return weather.forecast_line(today, sub.place.get("city", ""), weather.fahrenheit(sub.place)) if today else None
+    except Exception as e:
+        log(event="weather-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
+        return None
+
+
+def one_run(fetch):
+    """The fetch for one run: answers are shared (neighbors ask the same
+    question), and the first failure turns weather off for the rest of the
+    run, so an unreachable Open-Meteo costs one timeout, not one an email."""
+    answers, broken = {}, []
+
+    def call(url):
+        if broken:
+            raise RuntimeError("weather is off for this run")
+        if url not in answers:
+            try:
+                answers[url] = fetch(url)
+            except Exception:
+                broken.append(url)
+                raise
+        return answers[url]
+    return call
+
+
+def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_now, fetch=None):
     event = event or {}
     dry_run = bool(event.get("dry_run"))
     if event.get("now") and not dry_run:
         raise ValueError('"now" is for dry runs only; use "send_now" to send outside the window')
     now = datetime.fromisoformat(event["now"]) if event.get("now") else clock()
     send_now = event.get("send_now")
+    fetch = one_run(fetch or weather.fetch_json)
     if store is None:
         import boto3
 
@@ -127,6 +174,7 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
         if dry_run:
             streak = read_streak(store, sub.user_id, here.date())
             last_year = read_last_year(store, sub, here.date())
+            forecast = read_weather(store, sub, here.date(), fetch, False, clock)
             results.append(
                 {
                     "user": sub.user_id,
@@ -136,11 +184,13 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
                     "streak": streak.current if streak else None,
                     "longest": streak.longest if streak else None,
                     "last_year": last_year[0].isoformat() if last_year else None,
+                    "last_year_weather": bool(last_year and last_year[4]),
+                    "forecast": bool(forecast),
                 }
             )
             continue
         try:
-            results.append(send_one(store, ses, sub, day, v, clock))
+            results.append(send_one(store, ses, sub, day, v, clock, fetch))
         except Exception:
             # One bad address must not hold up everyone else. The run still
             # fails at the end so the Errors alarm sees it.
@@ -151,7 +201,7 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
     return {"dry_run": dry_run, "now": now.isoformat(), "results": results}
 
 
-def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock) -> dict:
+def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None) -> dict:
     previous = sub.last_sent_date
     if not store.claim_day(sub.user_id, day):
         log(event="skip", user=sub.user_id, date=day, reason="already-claimed")
@@ -159,6 +209,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock) -> dict:
     token = new_token()
     streak = read_streak(store, sub.user_id, date.fromisoformat(day))
     last_year = read_last_year(store, sub, date.fromisoformat(day))
+    forecast = read_weather(store, sub, date.fromisoformat(day), fetch or weather.fetch_json, True, clock)
     try:
         store.put_day(sub.user_id, day, str(v), token, clock().isoformat())
         msg = build_message(
@@ -171,6 +222,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock) -> dict:
             day=date.fromisoformat(day),
             streak=streak,
             last_year=last_year,
+            forecast=forecast,
         )
         resp = ses.send_email(
             FromEmailAddress=from_header(os.environ["FROM_ADDRESS"]),

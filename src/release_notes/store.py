@@ -10,6 +10,8 @@
     USER#<id>        NOTE#<YYYY-MM-DD>#w-<id>   one note written on the web: text, source=web
                                                 (either kind: links, named once when written; links.py;
                                                 an emailed one: media, its photos and recordings; media.py)
+    USER#<id>        WEATHER#<YYYY-MM-DD>       that day's weather where the subscriber was (weather.py): high_c,
+                                                low_c, code, city, region, country, lat, lon; kept for good
     USER#<id>        EXPORT                     the latest zip export (export_job.py): id, status
                                                 building|ready|failed, started_at; when ready, export_key,
                                                 size, files; gone a day after it is built
@@ -33,6 +35,9 @@ the key is random, so key order is not arrival order: sort by received_at.
 
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
+
+from .weather import place_of
 
 
 def _failed_condition(e: Exception) -> bool:
@@ -57,6 +62,7 @@ class Subscriber:
     last_sent_date: str | None
     pause_from: str | None = None
     pause_through: str | None = None
+    place: dict | None = None  # the city, for weather (weather.place_of)
 
     def paused_on(self, day: str) -> bool:
         return bool(self.pause_from and self.pause_through and self.pause_from <= day <= self.pause_through)
@@ -73,6 +79,7 @@ class Subscriber:
             last_sent_date=item.get("last_sent_date"),
             pause_from=item.get("pause_from"),
             pause_through=item.get("pause_through"),
+            place=place_of(item),
         )
 
 
@@ -335,6 +342,35 @@ class Store:
         with self.table.batch_writer() as batch:
             for key in keys:
                 batch.delete_item(Key=key)
+
+    # weather ------------------------------------------------------------------
+
+    def put_weather(self, user_id: str, day: str, fields: dict) -> bool:
+        """Keep a day's weather, once: the first reading stands. False if the
+        day already had one."""
+        item = {k: Decimal(str(v)) if isinstance(v, float) else v for k, v in fields.items()}
+        try:
+            self.table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **item},
+                                ConditionExpression="attribute_not_exists(sk)")
+            return True
+        except Exception as e:
+            if _failed_condition(e):
+                return False
+            raise
+
+    def weather_between(self, user_id: str, first: str, last: str) -> dict[str, dict]:
+        """Day -> its weather, for days first through last."""
+        items, kwargs = [], {
+            "KeyConditionExpression": "pk = :u AND sk BETWEEN :a AND :b",
+            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":a": f"WEATHER#{first}", ":b": f"WEATHER#{last}"},
+        }
+        while True:
+            page = self.table.query(**kwargs)
+            items.extend(page.get("Items", []))
+            if "LastEvaluatedKey" not in page:
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        return {i["sk"][8:]: i for i in items}
 
     # the zip export ---------------------------------------------------------
 

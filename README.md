@@ -40,6 +40,10 @@ reply email
 - **Links show by name.** When a note has a web address, its page is visited
   once, as the note is saved, to keep its title; a phrase you linked in your
   mail app keeps your words. Nothing is fetched when a note is shown.
+- **Weather.** Each day's high, low and conditions are kept with your notes,
+  for the city you were in, and the morning email carries one line of
+  today's forecast. [Weather from Open-Meteo](https://open-meteo.com/),
+  CC BY 4.0, which is told the city, never your notes.
 - **The email tracks nothing.** No open or click tracking, and the HTML email loads
   nothing remote: no images, fonts or stylesheets.
 - **The arithmetic is the site's.** `version.py` is a port of the site's

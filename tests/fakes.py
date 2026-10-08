@@ -118,6 +118,15 @@ class FakeStore:
                 rows = self.items.get(pk[5:], [])
                 rows[:] = [i for i in rows if i["sk"] != sk]
 
+    def put_weather(self, user_id, day, fields):
+        if self._rows(user_id, f"WEATHER#{day}"):
+            return False
+        self.items.setdefault(user_id, []).append({"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **fields})
+        return True
+
+    def weather_between(self, user_id, first, last):
+        return {i["sk"][8:]: dict(i) for i in self._rows(user_id, "WEATHER#") if first <= i["sk"][8:] <= last}
+
     def export(self, user_id):
         found = self._rows(user_id, "EXPORT")
         return dict(found[0]) if found else None

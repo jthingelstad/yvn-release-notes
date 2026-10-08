@@ -4,7 +4,7 @@ from datetime import date
 from email import policy
 from email.parser import BytesParser
 
-from release_notes.compose import build_message, countdown, html_body, streak_lines
+from release_notes.compose import PAST_MAX, body, build_message, countdown, html_body, linked, streak_lines
 from release_notes.streak import Streak, compute_streak
 from release_notes.version import compute_version
 
@@ -144,6 +144,51 @@ class StreakCopy(unittest.TestCase):
         html = html_body(self.v, BIRTHDAY, date(2026, 10, 8))
         self.assertNotIn("in a row", html)
         self.assertNotIn("streak", html.split("</style>")[1])
+
+
+class AYearAgo(unittest.TestCase):
+    DAY = date(2026, 10, 8)  # 4.5.110; a year back is 4.4.110 on 2025-10-08
+    THEN = date(2025, 10, 8)
+
+    def html(self, text):
+        return html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY, None, (self.THEN, text))
+
+    def test_the_section(self):
+        html = self.html("Walked the river.\n\nWrote it up: https://www.example.com/2025/10/08/river/.")
+        self.assertIn("A year ago</strong> &middot; Wednesday, October 8, 2025", html)
+        self.assertIn('aria-label="4.5.110"', html)
+        self.assertIn('4<span class="sep" style="color:#ff5a1f;">.</span>4<span class="sep" style="color:#ff5a1f;">.</span>110', html)
+        self.assertIn(">Walked the river.</p>", html)
+        self.assertIn('Wrote it up: <a class="link" href="https://www.example.com/2025/10/08/river/" style="color:#1a4fe0;">'
+                      'example.com/2025/10/08/river</a>.</p>', html)
+        self.assertIn('href="https://notes.yourversionnumber.com/day/?d=2025-10-08"', html)
+        text = body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, None, (self.THEN, "Walked the river."))
+        self.assertIn("A year ago you were 4.4.110 (Wednesday, October 8, 2025):\n\nWalked the river.\n\n"
+                      "See it: https://notes.yourversionnumber.com/day/?d=2025-10-08\n", text)
+
+    def test_still_type_on_paper_and_ascii(self):
+        html = self.html("Caf\u00e9 with Grace \U0001F389")
+        for banned in ("border:", "border-radius", "box-shadow", "<img"):
+            self.assertNotIn(banned, html)
+        self.assertEqual(html.count("background:"), 3)
+        html.encode("ascii")
+        self.assertIn("Caf&#233; with Grace &#127881;", html)
+
+    def test_note_text_is_escaped_and_only_web_addresses_link(self):
+        html = self.html('<script>x</script> javascript:alert(1) "quoted"')
+        self.assertIn("&lt;script&gt;x&lt;/script&gt; javascript:alert(1) &quot;quoted&quot;", html)
+        self.assertNotIn('href="javascript', html)
+        self.assertEqual(linked("(see https://example.com/a)"),
+                         '(see <a class="link" href="https://example.com/a" style="color:#1a4fe0;">example.com/a</a>)')
+
+    def test_long_notes_are_cut_between_words(self):
+        html = self.html("word " * 400)
+        self.assertIn("word&#8230;</p>", html)
+        self.assertIn(">Read the rest</a>", html)
+        self.assertLess(html.count("word"), PAST_MAX // 5 + 1)
+
+    def test_no_section_without_notes(self):
+        self.assertNotIn("A year ago", html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY))
 
 
 if __name__ == "__main__":

@@ -1,7 +1,9 @@
 import os
 import unittest
 from datetime import date, datetime, timezone
+from email import message_from_bytes
 from email.message import EmailMessage
+from email.policy import default
 
 from release_notes import inbound, send
 from release_notes.store import Subscriber
@@ -34,7 +36,7 @@ class FakeStore:
     def __init__(self, subs):
         self.subs = {s.user_id: s for s in subs}
         self.days, self.tokens, self.notes = {}, {}, {}
-        self.note_days_fail = False
+        self.note_days_fail = self.day_notes_fail = False
         self.paused = []
 
     def active_subscribers(self):
@@ -70,6 +72,11 @@ class FakeStore:
 
     def pauses(self, user_id):
         return self.paused
+
+    def day_notes(self, user_id, day):
+        if self.day_notes_fail:
+            raise ConnectionError("boom")
+        return [n for (u, d, _), n in sorted(self.notes.items()) if u == user_id and d == day]
 
     def put_note(self, user_id, day, message_id, note):
         key = (user_id, day, message_id)
@@ -205,6 +212,33 @@ class Sending(unittest.TestCase):
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         raw = ses.sent[0]["Content"]["Raw"]["Data"].decode()
         self.assertIn("2 days in a row, your longest yet.", raw)
+
+    def test_email_carries_last_years_notes(self):
+        # Ada is 5.0.0 on 2026-10-07; a year back is 4.9.0 on 2025-10-07.
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2025-10-07", "m1")] = {"text": "Birthday dinner. https://example.com/post/"}
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
+        self.assertEqual(out["results"][0]["last_year"], "2025-10-07")
+        self.assertNotIn("Birthday dinner", str(out))
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        self.assertIn("A year ago you were 4.9.0 (Tuesday, October 7, 2025):", msg.get_body(("plain",)).get_content())
+        self.assertIn('href="https://example.com/post/"', msg.get_body(("html",)).get_content())
+
+    def test_no_notes_a_year_ago_no_section(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2025-10-06", "m1")] = {"text": "The day before."}
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
+        self.assertIsNone(out["results"][0]["last_year"])
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertNotIn("A year ago", ses.sent[0]["Content"]["Raw"]["Data"].decode())
+
+    def test_last_year_read_failure_still_sends(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.day_notes_fail = True
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual(len(ses.sent), 1)
+        self.assertNotIn("A year ago", ses.sent[0]["Content"]["Raw"]["Data"].decode())
 
     def test_streak_read_failure_still_sends(self):
         store, ses = FakeStore([ada()]), FakeSES()

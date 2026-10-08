@@ -17,8 +17,12 @@ Rules for it:
 - Non-ASCII goes in as entities, so the HTML part stays 7-bit.
 - The plain-text part says the same thing. Replies are parsed from the
   replier's own plain text, never from this HTML.
+- "A year ago" shows the notes from the same patch number a release back
+  (version.a_year_before), after the streak, only when there are some. A
+  bare web address in them becomes a link; nothing is fetched from it.
 """
 
+import re
 import secrets
 from base64 import b32encode
 from datetime import date
@@ -104,13 +108,64 @@ def long_date(day: date) -> str:
     return f"{day:%A, %B} {day.day}"
 
 
+# --- a year ago -------------------------------------------------------------------
+
+PAST_MAX = 1000  # characters of last year's notes before "Read the rest"
+URL = re.compile(r"https?://[^\s<>\"]+", re.IGNORECASE)
+URL_TAIL = ".,;:!?'\")]}"  # sentence punctuation after an address, not part of it
+
+
+def past_text(text: str) -> tuple[str, bool]:
+    """Last year's notes, cut between words near PAST_MAX. True if cut."""
+    if len(text) <= PAST_MAX:
+        return text, False
+    return text[:PAST_MAX].rsplit(None, 1)[0].rstrip(), True
+
+
+def past_link(day: date) -> str:
+    return f"{APP}/day/?d={day.isoformat()}"
+
+
+def ascii_html(text: str) -> str:
+    return escape(text).encode("ascii", "xmlcharrefreplace").decode()
+
+
+def linked(text: str) -> str:
+    """Note text for the HTML part: escaped, 7-bit, bare web addresses as
+    links showing the address without its scheme."""
+    out, last = [], 0
+    for m in URL.finditer(text):
+        url = m.group(0).rstrip(URL_TAIL)
+        out.append(ascii_html(text[last : m.start()]))
+        shown = re.sub(r"^https?://(www\.)?", "", url, flags=re.IGNORECASE).rstrip("/")
+        out.append(f'<a class="link" href="{ascii_html(url)}" style="color:{BLUE};">{ascii_html(shown)}</a>')
+        last = m.start() + len(url)
+    out.append(ascii_html(text[last:]))
+    return "".join(out)
+
+
 # --- plain text ---------------------------------------------------------------
 
-def body(v: Version, birthday: date, streak: Streak | None = None) -> str:
+def past_body(birthday: date, then: date, text: str) -> str:
+    shown, cut = past_text(text)
+    more = "Read the rest" if cut else "See it"
+    return (
+        f"A year ago you were {compute_version(birthday, then)} ({long_date(then)}, {then.year}):\n"
+        "\n"
+        f"{shown}{' ...' if cut else ''}\n"
+        "\n"
+        f"{more}: {past_link(then)}\n"
+        "\n"
+    )
+
+
+def body(v: Version, birthday: date, streak: Streak | None = None, last_year: tuple[date, str] | None = None) -> str:
     opening = f"You're {v} today."
     if line := birthday_line(v):
         opening = f"{opening} {line}"
     streak_text = " ".join(streak_lines(v, streak)) + "\n\n" if streak else ""
+    if last_year:
+        streak_text += past_body(birthday, *last_year)
     return (
         f"{opening}\n"
         "\n"
@@ -186,6 +241,32 @@ def streak_html(v: Version, birthday: date, s: Streak) -> str:
 """
 
 
+def past_html(birthday: date, then: date, text: str) -> str:
+    v = compute_version(birthday, then)
+    shown, cut = past_text(text)
+    paras = [p.strip() for p in re.split(r"\n\s*\n", shown) if p.strip()]
+    if cut:
+        paras[-1] += "\u2026"
+    notes = "\n".join(
+        f'<p class="ink" style="margin:0 0 12px;font-family:{FONT};font-size:17px;line-height:1.5;color:{INK};">'
+        + "<br>".join(linked(line) for line in p.split("\n"))
+        + "</p>"
+        for p in paras
+    )
+    more = "Read the rest" if cut else "See it"
+    return f"""<tr><td style="padding:48px 0 0;">
+<p class="ink-2" style="margin:0 0 6px;font-family:{FONT};font-size:14px;color:{INK_2};">
+<strong class="ink" style="color:{INK};">A year ago</strong> &middot; {escape(long_date(then))}, {then.year}
+</p>
+<p style="margin:0 0 16px;">{vnum_html(v, 30)}</p>
+{notes}
+<p class="ink-2" style="margin:4px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
+<a class="link" href="{escape(past_link(then))}" style="color:{BLUE};font-weight:700;text-decoration:underline;">{more}</a>
+</p>
+</td></tr>
+"""
+
+
 DARK_CSS = f"""
 :root {{ color-scheme: light dark; supported-color-schemes: light dark; }}
 @media (max-width: 480px) {{
@@ -206,7 +287,9 @@ DARK_CSS = f"""
 """
 
 
-def html_body(v: Version, birthday: date, day: date, streak: Streak | None = None) -> str:
+def html_body(
+    v: Version, birthday: date, day: date, streak: Streak | None = None, last_year: tuple[date, str] | None = None
+) -> str:
     vs = escape(str(v))
     party = birthday_line(v)
     party_html = (
@@ -260,6 +343,7 @@ What happened, what you made, who you saw. Whatever you send back becomes the re
 </td></tr>
 
 {streak_html(v, birthday, streak) if streak else ""}
+{past_html(birthday, *last_year) if last_year else ""}
 <tr><td class="ink-2" style="padding:48px 0 0;font-family:{FONT};font-size:13px;line-height:1.5;color:{INK_2};">
 Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>. <a class="link" href="{APP}/settings/" style="color:{BLUE};">Pause or manage</a>
 </td></tr>
@@ -282,6 +366,7 @@ def build_message(
     birthday: date,
     day: date,
     streak: Streak | None = None,
+    last_year: tuple[date, str] | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = from_header(from_addr)
@@ -293,6 +378,6 @@ def build_message(
     # the emails. The day's reply token names the person.
     msg["List-Unsubscribe"] = f"<{APP}/api/unsubscribe?t={token}>"
     msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
-    msg.set_content(body(v, birthday, streak))
-    msg.add_alternative(html_body(v, birthday, day, streak), subtype="html")
+    msg.set_content(body(v, birthday, streak, last_year))
+    msg.add_alternative(html_body(v, birthday, day, streak, last_year), subtype="html")
     return msg

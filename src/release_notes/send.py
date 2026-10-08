@@ -12,6 +12,9 @@ email actually went.
 Invoke with {"send_now": "<user id>"} to send that subscriber today's email
 straight away, outside their send window. It is still once per local day.
 
+The email carries the notes from a year ago, by version (5.3.279 for
+5.4.279), when there are any. A dry run reports that day, never the text.
+
 A paused subscriber gets nothing on the days of the pause (pause_from through
 pause_through, in their own zone), send_now included.
 """
@@ -22,9 +25,10 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from .compose import build_message, from_header, new_token
+from .notes import combine
 from .store import Store, Subscriber
 from .streak import Streak, compute_streak, pause_days
-from .version import compute_version
+from .version import a_year_before, compute_version
 
 WINDOW = timedelta(hours=3)
 
@@ -62,6 +66,17 @@ def read_streak(store: Store, user_id: str, day: date) -> Streak | None:
         return compute_streak(store.note_days(user_id), day, pause_days(store.pauses(user_id), day))
     except Exception as e:
         log(event="streak-error", user=user_id, date=day.isoformat(), error=type(e).__name__)
+        return None
+
+
+def read_last_year(store: Store, sub: Subscriber, day: date) -> tuple[date, str] | None:
+    # Also a nicety: if last year's notes cannot be read, the email goes without.
+    try:
+        then = a_year_before(sub.birthday, day)
+        text = combine(store.day_notes(sub.user_id, then.isoformat())) if then else ""
+        return (then, text) if text else None
+    except Exception as e:
+        log(event="last-year-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
         return None
 
 
@@ -109,6 +124,7 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
             continue
         if dry_run:
             streak = read_streak(store, sub.user_id, here.date())
+            last_year = read_last_year(store, sub, here.date())
             results.append(
                 {
                     "user": sub.user_id,
@@ -117,6 +133,7 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
                     "local": here.isoformat(),
                     "streak": streak.current if streak else None,
                     "longest": streak.longest if streak else None,
+                    "last_year": last_year[0].isoformat() if last_year else None,
                 }
             )
             continue
@@ -139,6 +156,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock) -> dict:
         return {"user": sub.user_id, "date": day, "outcome": "already-claimed"}
     token = new_token()
     streak = read_streak(store, sub.user_id, date.fromisoformat(day))
+    last_year = read_last_year(store, sub, date.fromisoformat(day))
     try:
         store.put_day(sub.user_id, day, str(v), token, clock().isoformat())
         msg = build_message(
@@ -150,6 +168,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock) -> dict:
             birthday=sub.birthday,
             day=date.fromisoformat(day),
             streak=streak,
+            last_year=last_year,
         )
         resp = ses.send_email(
             FromEmailAddress=from_header(os.environ["FROM_ADDRESS"]),

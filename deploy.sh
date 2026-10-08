@@ -12,6 +12,12 @@
 # 2. Deploy infra/template.yaml as stack yvn-release-notes.
 # 3. Make the stack's receipt rule set the account's active one. SES allows
 #    one active set per region; refuse rather than replace someone else's.
+# 4. Sync web/ to the web bucket and invalidate the distribution.
+#
+# The notes.yourversionnumber.com certificate is issued outside the stack, as
+# Drop's is: an in-stack certificate would hold the whole deploy until the
+# DNS validation record exists. Until ACM says ISSUED the distribution has no
+# alias and answers on its cloudfront.net name only.
 set -euo pipefail
 export AWS_PROFILE="${AWS_PROFILE:-cloud-engineer}"
 export AWS_REGION=us-east-1 AWS_PAGER=""
@@ -55,12 +61,17 @@ trap 'rm -rf "$BUILD"' EXIT
 KEY="code/$(shasum -a 256 "$BUILD/code.zip" | cut -c1-16).zip"
 aws s3 cp "$BUILD/code.zip" "s3://$CODE_BUCKET/$KEY" --only-show-errors
 
+WEB_DOMAIN=notes.yourversionnumber.com
+WEB_CERT=$(aws acm list-certificates --certificate-statuses ISSUED \
+  --query "CertificateSummaryList[?DomainName=='$WEB_DOMAIN'].CertificateArn | [0]" --output text)
+[[ "$WEB_CERT" == None ]] && WEB_CERT="" && echo "note: no ISSUED certificate for $WEB_DOMAIN yet; deploying without the alias" >&2
+
 aws cloudformation deploy \
   --stack-name "$STACK" \
   --template-file infra/template.yaml \
   --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset \
-  --parameter-overrides "CodeBucket=$CODE_BUCKET" "CodeKey=$KEY" \
+  --parameter-overrides "CodeBucket=$CODE_BUCKET" "CodeKey=$KEY" "WebDomain=$WEB_DOMAIN" "WebCertificateArn=$WEB_CERT" \
   --tags Application=YourVersionNumber Project=yvn-release-notes ManagedBy=cloudformation \
          Environment=production Repository=jthingelstad/yvn-release-notes
 
@@ -71,6 +82,19 @@ if [[ -z "$ACTIVE" || "$ACTIVE" == None ]]; then
 elif [[ "$ACTIVE" != "$STACK" ]]; then
   echo "WARNING: receipt rule set '$ACTIVE' is active, not $STACK. Replies will not arrive." >&2
 fi
+
+output() {
+  aws cloudformation describe-stacks --stack-name "$STACK" \
+    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+}
+WEB_BUCKET=$(output WebBucketName)
+# Pages revalidate within a minute; versioned assets (?v=N) may sit longer.
+aws s3 sync web/ "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include '*.html' \
+  --cache-control 'public, max-age=60'
+aws s3 sync web/ "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*.html' --exclude '.DS_Store' \
+  --cache-control 'public, max-age=600'
+aws cloudfront create-invalidation --distribution-id "$(output WebDistributionId)" --paths '/*' \
+  --query Invalidation.Id --output text >/dev/null
 
 aws cloudformation describe-stacks --stack-name "$STACK" \
   --query 'Stacks[0].Outputs[].[OutputKey,OutputValue]' --output text

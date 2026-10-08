@@ -4,24 +4,25 @@
 gets one email a day whose subject is their version number ("You're 5.2.113
 today"). Whatever they reply becomes the release notes for that version.
 
-It is a separate product from `~/Projects/yourversionnumber.com` on purpose.
-That site stores nothing, anywhere, ever (its convention 1), and it stays that
-way. Everything that stores data lives here.
+It is its own repo and stack, separate from `~/Projects/yourversionnumber.com`
+(the birthday and work sites). Those sites keep everything in the URL because
+that was a fun way to build them, not because of a rule (Jamie, 2026-10-08:
+"This is a hobby project. It's just fun."). This product stores data, and it
+has a web app at `notes.yourversionnumber.com` (`docs/WEB-APP.md` is the plan).
+Leave the sites alone while the web app is built.
 
-## Why this is allowed when server-side cards were not
+## Who can write
 
-The site's server-side cards were torn down on 2026-09-14 because they were an
-unauthenticated public write endpoint holding other people's names and notes.
-Release Notes avoids both problems:
+Every write proves the writer owns the subscriber's address:
 
-- **Every write is authenticated.** Notes only arrive by email, through a reply
-  address that names the person and day with 120 random bits, and only from
-  the subscriber's own address with a DMARC or aligned DKIM pass.
-- **Each subscriber's data is their own.** People keep notes about themselves
-  because they asked to.
+- **By email**: through a reply address that names the person and day with
+  120 random bits, from the subscriber's own address, with a DMARC or aligned
+  DKIM pass.
+- **On the web**: inside a session that began with a link or code sent to
+  that address.
 
-Keep it that way. Do not add a public endpoint that writes without proving the
-caller owns the address it is writing for.
+Each subscriber's data is their own. Do not add an endpoint that writes
+without one of those two proofs.
 
 ## Shape
 
@@ -32,6 +33,10 @@ SES inbound (in.yourversionnumber.com MX)
 
 EventBridge, every quarter hour
   -> Lambda yvn-release-notes-sender   anyone whose local send time has come -> one email
+
+notes.yourversionnumber.com (CloudFront)
+  default -> S3 web bucket              web/: static HTML, CSS, vanilla JS
+  /api/*  -> HTTP API -> Lambda yvn-release-notes-web
 ```
 
 - `src/release_notes/version.py`: the version arithmetic, ported from the site's
@@ -47,6 +52,13 @@ EventBridge, every quarter hour
 
 **Standard library only.** No `requirements.txt`; `boto3` comes from the Lambda
 runtime and is imported lazily so the tests run without it.
+
+- `web.py`: the web app's API, routed by method and path. `web/` is the
+  static site, synced to the web bucket by `deploy.sh`. Pages load only their
+  own files (the CSP is `'self'`), so no inline script or style, nothing
+  remote; anything another service answers goes through `/api`.
+- Python stays the language for the web API too (decided 2026-10-08): one
+  language, one copy of the version arithmetic, nothing to install.
 
 ## Rules
 
@@ -136,15 +148,25 @@ runtime and is imported lazily so the tests run without it.
   an MX on the inbound subdomain to SES inbound, and an MX plus SPF on the
   MAIL FROM subdomain. DMARC is Jamie's own record. All were live on
   2026-10-07. Read current values from DNS or the stack, not from this repo.
+- The web app adds two records: the ACM validation CNAME for
+  `notes.yourversionnumber.com` and `notes` CNAME to the stack output
+  `WebDistributionDomain`. The certificate lives outside the stack (an
+  in-stack one would hold every deploy until DNS validated); `deploy.sh`
+  finds it once ACM says ISSUED and only then attaches the alias.
+- `deploy.sh` syncs `web/` to the web bucket (HTML at max-age 60, other files
+  600; bump `?v=N` on an asset whose change must land with a page) and
+  invalidates the distribution.
 
 ## Phases
 
-1. **Jamie only, text only** (this): sender, inbound, storage, subscribers added by hand.
-2. **Open sign-up** by email (a `mailto:` from the site; the sender's own DKIM
-   or a confirmation reply proves the address), STOP/unsubscribe with
-   `List-Unsubscribe`, DELETE and EXPORT by email. Bounces pause a subscriber.
+1. **Jamie only, text only** (done 2026-10-07): sender, inbound, storage,
+   subscribers added by hand.
+2. **The web app** (`docs/WEB-APP.md`): sign-up and sign-in by email link or
+   code, export, notes for today and past days, pause, settings,
+   `List-Unsubscribe`, bounces pause a subscriber.
 3. **Around it:** photos and audio from the raw mail; "on this version last
    year" (5.2.113 is exactly a year after 5.1.113); a yearly "release notes
-   for 5.2" collection on the birthday; a web reader behind sign-in by email;
-   weather from a home location (Open-Meteo, no key, CC BY 4.0) - ON HOLD,
-   Jamie 2026-10-07: "Let's wait to do anything with weather".
+   for 5.2" collection on the birthday; weather from the subscriber's city
+   (Open-Meteo, no key, CC BY 4.0). The city is collected in phase 2; using
+   it in the email is ON HOLD (Jamie 2026-10-07: "Let's wait to do anything
+   with weather").

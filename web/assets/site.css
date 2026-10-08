@@ -1,0 +1,20 @@
+/* Placeholder until the design canvas lands: the email's type on paper.
+   Colours are the email's (compose.py), light then dark. No boxes. */
+:root {
+  --paper: #fffbf2; --ink: #14163a; --ink-2: #3b3d63;
+  --blue: #1a4fe0; --orange-ink: #c43c00;
+  --font: 'Bricolage Grotesque', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #14163a; --ink: #fffbf2; --ink-2: #c9cbe6; --blue: #8fb0ff; --orange-ink: #ff8a5c; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 18px/1.55 var(--font); }
+main { max-width: 34rem; margin: 0 auto; padding: 4rem 1rem; }
+.eyebrow { color: var(--orange-ink); font-weight: 700; margin: 0 0 .5rem; }
+h1 { font-size: clamp(2rem, 6vw, 2.75rem); line-height: 1.1; margin: 0 0 1.25rem; }
+p { color: var(--ink-2); }
+a { color: var(--blue); font-weight: 700; }
+.soon { color: var(--ink); font-weight: 700; }
+.foot { margin-top: 3rem; font-size: .9rem; }

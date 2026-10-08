@@ -66,6 +66,10 @@ const SAY = {
   text: 'Write something first.',
   'too-long': 'That’s longer than one note can hold. Split it in two.',
   note: 'That note isn’t here any more. Reload the page.',
+  days: 'Pick how long to pause.',
+  through: 'Pick a day within the next 60.',
+  stopped: 'Your emails are stopped. Start them again in settings first.',
+  'delete-failed': 'Couldn’t delete everything just now. Nothing is lost; try again in a minute.',
 };
 
 function say(form, data) {
@@ -302,6 +306,20 @@ function failed(root) {
   root.textContent = 'Couldn’t load this just now. Reload to try again.';
 }
 
+// --- pausing -------------------------------------------------------------------
+
+function addDays(iso, n) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+// "Paused through Thursday, October 15." or, not yet begun, from and through.
+function pauseLine(p) {
+  const { from, through } = p.pause;
+  if (from > p.today) return `Paused from ${dayName(from)} through ${dayName(through)}.`;
+  return `Paused through ${dayName(through)}. They start again ${dayName(addDays(through, 1))} at ${clock(p.send_time)}.`;
+}
+
 const STOPPED = {
   unsubscribed: 'Stopped, because you unsubscribed.',
   bounce: 'Stopped, because an email to this address bounced.',
@@ -471,8 +489,12 @@ const pages = {
       const stopped = p.status === 'stopped';
       $('#email-status').textContent = stopped
         ? (STOPPED[p.stopped_reason] || 'Stopped.')
-        : `Arriving every morning at ${clock(p.send_time)}.`;
+        : p.pause ? pauseLine(p) : `Arriving every morning at ${clock(p.send_time)}.`;
       $('#restart').hidden = !stopped;
+      $('#pause-link').hidden = stopped;
+      $('#pause-link').textContent = p.pause ? 'Change the pause' : 'Pause the emails';
+      $('#resume').hidden = stopped || !p.pause;
+      $('#delete-link').hidden = $('#delete-hint').hidden = false;
       $('#account').hidden = false;
     };
     const save = async (change) => {
@@ -501,6 +523,10 @@ const pages = {
     });
 
     $('#restart').addEventListener('click', () => save({ status: 'active' }));
+    $('#resume').addEventListener('click', async () => {
+      const r = await api('DELETE', '/api/pause');
+      if (r.ok) { p = r.data; fill(); }
+    });
     $('#signout').addEventListener('click', async () => {
       await api('POST', '/api/auth/signout');
       location.replace('/');
@@ -525,6 +551,8 @@ const pages = {
       const [, nm, nd] = t.next.date.split('-').map(Number);
       const on = new Date(2000, nm - 1, nd).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
       next.append(el('span', 'mono', t.next.version), ` ships ${on}.`);
+      $('#paused').hidden = !t.paused_through;
+      if (t.paused_through) $('#paused').textContent = `Emails paused through ${dayName(t.paused_through)}. Notes still count.`;
       renderNotes($('#notes'), t.date, t.notes, t.tz, load);
       streakLine($('#streak'), t.streak);
       view.hidden = false;
@@ -561,6 +589,31 @@ const pages = {
       return sec;
     };
 
+    // Paused days with no notes read as one row, across pages too.
+    let run = null;
+    const paused = (d) => {
+      if (run && addDays(d.date, 1) === run.oldest.date) {
+        run.oldest = d;
+        run.days += 1;
+      } else {
+        run = { newest: d, oldest: d, days: 1, sec: el('section', 'tday') };
+        list.append(run.sec);
+      }
+      const { sec, newest, oldest, days } = run;
+      sec.textContent = '';
+      const head = el('p', 'tday-head');
+      const a = el('span', 'vnum small');
+      vnum(a, oldest.version);
+      head.append(a);
+      if (days > 1) {
+        const b = el('span', 'vnum small');
+        vnum(b, newest.version);
+        head.append(el('span', 'when', 'to'), b);
+      }
+      const when = days > 1 ? `${dayName(oldest.date, thisYear)} to ${dayName(newest.date, thisYear)}` : dayName(oldest.date, thisYear);
+      sec.append(head, el('p', 'hint', when), el('p', 'hint', `Paused, ${days === 1 ? '1 day' : days + ' days'}. Your streak waited.`));
+    };
+
     const load = async () => {
       more.disabled = true;
       const r = await api('GET', '/api/days' + (before ? `?before=${before}` : ''));
@@ -568,7 +621,11 @@ const pages = {
       more.disabled = false;
       if (!r.ok) return failed(list.appendChild(el('p', 'hint')));
       thisYear = thisYear || Number(r.data.today.slice(0, 4));
-      for (const d of r.data.days) list.append(day(d, r.data.today));
+      for (const d of r.data.days) {
+        if (d.paused && !d.notes.length) { paused(d); continue; }
+        run = null;
+        list.append(day(d, r.data.today));
+      }
       before = r.data.before;
       more.hidden = !before;
     };
@@ -615,6 +672,107 @@ const pages = {
     });
     noteForm(form, () => current, load);
     load();
+  },
+
+  async pause() {
+    const me = await api('GET', '/api/me');
+    if (bounce(me)) return;
+    if (me.data.new) return location.replace(home(true));
+    let p = me.data;
+    const form = $('#pause-form'), until = $('.until', form);
+
+    const start = () => (p.pause && p.pause.from <= p.today ? p.pause.from : p.pause_starts);
+    const through = () => {
+      const v = form.len.value;
+      return v === 'until' ? form.through.value : addDays(start(), Number(v) - 1);
+    };
+    const preview = () => {
+      quiet(form);
+      until.hidden = form.len.value !== 'until';
+      for (const c of form.querySelectorAll('.choice')) c.classList.toggle('on', $('input', c).checked);
+      const last = through(), out = $('#preview');
+      out.textContent = '';
+      if (!last) return;
+      const from = start() < p.today ? p.today : start();
+      const b = (t) => el('strong', '', t);
+      out.append('No emails from ', b(dayName(from)), ' through ', b(dayName(last)),
+        '. They start again on ', b(dayName(addDays(last, 1))), ` at ${clock(p.send_time)}.`);
+    };
+    const show = () => {
+      if (p.status === 'stopped') {
+        $('#current-text').textContent = 'Your emails are stopped, so there’s nothing to pause. Start them again in settings.';
+        $('#current').hidden = false;
+        $('#resume').hidden = true;
+        form.hidden = true;
+        return;
+      }
+      $('#current').hidden = !p.pause;
+      if (p.pause) $('#current-text').textContent = pauseLine(p);
+      $('#choose').textContent = p.pause ? 'Change it to' : 'Pause for';
+      form.through.min = start() < p.today ? p.today : start();
+      form.through.max = addDays(start(), 59);
+      if (!form.through.value) form.through.value = addDays(start(), 13);
+      form.hidden = false;
+      preview();
+    };
+
+    form.addEventListener('change', preview);
+    $('#resume').addEventListener('click', async () => {
+      const r = await api('DELETE', '/api/pause');
+      if (r.ok) { p = r.data; show(); }
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      busy(form, async () => {
+        quiet(form);
+        const v = form.len.value;
+        if (v === 'until' && !form.through.value) return say(form, { error: 'through' });
+        const r = await api('PUT', '/api/pause', v === 'until' ? { through: form.through.value } : { days: Number(v) });
+        if (!r.ok) return say(form, r.data);
+        location.replace('/settings/');
+      });
+    });
+    show();
+  },
+
+  async delete() {
+    const me = await api('GET', '/api/me');
+    if (bounce(me)) return;
+    if (me.data.new) return location.replace(home(true));
+    const ask = $('#code-ask'), confirm = $('#code-confirm');
+    $('#to').textContent = me.data.email;
+    $('#ask-delete').hidden = false;
+
+    ask.addEventListener('submit', (e) => {
+      e.preventDefault();
+      busy(ask, async () => {
+        quiet(ask);
+        const r = await api('POST', '/api/me/delete-code');
+        if (r.status !== 202) return say(ask, r.data);
+        ask.hidden = true;
+        confirm.hidden = false;
+        confirm.code.focus();
+      });
+    });
+    confirm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      busy(confirm, async () => {
+        quiet(confirm);
+        const r = await api('DELETE', '/api/me', { code: confirm.code.value });
+        if (!r.ok) {
+          if (['too-many-tries', 'code-expired', 'code-used'].includes(r.data.error)) {
+            ask.hidden = false;
+            confirm.hidden = true;
+            confirm.code.value = '';
+            return say(ask, r.data);
+          }
+          return say(confirm, r.data);
+        }
+        $('#ask-delete').hidden = true;
+        $('#deleted').hidden = false;
+        for (const a of document.querySelectorAll('.bar a:not(.brand)')) a.hidden = true;
+      });
+    });
   },
 
   unsubscribe() {

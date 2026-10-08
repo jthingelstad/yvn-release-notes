@@ -103,7 +103,22 @@ notes.yourversionnumber.com
 - **Pages**: `/` (sign in, with a live example number from `/api/sample`),
   `/signin/` (the link lands here, token in the fragment), `/setup/` (a new
   address's three questions), `/today/` (where sign-in lands), `/timeline/`,
-  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/settings/`, `/unsubscribe/`.
+  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/settings/`, `/pause/`,
+  `/delete/`, `/unsubscribe/`.
+- **A pause** starts on the next day an email would go (today, unless
+  today's has gone) and runs 1 to 60 days. It is `PAUSE#<from>` with
+  `through`, and the profile carries the latest one (`pause_from`,
+  `pause_through`) so the sender skips it without another read. Changing a
+  pause that is running keeps its start; resuming ends it yesterday, or
+  drops it if it has not begun. The timeline folds paused days without
+  notes into one row.
+- **Deleting an account** takes a code mailed to the account's own address
+  (`POST /api/me/delete-code`; it is a sign-in row, so the same limits and
+  attempt count apply). Then, in order so a failure can be retried: the raw
+  emails, the reply tokens, every item under the user, the address, the
+  profile. Other signed-in browsers keep a session pointing at nobody until
+  it expires; it can read and write nothing. Old versions in the mail
+  bucket expire 30 days later, which the page says.
 - **The timeline** lists every day with an email or a note, newest first,
   and today. Days with neither (before sign-up, or while stopped) are left
   out unless a note is written for them. A note written or replied after
@@ -135,8 +150,10 @@ notes.yourversionnumber.com
 | `GET /api/days/{date}` | one day: version and notes |
 | `POST /api/days/{date}/notes` | write for today or a past day |
 | `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete |
-| `PUT/DELETE /api/pause` | |
-| `DELETE /api/me` | needs a fresh code |
+| `PUT /api/pause` `{days}` or `{through}` | pause, or change the pause |
+| `DELETE /api/pause` | resume now |
+| `POST /api/me/delete-code` | mails the account's address a code to confirm deleting |
+| `DELETE /api/me` `{code}` | deletes everything; needs that fresh code |
 | `POST /api/unsubscribe?t=` | the email's one-click unsubscribe (RFC 8058); the token is the day's reply token, and this is the one write without an Origin |
 | `GET /api/unsubscribe?t=` | redirects to `/unsubscribe/`, a page with a button, for mail apps that open the link |
 

@@ -2,7 +2,9 @@
 
     pk               sk                         what
     USER#<id>        PROFILE                    email, birthday, tz, send_time, status, last_sent_date,
-                                                city, region, country, lat, lon; stopped_reason when stopped
+                                                city, region, country, lat, lon; stopped_reason when stopped;
+                                                pause_from, pause_through for the latest pause
+    USER#<id>        PAUSE#<YYYY-MM-DD>         one pause: through (inclusive), kept for the streak and export
     USER#<id>        DAY#<YYYY-MM-DD>           the email sent that day: version, token, message id
     USER#<id>        NOTE#<YYYY-MM-DD>#<msgid>  one reply: text, attachment list, raw S3 key
     USER#<id>        NOTE#<YYYY-MM-DD>#w-<id>   one note written on the web: text, source=web
@@ -48,6 +50,11 @@ class Subscriber:
     send_time: str
     status: str
     last_sent_date: str | None
+    pause_from: str | None = None
+    pause_through: str | None = None
+
+    def paused_on(self, day: str) -> bool:
+        return bool(self.pause_from and self.pause_through and self.pause_from <= day <= self.pause_through)
 
     @classmethod
     def from_item(cls, item: dict) -> "Subscriber":
@@ -59,6 +66,8 @@ class Subscriber:
             send_time=item.get("send_time", "06:00"),
             status=item.get("status", "active"),
             last_sent_date=item.get("last_sent_date"),
+            pause_from=item.get("pause_from"),
+            pause_through=item.get("pause_through"),
         )
 
 
@@ -280,6 +289,50 @@ class Store:
     def stop(self, user_id: str, reason: str, at: str) -> None:
         """No more emails until the subscriber starts them again."""
         self.update_profile(user_id, {"status": "stopped", "stopped_reason": reason, "stopped_at": at})
+
+    # pauses ----------------------------------------------------------------
+
+    def pauses(self, user_id: str) -> list[tuple[str, str]]:
+        """Every pause, as (from, through) ISO dates."""
+        items, kwargs = [], {
+            "KeyConditionExpression": "pk = :u AND begins_with(sk, :n)",
+            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":n": "PAUSE#"},
+        }
+        while True:
+            page = self.table.query(**kwargs)
+            items.extend(page.get("Items", []))
+            if "LastEvaluatedKey" not in page:
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        return [(i["sk"][6:], i["through"]) for i in items]
+
+    def put_pause(self, user_id: str, start: str, through: str, at: str) -> None:
+        """A pause from start through a day. The profile carries the latest
+        one, so the sender reads it with everything else."""
+        self.table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"PAUSE#{start}", "through": through, "created_at": at})
+        self.update_profile(user_id, {"pause_from": start, "pause_through": through})
+
+    def end_pause(self, user_id: str, start: str, through: str | None) -> None:
+        """Resume: the pause now ended on through, or (None) never happened."""
+        key = {"pk": f"USER#{user_id}", "sk": f"PAUSE#{start}"}
+        if through:
+            self.table.update_item(
+                Key=key, UpdateExpression="SET through = :t", ExpressionAttributeValues={":t": through}
+            )
+        else:
+            self.table.delete_item(Key=key)
+        self.table.update_item(
+            Key={"pk": f"USER#{user_id}", "sk": "PROFILE"},
+            UpdateExpression="REMOVE pause_from, pause_through",
+            ConditionExpression="attribute_exists(pk)",
+        )
+
+    def delete_keys(self, keys: list[dict]) -> None:
+        """Delete items by key, 25 to a request; the batch writer resends
+        anything DynamoDB leaves unprocessed."""
+        with self.table.batch_writer() as batch:
+            for key in keys:
+                batch.delete_item(Key=key)
 
     def user_items(self, user_id: str) -> list[dict]:
         """Everything filed under one subscriber: the export reads this."""

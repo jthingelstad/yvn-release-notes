@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 from . import auth, export, places
 from .compose import DOTS, from_header, next_release
-from .streak import ONE_DAY, compute_streak
+from .streak import ONE_DAY, compute_streak, pause_days
 from .version import compute_version
 
 MAX_BODY = 64 * 1024
@@ -185,29 +185,17 @@ def sample(app: App, req: Request) -> dict:
     return respond(200, {"birthday": birthday.isoformat(), "version": str(compute_version(birthday, today))})
 
 
-def auth_start(app: App, req: Request) -> dict:
-    email = auth.normal_email(req.json().get("email"))
-    if not email:
-        raise Reject(400, "email")
-    email_hash = auth.digest(email)
+def over_limits(app: App, checks) -> None:
+    """Count one more email against each (name, key, limit); 429 past any."""
     hour = app.now // 3600
-    over = [
-        name
-        for name, key, limit in (
-            ("total", "all", auth.LIMIT_TOTAL),
-            ("network", "net:" + auth.digest(auth.network(req.viewer())), auth.LIMIT_PER_NETWORK),
-            ("address", "email:" + email_hash, auth.LIMIT_PER_ADDRESS),
-        )
-        if app.store.count(key, hour) > limit
-    ]
+    over = [name for name, key, limit in checks if app.store.count(key, hour) > limit]
     if over:
-        log(event="signin-limited", limits=over)
+        log(event="mail-limited", limits=over)
         raise Reject(429, "limited")
 
-    token, code = auth.new_token(), auth.new_code()
-    app.store.put_login(auth.digest(token), email, email_hash, auth.digest(code), app.now, auth.LOGIN_TTL)
+
+def send_mail(app: App, email: str, msg) -> None:
     from_addr = os.environ["FROM_ADDRESS"]
-    msg = auth.signin_message(to=email, from_addr=from_addr, link=f"{app.origin}/signin/#t={token}", code=code)
     try:
         app.ses.send_email(
             FromEmailAddress=from_header(from_addr),
@@ -217,13 +205,56 @@ def auth_start(app: App, req: Request) -> dict:
         )
     except Exception as e:
         code_name = (getattr(e, "response", None) or {}).get("Error", {}).get("Code")
-        log(event="signin-mail-failed", error=type(e).__name__, code=code_name)
+        log(event="mail-failed", error=type(e).__name__, code=code_name)
         raise Reject(502, "mail-failed") from None
+
+
+def new_login(app: App, email: str) -> tuple[str, str]:
+    """A fresh link token and code for an address; the newest one is the
+    one a code is checked against."""
+    token, code = auth.new_token(), auth.new_code()
+    app.store.put_login(auth.digest(token), email, auth.digest(email), auth.digest(code), app.now, auth.LOGIN_TTL)
+    return token, code
+
+
+def auth_start(app: App, req: Request) -> dict:
+    email = auth.normal_email(req.json().get("email"))
+    if not email:
+        raise Reject(400, "email")
+    over_limits(
+        app,
+        (
+            ("total", "all", auth.LIMIT_TOTAL),
+            ("network", "net:" + auth.digest(auth.network(req.viewer())), auth.LIMIT_PER_NETWORK),
+            ("address", "email:" + auth.digest(email), auth.LIMIT_PER_ADDRESS),
+        ),
+    )
+    token, code = new_login(app, email)
+    from_addr = os.environ["FROM_ADDRESS"]
+    send_mail(app, email, auth.signin_message(to=email, from_addr=from_addr, link=f"{app.origin}/signin/#t={token}", code=code))
     log(event="signin-sent")
     return respond(202, {"ok": True})
 
 
 CODE_ERRORS = {"gone": "code-expired", "used": "code-used", "attempts": "too-many-tries"}
+
+
+def check_code(app: App, email: str, code: str) -> dict:
+    """Spend one of the address's newest sign-in's code attempts, then
+    compare; a match uses the sign-in up."""
+    token_hash = app.store.newest_login(auth.digest(email))
+    if not token_hash:
+        raise Reject(400, "code-expired")
+    spent = app.store.spend_attempt(token_hash, app.now, auth.MAX_CODE_ATTEMPTS)
+    if isinstance(spent, str):
+        raise Reject(400, CODE_ERRORS[spent])
+    if not auth.same(auth.digest(code), spent["code_hash"]):
+        left = auth.MAX_CODE_ATTEMPTS - int(spent["attempts"])
+        raise Reject(400, "wrong-code" if left else "too-many-tries", tries_left=left)
+    login = app.store.burn_login(token_hash, app.now)
+    if not login:
+        raise Reject(400, "code-used")
+    return login
 
 
 def auth_verify(app: App, req: Request) -> dict:
@@ -238,18 +269,7 @@ def auth_verify(app: App, req: Request) -> dict:
         email, code = auth.normal_email(body.get("email")), auth.valid_code(body.get("code"))
         if not email or not code:
             raise Reject(400, "email-and-code")
-        token_hash = app.store.newest_login(auth.digest(email))
-        if not token_hash:
-            raise Reject(400, "code-expired")
-        spent = app.store.spend_attempt(token_hash, app.now, auth.MAX_CODE_ATTEMPTS)
-        if isinstance(spent, str):
-            raise Reject(400, CODE_ERRORS[spent])
-        if not auth.same(auth.digest(code), spent["code_hash"]):
-            left = auth.MAX_CODE_ATTEMPTS - int(spent["attempts"])
-            raise Reject(400, "wrong-code" if left else "too-many-tries", tries_left=left)
-        login = app.store.burn_login(token_hash, app.now)
-        if not login:
-            raise Reject(400, "code-used")
+        login = check_code(app, email, code)
         how = "code"
 
     email = login["email"]
@@ -291,7 +311,16 @@ def profile_view(p: dict, now: int) -> dict:
     for k in ("city", "region", "country", "stopped_reason"):
         if p.get(k):
             view[k] = p[k]
+    if p.get("pause_through", "") >= today.isoformat() and p.get("pause_from"):
+        view["pause"] = {"from": p["pause_from"], "through": p["pause_through"]}
+    view["pause_starts"] = pause_start(p, today).isoformat()
     return view
+
+
+def pause_start(p: dict, today: date) -> date:
+    """The first day a new pause would hold back: today, unless today's
+    email has gone already."""
+    return today + ONE_DAY if p.get("last_sent_date", "") >= today.isoformat() else today
 
 
 def me(app: App, req: Request) -> dict:
@@ -512,8 +541,9 @@ def today(app: App, req: Request) -> dict:
     day = local_today(p, app.now)
     v = compute_version(date.fromisoformat(p["birthday"]), day)
     have = app.store.note_days(user_id)
+    paused = pause_days(app.store.pauses(user_id), day)
     # Today counts once it has a note; until then the run ends yesterday.
-    s = compute_streak(have, day + ONE_DAY if day in have else day)
+    s = compute_streak(have, day + ONE_DAY if day in have else day, paused)
     view = day_view(p, day.isoformat(), app.store.notes_between(user_id, day.isoformat(), day.isoformat()))
     view.update(
         tz=p["tz"],
@@ -521,12 +551,14 @@ def today(app: App, req: Request) -> dict:
         next={"version": next_release(v), "date": (day + timedelta(days=v.days_until)).isoformat()},
         streak={"current": s.current, "longest": s.longest, "today": day in have},
     )
+    if day in paused:
+        view["paused_through"] = p.get("pause_through")
     return respond(200, view)
 
 
 def days(app: App, req: Request) -> dict:
-    """The timeline, newest first: every day with an email or a note, and
-    today. ?before= pages back from a day."""
+    """The timeline, newest first: every day with an email, a note or a
+    pause, and today. ?before= pages back from a day."""
     user_id, p = app.account(req)
     day = local_today(p, app.now).isoformat()
     try:
@@ -536,7 +568,8 @@ def days(app: App, req: Request) -> dict:
     before = req.query.get("before")
     if before is not None:
         before = day_from(p, before, app.now).isoformat()
-    dated = app.store.sent_days(user_id) | {d.isoformat() for d in app.store.note_days(user_id)}
+    paused = {d.isoformat() for d in pause_days(app.store.pauses(user_id), local_today(p, app.now))}
+    dated = app.store.sent_days(user_id) | {d.isoformat() for d in app.store.note_days(user_id)} | paused
     if before is None:
         dated.add(day)
     picked = sorted((d for d in dated if p["birthday"] <= d <= day and (before is None or d < before)), reverse=True)
@@ -550,7 +583,7 @@ def days(app: App, req: Request) -> dict:
         {
             "today": day,
             "tz": p["tz"],
-            "days": [day_view(p, d, by_day[d]) for d in page],
+            "days": [{**day_view(p, d, by_day[d]), **({"paused": True} if d in paused else {})} for d in page],
             "before": page[-1] if len(picked) > limit else None,
         },
     )
@@ -606,6 +639,106 @@ def delete_note(app: App, req: Request, value: str, note_id: str) -> dict:
     return respond(200, {"ok": True})
 
 
+# --- pause --------------------------------------------------------------------
+
+MAX_PAUSE = 60
+
+
+def pause(app: App, req: Request) -> dict:
+    """Pause for {days: 1-60} or {through: date}. A pause already running
+    keeps its start and takes the new end; one not started yet is replaced."""
+    user_id, p = app.account(req)
+    if p.get("status", "active") != "active":
+        raise Reject(400, "stopped")
+    body = req.json()
+    today = local_today(p, app.now)
+    start = pause_start(p, today)
+    current = p.get("pause_from") if p.get("pause_through", "") >= today.isoformat() else None
+    if current and current <= today.isoformat():
+        start = date.fromisoformat(current)
+    if "days" in body:
+        n = body["days"]
+        if not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= MAX_PAUSE:
+            raise Reject(400, "days")
+        through = start + timedelta(days=n - 1)
+    else:
+        try:
+            through = date.fromisoformat(body.get("through") or "")
+        except (TypeError, ValueError):
+            raise Reject(400, "through") from None
+    if not max(start, today) <= through <= start + timedelta(days=MAX_PAUSE - 1):
+        raise Reject(400, "through")
+    if current and current != start.isoformat():
+        app.store.end_pause(user_id, current, None)
+    app.store.put_pause(user_id, start.isoformat(), through.isoformat(), iso(app.now))
+    log(event="pause", user=user_id, days=(through - start).days + 1)
+    return respond(200, profile_view({**p, "pause_from": start.isoformat(), "pause_through": through.isoformat()}, app.now))
+
+
+def resume(app: App, req: Request) -> dict:
+    """End the pause now. Days already paused stay paused (for the streak);
+    a pause that has not begun is dropped."""
+    user_id, p = app.account(req)
+    today = local_today(p, app.now)
+    start, through = p.get("pause_from"), p.get("pause_through")
+    if start and through and through >= today.isoformat():
+        ended = (today - ONE_DAY).isoformat()
+        app.store.end_pause(user_id, start, ended if start <= ended else None)
+        log(event="resume", user=user_id)
+    p = {k: v for k, v in p.items() if k not in ("pause_from", "pause_through")}
+    return respond(200, profile_view(p, app.now))
+
+
+# --- delete the account -------------------------------------------------------
+
+
+def delete_code(app: App, req: Request) -> dict:
+    """Mail the account's own address a code that confirms deleting it."""
+    user_id, p = app.account(req)
+    email = p["email"]
+    over_limits(
+        app,
+        (("total", "all", auth.LIMIT_TOTAL), ("address", "email:" + auth.digest(email), auth.LIMIT_PER_ADDRESS)),
+    )
+    _, code = new_login(app, email)
+    send_mail(app, email, auth.delete_message(to=email, from_addr=os.environ["FROM_ADDRESS"], code=code))
+    log(event="delete-code-sent", user=user_id)
+    return respond(202, {"ok": True})
+
+
+def delete_me(app: App, req: Request) -> dict:
+    """Delete everything: the original emails, the reply addresses, every
+    item under the subscriber, the address, and the profile last, so a
+    failure part way leaves an account that can try again."""
+    s = app.subscriber(req)
+    user_id = s["user_id"]
+    p = app.store.profile(user_id)
+    if not p:
+        raise Reject(403, "no-account")
+    code = auth.valid_code(req.json().get("code"))
+    if not code:
+        raise Reject(400, "email-and-code")
+    check_code(app, p["email"], code)
+
+    items = app.store.user_items(user_id)
+    raw = [i["raw_key"] for i in items if str(i.get("raw_key", "")).startswith("raw/")]
+    for n in range(0, len(raw), 1000):
+        out = app.s3.delete_objects(
+            Bucket=os.environ["MAIL_BUCKET"], Delete={"Objects": [{"Key": k} for k in raw[n : n + 1000]], "Quiet": True}
+        )
+        if out.get("Errors"):
+            log(event="delete-failed", user=user_id, step="mail", errors=len(out["Errors"]))
+            raise Reject(502, "delete-failed")
+    keys = [{"pk": f"TOKEN#{i['token']}", "sk": "TOKEN"} for i in items if i["sk"].startswith("DAY#") and i.get("token")]
+    keys += [{"pk": i["pk"], "sk": i["sk"]} for i in items if i["sk"] != "PROFILE"]
+    keys.append({"pk": f"EMAIL#{p['email']}", "sk": "EMAIL"})
+    app.store.delete_keys(keys)
+    app.store.delete_keys([{"pk": f"USER#{user_id}", "sk": "PROFILE"}])
+    app.store.delete_session(s["hash"])
+    log(event="account-deleted", user=user_id, items=len(items), emails=len(raw))
+    return respond(200, {"ok": True}, cookies=[auth.clear_cookie()])
+
+
 ROUTES = [
     ("GET", "/api/health", health),
     ("GET", "/api/sample", sample),
@@ -614,6 +747,8 @@ ROUTES = [
     ("POST", "/api/auth/signout", auth_signout),
     ("GET", "/api/me", me),
     ("PUT", "/api/me", update_me),
+    ("DELETE", "/api/me", delete_me),
+    ("POST", "/api/me/delete-code", delete_code),
     ("GET", "/api/places", find_places),
     ("GET", "/api/export", export_data),
     ("GET", "/api/today", today),
@@ -622,6 +757,8 @@ ROUTES = [
     ("POST", "/api/days/{date}/notes", add_note),
     ("PUT", "/api/days/{date}/notes/{id}", edit_note),
     ("DELETE", "/api/days/{date}/notes/{id}", delete_note),
+    ("PUT", "/api/pause", pause),
+    ("DELETE", "/api/pause", resume),
     ("GET", "/api/unsubscribe", unsubscribe),
     ("POST", "/api/unsubscribe", unsubscribe),
 ]

@@ -78,6 +78,42 @@ class FakeStore:
                 return rows.pop(n)
         return None
 
+    def add_day_token(self, user_id, day, token):
+        self.items.setdefault(user_id, []).append({"pk": f"USER#{user_id}", "sk": f"DAY#{day}", "token": token})
+        self.tokens[token] = {"user_id": user_id, "date": day}
+
+    def pauses(self, user_id):
+        return [(i["sk"][6:], i["through"]) for i in self._rows(user_id, "PAUSE#")]
+
+    def put_pause(self, user_id, start, through, at):
+        rows = self.items.setdefault(user_id, [])
+        rows[:] = [i for i in rows if i["sk"] != f"PAUSE#{start}"]
+        rows.append({"pk": f"USER#{user_id}", "sk": f"PAUSE#{start}", "through": through, "created_at": at})
+        self.update_profile(user_id, {"pause_from": start, "pause_through": through})
+
+    def end_pause(self, user_id, start, through):
+        rows = self.items.setdefault(user_id, [])
+        for i in list(rows):
+            if i["sk"] == f"PAUSE#{start}":
+                if through:
+                    i["through"] = through
+                else:
+                    rows.remove(i)
+        self.update_profile(user_id, {}, ("pause_from", "pause_through"))
+
+    def delete_keys(self, keys):
+        for key in keys:
+            pk, sk = key["pk"], key["sk"]
+            if pk.startswith("TOKEN#"):
+                self.tokens.pop(pk[6:], None)
+            elif pk.startswith("EMAIL#"):
+                self.emails.pop(pk[6:], None)
+            elif sk == "PROFILE":
+                self.profiles.pop(pk[5:], None)
+            else:
+                rows = self.items.get(pk[5:], [])
+                rows[:] = [i for i in rows if i["sk"] != sk]
+
     def user_items(self, user_id):
         return [{"pk": f"USER#{user_id}", "sk": "PROFILE", **self.profiles[user_id]}] + self.items.get(user_id, [])
 
@@ -150,4 +186,10 @@ class FakeS3:
         if self.fail:
             raise ConnectionError("down")
         self.deleted.append(kw)
+        return {}
+
+    def delete_objects(self, Bucket, Delete):
+        if self.fail:
+            return {"Errors": [{"Key": o["Key"], "Code": "InternalError"} for o in Delete["Objects"]]}
+        self.deleted.extend({"Bucket": Bucket, "Key": o["Key"]} for o in Delete["Objects"])
         return {}

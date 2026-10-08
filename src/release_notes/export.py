@@ -9,6 +9,7 @@ photos, are not in it yet; the JSON lists each one's attachments.
 from datetime import date
 from decimal import Decimal
 
+from . import links
 from .notes import combine
 from .version import compute_version
 
@@ -49,6 +50,7 @@ def build(items: list[dict], exported_at: str) -> dict:
                     "updated_at": item.get("updated_at"),
                     "subject": item.get("subject"),
                     "attachments": _plain(item.get("attachments", [])),
+                    "links": _plain(item.get("links", [])),
                 }
             )
         elif sk.startswith("PAUSE#"):
@@ -59,7 +61,7 @@ def build(items: list[dict], exported_at: str) -> dict:
             n["version"] = n["version"] or str(compute_version(born, date.fromisoformat(n["date"])))
     notes.sort(key=lambda n: (n["date"], n["received_at"] or "", n["id"]))
     for n in notes:
-        for k in ("updated_at", "subject"):
+        for k in ("updated_at", "subject", "links"):
             if not n[k]:
                 del n[k]
     return {
@@ -91,7 +93,8 @@ def markdown(data: dict) -> str:
     for n in data["notes"]:
         by_day.setdefault(n["date"], []).append(n)
     for day, notes in by_day.items():
-        text = combine(notes)
+        # Links by name, as Markdown links; the raw address stays the target.
+        text = combine([{"text": links.markdown(n["text"], n.get("links"))} for n in notes])
         lines += ["", f"## {notes[0]['version']} · {long_date(day)}", ""]
         lines.append(text or "(Attachments only. They are in the original email.)")
     return "\n".join(lines) + "\n"

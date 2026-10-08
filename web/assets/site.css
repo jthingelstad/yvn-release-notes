@@ -125,6 +125,7 @@ select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 .note { display: flex; flex-direction: column; gap: 4px; }
 .meta, .count { margin: 0; font-size: 13px; font-weight: 600; color: var(--orange-ink); }
 .text { margin: 0; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.text .site { color: var(--ink-2); }
 .note .actions { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
 .note .actions .quiet { min-height: 40px; padding: 8px 0; font-size: 14px; }
 .confirm { font-size: 14px; color: var(--ink-2); }

@@ -47,7 +47,8 @@ notes.yourversionnumber.com (CloudFront)
   own function by `scripts/gen-version-fixtures.mjs` (needs the sibling
   checkout). If the site's arithmetic changes, regenerate and re-test.
 - `parse.py`: MIME to note text, quote and signature stripping. Standard
-  library only.
+  library only. `links.py`: addresses in notes, their saved titles, and the
+  guarded fetch.
 - `send.py`, `inbound.py`, `events.py`: the mail handlers. `store.py`: the one table and its
   key layout (documented at the top of the file).
 - `infra/template.yaml`: the whole stack. `deploy.sh` packages, deploys and
@@ -132,9 +133,22 @@ runtime and is imported lazily so the tests run without it.
 - **A year ago** (Jamie, 2026-10-08): the email shows the notes from the
   same patch number one release back (`version.a_year_before`: 5.3.279 for
   5.4.279, by version, not calendar), after the streak, only when there are
-  some, cut near 1000 characters with a link to that day. Bare web addresses
-  in note text are links, in the email (`compose.linked`) and on the web
-  (`noteBody`), shown without the scheme. Nothing is fetched from them.
+  some, cut near 1000 characters with a link to that day.
+- **Links show by name, never raw, and there is no Markdown** (Jamie,
+  2026-10-08). The note's text keeps every address as written; the note's
+  `links` list names them (`links.py`). A phrase the writer linked in their
+  mail app keeps their words (`my post <url>` in the plain text, the anchor
+  in the HTML). Any other address gets its page's title and site, fetched
+  **once, when the note is written** (email, web, or an edit that adds an
+  address), never when it is shown. The fetch is guarded because the address
+  is whatever someone typed: http(s) on the usual port, no userinfo, every
+  resolved address public and the connection pinned to it, at most three
+  redirects each checked again, two seconds, 256 KB, HTML only, three
+  fetches a note; anything else is just no title. `links.segments` is the
+  one rendering for the email (`compose.linked`), the web (`parts` in each
+  note, drawn by `noteBody`) and the Markdown export. Tests never fetch:
+  pass a fake `fetch` to `web.handler` and `inbound.process`.
+  `scripts/fill_link_titles.py` fills in notes written before this.
 - **No rotating prompts or nudges** for now (Jamie, 2026-10-07: "keep it
   simple"). The ask is the same every day.
 - **No model processing of notes** (summaries, prompts, anything) without an

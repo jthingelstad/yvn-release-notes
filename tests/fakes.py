@@ -64,10 +64,14 @@ class FakeStore:
         self.add_note(user_id, day, note_id, **note)
         return True
 
-    def update_note(self, user_id, day, note_id, text, at):
+    def update_note(self, user_id, day, note_id, text, at, links=None):
         for i in self._rows(user_id, f"NOTE#{day}#{note_id}"):
             if i["sk"] == f"NOTE#{day}#{note_id}":
                 i.update(text=text, updated_at=at)
+                if links:
+                    i["links"] = links
+                else:
+                    i.pop("links", None)
                 return dict(i)
         return None
 

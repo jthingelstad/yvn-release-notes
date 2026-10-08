@@ -42,15 +42,20 @@ class WebCase(unittest.TestCase):
     def setUp(self):
         self.store, self.ses, self.s3, self.now = FakeStore(), FakeSES(), FakeS3(), NOW
         self.places = []
+        self.titles, self.fetched = {}, []  # url -> {"title", "site"}; urls asked for
         self.out = StringIO()
 
     def call(self, *args, **kw):
         with redirect_stdout(self.out):
             r = web.handler(
                 request(*args, **kw), None, store=self.store, ses=self.ses, s3=self.s3, geocode=self.geocode,
-                clock=lambda: self.now,
+                fetch=self.fetch, clock=lambda: self.now,
             )
         return r, json.loads(r["body"]) if r["headers"]["content-type"] == "application/json" else r["body"]
+
+    def fetch(self, url):
+        self.fetched.append(url)
+        return self.titles.get(url)
 
     def geocode(self, q):
         if self.places is None:
@@ -301,6 +306,21 @@ class WebTest(WebCase):
         self.assertNotIn("Backfilled", self.out.getvalue())
         r, body = self.call("GET", "/api/export", cookies=[cookie], query={"format": "csv"})
         self.assertEqual(r["statusCode"], 400)
+
+    def test_export_keeps_links(self):
+        items = [
+            {"sk": "PROFILE", "birthday": "1981-06-14"},
+            {"sk": "NOTE#2026-10-07#m1", "text": "Read https://example.com/a and my post <https://example.com/p>.",
+             "received_at": "2026-10-07T12:00:00Z",
+             "links": [{"url": "https://example.com/a", "title": "Page A", "site": "example.com"},
+                       {"url": "https://example.com/p", "title": "my post", "named": True}]},
+            {"sk": "NOTE#2026-10-06#m0", "text": "Nothing linked.", "received_at": "2026-10-06T12:00:00Z"},
+        ]
+        data = export.build(items, "2026-10-08T00:00:00Z")
+        self.assertEqual(data["notes"][1]["links"][0], {"url": "https://example.com/a", "title": "Page A", "site": "example.com"})
+        self.assertNotIn("links", data["notes"][0])
+        self.assertEqual(data["notes"][1]["text"], items[1]["text"])
+        self.assertIn("Read [Page A](https://example.com/a) and [my post](https://example.com/p).", export.markdown(data))
 
     def test_export_with_no_notes(self):
         md = export.markdown(export.build([{"sk": "PROFILE", "birthday": "1981-06-14"}], "2026-10-08T00:00:00Z"))

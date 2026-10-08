@@ -44,6 +44,10 @@ there links here until this is up and done.
   bucket is versioned, so the old version lingers 30 days, then expires.
 - The birthday is locked after sign-up, because changing it renumbers every
   day you have kept.
+- A link in a note shows by name: the words you linked, or the page's
+  title, fetched once when the note is saved (`links.py`; AGENTS.md has the
+  guards). The text keeps the address as written, and the exports carry
+  both. No Markdown.
 - Page counts go to Tinylytics site 3816, its own site beside the main
   site's 3343 (Jamie, 2026-10-08), sent by `app.js` without the embed
   script. Path only, no cookies, nothing per person.
@@ -149,7 +153,7 @@ notes.yourversionnumber.com
 | `GET /api/export?format=md\|json` | everything, as a download (JSON by default) |
 | `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
-| `GET /api/days/{date}` | one day: version and notes |
+| `GET /api/days/{date}` | one day: version and notes (each note's `parts` is its text split into strings and links by name) |
 | `POST /api/days/{date}/notes` | write for today or a past day |
 | `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete |
 | `PUT /api/pause` `{days}` or `{through}` | pause, or change the pause |

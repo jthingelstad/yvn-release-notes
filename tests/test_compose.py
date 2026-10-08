@@ -181,6 +181,18 @@ class AYearAgo(unittest.TestCase):
         self.assertEqual(linked("(see https://example.com/a)"),
                          '(see <a class="link" href="https://example.com/a" style="color:#1a4fe0;">example.com/a</a>)')
 
+    def test_links_show_by_name(self):
+        found = [{"url": "https://www.example.com/river/", "title": "Walking the river", "site": "Example Blog"},
+                 {"url": "https://example.com/p", "title": "my post", "named": True}]
+        text = "Wrote it up: https://www.example.com/river/ and my post <https://example.com/p>."
+        html = html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY, None, (self.THEN, text, found))
+        self.assertIn('Wrote it up: <a class="link" href="https://www.example.com/river/" style="color:#1a4fe0;">Walking the river</a>'
+                      '<span class="ink-2" style="color:#3b3d63;"> &middot; Example Blog</span> and '
+                      '<a class="link" href="https://example.com/p" style="color:#1a4fe0;">my post</a>.</p>', html)
+        self.assertNotIn("&lt;https://example.com/p&gt;", html)
+        text_part = body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, None, (self.THEN, text, found))
+        self.assertIn("Wrote it up: Walking the river <https://www.example.com/river/> and my post <https://example.com/p>.", text_part)
+
     def test_long_notes_are_cut_between_words(self):
         html = self.html("word " * 400)
         self.assertIn("word&#8230;</p>", html)

@@ -170,3 +170,44 @@ class DaysTest(NotesCase):
         self.assertEqual((r["statusCode"], body["error"]), (400, "limit"))
         r, body = self.get("/api/days", query={"before": "2026-10-10"})
         self.assertEqual((r["statusCode"], body["error"]), (400, "date"))
+
+
+class LinksTest(NotesCase):
+    def setUp(self):
+        super().setUp()
+        self.titles = {"https://example.com/a": {"title": "Page A", "site": "example.com"},
+                       "https://example.com/b": {"title": "Page B", "site": "example.com"}}
+
+    def put(self, note_id, text):
+        return self.call("PUT", f"/api/days/{TODAY}/notes/{note_id}", {"text": text}, cookies=self.cookies)
+
+    def test_a_new_note_names_its_links_once(self):
+        r, note = self.add(TODAY, "Read https://example.com/a and https://example.com/missing.")
+        self.assertEqual(r["statusCode"], 201)
+        self.assertEqual(note["parts"], [
+            "Read ", {"url": "https://example.com/a", "label": "Page A", "site": "example.com"},
+            " and ", {"url": "https://example.com/missing", "label": "example.com/missing"}, ".",
+        ])
+        stored = self.store.notes_between("u1", TODAY, TODAY)[0]
+        self.assertEqual(stored["text"], "Read https://example.com/a and https://example.com/missing.")
+        self.assertEqual(stored["links"], [{"url": "https://example.com/a", "title": "Page A", "site": "example.com"}])
+        _, today = self.get("/api/today")
+        self.assertEqual(today["notes"][0]["parts"][1]["label"], "Page A")
+        self.assertNotIn("example.com/a", self.out.getvalue())
+
+    def test_an_edit_fetches_only_new_addresses(self):
+        _, note = self.add(TODAY, "https://example.com/a")
+        self.titles["https://example.com/a"] = {"title": "Changed since", "site": "example.com"}
+        self.fetched.clear()
+        r, edited = self.put(note["id"], "https://example.com/a then https://example.com/b")
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual(self.fetched, ["https://example.com/b"])
+        self.assertEqual([p["label"] for p in edited["parts"] if isinstance(p, dict)], ["Page A", "Page B"])
+        r, edited = self.put(note["id"], "No links now.")
+        self.assertEqual(edited["parts"], ["No links now."])
+        self.assertNotIn("links", self.store.notes_between("u1", TODAY, TODAY)[0])
+
+    def test_a_note_without_addresses_fetches_nothing(self):
+        self.add(TODAY, "Cake.")
+        self.assertEqual(self.fetched, [])
+        self.assertNotIn("links", self.store.notes_between("u1", TODAY, TODAY)[0])

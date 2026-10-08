@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from . import auth, export, places
+from . import auth, export, links, places
 from .compose import DOTS, from_header, next_release
 from .streak import ONE_DAY, compute_streak, pause_days
 from .version import compute_version
@@ -517,6 +517,8 @@ def note_view(item: dict, tz: str) -> dict:
     _, day, note_id = item["sk"].split("#", 2)
     at = item.get("received_at") or ""
     view = {"id": note_id, "source": item.get("source", "email"), "text": item.get("text", ""), "at": at}
+    # The text as shown: strings and links by name (links.segments).
+    view["parts"] = links.segments(view["text"], item.get("links"))
     if item.get("updated_at"):
         view["edited_at"] = item["updated_at"]
     if item.get("attachments"):
@@ -608,6 +610,9 @@ def add_note(app: App, req: Request, value: str) -> dict:
         "source": "web",
         "received_at": iso(app.now),
     }
+    found = links.collect(text, fetch=app.fetch)
+    if found:
+        item["links"] = found
     app.store.put_note(user_id, day.isoformat(), note_id, item)
     log(event="note-added", user=user_id, date=day.isoformat())
     return respond(201, note_view({"sk": f"NOTE#{day.isoformat()}#{note_id}", **item}, p["tz"]))
@@ -616,7 +621,13 @@ def add_note(app: App, req: Request, value: str) -> dict:
 def edit_note(app: App, req: Request, value: str, note_id: str) -> dict:
     user_id, p = app.account(req)
     day = day_from(p, value, app.now).isoformat()
-    item = app.store.update_note(user_id, day, note_id, text_from(req.json()), iso(app.now))
+    text = text_from(req.json())
+    old = next((n for n in app.store.notes_between(user_id, day, day) if n["sk"].split("#", 2)[2] == note_id), None)
+    if not old:
+        raise Reject(404, "note")
+    # Links the note had keep their names; only a new address is fetched.
+    found = links.collect(text, keep=old.get("links"), fetch=app.fetch)
+    item = app.store.update_note(user_id, day, note_id, text, iso(app.now), found)
     if not item:
         raise Reject(404, "note")
     log(event="note-edited", user=user_id, date=day)
@@ -776,7 +787,7 @@ def match(method: str, path: str):
     return None, None, ()
 
 
-def handler(event, context, *, store=None, ses=None, s3=None, geocode=places.search, clock=time.time):
+def handler(event, context, *, store=None, ses=None, s3=None, geocode=places.search, fetch=links.fetch_title, clock=time.time):
     req = Request(event)
     pattern, route, args = match(req.method, req.path)
     if not route:
@@ -786,7 +797,7 @@ def handler(event, context, *, store=None, ses=None, s3=None, geocode=places.sea
     else:
         try:
             app = App(store, ses, int(clock()), s3)
-            app.geocode = geocode
+            app.geocode, app.fetch = geocode, fetch
             response = route(app, req, *args)
         except Reject as r:
             response = r.response

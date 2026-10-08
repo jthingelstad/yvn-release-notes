@@ -135,7 +135,7 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
         raise ValueError('"now" is for dry runs only; use "send_now" to send outside the window')
     now = datetime.fromisoformat(event["now"]) if event.get("now") else clock()
     send_now = event.get("send_now")
-    fetch = one_run(fetch or weather.fetch_json)
+    fetch = one_run(fetch or weather.fetch_morning)
     if store is None:
         import boto3
 
@@ -209,7 +209,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None)
     token = new_token()
     streak = read_streak(store, sub.user_id, date.fromisoformat(day))
     last_year = read_last_year(store, sub, date.fromisoformat(day))
-    forecast = read_weather(store, sub, date.fromisoformat(day), fetch or weather.fetch_json, True, clock)
+    forecast = read_weather(store, sub, date.fromisoformat(day), fetch or weather.fetch_morning, True, clock)
     try:
         store.put_day(sub.user_id, day, str(v), token, clock().isoformat())
         msg = build_message(

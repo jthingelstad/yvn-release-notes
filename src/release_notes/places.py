@@ -15,9 +15,9 @@ GEOCODER = "https://geocoding-api.open-meteo.com/v1/search"
 USER_AGENT = "ReleaseNotes/1 (+https://notes.yourversionnumber.com)"
 
 
-def _get(url: str) -> dict:
+def _get(url: str, timeout: float = 4) -> dict:
     req = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    with urlopen(req, timeout=4) as r:
+    with urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
 

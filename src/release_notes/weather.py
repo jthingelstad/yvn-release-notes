@@ -31,6 +31,10 @@ FORECAST = "https://api.open-meteo.com/v1/forecast"
 ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 DAILY = "weather_code,temperature_2m_max,temperature_2m_min"
 RECENT = 60  # days back the forecast API answers for; older days ask the archive
+# The sender often starts cold, and its first call to Open-Meteo (DNS, TLS)
+# ran past four seconds on 2026-10-08. It waits longer; one_run (send.py)
+# keeps that to one wait a run. A page waiting on a note keeps four.
+MORNING_TIMEOUT = 12
 CREDIT = "Weather from Open-Meteo"
 CREDIT_URL = "https://open-meteo.com/"
 
@@ -69,7 +73,11 @@ def _day(data: dict, day: str) -> dict | None:
     return {"high_c": round(float(high), 1), "low_c": round(float(low), 1), "code": int(code)}
 
 
-def morning(place: dict, today: date, fetch=fetch_json) -> tuple[dict | None, dict | None]:
+def fetch_morning(url: str) -> dict:
+    return fetch_json(url, timeout=MORNING_TIMEOUT)
+
+
+def morning(place: dict, today: date, fetch=fetch_morning) -> tuple[dict | None, dict | None]:
     """(yesterday's weather, today's forecast) for a place, in one call."""
     data = fetch(_url(FORECAST, place["lat"], place["lon"], place["tz"], past_days=1, forecast_days=1))
     return _day(data, (today - timedelta(days=1)).isoformat()), _day(data, today.isoformat())

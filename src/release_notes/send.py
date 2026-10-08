@@ -24,6 +24,7 @@ import os
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from . import media
 from .compose import build_message, from_header, new_token
 from .notes import combine, day_links
 from .store import Store, Subscriber
@@ -69,13 +70,13 @@ def read_streak(store: Store, user_id: str, day: date) -> Streak | None:
         return None
 
 
-def read_last_year(store: Store, sub: Subscriber, day: date) -> tuple[date, str, list] | None:
+def read_last_year(store: Store, sub: Subscriber, day: date) -> tuple[date, str, list, dict] | None:
     # Also a nicety: if last year's notes cannot be read, the email goes without.
     try:
         then = a_year_before(sub.birthday, day)
         notes = store.day_notes(sub.user_id, then.isoformat()) if then else []
-        text = combine(notes)
-        return (then, text, day_links(notes)) if text else None
+        text, files = combine(notes), media.counts(notes)
+        return (then, text, day_links(notes), files) if text or any(files.values()) else None
     except Exception as e:
         log(event="last-year-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
         return None

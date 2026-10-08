@@ -183,8 +183,22 @@ class FakeSES:
 
 
 class FakeS3:
+    """Deletes, puts and signed links. `objects` holds what was put, by key;
+    a signed link is /dev-media/<key>, which scripts/dev_server.py serves."""
+
     def __init__(self, fail=False):
         self.deleted, self.fail = [], fail
+        self.objects: dict[str, dict] = {}
+
+    def put_object(self, Bucket, Key, Body, **kw):
+        if self.fail:
+            raise ConnectionError("down")
+        self.objects[Key] = {"Body": Body, **kw}
+        return {}
+
+    def generate_presigned_url(self, op, Params, ExpiresIn):
+        self.signed = {"op": op, "Params": Params, "ExpiresIn": ExpiresIn}
+        return f"/dev-media/{Params['Key']}"
 
     def delete_object(self, **kw):
         if self.fail:

@@ -126,6 +126,12 @@ select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 .meta, .count { margin: 0; font-size: 13px; font-weight: 600; color: var(--orange-ink); }
 .text { margin: 0; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .text .site { color: var(--ink-2); }
+.media { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+.media a { display: block; line-height: 0; }
+.media img { display: block; max-width: 100%; max-height: 440px; width: auto; height: auto; }
+.media audio { width: 100%; max-width: 440px; }
+.media .hint { margin: 0; }
+.tday .media img { max-height: 180px; }
 .note .actions { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
 .note .actions .quiet { min-height: 40px; padding: 8px 0; font-size: 14px; }
 .confirm { font-size: 14px; color: var(--ink-2); }

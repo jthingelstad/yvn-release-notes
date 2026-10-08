@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from . import auth, export, links, places
+from . import auth, export, links, media, places
 from .compose import DOTS, from_header, next_release
 from .streak import ONE_DAY, compute_streak, pause_days
 from .version import compute_version
@@ -118,8 +118,15 @@ class App:
         if self._s3 is None:
             if "s3" not in _clients:
                 import boto3
+                from botocore.config import Config
 
-                _clients["s3"] = boto3.client("s3")
+                # The regional, virtual-hosted name, so a photo's link is on
+                # the one host the CSP names (the bucket's RegionalDomainName).
+                region = os.environ.get("AWS_REGION", "us-east-1")
+                _clients["s3"] = boto3.client(
+                    "s3", region_name=region, endpoint_url=f"https://s3.{region}.amazonaws.com",
+                    config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+                )
             self._s3 = _clients["s3"]
         return self._s3
 
@@ -521,8 +528,11 @@ def note_view(item: dict, tz: str) -> dict:
     view["parts"] = links.segments(view["text"], item.get("links"))
     if item.get("updated_at"):
         view["edited_at"] = item["updated_at"]
-    if item.get("attachments"):
-        view["attachments"] = len(item["attachments"])
+    if item.get("media"):
+        # Each file by number; its address is the API's, never the bucket's.
+        view["media"] = [{"n": int(m["n"]), "kind": m["kind"], "type": m["type"]} for m in item["media"]]
+    if others := media.others(item):
+        view["attachments"] = others
     try:
         # Written or sent after its day was over: "added later".
         local = datetime.fromisoformat(at.replace("Z", "+00:00")).astimezone(ZoneInfo(tz)).date()
@@ -641,13 +651,34 @@ def delete_note(app: App, req: Request, value: str, note_id: str) -> dict:
     if not note:
         raise Reject(404, "note")
     raw = note.get("raw_key", "")
-    if raw.startswith("raw/"):
-        # The email goes first, so a failure leaves the note to try again.
-        # The bucket is versioned: the old version expires 30 days later.
-        app.s3.delete_object(Bucket=os.environ["MAIL_BUCKET"], Key=raw)
+    # The email and its files go first, so a failure leaves the note to try
+    # again. The bucket is versioned: old versions expire 30 days later.
+    for key in ([raw] if raw.startswith("raw/") else []) + media.keys(note):
+        app.s3.delete_object(Bucket=os.environ["MAIL_BUCKET"], Key=key)
     app.store.delete_note(user_id, day, note_id)
     log(event="note-deleted", user=user_id, date=day, source=note.get("source", "email"))
     return respond(200, {"ok": True})
+
+
+MEDIA_LINK = 600  # seconds a photo's link lasts
+
+
+def media_file(app: App, req: Request, value: str, note_id: str, n: str) -> dict:
+    """A photo or recording, for its owner only: a redirect to a link to the
+    file that lasts ten minutes. The browser may reuse the redirect for five."""
+    user_id, p = app.account(req)
+    day = day_from(p, value, app.now).isoformat()
+    note = next((x for x in app.store.notes_between(user_id, day, day) if x["sk"].split("#", 2)[2] == note_id), None)
+    entry = next((m for m in (note or {}).get("media") or [] if int(m["n"]) == int(n)), None)
+    if not entry or not str(entry.get("key", "")).startswith(f"media/{user_id}/"):
+        raise Reject(404, "media")
+    url = app.s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": os.environ["MAIL_BUCKET"], "Key": entry["key"], "ResponseContentType": entry["type"],
+                "ResponseContentDisposition": "inline", "ResponseCacheControl": f"private, max-age={MEDIA_LINK}"},
+        ExpiresIn=MEDIA_LINK,
+    )
+    return respond(302, {}, headers={"location": url, "cache-control": "private, max-age=300"})
 
 
 # --- pause --------------------------------------------------------------------
@@ -733,9 +764,10 @@ def delete_me(app: App, req: Request) -> dict:
 
     items = app.store.user_items(user_id)
     raw = [i["raw_key"] for i in items if str(i.get("raw_key", "")).startswith("raw/")]
-    for n in range(0, len(raw), 1000):
+    files = raw + [k for i in items for k in media.keys(i)]
+    for n in range(0, len(files), 1000):
         out = app.s3.delete_objects(
-            Bucket=os.environ["MAIL_BUCKET"], Delete={"Objects": [{"Key": k} for k in raw[n : n + 1000]], "Quiet": True}
+            Bucket=os.environ["MAIL_BUCKET"], Delete={"Objects": [{"Key": k} for k in files[n : n + 1000]], "Quiet": True}
         )
         if out.get("Errors"):
             log(event="delete-failed", user=user_id, step="mail", errors=len(out["Errors"]))
@@ -746,7 +778,7 @@ def delete_me(app: App, req: Request) -> dict:
     app.store.delete_keys(keys)
     app.store.delete_keys([{"pk": f"USER#{user_id}", "sk": "PROFILE"}])
     app.store.delete_session(s["hash"])
-    log(event="account-deleted", user=user_id, items=len(items), emails=len(raw))
+    log(event="account-deleted", user=user_id, items=len(items), emails=len(raw), files=len(files) - len(raw))
     return respond(200, {"ok": True}, cookies=[auth.clear_cookie()])
 
 
@@ -768,6 +800,7 @@ ROUTES = [
     ("POST", "/api/days/{date}/notes", add_note),
     ("PUT", "/api/days/{date}/notes/{id}", edit_note),
     ("DELETE", "/api/days/{date}/notes/{id}", delete_note),
+    ("GET", "/api/days/{date}/notes/{id}/media/{n}", media_file),
     ("PUT", "/api/pause", pause),
     ("DELETE", "/api/pause", resume),
     ("GET", "/api/unsubscribe", unsubscribe),
@@ -776,7 +809,7 @@ ROUTES = [
 # Writes that carry their own proof (a token) and come from mail apps,
 # which send no Origin.
 NO_ORIGIN = {"/api/unsubscribe"}
-_COMPILED = [(m, re.compile(p.replace("{date}", r"(\d{4}-\d{2}-\d{2})").replace("{id}", r"([A-Za-z0-9_-]{1,80})")), p, f) for m, p, f in ROUTES]
+_COMPILED = [(m, re.compile(p.replace("{date}", r"(\d{4}-\d{2}-\d{2})").replace("{id}", r"([A-Za-z0-9_-]{1,80})").replace("{n}", r"([1-9][0-9]?)")), p, f) for m, p, f in ROUTES]
 
 
 def match(method: str, path: str):

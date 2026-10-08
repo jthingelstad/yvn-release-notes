@@ -32,8 +32,9 @@ reply email
 - **Streaks.** The email shows how many days in a row you have replied.
   Replying late to an earlier email still counts for that day; a missed day
   starts the count over and the email shows your longest instead.
-- **Raw mail is kept.** For now only the text of a reply is filed. Photos,
-  audio and other attachments stay in the original message, to be handled later.
+- **Photos and voice memos.** Reply with them and they are kept with that
+  day's notes, for your eyes only. Other attachments stay in the original
+  message, which is kept too.
 - **Links show by name.** When a note has a web address, its page is visited
   once, as the note is saved, to keep its title; a phrase you linked in your
   mail app keeps your words. Nothing is fetched when a note is shown.

@@ -189,7 +189,41 @@ function button(text, cls, onClick) {
 }
 
 function noteText(n) {
-  return n.text || 'Attachments only. They are in the original email.';
+  if (n.text) return n.text;
+  return n.media && n.media.length ? '' : 'Attachments only. They are in the original email.';
+}
+
+// A note's photos and recordings. Each address is the API's, which checks
+// the session and redirects to a link that lasts ten minutes; the page
+// never sees the bucket's own key.
+function noteMedia(day, n) {
+  const box = el('div', 'media');
+  for (const m of n.media || []) {
+    const src = `/api/days/${day}/notes/${encodeURIComponent(n.id)}/media/${m.n}`;
+    if (m.kind === 'image') {
+      const a = el('a');
+      a.href = src;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      const img = el('img');
+      img.alt = 'Photo';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.src = src;
+      // HEIC shows in Safari only; say so rather than show a broken image.
+      img.addEventListener('error', () => a.replaceWith(el('p', 'hint', 'A photo this browser can’t show. It’s in the original email.')));
+      a.append(img);
+      box.append(a);
+    } else {
+      const audio = el('audio');
+      audio.controls = true;
+      audio.preload = 'none';
+      audio.src = src;
+      audio.setAttribute('aria-label', 'Recording');
+      box.append(audio);
+    }
+  }
+  return box;
 }
 
 // A note's text as a paragraph, links by name: the API's `parts` (strings
@@ -207,6 +241,7 @@ function linkTo(url, label) {
 
 function noteBody(n, cls = 'text') {
   const p = el('p', cls);
+  p.hidden = !noteText(n);
   if (n.text && Array.isArray(n.parts)) {
     for (const part of n.parts) {
       if (typeof part === 'string') {
@@ -280,7 +315,9 @@ function renderNotes(root, day, notes, tz, onChange) {
 
     const ask = () => {
       actions.textContent = '';
-      const q = el('span', 'confirm', n.source === 'web' ? 'Delete this note?' : 'Delete this note and the email it came in?');
+      const q = el('span', 'confirm', n.source === 'web' ? 'Delete this note?'
+        : n.media && n.media.length ? 'Delete this note and the email it came in, with its photos and recordings?'
+        : 'Delete this note and the email it came in?');
       const yes = button('Delete', 'quiet danger', async () => {
         yes.disabled = true;
         const r = await api('DELETE', path);
@@ -295,7 +332,9 @@ function renderNotes(root, day, notes, tz, onChange) {
     };
 
     actions.append(button('Edit', 'quiet', edit), button('Delete', 'quiet', ask));
-    item.append(meta, text, actions);
+    item.append(meta, text);
+    if (n.media && n.media.length) item.append(noteMedia(day, n));
+    item.append(actions);
     root.append(item);
   }
 }
@@ -621,7 +660,10 @@ const pages = {
         sec.append(p);
         return sec;
       }
-      for (const n of d.notes) sec.append(noteBody(n));
+      for (const n of d.notes) {
+        sec.append(noteBody(n));
+        if (n.media && n.media.length) sec.append(noteMedia(d.date, n));
+      }
       let count = d.notes.length === 1 ? '1 note' : `${d.notes.length} notes`;
       if (d.notes.every((n) => n.late)) count += ', added later';
       sec.append(el('p', 'count', count));

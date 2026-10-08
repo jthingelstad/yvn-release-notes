@@ -113,6 +113,8 @@ def long_date(day: date) -> str:
 # --- a year ago -------------------------------------------------------------------
 
 PAST_MAX = 1000  # characters of last year's notes before "Read the rest"
+
+
 def past_text(text: str) -> tuple[str, bool]:
     """Last year's notes, cut between words near PAST_MAX. True if cut."""
     if len(text) <= PAST_MAX:
@@ -142,19 +144,44 @@ def linked(text: str, found: list[dict] | None = None) -> str:
     return "".join(out)
 
 
-LastYear = tuple[date, str, list]  # the day, its notes' text, their links
+# The day, its notes' text, their links, and how many photos and recordings
+# (media.counts). The email never carries a file: it links to the day.
+LastYear = tuple[date, str, list, dict]
 
 
-def past_body(birthday: date, then: date, text: str, found: list | None = None) -> str:
+def files_phrase(files: dict | None) -> str:
+    """'the photo', '3 photos and a recording', or ''."""
+    def one(n, single, plural):
+        return "" if not n else single if n == 1 else f"{n} {plural}"
+    files = files or {}
+    parts = [one(files.get("image", 0), "the photo", "photos"), one(files.get("audio", 0), "the recording", "recordings")]
+    parts = [p for p in parts if p]
+    if len(parts) == 2 and parts[1] == "the recording":
+        parts[1] = "a recording"
+    return " and ".join(parts)
+
+
+def past_more(cut: bool, files: dict | None) -> str:
+    """The link's words: 'See it', 'Read the rest', 'See 2 photos',
+    'Read the rest, with the photo', 'Hear the recording'."""
+    phrase = files_phrase(files)
+    if cut:
+        return f"Read the rest, with {phrase}" if phrase else "Read the rest"
+    if not phrase:
+        return "See it"
+    verb = "Hear" if not (files or {}).get("image") else "See"
+    return f"{verb} {phrase}"
+
+
+def past_body(birthday: date, then: date, text: str, found: list | None = None, files: dict | None = None) -> str:
     shown, cut = past_text(text)
     shown = links.plain(shown, found)
-    more = "Read the rest" if cut else "See it"
+    notes = f"{shown}{' ...' if cut else ''}\n\n" if shown else ""
     return (
         f"A year ago you were {compute_version(birthday, then)} ({long_date(then)}, {then.year}):\n"
         "\n"
-        f"{shown}{' ...' if cut else ''}\n"
-        "\n"
-        f"{more}: {past_link(then)}\n"
+        f"{notes}"
+        f"{past_more(cut, files)}: {past_link(then)}\n"
         "\n"
     )
 
@@ -241,7 +268,7 @@ def streak_html(v: Version, birthday: date, s: Streak) -> str:
 """
 
 
-def past_html(birthday: date, then: date, text: str, found: list | None = None) -> str:
+def past_html(birthday: date, then: date, text: str, found: list | None = None, files: dict | None = None) -> str:
     v = compute_version(birthday, then)
     shown, cut = past_text(text)
     paras = [p.strip() for p in re.split(r"\n\s*\n", shown) if p.strip()]
@@ -253,7 +280,7 @@ def past_html(birthday: date, then: date, text: str, found: list | None = None) 
         + "</p>"
         for p in paras
     )
-    more = "Read the rest" if cut else "See it"
+    more = escape(past_more(cut, files))
     return f"""<tr><td style="padding:48px 0 0;">
 <p class="ink-2" style="margin:0 0 6px;font-family:{FONT};font-size:14px;color:{INK_2};">
 <strong class="ink" style="color:{INK};">A year ago</strong> &middot; {escape(long_date(then))}, {then.year}

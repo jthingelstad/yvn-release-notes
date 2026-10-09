@@ -144,7 +144,8 @@ def keys(note: dict) -> list[str]:
 
 
 def counts(notes: list[dict]) -> dict[str, int]:
-    """{"image": n, "audio": n} across notes."""
+    """{"image": n, "audio": n} across notes, plus any other kind
+    ("file": an imported PDF)."""
     out = {"image": 0, "audio": 0}
     for note in notes:
         for m in note.get("media") or []:

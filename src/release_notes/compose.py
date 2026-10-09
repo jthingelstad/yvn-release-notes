@@ -174,16 +174,19 @@ def linked(text: str, found: list[dict] | None = None) -> str:
 LastYear = tuple[date, str, list, dict, str | None]
 
 
+FILE_WORDS = (("image", "photo"), ("audio", "recording"), ("file", "file"))
+
+
 def files_phrase(files: dict | None) -> str:
-    """'the photo', '3 photos and a recording', or ''."""
-    def one(n, single, plural):
-        return "" if not n else single if n == 1 else f"{n} {plural}"
+    """'the photo', '3 photos and a recording', '2 photos, a recording and
+    a file', or ''."""
     files = files or {}
-    parts = [one(files.get("image", 0), "the photo", "photos"), one(files.get("audio", 0), "the recording", "recordings")]
-    parts = [p for p in parts if p]
-    if len(parts) == 2 and parts[1] == "the recording":
-        parts[1] = "a recording"
-    return " and ".join(parts)
+    parts = []
+    for kind, word in FILE_WORDS:
+        n = files.get(kind, 0)
+        if n:
+            parts.append(f"{n} {word}s" if n > 1 else f"the {word}" if not parts else f"a {word}")
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1] if parts else ""
 
 
 def past_more(cut: bool, files: dict | None) -> str:
@@ -194,7 +197,7 @@ def past_more(cut: bool, files: dict | None) -> str:
         return f"Read the rest, with {phrase}" if phrase else "Read the rest"
     if not phrase:
         return "See it"
-    verb = "Hear" if not (files or {}).get("image") else "See"
+    verb = "Hear" if set(k for k, n in (files or {}).items() if n) == {"audio"} else "See"
     return f"{verb} {phrase}"
 
 

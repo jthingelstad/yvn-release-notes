@@ -89,8 +89,8 @@ runtime and is imported lazily so the tests run without it.
   (`NOTE#<day>#<messageId>`); together, oldest first, they are that day's
   release notes (Jamie, 2026-10-08: "keep them in the database as separate
   things" but "treated as one day's release notes"). Read a day with
-  `Store.day_notes` and join it with `notes.combine`. Message ids are random,
-  so sort by `received_at`, never by key. A day with any note counts once for
+  `Store.day_notes` and join it with `notes.combine`. Note ids are random,
+  so sort by `notes.written_at`, never by key. A day with any note counts once for
   the streak.
 - **Raw mail is the source of truth.** Every filed reply stays whole in S3
   (`raw/`, tagged `outcome=note`, kept indefinitely); never expire those.
@@ -118,12 +118,21 @@ runtime and is imported lazily so the tests run without it.
   are read whole.
 - **Imported days count** toward streaks and every lifetime count (Jamie,
   2026-10-09). The dashboard splits notes into email, web and imported.
+- **Day One imports are planned before anything is written** (Jamie,
+  2026-10-09: "keep it to dry-run"). `dayone.py` turns an export into the
+  notes it would make (`NOTE#<day>#d1-<uuid>`) and touches nothing;
+  `scripts/import_dayone.py EMAIL ZIP...` reads the subscriber and prints
+  what an import would do, as counts (`--plan-out` to a folder outside the
+  repo for the full plan, note text included). `scripts/dev_server.py
+  --dayone ZIP` shows the plan in the app locally. There is no write path
+  yet; adding one needs Jamie's go.
 - **Photos and recordings** (Jamie, 2026-10-08) are kept with their note,
   whatever channel brought them. From an emailed reply, inbound copies each one to
   `media/<user>/<day>/<message id>/<n>.<ext>` in the same bucket and lists it
   on the note as `media` (`media.py`); signature logos (longest side under
-  200 px) are left out. Video, PDFs and the rest stay in the raw message and
-  show as "in the original email". The page asks
+  200 px) are left out. Video, PDFs and the rest of an emailed reply stay in
+  the raw message and show as "in the original email". A note's media can
+  also be a `file` (an imported PDF), shown as a link. The page asks
   `/api/days/<day>/notes/<id>/media/<n>`, which checks the session and the
   key's owner and redirects to a ten-minute signed link on the bucket's own
   host, the one host the CSP adds (`img-src`, `media-src`). Never a public

@@ -145,6 +145,6 @@ def markdown(data: dict) -> str:
             lines += ["", text or "(Attachments only. They are in the original email.)"]
         for f in shown:
             # Paths inside the zip, so the Markdown reads with its pictures.
-            label = "Photo" if f["kind"] == "image" else "Recording"
+            label = {"image": "Photo", "audio": "Recording"}.get(f["kind"], "File")
             lines += ["", f"{'!' if f['kind'] == 'image' else ''}[{label}, {notes[0]['version']}]({f['path']})"]
     return "\n".join(lines) + "\n"

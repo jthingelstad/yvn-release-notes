@@ -123,14 +123,16 @@ runtime and is imported lazily so the tests run without it.
   notes it would make (`NOTE#<day>#d1-<uuid>`) and touches nothing;
   `scripts/import_dayone.py EMAIL ZIP...` reads the subscriber and prints
   what an import would do, as counts (`--plan-out` to a folder outside the
-  repo for the full plan, note text included). `scripts/dev_server.py
-  --dayone ZIP` shows the plan in the app locally. There is no write path
-  yet; adding one needs Jamie's go. When it is written it must: copy files
-  and the original first, then put each note conditionally; turn floats
-  into Decimal all the way down (place, media); skip an entry whose `d1-`
-  id is on any day, and never bring back one the subscriber deleted; keep
-  the plan's weather (`weather_days`) before anything else fills those
-  days; and save the writer's own link words (`named`) with `links`.
+  repo for the full plan, note text included). `--write` then imports
+  (`importer.py`): files and the original first, then each note
+  conditionally, then the plan's weather before anything else fills those
+  days, with the writer's own link words kept. The ledger item
+  `IMPORT#<app>#<journal>` lists every entry imported, so a repeat skips
+  them and never brings back a note the subscriber deleted; a `d1-` id on
+  any day is skipped too. `Store.put_note` turns floats into Decimal all
+  the way down. Writing uses boto3 (a virtualenv); every live run needs
+  Jamie's go. `scripts/dev_server.py --dayone ZIP` runs the same importer
+  into the fakes, to see an import locally first.
 - **Photos and recordings** (Jamie, 2026-10-08) are kept with their note,
   whatever channel brought them. From an emailed reply, inbound copies each one to
   `media/<user>/<day>/<message id>/<n>.<ext>` in the same bucket and lists it

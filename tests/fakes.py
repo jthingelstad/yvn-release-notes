@@ -126,6 +126,21 @@ class FakeStore:
                 rows = self.items.get(pk[5:], [])
                 rows[:] = [i for i in rows if i["sk"] != sk]
 
+    def note_ids(self, user_id):
+        return {i["sk"].split("#", 2)[2] for i in self._rows(user_id, "NOTE#")}
+
+    def imported(self, user_id, ledger):
+        found = self._rows(user_id, ledger)
+        return set(found[0]["ids"]) if found else set()
+
+    def add_imported(self, user_id, ledger, ids, at):
+        found = self._rows(user_id, ledger)
+        if not found:
+            found = [{"pk": f"USER#{user_id}", "sk": ledger, "ids": set()}]
+            self.items.setdefault(user_id, []).append(found[0])
+        found[0]["ids"] |= set(ids)
+        found[0]["updated_at"] = at
+
     def put_weather(self, user_id, day, fields):
         if self._rows(user_id, f"WEATHER#{day}"):
             return False
@@ -253,7 +268,7 @@ class FakeS3:
             e = KeyError(Key)
             e.response = {"Error": {"Code": "NoSuchKey"}}
             raise e
-        return {"Body": BytesIO(self.objects[Key]["Body"])}
+        return {"Body": BytesIO(bytes(self.objects[Key]["Body"]))}
 
     def upload_file(self, Filename, Bucket, Key, ExtraArgs=None):
         with open(Filename, "rb") as f:

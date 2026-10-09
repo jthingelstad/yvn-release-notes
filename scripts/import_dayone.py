@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Plan a Day One import for a subscriber, and write nothing (Jamie, 2026-10-09).
+"""Plan a Day One import for a subscriber, and with --write, do it (Jamie, 2026-10-09).
 
     scripts/import_dayone.py EMAIL ZIP [ZIP ...] [--plan-out DIR] [--weather-sample N]
+    scripts/import_dayone.py EMAIL ZIP [ZIP ...] --write
 
 Reads the subscriber (their profile, the keys of their notes, weather and
 pauses), plans every note the export would make (dayone.py) and prints what
 the import would do as counts: notes, days, files and bytes by kind, tags,
 where places came from, days that already have notes or weather, notes this
 export already made, the streak before and after, and the largest item
-against DynamoDB's limit. It has no write path: importing is a later step,
-after Jamie has seen this.
+against DynamoDB's limit. Without --write it writes nothing.
+
+--write imports, after the same report: files, originals and notes, then
+each day's weather (importer.py, which says why in that order). A run can
+stop and be repeated; it skips what it already did and never brings back
+a note the subscriber deleted. Each live run needs Jamie's go. Writing
+uses boto3 (the Store class the Lambdas use), so run it from a virtualenv
+with boto3 installed.
 
 Each zip is one journal; give them all at once, since journals share days
 and the streak and each day's weather are worked out across them.
@@ -17,9 +24,9 @@ and the streak and each day's weather are worked out across them.
 folder outside the repository (a scratchpad). --weather-sample asks Open-Meteo
 for that many of the days, to see the archive answers for the places.
 
-Prints counts only, never note text, tags or places. Uses the AWS CLI (the
-host's cloud-engineer identity), like fill_weather.py, so it runs with
-nothing installed.
+Prints counts only, never note text, tags or places. The report uses the
+AWS CLI (the host's cloud-engineer identity), like fill_weather.py, so it
+runs with nothing installed.
 """
 
 import argparse
@@ -29,7 +36,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -40,6 +47,7 @@ from release_notes import dayone, tags, weather  # noqa: E402
 from release_notes.streak import compute_streak, pause_days  # noqa: E402
 
 TABLE = "yvn-release-notes"
+ACCOUNT = "999153317627"
 ITEM_LIMIT = 400 * 1024  # DynamoDB's largest item, in bytes
 
 
@@ -140,6 +148,7 @@ def main():
     ap.add_argument("zips", nargs="+", metavar="ZIP", help="Day One exports, one journal each")
     ap.add_argument("--plan-out", help="a folder for each plan as JSON (note text included): not in the repo")
     ap.add_argument("--weather-sample", type=int, default=0, metavar="N")
+    ap.add_argument("--write", action="store_true", help="import, after the report (each live run needs Jamie's go)")
     args = ap.parse_args()
     if args.plan_out and Path(args.plan_out).resolve().is_relative_to(ROOT):
         sys.exit("--plan-out holds note text: write it outside the repository")
@@ -205,7 +214,40 @@ def main():
         report["weather"]["sampled"] = len(sample)
         report["weather"]["answered"] = answered
 
-    print(json.dumps(report, indent=1))
+    print(json.dumps(report, indent=1), flush=True)
+    if args.write:
+        print(json.dumps({"written": write(args, plans, user_id, today)}, indent=1))
+
+
+def write(args, plans: list[dict], user_id: str, today: date) -> dict:
+    import zipfile
+
+    try:
+        import boto3
+    except ImportError:
+        sys.exit("--write needs boto3: run it from a virtualenv with boto3 installed")
+    from release_notes import importer, links
+    from release_notes.store import Store
+
+    if any(p["missing_files"] for p in plans):
+        sys.exit("refusing: the export is missing files")
+    who = boto3.client("sts", region_name="us-east-1").get_caller_identity()
+    if who["Account"] != ACCOUNT or "assumed-role/ProjectsCloudEngineer/" not in who["Arn"]:
+        sys.exit("refusing: not the cloud-engineer identity")
+    zips = [zipfile.ZipFile(path) for path in args.zips]
+    started = time.monotonic()
+
+    def progress(counts):
+        if counts["notes"] % 50 == 0:
+            print(json.dumps({"notes": counts["notes"], "files": counts["files"],
+                              "seconds": round(time.monotonic() - started)}), flush=True)
+
+    return importer.write(
+        [(plan, z.read) for plan, z in zip(plans, zips)], user_id,
+        store=Store(boto3.resource("dynamodb", region_name="us-east-1").Table(TABLE)),
+        s3=boto3.client("s3", region_name="us-east-1"), bucket=f"yvn-release-notes-mail-{ACCOUNT}", today=today,
+        at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        fetch_title=links.fetch_title, fetch_weather=weather.fetch_json, pause=0.2, progress=progress)
 
 
 if __name__ == "__main__":

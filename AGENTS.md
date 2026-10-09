@@ -52,7 +52,7 @@ notes.yourversionnumber.com (CloudFront)
   library only. `links.py`: addresses in notes, their saved titles, and the
   guarded fetch. `media.py`: photos and recordings out of a reply.
   `transcribe.py`: recordings written out by Amazon Transcribe, and
-  `describe.py`: photos described by Claude Haiku 4.5 on Bedrock, each for
+  `describe.py`: photos described by Claude Haiku 5.5 through the Anthropic API, each for
   those who turn it on (their docstrings are the design).
 - `send.py`, `inbound.py`, `events.py`: the mail handlers. `store.py`: the one table and its
   key layout (documented at the top of the file). `census.py`: the
@@ -188,7 +188,8 @@ runtime and is imported lazily so the tests run without it.
   2026-10-09: "I don't care if they keep it"), so Amazon may keep the audio.
   `scripts/extract_media.py` fills in notes filed before this.
   **Descriptions** (Jamie, 2026-10-09: "image descriptions to allow images
-  to appear in search", Claude Haiku 4.5 on Bedrock): off until the
+  to appear in search"; then Claude Haiku 5.5 through the Anthropic API
+  rather than Haiku 4.5 on Bedrock): off until the
   subscriber ticks "Describe my photos" (`describe` on the profile), which
   also describes every photo already kept, in passes the function hands
   on to itself. The same stream sends each new photo to the model; one or
@@ -199,7 +200,11 @@ runtime and is imported lazily so the tests run without it.
   only in search results where the search found it (Jamie: "descriptions
   only on search results"); in the zip it is the Markdown's alt text and
   on the JSON's file entry. The settings copy says the photos go to "an
-  AI", without naming it.
+  AI", without naming it. The key is `api_key` in the Secrets Manager
+  secret `yvn-release-notes-anthropic`, made by hand outside the stack
+  (Jamie keeps its value; agents never read it). Until it holds a real
+  key the describer sends nothing and logs `no-key`; photos stay waiting,
+  so after the key goes in, turning the setting off and on describes them.
 - A subscriber who deletes an emailed note deletes its message and its
   files too (the web function may delete `raw/*` and `media/*`; old
   versions expire 30 days later).

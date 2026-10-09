@@ -32,6 +32,11 @@ Parameters:
     AllowedPattern: ^$|^arn:aws:acm:us-east-1:[0-9]{12}:certificate/[0-9a-f-]+$
     Description: The us-east-1 ACM certificate for WebDomain, issued outside the stack (as Drop's is). deploy.sh passes it once ACM says ISSUED; until then the distribution answers on its cloudfront.net name only.
 
+  AnthropicSecretName:
+    Type: String
+    Default: yvn-release-notes-anthropic
+    Description: The Secrets Manager secret holding api_key, the Anthropic API key photo descriptions use. Made by hand; the describer sends nothing while it holds the placeholder.
+
 Conditions:
   HasWebCertificate: !Not [!Equals [!Ref WebCertificateArn, ""]]
 
@@ -1011,7 +1016,7 @@ Resources:
       SourceArn: !GetAtt TranscribeDone.Arn
 
   # --- photo descriptions --------------------------------------------------------
-  # describe.py: Claude on Bedrock describes each photo, for subscribers who
+  # describe.py: Claude, through the Anthropic API, describes each photo, for subscribers who
   # turned it on, from the same stream; turning it on starts a pass over
   # every photo already kept, which hands on to a new pass near its limit.
 
@@ -1048,12 +1053,11 @@ Resources:
                 Action: s3:GetObject
                 Resource: !Sub "${MailBucket.Arn}/media/*"
               - Effect: Allow
-                # The US cross-region profile, and the model in each region
-                # it may route to.
-                Action: bedrock:InvokeModel
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0"
-                  - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+                # The Anthropic API key. The secret is made by hand outside
+                # the stack (its value never passes through a template);
+                # the ?????? is the suffix Secrets Manager adds.
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AnthropicSecretName}-??????"
               - Effect: Allow
                 # The next pass over photos already kept. By name, since the
                 # function's own ARN would make a cycle.
@@ -1082,6 +1086,7 @@ Resources:
           TABLE: !Ref Table
           BUCKET: !Ref MailBucket
           SELF: !Sub "${AWS::StackName}-describe"
+          SECRET: !Ref AnthropicSecretName
 
   DescribeInvokeConfig:
     Type: AWS::Lambda::EventInvokeConfig

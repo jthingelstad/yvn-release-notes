@@ -47,6 +47,18 @@ from .notes import written_at
 from .weather import place_of
 
 
+def numbers(v):
+    """A value as DynamoDB takes it: floats as Decimal, all the way down
+    (an imported note's place and media carry coordinates)."""
+    if isinstance(v, float):
+        return Decimal(str(v))
+    if isinstance(v, dict):
+        return {k: numbers(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [numbers(x) for x in v]
+    return v
+
+
 def _failed_condition(e: Exception) -> bool:
     # A botocore ClientError, read by shape so the tests need no boto.
     code = (getattr(e, "response", None) or {}).get("Error", {}).get("Code")
@@ -198,19 +210,26 @@ class Store:
         return self.table.get_item(Key={"pk": f"TOKEN#{token}", "sk": "TOKEN"}).get("Item")
 
     def _dates(self, user_id: str, prefix: str) -> set[str]:
+        return {sk.split("#")[1] for sk in self._keys(user_id, prefix)}
+
+    def note_ids(self, user_id: str) -> set[str]:
+        """Every note's id, whatever its day."""
+        return {sk.split("#", 2)[2] for sk in self._keys(user_id, "NOTE#")}
+
+    def _keys(self, user_id: str, prefix: str) -> set[str]:
         # Keys only: no note text.
-        days, kwargs = set(), {
+        keys, kwargs = set(), {
             "KeyConditionExpression": "pk = :u AND begins_with(sk, :n)",
             "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":n": prefix},
             "ProjectionExpression": "sk",
         }
         while True:
             page = self.table.query(**kwargs)
-            days.update(i["sk"].split("#")[1] for i in page.get("Items", []))
+            keys.update(i["sk"] for i in page.get("Items", []))
             if "LastEvaluatedKey" not in page:
                 break
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
-        return days
+        return keys
 
     def note_days(self, user_id: str) -> set[date]:
         """The days this subscriber has a note for."""
@@ -258,7 +277,7 @@ class Store:
         makes this idempotent. Returns False if the note already exists."""
         try:
             self.table.put_item(
-                Item={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{message_id}", **note},
+                Item={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{message_id}", **numbers(note)},
                 ConditionExpression="attribute_not_exists(pk)",
             )
             return True
@@ -395,6 +414,20 @@ class Store:
                 batch.delete_item(Key=key)
 
     # weather ------------------------------------------------------------------
+
+    # imports: IMPORT#<app>#<journal> holds the ids of every entry imported,
+    # so a repeat skips them, kept or deleted since (importer.py)
+
+    def imported(self, user_id: str, ledger: str) -> set[str]:
+        got = self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": ledger}, ProjectionExpression="ids")
+        return set(got.get("Item", {}).get("ids") or ())
+
+    def add_imported(self, user_id: str, ledger: str, ids: list[str], at: str) -> None:
+        self.table.update_item(
+            Key={"pk": f"USER#{user_id}", "sk": ledger},
+            UpdateExpression="ADD ids :i SET updated_at = :t",
+            ExpressionAttributeValues={":i": set(ids), ":t": at},
+        )
 
     def put_weather(self, user_id: str, day: str, fields: dict) -> bool:
         """Keep a day's weather, once: the first reading stands. False if the

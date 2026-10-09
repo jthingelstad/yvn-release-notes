@@ -20,9 +20,10 @@ Everything is forgotten when it stops.
 
     scripts/dev_server.py --dayone EXPORT.zip [--dayone ANOTHER.zip]
 
-adds what a Day One import would make (dayone.py) to Ada's notes, to see a
-real journal in the app before any of it is imported; its files are read
-from the zip when asked for.
+imports Day One exports as Ada's notes with the importer itself
+(importer.py), to see a real journal in the app before any of it is
+imported for real; files are read from the zip when asked for, and the
+days' weather is the fake one with --fake-places, else none.
 """
 
 import argparse
@@ -48,7 +49,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
 from fakes import FakeLambda, FakeS3, FakeSES, FakeStore  # noqa: E402
-from release_notes import dayone, export_job, links, media, places, tags, weather, web  # noqa: E402
+from release_notes import dayone, export_job, importer, links, media, places, tags, weather, web  # noqa: E402
 
 FAKE_PLACES = [
     {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
@@ -103,16 +104,34 @@ class PrintingSES(FakeSES):
         return super().send_email(**kw)
 
 
-def load_dayone(path: str, store, s3) -> None:
-    """A Day One export's notes as Ada's, and its files as objects that
-    point into the zip."""
-    journal, entries, names = dayone.read(path)
-    plan = dayone.plan(journal, entries, names, store.profiles["u1"], "u1", web_origin=os.environ["WEB_ORIGIN"])
-    for n in plan["notes"]:
-        for f in n["files"]:
-            s3.objects[f["key"]] = {"Zip": path, "Member": f["from"], "ContentType": f["type"]}
-        store.put_note("u1", n["date"], n["id"], n["item"])
-    print(f"-- {len(plan['notes'])} notes from a Day One export ({journal})", flush=True)
+class ZipMember:
+    """A file in a zip, read when its bytes are asked for: an import puts
+    hundreds of megabytes of photos, and this server keeps them all."""
+
+    def __init__(self, path: str, name: str):
+        self.path, self.name = path, name
+        with zipfile.ZipFile(path) as z:
+            self.size = z.getinfo(name).file_size
+
+    def __len__(self):
+        return self.size
+
+    def __bytes__(self):
+        with zipfile.ZipFile(self.path) as z:
+            return z.read(self.name)
+
+
+def load_dayone(paths: list[str], store, s3, fetch, weather_fetch) -> None:
+    """Day One exports imported as Ada's notes, by the importer itself."""
+    plans = []
+    for path in paths:
+        journal, entries, names = dayone.read(path)
+        plan = dayone.plan(journal, entries, names, store.profiles["u1"], "u1", web_origin=os.environ["WEB_ORIGIN"])
+        plans.append((plan, lambda name, path=path: ZipMember(path, name)))
+    today = datetime.now(ZoneInfo("America/Chicago")).date()
+    counts = importer.write(plans, "u1", store=store, s3=s3, bucket="dev", today=today, at="2026-10-09T12:00:00Z",
+                            fetch_title=fetch, fetch_weather=weather_fetch)
+    print(f"-- a Day One import: {json.dumps(counts)}", flush=True)
 
 
 def main():
@@ -174,12 +193,13 @@ def main():
     lake["attachments"] = [{"content_type": e["type"], "filename": "", "size": e["size"]} for e in kept]
     store.items["u1"].append({"pk": "USER#u1", "sk": f"PAUSE#{today - timedelta(days=12)}",
                               "through": (today - timedelta(days=9)).isoformat()})
-    for path in args.dayone:
-        load_dayone(path, store, s3)
     store.tokens["abcdefghijklmnopqrstuvwx"] = {"user_id": "u1", "date": "2026-10-01", "version": "4.5.109"}
     fetch = (lambda u: {"title": f"A page at {urlsplit(u).hostname}", "site": urlsplit(u).hostname}) if args.fake_links else links.fetch_title
     geocode = (lambda q: [p for p in FAKE_PLACES if p["name"].lower().startswith(q.lower())]) if args.fake_places else places.search
     weather_fetch = fake_weather if args.fake_places else weather.fetch_json
+    if args.dayone:
+        # Real weather for hundreds of days is minutes of asking: only the fake.
+        load_dayone(args.dayone, store, s3, fetch, fake_weather if args.fake_places else None)
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
@@ -227,16 +247,14 @@ def main():
                 obj = s3.objects.get(self.path.split("?")[0][len("/dev-media/"):])
                 if not obj:
                     return self.send_error(404)
-                if "Zip" in obj:  # a Day One file, read when it is asked for
-                    with zipfile.ZipFile(obj["Zip"]) as z:
-                        obj = {**obj, "Body": z.read(obj["Member"])}
+                body = bytes(obj["Body"])  # a Day One file is read from its zip now
                 self.send_response(200)
                 self.send_header("content-type", obj["ContentType"])
                 if self.path.startswith("/dev-media/exports/"):
                     self.send_header("content-disposition", 'attachment; filename="release-notes.zip"')
-                self.send_header("content-length", str(len(obj["Body"])))
+                self.send_header("content-length", str(len(body)))
                 self.end_headers()
-                return self.wfile.write(obj["Body"])
+                return self.wfile.write(body)
             return super().do_GET()
 
         do_POST = do_PUT = do_DELETE = api

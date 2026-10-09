@@ -85,8 +85,22 @@ Resources:
               SSEAlgorithm: AES256
       VersioningConfiguration:
         Status: Enabled
+      # The web app sends files straight here, with a form web.start_upload
+      # signs (media.py); the page must be able to read S3's answer.
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: [!Sub "https://${WebDomain}"]
+            AllowedMethods: [POST]
+            AllowedHeaders: ["*"]
+            MaxAge: 3000
       LifecycleConfiguration:
         Rules:
+          - Id: expire-pending-uploads
+            # A file sent from the web that no note took within a day.
+            Status: Enabled
+            TagFilters:
+              - { Key: outcome, Value: pending }
+            ExpirationInDays: 1
           - Id: expire-ignored-mail
             Status: Enabled
             TagFilters:
@@ -489,7 +503,7 @@ Resources:
         Comment: Security headers for notes.yourversionnumber.com
         SecurityHeadersConfig:
           ContentSecurityPolicy:
-            ContentSecurityPolicy: !Sub "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://${MailBucket.RegionalDomainName}; media-src 'self' https://${MailBucket.RegionalDomainName}; font-src 'self'; connect-src 'self' https://tinylytics.app; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+            ContentSecurityPolicy: !Sub "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://${MailBucket.RegionalDomainName}; media-src 'self' https://${MailBucket.RegionalDomainName}; font-src 'self'; connect-src 'self' https://tinylytics.app https://${MailBucket.RegionalDomainName}; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
             Override: true
           ContentTypeOptions:
             Override: true
@@ -673,6 +687,13 @@ Resources:
                 Resource:
                   - !Sub "${MailBucket.Arn}/media/*"
                   - !Sub "${MailBucket.Arn}/exports/*"
+              - Effect: Allow
+                # Files from the web (media.py): signs the form that sends one
+                # straight to the bucket, tagged pending (the form posts as
+                # this role, so it needs the put and the tag), reads its
+                # tags and first bytes, and tags it kept once a note takes it.
+                Action: [s3:PutObject, s3:PutObjectTagging, s3:GetObjectTagging]
+                Resource: !Sub "${MailBucket.Arn}/media/*/web/*"
               - Effect: Allow
                 # A new zip export replaces the last; deleting the account
                 # deletes it.

@@ -92,7 +92,44 @@ const SAY = {
   through: 'Pick a day within the next 60.',
   stopped: 'Your emails are stopped. Start them again in settings first.',
   'delete-failed': 'Couldn’t delete everything just now. Nothing is lost; try again in a minute.',
+  'file-type': 'isn’t a photo, recording or PDF, so it can’t be added.',
+  'file-size': 'is empty.',
+  'file-too-big': 'is over 50 MB, more than one file can be.',
+  upload: 'didn’t finish sending. Try again.',
+  'too-many-files': 'A note holds up to 20 files.',
+  busy: 'That note just changed. Reload the page and try again.',
 };
+
+// What the file pickers offer: photos, recordings and PDFs (media.py).
+const FILES = 'image/*,audio/*,application/pdf,.heic,.heif,.m4a,.pdf';
+
+// Files from this device, each sent straight to the bucket with a form the
+// API signs for its type and size (media.py has why). Returns { sent }, what
+// a note takes, or { error, file } for the first that fails. tell(text)
+// says how far it has got.
+async function sendFiles(files, tell) {
+  const sent = [];
+  for (const [i, f] of files.entries()) {
+    tell(files.length > 1 ? `Sending ${i + 1} of ${files.length}…` : 'Sending the file…');
+    const r = await api('POST', '/api/uploads', { name: f.name, type: f.type, size: f.size });
+    if (!r.ok) return { error: r.data.error, file: f.name };
+    const form = new FormData();
+    for (const [k, v] of Object.entries(r.data.fields)) form.append(k, v);
+    form.append('file', f); // last: S3 reads the fields before the file
+    let ok = false;
+    try { ok = (await fetch(r.data.url, { method: 'POST', body: form })).ok; } catch (e) { ok = false; }
+    if (!ok) return { error: 'upload', file: f.name };
+    sent.push({ upload: r.data.upload, type: r.data.type, name: f.name });
+  }
+  return { sent };
+}
+
+// An error about one file starts with its name.
+function fileError(data) {
+  if (data.error === 'signed-out') return signedOutLine(data.draft);
+  const text = SAY[data.error] || 'Something went wrong. Try again.';
+  return data.file && /^[a-z]/.test(text) ? `${data.file} ${text}` : text;
+}
 
 // Signed out mid-write (the session ran out in another tab, or a sign-out
 // elsewhere). `draft` says what happened to what was being written: 'kept'
@@ -125,8 +162,7 @@ function lineOf(line, text) {
 // button. (The submit button is disabled while busy, which drops focus.)
 function say(root, data, field) {
   const line = $('.error', root);
-  let text = data.error === 'signed-out' ? signedOutLine(data.draft)
-    : SAY[data.error] || 'Something went wrong. Try again.';
+  let text = fileError(data);
   if (data.error === 'wrong-code' && data.tries_left !== undefined) {
     text += data.tries_left === 1 ? ' One try left.' : ` ${data.tries_left} tries left.`;
   }
@@ -432,7 +468,32 @@ function renderNotes(root, day, notes, tz, onChange, version) {
       actions.append(q, yes, button('Keep it', 'quiet', () => renderNotes(root, day, notes, tz, onChange, version)));
     };
 
-    actions.append(button('Edit', 'quiet', edit), button('Delete', 'quiet', ask));
+    // Photos, recordings or PDFs from this device, after the note's own.
+    const addFiles = () => {
+      const pick = el('input');
+      pick.type = 'file';
+      pick.multiple = true;
+      pick.accept = FILES;
+      pick.hidden = true;
+      pick.addEventListener('change', async () => {
+        const files = [...pick.files];
+        pick.remove();
+        if (!files.length) return;
+        actions.textContent = '';
+        const line = el('span', 'confirm');
+        line.setAttribute('role', 'status');
+        actions.append(line);
+        const out = await sendFiles(files, (t) => { line.textContent = t; });
+        const r = out.error ? null : await api('POST', `${path}/media`, { uploads: out.sent });
+        if (r && r.ok) return onChange();
+        lineOf(line, fileError(out.error ? out : r.data));
+        actions.append(button('OK', 'quiet', () => renderNotes(root, day, notes, tz, onChange, version)));
+      });
+      item.append(pick);
+      pick.click();
+    };
+
+    actions.append(button('Edit', 'quiet', edit), button('Add files', 'quiet', addFiles), button('Delete', 'quiet', ask));
     item.append(meta, text);
     if (n.media && n.media.length) item.append(noteMedia(day, n, version));
     item.append(actions);
@@ -445,6 +506,15 @@ function renderNotes(root, day, notes, tz, onChange, version) {
 // mid-note (or a reload) doesn't lose it; restore(day) puts it back.
 function noteForm(form, getDay, onAdded) {
   const key = () => `rn-draft-${getDay()}`;
+  // Files chosen to go with the note: a photo alone is a note too.
+  const pick = $('input[type=file]', form), chosen = $('.chosen', form);
+  pick.accept = FILES;
+  const showChosen = () => {
+    const names = [...pick.files].map((f) => f.name);
+    chosen.textContent = names.length ? `With ${names.join(', ')}` : '';
+    chosen.hidden = !names.length;
+  };
+  pick.addEventListener('change', () => { quiet(form); showChosen(); });
   form.text.addEventListener('input', () => {
     quiet(form);
     if (form.text.value.trim()) store.set(key(), form.text.value); else store.drop(key());
@@ -453,16 +523,29 @@ function noteForm(form, getDay, onAdded) {
     e.preventDefault();
     busy(form, async () => {
       quiet(form);
-      if (!form.text.value.trim()) return say(form, { error: 'text' }, form.text);
+      const files = [...pick.files];
+      if (!form.text.value.trim() && !files.length) return say(form, { error: 'text' }, form.text);
       // The zone it is being written in, so its time reads as it did here.
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const r = await api('POST', `/api/days/${getDay()}/notes`, { text: form.text.value, tz });
+      const body = { text: form.text.value, tz };
+      if (files.length) {
+        const out = await sendFiles(files, (t) => { chosen.textContent = t; });
+        showChosen();
+        if (out.error) {
+          store.set(key(), form.text.value);
+          return say(form, { ...out, draft: 'kept' }, pick);
+        }
+        body.uploads = out.sent;
+      }
+      const r = await api('POST', `/api/days/${getDay()}/notes`, body);
       if (!r.ok) {
         store.set(key(), form.text.value);
         return say(form, { ...r.data, draft: 'kept' }, form.text);
       }
       store.drop(key());
       form.text.value = '';
+      pick.value = '';
+      showChosen();
       onAdded();
     });
   });

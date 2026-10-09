@@ -312,6 +312,25 @@ class Store:
                 return None
             raise
 
+    def add_media(self, user_id: str, day: str, note_id: str, entries: list[dict], had: int, at: str) -> dict | None:
+        """Add files to the end of a note's media, if it still has the `had`
+        it was read with (two pages adding at once must not both take the
+        same numbers). Returns the note, or None if it is gone or changed."""
+        condition = "attribute_exists(pk) AND " + ("size(media) = :had" if had else "attribute_not_exists(media)")
+        values = {":m": numbers(entries), ":none": [], ":at": at, **({":had": had} if had else {})}
+        try:
+            return self.table.update_item(
+                Key={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}"},
+                UpdateExpression="SET media = list_append(if_not_exists(media, :none), :m), updated_at = :at",
+                ConditionExpression=condition,
+                ExpressionAttributeValues=values,
+                ReturnValues="ALL_NEW",
+            )["Attributes"]
+        except Exception as e:
+            if _failed_condition(e):
+                return None
+            raise
+
     def delete_note(self, user_id: str, day: str, note_id: str) -> dict | None:
         """Delete a note. Returns what it was (the caller deletes its raw
         email), or None if there was none."""

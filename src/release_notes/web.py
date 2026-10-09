@@ -643,12 +643,13 @@ def day_from(p: dict, value: str, now: int) -> date:
     return day
 
 
-def text_from(body: dict) -> str:
-    text = body.get("text")
+def text_from(body: dict, empty_ok: bool = False) -> str:
+    """The note's text. It may be empty only for a note with files."""
+    text = body.get("text", "" if empty_ok else None)
     if not isinstance(text, str):
         raise Reject(400, "text")
     text = text.replace("\r\n", "\n").strip()
-    if not text:
+    if not text and not empty_ok:
         raise Reject(400, "text")
     if len(text) > MAX_NOTE:
         raise Reject(400, "too-long")
@@ -770,7 +771,10 @@ def add_note(app: App, req: Request, value: str) -> dict:
     user_id, p = app.account(req)
     day = day_from(p, value, app.now)
     body = req.json()
-    text = text_from(body)
+    uploads = body.get("uploads")
+    text = text_from(body, empty_ok=bool(uploads))
+    # Its files first: one that is not there or not what it says stops the note.
+    files = attach(app, user_id, uploads) if uploads else []
     note_id = "w-" + uuid.uuid4().hex[:20]
     item = {
         "version": str(compute_version(date.fromisoformat(p["birthday"]), day)),
@@ -785,8 +789,10 @@ def add_note(app: App, req: Request, value: str) -> dict:
         item["links"] = found
     if tagged := tags.found(text):
         item["tags"] = tagged
+    if files:
+        item["media"] = [{"n": n, **f} for n, f in enumerate(files, 1)]
     app.store.put_note(user_id, day.isoformat(), note_id, item)
-    log(event="note-added", user=user_id, date=day.isoformat())
+    log(event="note-added", user=user_id, date=day.isoformat(), files=len(files))
     keep_weather(app, user_id, p, day)
     return respond(201, note_view({"sk": f"NOTE#{day.isoformat()}#{note_id}", **item}, p["tz"]))
 
@@ -811,10 +817,11 @@ def keep_weather(app: App, user_id: str, p: dict, day: date) -> None:
 def edit_note(app: App, req: Request, value: str, note_id: str) -> dict:
     user_id, p = app.account(req)
     day = day_from(p, value, app.now).isoformat()
-    text = text_from(req.json())
+    body = req.json()
     old = next((n for n in app.store.notes_between(user_id, day, day) if n["sk"].split("#", 2)[2] == note_id), None)
     if not old:
         raise Reject(404, "note")
+    text = text_from(body, empty_ok=bool(old.get("media")))
     # Links the note had keep their names; only a new address is fetched.
     found = links.collect(text, keep=old.get("links"), fetch=app.fetch)
     item = app.store.update_note(user_id, day, note_id, text, iso(app.now), found, tags.found(text))
@@ -841,6 +848,120 @@ def delete_note(app: App, req: Request, value: str, note_id: str) -> dict:
 
 
 MEDIA_LINK = 600  # seconds a photo's link lasts
+
+# --- files from the web -------------------------------------------------------
+# media.py has the design: the browser sends each file straight to the bucket
+# with a form signed here (the API takes a few megabytes at most), then a
+# note takes it: a new one (add_note) or one already there (add_files).
+
+UPLOAD_FORM = 900  # seconds a signed upload form lasts
+PENDING = "<Tagging><TagSet><Tag><Key>outcome</Key><Value>pending</Value></Tag></TagSet></Tagging>"
+UPLOAD_ID = re.compile(r"[0-9a-f]{32}")
+
+
+def start_upload(app: App, req: Request) -> dict:
+    """A form for one file, of the type and exact size the page says, to a
+    key of its own. Nothing joins a note until attach() has checked it."""
+    user_id, _ = app.account(req)
+    body = req.json()
+    name, ctype = body.get("name"), body.get("type")
+    ctype = media.upload_type(ctype if isinstance(ctype, str) else "", name if isinstance(name, str) else "")
+    if not ctype:
+        raise Reject(400, "file-type")
+    size = body.get("size")
+    if not isinstance(size, int) or isinstance(size, bool) or size < 1:
+        raise Reject(400, "file-size")
+    if size > media.MAX_UPLOAD:
+        raise Reject(400, "file-too-big")
+    upload_id = uuid.uuid4().hex
+    form = app.s3.generate_presigned_post(
+        Bucket=os.environ["MAIL_BUCKET"], Key=media.upload_key(user_id, upload_id, ctype),
+        Fields={"Content-Type": ctype, "tagging": PENDING},
+        Conditions=[{"Content-Type": ctype}, {"tagging": PENDING}, ["content-length-range", size, size]],
+        ExpiresIn=UPLOAD_FORM,
+    )
+    log(event="upload-started", user=user_id, kind=media.kind(ctype), size=size)
+    return respond(200, {"upload": upload_id, "type": ctype, "url": form["url"], "fields": form["fields"]})
+
+
+def _missing(e: Exception) -> bool:
+    code = (getattr(e, "response", None) or {}).get("Error", {}).get("Code")
+    return code in ("NoSuchKey", "404", "NotFound")
+
+
+def file_name(value) -> str:
+    """The name the file had on the writer's device, without its folders."""
+    if not isinstance(value, str):
+        return ""
+    name = re.split(r"[\\/]", value)[-1]
+    return "".join(c for c in name if c.isprintable()).strip()[:120]
+
+
+def attach(app: App, user_id: str, uploads) -> list[dict]:
+    """Note entries (without `n`) for files sent with start_upload's forms.
+    Each must be there, still pending (on no note yet), of the type it was
+    signed for, and start like one; any that is not stops them all. Then
+    each is tagged as kept, which takes it out of the bucket's expiry."""
+    if (not isinstance(uploads, list) or not uploads or len(uploads) > media.MAX_FILES
+            or not all(isinstance(u, dict) for u in uploads)
+            or len({u.get("upload") for u in uploads}) != len(uploads)):
+        raise Reject(400, "upload")
+    bucket = os.environ["MAIL_BUCKET"]
+    entries = []
+    for u in uploads:
+        upload_id, ctype = u.get("upload"), u.get("type")
+        if not isinstance(upload_id, str) or not UPLOAD_ID.fullmatch(upload_id) or ctype not in media.UPLOADABLE:
+            raise Reject(400, "upload")
+        key = media.upload_key(user_id, upload_id, ctype)
+        try:
+            tagged = {t["Key"]: t["Value"] for t in app.s3.get_object_tagging(Bucket=bucket, Key=key)["TagSet"]}
+            got = app.s3.get_object(Bucket=bucket, Key=key, Range=f"bytes=0-{media.HEAD - 1}")
+            head = got["Body"].read()
+        except Exception as e:
+            if _missing(e):
+                raise Reject(400, "upload") from None
+            raise
+        if tagged.get("outcome") != "pending" or got.get("ContentType") != ctype or not media.looks_like(ctype, head):
+            raise Reject(400, "upload")
+        total = str(got.get("ContentRange") or "").rpartition("/")[2]
+        entry = {"kind": media.kind(ctype), "type": ctype, "size": int(total) if total.isdigit() else len(head),
+                 "key": key}
+        if name := file_name(u.get("name")):
+            entry["name"] = name
+        if ctype in media.IMAGES and (wh := media.image_size(head)):
+            entry["width"], entry["height"] = wh
+        entries.append(entry)
+    for e in entries:
+        app.s3.put_object_tagging(Bucket=bucket, Key=e["key"],
+                                  Tagging={"TagSet": [{"Key": "outcome", "Value": "note"}]})
+    return entries
+
+
+def add_files(app: App, req: Request, value: str, note_id: str) -> dict:
+    """Files for a note already there, after the ones it has."""
+    user_id, p = app.account(req)
+    day = day_from(p, value, app.now).isoformat()
+    uploads = req.json().get("uploads")
+
+    def note():
+        found = next((n for n in app.store.notes_between(user_id, day, day) if n["sk"].split("#", 2)[2] == note_id), None)
+        if not found:
+            raise Reject(404, "note")
+        return list(found.get("media") or [])
+
+    had = note()
+    if isinstance(uploads, list) and len(had) + len(uploads) > media.MAX_FILES:
+        raise Reject(400, "too-many-files")
+    files = attach(app, user_id, uploads)
+    for _ in range(3):  # another page adding at the same moment takes the numbers first
+        first = max((int(m["n"]) for m in had), default=0) + 1
+        item = app.store.add_media(user_id, day, note_id, [{"n": first + i, **f} for i, f in enumerate(files)],
+                                   len(had), iso(app.now))
+        if item:
+            log(event="files-added", user=user_id, date=day, files=len(files))
+            return respond(200, note_view(item, p["tz"]))
+        had = note()
+    raise Reject(409, "busy")
 
 
 def media_file(app: App, req: Request, value: str, note_id: str, n: str) -> dict:
@@ -1034,6 +1155,8 @@ ROUTES = [
     ("PUT", "/api/days/{date}/notes/{id}", edit_note),
     ("DELETE", "/api/days/{date}/notes/{id}", delete_note),
     ("GET", "/api/days/{date}/notes/{id}/media/{n}", media_file),
+    ("POST", "/api/days/{date}/notes/{id}/media", add_files),
+    ("POST", "/api/uploads", start_upload),
     ("GET", "/api/tags", tag_list),
     ("GET", "/api/tags/{tag}", tagged_days),
     ("PUT", "/api/pause", pause),

@@ -371,3 +371,112 @@ class WhereAndWhenTest(NotesCase):
         self.assertEqual([n.get("map") for n in day["notes"]],
                          ["https://maps.apple.com/?ll=45.03,-93.41&q=Four%20Seasons%20Mall,%20Plymouth", None])
         self.assertNotIn("45.03", str([{k: v for k, v in n.items() if k != "map"} for n in day["notes"]]))
+
+
+# A PNG header 640 x 480, a recording and a PDF, as a browser would send them.
+PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + (640).to_bytes(4, "big") + (480).to_bytes(4, "big") + b"\x08\x02" * 40
+M4A = b"\x00\x00\x00\x20ftypM4A " + b"\x00" * 2000
+PDF = b"%PDF-1.7\n" + b"x" * 500
+
+
+class UploadTest(NotesCase):
+    """Files from the web: a signed form per file, straight to the bucket,
+    then a note takes them (media.py has the design)."""
+
+    def form(self, name, data, ctype, **kw):
+        body = {"name": name, "type": ctype, "size": len(data), **kw}
+        return self.call("POST", "/api/uploads", body, cookies=self.cookies)
+
+    def upload(self, name, data, ctype=""):
+        """Ask for a form and post the file with it, as the page does."""
+        r, form = self.form(name, data, ctype)
+        self.assertEqual(r["statusCode"], 200, form)
+        self.assertTrue(self.s3.form_upload(form["fields"], data))
+        return {"upload": form["upload"], "type": form["type"], "name": name}
+
+    def test_a_new_note_with_a_photo_a_recording_and_a_pdf(self):
+        files = [self.upload("IMG_1.png", PNG, "image/png"), self.upload("Memo.m4a", M4A, "audio/x-m4a"),
+                 self.upload("Menu.pdf", PDF, "application/pdf")]
+        r, note = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "Dinner.", "uploads": files},
+                            cookies=self.cookies)
+        self.assertEqual(r["statusCode"], 201, note)
+        self.assertEqual(note["media"], [{"n": 1, "kind": "image", "type": "image/png", "name": "IMG_1.png"},
+                                         {"n": 2, "kind": "audio", "type": "audio/mp4", "name": "Memo.m4a"},
+                                         {"n": 3, "kind": "file", "type": "application/pdf", "name": "Menu.pdf"}])
+        kept = self.store.notes_between("u1", TODAY, TODAY)[0]["media"]
+        self.assertEqual((kept[0]["width"], kept[0]["height"], kept[0]["size"]), (640, 480, len(PNG)))
+        self.assertTrue(all(m["key"].startswith("media/u1/web/") for m in kept))
+        self.assertEqual({self.s3.objects[m["key"]]["Tagging"] for m in kept}, {"outcome=note"})
+        self.assertNotIn("media/", str(note))
+        # It opens like any other, and deleting the note deletes the files.
+        r, _ = self.call("GET", f"/api/days/{TODAY}/notes/{note['id']}/media/3", cookies=self.cookies)
+        self.assertEqual(r["statusCode"], 302)
+        self.call("DELETE", f"/api/days/{TODAY}/notes/{note['id']}", cookies=self.cookies)
+        self.assertFalse(any(k.startswith("media/u1/web/") for k in self.s3.objects))
+
+    def test_the_form_is_for_that_type_and_exact_size_only(self):
+        r, form = self.form("a.png", PNG, "image/png")
+        signed = self.s3.posts[form["fields"]["key"]]
+        self.assertIn(["content-length-range", len(PNG), len(PNG)], signed["Conditions"])
+        self.assertEqual(signed["Fields"]["Content-Type"], "image/png")
+        self.assertIn("<Value>pending</Value>", signed["Fields"]["tagging"])
+        self.assertFalse(self.s3.form_upload(form["fields"], PNG + b"more"))
+        self.assertFalse(self.s3.form_upload({**form["fields"], "Content-Type": "text/html"}, PNG))
+        self.assertIn("upload-started", self.out.getvalue())
+        self.assertNotIn("a.png", self.out.getvalue())  # names stay out of the logs
+
+    def test_only_photos_recordings_and_pdfs_up_to_50_mb(self):
+        for name, ctype, size, error in [("clip.mov", "video/quicktime", 10, "file-type"), ("page.html", "text/html", 10, "file-type"),
+                                         ("a.png", "image/png", 0, "file-size"), ("a.png", "image/png", "9", "file-size"),
+                                         ("big.m4a", "audio/mp4", 50 * 1024 * 1024 + 1, "file-too-big")]:
+            r, body = self.call("POST", "/api/uploads", {"name": name, "type": ctype, "size": size}, cookies=self.cookies)
+            self.assertEqual((r["statusCode"], body["error"]), (400, error), name)
+        # No type from the browser: the name decides.
+        r, body = self.call("POST", "/api/uploads", {"name": "Menu.PDF", "type": "", "size": 9}, cookies=self.cookies)
+        self.assertEqual(body["type"], "application/pdf")
+
+    def test_a_file_not_sent_not_what_it_says_or_already_used_stops_the_note(self):
+        _, form = self.form("a.png", PNG, "image/png")
+        missing = {"upload": form["upload"], "type": "image/png"}
+        bad = self.upload("fake.png", b"<html>" + b"x" * 100, "image/png")
+        good = self.upload("a.png", PNG, "image/png")
+        for uploads in ([missing], [bad], [{"upload": "../u2/x", "type": "image/png"}], [good, good],
+                        [{**good, "type": "application/pdf"}]):
+            r, body = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "", "uploads": uploads}, cookies=self.cookies)
+            self.assertEqual((r["statusCode"], body["error"]), (400, "upload"), uploads)
+        self.assertEqual(self.store.notes_between("u1", TODAY, TODAY), [])
+        r, _ = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "", "uploads": [good]}, cookies=self.cookies)
+        self.assertEqual(r["statusCode"], 201)  # a photo alone is a note
+        r, body = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "Again.", "uploads": [good]}, cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body["error"]), (400, "upload"))  # one file, one note
+
+    def test_another_persons_upload_is_not_found(self):
+        good = self.upload("a.png", PNG, "image/png")
+        self.subscribe("bo@example.com", "u2")
+        bo = [self.signed_in("bo@example.com")]
+        r, body = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "Mine?", "uploads": [good]}, cookies=bo)
+        self.assertEqual((r["statusCode"], body["error"]), (400, "upload"))
+
+    def test_files_join_a_note_already_there_after_its_own(self):
+        self.emailed("2026-10-07", text="", media=[PHOTO, MEMO])
+        files = [self.upload("Menu.pdf", PDF, "application/pdf")]
+        r, note = self.call("POST", "/api/days/2026-10-07/notes/0100abc-1/media", {"uploads": files}, cookies=self.cookies)
+        self.assertEqual(r["statusCode"], 200, note)
+        self.assertEqual([(m["n"], m["kind"]) for m in note["media"]], [(1, "image"), (2, "audio"), (3, "file")])
+        self.assertTrue(note["edited_at"])
+        r, body = self.call("POST", "/api/days/2026-10-07/notes/nope/media", {"uploads": files}, cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body["error"]), (404, "note"))
+
+    def test_at_most_20_files_a_note(self):
+        self.emailed("2026-10-07", text="Lots.", media=[{**PHOTO, "n": n} for n in range(1, 20)])
+        files = [self.upload("a.png", PNG, "image/png"), self.upload("b.png", PNG, "image/png")]
+        r, body = self.call("POST", "/api/days/2026-10-07/notes/0100abc-1/media", {"uploads": files}, cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body["error"]), (400, "too-many-files"))
+
+    def test_a_note_with_files_may_be_edited_down_to_no_words(self):
+        self.emailed("2026-10-07", text="Caption.", media=[PHOTO])
+        r, _ = self.call("PUT", "/api/days/2026-10-07/notes/0100abc-1", {"text": ""}, cookies=self.cookies)
+        self.assertEqual(r["statusCode"], 200)
+        self.emailed("2026-10-06", note_id="0100abc-2", text="Words only.")
+        r, body = self.call("PUT", "/api/days/2026-10-06/notes/0100abc-2", {"text": ""}, cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body["error"]), (400, "text"))

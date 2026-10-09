@@ -139,6 +139,10 @@ select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 .note .actions { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
 .note .actions .quiet { min-height: 40px; padding: 8px 0; font-size: 14px; }
 .confirm { font-size: 14px; color: var(--ink-2); }
+/* The note form's file picker: a quiet link that opens the device's own. */
+label.picker { position: relative; display: inline-block; font-size: 15px; font-weight: 700; }
+label.picker input { position: absolute; inset: 0; opacity: 0; width: 1px; height: 1px; padding: 0; border: 0; }
+label.picker:focus-within { outline: 2px solid var(--orange); outline-offset: 4px; }
 form.edit, form.note-form { gap: 12px; }
 form.edit { margin-top: 0; }
 form.note-form { margin-top: 32px; }

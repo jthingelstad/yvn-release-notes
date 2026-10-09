@@ -367,4 +367,7 @@ class WhereAndWhenTest(NotesCase):
         _, day = self.get("/api/days/2026-10-06")
         self.assertEqual([(n["place"], n["from"], n["source"]) for n in day["notes"]],
                          [("Four Seasons Mall, Plymouth", "Day One", "import"), ("Kyiv, Kyiv City", "an import", "import")])
-        self.assertNotIn("45.03", str(day))  # a place shows by name, never its coordinates
+        # A place shows by name; its coordinates are only in the map link.
+        self.assertEqual([n.get("map") for n in day["notes"]],
+                         ["https://maps.apple.com/?ll=45.03,-93.41&q=Four%20Seasons%20Mall,%20Plymouth", None])
+        self.assertNotIn("45.03", str([{k: v for k, v in n.items() if k != "map"} for n in day["notes"]]))

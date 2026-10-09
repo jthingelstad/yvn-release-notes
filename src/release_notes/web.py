@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 from . import auth, export, export_job, links, media, places, tags, weather
 from .compose import DOTS, MAIL_TAG, from_header, next_release
-from .notes import MAX_NOTE, place_label, written_at
+from .notes import MAX_NOTE, map_url, place_label, written_at
 from .streak import ONE_DAY, compute_streak, pause_days
 from .version import anniversary, compute_version
 
@@ -672,6 +672,8 @@ def note_view(item: dict, tz: str) -> dict:
         view["tags"] = list(item["tags"])
     if item.get("place") and (label := place_label(item["place"])):
         view["place"] = label
+        if url := map_url(item["place"]):
+            view["map"] = url
     if item.get("origin"):
         view["from"] = APPS.get(item["origin"].get("app"), "an import")
     if item.get("updated_at"):

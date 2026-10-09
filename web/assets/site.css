@@ -127,6 +127,7 @@ select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 .notes:empty { display: none; }
 .note { display: flex; flex-direction: column; gap: 4px; }
 .meta, .count { margin: 0; font-size: 13px; font-weight: 600; color: var(--orange-ink); }
+.meta a, .count a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 .text { margin: 0; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .text .site { color: var(--ink-2); }
 .media { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }

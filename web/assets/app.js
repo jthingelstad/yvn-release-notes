@@ -353,7 +353,7 @@ function sourceName(n) {
 
 // The time reads in the zone the note was written in (n.tz), named when it
 // isn't the subscriber's own.
-function noteMeta(n, tz) {
+function noteMeta(n, tz, cls) {
   const zone = n.tz || tz;
   let when = '';
   if (n.at) {
@@ -364,10 +364,12 @@ function noteMeta(n, tz) {
       if (name) when += ` ${name.value}`;
     }
   }
-  const parts = [when, n.place, sourceName(n)];
+  const parts = [when, n.place && n.map ? linkTo(n.map, n.place) : n.place, sourceName(n)];
   if (n.attachments) parts.push(n.attachments === 1 ? '1 attachment in the email' : `${n.attachments} attachments in the email`);
   if (n.edited_at) parts.push('edited');
-  return parts.filter(Boolean).join(' · ');
+  const p = el('p', cls);
+  parts.filter(Boolean).forEach((x, i) => p.append(...(i ? [' · ', x] : [x])));
+  return p;
 }
 
 // A day's notes, each with Edit and Delete. onChange() runs after either.
@@ -375,7 +377,7 @@ function renderNotes(root, day, notes, tz, onChange, version) {
   root.textContent = '';
   for (const n of notes) {
     const item = el('article', 'note');
-    const meta = el('p', 'meta', noteMeta(n, tz));
+    const meta = noteMeta(n, tz, 'meta');
     const text = noteBody(n);
     const actions = el('div', 'actions');
     const path = `/api/days/${day}/notes/${encodeURIComponent(n.id)}`;
@@ -1414,7 +1416,7 @@ const pages = {
       for (const n of d.notes) {
         sec.append(noteBody(n));
         if (n.media && n.media.length) sec.append(noteMedia(d.date, n, d.version));
-        sec.append(el('p', 'count', noteMeta(n, r.data.tz)));
+        sec.append(noteMeta(n, r.data.tz, 'count'));
       }
       list.append(sec);
     }

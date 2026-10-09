@@ -383,20 +383,28 @@ function noteText(n) {
   return n.source === 'email' ? 'Attachments only. They are in the original email.' : 'Nothing written.';
 }
 
-// A note's photos and recordings. A photo loads from the signed link the
-// API put on it (`url`, good for ten minutes at least), so a page of photos
-// is not a call to the API each. Clicking one, a recording and a PDF use the
-// API's own address, which checks the session and redirects to a fresh link,
-// so they still open on a page left open longer.
+// A note's photos, recordings and files, each from the signed link the API
+// put on it (`url`, good for ten minutes at least), so a page of them is not
+// a call to the API each. Past nine minutes, or when a link fails, they use
+// the API's own address instead, which checks the session and redirects to
+// a fresh link, so a page left open longer still opens them.
+const LINK_MS = 9 * 60 * 1000;
 function noteMedia(day, n, version, mark = null) {
   const box = el('div', 'media');
+  const given = Date.now();
   for (const m of n.media || []) {
     const src = `/api/days/${day}/notes/${encodeURIComponent(n.id)}/media/${m.n}`;
-    if (m.kind === 'image') {
-      const a = el('a');
-      a.href = src;
+    const link = () => (m.url && Date.now() - given < LINK_MS ? m.url : src);
+    // A link to open: its address is checked again as it is used.
+    const opens = (a) => {
+      a.href = link();
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
+      for (const ev of ['pointerdown', 'focus', 'click']) a.addEventListener(ev, () => { a.href = link(); });
+      return a;
+    };
+    if (m.kind === 'image') {
+      const a = opens(el('a'));
       const img = el('img');
       // Described for those who turned it on (describe.py).
       img.alt = m.description || (version ? `Photo from ${version}` : 'Photo');
@@ -426,17 +434,26 @@ function noteMedia(day, n, version, mark = null) {
       }
     } else if (m.kind === 'file') {
       // A PDF or any other file: a link that opens it.
-      const a = el('a', 'file', m.name || (m.type === 'application/pdf' ? 'PDF' : 'File'));
-      a.href = src;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      box.append(a);
+      box.append(opens(el('a', 'file', m.name || (m.type === 'application/pdf' ? 'PDF' : 'File'))));
     } else {
       const audio = el('audio');
       audio.controls = true;
       audio.preload = 'none';
-      audio.src = src;
+      audio.src = link();
       audio.setAttribute('aria-label', 'Recording');
+      // Nothing loads until play, so a link may be old by then: swap it
+      // before playing, and once more if it fails anyway.
+      for (const ev of ['pointerdown', 'keydown']) {
+        audio.addEventListener(ev, () => {
+          if (audio.paused && audio.currentTime === 0 && audio.src !== new URL(link(), location.href).href) audio.src = link();
+        });
+      }
+      audio.addEventListener('error', () => {
+        if (audio.src !== new URL(src, location.href).href) {
+          audio.src = src;
+          audio.play().catch(() => {});
+        }
+      });
       box.append(audio);
       // What was said, for those who turned it on (transcribe.py).
       if (m.transcript) {

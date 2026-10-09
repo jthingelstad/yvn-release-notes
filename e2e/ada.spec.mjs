@@ -53,6 +53,10 @@ test('a photo goes with a new note, and a PDF joins it later', async ({ page }) 
   await (await chooser).setFiles({ name: 'Menu.pdf', mimeType: 'application/pdf', buffer: PDF });
   await expect(note.locator('.media a.file')).toHaveText('Menu.pdf');
   await expect(note.locator('.media img')).toHaveCount(1);
+  // Each opens from its signed link (the dev server's /dev-media/), not an API call.
+  await expect(note.locator('.media img')).toHaveAttribute('src', /^\/dev-media\/media\//);
+  await expect(note.locator('.media a').first()).toHaveAttribute('href', /^\/dev-media\/media\//);
+  await expect(note.locator('.media a.file')).toHaveAttribute('href', /^\/dev-media\/media\/.*\.pdf$/);
 });
 
 test('a file that is not a photo, recording or PDF is refused by name, and nothing is saved', async ({ page }) => {
@@ -117,6 +121,7 @@ test('a recording made on the page plays back, then goes with the note', async (
   await form.getByRole('button', { name: 'Add note' }).click();
   const note = page.locator('article.note', { hasText: words });
   await expect(note.locator('.media audio')).toHaveCount(1);
+  await expect(note.locator('.media audio')).toHaveAttribute('src', /^\/dev-media\/media\//);
   await expect(form.locator('.recordings audio')).toHaveCount(0);
 });
 

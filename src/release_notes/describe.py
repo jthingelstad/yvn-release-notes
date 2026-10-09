@@ -58,7 +58,8 @@ MAX_SIDE = 8000
 MAX_DESCRIPTION = 600  # characters
 LEFT_FOR_NEXT = 60  # seconds: a pass hands over with this much time left
 PROMPT = ("Describe this photo in one or two plain sentences, so it can be found by searching later: what is in it, "
-          "where it seems to be, and any words you can read in it, such as signs. Just the description, no preamble.")
+          "where it seems to be, and any words you can read in it, such as signs. Answer with only those sentences: "
+          "no preamble, no headings, no list of keywords or search terms.")
 
 
 class ApiError(Exception):

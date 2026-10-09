@@ -130,9 +130,10 @@ test('turning on transcripts writes out a recording, and search finds what was s
   // The dev server writes it out five seconds after (transcribe.py's stand-in).
   await page.goto('/timeline/');
   await expect(page.getByText('Writing this out.').first()).toBeVisible();
-  await page.waitForTimeout(6000);
-  await page.reload();
-  await expect(page.locator('.media .said', { hasText: 'loons were out' }).first()).toBeVisible();
+  await expect(async () => {
+    await page.reload();
+    await expect(page.locator('.media .said', { hasText: 'loons were out' }).first()).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 20000 });
 
   await page.goto('/search/#q=loons');
   await expect(page.locator('.media .said mark').first()).toHaveText('loons');
@@ -151,10 +152,12 @@ test('turning on descriptions describes a photo, shown only where search found i
 
   // The dev server describes it five seconds after (describe.py's stand-in);
   // on the day it is the photo's alt text, never words on the page.
-  await page.waitForTimeout(6000);
   await page.goto('/today/');
   const photo = page.locator('article.note', { hasText: 'Bagels at' }).locator('.media img').first();
-  await expect(photo).toHaveAttribute('alt', /red canoe/);
+  await expect(async () => {
+    await page.reload();
+    await expect(photo).toHaveAttribute('alt', /red canoe/, { timeout: 1000 });
+  }).toPass({ timeout: 20000 });
   await expect(page.locator('.media .said', { hasText: 'canoe' })).toHaveCount(0);
 
   await page.goto('/search/#q=canoe');

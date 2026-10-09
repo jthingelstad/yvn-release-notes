@@ -38,6 +38,7 @@ import os
 import struct
 import sys
 import threading
+import time
 import wave
 import zipfile
 import zlib
@@ -205,15 +206,30 @@ def main():
         # Real weather for hundreds of days is minutes of asking: only the fake.
         load_dayone(args.dayone, store, s3, fetch, fake_weather if args.fake_places else None)
 
-    def write_out():  # what transcribe.py does, with made-up words
-        for user_id, p in list(store.profiles.items()):
-            for n in store.all_notes(user_id) if p.get("transcribe") else []:
-                for m in transcribe.waiting(n):
-                    m["transcript"] = "Made up on this machine: back from the lake, and the loons were out on the water."
-            if p.get("describe"):  # and what describe.py does
-                for n in store.all_notes(user_id):
-                    for m in describe.waiting(n):
-                        m["description"] = "Made up on this machine: a red canoe pulled up on a rocky shore, pines behind it."
+    # What transcribe.py and describe.py do, with made-up words: each file
+    # five seconds after it is first seen waiting with the setting on, so a
+    # page shows it waiting first whatever else the server is doing.
+    made_up = {
+        "transcript": ("transcribe", transcribe.waiting,
+                       "Made up on this machine: back from the lake, and the loons were out on the water."),
+        "description": ("describe", describe.waiting,
+                        "Made up on this machine: a red canoe pulled up on a rocky shore, pines behind it."),
+    }
+    seen = {}
+
+    def write_out():
+        while True:
+            now = time.monotonic()
+            for user_id, p in list(store.profiles.items()):
+                for field, (setting, waiting, words) in made_up.items():
+                    for n in store.all_notes(user_id) if p.get(setting) else []:
+                        for m in waiting(n):
+                            at = seen.setdefault((user_id, n["sk"], int(m["n"]), field), now)
+                            if now - at >= 5:
+                                m[field] = words
+            time.sleep(0.5)
+
+    threading.Thread(target=write_out, daemon=True).start()
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
@@ -233,7 +249,6 @@ def main():
             }
             r = web.handler(event, None, store=store, ses=ses, s3=s3, lam=lam, geocode=geocode, fetch=fetch,
                             weather_fetch=weather_fetch)
-            threading.Timer(5, write_out).start()
             body = r["body"].encode()
             self.send_response(r["statusCode"])
             for k, v in r["headers"].items():

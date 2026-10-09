@@ -121,6 +121,32 @@ class WeatherItem(unittest.TestCase):
 
 
 
+class NoteQueries(unittest.TestCase):
+    RANGE = {":u": "USER#u1", ":a": "NOTE#0000-00-00#", ":b": "NOTE#9999-99-99$"}
+
+    def test_every_note_is_the_whole_range_and_nothing_else(self):
+        table = FakeTable()
+        Store(table).all_notes("u1")
+        self.assertEqual(table.calls[0][1], {"KeyConditionExpression": "pk = :u AND sk BETWEEN :a AND :b",
+                                             "ExpressionAttributeValues": self.RANGE})
+
+    def test_tags_bring_back_keys_and_tags_only(self):
+        table = FakeTable()
+        Store(table).note_tags("u1")
+        self.assertEqual(table.calls[0][1], {"KeyConditionExpression": "pk = :u AND sk BETWEEN :a AND :b",
+                                             "ExpressionAttributeValues": self.RANGE,
+                                             "ExpressionAttributeNames": {"#g": "tags"},
+                                             "ProjectionExpression": "sk, #g"})
+
+    def test_a_tag_brings_back_only_its_notes(self):
+        table = FakeTable()
+        Store(table).tagged_notes("u1", "maine-2016")
+        self.assertEqual(table.calls[0][1], {"KeyConditionExpression": "pk = :u AND sk BETWEEN :a AND :b",
+                                             "ExpressionAttributeValues": {**self.RANGE, ":g": "maine-2016"},
+                                             "ExpressionAttributeNames": {"#g": "tags"},
+                                             "FilterExpression": "contains(#g, :g)"})
+
+
 class ReviewRequests(unittest.TestCase):
     # The exact table calls added after the 2026-10-08 review.
 

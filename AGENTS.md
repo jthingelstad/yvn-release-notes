@@ -119,8 +119,9 @@ runtime and is imported lazily so the tests run without it.
   removes it. An import writes its tags as a closing line of hashtags; a
   journal other than the main one comes in tagged with its name.
   `/search/` lists every tag and `/tag/?t=<tag>` shows a tag's days.
-  No index: one person's notes
-  are read whole.
+  No index: one person's notes are read whole, but the tag list brings
+  back keys and tags only (`Store.note_tags`) and a tag's page only its
+  notes (`Store.tagged_notes`, a filter).
 - **Search** (Jamie, 2026-10-09: "pull posts by tag, showing all tags
   that have been used, as well as search by string across notes"):
   `/search/`, every tag, and `POST /api/search {q}`: notes with every word
@@ -160,11 +161,18 @@ runtime and is imported lazily so the tests run without it.
   `media/<user>/web/<id>.<ext>` tagged `outcome=pending`, which the bucket
   expires after a day; the note's write checks its first bytes and tags it
   `outcome=note` (`media.py` has the design). So the CSP's connect-src and
-  the bucket's CORS name each other. The page asks
+  the bucket's CORS name each other. Each file on a note in an API answer
+  carries `url`, a signed link on the bucket's own host, the one host the
+  CSP adds (`img-src`, `media-src`), only for keys under the subscriber's
+  own `media/<user>/` (`App.media_links`). A link is signed for 15 minutes
+  and a warm function hands out the same one for 5, so the browser reuses
+  its copy (2026-10-09: photos had been one API call each, and a page of
+  them started several cold functions at once). Photos load from `url`;
+  clicking one, recordings and PDFs ask
   `/api/days/<day>/notes/<id>/media/<n>`, which checks the session and the
-  key's owner and redirects to a ten-minute signed link on the bucket's own
-  host, the one host the CSP adds (`img-src`, `media-src`). Never a public
-  URL, never a key in an API answer. **Recording on the page** (Jamie,
+  key's owner and redirects to the same kind of link, and a photo whose
+  link ran out tries that address once. Never a public URL; the key itself
+  is never a field of an answer, only inside a signed link. **Recording on the page** (Jamie,
   2026-10-09): the new-note form's Record button (shown only where the
   browser has MediaRecorder) records the microphone, up to 30 minutes, as
   MP4 where the browser makes it (Safari, newer Chrome) else WebM or Ogg.

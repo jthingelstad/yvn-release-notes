@@ -60,7 +60,7 @@ def main():
     if not days:
         print("no notes")
     for day in sorted(days):
-        notes = sorted(days[day], key=lambda n: (n.get("received_at", ""), n["sk"]))
+        notes = sorted(days[day], key=lambda n: (n.get("written_at") or n.get("received_at", ""), n["sk"]))
         replies = f"{len(notes)} replies" if len(notes) > 1 else "1 reply"
         print(f"{notes[0].get('version', '?')}  {day}  ({replies})\n")
         print(combine(notes) or "(no text)")

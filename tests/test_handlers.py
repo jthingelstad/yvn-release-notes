@@ -470,6 +470,15 @@ class Inbound(unittest.TestCase):
         note = self.store.notes[("u1", "2026-10-07", "m1")]
         self.assertEqual(note["text"], "Fifty. Cake with the family.")
         self.assertEqual(note["version"], "5.0.0")
+        self.assertEqual((note["source"], note["tz"], note["written_at"]), ("email", "America/Chicago", "2026-10-08T02:10:00.000Z"))
+        self.assertNotIn("tags", note)
+
+    def test_hashtags_in_a_reply_are_its_tags(self):
+        msg = message_from_bytes(reply_raw(), policy=default)
+        msg.clear_content()
+        msg.set_content("Fifty. Cake with the family. #Birthday #cake")
+        self.run_one(ses_event(), msg.as_bytes())
+        self.assertEqual(self.store.notes[("u1", "2026-10-07", "m1")]["tags"], ["birthday", "cake"])
 
     def test_links_are_named_and_titled(self):
         msg = message_from_bytes(reply_raw(), policy=default)

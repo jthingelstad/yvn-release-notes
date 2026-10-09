@@ -1,6 +1,9 @@
 """In-memory stand-ins for the table, SES, S3 and Lambda, shared by the web
 tests and scripts/dev_server.py."""
 
+from release_notes.notes import written_at
+
+
 
 class FakeStore:
     """The Store methods web.py uses, with the same conditions."""
@@ -57,7 +60,10 @@ class FakeStore:
 
     def notes_between(self, user_id, first, last):
         rows = [dict(i) for i in self._rows(user_id, "NOTE#") if first <= i["sk"].split("#")[1] <= last]
-        return sorted(rows, key=lambda i: (i["sk"].split("#")[1], i.get("received_at", ""), i["sk"]))
+        return sorted(rows, key=lambda i: (i["sk"].split("#")[1], written_at(i), i["sk"]))
+
+    def all_notes(self, user_id):
+        return self.notes_between(user_id, "0000-00-00", "9999-99-99")
 
     def put_note(self, user_id, day, note_id, note):
         if any(i["sk"] == f"NOTE#{day}#{note_id}" for i in self.items.get(user_id, [])):
@@ -65,14 +71,15 @@ class FakeStore:
         self.add_note(user_id, day, note_id, **note)
         return True
 
-    def update_note(self, user_id, day, note_id, text, at, links=None):
+    def update_note(self, user_id, day, note_id, text, at, links=None, tags=None):
         for i in self._rows(user_id, f"NOTE#{day}#{note_id}"):
             if i["sk"] == f"NOTE#{day}#{note_id}":
                 i.update(text=text, updated_at=at)
-                if links:
-                    i["links"] = links
-                else:
-                    i.pop("links", None)
+                for name, value in (("links", links), ("tags", tags)):
+                    if value:
+                        i[name] = value
+                    else:
+                        i.pop(name, None)
                 return dict(i)
         return None
 

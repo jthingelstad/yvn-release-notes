@@ -22,7 +22,7 @@ import os
 import re
 from email.utils import getaddresses
 
-from . import links, media
+from . import links, media, tags
 from .notes import MAX_NOTE
 from .parse import anchors, attachments, note_text, parse_message
 from .store import Store
@@ -139,12 +139,15 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None) -> tuple[str, dict]
         {
             "version": tok["version"],
             "text": text,
+            "source": "email",
             "attachments": files,
-            "received_at": mail["timestamp"],
+            "written_at": mail["timestamp"],
+            "tz": sub.tz,
             "subject": (mail.get("commonHeaders", {}).get("subject") or "")[:300],
             "raw_key": key,
             "parser_version": PARSER_VERSION,
             **({"links": found} if found else {}),
+            **({"tags": tagged} if (tagged := tags.found(text)) else {}),
             **({"media": kept} if kept else {}),
         },
     )

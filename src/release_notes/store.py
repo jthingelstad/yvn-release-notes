@@ -8,8 +8,10 @@
     USER#<id>        DAY#<YYYY-MM-DD>           the email sent that day: version, token, message id
     USER#<id>        NOTE#<YYYY-MM-DD>#<msgid>  one reply: text, attachment list, raw S3 key
     USER#<id>        NOTE#<YYYY-MM-DD>#w-<id>   one note written on the web: text, source=web
-                                                (either kind: links, named once when written; links.py;
-                                                an emailed one: media, its photos and recordings; media.py)
+    USER#<id>        NOTE#<YYYY-MM-DD>#d1-<id>  one imported Day One entry: source=import, origin
+                                                (every kind has the same fields, notes.py: tags, written_at,
+                                                tz, place; links, named once when written, links.py; media,
+                                                its photos and recordings, media.py)
     USER#<id>        WEATHER#<YYYY-MM-DD>       that day's weather where the subscriber was (weather.py): high_c,
                                                 low_c, code, city, region, country, lat, lon; kept for good
     USER#<id>        EXPORT                     the latest zip export (export_job.py): id, status
@@ -32,14 +34,16 @@ the secret (or, for LOGINFOR and RATE, of the address or network).
 A note is filed under the day of the email it answers, not the day it
 arrived, so a reply to Tuesday's email sent on Thursday is Tuesday's note.
 A day can have any number of notes, one per reply; together, in the order
-they arrived, they are that day's release notes (notes.py). The message id in
-the key is random, so key order is not arrival order: sort by received_at.
+they were written, they are that day's release notes (notes.py). The message
+id in the key is random, so key order is not that order: sort by
+notes.written_at.
 """
 
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+from .notes import written_at
 from .weather import place_of
 
 
@@ -229,7 +233,7 @@ class Store:
             if "LastEvaluatedKey" not in page:
                 break
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
-        return sorted(items, key=lambda i: (i["sk"].split("#")[1], i.get("received_at", ""), i["sk"]))
+        return sorted(items, key=lambda i: (i["sk"].split("#")[1], written_at(i), i["sk"]))
 
     def day_notes(self, user_id: str, day: str) -> list[dict]:
         """Every note filed for one day, oldest first."""
@@ -243,7 +247,11 @@ class Store:
             if "LastEvaluatedKey" not in page:
                 break
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
-        return sorted(items, key=lambda i: (i.get("received_at", ""), i["sk"]))
+        return sorted(items, key=lambda i: (written_at(i), i["sk"]))
+
+    def all_notes(self, user_id: str) -> list[dict]:
+        """Every note, oldest day first."""
+        return self.notes_between(user_id, "0000-00-00", "9999-99-99")
 
     def put_note(self, user_id: str, day: str, message_id: str, note: dict) -> bool:
         """Store one reply. SES retries a failed Lambda, so the message id
@@ -259,11 +267,18 @@ class Store:
                 return False
             raise
 
-    def update_note(self, user_id: str, day: str, note_id: str, text: str, at: str, links: list[dict] | None = None) -> dict | None:
-        """Change a note's text and its links. Returns the note, or None if
-        there is none."""
-        expr = "SET #t = :t, updated_at = :at, links = :l" if links else "SET #t = :t, updated_at = :at REMOVE links"
-        values = {":t": text, ":at": at, **({":l": links} if links else {})}
+    def update_note(self, user_id: str, day: str, note_id: str, text: str, at: str, links: list[dict] | None = None,
+                    tags: list[str] | None = None) -> dict | None:
+        """Change a note's text, its links and its tags. Returns the note, or
+        None if there is none."""
+        sets, removes, values = ["#t = :t", "updated_at = :at"], [], {":t": text, ":at": at}
+        for name, ref, value in (("links", ":l", links), ("tags", ":g", tags)):
+            if value:
+                sets.append(f"{name} = {ref}")
+                values[ref] = value
+            else:
+                removes.append(name)
+        expr = "SET " + ", ".join(sets) + (" REMOVE " + ", ".join(removes) if removes else "")
         try:
             return self.table.update_item(
                 Key={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}"},

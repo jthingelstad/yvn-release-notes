@@ -100,6 +100,24 @@ runtime and is imported lazily so the tests run without it.
   the web, an import: none is the only way in for text, photos, recordings
   or anything else. Where a channel does not carry something yet, that is
   work not done, never a rule.
+- **A note is the same record from every channel** (`notes.py` lists its
+  fields): `written_at` (notes filed before 2026-10-09 have `received_at`,
+  which `notes.written_at` reads), `tz`, the zone it was written in, so its
+  time reads as it did there (email: the subscriber's; web: the browser's;
+  an import: the entry's), an optional `place` (name, city, region,
+  country, coordinates rounded to two places; shown by name, never the
+  coordinates), and `source`: `email`, `web` or `import`, an import with
+  `origin` (`{app, journal, id}`, the entry it came from).
+- **Tags are hashtags** (Jamie, 2026-10-09: on the note, "hashtags",
+  lowercase with hyphens, "maine-2016"). A note's `tags` are the slugs of the
+  hashtags in its text (`tags.py`), worked out again on every write and
+  edit, so the text is the one place a tag lives and removing a hashtag
+  removes it. An import writes its tags as a closing line of hashtags; a
+  journal other than the main one comes in tagged with its name. `/tag/`
+  lists them; `/tag/?t=<tag>` shows the days. No index: one person's notes
+  are read whole.
+- **Imported days count** toward streaks and every lifetime count (Jamie,
+  2026-10-09). The dashboard splits notes into email, web and imported.
 - **Photos and recordings** (Jamie, 2026-10-08) are kept with their note,
   whatever channel brought them. From an emailed reply, inbound copies each one to
   `media/<user>/<day>/<message id>/<n>.<ext>` in the same bucket and lists it

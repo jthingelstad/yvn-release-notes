@@ -147,6 +147,26 @@ class ReviewRequests(unittest.TestCase):
         self.assertEqual(table.calls[0][1]["ExpressionAttributeValues"][":exp"], 20002 * 86400)
 
 
+
+class UpdateNote(unittest.TestCase):
+    def table(self):
+        t = FakeTable()
+        t.update_item = lambda **kw: t.calls.append(("update_item", kw)) or {"Attributes": {}}
+        return t
+
+    def test_sets_links_and_tags_it_has_and_removes_the_rest(self):
+        t = self.table()
+        Store(t).update_note("u1", "2026-10-08", "w-1", "Hi #kubb", "2026-10-08T12:00:00Z", None, ["kubb"])
+        kw = t.calls[0][1]
+        self.assertEqual(kw["UpdateExpression"], "SET #t = :t, updated_at = :at, tags = :g REMOVE links")
+        self.assertEqual(kw["ExpressionAttributeValues"], {":t": "Hi #kubb", ":at": "2026-10-08T12:00:00Z", ":g": ["kubb"]})
+
+    def test_with_neither_both_go(self):
+        t = self.table()
+        Store(t).update_note("u1", "2026-10-08", "w-1", "Hi", "2026-10-08T12:00:00Z")
+        self.assertEqual(t.calls[0][1]["UpdateExpression"], "SET #t = :t, updated_at = :at REMOVE links, tags")
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -175,4 +195,3 @@ class CensusItems(unittest.TestCase):
         named = {names.get(f.split("[")[0], f.split("[")[0]) for f in fields}
         self.assertEqual(named, {"pk", "sk", "status", "tz", "send_time", "last_sent_date", "pause_from", "pause_through", "source", "media"})
         self.assertEqual(first["ExpressionAttributeValues"], {":u": "USER#", ":p": "PROFILE", ":d": "DAY#", ":n": "NOTE#"})
-

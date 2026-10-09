@@ -17,7 +17,7 @@ from datetime import date
 from decimal import Decimal
 
 from . import links, weather
-from .notes import combine
+from .notes import combine, place_label, written_at
 from .version import compute_version
 
 PROFILE_FIELDS = (
@@ -41,7 +41,7 @@ def file_paths(items: list[dict]) -> dict[str, list[dict]]:
     """Note id -> [{"path", "kind", "type", "key"}] for the zip: files/<day>-<n>.<ext>,
     numbered through each day in the order its notes arrived."""
     notes = sorted((i for i in items if i["sk"].startswith("NOTE#") and i.get("media")),
-                   key=lambda i: (i["sk"].split("#")[1], i.get("received_at", ""), i["sk"]))
+                   key=lambda i: (i["sk"].split("#")[1], written_at(i), i["sk"]))
     out: dict[str, list[dict]] = {}
     count: dict[str, int] = {}
     for item in notes:
@@ -72,7 +72,11 @@ def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | No
                     "version": item.get("version"),
                     "source": item.get("source", "email"),
                     "text": item.get("text", ""),
-                    "received_at": item.get("received_at"),
+                    "written_at": written_at(item) or None,
+                    "tz": item.get("tz"),
+                    "place": _plain(item.get("place")),
+                    "tags": list(item.get("tags") or []),
+                    "origin": _plain(item.get("origin")),
                     "updated_at": item.get("updated_at"),
                     "subject": item.get("subject"),
                     "attachments": _plain(item.get("attachments", [])),
@@ -89,9 +93,9 @@ def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | No
         born = date.fromisoformat(profile["birthday"])
         for n in notes:
             n["version"] = n["version"] or str(compute_version(born, date.fromisoformat(n["date"])))
-    notes.sort(key=lambda n: (n["date"], n["received_at"] or "", n["id"]))
+    notes.sort(key=lambda n: (n["date"], n["written_at"] or "", n["id"]))
     for n in notes:
-        for k in ("updated_at", "subject", "links", "files"):
+        for k in ("updated_at", "subject", "links", "files", "tz", "place", "tags", "origin"):
             if not n[k]:
                 del n[k]
     return {
@@ -133,6 +137,9 @@ def markdown(data: dict) -> str:
         lines += ["", f"## {notes[0]['version']} · {long_date(day)}"]
         if day in skies:
             lines += ["", weather.day_line(skies[day], fahrenheit) + "."]
+        where = list(dict.fromkeys(label for n in notes if n.get("place") and (label := place_label(n["place"]))))
+        if where:
+            lines += ["", "At " + "; ".join(where) + "."]
         shown = [f for n in notes for f in n.get("files", [])]
         if text or not shown:
             lines += ["", text or "(Attachments only. They are in the original email.)"]

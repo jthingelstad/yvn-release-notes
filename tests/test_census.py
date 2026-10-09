@@ -57,9 +57,10 @@ class Counts(unittest.TestCase):
             profile("a"),
             note("a", "2026-10-09", "m1", media=[{"kind": "photo"}]),
             note("a", "2026-10-09", "w-1", source="web"),
+            note("a", "2015-06-01", "d1-1", source="import"),
             note("gone", "2026-01-01", "m2"),  # no profile: still a note
         ], NOW)
-        self.assertEqual((c["Notes"], c["EmailNotes"], c["WebNotes"], c["NotesWithMedia"]), (3, 2, 1, 1))
+        self.assertEqual((c["Notes"], c["EmailNotes"], c["WebNotes"], c["ImportedNotes"], c["NotesWithMedia"]), (4, 2, 1, 1, 1))
 
     def test_writers_by_their_notes_days(self):
         c = census.counts([

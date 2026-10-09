@@ -371,6 +371,24 @@ class WebTest(WebCase):
         self.assertEqual(data["notes"][1]["text"], items[1]["text"])
         self.assertIn("Read [Page A](https://example.com/a) and [my post](https://example.com/p).", export.markdown(data))
 
+    def test_export_keeps_where_when_and_tags(self):
+        place = {"name": "Four Seasons Mall", "city": "Plymouth", "region": "Minnesota", "country": "United States",
+                 "lat": Decimal("45.03"), "lon": Decimal("-93.41")}
+        items = [
+            {"sk": "PROFILE", "birthday": "1981-06-14"},
+            {"sk": "NOTE#2015-06-01#d1-ABC", "text": "Pizza.\n\n#tyler #mazie", "written_at": "2015-06-01T23:09:05Z",
+             "source": "import", "tz": "America/Chicago", "tags": ["tyler", "mazie"], "place": place,
+             "origin": {"app": "dayone", "journal": "Journal", "id": "ABC"}},
+            {"sk": "NOTE#2015-06-01#w-1", "text": "Later.", "written_at": "2015-06-02T01:00:00Z", "source": "web"},
+        ]
+        data = export.build(items, "2026-10-08T00:00:00Z")
+        first, second = data["notes"]
+        self.assertEqual((first["written_at"], first["tz"], first["tags"]), ("2015-06-01T23:09:05Z", "America/Chicago", ["tyler", "mazie"]))
+        self.assertEqual((first["place"]["lat"], first["origin"]["app"]), (45.03, "dayone"))
+        self.assertTrue(not ({"tz", "place", "tags", "origin"} & set(second)))
+        md = export.markdown(data)
+        self.assertIn("At Four Seasons Mall, Plymouth.\n\nPizza.\n\n#tyler #mazie\n\nLater.", md)
+
     def test_export_with_no_notes(self):
         md = export.markdown(export.build([{"sk": "PROFILE", "birthday": "1981-06-14"}], "2026-10-08T00:00:00Z"))
         self.assertIn("No notes yet.", md)

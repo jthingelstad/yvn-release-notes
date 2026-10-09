@@ -1044,8 +1044,10 @@ Resources:
               "metrics": [
                 [{"expression": "DIFF(email)", "label": "By email", "id": "byEmail"}],
                 [{"expression": "DIFF(web)", "label": "On the web", "id": "onWeb"}],
+                [{"expression": "DIFF(imported)", "label": "Imported", "id": "byImport"}],
                 ["ReleaseNotes", "EmailNotes", {"id": "email", "visible": false}],
-                ["ReleaseNotes", "WebNotes", {"id": "web", "visible": false}]
+                ["ReleaseNotes", "WebNotes", {"id": "web", "visible": false}],
+                ["ReleaseNotes", "ImportedNotes", {"id": "imported", "visible": false}]
               ]}},
             {"type": "metric", "x": 12, "y": 15, "width": 12, "height": 6, "properties": {
               "title": "Subscribers and writers", "view": "timeSeries", "region": "${AWS::Region}",

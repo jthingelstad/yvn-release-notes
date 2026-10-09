@@ -13,7 +13,8 @@ a few fields (Store.census_items), never a note's text.
     Overdue         active and not paused, and today's email has not gone
                     though their send time was over half an hour ago. Should
                     be 0; anything else is someone missing their email.
-    Notes           every note; EmailNotes and WebNotes split them by source
+    Notes           every note; EmailNotes, WebNotes and ImportedNotes split
+                    them by source
     NotesWithMedia  notes with a photo or recording
     Writers7        subscribers with a note dated in their last 7 days,
     Writers30       or 30, today included
@@ -48,15 +49,18 @@ def counts(items: list[dict], now: datetime) -> dict:
     for item in items:
         by_user.setdefault(item["pk"], []).append(item)
     c = dict.fromkeys(
-        ["Subscribers", "Paused", "Stopped", "Overdue", "Notes", "EmailNotes", "WebNotes", "NotesWithMedia", "Writers7", "Writers30"], 0
+        ["Subscribers", "Paused", "Stopped", "Overdue", "Notes", "EmailNotes", "WebNotes", "ImportedNotes", "NotesWithMedia",
+         "Writers7", "Writers30"], 0
     )
     sent = replied = 0
     for rows in by_user.values():
         notes = [r for r in rows if r["sk"].startswith("NOTE#")]
         web = sum(1 for n in notes if n.get("source") == "web")
+        imported = sum(1 for n in notes if n.get("source") == "import")
         c["Notes"] += len(notes)
         c["WebNotes"] += web
-        c["EmailNotes"] += len(notes) - web
+        c["ImportedNotes"] += imported
+        c["EmailNotes"] += len(notes) - web - imported
         c["NotesWithMedia"] += sum(1 for n in notes if n.get("media"))
 
         profile = next((r for r in rows if r["sk"] == "PROFILE"), None)

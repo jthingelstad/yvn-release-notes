@@ -269,3 +269,94 @@ class MediaTest(NotesCase):
         r, _ = self.call("DELETE", "/api/days/2026-10-07/notes/0100abc-1", cookies=self.cookies)
         self.assertEqual(r["statusCode"], 200)
         self.assertEqual([d["Key"] for d in self.s3.deleted], ["raw/0100abc-1", PHOTO["key"], MEMO["key"]])
+
+
+class TagsTest(NotesCase):
+    def put(self, day, note_id, text):
+        return self.call("PUT", f"/api/days/{day}/notes/{note_id}", {"text": text}, cookies=self.cookies)
+
+    def test_hashtags_are_the_notes_tags(self):
+        r, note = self.add(TODAY, "Kubb at the park with #Tyler. #kubb #Tyler")
+        self.assertEqual(note["tags"], ["tyler", "kubb"])
+        self.assertEqual(note["parts"], ["Kubb at the park with ", {"tag": "tyler", "text": "#Tyler"}, ". ",
+                                         {"tag": "kubb", "text": "#kubb"}, " ", {"tag": "tyler", "text": "#Tyler"}])
+        self.assertEqual(self.store.notes_between("u1", TODAY, TODAY)[0]["tags"], ["tyler", "kubb"])
+
+    def test_an_edit_works_the_tags_out_again(self):
+        _, note = self.add(TODAY, "Up north. #cabin #kubb")
+        _, note = self.put(TODAY, note["id"], "Up north. #cabin #Big-Green-Egg")
+        self.assertEqual(note["tags"], ["cabin", "big-green-egg"])
+        _, note = self.put(TODAY, note["id"], "Up north.")
+        self.assertNotIn("tags", note)
+        self.assertNotIn("tags", self.store.notes_between("u1", TODAY, TODAY)[0])
+
+    def test_tags_from_an_emailed_note_count_too(self):
+        self.emailed("2026-10-01", "m1", text="Cake. #birthday", tags=["birthday"])
+        self.add("2026-10-03", "More cake. #birthday #cake")
+        self.add(TODAY, "Nothing tagged.")
+        r, body = self.get("/api/tags")
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual(body["tags"], [
+            {"tag": "birthday", "notes": 2, "days": 2, "first": "2026-10-01", "last": "2026-10-03"},
+            {"tag": "cake", "notes": 1, "days": 1, "first": "2026-10-03", "last": "2026-10-03"},
+        ])
+
+    def test_a_tags_days_newest_first_with_only_its_notes(self):
+        self.add("2026-10-01", "Cake. #birthday")
+        self.add("2026-10-01", "Untagged, same day.")
+        self.add("2026-10-03", "More. #Birthday")
+        r, body = self.get("/api/tags/birthday")
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual([d["date"] for d in body["days"]], ["2026-10-03", "2026-10-01"])
+        self.assertEqual([len(d["notes"]) for d in body["days"]], [1, 1])
+        self.assertEqual(body["days"][1]["version"], "4.5.109")
+
+    def test_a_tag_nobody_used_is_no_days_and_a_bad_one_not_found(self):
+        _, body = self.get("/api/tags/nothing-here")
+        self.assertEqual(body["days"], [])
+        r, _ = self.get("/api/tags/Not%20A%20Tag")
+        self.assertEqual(r["statusCode"], 404)
+
+    def test_tags_need_an_account(self):
+        r, _ = self.call("GET", "/api/tags")
+        self.assertEqual(r["statusCode"], 401)
+
+
+class WhereAndWhenTest(NotesCase):
+    def test_a_web_note_keeps_the_browsers_zone(self):
+        r, note = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "From Denver.", "tz": "America/Denver"}, cookies=self.cookies)
+        self.assertEqual((note["tz"], note["late"]), ("America/Denver", False))
+        self.assertEqual(self.store.notes_between("u1", TODAY, TODAY)[0]["tz"], "America/Denver")
+        # 17:53 in Chicago is already the 9th in Kyiv: written after its day.
+        r, note = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "From Kyiv.", "tz": "Europe/Kyiv"}, cookies=self.cookies)
+        self.assertEqual((note["tz"], note["late"]), ("Europe/Kyiv", True))
+
+    def test_no_zone_or_a_bad_one_is_the_subscribers(self):
+        for tz in (None, "Mars/Olympus"):
+            self.call("POST", f"/api/days/{TODAY}/notes", {"text": "Here.", **({"tz": tz} if tz else {})}, cookies=self.cookies)
+        self.assertEqual({n["tz"] for n in self.store.notes_between("u1", TODAY, TODAY)}, {"America/Chicago"})
+
+    def test_late_is_read_where_the_note_was_written(self):
+        # 23:30 on the 6th in Denver is 00:30 on the 7th in Chicago: on time.
+        self.emailed("2026-10-06", "d1-a", at="2026-10-07T05:30:00Z", source="import", tz="America/Denver")
+        self.emailed("2026-10-06", "d1-b", at="2026-10-07T05:30:00Z", source="import")
+        _, day = self.get("/api/days/2026-10-06")
+        self.assertEqual([(n["tz"], n["late"]) for n in day["notes"]], [("America/Denver", False), ("America/Chicago", True)])
+
+    def test_written_at_or_the_older_received_at(self):
+        self.store.add_note("u1", TODAY, "new", text="New.", written_at="2026-10-08T12:00:00Z")
+        self.store.add_note("u1", TODAY, "old", text="Old.", received_at="2026-10-08T11:00:00Z")
+        _, day = self.get(f"/api/days/{TODAY}")
+        self.assertEqual([(n["id"], n["at"]) for n in day["notes"]], [("old", "2026-10-08T11:00:00Z"), ("new", "2026-10-08T12:00:00Z")])
+
+    def test_an_imported_note_shows_its_place_and_app(self):
+        place = {"name": "Four Seasons Mall", "city": "Plymouth", "region": "Minnesota", "country": "United States",
+                 "lat": 45.03, "lon": -93.41}
+        self.emailed("2026-10-06", "d1-a", source="import", place=place,
+                     origin={"app": "dayone", "journal": "Journal", "id": "ABC"})
+        self.emailed("2026-10-06", "d1-b", source="import", place={"city": "Kyiv", "region": "Kyiv City", "country": "Ukraine"},
+                     origin={"app": "someday"})
+        _, day = self.get("/api/days/2026-10-06")
+        self.assertEqual([(n["place"], n["from"], n["source"]) for n in day["notes"]],
+                         [("Four Seasons Mall, Plymouth", "Day One", "import"), ("Kyiv, Kyiv City", "an import", "import")])
+        self.assertNotIn("45.03", str(day))  # a place shows by name, never its coordinates

@@ -5,11 +5,42 @@ later phase can show them apart. Read together they are one day: the texts
 in the order they arrived, separated by a blank line. A reply with no text
 (a photo alone) adds nothing to the text, and a reply sent twice (same text)
 is shown once.
+
+A note is the same record whichever channel brought it (Jamie, 2026-10-09:
+any kind of data can come from any channel):
+
+    text         as written; its hashtags are its tags (tags.py)
+    tags         the hashtags' slugs, worked out again on every write
+    written_at   when it was written (UTC); notes filed before 2026-10-09
+                 have received_at instead, which written_at() reads
+    tz           the zone it was written in, so its time reads as it did
+                 there; without one, the subscriber's
+    place        optional: where it was written (name, city, region,
+                 country, lat and lon rounded to two places)
+    source       email, web or import; an import also has `origin`:
+                 {"app", "journal", "id"}, the entry it came from
+    version, links, media, updated_at as before; an emailed note also has
+    raw_key, subject, attachments and parser_version
 """
 
 # The longest a note's text can be, written on the web or emailed. A longer
 # reply keeps its first MAX_NOTE characters; the raw email keeps the rest.
 MAX_NOTE = 20_000
+
+
+SOURCES = ("email", "web", "import")
+
+
+def written_at(note: dict) -> str:
+    return note.get("written_at") or note.get("received_at") or ""
+
+
+def place_label(place: dict) -> str:
+    """"Four Seasons Mall, Plymouth", or "Plymouth, Minnesota" with no name."""
+    name, city = place.get("name") or "", place.get("city") or ""
+    if name and city and name != city:
+        return f"{name}, {city}"
+    return ", ".join(x for x in (name or city, place.get("region") or place.get("country") or "") if x)
 
 
 def combine(notes: list[dict]) -> str:

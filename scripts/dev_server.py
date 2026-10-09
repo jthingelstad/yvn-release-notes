@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
 from fakes import FakeLambda, FakeS3, FakeSES, FakeStore  # noqa: E402
-from release_notes import export_job, links, media, places, weather, web  # noqa: E402
+from release_notes import export_job, links, media, places, tags, weather, web  # noqa: E402
 
 FAKE_PLACES = [
     {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
@@ -130,16 +130,23 @@ def main():
             {"high_c": 14.0 + n, "low_c": 4.0 + n / 2, "code": [0, 2, 3, 61, 1, 45, 80][n - 1]},
             weather.place_of(store.profiles["u1"]), "2026-10-01T12:00:00Z"))
     for back, note_id, late, text in [
-        (0, "dev-1", 0, "Walked before the rain came in. Coffee on the porch."),
+        (0, "dev-1", 0, "Walked before the rain came in. Coffee on the porch. #walks"),
         (1, "dev-2", 0, "Long day of meetings.\nDinner with the neighbours, who brought the good bread."),
-        (3, "dev-3", 2, "Back from the lake. Unpacked, mostly."),
+        (3, "dev-3", 2, "Back from the lake. Unpacked, mostly. #cabin #walks"),
         (200, "w-dev4", 150, "Filled in later: the day the new bike came."),
     ]:
         day = today - timedelta(days=back)
         at = datetime.combine(day + timedelta(days=late), datetime.min.time(), ZoneInfo("America/Chicago")) + timedelta(hours=12)
         store.add_note("u1", day.isoformat(), note_id, text=text, source="web" if note_id.startswith("w-") else "email",
-                       received_at=at.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                       written_at=at.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ"), tz="America/Chicago",
+                       **({"tags": found} if (found := tags.found(text)) else {}),
                        **({} if note_id.startswith("w-") else {"raw_key": f"raw/{note_id}"}))
+    # An imported entry, written while travelling: its own zone and place.
+    store.add_note("u1", "2016-07-04", "d1-DEV", text="Fireworks over the harbour.\n\n#vacation #maine-2016",
+                   source="import", written_at="2016-07-05T01:40:00Z", tz="America/New_York", tags=["vacation", "maine-2016"],
+                   place={"name": "Bar Harbor Town Pier", "city": "Bar Harbor", "region": "Maine", "country": "United States",
+                          "lat": 44.39, "lon": -68.2},
+                   origin={"app": "dayone", "journal": "Journal", "id": "DEV"})
     photo_day = (today - timedelta(days=3)).isoformat()
     kept = media.store(s3, "dev", "u1", photo_day, "dev-3", [("image/png", sample_png()), ("audio/wav", sample_wav())])
     lake = next(i for i in store.items["u1"] if i["sk"] == f"NOTE#{photo_day}#dev-3")

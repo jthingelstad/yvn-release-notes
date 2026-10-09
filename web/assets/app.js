@@ -253,7 +253,8 @@ function button(text, cls, onClick) {
 
 function noteText(n) {
   if (n.text) return n.text;
-  return n.media && n.media.length ? '' : 'Attachments only. They are in the original email.';
+  if (n.media && n.media.length) return '';
+  return n.source === 'email' ? 'Attachments only. They are in the original email.' : 'Nothing written.';
 }
 
 // A note's photos and recordings. Each address is the API's, which checks
@@ -311,6 +312,11 @@ function noteBody(n, cls = 'text') {
     for (const part of n.parts) {
       if (typeof part === 'string') {
         p.append(part);
+      } else if (part.tag) {
+        // A hashtag: its tag's page (tags.py).
+        const a = el('a', 'tag', part.text);
+        a.href = `/tag/?t=${encodeURIComponent(part.tag)}`;
+        p.append(a);
       } else if (/^https?:\/\//i.test(part.url || '')) {
         p.append(linkTo(part.url, part.label || part.url));
         if (part.site) p.append(el('span', 'site', ` · ${part.site}`));
@@ -330,9 +336,27 @@ function noteBody(n, cls = 'text') {
   return p;
 }
 
+// Where a note came from, as the note's line says it.
+function sourceName(n) {
+  if (n.source === 'web') return 'on the web';
+  if (n.source === 'import') return `from ${n.from || 'an import'}`;
+  return 'by email';
+}
+
+// The time reads in the zone the note was written in (n.tz), named when it
+// isn't the subscriber's own.
 function noteMeta(n, tz) {
-  const when = n.at ? (n.late ? `${zoneShortDate(n.at, tz)}, ${zoneTime(n.at, tz)}` : zoneTime(n.at, tz)) : '';
-  const parts = [when, n.source === 'web' ? 'on the web' : 'by email'];
+  const zone = n.tz || tz;
+  let when = '';
+  if (n.at) {
+    when = n.late ? `${zoneShortDate(n.at, zone)}, ${zoneTime(n.at, zone)}` : zoneTime(n.at, zone);
+    if (zone !== tz) {
+      const name = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'short' })
+        .formatToParts(new Date(n.at)).find((x) => x.type === 'timeZoneName');
+      if (name) when += ` ${name.value}`;
+    }
+  }
+  const parts = [when, n.place, sourceName(n)];
   if (n.attachments) parts.push(n.attachments === 1 ? '1 attachment in the email' : `${n.attachments} attachments in the email`);
   if (n.edited_at) parts.push('edited');
   return parts.filter(Boolean).join(' · ');
@@ -380,9 +404,10 @@ function renderNotes(root, day, notes, tz, onChange, version) {
 
     const ask = () => {
       actions.textContent = '';
-      const q = el('span', 'confirm', n.source === 'web' ? 'Delete this note?'
-        : n.media && n.media.length ? 'Delete this note and the email it came in, with its photos and recordings?'
-        : 'Delete this note and the email it came in?');
+      const files = n.media && n.media.length;
+      const q = el('span', 'confirm', n.source === 'email'
+        ? (files ? 'Delete this note and the email it came in, with its photos and recordings?' : 'Delete this note and the email it came in?')
+        : (files ? 'Delete this note, with its photos and recordings?' : 'Delete this note?'));
       const yes = button('Delete', 'quiet danger', async () => {
         yes.disabled = true;
         const r = await api('DELETE', path);
@@ -419,7 +444,9 @@ function noteForm(form, getDay, onAdded) {
     busy(form, async () => {
       quiet(form);
       if (!form.text.value.trim()) return say(form, { error: 'text' }, form.text);
-      const r = await api('POST', `/api/days/${getDay()}/notes`, { text: form.text.value });
+      // The zone it is being written in, so its time reads as it did here.
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const r = await api('POST', `/api/days/${getDay()}/notes`, { text: form.text.value, tz });
       if (!r.ok) {
         store.set(key(), form.text.value);
         return say(form, { ...r.data, draft: 'kept' }, form.text);
@@ -1331,6 +1358,58 @@ const pages = {
         for (const a of document.querySelectorAll('.bar a:not(.brand)')) a.hidden = true;
       });
     });
+  },
+
+  // One tag's days, newest first, with the notes that carry it (?t=), or
+  // every tag, most used first.
+  async tag() {
+    const list = $('#tagged'), title = $('#tag-title'), lede = $('#tag-lede');
+    const tag = new URLSearchParams(location.search).get('t');
+    const done = loading(list);
+    const r = await api('GET', tag ? `/api/tags/${encodeURIComponent(tag)}` : '/api/tags');
+    done();
+    if (bounce(r)) return;
+    if (!r.ok) {
+      if (r.status === 404) return location.replace('/tag/');
+      return failed(list);
+    }
+    const count = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
+    if (!tag) {
+      title.textContent = 'Tags';
+      lede.textContent = r.data.tags.length
+        ? 'Every hashtag in your notes. Write one, like #cabin, in an email or here, and the note has that tag.'
+        : 'No tags yet. Write a hashtag, like #cabin, in a note or a reply, and it shows here.';
+      const ul = el('ul', 'tags');
+      for (const t of r.data.tags) {
+        const li = el('li');
+        const a = el('a', 'tag', `#${t.tag}`);
+        a.href = `/tag/?t=${encodeURIComponent(t.tag)}`;
+        li.append(a, el('span', 'hint', ` ${count(t.days, 'day', 'days')}`));
+        ul.append(li);
+      }
+      list.append(ul);
+      return;
+    }
+    $('#every-tag').hidden = false;
+    document.title = `#${r.data.tag}: Release Notes`;
+    title.textContent = `#${r.data.tag}`;
+    lede.textContent = r.data.days.length ? count(r.data.days.length, 'day', 'days') : 'No notes have this tag now.';
+    const thisYear = Number(r.data.today.slice(0, 4));
+    for (const d of r.data.days) {
+      const sec = el('section', 'tday');
+      const head = el('a', 'tday-head');
+      head.href = d.date === r.data.today ? '/today/' : `/day/?d=${d.date}`;
+      const v = el('span', 'vnum small');
+      vnum(v, d.version, true);
+      head.append(v, el('span', 'when', dayName(d.date, thisYear)));
+      sec.append(head);
+      for (const n of d.notes) {
+        sec.append(noteBody(n));
+        if (n.media && n.media.length) sec.append(noteMedia(d.date, n, d.version));
+        sec.append(el('p', 'count', noteMeta(n, r.data.tz)));
+      }
+      list.append(sec);
+    }
   },
 
   unsubscribe() {

@@ -22,9 +22,9 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from . import auth, export, export_job, links, media, places, weather
+from . import auth, export, export_job, links, media, places, tags, weather
 from .compose import DOTS, MAIL_TAG, from_header, next_release
-from .notes import MAX_NOTE
+from .notes import MAX_NOTE, place_label, written_at
 from .streak import ONE_DAY, compute_streak, pause_days
 from .version import anniversary, compute_version
 
@@ -655,12 +655,25 @@ def text_from(body: dict) -> str:
     return text
 
 
+# What an import's `origin.app` is called on the page.
+APPS = {"dayone": "Day One"}
+
+
 def note_view(item: dict, tz: str) -> dict:
+    """One note for the page. Its time reads in the zone it was written in
+    (`tz` on the note), the subscriber's for notes without one."""
     _, day, note_id = item["sk"].split("#", 2)
-    at = item.get("received_at") or ""
-    view = {"id": note_id, "source": item.get("source", "email"), "text": item.get("text", ""), "at": at}
-    # The text as shown: strings and links by name (links.segments).
-    view["parts"] = links.segments(view["text"], item.get("links"))
+    at = written_at(item)
+    zone = item["tz"] if places.valid_tz(item.get("tz")) else tz
+    view = {"id": note_id, "source": item.get("source", "email"), "text": item.get("text", ""), "at": at, "tz": zone}
+    # The text as shown: strings, links by name (links.segments) and tags.
+    view["parts"] = tags.split(links.segments(view["text"], item.get("links")))
+    if item.get("tags"):
+        view["tags"] = list(item["tags"])
+    if item.get("place") and (label := place_label(item["place"])):
+        view["place"] = label
+    if item.get("origin"):
+        view["from"] = APPS.get(item["origin"].get("app"), "an import")
     if item.get("updated_at"):
         view["edited_at"] = item["updated_at"]
     if item.get("media"):
@@ -669,8 +682,8 @@ def note_view(item: dict, tz: str) -> dict:
     if others := media.others(item):
         view["attachments"] = others
     try:
-        # Written or sent after its day was over: "added later".
-        local = datetime.fromisoformat(at.replace("Z", "+00:00")).astimezone(ZoneInfo(tz)).date()
+        # Written after its day was over, where it was written: "added later".
+        local = datetime.fromisoformat(at.replace("Z", "+00:00")).astimezone(ZoneInfo(zone)).date()
         view["late"] = local.isoformat() > day
     except ValueError:
         pass
@@ -753,17 +766,22 @@ def one_day(app: App, req: Request, value: str) -> dict:
 def add_note(app: App, req: Request, value: str) -> dict:
     user_id, p = app.account(req)
     day = day_from(p, value, app.now)
-    text = text_from(req.json())
+    body = req.json()
+    text = text_from(body)
     note_id = "w-" + uuid.uuid4().hex[:20]
     item = {
         "version": str(compute_version(date.fromisoformat(p["birthday"]), day)),
         "text": text,
         "source": "web",
-        "received_at": iso(app.now),
+        "written_at": iso(app.now),
+        # The browser's zone, where the note is being written.
+        "tz": body["tz"] if places.valid_tz(body.get("tz")) else p["tz"],
     }
     found = links.collect(text, fetch=app.fetch)
     if found:
         item["links"] = found
+    if tagged := tags.found(text):
+        item["tags"] = tagged
     app.store.put_note(user_id, day.isoformat(), note_id, item)
     log(event="note-added", user=user_id, date=day.isoformat())
     keep_weather(app, user_id, p, day)
@@ -796,7 +814,7 @@ def edit_note(app: App, req: Request, value: str, note_id: str) -> dict:
         raise Reject(404, "note")
     # Links the note had keep their names; only a new address is fetched.
     found = links.collect(text, keep=old.get("links"), fetch=app.fetch)
-    item = app.store.update_note(user_id, day, note_id, text, iso(app.now), found)
+    item = app.store.update_note(user_id, day, note_id, text, iso(app.now), found, tags.found(text))
     if not item:
         raise Reject(404, "note")
     log(event="note-edited", user=user_id, date=day)
@@ -838,6 +856,43 @@ def media_file(app: App, req: Request, value: str, note_id: str, n: str) -> dict
         ExpiresIn=MEDIA_LINK,
     )
     return respond(302, {}, headers={"location": url, "cache-control": "private, max-age=300"})
+
+
+# --- tags ---------------------------------------------------------------------
+# A note's tags are its hashtags (tags.py). One person's notes are few enough
+# to read whole, so there is no index: both answers read every note's keys
+# and tags.
+
+
+def tag_list(app: App, req: Request) -> dict:
+    """Every tag, most used first: notes, days, and the first and last day."""
+    user_id, _ = app.account(req)
+    seen: dict[str, dict] = {}
+    for n in app.store.all_notes(user_id):
+        day = n["sk"].split("#")[1]
+        for t in n.get("tags") or []:
+            e = seen.setdefault(t, {"tag": t, "notes": 0, "days": set(), "first": day, "last": day})
+            e["notes"] += 1
+            e["days"].add(day)
+            e["first"], e["last"] = min(e["first"], day), max(e["last"], day)
+    out = [{**e, "days": len(e["days"])} for e in seen.values()]
+    out.sort(key=lambda e: (-e["notes"], e["tag"]))
+    return respond(200, {"tags": out})
+
+
+def tagged_days(app: App, req: Request, tag: str) -> dict:
+    """Every day with a note tagged so, newest first, with those notes."""
+    user_id, p = app.account(req)
+    by_day: dict[str, list[dict]] = {}
+    for n in app.store.all_notes(user_id):
+        if tag in (n.get("tags") or []):
+            by_day.setdefault(n["sk"].split("#")[1], []).append(n)
+    return respond(200, {
+        "tag": tag,
+        "today": local_today(p, app.now).isoformat(),
+        "tz": p["tz"],
+        "days": [day_view(p, d, by_day[d]) for d in sorted(by_day, reverse=True)],
+    })
 
 
 # --- pause --------------------------------------------------------------------
@@ -976,6 +1031,8 @@ ROUTES = [
     ("PUT", "/api/days/{date}/notes/{id}", edit_note),
     ("DELETE", "/api/days/{date}/notes/{id}", delete_note),
     ("GET", "/api/days/{date}/notes/{id}/media/{n}", media_file),
+    ("GET", "/api/tags", tag_list),
+    ("GET", "/api/tags/{tag}", tagged_days),
     ("PUT", "/api/pause", pause),
     ("DELETE", "/api/pause", resume),
     ("GET", "/api/unsubscribe", unsubscribe),
@@ -984,7 +1041,7 @@ ROUTES = [
 # Writes that carry their own proof (a token) and come from mail apps,
 # which send no Origin.
 NO_ORIGIN = {"/api/unsubscribe"}
-_COMPILED = [(m, re.compile(p.replace("{date}", r"(\d{4}-\d{2}-\d{2})").replace("{id}", r"([A-Za-z0-9_-]{1,80})").replace("{n}", r"([1-9][0-9]?)")), p, f) for m, p, f in ROUTES]
+_COMPILED = [(m, re.compile(p.replace("{date}", r"(\d{4}-\d{2}-\d{2})").replace("{id}", r"([A-Za-z0-9_-]{1,80})").replace("{n}", r"([1-9][0-9]?)").replace("{tag}", r"([a-z0-9]{1,50}(?:-[a-z0-9]{1,49})*)")), p, f) for m, p, f in ROUTES]
 
 
 def match(method: str, path: str):

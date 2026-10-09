@@ -47,9 +47,9 @@ there links here until this is up and done.
   bucket is versioned, so the old version lingers 30 days, then expires.
 - The birthday is locked after sign-up, because changing it renumbers every
   day you have kept.
-- Photos and recordings from emailed replies show with their note, by a
-  signed link that lasts ten minutes, for their owner only (`media.py`).
-  There is no upload on the web.
+- Photos and recordings show with their note, by a signed link that lasts
+  ten minutes, for their owner only (`media.py`). Today they come from
+  emailed replies; any channel may bring them (Jamie, 2026-10-09).
 - A link in a note shows by name: the words you linked, or the page's
   title, fetched once when the note is saved (`links.py`; AGENTS.md has the
   guards). The text keeps the address as written, and the exports carry

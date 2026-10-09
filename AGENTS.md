@@ -95,8 +95,13 @@ runtime and is imported lazily so the tests run without it.
 - **Raw mail is the source of truth.** Every filed reply stays whole in S3
   (`raw/`, tagged `outcome=note`, kept indefinitely); never expire those.
   Ignored mail is tagged `outcome=ignored` and expires in 30 days.
-- **Photos and recordings** (Jamie, 2026-10-08) arrive by email only, never
-  uploaded on the web. Inbound copies each one to
+- **Any kind of data can come from any channel** (Jamie, 2026-10-09:
+  "assume any type of data we deal with can come from any channel"). Email,
+  the web, an import: none is the only way in for text, photos, recordings
+  or anything else. Where a channel does not carry something yet, that is
+  work not done, never a rule.
+- **Photos and recordings** (Jamie, 2026-10-08) are kept with their note,
+  whatever channel brought them. From an emailed reply, inbound copies each one to
   `media/<user>/<day>/<message id>/<n>.<ext>` in the same bucket and lists it
   on the note as `media` (`media.py`); signature logos (longest side under
   200 px) are left out. Video, PDFs and the rest stay in the raw message and

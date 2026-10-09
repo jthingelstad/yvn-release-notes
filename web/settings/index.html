@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Settings: Release Notes</title>
-<link rel="stylesheet" href="/assets/site.css?v=8">
-<script src="/assets/app.js?v=11" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=9">
+<script src="/assets/app.js?v=12" defer></script>
 </head>
 <body data-page="settings">
 <main>
@@ -29,19 +29,25 @@
       <label>Send my email at
         <select name="send_time" class="send-times" id="send-time"></select>
       </label>
-      <p class="aside saved" id="send-time-saved" hidden>Saved.</p>
+      <p class="aside saved" id="send-time-saved" role="status" hidden>Saved.</p>
+      <p class="error" role="alert" hidden></p>
     </section>
 
     <section class="section">
       <h2>Where you are</h2>
       <p class="value"><span data-field="city"></span> <span class="aside">&middot; <span data-field="tz"></span></span></p>
-      <p class="hint">Each day&rsquo;s weather here is kept with your notes, and the morning email carries the forecast. Weather from <a href="https://open-meteo.com/">Open-Meteo</a>, which is told the city, never your notes.</p>
+      <p class="hint">Each day&rsquo;s weather here is kept with your notes, and your daily email carries the forecast. Weather from <a href="https://open-meteo.com/">Open-Meteo</a>, which is told the city, never your notes.</p>
       <button class="quiet" type="button" id="change-city">Change city</button>
       <div class="stack tight place-picker" id="city-picker" hidden>
         <label>New city
           <input type="search" name="city" autocomplete="off" placeholder="Start typing a city">
         </label>
-        <div class="places" role="listbox" aria-label="Places"></div>
+        <div>
+          <div class="places" role="listbox" aria-label="Places"></div>
+          <p class="hint places-status" role="status"></p>
+        </div>
+        <p class="error" role="alert" hidden></p>
+        <button class="quiet" type="button" id="cancel-city">Cancel</button>
         <p class="hint">Places from <a href="https://open-meteo.com/">Open-Meteo</a>.</p>
       </div>
     </section>
@@ -58,6 +64,7 @@
       <button class="quiet" type="button" id="restart" hidden>Start them again</button>
       <a class="quiet" href="/pause/" id="pause-link" hidden>Pause the emails</a>
       <button class="quiet" type="button" id="resume" hidden>Start them again now</button>
+      <p class="error" role="alert" hidden></p>
     </section>
 
     <section class="section wide" id="your-data">

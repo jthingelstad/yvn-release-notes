@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Release Notes</title>
 <meta name="description" content="A daily email with your version number. Reply, and your reply becomes that day's release notes.">
-<link rel="stylesheet" href="/assets/site.css?v=8">
-<script src="/assets/app.js?v=11" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=9">
+<script src="/assets/app.js?v=12" defer></script>
 </head>
 <body data-page="home">
 <main>
@@ -19,7 +19,7 @@
     <p class="sub" id="sample-who">&nbsp;</p>
 
     <h1>Every day is a patch release.</h1>
-    <p class="lede">Each morning you get your version number by email. Reply with anything about the day, and your reply becomes that day&rsquo;s release notes.</p>
+    <p class="lede">Each day, at the time you choose, you get your version number by email. Reply with anything about the day, and your reply becomes that day&rsquo;s release notes.</p>
 
     <form id="start-form" novalidate>
       <label>Your email
@@ -43,8 +43,9 @@
       <p class="error" role="alert" hidden></p>
     </form>
 
-    <p class="hint">The link and the code work once, for 15 minutes. Nothing there? Look in junk, or <a href="/" id="again">use a different address</a>.</p>
-    <p class="foot">The email comes from <strong>notes@yourversionnumber.com</strong>. Adding it to your contacts keeps your morning emails out of junk.</p>
+    <p class="hint">The link and the code work once, for 15 minutes. Nothing there? Look in junk, <a href="/" id="resend">send it again</a>, or <a href="/" id="again">use a different address</a>.</p>
+    <p class="hint spaced" id="resent" role="status" hidden></p>
+    <p class="foot">The email comes from <strong>notes@yourversionnumber.com</strong>. Adding it to your contacts keeps your daily emails out of junk.</p>
   </section>
 
   <p class="foot" id="home-foot" hidden>No ads. Your notes are yours, and you can export them any time. Page counts by Tinylytics, without cookies. From <a href="https://yourversionnumber.com/">Your Version Number</a>.</p>

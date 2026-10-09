@@ -34,9 +34,17 @@ const signedIn = {
   drop() { try { localStorage.removeItem('rn-in'); } catch (e) { /* private mode */ } },
 };
 
-// Cobalt digits, tangerine dots.
-function vnum(el, v) {
+// Cobalt digits, tangerine dots. A number standing on its own says
+// "Version" to a screen reader, in text only it hears; one inside a
+// sentence ("That makes you 5.4.279 today") reads as it is.
+function vnum(el, v, named = false) {
   el.textContent = '';
+  if (named) {
+    const vh = document.createElement('span');
+    vh.className = 'vh';
+    vh.textContent = 'Version ';
+    el.append(vh);
+  }
   v.split('.').forEach((part, i) => {
     if (i) {
       const dot = document.createElement('span');
@@ -46,7 +54,6 @@ function vnum(el, v) {
     }
     el.append(part);
   });
-  el.setAttribute('aria-label', 'Version ' + v);
 }
 
 function longDate(iso) {
@@ -74,10 +81,12 @@ const SAY = {
   place: 'Pick your city from the list.',
   'send-time': 'Pick a time for your email.',
   'places-failed': 'The city search isn’t answering. Try again in a minute.',
-  token: 'This link isn’t one we sent. Sign in to manage your emails.',
+  token: ['This link isn’t one we sent. ', { href: '/', text: 'Sign in to manage your emails' }, '.'],
+  origin: 'That came from outside notes.yourversionnumber.com. Open Release Notes there and try again.',
   date: 'Pick a day between your birthday and today.',
   text: 'Write something first.',
   'too-long': 'That’s longer than one note can hold. Split it in two.',
+  'too-large': 'That’s longer than one note can hold. Split it in two.',
   note: 'That note isn’t here any more. Reload the page.',
   days: 'Pick how long to pause.',
   through: 'Pick a day within the next 60.',
@@ -85,23 +94,62 @@ const SAY = {
   'delete-failed': 'Couldn’t delete everything just now. Nothing is lost; try again in a minute.',
 };
 
-function say(form, data) {
-  const el = $('.error', form);
-  let text = SAY[data.error] || 'Something went wrong. Try again.';
+// Signed out mid-write (the session ran out in another tab, or a sign-out
+// elsewhere). `draft` says what happened to what was being written: 'kept'
+// (the note form keeps it in this tab) or 'copy' (an edit, which doesn't).
+function signedOutLine(draft) {
+  const again = (t) => ({ href: '/', text: t, back: true });
+  if (draft === 'kept') return ['You’ve been signed out. Your note is kept here; ', again('sign in again'), '.'];
+  if (draft === 'copy') return ['You’ve been signed out. ', again('Sign in again'), '; copy your note first if you were writing one.'];
+  return ['You’ve been signed out. ', again('Sign in again'), '.'];
+}
+
+// Text, or a list of strings and {href, text} links, into a line.
+function lineOf(line, text) {
+  line.textContent = '';
+  for (const part of [].concat(text)) {
+    if (typeof part === 'string') { line.append(part); continue; }
+    const a = el('a', '', part.text);
+    a.href = part.href;
+    if (part.back) {
+      // Come back here after signing in again, with the signed-in hint
+      // dropped so the home page shows its form at once.
+      a.addEventListener('click', () => { store.set('rn-back', location.pathname + location.search); signedIn.drop(); });
+    }
+    line.append(a);
+  }
+}
+
+// Show an error in root's .error line, then put focus back where the person
+// was typing: `field` if given, else the root's first field, else its
+// button. (The submit button is disabled while busy, which drops focus.)
+function say(root, data, field) {
+  const line = $('.error', root);
+  let text = data.error === 'signed-out' ? signedOutLine(data.draft)
+    : SAY[data.error] || 'Something went wrong. Try again.';
   if (data.error === 'wrong-code' && data.tries_left !== undefined) {
     text += data.tries_left === 1 ? ' One try left.' : ` ${data.tries_left} tries left.`;
   }
-  el.textContent = text;
-  el.hidden = false;
+  lineOf(line, text);
+  line.hidden = false;
+  const target = field || root.querySelector(
+    'input:not([type=radio]):not([type=hidden]):not([disabled]), textarea, select',
+  ) || $('button[type=submit]', root) || $('button', root);
+  // After busy() gives the button back, so a button can take focus too.
+  if (target && !target.closest('[hidden]')) setTimeout(() => target.focus(), 0);
 }
 
-function quiet(form) {
-  $('.error', form).hidden = true;
+function quiet(root) {
+  $('.error', root).hidden = true;
 }
 
-// Where a signed-in person lands.
+// Where a signed-in person lands: back where they were signed out, if
+// that was in this tab, or Today.
 function home(isNew) {
-  return isNew ? '/setup/' : '/today/';
+  if (isNew) return '/setup/';
+  const back = store.get('rn-back');
+  store.drop('rn-back');
+  return back && /^\/[a-z]/.test(back) ? back : '/today/';
 }
 
 // Every quarter hour, as the sender allows.
@@ -123,10 +171,13 @@ function zoneNow(tz) {
   return { hhmm: `${parts.hour}:${parts.minute}`, date: `${parts.year}-${parts.month}-${parts.day}` };
 }
 
-// A city search over /api/places. Calls onPick(place) with the choice.
-function placePicker(root, onPick) {
+// A city search over /api/places. Calls onPick(place) with the choice, and
+// onClear() when the text changes after a pick. "No city by that name" and
+// failures go to the picker's status line, outside the listbox.
+function placePicker(root, onPick, onClear = () => {}) {
   const input = $('input[type=search]', root), list = $('.places', root);
-  let timer = null, asked = 0;
+  const status = $('.places-status', root);
+  let timer = null, asked = 0, chosen = false;
 
   const show = (places, picked) => {
     list.textContent = '';
@@ -148,24 +199,33 @@ function placePicker(root, onPick) {
       where.textContent = [p.region, p.country].filter(Boolean).join(', ');
       text.append(name, where);
       b.append(mark, text);
-      b.addEventListener('click', () => { show(places, p); onPick(p); });
+      b.addEventListener('click', () => { show(places, p); chosen = true; onPick(p); });
       list.append(b);
     }
   };
 
+  const tell = (text) => { status.textContent = text; };
   input.addEventListener('input', () => {
     clearTimeout(timer);
+    if (chosen) { chosen = false; onClear(); }
+    tell('');
     const q = input.value.trim();
-    if (q.length < 2) { list.textContent = ''; return; }
+    if (q.length < 2) { ++asked; list.textContent = ''; return; }
     timer = setTimeout(async () => {
       const mine = ++asked;
       const r = await api('GET', '/api/places?q=' + encodeURIComponent(q));
       if (mine !== asked) return; // a later search has gone out
-      if (!r.ok) { list.textContent = SAY[r.data.error] || SAY['places-failed']; return; }
-      if (!r.data.places.length) { list.textContent = 'No city by that name. Try the nearest larger one.'; return; }
+      if (!r.ok) {
+        list.textContent = '';
+        return lineOf(status, r.data.error === 'signed-out' ? signedOutLine() : SAY[r.data.error] || SAY['places-failed']);
+      }
+      if (!r.data.places.length) { list.textContent = ''; return tell('No city by that name. Try the nearest larger one.'); }
       show(r.data.places, null);
     }, 300);
   });
+  return {
+    reset() { clearTimeout(timer); ++asked; chosen = false; input.value = ''; list.textContent = ''; tell(''); },
+  };
 }
 
 // --- notes -------------------------------------------------------------------
@@ -208,7 +268,7 @@ function noteText(n) {
 // A note's photos and recordings. Each address is the API's, which checks
 // the session and redirects to a link that lasts ten minutes; the page
 // never sees the bucket's own key.
-function noteMedia(day, n) {
+function noteMedia(day, n, version) {
   const box = el('div', 'media');
   for (const m of n.media || []) {
     const src = `/api/days/${day}/notes/${encodeURIComponent(n.id)}/media/${m.n}`;
@@ -218,12 +278,14 @@ function noteMedia(day, n) {
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       const img = el('img');
-      img.alt = 'Photo';
+      img.alt = version ? `Photo from ${version}` : 'Photo';
       img.loading = 'lazy';
       img.decoding = 'async';
       img.src = src;
-      // HEIC shows in Safari only; say so rather than show a broken image.
-      img.addEventListener('error', () => a.replaceWith(el('p', 'hint', 'A photo this browser can’t show. It’s in the original email.')));
+      // A signed link that has run out, a session that has, or a HEIC
+      // outside Safari: say so rather than show a broken image.
+      img.addEventListener('error', () => a.replaceWith(el('p', 'hint',
+        'This photo couldn’t load. Reload, or sign in again if you’ve been signed out. It’s also in the original email.')));
       a.append(img);
       box.append(a);
     } else {
@@ -286,7 +348,7 @@ function noteMeta(n, tz) {
 }
 
 // A day's notes, each with Edit and Delete. onChange() runs after either.
-function renderNotes(root, day, notes, tz, onChange) {
+function renderNotes(root, day, notes, tz, onChange, version) {
   root.textContent = '';
   for (const n of notes) {
     const item = el('article', 'note');
@@ -306,7 +368,7 @@ function renderNotes(root, day, notes, tz, onChange) {
       const save = el('button', 'go small', 'Save');
       save.type = 'submit';
       const row = el('div', 'row');
-      row.append(save, button('Cancel', 'quiet', () => renderNotes(root, day, notes, tz, onChange)));
+      row.append(save, button('Cancel', 'quiet', () => renderNotes(root, day, notes, tz, onChange, version)));
       const err = el('p', 'error');
       err.setAttribute('role', 'alert');
       err.hidden = true;
@@ -316,7 +378,7 @@ function renderNotes(root, day, notes, tz, onChange) {
         busy(form, async () => {
           quiet(form);
           const r = await api('PUT', path, { text: area.value });
-          if (!r.ok) return say(form, r.data);
+          if (!r.ok) return say(form, { ...r.data, draft: 'copy' }, area);
           onChange();
         });
       });
@@ -335,36 +397,50 @@ function renderNotes(root, day, notes, tz, onChange) {
         const r = await api('DELETE', path);
         if (!r.ok && r.status !== 404) {
           yes.disabled = false;
-          q.textContent = SAY[r.data.error] || 'That didn’t work. Try again.';
+          lineOf(q, r.data.error === 'signed-out' ? signedOutLine() : SAY[r.data.error] || 'That didn’t work. Try again.');
+          yes.focus();
           return;
         }
         onChange();
       });
-      actions.append(q, yes, button('Keep it', 'quiet', () => renderNotes(root, day, notes, tz, onChange)));
+      actions.append(q, yes, button('Keep it', 'quiet', () => renderNotes(root, day, notes, tz, onChange, version)));
     };
 
     actions.append(button('Edit', 'quiet', edit), button('Delete', 'quiet', ask));
     item.append(meta, text);
-    if (n.media && n.media.length) item.append(noteMedia(day, n));
+    if (n.media && n.media.length) item.append(noteMedia(day, n, version));
     item.append(actions);
     root.append(item);
   }
 }
 
-// The form that adds a note to a day. onAdded() runs after.
+// The form that adds a note to a day. onAdded() runs after. What is being
+// written is kept in this tab, by day, until it is saved, so a sign-out
+// mid-note (or a reload) doesn't lose it; restore(day) puts it back.
 function noteForm(form, getDay, onAdded) {
-  form.text.addEventListener('input', () => quiet(form));
+  const key = () => `rn-draft-${getDay()}`;
+  form.text.addEventListener('input', () => {
+    quiet(form);
+    if (form.text.value.trim()) store.set(key(), form.text.value); else store.drop(key());
+  });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     busy(form, async () => {
       quiet(form);
-      if (!form.text.value.trim()) return say(form, { error: 'text' });
+      if (!form.text.value.trim()) return say(form, { error: 'text' }, form.text);
       const r = await api('POST', `/api/days/${getDay()}/notes`, { text: form.text.value });
-      if (!r.ok) return say(form, r.data);
+      if (!r.ok) {
+        store.set(key(), form.text.value);
+        return say(form, { ...r.data, draft: 'kept' }, form.text);
+      }
+      store.drop(key());
       form.text.value = '';
       onAdded();
     });
   });
+  return {
+    restore() { form.text.value = store.get(key()) || ''; },
+  };
 }
 
 function streakLine(root, s) {
@@ -387,13 +463,41 @@ function streakLine(root, s) {
 
 // Send anyone without an account where they belong. Returns true if sent.
 function bounce(r) {
-  if (r.status === 401) { location.replace('/'); return true; }
+  if (r.status === 401) {
+    store.set('rn-back', location.pathname + location.search);
+    location.replace('/');
+    return true;
+  }
   if (r.status === 403 && r.data.error === 'no-account') { location.replace(home(true)); return true; }
   return false;
 }
 
-function failed(root) {
-  root.textContent = 'Couldn’t load this just now. Reload to try again.';
+// "Couldn't load", once, just before `before` (an element), however many
+// times a load fails; ok(before) takes it away again.
+function failed(before) {
+  let line = before.previousElementSibling;
+  if (!line || !line.classList.contains('failed')) {
+    line = el('p', 'hint loading failed');
+    line.setAttribute('role', 'status');
+    before.before(line);
+  }
+  line.textContent = 'Couldn’t load this just now. Reload to try again.';
+}
+function ok(before) {
+  const line = before.previousElementSibling;
+  if (line && line.classList.contains('failed')) line.remove();
+}
+
+// A quiet "Loading…" just before `before`, shown only if the answer takes
+// longer than `wait` ms (a cold API start). Call the result when it comes.
+function loading(before, text = 'Loading…', wait = 300) {
+  let line = null;
+  const timer = setTimeout(() => {
+    line = el('p', 'hint loading', text);
+    line.setAttribute('role', 'status');
+    before.before(line);
+  }, wait);
+  return () => { clearTimeout(timer); if (line) line.remove(); };
 }
 
 // --- pausing -------------------------------------------------------------------
@@ -406,8 +510,9 @@ function addDays(iso, n) {
 // "Paused through Thursday, October 15." or, not yet begun, from and through.
 function pauseLine(p) {
   const { from, through } = p.pause;
-  if (from > p.today) return `Paused from ${dayName(from)} through ${dayName(through)}.`;
-  return `Paused through ${dayName(through)}. They start again ${dayName(addDays(through, 1))} at ${clock(p.send_time)}.`;
+  const year = Number(p.today.slice(0, 4)), on = (iso) => dayName(iso, year);
+  if (from > p.today) return `Paused from ${on(from)} through ${on(through)}.`;
+  return `Paused through ${on(through)}. They start again ${on(addDays(through, 1))} at ${clock(p.send_time)}.`;
 }
 
 // --- the zip export ------------------------------------------------------------
@@ -501,6 +606,23 @@ const pages = {
       });
     });
 
+    // The same address again. Only the newest email's code works.
+    const resend = $('#resend'), resent = $('#resent');
+    resend.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (resend.dataset.busy) return;
+      resend.dataset.busy = '1';
+      quiet(codeForm);
+      resent.hidden = true;
+      const r = await api('POST', '/api/auth/start', { email: store.get('rn-email') || $('#sent-to').textContent });
+      delete resend.dataset.busy;
+      if (r.status !== 202) return say(codeForm, r.data, codeForm.code);
+      codeForm.code.value = '';
+      resent.textContent = 'Sent again. Use the code in the newest email.';
+      resent.hidden = false;
+      codeForm.code.focus();
+    });
+
     codeForm.addEventListener('submit', (e) => {
       e.preventDefault();
       busy(codeForm, async () => {
@@ -519,6 +641,7 @@ const pages = {
     $('#again').addEventListener('click', (e) => {
       e.preventDefault();
       store.drop('rn-email');
+      resent.hidden = true;
       check.hidden = true;
       ask.hidden = false;
       $('#home-foot').hidden = false;
@@ -527,11 +650,14 @@ const pages = {
 
     // The form starts hidden. Someone signed in here before goes straight
     // on once /api/me agrees, without the form ever showing.
+    // If /api/me is slow (a cold start), a quiet line after a moment.
     const reveal = () => { ask.hidden = false; $('#home-foot').hidden = false; };
+    const waited = signedIn.get() ? loading(ask, 'Opening your notes…', 600) : () => {};
     if (!signedIn.get()) reveal();
     const sampled = api('GET', '/api/sample');
     const me = await api('GET', '/api/me');
     if (me.ok) return location.replace(home(me.data.new));
+    waited();
     reveal();
     if (store.get('rn-email')) showCheck(store.get('rn-email'));
     const sample = await sampled;
@@ -546,25 +672,22 @@ const pages = {
     const token = new URLSearchParams(location.hash.slice(1)).get('t');
     // Keep the token out of history and anything copied from the bar.
     history.replaceState(null, '', location.pathname);
-    if (!token) {
-      say(form, { error: 'link-used-or-expired' });
+    // A link that can't sign in: say why and offer a new one.
+    const spent = (data) => {
       $('button', form).hidden = true;
-      return;
-    }
+      const again = el('a', '', 'Send a new link');
+      again.href = '/';
+      form.append(again);
+      say(form, data, again);
+    };
+    if (!token) return spent({ error: 'link-used-or-expired' });
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       busy(form, async () => {
         quiet(form);
         const r = await api('POST', '/api/auth/verify', { token });
-        if (!r.ok) {
-          say(form, r.data);
-          $('button', form).hidden = true;
-          const again = document.createElement('a');
-          again.href = '/';
-          again.textContent = 'Send a new link';
-          form.append(again);
-          return;
-        }
+        if (r.data.error === 'network') return say(form, r.data);
+        if (!r.ok) return spent(r.data);
         signedIn.set();
         location.replace(home(r.data.new));
       });
@@ -584,7 +707,7 @@ const pages = {
     // Sign-up sends today's email at once (web.send_first).
     const firstEmail = () => {
       $('#first-email').textContent =
-        `Today's email comes as soon as you start. After that, every day at ${clock(form.send_time.value)}.`;
+        `Today’s email comes as soon as you start. After that, every day at ${clock(form.send_time.value)}.`;
     };
     firstEmail();
     const version = async () => {
@@ -601,6 +724,10 @@ const pages = {
       $('.picked', form).hidden = false;
       firstEmail();
       version();
+    }, () => {
+      // The city text changed after a pick: that pick no longer holds.
+      place = null;
+      $('.picked', form).hidden = true;
     });
     form.birthday.addEventListener('change', version);
     form.addEventListener('input', () => quiet(form));
@@ -611,18 +738,25 @@ const pages = {
       e.preventDefault();
       busy(form, async () => {
         quiet(form);
-        if (!form.birthday.value) return say(form, { error: 'birthday' });
-        if (!place) return say(form, { error: 'place' });
+        if (!form.birthday.value) return say(form, { error: 'birthday' }, form.birthday);
+        if (!place) return say(form, { error: 'place' }, form.city);
         const r = await api('PUT', '/api/me', { birthday: form.birthday.value, place, send_time: form.send_time.value });
-        if (!r.ok) return say(form, r.data);
+        if (!r.ok) {
+          const field = { birthday: form.birthday, place: form.city, 'send-time': form.send_time }[r.data.error];
+          return say(form, r.data, field || $('button[type=submit]', form));
+        }
         location.replace(home(false));
       });
     });
   },
 
   async settings() {
+    const account = $('#account');
+    const done = loading(account);
     const me = await api('GET', '/api/me');
-    if (!me.ok) return location.replace('/');
+    done();
+    if (bounce(me)) return;
+    if (!me.ok) return failed(account);
     if (me.data.new) return location.replace(home(true));
     let p = me.data;
 
@@ -635,7 +769,7 @@ const pages = {
       const stopped = p.status === 'stopped';
       $('#email-status').textContent = stopped
         ? (STOPPED[p.stopped_reason] || 'Stopped.')
-        : p.pause ? pauseLine(p) : `Arriving every morning at ${clock(p.send_time)}.`;
+        : p.pause ? pauseLine(p) : `Arriving every day at ${clock(p.send_time)}.`;
       $('#restart').hidden = !stopped;
       $('#pause-link').hidden = stopped;
       $('#pause-link').textContent = p.pause ? 'Change the pause' : 'Pause the emails';
@@ -644,35 +778,48 @@ const pages = {
       $('#account').hidden = false;
     };
     zipExport($('#your-data'));
-    const save = async (change) => {
+    // Each change saves at once; a failure shows in that section's error
+    // line, with focus back on `field`.
+    const save = async (change, section, field) => {
+      quiet(section);
       const r = await api('PUT', '/api/me', change);
-      if (r.ok) { p = r.data; fill(); }
+      if (r.ok) { p = r.data; fill(); } else say(section, r.data, field);
       return r.ok;
     };
 
-    const sendTime = $('#send-time');
+    const sendTime = $('#send-time'), timeSection = sendTime.closest('.section');
     sendTimes(sendTime, p.send_time);
     sendTime.addEventListener('change', async () => {
       $('#send-time-saved').hidden = true;
-      $('#send-time-saved').hidden = !(await save({ send_time: sendTime.value }));
+      const saved = await save({ send_time: sendTime.value }, timeSection, sendTime);
+      $('#send-time-saved').hidden = !saved;
+      if (!saved) sendTime.value = p.send_time; // back to what is stored
     });
 
-    $('#change-city').addEventListener('click', () => {
-      $('#city-picker').hidden = false;
-      $('#change-city').hidden = true;
-      $('#city-picker input').focus();
+    const picker = $('#city-picker'), changeCity = $('#change-city');
+    const closePicker = () => {
+      city.reset();
+      quiet(picker);
+      picker.hidden = true;
+      changeCity.hidden = false;
+      changeCity.focus();
+    };
+    changeCity.addEventListener('click', () => {
+      picker.hidden = false;
+      changeCity.hidden = true;
+      $('input', picker).focus();
     });
-    placePicker($('#city-picker'), async (place) => {
-      if (await save({ place })) {
-        $('#city-picker').hidden = true;
-        $('#change-city').hidden = false;
-      }
+    const city = placePicker(picker, async (place) => {
+      if (await save({ place }, picker, $('input', picker))) closePicker();
     });
+    $('#cancel-city').addEventListener('click', closePicker);
 
-    $('#restart').addEventListener('click', () => save({ status: 'active' }));
+    const emails = $('#email-status').closest('.section');
+    $('#restart').addEventListener('click', () => save({ status: 'active' }, emails, $('#restart')));
     $('#resume').addEventListener('click', async () => {
+      quiet(emails);
       const r = await api('DELETE', '/api/pause');
-      if (r.ok) { p = r.data; fill(); }
+      if (r.ok) { p = r.data; fill(); } else say(emails, r.data, $('#resume'));
     });
     $('#signout').addEventListener('click', async () => {
       await api('POST', '/api/auth/signout');
@@ -684,13 +831,24 @@ const pages = {
 
   async today() {
     const view = $('#day');
+    // The address comes from /api/me, asked alongside, for the line that
+    // stands in for an empty day.
+    const asked = api('GET', '/api/me');
+    let me = null;
     const load = async () => {
+      const done = view.hidden ? loading(view) : () => {};
       const r = await api('GET', '/api/today');
+      done();
       if (bounce(r)) return;
-      if (!r.ok) return failed(view.parentNode.appendChild(el('p', 'hint spaced')));
+      if (!r.ok) return failed(view);
+      ok(view);
       const t = r.data;
+      if (!me) {
+        const m = await asked;
+        me = m.ok ? m.data : {};
+      }
       $('#date').textContent = dayName(t.date);
-      vnum($('#v'), t.version);
+      vnum($('#v'), t.version, true);
       const dots = $('#dots');
       dots.textContent = '';
       for (let i = 0; i < 24; i++) dots.append(el('span', i < t.dots ? 'on' : ''));
@@ -701,13 +859,32 @@ const pages = {
       next.append(el('span', 'mono', t.next.version), ` ships ${on}.`);
       $('#paused').hidden = !t.paused_through;
       if (t.paused_through) $('#paused').textContent = `Emails paused through ${dayName(t.paused_through)}. Notes still count.`;
-      renderNotes($('#notes'), t.date, t.notes, t.tz, load);
+      renderNotes($('#notes'), t.date, t.notes, t.tz, load, t.version);
+      emptyLine(t);
       streakLine($('#streak'), t.streak);
       view.hidden = false;
       return t;
     };
+
+    // No notes yet today: one quiet line where they will be. True whether
+    // or not today's email has gone, which this page can't tell. Someone
+    // with no notes at all yet also hears where the email comes from.
+    const emptyLine = (t) => {
+      const line = $('#empty');
+      line.textContent = '';
+      // Paused or stopped, no email comes today; the paused line says so.
+      line.hidden = t.notes.length > 0 || !!t.paused_through || me.status === 'stopped' || !me.email;
+      if (line.hidden) return;
+      line.append('Today’s email, for ', el('span', 'mono', t.version), ', comes to ', el('strong', '', me.email),
+        '. Reply to it, with photos or a voice memo if you like, or write here.');
+      if (!t.streak.longest && !t.streak.current) {
+        line.append(' Add ', el('strong', '', 'notes@yourversionnumber.com'),
+          ' to your contacts so the emails don’t land in junk.');
+      }
+    };
+
     const t = await load();
-    if (t) noteForm($('#note-form'), () => t.date, load);
+    if (t) noteForm($('#note-form'), () => t.date, load).restore();
   },
 
   async timeline() {
@@ -719,7 +896,7 @@ const pages = {
       const head = el('a', 'tday-head');
       head.href = d.date === today ? '/today/' : `/day/?d=${d.date}`;
       const v = el('span', 'vnum small');
-      vnum(v, d.version);
+      vnum(v, d.version, true);
       head.append(v, el('span', 'when', (d.date === today ? 'Today, ' : '') + dayName(d.date, thisYear)));
       sec.append(head);
       if (d.weather) {
@@ -736,7 +913,7 @@ const pages = {
       }
       for (const n of d.notes) {
         sec.append(noteBody(n));
-        if (n.media && n.media.length) sec.append(noteMedia(d.date, n));
+        if (n.media && n.media.length) sec.append(noteMedia(d.date, n, d.version));
       }
       let count = d.notes.length === 1 ? '1 note' : `${d.notes.length} notes`;
       if (d.notes.every((n) => n.late)) count += ', added later';
@@ -758,24 +935,28 @@ const pages = {
       sec.textContent = '';
       const head = el('p', 'tday-head');
       const a = el('span', 'vnum small');
-      vnum(a, oldest.version);
+      vnum(a, oldest.version, true);
       head.append(a);
       if (days > 1) {
         const b = el('span', 'vnum small');
-        vnum(b, newest.version);
+        vnum(b, newest.version, true);
         head.append(el('span', 'when', 'to'), b);
       }
       const when = days > 1 ? `${dayName(oldest.date, thisYear)} to ${dayName(newest.date, thisYear)}` : dayName(oldest.date, thisYear);
       sec.append(head, el('p', 'hint', when), el('p', 'hint', `Paused, ${days === 1 ? '1 day' : days + ' days'}. Your streak waited.`));
     };
 
-    const load = async () => {
+    const load = async (clicked) => {
       more.disabled = true;
+      const done = list.children.length ? () => {} : loading(list);
       const r = await api('GET', '/api/days' + (before ? `?before=${before}` : ''));
+      done();
       if (bounce(r)) return;
       more.disabled = false;
-      if (!r.ok) return failed(list.appendChild(el('p', 'hint')));
+      if (!r.ok) { if (clicked) more.focus(); return failed(more); }
+      ok(more);
       thisYear = thisYear || Number(r.data.today.slice(0, 4));
+      const had = list.children.length, lastRun = run && run.sec;
       for (const d of r.data.days) {
         if (d.paused && !d.notes.length) { paused(d); continue; }
         run = null;
@@ -783,16 +964,29 @@ const pages = {
       }
       before = r.data.before;
       more.hidden = !before;
+      // Disabling the button dropped focus. Give it back, or, when the last
+      // page took the button away, move on to the first day that page added
+      // (or the paused run it extended).
+      if (clicked && before) more.focus();
+      else if (clicked) {
+        const first = list.children[had] || lastRun;
+        const link = first && $('a.tday-head', first);
+        if (link) link.focus();
+        else if (first) { first.tabIndex = -1; first.focus(); }
+      }
     };
-    more.addEventListener('click', load);
-    await load();
+    more.addEventListener('click', () => load(true));
+    await load(false);
   },
 
   async day() {
-    const me = await api('GET', '/api/me');
-    if (bounce(me)) return;
-    if (me.data.new) return location.replace(home(true));
     const pick = $('#pick'), view = $('#day'), form = $('#note-form');
+    const waited = loading(view);
+    const me = await api('GET', '/api/me');
+    waited();
+    if (bounce(me)) return;
+    if (!me.ok) return failed(view);
+    if (me.data.new) return location.replace(home(true));
     pick.min = me.data.birthday;
     pick.max = me.data.today;
     const asked = new URLSearchParams(location.search).get('d');
@@ -805,19 +999,49 @@ const pages = {
     if (current < pick.min) current = pick.min;
     pick.value = current;
 
-    const load = async () => {
+    const thisYear = Number(me.data.today.slice(0, 4));
+    // The days either side, by date (their versions aren't known here),
+    // from the birthday to today.
+    const nearby = () => {
+      const prev = addDays(current, -1), next = addDays(current, 1);
+      const short = (iso) => {
+        const [y, m, d] = iso.split('-').map(Number);
+        const opts = { month: 'long', day: 'numeric' };
+        if (y !== thisYear) opts.year = 'numeric';
+        return new Date(y, m - 1, d).toLocaleDateString('en-US', opts);
+      };
+      const nav = $('#nearby');
+      nav.textContent = '';
+      const link = (iso, text, rel) => {
+        const a = el('a', '', text);
+        a.href = iso === me.data.today ? '/today/' : `/day/?d=${iso}`;
+        a.rel = rel;
+        return a;
+      };
+      if (prev >= pick.min) nav.append(link(prev, `← ${short(prev)}`, 'prev'));
+      if (prev >= pick.min && next <= pick.max) nav.append(' · ');
+      if (next <= pick.max) nav.append(link(next, `${short(next)} →`, 'next'));
+      nav.hidden = !nav.childNodes.length;
+    };
+    const draft = noteForm(form, () => current, () => load());
+    const load = async (fresh) => {
+      const done = view.hidden ? loading(view) : () => {};
       const r = await api('GET', `/api/days/${current}`);
+      done();
       if (bounce(r)) return;
-      if (!r.ok) { view.hidden = true; return; }
+      if (!r.ok) { view.hidden = true; return failed(view); }
+      ok(view);
       const d = r.data;
-      $('#date').textContent = dayName(d.date, Number(me.data.today.slice(0, 4)));
-      vnum($('#v'), d.version);
+      $('#date').textContent = dayName(d.date, thisYear);
+      vnum($('#v'), d.version, true);
       $('#weather').hidden = $('#weather-credit').hidden = !d.weather;
       $('#weather').textContent = d.weather || '';
       vnum($('#for-v'), d.version);
       $('#save-v').textContent = d.version;
-      renderNotes($('#notes'), d.date, d.notes, d.tz, load);
+      renderNotes($('#notes'), d.date, d.notes, d.tz, () => load(), d.version);
       $('#none').hidden = d.notes.length > 0;
+      nearby();
+      if (fresh) draft.restore();
       view.hidden = false;
     };
     pick.addEventListener('change', () => {
@@ -825,24 +1049,30 @@ const pages = {
       current = pick.value;
       history.replaceState(null, '', `/day/?d=${current}`);
       quiet(form);
-      load();
+      load(true);
     });
-    noteForm(form, () => current, load);
-    load();
+    load(true);
   },
 
   async pause() {
+    const form = $('#pause-form'), until = $('.until', form);
+    const done = loading($('#current'));
     const me = await api('GET', '/api/me');
+    done();
     if (bounce(me)) return;
+    if (!me.ok) return failed($('#current'));
     if (me.data.new) return location.replace(home(true));
     let p = me.data;
-    const form = $('#pause-form'), until = $('.until', form);
+    const thisYear = Number(p.today.slice(0, 4)), on = (iso) => dayName(iso, thisYear);
 
     const start = () => (p.pause && p.pause.from <= p.today ? p.pause.from : p.pause_starts);
     const through = () => {
       const v = form.len.value;
       return v === 'until' ? form.through.value : addDays(start(), Number(v) - 1);
     };
+    // A typed date outside the range the API takes gets the error a
+    // submit would, instead of a preview.
+    const outOfRange = (last) => last < form.through.min || last > form.through.max;
     const preview = () => {
       quiet(form);
       until.hidden = form.len.value !== 'until';
@@ -850,10 +1080,16 @@ const pages = {
       const last = through(), out = $('#preview');
       out.textContent = '';
       if (!last) return;
+      if (form.len.value === 'until' && outOfRange(last)) {
+        const err = $('.error', form);
+        err.textContent = SAY.through;
+        err.hidden = false;
+        return;
+      }
       const from = start() < p.today ? p.today : start();
       const b = (t) => el('strong', '', t);
-      out.append('No emails from ', b(dayName(from)), ' through ', b(dayName(last)),
-        '. They start again on ', b(dayName(addDays(last, 1))), ` at ${clock(p.send_time)}.`);
+      out.append('No emails from ', b(on(from)), ' through ', b(on(last)),
+        '. They start again on ', b(on(addDays(last, 1))), ` at ${clock(p.send_time)}.`);
     };
     const show = () => {
       if (p.status === 'stopped') {
@@ -875,17 +1111,20 @@ const pages = {
 
     form.addEventListener('change', preview);
     $('#resume').addEventListener('click', async () => {
+      const current = $('#current');
+      quiet(current);
       const r = await api('DELETE', '/api/pause');
-      if (r.ok) { p = r.data; show(); }
+      if (r.ok) { p = r.data; show(); } else say(current, r.data, $('#resume'));
     });
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       busy(form, async () => {
         quiet(form);
         const v = form.len.value;
-        if (v === 'until' && !form.through.value) return say(form, { error: 'through' });
+        const field = v === 'until' ? form.through : form.querySelector('input[name=len]:checked');
+        if (v === 'until' && (!form.through.value || outOfRange(form.through.value))) return say(form, { error: 'through' }, field);
         const r = await api('PUT', '/api/pause', v === 'until' ? { through: form.through.value } : { days: Number(v) });
-        if (!r.ok) return say(form, r.data);
+        if (!r.ok) return say(form, r.data, field);
         location.replace('/settings/');
       });
     });
@@ -895,6 +1134,7 @@ const pages = {
   async delete() {
     const me = await api('GET', '/api/me');
     if (bounce(me)) return;
+    if (!me.ok) return failed($('#ask-delete'));
     if (me.data.new) return location.replace(home(true));
     const ask = $('#code-ask'), confirm = $('#code-confirm');
     $('#to').textContent = me.data.email;
@@ -938,8 +1178,8 @@ const pages = {
     const token = new URLSearchParams(location.hash.slice(1)).get('t');
     history.replaceState(null, '', location.pathname);
     if (!token) {
-      say(form, { error: 'token' });
       $('button', form).hidden = true;
+      say(form, { error: 'token' });
       return;
     }
     form.addEventListener('submit', (e) => {

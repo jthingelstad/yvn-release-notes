@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Pause: Release Notes</title>
-<link rel="stylesheet" href="/assets/site.css?v=8">
-<script src="/assets/app.js?v=11" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=9">
+<script src="/assets/app.js?v=12" defer></script>
 </head>
 <body data-page="pause">
 <main>
@@ -23,6 +23,7 @@
   <div class="section" id="current" hidden>
     <p class="value" id="current-text"></p>
     <button class="quiet" type="button" id="resume">Start the emails again now</button>
+    <p class="error" role="alert" hidden></p>
   </div>
 
   <form id="pause-form" class="roomy" novalidate hidden>
@@ -39,7 +40,7 @@
 
     <div class="stack tight">
       <p class="value" id="preview"></p>
-      <p class="hint">Paused days don&rsquo;t break your streak. You can still add notes for them here.</p>
+      <p class="hint">Paused days don&rsquo;t break your streak. You can still <a href="/day/">add notes for them</a>.</p>
     </div>
 
     <div class="stack tight">

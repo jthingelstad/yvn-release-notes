@@ -239,12 +239,17 @@ class Store:
         """The days an email went out, as ISO dates."""
         return self._dates(user_id, "DAY#")
 
-    def notes_between(self, user_id: str, first: str, last: str) -> list[dict]:
+    def notes_between(self, user_id: str, first: str, last: str, **query) -> list[dict]:
         """Every note from one day through another, oldest first. '$'
-        sorts just after '#', so the range ends after the last day's notes."""
+        sorts just after '#', so the range ends after the last day's notes.
+        `query` adds to the request (a projection, a filter)."""
+        names = query.pop("ExpressionAttributeNames", None)
         items, kwargs = [], {
             "KeyConditionExpression": "pk = :u AND sk BETWEEN :a AND :b",
-            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":a": f"NOTE#{first}#", ":b": f"NOTE#{last}$"},
+            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":a": f"NOTE#{first}#", ":b": f"NOTE#{last}$",
+                                          **query.pop("ExpressionAttributeValues", {})},
+            **({"ExpressionAttributeNames": names} if names else {}),
+            **query,
         }
         while True:
             page = self.table.query(**kwargs)
@@ -271,6 +276,18 @@ class Store:
     def all_notes(self, user_id: str) -> list[dict]:
         """Every note, oldest day first."""
         return self.notes_between(user_id, "0000-00-00", "9999-99-99")
+
+    def note_tags(self, user_id: str) -> list[dict]:
+        """Every note's key and tags only, oldest day first: the tag list,
+        without bringing every note's text."""
+        return self.notes_between(user_id, "0000-00-00", "9999-99-99",
+                                  ProjectionExpression="sk, #g", ExpressionAttributeNames={"#g": "tags"})
+
+    def tagged_notes(self, user_id: str, tag: str) -> list[dict]:
+        """Every note with this tag, whole, oldest day first. The table still
+        reads every note; only the tagged ones come back."""
+        return self.notes_between(user_id, "0000-00-00", "9999-99-99", FilterExpression="contains(#g, :g)",
+                                  ExpressionAttributeNames={"#g": "tags"}, ExpressionAttributeValues={":g": tag})
 
     def put_note(self, user_id: str, day: str, message_id: str, note: dict) -> bool:
         """Store one reply. SES retries a failed Lambda, so the message id

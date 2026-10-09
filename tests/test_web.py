@@ -47,6 +47,7 @@ class WebCase(unittest.TestCase):
         self.places = []
         self.titles, self.fetched = {}, []  # url -> {"title", "site"}; urls asked for
         self.out = StringIO()
+        web._links.clear()  # signed links a warm function reuses
 
     def call(self, *args, **kw):
         with redirect_stdout(self.out):

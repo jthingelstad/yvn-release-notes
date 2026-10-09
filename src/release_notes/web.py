@@ -143,6 +143,31 @@ class App:
             self._lam = _clients["lambda"]
         return self._lam
 
+    def media_link(self, key: str, content_type: str) -> str:
+        """A signed link to one of the bucket's files, good for MEDIA_LINK
+        seconds at least. The same link for LINK_REUSE seconds, so the
+        browser's copy from a page a minute ago is used again."""
+        kept = _links.get(key)
+        if kept and self.now - kept[1] < LINK_REUSE:
+            return kept[0]
+        url = self.s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": os.environ["MAIL_BUCKET"], "Key": key, "ResponseContentType": content_type,
+                    "ResponseContentDisposition": "inline", "ResponseCacheControl": f"private, max-age={MEDIA_LINK}"},
+            ExpiresIn=MEDIA_LINK + LINK_REUSE,
+        )
+        if len(_links) > 5000:
+            _links.clear()
+        _links[key] = (url, self.now)
+        return url
+
+    def media_links(self, user_id: str):
+        """media_link for this subscriber's own files only: anything else
+        on a note (a key outside media/<user>/) gets no link."""
+        def link(key, content_type):
+            return self.media_link(key, content_type) if str(key or "").startswith(f"media/{user_id}/") else None
+        return link
+
     def session(self, req: Request) -> dict | None:
         token = auth.cookie_token(req.cookies)
         if not token:
@@ -673,11 +698,12 @@ def text_from(body: dict, empty_ok: bool = False) -> str:
 APPS = {"dayone": "Day One"}
 
 
-def note_view(item: dict, tz: str, writing_out: bool = False) -> dict:
+def note_view(item: dict, tz: str, writing_out: bool = False, link=None) -> dict:
     """One note for the page. Its time reads in the zone it was written in
     (`tz` on the note), the subscriber's for notes without one. With
     `writing_out` (the subscriber has transcripts on), a recording still
-    waiting for its text says so."""
+    waiting for its text says so. With `link` (App.media_links), each file
+    carries its signed link, so the page loads it without a call here."""
     _, day, note_id = item["sk"].split("#", 2)
     at = written_at(item)
     zone = item["tz"] if places.valid_tz(item.get("tz")) else tz
@@ -695,10 +721,12 @@ def note_view(item: dict, tz: str, writing_out: bool = False) -> dict:
     if item.get("updated_at"):
         view["edited_at"] = item["updated_at"]
     if item.get("media"):
-        # Each file by number; its address is the API's, never the bucket's.
+        # Each file by number, with its signed link when `link` gives one.
         view["media"] = [{"n": int(m["n"]), "kind": m["kind"], "type": m["type"], **({"name": m["name"]} if m.get("name") else {})}
                          for m in item["media"]]
         for shown, m in zip(view["media"], item["media"]):
+            if link and (url := link(m.get("key"), m["type"])):
+                shown["url"] = url
             if m.get("transcript"):
                 shown["transcript"] = m["transcript"]
             if m.get("description"):
@@ -723,9 +751,9 @@ def writes_out(p: dict) -> bool:
     return bool(p.get("transcribe"))
 
 
-def day_view(p: dict, day: str, notes: list[dict], sky: dict | None = None) -> dict:
+def day_view(p: dict, day: str, notes: list[dict], sky: dict | None = None, link=None) -> dict:
     v = compute_version(date.fromisoformat(p["birthday"]), date.fromisoformat(day))
-    view = {"date": day, "version": str(v), "notes": [note_view(n, p["tz"], writes_out(p)) for n in notes]}
+    view = {"date": day, "version": str(v), "notes": [note_view(n, p["tz"], writes_out(p), link) for n in notes]}
     if sky:
         # As words, in the subscriber's units: "Partly cloudy, 61° / 44° in Minneapolis".
         view["weather"] = weather.day_line(sky, weather.fahrenheit(weather.place_of(p) or sky))
@@ -741,7 +769,8 @@ def today(app: App, req: Request) -> dict:
     paused = pause_days(app.store.pauses(user_id), day)
     # Today counts once it has a note; until then the run ends yesterday.
     s = compute_streak(have, day + ONE_DAY if day in have else day, paused)
-    view = day_view(p, day.isoformat(), app.store.notes_between(user_id, day.isoformat(), day.isoformat()))
+    view = day_view(p, day.isoformat(), app.store.notes_between(user_id, day.isoformat(), day.isoformat()),
+                    link=app.media_links(user_id))
     view.update(
         tz=p["tz"],
         dots=round(v.patch / v.cycle_days * DOTS),
@@ -782,7 +811,7 @@ def days(app: App, req: Request) -> dict:
         {
             "today": day,
             "tz": p["tz"],
-            "days": [{**day_view(p, d, by_day[d], skies.get(d)), **({"paused": True} if d in paused else {})} for d in page],
+            "days": [{**day_view(p, d, by_day[d], skies.get(d), app.media_links(user_id)), **({"paused": True} if d in paused else {})} for d in page],
             "before": page[-1] if len(picked) > limit else None,
         },
     )
@@ -791,7 +820,8 @@ def days(app: App, req: Request) -> dict:
 def one_day(app: App, req: Request, value: str) -> dict:
     user_id, p = app.account(req)
     day = day_from(p, value, app.now).isoformat()
-    view = day_view(p, day, app.store.notes_between(user_id, day, day), app.store.weather_between(user_id, day, day).get(day))
+    view = day_view(p, day, app.store.notes_between(user_id, day, day), app.store.weather_between(user_id, day, day).get(day),
+                    app.media_links(user_id))
     view.update(tz=p["tz"], today=day == local_today(p, app.now).isoformat())
     return respond(200, view)
 
@@ -823,7 +853,8 @@ def add_note(app: App, req: Request, value: str) -> dict:
     app.store.put_note(user_id, day.isoformat(), note_id, item)
     log(event="note-added", user=user_id, date=day.isoformat(), files=len(files))
     keep_weather(app, user_id, p, day)
-    return respond(201, note_view({"sk": f"NOTE#{day.isoformat()}#{note_id}", **item}, p["tz"], writes_out(p)))
+    view = note_view({"sk": f"NOTE#{day.isoformat()}#{note_id}", **item}, p["tz"], writes_out(p), app.media_links(user_id))
+    return respond(201, view)
 
 
 def keep_weather(app: App, user_id: str, p: dict, day: date) -> None:
@@ -857,7 +888,7 @@ def edit_note(app: App, req: Request, value: str, note_id: str) -> dict:
     if not item:
         raise Reject(404, "note")
     log(event="note-edited", user=user_id, date=day)
-    return respond(200, note_view(item, p["tz"], writes_out(p)))
+    return respond(200, note_view(item, p["tz"], writes_out(p), app.media_links(user_id)))
 
 
 def delete_note(app: App, req: Request, value: str, note_id: str) -> dict:
@@ -876,7 +907,12 @@ def delete_note(app: App, req: Request, value: str, note_id: str) -> dict:
     return respond(200, {"ok": True})
 
 
-MEDIA_LINK = 600  # seconds a photo's link lasts
+MEDIA_LINK = 600  # seconds a photo's link lasts, at least, once handed out
+# A warm function hands out the same link for this long, so a photo seen
+# again soon is the browser's cached copy, not another download. Each link
+# is signed for MEDIA_LINK + LINK_REUSE.
+LINK_REUSE = 300
+_links: dict[str, tuple[str, int]] = {}  # key -> (link, signed at); warm invocations only
 
 # --- files from the web -------------------------------------------------------
 # media.py has the design: the browser sends each file straight to the bucket
@@ -988,7 +1024,7 @@ def add_files(app: App, req: Request, value: str, note_id: str) -> dict:
                                    len(had), iso(app.now))
         if item:
             log(event="files-added", user=user_id, date=day, files=len(files))
-            return respond(200, note_view(item, p["tz"], writes_out(p)))
+            return respond(200, note_view(item, p["tz"], writes_out(p), app.media_links(user_id)))
         had = note()
     raise Reject(409, "busy")
 
@@ -1002,26 +1038,22 @@ def media_file(app: App, req: Request, value: str, note_id: str, n: str) -> dict
     entry = next((m for m in (note or {}).get("media") or [] if int(m["n"]) == int(n)), None)
     if not entry or not str(entry.get("key", "")).startswith(f"media/{user_id}/"):
         raise Reject(404, "media")
-    url = app.s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": os.environ["MAIL_BUCKET"], "Key": entry["key"], "ResponseContentType": entry["type"],
-                "ResponseContentDisposition": "inline", "ResponseCacheControl": f"private, max-age={MEDIA_LINK}"},
-        ExpiresIn=MEDIA_LINK,
-    )
+    url = app.media_links(user_id)(entry["key"], entry["type"])
     return respond(302, {}, headers={"location": url, "cache-control": "private, max-age=300"})
 
 
 # --- tags ---------------------------------------------------------------------
 # A note's tags are its hashtags (tags.py). One person's notes are few enough
 # to read whole, so there is no index: both answers read every note's keys
-# and tags.
+# and tags. The list brings back only those (Store.note_tags); a tag's page,
+# only the notes with it (Store.tagged_notes).
 
 
 def tag_list(app: App, req: Request) -> dict:
     """Every tag, most used first: notes, days, and the first and last day."""
     user_id, _ = app.account(req)
     seen: dict[str, dict] = {}
-    for n in app.store.all_notes(user_id):
+    for n in app.store.note_tags(user_id):
         day = n["sk"].split("#")[1]
         for t in n.get("tags") or []:
             e = seen.setdefault(t, {"tag": t, "notes": 0, "days": set(), "first": day, "last": day})
@@ -1037,14 +1069,14 @@ def tagged_days(app: App, req: Request, tag: str) -> dict:
     """Every day with a note tagged so, newest first, with those notes."""
     user_id, p = app.account(req)
     by_day: dict[str, list[dict]] = {}
-    for n in app.store.all_notes(user_id):
+    for n in app.store.tagged_notes(user_id, tag):
         if tag in (n.get("tags") or []):
             by_day.setdefault(n["sk"].split("#")[1], []).append(n)
     return respond(200, {
         "tag": tag,
         "today": local_today(p, app.now).isoformat(),
         "tz": p["tz"],
-        "days": [day_view(p, d, by_day[d]) for d in sorted(by_day, reverse=True)],
+        "days": [day_view(p, d, by_day[d], link=app.media_links(user_id)) for d in sorted(by_day, reverse=True)],
     })
 
 
@@ -1107,7 +1139,7 @@ def search(app: App, req: Request) -> dict:
         "tz": p["tz"],
         "notes": sum(len(v) for v in by_day.values()),
         "day_count": len(days),
-        "days": [day_view(p, d, sorted(by_day[d], key=written_at)) for d in days[:SEARCH_DAYS]],
+        "days": [day_view(p, d, sorted(by_day[d], key=written_at), link=app.media_links(user_id)) for d in days[:SEARCH_DAYS]],
     })
 
 

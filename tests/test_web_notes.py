@@ -231,14 +231,16 @@ class MediaTest(NotesCase):
         kw.setdefault("cookies", self.cookies)
         return self.call("GET", f"/api/days/{day}/notes/{note}/media/{n}", **kw)
 
-    def test_the_day_lists_files_without_their_keys(self):
+    def test_the_day_lists_files_with_their_signed_links(self):
         _, day = self.get("/api/days/2026-10-07")
         note = day["notes"][0]
-        self.assertEqual(note["media"], [{"n": 1, "kind": "image", "type": "image/jpeg"},
-                                         {"n": 2, "kind": "audio", "type": "audio/mp4"}])
+        self.assertEqual(note["media"], [{"n": 1, "kind": "image", "type": "image/jpeg", "url": f"/dev-media/{PHOTO['key']}"},
+                                         {"n": 2, "kind": "audio", "type": "audio/mp4", "url": f"/dev-media/{MEMO['key']}"}])
         self.assertEqual(note["attachments"], 1)  # the video, still in the email
+        # Every list of days carries them; the key itself is never a field.
         _, days = self.get("/api/days")
-        self.assertNotIn("media/u1", str(days))
+        self.assertIn(f"/dev-media/{PHOTO['key']}", str(days))
+        self.assertNotIn("'key'", str(days))
 
     def test_an_imported_pdf_lists_with_its_name(self):
         pdf = {"n": 1, "kind": "file", "type": "application/pdf", "size": 9, "name": "Menu.pdf",
@@ -246,14 +248,16 @@ class MediaTest(NotesCase):
         self.store.add_note("u1", "2026-10-06", "d1-A", text="Dinner.", source="import", media=[pdf])
         _, day = self.get("/api/days/2026-10-06")
         self.assertEqual(day["notes"][0]["media"],
-                         [{"n": 1, "kind": "file", "type": "application/pdf", "name": "Menu.pdf"}])
+                         [{"n": 1, "kind": "file", "type": "application/pdf", "name": "Menu.pdf",
+                           "url": "/dev-media/media/u1/2026-10-06/d1-A/1.pdf"}])
 
     def test_a_file_is_a_short_lived_redirect_for_its_owner(self):
         r, _ = self.file(1)
         self.assertEqual(r["statusCode"], 302)
         self.assertEqual(r["headers"]["location"], "/dev-media/media/u1/2026-10-07/0100abc-1/1.jpg")
         self.assertEqual(r["headers"]["cache-control"], "private, max-age=300")
-        self.assertEqual(self.s3.signed["ExpiresIn"], 600)
+        # Ten minutes left at least: signed for fifteen, handed out for five.
+        self.assertEqual(self.s3.signed["ExpiresIn"], 900)
         self.assertEqual(self.s3.signed["Params"]["ResponseContentType"], "image/jpeg")
         self.assertEqual(self.s3.signed["Params"]["Bucket"], "mail-bucket")
         r, _ = self.file(2)
@@ -273,7 +277,19 @@ class MediaTest(NotesCase):
         self.emailed("2026-10-06", note_id="odd", media=[{**PHOTO, "key": "raw/0100abc-1"}])
         r, _ = self.file(1, day="2026-10-06", note="odd")
         self.assertEqual(r["statusCode"], 404)
+        _, day = self.get("/api/days/2026-10-06")
+        self.assertNotIn("url", day["notes"][0]["media"][0])
         self.assertFalse(hasattr(self.s3, "signed"))
+
+    def test_a_warm_function_hands_out_the_same_link_for_five_minutes(self):
+        self.get("/api/days/2026-10-07")
+        self.s3.signed = None
+        self.now += 299
+        _, day = self.get("/api/days/2026-10-07")
+        self.assertIsNone(self.s3.signed)  # the same link again, so the browser's copy is used
+        self.now += 1
+        self.get("/api/days/2026-10-07")
+        self.assertEqual(self.s3.signed["Params"]["Key"], MEMO["key"])
 
     def test_deleting_the_note_deletes_its_files(self):
         r, _ = self.call("DELETE", "/api/days/2026-10-07/notes/0100abc-1", cookies=self.cookies)
@@ -402,14 +418,16 @@ class UploadTest(NotesCase):
         r, note = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "Dinner.", "uploads": files},
                             cookies=self.cookies)
         self.assertEqual(r["statusCode"], 201, note)
-        self.assertEqual(note["media"], [{"n": 1, "kind": "image", "type": "image/png", "name": "IMG_1.png"},
-                                         {"n": 2, "kind": "audio", "type": "audio/mp4", "name": "Memo.m4a"},
-                                         {"n": 3, "kind": "file", "type": "application/pdf", "name": "Menu.pdf"}])
+        self.assertEqual([{k: v for k, v in m.items() if k != "url"} for m in note["media"]],
+                         [{"n": 1, "kind": "image", "type": "image/png", "name": "IMG_1.png"},
+                          {"n": 2, "kind": "audio", "type": "audio/mp4", "name": "Memo.m4a"},
+                          {"n": 3, "kind": "file", "type": "application/pdf", "name": "Menu.pdf"}])
         kept = self.store.notes_between("u1", TODAY, TODAY)[0]["media"]
         self.assertEqual((kept[0]["width"], kept[0]["height"], kept[0]["size"]), (640, 480, len(PNG)))
         self.assertTrue(all(m["key"].startswith("media/u1/web/") for m in kept))
         self.assertEqual({self.s3.objects[m["key"]]["Tagging"] for m in kept}, {"outcome=note"})
-        self.assertNotIn("media/", str(note))
+        self.assertNotIn("'key'", str(note))
+        self.assertEqual([m["url"] for m in note["media"]], [f"/dev-media/{m['key']}" for m in kept])
         # It opens like any other, and deleting the note deletes the files.
         r, _ = self.call("GET", f"/api/days/{TODAY}/notes/{note['id']}/media/3", cookies=self.cookies)
         self.assertEqual(r["statusCode"], 302)

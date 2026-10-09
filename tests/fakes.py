@@ -67,6 +67,12 @@ class FakeStore:
     def all_notes(self, user_id):
         return self.notes_between(user_id, "0000-00-00", "9999-99-99")
 
+    def note_tags(self, user_id):
+        return [{"sk": n["sk"], **({"tags": n["tags"]} if "tags" in n else {})} for n in self.all_notes(user_id)]
+
+    def tagged_notes(self, user_id, tag):
+        return [n for n in self.all_notes(user_id) if tag in (n.get("tags") or [])]
+
     def put_note(self, user_id, day, note_id, note):
         if any(i["sk"] == f"NOTE#{day}#{note_id}" for i in self.items.get(user_id, [])):
             return False

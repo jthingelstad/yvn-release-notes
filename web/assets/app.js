@@ -383,9 +383,11 @@ function noteText(n) {
   return n.source === 'email' ? 'Attachments only. They are in the original email.' : 'Nothing written.';
 }
 
-// A note's photos and recordings. Each address is the API's, which checks
-// the session and redirects to a link that lasts ten minutes; the page
-// never sees the bucket's own key.
+// A note's photos and recordings. A photo loads from the signed link the
+// API put on it (`url`, good for ten minutes at least), so a page of photos
+// is not a call to the API each. Clicking one, a recording and a PDF use the
+// API's own address, which checks the session and redirects to a fresh link,
+// so they still open on a page left open longer.
 function noteMedia(day, n, version, mark = null) {
   const box = el('div', 'media');
   for (const m of n.media || []) {
@@ -400,12 +402,19 @@ function noteMedia(day, n, version, mark = null) {
       img.alt = m.description || (version ? `Photo from ${version}` : 'Photo');
       img.loading = 'lazy';
       img.decoding = 'async';
-      img.src = src;
-      // A signed link that has run out, a session that has, or a HEIC
-      // outside Safari: say so rather than show a broken image.
-      img.addEventListener('error', () => a.replaceWith(el('p', 'hint',
-        'This photo couldn’t load. Reload, or sign in again if you’ve been signed out.' +
-        (n.source === 'email' || !n.source ? ' It’s also in the original email.' : ''))));
+      img.src = m.url || src;
+      // A signed link that has run out tries the API's address once. After
+      // that, a session that has run out or a HEIC outside Safari: say so
+      // rather than show a broken image.
+      img.addEventListener('error', () => {
+        if (m.url && img.src !== new URL(src, location.href).href) {
+          img.src = src;
+          return;
+        }
+        a.replaceWith(el('p', 'hint',
+          'This photo couldn’t load. Reload, or sign in again if you’ve been signed out.' +
+          (n.source === 'email' || !n.source ? ' It’s also in the original email.' : '')));
+      });
       a.append(img);
       box.append(a);
       // Shown only in search results, and only when the search found it

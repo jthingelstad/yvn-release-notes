@@ -158,6 +158,15 @@ class PlanTest(unittest.TestCase):
                                        "type": "image/png"}])
         self.assertNotIn("from", n["item"]["media"][0])
 
+    def test_day_ones_own_guide_is_left_out(self):
+        p = plan([entry("A", "2024-02-17T12:00:00Z", "Day One Essentials Guide\nWelcome to Day One, we are glad.")])
+        self.assertEqual((p["notes"], p["skipped"][0]["why"]), ([], "day one's own"))
+
+    def test_an_all_day_entry_is_all_day_on_its_own_date(self):
+        p = plan([entry("A", "2016-12-25T06:00:00Z", "Christmas.", isAllDay=True)])
+        n = p["notes"][0]
+        self.assertEqual((n["date"], n["item"]["all_day"]), ("2016-12-25", True))
+
     def test_empty_entries_are_left_out(self):
         p = plan([entry("A", "2020-01-01T12:00:00Z", "![](dayone-moment://X)")])
         self.assertEqual((p["notes"], p["skipped"]), ([], [{"date": "2020-01-01", "uuid": "A", "why": "empty"}]))

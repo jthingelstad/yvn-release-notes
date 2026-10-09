@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Today: Release Notes</title>
-<link rel="stylesheet" href="/assets/site.css?v=12">
-<script src="/assets/app.js?v=20" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=13">
+<script src="/assets/app.js?v=21" defer></script>
 </head>
 <body data-page="today">
 <main>
@@ -31,7 +31,11 @@
     <label>Add to today
       <textarea name="text" rows="3" placeholder="Anything about the day"></textarea>
     </label>
-    <button class="go" type="submit">Add note</button>
+    <p class="hint chosen" role="status" hidden></p>
+    <div class="row">
+      <button class="go" type="submit">Add note</button>
+      <label class="quiet picker">Add files<input type="file" name="files" multiple></label>
+    </div>
     <p class="error" role="alert" hidden></p>
   </form>
 

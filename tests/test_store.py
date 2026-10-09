@@ -167,6 +167,30 @@ class UpdateNote(unittest.TestCase):
         self.assertEqual(t.calls[0][1]["UpdateExpression"], "SET #t = :t, updated_at = :at REMOVE links, tags")
 
 
+class AddMedia(unittest.TestCase):
+    def table(self):
+        t = FakeTable()
+        t.update_item = lambda **kw: t.calls.append(("update_item", kw)) or {"Attributes": {}}
+        return t
+
+    def test_appends_only_if_the_note_still_has_what_it_was_read_with(self):
+        t = self.table()
+        entry = {"n": 3, "kind": "image", "type": "image/png", "size": 10, "key": "media/u1/web/a.png"}
+        Store(t).add_media("u1", "2026-10-08", "w-1", [entry], 2, "2026-10-09T12:00:00Z")
+        kw = t.calls[0][1]
+        self.assertEqual(kw["UpdateExpression"], "SET media = list_append(if_not_exists(media, :none), :m), updated_at = :at")
+        self.assertEqual(kw["ConditionExpression"], "attribute_exists(pk) AND size(media) = :had")
+        self.assertEqual(kw["ExpressionAttributeValues"],
+                         {":m": [entry], ":none": [], ":at": "2026-10-09T12:00:00Z", ":had": 2})
+
+    def test_a_note_without_files_must_still_have_none(self):
+        t = self.table()
+        Store(t).add_media("u1", "2026-10-08", "w-1", [], 0, "2026-10-09T12:00:00Z")
+        kw = t.calls[0][1]
+        self.assertEqual(kw["ConditionExpression"], "attribute_exists(pk) AND attribute_not_exists(media)")
+        self.assertNotIn(":had", kw["ExpressionAttributeValues"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

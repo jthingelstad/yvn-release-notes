@@ -15,6 +15,15 @@ longest side is under MIN_SIDE pixels (read from its header, standard
 library only) is left out, and one whose size cannot be read is kept only
 if it is big enough to be a photo.
 
+On the web (Jamie, 2026-10-09: "add a file to an entry via the web ...
+image, audio, PDF"), the browser sends each file straight to the bucket,
+since the API takes at most a few megabytes. web.start_upload signs a
+form for one file of one type and exact size, to
+`media/<user>/web/<upload id>.<ext>`, tagged `outcome=pending`; the
+bucket expires pending files after a day. web.attach then reads the
+file's first bytes (looks_like), tags it `outcome=note` and lists it on
+the note. A PDF is kind `file`, as an imported one is.
+
 Nobody but the owner sees a file: the web app asks the API, which checks the
 session and redirects to a link that lasts ten minutes (web.media_file).
 Deleting a note or the account deletes its files too.
@@ -37,7 +46,11 @@ BY_EXTENSION = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "
 MIN_SIDE = 200          # pixels; smaller images are logos and icons
 MIN_UNREAD = 20 * 1024  # bytes; an image we cannot measure must be at least this
 MIN_AUDIO = 1024        # bytes
-MAX_FILES = 20          # per reply
+MAX_FILES = 20          # per reply, and per note on the web
+PDF = {"application/pdf": "pdf"}
+MAX_UPLOAD = 50 * 1024 * 1024  # bytes, one file on the web
+UPLOADABLE = {**IMAGES, **AUDIO, **PDF}
+HEAD = 64 * 1024        # bytes of an upload read to check what it is
 
 
 def media_type(content_type: str, filename: str) -> str | None:
@@ -54,7 +67,47 @@ def media_type(content_type: str, filename: str) -> str | None:
 
 
 def kind(ctype: str) -> str:
-    return "image" if ctype in IMAGES else "audio"
+    return "image" if ctype in IMAGES else "file" if ctype in PDF else "audio"
+
+
+def extension(ctype: str) -> str:
+    return IMAGES.get(ctype) or AUDIO.get(ctype) or PDF[ctype]
+
+
+def upload_type(content_type: str, filename: str) -> str | None:
+    """What a file chosen on the web is kept as: a photo, a recording or a
+    PDF. Browsers leave the type empty for some files, so the name decides
+    then."""
+    ctype = (content_type or "").lower()
+    if ctype in PDF or (ctype in ("", "application/octet-stream") and filename.lower().endswith(".pdf")):
+        return "application/pdf"
+    return media_type(ctype, filename)
+
+
+def upload_key(user_id: str, upload_id: str, ctype: str) -> str:
+    return f"media/{user_id}/web/{upload_id}.{extension(ctype)}"
+
+
+def looks_like(ctype: str, head: bytes) -> bool:
+    """Whether a file's first bytes are what its type says: an upload is
+    whatever the browser sent, so it is checked before it joins a note."""
+    box = head[4:8] == b"ftyp"  # the ISO media family: HEIC, M4A
+    checks = {
+        "image/jpeg": head[:3] == b"\xff\xd8\xff",
+        "image/png": head[:8] == b"\x89PNG\r\n\x1a\n",
+        "image/gif": head[:6] in (b"GIF87a", b"GIF89a"),
+        "image/webp": head[:4] == b"RIFF" and head[8:12] == b"WEBP",
+        "image/heic": box, "image/heif": box,
+        "audio/mp4": box,
+        "audio/aac": head[:2] in (b"\xff\xf1", b"\xff\xf9"),
+        "audio/mpeg": head[:3] == b"ID3" or (head[:1] == b"\xff" and len(head) > 1 and head[1] & 0xE0 == 0xE0),
+        "audio/wav": head[:4] == b"RIFF" and head[8:12] == b"WAVE",
+        "audio/ogg": head[:4] == b"OggS",
+        "audio/webm": head[:4] == b"\x1a\x45\xdf\xa3",
+        "audio/flac": head[:4] == b"fLaC",
+        "application/pdf": head[:5] == b"%PDF-",
+    }
+    return checks.get(ctype, False)
 
 
 def image_size(data: bytes) -> tuple[int, int] | None:
@@ -125,7 +178,7 @@ def found(msg) -> list[tuple[str, bytes]]:
 
 
 def key(user_id: str, day: str, note_id: str, n: int, ctype: str) -> str:
-    return f"media/{user_id}/{day}/{note_id}/{n}.{IMAGES.get(ctype) or AUDIO[ctype]}"
+    return f"media/{user_id}/{day}/{note_id}/{n}.{extension(ctype)}"
 
 
 def store(s3, bucket: str, user_id: str, day: str, note_id: str, files: list[tuple[str, bytes]]) -> list[dict]:

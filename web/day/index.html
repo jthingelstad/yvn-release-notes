@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Another day: Release Notes</title>
-<link rel="stylesheet" href="/assets/site.css?v=12">
-<script src="/assets/app.js?v=20" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=13">
+<script src="/assets/app.js?v=21" defer></script>
 </head>
 <body data-page="day">
 <main>
@@ -31,7 +31,11 @@
     <label>Release notes for <span class="vnum inline" id="for-v"></span>
       <textarea name="text" rows="3" placeholder="What happened that day"></textarea>
     </label>
-    <button class="go" type="submit">Save to <span id="save-v"></span></button>
+    <p class="hint chosen" role="status" hidden></p>
+    <div class="row">
+      <button class="go" type="submit">Save to <span id="save-v"></span></button>
+      <label class="quiet picker">Add files<input type="file" name="files" multiple></label>
+    </div>
     <p class="error" role="alert" hidden></p>
   </form>
     <nav class="hint nearby" id="nearby" aria-label="Nearby days" hidden></nav>

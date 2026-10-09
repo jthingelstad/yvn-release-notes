@@ -1,6 +1,8 @@
 """In-memory stand-ins for the table, SES, S3 and Lambda, shared by the web
 tests and scripts/dev_server.py."""
 
+import re
+
 from release_notes.notes import written_at
 
 
@@ -80,6 +82,16 @@ class FakeStore:
                         i[name] = value
                     else:
                         i.pop(name, None)
+                return dict(i)
+        return None
+
+    def add_media(self, user_id, day, note_id, entries, had, at):
+        for i in self._rows(user_id, f"NOTE#{day}#{note_id}"):
+            if i["sk"] == f"NOTE#{day}#{note_id}":
+                if len(i.get("media") or []) != had:
+                    return None
+                i["media"] = list(i.get("media") or []) + list(entries)
+                i["updated_at"] = at
                 return dict(i)
         return None
 
@@ -261,14 +273,54 @@ class FakeS3:
         self.objects[Key] = {"Body": Body, **kw}
         return {}
 
-    def get_object(self, Bucket, Key):
-        from io import BytesIO
-
+    def _there(self, Key):
         if Key not in self.objects:
             e = KeyError(Key)
             e.response = {"Error": {"Code": "NoSuchKey"}}
             raise e
-        return {"Body": BytesIO(bytes(self.objects[Key]["Body"]))}
+        return self.objects[Key]
+
+    def get_object(self, Bucket, Key, Range=None):
+        from io import BytesIO
+
+        obj = self._there(Key)
+        body = bytes(obj["Body"])
+        got = {"ContentType": obj.get("ContentType"), "ContentLength": len(body)}
+        if Range:  # bytes=<first>-<last>
+            first, last = (int(x) for x in Range[len("bytes="):].split("-"))
+            got.update(ContentRange=f"bytes {first}-{min(last, len(body) - 1)}/{len(body)}", ContentLength=None)
+            body = body[first:last + 1]
+            got["ContentLength"] = len(body)
+        return {"Body": BytesIO(body), **got}
+
+    def get_object_tagging(self, Bucket, Key):
+        tagging = self._there(Key).get("Tagging") or ""
+        return {"TagSet": [{"Key": k, "Value": v} for k, _, v in (t.partition("=") for t in tagging.split("&") if t)]}
+
+    def put_object_tagging(self, Bucket, Key, Tagging):
+        self._there(Key)["Tagging"] = "&".join(f"{t['Key']}={t['Value']}" for t in Tagging["TagSet"])
+        return {}
+
+    def generate_presigned_post(self, Bucket, Key, Fields, Conditions, ExpiresIn):
+        """A form posted to /dev-upload/, which scripts/dev_server.py takes
+        (form_upload), checking it as S3 checks the signed policy."""
+        self.posts = getattr(self, "posts", {})
+        self.posts[Key] = {"Fields": Fields, "Conditions": Conditions, "ExpiresIn": ExpiresIn}
+        return {"url": "/dev-upload/", "fields": {"key": Key, **Fields}}
+
+    def form_upload(self, fields: dict, body: bytes) -> bool:
+        """What S3 does with a posted form: refuse one that breaks its policy,
+        else keep the file with the form's type and tags."""
+        signed = getattr(self, "posts", {}).get(fields.get("key"))
+        if not signed or any(fields.get(k) != v for k, v in signed["Fields"].items()):
+            return False
+        low, high = next(c[1:] for c in signed["Conditions"] if isinstance(c, list) and c[0] == "content-length-range")
+        if not low <= len(body) <= high:
+            return False
+        tags = re.findall(r"<Key>(.*?)</Key><Value>(.*?)</Value>", fields.get("tagging", ""))
+        self.objects[fields["key"]] = {"Body": body, "ContentType": fields["Content-Type"],
+                                       "Tagging": "&".join(f"{k}={v}" for k, v in tags)}
+        return True
 
     def upload_file(self, Filename, Bucket, Key, ExtraArgs=None):
         with open(Filename, "rb") as f:

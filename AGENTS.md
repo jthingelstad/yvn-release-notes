@@ -140,7 +140,16 @@ runtime and is imported lazily so the tests run without it.
   on the note as `media` (`media.py`); signature logos (longest side under
   200 px) are left out. Video, PDFs and the rest of an emailed reply stay in
   the raw message and show as "in the original email". A note's media can
-  also be a `file` (an imported PDF), shown as a link. The page asks
+  also be a `file` (a PDF), shown as a link. **On the web** (Jamie,
+  2026-10-09: "add a file to an entry via the web ... image, audio, PDF")
+  a new note or one already there takes photos, recordings and PDFs, up
+  to 50 MB each and 20 a note; a note with files may have no words. The
+  browser sends each file straight to the bucket with a form the API signs
+  for that type and exact size (`POST /api/uploads`), to
+  `media/<user>/web/<id>.<ext>` tagged `outcome=pending`, which the bucket
+  expires after a day; the note's write checks its first bytes and tags it
+  `outcome=note` (`media.py` has the design). So the CSP's connect-src and
+  the bucket's CORS name each other. The page asks
   `/api/days/<day>/notes/<id>/media/<n>`, which checks the session and the
   key's owner and redirects to a ten-minute signed link on the bucket's own
   host, the one host the CSP adds (`img-src`, `media-src`). Never a public

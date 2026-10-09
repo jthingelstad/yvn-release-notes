@@ -13,7 +13,8 @@ made-up notes, a past four-day pause and one reply token for trying
 deletes nothing real. Three days back, Ada replied with a made-up photo
 and a two-second recording, served from memory at /dev-media/ in place of
 the bucket's signed links. A zip export builds in a thread, two seconds
-after it is asked for, and downloads from /dev-media/ too. City search and weather ask the real Open-Meteo
+after it is asked for, and downloads from /dev-media/ too. Files chosen on
+the web post to /dev-upload/, checked as S3 checks a signed form. City search and weather ask the real Open-Meteo
 unless --fake-places (the week of emails comes with made-up weather either
 way), and a link's page for its title unless --fake-links.
 Everything is forgotten when it stops.
@@ -257,7 +258,32 @@ def main():
                 return self.wfile.write(body)
             return super().do_GET()
 
-        do_POST = do_PUT = do_DELETE = api
+        def do_POST(self):
+            if self.path == "/dev-upload/":
+                return self.upload()
+            return self.api()
+
+        do_PUT = do_DELETE = api
+
+        def upload(self):
+            """A file sent with a form web.start_upload signed, kept as S3
+            would keep it (FakeS3.form_upload): 204, or 403 for a form that
+            breaks its policy."""
+            from email.parser import BytesParser
+            from email.policy import HTTP
+
+            raw = self.rfile.read(int(self.headers.get("content-length", 0)))
+            msg = BytesParser(policy=HTTP).parsebytes(
+                f"content-type: {self.headers['content-type']}\r\n\r\n".encode() + raw)
+            fields, data = {}, b""
+            for part in msg.iter_parts():
+                name = part.get_param("name", header="content-disposition")
+                if name == "file":
+                    data = part.get_payload(decode=True) or b""
+                else:
+                    fields[name] = part.get_content().strip("\r\n")
+            self.send_response(204 if s3.form_upload(fields, data) else 403)
+            self.end_headers()
 
         def end_headers(self):
             if not self.path.startswith("/api/"):

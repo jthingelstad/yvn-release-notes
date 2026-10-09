@@ -5,3 +5,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# the browser tests (e2e/)
+node_modules/
+test-results/
+playwright-report/

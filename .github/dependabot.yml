@@ -1,5 +1,6 @@
-# The code is standard library only, so the one thing to keep current is the
-# pinned actions in .github/workflows. Monthly, one grouped PR.
+# The code is standard library only, so what to keep current is the pinned
+# actions in .github/workflows and the browser tests' one dev dependency
+# (@playwright/test, package.json). Monthly, one grouped PR each.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -11,3 +12,12 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: ci
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      e2e:
+        patterns: ["*"]
+    commit-message:
+      prefix: e2e

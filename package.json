@@ -1,0 +1,11 @@
+{
+  "name": "yvn-release-notes-e2e",
+  "private": true,
+  "description": "Browser tests for the sign-up flow. Dev tooling only: nothing here is deployed.",
+  "scripts": {
+    "e2e": "playwright test --config e2e/playwright.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

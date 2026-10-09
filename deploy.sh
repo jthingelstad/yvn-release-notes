@@ -66,9 +66,12 @@ WEB_CERT=$(aws acm list-certificates --certificate-statuses ISSUED \
   --query "CertificateSummaryList[?DomainName=='$WEB_DOMAIN'].CertificateArn | [0]" --output text)
 [[ "$WEB_CERT" == None ]] && WEB_CERT="" && echo "note: no ISSUED certificate for $WEB_DOMAIN yet; deploying without the alias" >&2
 
+# The template is over CloudFormation's 51,200-byte inline limit, so it
+# goes up through the code bucket (expired with the code after 90 days).
 aws cloudformation deploy \
   --stack-name "$STACK" \
   --template-file infra/template.yaml \
+  --s3-bucket "$CODE_BUCKET" --s3-prefix code/templates \
   --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset \
   --parameter-overrides "CodeBucket=$CODE_BUCKET" "CodeKey=$KEY" "WebDomain=$WEB_DOMAIN" "WebCertificateArn=$WEB_CERT" \

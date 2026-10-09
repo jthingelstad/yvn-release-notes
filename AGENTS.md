@@ -259,6 +259,19 @@ runtime and is imported lazily so the tests run without it.
   else (`--break-glass` is for GitHub being down, never a red check). It
   runs the tests again first.
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests`
+- Browser tests (optional, Jamie 2026-10-08: quick deploys for most
+  changes, the browser run when wanted): `e2e/` drives sign-up in Chromium
+  against `scripts/dev_server.py`, reading sign-in codes and links from the
+  dev server's `/dev-mail/`. Locally: `npm ci --ignore-scripts`, then
+  `npx playwright install chromium` once, then `npm run e2e`. On GitHub: the
+  `e2e` workflow, from the Actions tab or by labelling a PR `e2e`. It is
+  not a required check and `deploy.sh` does not wait for it; run it for
+  any change to `web/assets/app.js` or the pages. Node is dev tooling only
+  (`package.json` holds one dev dependency): nothing under `node_modules`
+  is packaged or synced. The expected number comes from `/api/sample`,
+  never a fixed string, since it depends on today. The dev server's sign-in
+  limits still apply (20 emails an hour from one network), so
+  `--repeat-each` past about 4 trips them.
 - The web app locally: `scripts/dev_server.py` serves `web/` and the real API
   against in-memory fakes, prints sign-in emails instead of sending them, and
   starts with a fictional subscriber, ada@example.com. `--fake-places`

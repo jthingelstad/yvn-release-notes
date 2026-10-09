@@ -5,7 +5,8 @@
 
 Serves web/ and hands /api/* to web.handler with the in-memory fakes from
 tests/fakes.py: no AWS, no mail. A sign-in email is printed here instead of
-sent, link and code included. A fictional subscriber, ada@example.com
+sent, link and code included, and the newest one to each address is at
+/dev-mail/?to=<address> (the browser tests in e2e/ read it). A fictional subscriber, ada@example.com
 (born 1981-06-14), exists from the start, with a week of emails, a few
 made-up notes, a past four-day pause and one reply token for trying
 /unsubscribe/; any other address is new. Deleting a note or the account
@@ -80,9 +81,18 @@ def fake_weather(url: str) -> dict:
 
 
 class PrintingSES(FakeSES):
+    """Prints each email, and keeps the newest one to each address for
+    /dev-mail/ (the browser tests read sign-in codes there)."""
+
+    def __init__(self):
+        super().__init__()
+        self.newest = {}
+
     def send_email(self, **kw):
         msg = message_from_bytes(kw["Content"]["Raw"]["Data"], policy=default)
-        print(f"\n--- mail to {msg['To']}: {msg['Subject']}\n{msg.get_body(('plain',)).get_content()}---\n", flush=True)
+        text = msg.get_body(('plain',)).get_content()
+        self.newest[str(msg['To']).lower()] = f"Subject: {msg['Subject']}\n\n{text}"
+        print(f"\n--- mail to {msg['To']}: {msg['Subject']}\n{text}---\n", flush=True)
         return super().send_email(**kw)
 
 
@@ -173,6 +183,17 @@ def main():
         def do_GET(self):
             if self.path.startswith("/api/"):
                 return self.api()
+            if self.path.startswith("/dev-mail/"):
+                # The newest email to ?to=, as text: only this server has it.
+                to = dict(parse_qsl(urlsplit(self.path).query)).get("to", "").lower()
+                if to not in ses.newest:
+                    return self.send_error(404)
+                body = ses.newest[to].encode()
+                self.send_response(200)
+                self.send_header("content-type", "text/plain; charset=utf-8")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
             if self.path.startswith("/dev-media/"):
                 obj = s3.objects.get(self.path.split("?")[0][len("/dev-media/"):])
                 if not obj:
@@ -201,6 +222,9 @@ def main():
 
     print(f"Release Notes, locally: {origin}/  (ada@example.com is a subscriber;", flush=True)
     print(f"  {origin}/unsubscribe/#t=abcdefghijklmnopqrstuvwx stops Ada's emails)", flush=True)
+    # The browser tests open many pages at once; socketserver's default
+    # queue of 5 resets connections past it.
+    ThreadingHTTPServer.request_queue_size = 128
     ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
 
 

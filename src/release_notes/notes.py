@@ -15,12 +15,20 @@ any kind of data can come from any channel):
                  have received_at instead, which written_at() reads
     tz           the zone it was written in, so its time reads as it did
                  there; without one, the subscriber's
-    place        optional: where it was written (name, city, region,
-                 country, lat and lon rounded to two places)
+    place        optional: where it was written, with all that is known
+                 (Jamie, 2026-10-09: "we don't lose the resolution"):
+                 label (the writer's own name for it: "Cabin"), venue
+                 ("Town Pier"), address (a street address, kept, not
+                 shown yet), city, region, country, lat and lon (to six
+                 places), accuracy_m, and `from`: how it is known (entry,
+                 photo, day: another note that day, home: the
+                 subscriber's city)
     source       email, web or import; an import also has `origin`:
                  {"app", "journal", "id"}, the entry it came from
     version, links, media, updated_at as before; an emailed note also has
-    raw_key, subject, attachments and parser_version
+    raw_key, subject, attachments and parser_version; an import has
+    raw_key too (the entry as the app wrote it). A media entry may carry
+    width, height, duration, taken_at, name and its own place
 """
 
 # The longest a note's text can be, written on the web or emailed. A longer
@@ -36,8 +44,9 @@ def written_at(note: dict) -> str:
 
 
 def place_label(place: dict) -> str:
-    """"Four Seasons Mall, Plymouth", or "Plymouth, Minnesota" with no name."""
-    name, city = place.get("name") or "", place.get("city") or ""
+    """"Cabin, Grand Marais", "Four Seasons Mall, Plymouth", or "Plymouth,
+    Minnesota" with no name. A street address is kept but not shown here."""
+    name, city = place.get("label") or place.get("venue") or "", place.get("city") or ""
     if name and city and name != city:
         return f"{name}, {city}"
     return ", ".join(x for x in (name or city, place.get("region") or place.get("country") or "") if x)

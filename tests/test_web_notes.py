@@ -358,7 +358,7 @@ class WhereAndWhenTest(NotesCase):
         self.assertEqual([(n["id"], n["at"]) for n in day["notes"]], [("old", "2026-10-08T11:00:00Z"), ("new", "2026-10-08T12:00:00Z")])
 
     def test_an_imported_note_shows_its_place_and_app(self):
-        place = {"name": "Four Seasons Mall", "city": "Plymouth", "region": "Minnesota", "country": "United States",
+        place = {"venue": "Four Seasons Mall", "city": "Plymouth", "region": "Minnesota", "country": "United States",
                  "lat": 45.03, "lon": -93.41}
         self.emailed("2026-10-06", "d1-a", source="import", place=place,
                      origin={"app": "dayone", "journal": "Journal", "id": "ABC"})

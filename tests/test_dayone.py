@@ -11,7 +11,8 @@ from release_notes import dayone
 PROFILE = {"birthday": "1981-06-14", "tz": "America/Chicago", "city": "Minneapolis", "region": "Minnesota",
            "country": "United States", "lat": 44.98, "lon": -93.26}
 HARBOR = {"userLabel": "", "placeName": "Town Pier", "localityName": "Bar Harbor", "administrativeArea": "Maine",
-          "country": "United States", "latitude": 44.3912, "longitude": -68.2043}
+          "country": "United States", "latitude": 44.39123456789012, "longitude": -68.2043,
+          "region": {"center": {}, "radius": 75.0}}
 
 
 def entry(uuid, when, text="", tz="America/Chicago", **kw):
@@ -49,11 +50,20 @@ class WhenAndWhereTest(unittest.TestCase):
         self.assertEqual(dayone.zone(e), "America/New_York")
         self.assertEqual(dayone.day_of(e), "2016-07-04")
 
-    def test_a_place_takes_the_writers_label_first(self):
-        self.assertEqual(dayone.place_of({**HARBOR, "userLabel": "Cabin"})["name"], "Cabin")
-        self.assertEqual(dayone.place_of(HARBOR), {"name": "Town Pier", "city": "Bar Harbor", "region": "Maine",
-                                                   "country": "United States", "lat": 44.39, "lon": -68.2})
+    def test_a_place_keeps_all_day_one_knew(self):
+        self.assertEqual(dayone.place_of(HARBOR), {"venue": "Town Pier", "city": "Bar Harbor", "region": "Maine",
+                                                   "country": "United States", "lat": 44.391235, "lon": -68.2043,
+                                                   "accuracy_m": 75})
         self.assertIsNone(dayone.place_of({"placeName": "Nowhere"}))
+
+    def test_a_street_address_is_an_address_and_a_label_is_the_writers(self):
+        home = dayone.place_of({**HARBOR, "userLabel": "Cabin", "placeName": "6025 232nd St W"})
+        self.assertEqual((home["label"], home["address"], "venue" in home), ("Cabin", "6025 232nd St W", False))
+        for found in ("300–338 Washington Ave S", "17 Riesling St"):
+            self.assertEqual(dayone.place_of({**HARBOR, "placeName": found})["address"], found)
+        for found in ("7-Eleven", "3M Center", "7th St & 3rd/4th Ave", "Bar Harbor"):
+            self.assertNotIn("address", dayone.place_of({**HARBOR, "placeName": found}))
+        self.assertNotIn("venue", dayone.place_of({**HARBOR, "placeName": "Bar Harbor"}))  # just the town
 
     def test_places_fall_back_from_entry_to_photo_to_day_to_home(self):
         photo = {"md5": "p1", "type": "jpeg", "location": {"latitude": 44.40, "longitude": -68.21}}
@@ -67,11 +77,15 @@ class WhenAndWhereTest(unittest.TestCase):
             entry("E", "2016-07-08T16:00:00Z", "Home."),
         ], names=names)
         by = {n["id"]: n for n in p["notes"]}
-        self.assertEqual(by["d1-B"]["item"]["place"]["name"], "Town Pier")  # within a few km of a named place
-        self.assertEqual(by["d1-B"]["item"]["place"]["lat"], 44.4)          # at the photo's own spot
-        self.assertEqual(by["d1-C"]["item"]["place"]["city"], "Bar Harbor")
-        self.assertEqual(by["d1-D"]["item"]["place"], {"lat": 10.0, "lon": 10.0})
+        # The photo's own spot, with the town of an entry within a few km, not its venue.
+        self.assertEqual(by["d1-B"]["item"]["place"], {"city": "Bar Harbor", "region": "Maine", "country": "United States",
+                                                       "lat": 44.4, "lon": -68.21, "from": "photo"})
+        self.assertEqual(by["d1-B"]["item"]["media"][0]["place"], {"lat": 44.4, "lon": -68.21})
+        self.assertEqual(by["d1-C"]["item"]["place"]["venue"], "Town Pier")
+        self.assertEqual(by["d1-C"]["item"]["place"]["from"], "day")
+        self.assertEqual(by["d1-D"]["item"]["place"], {"lat": 10.0, "lon": 10.0, "from": "photo"})
         self.assertEqual(by["d1-E"]["item"]["place"]["city"], "Minneapolis")
+        self.assertEqual(by["d1-E"]["item"]["place"]["from"], "home")
         self.assertEqual(p["place_from"], {"entry": 1, "photo": 2, "day": 1, "home": 1})
 
 
@@ -109,6 +123,8 @@ class PlanTest(unittest.TestCase):
         self.assertEqual((item["source"], item["tz"], item["written_at"], item["version"]),
                          ("import", "America/New_York", "2016-07-05T01:40:00Z", "3.5.20"))
         self.assertEqual(item["origin"], {"app": "dayone", "journal": "Journal", "id": "A"})
+        self.assertEqual(item["raw_key"], "raw/dayone/u1/A.json")
+        self.assertEqual(n["original"]["location"], HARBOR)  # kept whole, to store at raw_key
 
     def test_another_journals_name_is_a_tag(self):
         p = plan([entry("A", "2020-01-01T12:00:00Z", "Thankful.")], journal="Gratitude")
@@ -122,8 +138,9 @@ class PlanTest(unittest.TestCase):
         home = plan([entry("A", "2016-07-04T12:00:00Z", "Early, no place.")])
         away = plan([entry("B", "2016-07-04T18:00:00Z", "Pier.", tz="America/New_York", location=HARBOR)])
         days = dayone.weather_days(home["notes"] + away["notes"])
-        self.assertEqual(days["2016-07-04"]["city"], "Bar Harbor")
-        self.assertEqual(days["2016-07-04"]["tz"], "America/New_York")
+        # The town and coordinates to two places: all that goes to Open-Meteo.
+        self.assertEqual(days["2016-07-04"], {"city": "Bar Harbor", "region": "Maine", "country": "United States",
+                                              "lat": 44.39, "lon": -68.2, "tz": "America/New_York"})
         self.assertEqual(dayone.weather_days(home["notes"])["2016-07-04"]["city"], "Minneapolis")
 
 

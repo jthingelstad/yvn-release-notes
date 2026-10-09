@@ -167,7 +167,7 @@ def main():
     # An imported entry, written while travelling: its own zone and place.
     store.add_note("u1", "2016-07-04", "d1-DEV", text="Fireworks over the harbour.\n\n#vacation #maine-2016",
                    source="import", written_at="2016-07-05T01:40:00Z", tz="America/New_York", tags=["vacation", "maine-2016"],
-                   place={"name": "Bar Harbor Town Pier", "city": "Bar Harbor", "region": "Maine", "country": "United States",
+                   place={"venue": "Bar Harbor Town Pier", "city": "Bar Harbor", "region": "Maine", "country": "United States",
                           "lat": 44.39, "lon": -68.2},
                    origin={"app": "dayone", "journal": "Journal", "id": "DEV"})
     photo_day = (today - timedelta(days=3)).isoformat()

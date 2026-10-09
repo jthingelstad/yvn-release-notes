@@ -103,6 +103,9 @@ def summary(plan: dict) -> dict:
         # Hashtags in the entry's own text, beyond its Day One tags.
         extra_tags += bool(set(found) - set(tags.found(n["tag_line"])))
     biggest = max((stored_size(n["item"]) for n in notes), default=0)
+    raw_bytes = sum(len(json.dumps(n["original"], ensure_ascii=False).encode()) for n in notes)
+    places = [n["item"]["place"] for n in notes if n["item"].get("place")]
+    photo_spots = sum(1 for n in notes for m in n["item"].get("media", []) if m.get("place"))
     urls = {u for n in notes for u in n["urls"]}
     named = {u for n in notes for u in n["named"]}
     return {
@@ -119,6 +122,9 @@ def summary(plan: dict) -> dict:
         "missing_files": plan["missing_files"],
         "tags": {"notes_tagged": tagged, "distinct": len(tag_set), "notes_with_hashtags_in_text": extra_tags},
         "place_from": plan["place_from"],
+        "places": {k: sum(1 for p in places if k in p) for k in ("label", "venue", "address", "city", "accuracy_m")},
+        "photos_with_their_own_spot": photo_spots,
+        "originals_kb": round(raw_bytes / 1024),
         "zones_renamed": sum(1 for n in notes if n["zone_was"] in dayone.ZONES),
         "all_day": sum(n["all_day"] for n in notes),
         "starred": sum(n["starred"] for n in notes),

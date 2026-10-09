@@ -1,6 +1,7 @@
 """Photos described (describe.py): stream records and the describe_all
 passes put a description on each photo. Made-up notes and the fakes."""
 
+import base64
 import json
 import os
 import struct
@@ -31,24 +32,35 @@ def photo(n, day="2026-10-09", note_id="w-1", ctype="image/png", size=9000, ext=
 M4A = {"n": Decimal(9), "kind": "audio", "type": "audio/mp4", "size": Decimal(9000), "key": "media/u1/2026-10-09/w-1/9.m4a"}
 
 
-class FakeBedrock:
-    def __init__(self, words="A red canoe pulled up on a rocky shore, pines behind it.", refuse=None):
-        self.calls, self.words, self.refuse = [], words, refuse
+class FakeClaude:
+    """The Messages API: a body in, an answer out, or `fail` as ApiError."""
 
-    def converse(self, **kw):
-        self.calls.append(kw)
-        if self.refuse:
-            e = Exception("no")
-            e.response = {"Error": {"Code": self.refuse}}
-            raise e
-        return {"output": {"message": {"role": "assistant", "content": [{"text": self.words}]}}}
+    def __init__(self, words="A red canoe pulled up on a rocky shore, pines behind it."):
+        self.calls, self.words, self.fail, self.stop = [], words, None, "end_turn"
+
+    def __call__(self, body):
+        self.calls.append(body)
+        if self.fail:
+            raise describe.ApiError(*self.fail)
+        return {"stop_reason": self.stop, "content": [
+            {"type": "thinking", "thinking": "A boat by water."}] + ([{"type": "text", "text": self.words}] if self.words else [])}
+
+
+class FakeSecrets:
+    def __init__(self, key):
+        self.key, self.asked = key, []
+
+    def get_secret_value(self, SecretId):
+        self.asked.append(SecretId)
+        return {"SecretString": json.dumps({"api_key": self.key})}
 
 
 class DescribeCase(unittest.TestCase):
     def setUp(self):
-        self.store, self.s3, self.model, self.lam = FakeStore(), FakeS3(), FakeBedrock(), FakeLambda()
+        self.store, self.s3, self.model, self.lam = FakeStore(), FakeS3(), FakeClaude(), FakeLambda()
         self.store.profiles["u1"] = {"email": "ada@example.com", "tz": "America/Chicago", "describe": True}
-        env = mock.patch.dict(os.environ, {"TABLE": "t", "BUCKET": BUCKET, "SELF": "yvn-release-notes-describe"})
+        env = mock.patch.dict(os.environ, {"TABLE": "t", "BUCKET": BUCKET, "SELF": "yvn-release-notes-describe",
+                                              "SECRET": "yvn-release-notes-anthropic"})
         env.start()
         self.addCleanup(env.stop)
 
@@ -64,7 +76,7 @@ class DescribeCase(unittest.TestCase):
 
     def run_it(self, event, context=None):
         with mock.patch("builtins.print") as printed:
-            describe.handler(event, context, store=self.store, s3=self.s3, bedrock=self.model, lam=self.lam)
+            describe.handler(event, context, store=self.store, s3=self.s3, claude=self.model, lam=self.lam)
         return "\n".join(str(c.args[0]) for c in printed.call_args_list)
 
 
@@ -77,9 +89,10 @@ class StreamTest(DescribeCase):
         self.assertNotIn("description", self.media()[2])  # HEIC: Bedrock can't read it
         call = self.model.calls[0]
         self.assertEqual(len(self.model.calls), 1)
-        self.assertEqual(call["modelId"], describe.MODEL)
-        image = call["messages"][0]["content"][0]["image"]
-        self.assertEqual((image["format"], image["source"]["bytes"]), ("png", png()))
+        self.assertEqual((call["model"], call["output_config"], call["max_tokens"]), ("claude-haiku-5-5", {"effort": "low"}, 2000))
+        self.assertNotIn("temperature", call)  # Haiku 5.5 refuses one
+        source = call["messages"][0]["content"][0]["source"]
+        self.assertEqual((source["media_type"], base64.b64decode(source["data"])), ("image/png", png()))
         self.assertNotIn("canoe", logged)  # a description never goes in the logs
 
     def test_nothing_is_sent_unless_its_owner_turned_it_on(self):
@@ -103,22 +116,28 @@ class StreamTest(DescribeCase):
         self.assertNotIn("description", self.media()[0])
 
     def test_wider_than_the_model_takes_is_done_with_no_words(self):
-        self.assertEqual(describe.words_for(png(9000, 100), "image/png", bedrock=self.model), "")
+        self.assertEqual(describe.words_for(png(9000, 100), "image/png", claude=self.model), "")
         self.assertEqual(self.model.calls, [])
 
     def test_a_photo_the_model_cannot_read_gets_no_words_and_is_not_tried_again(self):
-        self.model.refuse = "ValidationException"
+        self.model.fail = (400, "invalid_request_error")
         n = self.keep("2026-10-09", "w-1", photo(1))
         self.run_it({"Records": [record(n)]})
         self.assertEqual(self.media()[0]["description"], "")
         self.assertEqual(describe.waiting(self.store.note("u1", "2026-10-09", "w-1")), [])
 
-    def test_throttled_is_raised_so_the_stream_tries_again(self):
-        self.model.refuse = "ThrottlingException"
+    def test_rate_limited_overloaded_or_refused_key_is_raised_so_the_stream_tries_again(self):
         n = self.keep("2026-10-09", "w-1", photo(1))
-        with self.assertRaises(Exception):
-            self.run_it({"Records": [record(n)]})
+        for fail in [(429, "rate_limit_error"), (529, "overloaded_error"), (401, "authentication_error")]:
+            self.model.fail = fail
+            with self.assertRaises(describe.ApiError):
+                self.run_it({"Records": [record(n)]})
         self.assertNotIn("description", self.media()[0])
+
+    def test_a_refusal_or_thinking_that_used_every_token_gets_no_words(self):
+        for stop, words in [("refusal", "Sorry."), ("max_tokens", "")]:
+            self.model.stop, self.model.words = stop, words
+            self.assertEqual(describe.words_for(png(), "image/png", claude=self.model), "")
 
     def test_long_words_are_cut_and_runs_of_space_closed_up(self):
         self.model.words = "  A dock.\n\n  " + "x" * 2000
@@ -172,6 +191,56 @@ class DescribeAllTest(DescribeCase):
         self.run_it({"describe_all": "u1"}, Context(900))
         self.assertEqual(self.media()[0]["description"], "")
         self.assertEqual(len(self.model.calls), 2)
+
+
+class KeyTest(DescribeCase):
+    """The key comes from the secret, only when a photo needs it, and a
+    placeholder sends nothing."""
+
+    def run_with(self, secrets, event):
+        with mock.patch("builtins.print") as printed:
+            describe.handler(event, None, store=self.store, s3=self.s3, lam=self.lam, secrets=secrets)
+        return "\n".join(str(c.args[0]) for c in printed.call_args_list)
+
+    def test_the_placeholder_sends_nothing_and_leaves_photos_waiting(self):
+        n = self.keep("2026-10-09", "w-1", photo(1))
+        secrets = FakeSecrets("PASTE-ANTHROPIC-API-KEY-HERE")
+        with mock.patch("urllib.request.urlopen") as sent:
+            logged = self.run_with(secrets, {"Records": [record(n)]})
+        sent.assert_not_called()
+        self.assertIn('"outcome":"no-key"', logged)
+        self.assertEqual(secrets.asked, ["yvn-release-notes-anthropic"])
+        self.assertEqual(len(describe.waiting(self.store.note("u1", "2026-10-09", "w-1"))), 1)
+
+    def test_no_photo_waiting_reads_no_key(self):
+        secrets = FakeSecrets("sk-ant-test")
+        self.run_with(secrets, {"Records": [record({"pk": "USER#u1", "sk": "NOTE#2026-10-09#w-2", "text": "Hi."})]})
+        self.assertEqual(secrets.asked, [])
+
+    def test_a_real_key_goes_in_the_header_once_a_run(self):
+        self.keep("2026-10-09", "w-1", photo(1), photo(2))
+        sent = []
+
+        class Answer:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return json.dumps({"stop_reason": "end_turn", "content": [{"type": "text", "text": "A dock."}]}).encode()
+
+        def urlopen(req, timeout):
+            sent.append((req.full_url, req.get_header("X-api-key"), req.get_header("Anthropic-version")))
+            return Answer()
+
+        secrets = FakeSecrets("sk-ant-test")
+        with mock.patch("urllib.request.urlopen", urlopen):
+            self.run_with(secrets, {"describe_all": "u1"})
+        self.assertEqual(sent, [("https://api.anthropic.com/v1/messages", "sk-ant-test", "2023-06-01")] * 2)
+        self.assertEqual(len(secrets.asked), 1)
+        self.assertEqual([m["description"] for m in self.media()], ["A dock.", "A dock."])
 
 
 if __name__ == "__main__":

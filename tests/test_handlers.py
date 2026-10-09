@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from contextlib import redirect_stdout
@@ -53,6 +54,12 @@ class FakeStore:
 
     def active_subscribers(self):
         return [s for s in self.subs.values() if s.status == "active"]
+
+    def census_items(self):
+        if getattr(self, "census_fail", False):
+            raise ConnectionError("boom")
+        return [{"pk": f"USER#{s.user_id}", "sk": "PROFILE", "status": s.status, "tz": s.tz, "send_time": s.send_time,
+                 "last_sent_date": s.last_sent_date} for s in self.subs.values()]
 
     def get_subscriber(self, user_id):
         return self.subs.get(user_id)
@@ -185,6 +192,37 @@ class Sending(unittest.TestCase):
         self.assertEqual(ses.sent[0]["FromEmailAddress"], "Release Notes <notes@yourversionnumber.com>")
         self.assertIn("From: Release Notes <notes@yourversionnumber.com>", ses.sent[0]["Content"]["Raw"]["Data"].decode())
 
+    def test_daily_email_is_tagged_for_the_mail_metrics(self):
+        ses = FakeSES()
+        send.handler({}, None, store=FakeStore([ada()]), ses=ses, clock=AT_8PM)
+        self.assertEqual(ses.sent[0]["EmailTags"], [{"Name": "release-notes-mail", "Value": "daily"}])
+
+    def test_a_scheduled_run_ends_with_the_census_line(self):
+        out = StringIO()
+        with redirect_stdout(out):
+            send.handler({}, None, store=FakeStore([ada()]), ses=FakeSES(), clock=AT_8PM)
+        lines = [json.loads(l) for l in out.getvalue().splitlines()]
+        census = [l for l in lines if l.get("event") == "census"]
+        self.assertEqual(len(census), 1)
+        self.assertEqual(census[0]["_aws"]["CloudWatchMetrics"][0]["Namespace"], "ReleaseNotes")
+        self.assertEqual((census[0]["Subscribers"], census[0]["Overdue"]), (1, 0))
+        self.assertNotIn("ada@example.com", out.getvalue())
+
+    def test_no_census_on_a_dry_run_or_send_now(self):
+        for event in ({"dry_run": True}, {"send_now": "u1"}):
+            out = StringIO()
+            with redirect_stdout(out):
+                send.handler(event, None, store=FakeStore([ada()]), ses=FakeSES(), clock=AT_8PM)
+            self.assertNotIn('"census"', out.getvalue())
+
+    def test_a_failed_census_never_fails_the_run(self):
+        store, ses, out = FakeStore([ada()]), FakeSES(), StringIO()
+        store.census_fail = True
+        with redirect_stdout(out):
+            send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual(len(ses.sent), 1)
+        self.assertIn('"event":"census-error"', out.getvalue())
+
     def test_sent_at_is_the_real_send_time(self):
         store = FakeStore([ada()])
         send.handler({}, None, store=store, ses=FakeSES(), clock=AT_8_15PM)
@@ -241,9 +279,13 @@ class Sending(unittest.TestCase):
 
     def test_stops_starting_sends_when_time_is_short(self):
         store, ses = FakeStore([ada(), ada(user_id="u2", email="bea@example.com")]), FakeSES()
-        left = iter([60_000, 10_000])
+        left = iter([60_000, 10_000, 9_000])
         context = type("Ctx", (), {"get_remaining_time_in_millis": lambda self: next(left)})()
-        out = send.handler({}, context, store=store, ses=ses, clock=AT_8PM)
+        log = StringIO()
+        with redirect_stdout(log):
+            out = send.handler({}, context, store=store, ses=ses, clock=AT_8PM)
+        # Too little time left for the dashboard's counts as well.
+        self.assertIn('"event":"census-skipped"', log.getvalue())
         self.assertEqual(len(ses.sent), 1)
         self.assertEqual(len(out["results"]), 1)
         # The next quarter hour picks up the other.

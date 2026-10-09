@@ -149,3 +149,30 @@ class ReviewRequests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScanTable(FakeTable):
+    def __init__(self, pages):
+        super().__init__()
+        self.pages = list(pages)
+
+    def scan(self, **kw):
+        self.calls.append(("scan", kw))
+        return self.pages.pop(0)
+
+
+class CensusItems(unittest.TestCase):
+    def test_one_paged_scan_of_keys_and_a_few_fields_never_text(self):
+        t = ScanTable([{"Items": [{"pk": "USER#u1", "sk": "PROFILE"}], "LastEvaluatedKey": {"pk": "x"}},
+                       {"Items": [{"pk": "USER#u1", "sk": "NOTE#2026-10-07#m1"}]}])
+        items = Store(t).census_items()
+        self.assertEqual(len(items), 2)
+        (_, first), (_, second) = t.calls
+        self.assertEqual(second["ExclusiveStartKey"], {"pk": "x"})
+        self.assertEqual(first["FilterExpression"], "begins_with(pk, :u) AND (sk = :p OR begins_with(sk, :d) OR begins_with(sk, :n))")
+        fields = [f.strip() for f in first["ProjectionExpression"].split(",")]
+        names = first["ExpressionAttributeNames"]
+        named = {names.get(f.split("[")[0], f.split("[")[0]) for f in fields}
+        self.assertEqual(named, {"pk", "sk", "status", "tz", "send_time", "last_sent_date", "pause_from", "pause_through", "source", "media"})
+        self.assertEqual(first["ExpressionAttributeValues"], {":u": "USER#", ":p": "PROFILE", ":d": "DAY#", ":n": "NOTE#"})
+

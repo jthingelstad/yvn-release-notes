@@ -56,6 +56,12 @@ def new_token() -> str:
     return b32encode(secrets.token_bytes(15)).decode().lower()
 
 
+# SES counts every email under this tag in CloudWatch (the stack's
+# MailMetrics destination): "daily" from the sender, "account" (sign-in and
+# delete codes) from the web app. A count, never a person.
+MAIL_TAG = "release-notes-mail"
+
+
 def from_header(from_addr: str) -> str:
     # The one From every email carries; subscribers' mail rules match it.
     # send.py hands the same string to SES, which writes its FromEmailAddress

@@ -105,8 +105,9 @@ runtime and is imported lazily so the tests run without it.
   which `notes.written_at` reads), `tz`, the zone it was written in, so its
   time reads as it did there (email: the subscriber's; web: the browser's;
   an import: the entry's), an optional `place` (name, city, region,
-  country, coordinates rounded to two places; shown by name, never the
-  coordinates), and `source`: `email`, `web` or `import`, an import with
+  country, coordinates; shown by name, never the coordinates, the name
+  linking to Apple Maps at them unless the place is only the subscriber's
+  city, `notes.map_url`, Jamie 2026-10-09), and `source`: `email`, `web` or `import`, an import with
   `origin` (`{app, journal, id}`, the entry it came from).
 - **Tags are hashtags** (Jamie, 2026-10-09: on the note, "hashtags",
   lowercase with hyphens, "maine-2016"). A note's `tags` are the slugs of the

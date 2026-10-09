@@ -1,6 +1,7 @@
+from decimal import Decimal
 import unittest
 
-from release_notes.notes import combine
+from release_notes.notes import combine, map_url
 from release_notes.store import Store
 
 
@@ -70,6 +71,17 @@ class Combine(unittest.TestCase):
 
     def test_no_notes(self):
         self.assertEqual(combine([]), "")
+
+
+class MapUrl(unittest.TestCase):
+    def test_a_spot_links_to_its_own_coordinates_under_its_name(self):
+        place = {"venue": "Town Pier", "city": "Bar Harbor", "lat": Decimal("44.391234"), "lon": Decimal("-68.204321"),
+                 "from": "entry"}
+        self.assertEqual(map_url(place), "https://maps.apple.com/?ll=44.391234,-68.204321&q=Town%20Pier,%20Bar%20Harbor")
+
+    def test_no_link_without_coordinates_or_for_the_home_city(self):
+        self.assertIsNone(map_url({"city": "Kyiv"}))
+        self.assertIsNone(map_url({"city": "Minneapolis", "lat": 44.98, "lon": -93.26, "from": "home"}))
 
 
 if __name__ == "__main__":

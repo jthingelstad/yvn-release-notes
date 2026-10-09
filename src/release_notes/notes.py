@@ -22,7 +22,8 @@ any kind of data can come from any channel):
                  shown yet), city, region, country, lat and lon (to six
                  places), accuracy_m, and `from`: how it is known (entry,
                  photo, day: another note that day, home: the
-                 subscriber's city)
+                 subscriber's city). Shown by name, which links to the
+                 spot on a map (map_url)
     source       email, web or import; an import also has `origin`:
                  {"app", "journal", "id"}, the entry it came from
     version, links, media, updated_at as before; an emailed note also has
@@ -30,6 +31,8 @@ any kind of data can come from any channel):
     raw_key too (the entry as the app wrote it). A media entry may carry
     width, height, duration, taken_at, name and its own place
 """
+
+from urllib.parse import quote, urlencode
 
 # The longest a note's text can be, written on the web or emailed. A longer
 # reply keeps its first MAX_NOTE characters; the raw email keeps the rest.
@@ -50,6 +53,19 @@ def place_label(place: dict) -> str:
     if name and city and name != city:
         return f"{name}, {city}"
     return ", ".join(x for x in (name or city, place.get("region") or place.get("country") or "") if x)
+
+
+def map_url(place: dict) -> str | None:
+    """Apple Maps at the place's own coordinates, under its name (Jamie,
+    2026-10-09). The coordinates go in the link only, never on the page.
+    None for a place without them, and for one taken from the subscriber's
+    city (`from: home`), which says nothing about where the note was."""
+    if place.get("from") == "home" or place.get("lat") is None or place.get("lon") is None:
+        return None
+    query = {"ll": f"{float(place['lat'])},{float(place['lon'])}"}
+    if label := place_label(place):
+        query["q"] = label
+    return "https://maps.apple.com/?" + urlencode(query, safe=",", quote_via=quote)
 
 
 def combine(notes: list[dict]) -> str:

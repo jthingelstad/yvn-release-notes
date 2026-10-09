@@ -44,6 +44,15 @@ class Email(unittest.TestCase):
             msg["List-Unsubscribe"], "<https://notes.yourversionnumber.com/api/unsubscribe?t=abcdefghijklmnopqrstuvwx>"
         )
         self.assertEqual(msg["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click")
+        self.assertEqual(msg["X-Auto-Response-Suppress"], "OOF, AutoReply")
+
+    def test_a_visible_unsubscribe_link_to_the_page_that_asks(self):
+        msg = message(date(2026, 10, 8))
+        link = "https://notes.yourversionnumber.com/unsubscribe/#t=abcdefghijklmnopqrstuvwx"
+        self.assertIn(f"Unsubscribe: {link}", msg.get_body(("plain",)).get_content())
+        self.assertIn(f'href="{link}"', msg.get_body(("html",)).get_content())
+        v = compute_version(BIRTHDAY, date(2026, 10, 8))
+        self.assertNotIn("Unsubscribe", body(v, BIRTHDAY) + html_body(v, BIRTHDAY, date(2026, 10, 8)))
 
     def test_says_reply_as_often_as_you_like(self):
         # Jamie, 2026-10-08: every reply to a day's email adds to its notes.
@@ -59,9 +68,10 @@ class Email(unittest.TestCase):
 
     def test_welcome_only_when_asked(self):
         v = compute_version(BIRTHDAY, date(2026, 10, 8))
-        line = welcome_line("06:30")
+        line = welcome_line("06:30", "notes@yourversionnumber.com")
         self.assertEqual(line, "Welcome to Release Notes. This first one is today's; "
-                               "from tomorrow it comes every day at 6:30 AM.")
+                               "from tomorrow it comes every day at 6:30 AM. "
+                               "Add notes@yourversionnumber.com to your contacts so it never lands in junk.")
         self.assertTrue(body(v, BIRTHDAY, welcome=line).startswith(line + "\n\nYou're "))
         self.assertIn("This first one is today&#x27;s", html_body(v, BIRTHDAY, date(2026, 10, 8), welcome=line))
         self.assertNotIn("Welcome", body(v, BIRTHDAY) + html_body(v, BIRTHDAY, date(2026, 10, 8)))

@@ -141,6 +141,22 @@ class DeleteTest(PauseCase):
         _, again = self.call("POST", "/api/auth/verify", {"token": token})
         self.assertTrue(again["new"])
 
+    def test_a_reply_saved_during_the_delete_is_deleted_too(self):
+        # A reply already past its checks writes after the first read.
+        code, delete_keys = self.code(), self.store.delete_keys
+
+        def late_reply(keys):
+            delete_keys(keys)
+            if {"pk": "USER#u1", "sk": "PROFILE"} in keys:
+                self.store.add_note("u1", "2026-10-08", "0100late", text="Late.", received_at="2026-10-08T12:00:00Z",
+                                    raw_key="raw/0100late")
+        self.store.delete_keys = late_reply
+        r, _ = self.delete(code)
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual(self.store.items["u1"], [])
+        self.assertIn({"Bucket": "mail-bucket", "Key": "raw/0100late"}, self.s3.deleted)
+        self.assertEqual(self.store.tallied, {("2026-10", "deletes"): 1})
+
     def test_the_code_is_used_up(self):
         code = self.code()
         self.delete(code)

@@ -21,6 +21,9 @@
     LOGINFOR#<hash>  LOGIN                      an address's newest sign-in, the one a code is checked against
     SESSION#<hash>   SESSION                    a signed-in browser: user, or the address of one signing up
     RATE#<key>#<hr>  RATE                       a counter for one hour of sign-in emails
+    RATE#<key>#<day> RATE                       a counter for one day of wrong sign-in codes
+    TALLY#<YYYY-MM>  TALLY                      that month's counts: signups, unsubscribes, restarts,
+                                                bounces, complaints, deletes. Numbers only, no one named
 
 expires_at (epoch seconds) is the table's TTL. DynamoDB deletes late, up to
 a couple of days, so every read checks it as well. Hashes are SHA-256 of
@@ -144,6 +147,21 @@ class Store:
         self.table.put_item(
             Item={"pk": f"USER#{user_id}", "sk": f"DAY#{day}", "version": version, "token": token, "sent_at": sent_at}
         )
+
+    def drop_day(self, user_id: str, day: str, token: str) -> None:
+        """Undo put_day after a failed send: its reply address and the DAY
+        item, if it is still this attempt's."""
+        self.table.delete_item(Key={"pk": f"TOKEN#{token}", "sk": "TOKEN"})
+        try:
+            self.table.delete_item(
+                Key={"pk": f"USER#{user_id}", "sk": f"DAY#{day}"},
+                ConditionExpression="#t = :t",
+                ExpressionAttributeNames={"#t": "token"},
+                ExpressionAttributeValues={":t": token},
+            )
+        except Exception as e:
+            if not _failed_condition(e):
+                raise
 
     def set_day_message_id(self, user_id: str, day: str, message_id: str) -> None:
         self.table.update_item(
@@ -478,15 +496,39 @@ class Store:
                 return None
             raise
 
-    def count(self, key: str, hour: int) -> int:
-        """Add one to an hour's counter and return the new total."""
+    def count(self, key: str, hour: int, span: int = 3600) -> int:
+        """Add one to a counter for one period (`hour` counts `span`
+        seconds: an hour, or a day for wrong codes) and return the new total."""
         item = self.table.update_item(
             Key={"pk": f"RATE#{key}#{hour}", "sk": "RATE"},
             UpdateExpression="ADD n :one SET expires_at = :exp",
-            ExpressionAttributeValues={":one": 1, ":exp": (hour + 2) * 3600},
+            ExpressionAttributeValues={":one": 1, ":exp": (hour + 2) * span},
             ReturnValues="UPDATED_NEW",
         )["Attributes"]
         return _number(item, "n")
+
+    def peek(self, key: str, period: int) -> int:
+        item = self.table.get_item(Key={"pk": f"RATE#{key}#{period}", "sk": "RATE"}).get("Item")
+        return _number(item, "n") if item else 0
+
+    def tally(self, month: str, name: str) -> None:
+        """Add one to a month's count of something that happened."""
+        self.table.update_item(
+            Key={"pk": f"TALLY#{month}", "sk": "TALLY"},
+            UpdateExpression="ADD #n :one",
+            ExpressionAttributeNames={"#n": name},
+            ExpressionAttributeValues={":one": 1},
+        )
+
+    def tallies(self) -> dict[str, dict[str, int]]:
+        items, kwargs = [], {"FilterExpression": "begins_with(pk, :t)", "ExpressionAttributeValues": {":t": "TALLY#"}}
+        while True:
+            page = self.table.scan(**kwargs)
+            items.extend(page.get("Items", []))
+            if "LastEvaluatedKey" not in page:
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        return {i["pk"].split("#", 1)[1]: {k: int(v) for k, v in i.items() if k not in ("pk", "sk")} for i in items}
 
     # sessions --------------------------------------------------------------
 

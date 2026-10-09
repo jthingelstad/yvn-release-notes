@@ -83,6 +83,39 @@ class SignUpTest(WebCase):
         self.assertEqual((r["statusCode"], again["new"]), (200, False))
         self.assertEqual(len(self.store.profiles), 1)
         self.assertEqual(len(self.lam.invoked), 1)  # one first email
+        self.assertEqual(self.store.tallied, {("2026-10", "signups"): 1})
+
+    def restart(self, reason):
+        self.subscribe()
+        self.store.profiles["u1"].update(status="stopped", stopped_reason=reason, stopped_at="2026-10-01T00:00:00Z")
+        return self.put_me({"status": "active"}, [self.signed_in()])
+
+    def test_restarting_after_a_bounce_takes_the_address_off_the_suppression_list(self):
+        # Otherwise SES drops every email to it, sign-in included, and each
+        # drop is a new bounce that stops them again.
+        for reason in ("bounce", "complaint"):
+            self.ses.suppressed.add("ada@example.com")
+            r, body = self.restart(reason)
+            self.assertEqual((r["statusCode"], body["status"]), (200, "active"))
+            self.assertNotIn("ada@example.com", self.ses.suppressed)
+        self.assertEqual(self.store.tallied[("2026-10", "restarts")], 2)
+
+    def test_restarting_after_unsubscribing_leaves_suppression_alone(self):
+        r, _ = self.restart("unsubscribed")
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual(self.ses.unsuppressed, [])
+
+    def test_restart_is_fine_when_ses_has_already_let_the_address_go(self):
+        r, _ = self.restart("bounce")  # not on the list: NotFound
+        self.assertEqual(r["statusCode"], 200)
+
+    def test_restart_fails_loudly_when_ses_cannot_be_asked(self):
+        def broken(EmailAddress):
+            raise ConnectionError("down")
+        self.ses.delete_suppressed_destination = broken
+        r, body = self.restart("bounce")
+        self.assertEqual((r["statusCode"], body["error"]), (502, "restart-failed"))
+        self.assertEqual(self.store.profiles["u1"]["status"], "stopped")
 
     def test_settings_change_send_time_and_city(self):
         self.subscribe()
@@ -134,6 +167,10 @@ class SignUpTest(WebCase):
         self.assertEqual(r["statusCode"], 200)
         p = self.store.profiles["u1"]
         self.assertEqual((p["status"], p["stopped_reason"]), ("stopped", "unsubscribed"))
+        # A second click (or the mail app's retry) counts once.
+        r, _ = self.call("POST", "/api/unsubscribe", origin=None, query={"t": "abcdefghijklmnopqrstuvwx"})
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual(self.store.tallied, {("2026-10", "unsubscribes"): 1})
         r, _ = self.call("POST", "/api/unsubscribe", origin=None, query={"t": "bbbbbbbbbbbbbbbbbbbbbbbb"})
         self.assertEqual(r["statusCode"], 404)
         r, _ = self.call("POST", "/api/unsubscribe", origin=None, query={"t": "../../etc"})
@@ -174,6 +211,14 @@ class PlacesTest(unittest.TestCase):
         self.assertEqual(places.search("zzz", fetch=lambda url: {}), [])
 
 
+class FakeSNS:
+    def __init__(self):
+        self.published = []
+
+    def publish(self, TopicArn, Subject, Message):
+        self.published.append({"TopicArn": TopicArn, "Message": json.loads(Message)})
+
+
 class BounceTest(unittest.TestCase):
     def run_events(self, *messages):
         store = FakeStore()
@@ -182,10 +227,15 @@ class BounceTest(unittest.TestCase):
         out = StringIO()
         with redirect_stdout(out):
             events.handler(
-                {"Records": [{"Sns": {"Message": json.dumps(m)}} for m in messages]}, None, store=store, clock=lambda: NOW
+                {"Records": [{"Sns": {"Message": json.dumps(m)}} for m in messages]}, None, store=store, sns=self.sns,
+                clock=lambda: NOW,
             )
         self.assertNotIn("ada@example.com", out.getvalue())
+        self.store = store
         return store.profiles["u1"]
+
+    def setUp(self):
+        self.sns = FakeSNS()
 
     def test_hard_bounce_stops_the_emails(self):
         p = self.run_events(
@@ -196,6 +246,30 @@ class BounceTest(unittest.TestCase):
     def test_complaint_stops_the_emails(self):
         p = self.run_events({"eventType": "Complaint", "complaint": {"complainedRecipients": [{"emailAddress": "ada@example.com"}]}})
         self.assertEqual((p["status"], p["stopped_reason"]), ("stopped", "complaint"))
+
+    def test_ops_get_kinds_and_ids_never_addresses_or_subjects(self):
+        headers = [{"name": "List-Unsubscribe", "value": "<https://notes.yourversionnumber.com/api/unsubscribe?t=secret>"},
+                   {"name": "Reply-To", "value": "n-secret@in.yourversionnumber.com"}]
+        self.run_events(
+            {"eventType": "Bounce", "mail": {"headers": headers, "destination": ["ada@example.com"],
+                                             "commonHeaders": {"subject": "You're 4.5.116 today"}},
+             "bounce": {"bounceType": "Permanent", "bounceSubType": "General",
+                        "bouncedRecipients": [{"emailAddress": "ada@example.com"}]}},
+            {"eventType": "Bounce", "mail": {"headers": [], "commonHeaders": {"subject": "123456 is your Release Notes code"}},
+             "bounce": {"bounceType": "Permanent", "bouncedRecipients": [{"emailAddress": "nobody@example.com"}]}},
+            {"eventType": "DeliveryDelay", "mail": {"headers": headers}, "deliveryDelay": {}},
+        )
+        lines = [p["Message"] for p in self.sns.published]
+        self.assertEqual(lines, [
+            {"source": "yvn-release-notes", "event": "Bounce", "mail": "daily", "bounce_type": "Permanent",
+             "bounce_subtype": "General", "users": ["u1"]},
+            {"source": "yvn-release-notes", "event": "Bounce", "mail": "account", "bounce_type": "Permanent",
+             "bounce_subtype": None, "users": [None]},
+        ])
+        sent = json.dumps(self.sns.published)
+        for secret in ("example.com", "secret", "123456", "4.5.116"):
+            self.assertNotIn(secret, sent)
+        self.assertEqual(self.store.tallied, {("2026-10", "bounces"): 1})
 
     def test_soft_bounces_and_strangers_change_nothing(self):
         p = self.run_events(

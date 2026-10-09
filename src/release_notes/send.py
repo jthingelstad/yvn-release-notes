@@ -29,6 +29,7 @@ fails, the email goes without, and so does the rest of that run's mail
 
 import json
 import os
+import time as time_module
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -40,6 +41,11 @@ from .streak import Streak, compute_streak, pause_days
 from .version import a_year_before, compute_version
 
 WINDOW = timedelta(hours=3)
+# Stop starting sends with this much of the function's time left; the next
+# quarter hour's run sends the rest, inside the window.
+RESERVE_MS = 20_000
+# Weather for a whole run gets this long; past it the rest go without.
+WEATHER_BUDGET = 30.0
 
 # Fail at cold start, not at someone's send time, if the runtime ever ships
 # without a zone database (zoneinfo reads the system's; there is no tzdata pin).
@@ -111,21 +117,25 @@ def read_weather(store: Store, sub: Subscriber, day: date, fetch, keep: bool, cl
         return None
 
 
-def one_run(fetch):
+def one_run(fetch, budget=WEATHER_BUDGET, timer=time_module.monotonic):
     """The fetch for one run: answers are shared (neighbors ask the same
     question), and the first failure turns weather off for the rest of the
-    run, so an unreachable Open-Meteo costs one timeout, not one an email."""
-    answers, broken = {}, []
+    run, so an unreachable Open-Meteo costs one timeout, not one an email.
+    A slow one is held to `budget` seconds for the run in all."""
+    answers, broken, spent = {}, [], [0.0]
 
     def call(url):
-        if broken:
+        if broken or spent[0] >= budget:
             raise RuntimeError("weather is off for this run")
         if url not in answers:
+            start = timer()
             try:
                 answers[url] = fetch(url)
             except Exception:
                 broken.append(url)
                 raise
+            finally:
+                spent[0] += timer() - start
         return answers[url]
     return call
 
@@ -167,6 +177,9 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
                 continue
         elif not is_due(sub, here):
             continue
+        if context is not None and context.get_remaining_time_in_millis() < RESERVE_MS:
+            log(event="out-of-time", user=sub.user_id, date=day)
+            break
         if sub.paused_on(day):
             # Not logged on a schedule run: it would repeat every quarter hour.
             if send_now:
@@ -205,13 +218,15 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
 
 def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None) -> dict:
     previous = sub.last_sent_date
+    # The slow parts come before the claim, so a run that times out in them
+    # has claimed nothing and the next run sends this one.
+    streak = read_streak(store, sub.user_id, date.fromisoformat(day))
+    last_year = read_last_year(store, sub, date.fromisoformat(day))
+    forecast = read_weather(store, sub, date.fromisoformat(day), fetch or weather.fetch_morning, True, clock)
     if not store.claim_day(sub.user_id, day):
         log(event="skip", user=sub.user_id, date=day, reason="already-claimed")
         return {"user": sub.user_id, "date": day, "outcome": "already-claimed"}
     token = new_token()
-    streak = read_streak(store, sub.user_id, date.fromisoformat(day))
-    last_year = read_last_year(store, sub, date.fromisoformat(day))
-    forecast = read_weather(store, sub, date.fromisoformat(day), fetch or weather.fetch_morning, True, clock)
     try:
         store.put_day(sub.user_id, day, str(v), token, clock().isoformat())
         msg = build_message(
@@ -226,7 +241,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None)
             last_year=last_year,
             forecast=forecast,
             # Nothing sent before means this is the one sign-up sends.
-            welcome=welcome_line(sub.send_time) if previous is None else None,
+            welcome=welcome_line(sub.send_time, os.environ["FROM_ADDRESS"]) if previous is None else None,
         )
         resp = ses.send_email(
             FromEmailAddress=from_header(os.environ["FROM_ADDRESS"]),
@@ -236,6 +251,10 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None)
         )
     except Exception as e:
         store.release_day(sub.user_id, day, previous)
+        try:
+            store.drop_day(sub.user_id, day, token)  # no orphaned reply address
+        except Exception:
+            log(event="drop-day-failed", user=sub.user_id, date=day)
         code = getattr(e, "response", {}).get("Error", {}).get("Code")
         log(event="error", user=sub.user_id, date=day, error=type(e).__name__, code=code)
         raise

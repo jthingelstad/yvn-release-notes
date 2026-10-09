@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 
 from . import auth, export, export_job, links, media, places, weather
 from .compose import DOTS, from_header, next_release
+from .notes import MAX_NOTE
 from .streak import ONE_DAY, compute_streak, pause_days
 from .version import compute_version
 
@@ -264,10 +265,15 @@ def check_code(app: App, email: str, code: str) -> dict:
     token_hash = app.store.newest_login(auth.digest(email))
     if not token_hash:
         raise Reject(400, "code-expired")
+    wrong, day = "codefail:" + auth.digest(email), app.now // 86400
+    if app.store.peek(wrong, day) >= auth.MAX_WRONG_CODES_A_DAY:
+        log(event="code-limited")
+        raise Reject(429, "limited")
     spent = app.store.spend_attempt(token_hash, app.now, auth.MAX_CODE_ATTEMPTS)
     if isinstance(spent, str):
         raise Reject(400, CODE_ERRORS[spent])
     if not auth.same(auth.digest(code), spent["code_hash"]):
+        app.store.count(wrong, day, 86400)
         left = auth.MAX_CODE_ATTEMPTS - int(spent["attempts"])
         raise Reject(400, "wrong-code" if left else "too-many-tries", tries_left=left)
     login = app.store.burn_login(token_hash, app.now)
@@ -401,6 +407,10 @@ def update_me(app: App, req: Request) -> dict:
         if body["status"] != "active":
             raise Reject(400, "status")
         fields.update(status="active", restarted_at=iso(app.now))
+        if p.get("status") == "stopped":
+            if p.get("stopped_reason") in ("bounce", "complaint"):
+                unsuppress(app, user_id, p["email"])
+            tally(app, "restarts")
     if not fields:
         raise Reject(400, "nothing-to-change")
     remove = ("stopped_reason", "stopped_at") if "status" in fields else ()
@@ -408,6 +418,31 @@ def update_me(app: App, req: Request) -> dict:
     log(event="settings", user=user_id, changed=sorted(k for k in fields if k in ("send_time", "tz", "status")))
     p = {k: v for k, v in {**p, **fields}.items() if k not in remove}
     return respond(200, profile_view(p, app.now))
+
+
+def unsuppress(app: App, user_id: str, email: str) -> None:
+    """A hard bounce or a complaint put the address on SES's account-level
+    suppression list, which would drop every email to it, the daily one
+    and sign-in alike, and report each as a new bounce that stops them
+    again. Starting again is the person asking for the emails, so take the
+    address off the list."""
+    try:
+        app.ses.delete_suppressed_destination(EmailAddress=email)
+        log(event="unsuppressed", user=user_id)
+    except Exception as e:
+        code = getattr(e, "response", {}).get("Error", {}).get("Code")
+        if code != "NotFoundException":
+            log(event="unsuppress-failed", user=user_id, code=code)
+            raise Reject(502, "restart-failed") from None
+
+
+def tally(app: App, name: str) -> None:
+    """Count it for the month, with no one named (scripts/tally.py reads
+    them). A count is never worth a failed request."""
+    try:
+        app.store.tally(datetime.fromtimestamp(app.now, timezone.utc).strftime("%Y-%m"), name)
+    except Exception:
+        log(event="tally-failed", name=name)
 
 
 def sign_up(app: App, s: dict, body: dict) -> dict:
@@ -437,6 +472,7 @@ def sign_up(app: App, s: dict, body: dict) -> dict:
         profile = app.store.profile(user_id) or {}
     else:
         send_first(app, user_id)
+        tally(app, "signups")
     app.store.claim_session(s["hash"], user_id)
     log(event="signup", user=user_id)
     return respond(200, profile_view({"email": email, **profile}, app.now))
@@ -484,7 +520,12 @@ def unsubscribe(app: App, req: Request) -> dict:
     found = app.store.get_token(token)
     if not found:
         raise Reject(404, "token")
-    app.store.stop(found["user_id"], "unsubscribed", iso(app.now))
+    p = app.store.profile(found["user_id"])
+    if not p:
+        raise Reject(404, "token")
+    if p.get("status") != "stopped":
+        app.store.stop(found["user_id"], "unsubscribed", iso(app.now))
+        tally(app, "unsubscribes")
     log(event="unsubscribe", user=found["user_id"])
     return respond(200, {"ok": True})
 
@@ -574,7 +615,6 @@ def export_zip_file(app: App, req: Request) -> dict:
 # birthday; an emailed note can be edited or deleted the same way, and
 # deleting one deletes the email it came in.
 
-MAX_NOTE = 20_000
 DAYS_PAGE, DAYS_MAX = 30, 100
 
 
@@ -887,8 +927,20 @@ def delete_me(app: App, req: Request) -> dict:
     keys.append({"pk": f"EMAIL#{p['email']}", "sk": "EMAIL"})
     app.store.delete_keys(keys)
     app.store.delete_keys([{"pk": f"USER#{user_id}", "sk": "PROFILE"}])
+    # A send or a reply already past its checks may have written something
+    # since the first read. With the profile gone, no new one gets that far.
+    late = app.store.user_items(user_id)
+    if late:
+        late_files = [i["raw_key"] for i in late if str(i.get("raw_key", "")).startswith("raw/")]
+        late_files += [k for i in late for k in media.keys(i)]
+        if late_files:
+            app.s3.delete_objects(Bucket=os.environ["MAIL_BUCKET"],
+                                  Delete={"Objects": [{"Key": k} for k in late_files[:1000]], "Quiet": True})
+        app.store.delete_keys([{"pk": f"TOKEN#{i['token']}", "sk": "TOKEN"} for i in late if i["sk"].startswith("DAY#") and i.get("token")]
+                              + [{"pk": i["pk"], "sk": i["sk"]} for i in late])
     app.store.delete_session(s["hash"])
-    log(event="account-deleted", user=user_id, items=len(items), emails=len(raw), files=len(files) - len(raw))
+    tally(app, "deletes")
+    log(event="account-deleted", user=user_id, items=len(items) + len(late), emails=len(raw), files=len(files) - len(raw))
     return respond(200, {"ok": True}, cookies=[auth.clear_cookie()])
 
 

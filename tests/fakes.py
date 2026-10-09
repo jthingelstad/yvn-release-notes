@@ -9,6 +9,7 @@ class FakeStore:
         self.emails, self.profiles, self.items = {}, {}, {}
         self.logins, self.newest, self.sessions, self.counts = {}, {}, {}, {}
         self.tokens = {}
+        self.tallied = {}  # (month, name) -> n
 
     def user_for_email(self, email):
         return self.emails.get(email)
@@ -145,7 +146,8 @@ class FakeStore:
         return True
 
     def user_items(self, user_id):
-        return [{"pk": f"USER#{user_id}", "sk": "PROFILE", **self.profiles[user_id]}] + self.items.get(user_id, [])
+        profile = [{"pk": f"USER#{user_id}", "sk": "PROFILE", **self.profiles[user_id]}] if user_id in self.profiles else []
+        return profile + self.items.get(user_id, [])
 
     def put_login(self, token_hash, email, email_hash, code_hash, now, ttl):
         self.logins[token_hash] = dict(email=email, code_hash=code_hash, attempts=0, expires_at=now + ttl)
@@ -172,9 +174,15 @@ class FakeStore:
         row["used_at"] = now
         return dict(row)
 
-    def count(self, key, hour):
+    def count(self, key, hour, span=3600):
         self.counts[(key, hour)] = self.counts.get((key, hour), 0) + 1
         return self.counts[(key, hour)]
+
+    def peek(self, key, period):
+        return self.counts.get((key, period), 0)
+
+    def tally(self, month, name):
+        self.tallied[(month, name)] = self.tallied.get((month, name), 0) + 1
 
     def put_session(self, session_hash, *, user_id, email, now, expires):
         s = {"created_at": now, "seen_at": now, "expires_at": expires}
@@ -200,12 +208,21 @@ class FakeStore:
 class FakeSES:
     def __init__(self, fail=False):
         self.sent, self.fail = [], fail
+        self.suppressed, self.unsuppressed = set(), []  # SES's account-level suppression list
 
     def send_email(self, **kw):
         if self.fail:
             raise ConnectionError("down")
         self.sent.append(kw)
         return {"MessageId": "m1"}
+
+    def delete_suppressed_destination(self, EmailAddress):
+        if EmailAddress not in self.suppressed:
+            err = Exception("not found")
+            err.response = {"Error": {"Code": "NotFoundException"}}
+            raise err
+        self.suppressed.discard(EmailAddress)
+        self.unsuppressed.append(EmailAddress)
 
 
 class FakeS3:

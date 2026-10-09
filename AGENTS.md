@@ -34,8 +34,9 @@ SES inbound (in.yourversionnumber.com MX)
 EventBridge, every quarter hour
   -> Lambda yvn-release-notes-sender   anyone whose local send time has come -> one email
 
-SES delivery events, via the alarms topic (filtered to Bounce, Complaint)
-  -> Lambda yvn-release-notes-events   hard bounce or complaint -> that subscriber stopped
+SES delivery events, on their own topic (yvn-release-notes-mail-events)
+  -> Lambda yvn-release-notes-events   hard bounce or complaint -> that subscriber stopped;
+                                         one scrubbed line (kinds, user ids) -> the alarms topic
 
 notes.yourversionnumber.com (CloudFront)
   default -> S3 web bucket              web/: static HTML, CSS, vanilla JS
@@ -116,9 +117,25 @@ runtime and is imported lazily so the tests run without it.
   `stopped_reason`: `unsubscribed` (the email's one-click
   `List-Unsubscribe`, or the page it opens), `bounce` (a hard bounce) or
   `complaint`. Nothing is deleted; the person starts the emails again in
-  settings. Pauses are dated (`PAUSE#<from>`, at most 60 days) and end on
+  settings, which for a bounce or complaint also takes the address off SES's
+  account suppression list (`web.unsuppress`), or SES would drop every email
+  to it. Pauses are dated (`PAUSE#<from>`, at most 60 days) and end on
   their own; stopping does not. The sender skips a paused day, and paused
   days neither break a streak nor add to it (`streak.py`).
+- **SES events never reach the ops queue as is.** They carry the address,
+  the subject (a sign-in code) and the reply token. `events.py` sends the
+  alarms topic one line: the kind of event, the kind of email (`daily` or
+  `account`) and user ids.
+- **Automatic replies are not notes.** Inbound ignores mail marked
+  `Auto-Submitted` (other than `no`), `X-Autoreply`, `X-Autorespond`, or
+  `Precedence: auto_reply`, `bulk` or `junk`, and mail with more than one
+  From. A note is at most 20,000 characters (`notes.MAX_NOTE`), emailed or
+  typed.
+- **Counts, not people** (`TALLY#<YYYY-MM>`): sign-ups, unsubscribes,
+  restarts, bounces, complaints and deletes, one number each a month, read
+  with `scripts/tally.py`. Never per person. A stopped subscriber gets
+  nothing from the product, so the unsubscribe count is the one to watch
+  (Jamie, 2026-10-08).
 - **Deleting an account deletes it**: raw emails, photos and recordings,
   any zip export, tokens, every `USER#` item, the address and the profile, after a code mailed to the address.
   Nothing is kept; the export is offered first.
@@ -245,7 +262,10 @@ runtime and is imported lazily so the tests run without it.
   with `{"send_now": "<user id>"}` (add `"dry_run": true` first to see it).
   Still once per local day; never fake the clock with `now` to do it.
 - Alarms go to SNS `yvn-release-notes-alarms`, which is subscribed to the sysadmin
-  `projects-ops-alerts` queue. The queue's policy must list the topic.
+  `projects-ops-alerts` queue. The queue's policy must list the topic. SES
+  events go to `yvn-release-notes-mail-events`, read only by the events
+  function, which puts a scrubbed line on the alarms topic.
+- The monthly counts: `scripts/tally.py` (reads only).
 - DNS for `yourversionnumber.com` is at Namecheap; Jamie applies records by
   hand. The stack needs: the three DKIM CNAMEs (stack outputs `DkimRecord1-3`),
   an MX on the inbound subdomain to SES inbound, and an MX plus SPF on the

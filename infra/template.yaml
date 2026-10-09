@@ -144,17 +144,41 @@ Resources:
       SuppressionOptions:
         SuppressedReasons: [BOUNCE, COMPLAINT]
 
-  # Delivery problems go to the ops queue. No open or click events, by policy.
+  # Delivery problems go to the events function only (events.py): SES's
+  # event carries the address, the subject (a sign-in code) and the reply
+  # token, so it never goes to the ops queue as is. The function sends the
+  # queue a line with the kind and the user id. No open or click events.
   ConfigurationSetEvents:
     Type: AWS::SES::ConfigurationSetEventDestination
     Properties:
       ConfigurationSetName: !Ref ConfigurationSet
       EventDestination:
-        Name: ops-alerts
+        Name: mail-events
         Enabled: true
         MatchingEventTypes: [bounce, complaint, reject, renderingFailure, deliveryDelay]
         SnsDestination:
-          TopicARN: !Ref AlarmTopic
+          TopicARN: !Ref MailEventsTopic
+
+  MailEventsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-mail-events"
+
+  MailEventsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref MailEventsTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SesEvents
+            Effect: Allow
+            Principal: { Service: ses.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref MailEventsTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
 
   EmailIdentity:
     Type: AWS::SES::EmailIdentity
@@ -647,6 +671,12 @@ Resources:
                 Action: lambda:InvokeFunction
                 Resource: !GetAtt SenderFunction.Arn
               - Effect: Allow
+                # Starting the emails again after a hard bounce or complaint
+                # takes the address off SES's account-level suppression list
+                # (web.unsuppress). The action takes no resource ARN.
+                Action: ses:DeleteSuppressedDestination
+                Resource: "*"
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt WebLogs.Arn
 
@@ -777,6 +807,10 @@ Resources:
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
+                # The scrubbed line for the ops queue.
+                Action: sns:Publish
+                Resource: !Ref AlarmTopic
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt EventsLogs.Arn
 
@@ -784,7 +818,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-events"
-      Description: Stops a subscriber's emails after a hard bounce or a complaint
+      Description: Stops a subscriber's emails after a hard bounce or a complaint; tells ops without addresses
       Runtime: python3.13
       Architectures: [arm64]
       Handler: release_notes.events.handler
@@ -797,16 +831,14 @@ Resources:
       Environment:
         Variables:
           TABLE: !Ref Table
+          ALARM_TOPIC: !Ref AlarmTopic
 
   EventsSubscription:
     Type: AWS::SNS::Subscription
     Properties:
-      TopicArn: !Ref AlarmTopic
+      TopicArn: !Ref MailEventsTopic
       Protocol: lambda
       Endpoint: !GetAtt EventsFunction.Arn
-      FilterPolicyScope: MessageBody
-      FilterPolicy:
-        eventType: [Bounce, Complaint]
 
   EventsInvokePermission:
     Type: AWS::Lambda::Permission
@@ -814,7 +846,7 @@ Resources:
       FunctionName: !Ref EventsFunction
       Action: lambda:InvokeFunction
       Principal: sns.amazonaws.com
-      SourceArn: !Ref AlarmTopic
+      SourceArn: !Ref MailEventsTopic
 
   # --- alarms -----------------------------------------------------------------
 
@@ -830,14 +862,6 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: SesEvents
-            Effect: Allow
-            Principal: { Service: ses.amazonaws.com }
-            Action: sns:Publish
-            Resource: !Ref AlarmTopic
-            Condition:
-              StringEquals:
-                aws:SourceAccount: !Ref AWS::AccountId
           - Sid: CloudWatchAlarms
             Effect: Allow
             Principal: { Service: cloudwatch.amazonaws.com }

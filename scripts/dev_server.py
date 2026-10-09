@@ -109,12 +109,9 @@ def load_dayone(path: str, store, s3) -> None:
     journal, entries, names = dayone.read(path)
     plan = dayone.plan(journal, entries, names, store.profiles["u1"], "u1", web_origin=os.environ["WEB_ORIGIN"])
     for n in plan["notes"]:
-        item = dict(n["item"])
-        if item.get("media"):
-            for m in item["media"]:
-                s3.objects[m["key"]] = {"Zip": path, "Member": m["from"], "ContentType": m["type"]}
-            item["media"] = [{k: v for k, v in m.items() if k != "from"} for m in item["media"]]
-        store.put_note("u1", n["date"], n["id"], item)
+        for f in n["files"]:
+            s3.objects[f["key"]] = {"Zip": path, "Member": f["from"], "ContentType": f["type"]}
+        store.put_note("u1", n["date"], n["id"], n["item"])
     print(f"-- {len(plan['notes'])} notes from a Day One export ({journal})", flush=True)
 
 

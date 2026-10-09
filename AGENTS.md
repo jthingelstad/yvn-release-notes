@@ -125,7 +125,12 @@ runtime and is imported lazily so the tests run without it.
   what an import would do, as counts (`--plan-out` to a folder outside the
   repo for the full plan, note text included). `scripts/dev_server.py
   --dayone ZIP` shows the plan in the app locally. There is no write path
-  yet; adding one needs Jamie's go.
+  yet; adding one needs Jamie's go. When it is written it must: copy files
+  and the original first, then put each note conditionally; turn floats
+  into Decimal all the way down (place, media); skip an entry whose `d1-`
+  id is on any day, and never bring back one the subscriber deleted; keep
+  the plan's weather (`weather_days`) before anything else fills those
+  days; and save the writer's own link words (`named`) with `links`.
 - **Photos and recordings** (Jamie, 2026-10-08) are kept with their note,
   whatever channel brought them. From an emailed reply, inbound copies each one to
   `media/<user>/<day>/<message id>/<n>.<ext>` in the same bucket and lists it

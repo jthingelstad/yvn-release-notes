@@ -277,7 +277,8 @@ function noteMedia(day, n, version) {
       // A signed link that has run out, a session that has, or a HEIC
       // outside Safari: say so rather than show a broken image.
       img.addEventListener('error', () => a.replaceWith(el('p', 'hint',
-        'This photo couldn’t load. Reload, or sign in again if you’ve been signed out. It’s also in the original email.')));
+        'This photo couldn’t load. Reload, or sign in again if you’ve been signed out.' +
+        (n.source === 'email' || !n.source ? ' It’s also in the original email.' : ''))));
       a.append(img);
       box.append(a);
     } else if (m.kind === 'file') {

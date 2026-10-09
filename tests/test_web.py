@@ -149,6 +149,7 @@ class WebTest(WebCase):
         sent = self.ses.sent[0]
         self.assertEqual(sent["Destination"], {"ToAddresses": ["ada@example.com"]})
         self.assertEqual(sent["ConfigurationSetName"], "yvn-release-notes")
+        self.assertEqual(sent["EmailTags"], [{"Name": "release-notes-mail", "Value": "account"}])
         self.assertIn("Release Notes <notes@yourversionnumber.com>", sent["FromEmailAddress"])
         stored = json.dumps(self.store.logins) + json.dumps(self.store.newest)
         self.assertNotIn(token, stored)

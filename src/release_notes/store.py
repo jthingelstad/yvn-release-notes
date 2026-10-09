@@ -107,6 +107,24 @@ class Store:
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
         return [Subscriber.from_item(i) for i in items]
 
+    def census_items(self) -> list[dict]:
+        """Every subscriber's profile, sent days and notes, for the
+        dashboard's counts (census.py): keys and a few fields, never a note's
+        text, an address or a reply token."""
+        items, kwargs = [], {
+            "FilterExpression": "begins_with(pk, :u) AND (sk = :p OR begins_with(sk, :d) OR begins_with(sk, :n))",
+            "ProjectionExpression": "pk, sk, #st, tz, send_time, last_sent_date, pause_from, pause_through, #src, #m[0].#k",
+            "ExpressionAttributeNames": {"#st": "status", "#src": "source", "#m": "media", "#k": "kind"},
+            "ExpressionAttributeValues": {":u": "USER#", ":p": "PROFILE", ":d": "DAY#", ":n": "NOTE#"},
+        }
+        while True:
+            page = self.table.scan(**kwargs)
+            items.extend(page.get("Items", []))
+            if "LastEvaluatedKey" not in page:
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        return items
+
     def get_subscriber(self, user_id: str) -> Subscriber | None:
         item = self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": "PROFILE"}).get("Item")
         return Subscriber.from_item(item) if item else None

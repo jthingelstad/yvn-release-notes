@@ -33,8 +33,8 @@ import time as time_module
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import media, weather
-from .compose import build_message, from_header, new_token, welcome_line
+from . import census, media, weather
+from .compose import MAIL_TAG, build_message, from_header, new_token, welcome_line
 from .notes import combine, day_links
 from .store import Store, Subscriber
 from .streak import Streak, compute_streak, pause_days
@@ -46,6 +46,8 @@ WINDOW = timedelta(hours=3)
 RESERVE_MS = 20_000
 # Weather for a whole run gets this long; past it the rest go without.
 WEATHER_BUDGET = 30.0
+# The dashboard's counts need this much of the function's time left.
+CENSUS_MS = 10_000
 
 # Fail at cold start, not at someone's send time, if the runtime ever ships
 # without a zone database (zoneinfo reads the system's; there is no tzdata pin).
@@ -211,9 +213,23 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
             # fails at the end so the Errors alarm sees it.
             failed += 1
     log(event="run", now=now.isoformat(), dry_run=dry_run, send_now=bool(send_now), due=len(results) + failed, failed=failed)
+    if not (dry_run or send_now):
+        report(store, now, context)
     if failed:
         raise RuntimeError(f"{failed} send(s) failed")
     return {"dry_run": dry_run, "now": now.isoformat(), "results": results}
+
+
+def report(store: Store, now: datetime, context) -> None:
+    """The dashboard's counts (census.py), once a scheduled run is done. A
+    failure here is logged and never fails the run."""
+    if context is not None and context.get_remaining_time_in_millis() < CENSUS_MS:
+        log(event="census-skipped")
+        return
+    try:
+        print(json.dumps(census.line(census.counts(store.census_items(), now), now), separators=(",", ":")))
+    except Exception as e:
+        log(event="census-error", error=type(e).__name__)
 
 
 def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None) -> dict:
@@ -248,6 +264,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None)
             Destination={"ToAddresses": [sub.email]},
             Content={"Raw": {"Data": msg.as_bytes()}},
             ConfigurationSetName=os.environ["CONFIG_SET"],
+            EmailTags=[{"Name": MAIL_TAG, "Value": "daily"}],
         )
     except Exception as e:
         store.release_day(sub.user_id, day, previous)

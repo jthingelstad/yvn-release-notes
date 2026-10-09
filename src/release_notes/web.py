@@ -23,7 +23,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from . import auth, export, export_job, links, media, places, weather
-from .compose import DOTS, from_header, next_release
+from .compose import DOTS, MAIL_TAG, from_header, next_release
 from .notes import MAX_NOTE
 from .streak import ONE_DAY, compute_streak, pause_days
 from .version import anniversary, compute_version
@@ -231,6 +231,7 @@ def send_mail(app: App, email: str, msg) -> None:
             Destination={"ToAddresses": [email]},
             Content={"Raw": {"Data": msg.as_bytes()}},
             ConfigurationSetName=os.environ["CONFIG_SET"],
+            EmailTags=[{"Name": MAIL_TAG, "Value": "account"}],
         )
     except Exception as e:
         code_name = (getattr(e, "response", None) or {}).get("Error", {}).get("Code")

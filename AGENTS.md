@@ -52,7 +52,8 @@ notes.yourversionnumber.com (CloudFront)
   library only. `links.py`: addresses in notes, their saved titles, and the
   guarded fetch. `media.py`: photos and recordings out of a reply.
 - `send.py`, `inbound.py`, `events.py`: the mail handlers. `store.py`: the one table and its
-  key layout (documented at the top of the file).
+  key layout (documented at the top of the file). `census.py`: the
+  dashboard's counts, put out by the sender (its docstring lists them).
 - `infra/template.yaml`: the whole stack. `deploy.sh` packages, deploys and
   activates the receipt rule set.
 
@@ -136,6 +137,19 @@ runtime and is imported lazily so the tests run without it.
   with `scripts/tally.py`. Never per person. A stopped subscriber gets
   nothing from the product, so the unsubscribe count is the one to watch
   (Jamie, 2026-10-08).
+- **The operations dashboard is CloudWatch, not the web app** (Jamie,
+  2026-10-09: "instead of part of the application ... an AWS dashboard").
+  Dashboard `yvn-release-notes` (stack output `DashboardUrl`), behind AWS
+  sign-in. Counts only: no address, user id or note text on it. Its sources:
+  the census line the sender prints at the end of every scheduled run
+  (embedded metrics, namespace `ReleaseNotes`; never on a dry run or
+  `send_now`; a failure is logged and never fails the run), SES's
+  `mail-metrics` destination (send, delivery, bounce, complaint, reject,
+  counted by the `release-notes-mail` tag: `daily` or `account`; still no
+  opens or clicks), and Logs Insights over the functions' logs. A new
+  dashboard number goes in `census.py`; `tests/test_census.py` checks the
+  dashboard's JSON and that every census metric it shows exists. The
+  per-person view is `scripts/subscribers.py`, on this Mac only.
 - **Deleting an account deletes it**: raw emails, photos and recordings,
   any zip export, tokens, every `USER#` item, the address and the profile, after a code mailed to the address.
   Nothing is kept; the export is offered first.
@@ -290,6 +304,14 @@ runtime and is imported lazily so the tests run without it.
   events go to `yvn-release-notes-mail-events`, read only by the events
   function, which puts a scrubbed line on the alarms topic.
 - The monthly counts: `scripts/tally.py` (reads only).
+- The dashboard: stack output `DashboardUrl`. Alarm `yvn-release-notes-overdue`
+  fires when anyone's email is over half an hour late for two quarter
+  hours (census `Overdue`); a send time moved past today's window also
+  trips it, for that day.
+- One row per subscriber (address, state, sign-up day, send time, last
+  email, last note, notes, 30-day reply rate): `scripts/subscribers.py`.
+  Reads keys and a few fields, never note text. It prints addresses, so its
+  output stays on this Mac.
 - DNS for `yourversionnumber.com` is at Namecheap; Jamie applies records by
   hand. The stack needs: the three DKIM CNAMEs (stack outputs `DkimRecord1-3`),
   an MX on the inbound subdomain to SES inbound, and an MX plus SPF on the

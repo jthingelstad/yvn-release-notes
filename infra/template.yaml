@@ -159,6 +159,23 @@ Resources:
         SnsDestination:
           TopicARN: !Ref MailEventsTopic
 
+  # Every email counted in CloudWatch for the dashboard, by its kind (the
+  # release-notes-mail tag: daily or account). Counts only; still no open
+  # or click events.
+  ConfigurationSetMetrics:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref ConfigurationSet
+      EventDestination:
+        Name: mail-metrics
+        Enabled: true
+        MatchingEventTypes: [send, delivery, bounce, complaint, reject]
+        CloudWatchDestination:
+          DimensionConfigurations:
+            - DimensionName: release-notes-mail
+              DimensionValueSource: messageTag
+              DefaultDimensionValue: other
+
   MailEventsTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -959,6 +976,122 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlarmTopic]
 
+  # Anyone's email overdue: their send time was over half an hour ago and
+  # nothing went (census.py). A count from the sender's census line.
+  OverdueAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-overdue"
+      AlarmDescription: Someone's daily email is over half an hour late. The sender may be failing, or a send time moved past today's window.
+      Namespace: ReleaseNotes
+      MetricName: Overdue
+      Statistic: Maximum
+      Period: 900
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  # The operations dashboard (Jamie, 2026-10-09). Counts only: no address,
+  # no user id, no note text. Behind AWS sign-in, so nothing in the web app.
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Ref AWS::StackName
+      DashboardBody: !Sub |
+        {
+          "start": "-P14D",
+          "periodOverride": "inherit",
+          "widgets": [
+            {"type": "text", "x": 0, "y": 0, "width": 24, "height": 2, "properties": {
+              "markdown": "# Release Notes\nCounts only: no addresses, no note text. Subscribers, notes and writers come from the sender's census line every quarter hour (`census.py`); emails from SES; mail in and account events from the functions' logs, kept 90 days. One row per person: `scripts/subscribers.py`."}},
+            {"type": "alarm", "x": 0, "y": 2, "width": 24, "height": 3, "properties": {
+              "title": "Alarms",
+              "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${InboundErrorsAlarm.Arn}", "${EventsErrorsAlarm.Arn}", "${WebErrorsAlarm.Arn}", "${ExportErrorsAlarm.Arn}"]}},
+            {"type": "metric", "x": 0, "y": 5, "width": 24, "height": 4, "properties": {
+              "title": "Right now", "view": "singleValue", "region": "${AWS::Region}",
+              "period": 900, "stat": "Maximum", "setPeriodToTimeRange": false, "sparkline": true,
+              "metrics": [
+                ["ReleaseNotes", "Subscribers", {"label": "Getting the email"}],
+                ["ReleaseNotes", "Paused", {"label": "Paused"}],
+                ["ReleaseNotes", "Stopped", {"label": "Stopped"}],
+                ["ReleaseNotes", "Overdue", {"label": "Email overdue"}],
+                ["ReleaseNotes", "Notes", {"label": "Notes"}],
+                ["ReleaseNotes", "Writers7", {"label": "Wrote this week"}],
+                ["ReleaseNotes", "ReplyRate30", {"label": "Reply rate, 30 days (%)"}]
+              ]}},
+            {"type": "metric", "x": 0, "y": 9, "width": 12, "height": 6, "properties": {
+              "title": "Emails a day, by kind (SES)", "view": "timeSeries", "region": "${AWS::Region}",
+              "period": 86400, "stat": "Sum",
+              "metrics": [
+                [{"expression": "SEARCH('{AWS/SES,\"release-notes-mail\"}', 'Sum', 86400)", "id": "mail"}]
+              ]}},
+            {"type": "metric", "x": 12, "y": 9, "width": 12, "height": 6, "properties": {
+              "title": "SES account reputation", "view": "timeSeries", "region": "${AWS::Region}",
+              "period": 3600, "stat": "Maximum",
+              "metrics": [
+                ["AWS/SES", "Reputation.BounceRate", {"label": "Bounce rate"}],
+                ["AWS/SES", "Reputation.ComplaintRate", {"label": "Complaint rate", "yAxis": "right"}]
+              ],
+              "annotations": {"horizontal": [
+                {"value": 0.05, "label": "Bounces: AWS reviews at 5%"},
+                {"value": 0.001, "label": "Complaints: AWS reviews at 0.1%", "yAxis": "right"}
+              ]}}},
+            {"type": "metric", "x": 0, "y": 15, "width": 12, "height": 6, "properties": {
+              "title": "Notes added a day", "view": "timeSeries", "stacked": true, "region": "${AWS::Region}",
+              "period": 86400, "stat": "Maximum",
+              "metrics": [
+                [{"expression": "DIFF(email)", "label": "By email", "id": "byEmail"}],
+                [{"expression": "DIFF(web)", "label": "On the web", "id": "onWeb"}],
+                ["ReleaseNotes", "EmailNotes", {"id": "email", "visible": false}],
+                ["ReleaseNotes", "WebNotes", {"id": "web", "visible": false}]
+              ]}},
+            {"type": "metric", "x": 12, "y": 15, "width": 12, "height": 6, "properties": {
+              "title": "Subscribers and writers", "view": "timeSeries", "region": "${AWS::Region}",
+              "period": 86400, "stat": "Maximum",
+              "metrics": [
+                ["ReleaseNotes", "Subscribers", {"label": "Getting the email"}],
+                ["ReleaseNotes", "Writers7", {"label": "Wrote in the last 7 days"}],
+                ["ReleaseNotes", "Writers30", {"label": "Wrote in the last 30 days"}],
+                ["ReleaseNotes", "ReplyRate30", {"label": "Reply rate, 30 days (%)", "yAxis": "right"}]
+              ]}},
+            {"type": "log", "x": 0, "y": 21, "width": 12, "height": 6, "properties": {
+              "title": "Mail in: filed or ignored, and why", "view": "table", "region": "${AWS::Region}",
+              "query": "SOURCE '${InboundLogs}' | filter event = 'inbound' | stats count(*) as messages by outcome, reason | sort messages desc"}},
+            {"type": "log", "x": 12, "y": 21, "width": 12, "height": 6, "properties": {
+              "title": "Accounts: sign-ups, stops and sign-ins", "view": "table", "region": "${AWS::Region}",
+              "query": "SOURCE '${WebLogs}' | SOURCE '${EventsLogs}' | filter event in ['signup', 'signin-sent', 'unsubscribe', 'pause', 'resume', 'account-deleted'] or (event = 'mail-event' and outcome = 'stopped') | stats count(*) as times by event, reason | sort times desc"}},
+            {"type": "metric", "x": 0, "y": 27, "width": 8, "height": 6, "properties": {
+              "title": "Function errors", "view": "timeSeries", "region": "${AWS::Region}",
+              "period": 3600, "stat": "Sum",
+              "metrics": [
+                ["AWS/Lambda", "Errors", "FunctionName", "${SenderFunction}", {"label": "sender"}],
+                ["AWS/Lambda", "Errors", "FunctionName", "${InboundFunction}", {"label": "inbound"}],
+                ["AWS/Lambda", "Errors", "FunctionName", "${WebFunction}", {"label": "web"}],
+                ["AWS/Lambda", "Errors", "FunctionName", "${EventsFunction}", {"label": "events"}],
+                ["AWS/Lambda", "Errors", "FunctionName", "${ExportFunction}", {"label": "export"}]
+              ]}},
+            {"type": "metric", "x": 8, "y": 27, "width": 8, "height": 6, "properties": {
+              "title": "Web API requests", "view": "timeSeries", "region": "${AWS::Region}",
+              "period": 3600, "stat": "Sum",
+              "metrics": [
+                ["AWS/ApiGateway", "Count", "ApiId", "${WebApi}", {"label": "requests"}],
+                ["AWS/ApiGateway", "4xx", "ApiId", "${WebApi}", {"label": "4xx"}],
+                ["AWS/ApiGateway", "5xx", "ApiId", "${WebApi}", {"label": "5xx"}]
+              ]}},
+            {"type": "metric", "x": 16, "y": 27, "width": 8, "height": 6, "properties": {
+              "title": "Mail bucket size (emails, photos, exports)", "view": "timeSeries", "region": "${AWS::Region}",
+              "period": 86400, "stat": "Average",
+              "metrics": [
+                ["AWS/S3", "BucketSizeBytes", "BucketName", "${MailBucket}", "StorageType", "StandardStorage", {"label": "bytes"}]
+              ]}},
+            {"type": "log", "x": 0, "y": 33, "width": 24, "height": 7, "properties": {
+              "title": "Recent problems", "view": "table", "region": "${AWS::Region}",
+              "query": "SOURCE '${SenderLogs}' | SOURCE '${InboundLogs}' | SOURCE '${WebLogs}' | SOURCE '${EventsLogs}' | SOURCE '${ExportLogs}' | filter (ispresent(event) and (event like /error|failed|out-of-time|census-skipped/ or status >= 500)) or (not ispresent(event) and @message like /ERROR|Task timed out/) | fields @timestamp, @log, coalesce(event, @message) as what, error, code, status | sort @timestamp desc | limit 25"}}
+          ]
+        }
+
 Outputs:
   TableName:
     Value: !Ref Table
@@ -981,3 +1114,6 @@ Outputs:
     Value: !Sub "${EmailIdentity.DkimDNSTokenName2} CNAME ${EmailIdentity.DkimDNSTokenValue2}"
   DkimRecord3:
     Value: !Sub "${EmailIdentity.DkimDNSTokenName3} CNAME ${EmailIdentity.DkimDNSTokenValue3}"
+  DashboardUrl:
+    Description: The operations dashboard
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/${Dashboard}"

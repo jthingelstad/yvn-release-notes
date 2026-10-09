@@ -30,8 +30,9 @@ An entry becomes one note, `NOTE#<day>#d1-<uuid>`:
   rich text).
 
 An entry with no text and no file is left out, and so is one Day One
-wrote itself (its welcome guide). An all-day entry is `all_day`: its page
-shows no time.
+wrote itself (its welcome guide). An all-day entry is a note at midnight
+(Jamie, 2026-10-09: "just accept the 12:00 AM timestamp"); its original
+keeps Day One's mark.
 """
 
 import json
@@ -349,8 +350,6 @@ def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict
             "tz": zone(e),
             "raw_key": f"raw/{APP}/{user_id}/{e['uuid']}.json",
         }
-        if e.get("isAllDay"):
-            item["all_day"] = True
         if place:
             item["place"] = {**place, "from": source}
         if found := tags.found(text):

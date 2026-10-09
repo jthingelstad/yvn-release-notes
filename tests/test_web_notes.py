@@ -357,14 +357,6 @@ class WhereAndWhenTest(NotesCase):
         _, day = self.get(f"/api/days/{TODAY}")
         self.assertEqual([(n["id"], n["at"]) for n in day["notes"]], [("old", "2026-10-08T11:00:00Z"), ("new", "2026-10-08T12:00:00Z")])
 
-    def test_an_all_day_note_says_so(self):
-        self.emailed("2026-10-06", "d1-c", source="import", all_day=True)
-        _, day = self.get("/api/days/2026-10-06")
-        self.assertTrue(day["notes"][0]["all_day"])
-        self.emailed("2026-10-05", "d1-d", source="import")
-        _, day = self.get("/api/days/2026-10-05")
-        self.assertNotIn("all_day", day["notes"][0])
-
     def test_an_imported_note_shows_its_place_and_app(self):
         place = {"venue": "Four Seasons Mall", "city": "Plymouth", "region": "Minnesota", "country": "United States",
                  "lat": 45.03, "lon": -93.41}

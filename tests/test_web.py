@@ -372,7 +372,7 @@ class WebTest(WebCase):
         self.assertIn("Read [Page A](https://example.com/a) and [my post](https://example.com/p).", export.markdown(data))
 
     def test_export_keeps_where_when_and_tags(self):
-        place = {"name": "Four Seasons Mall", "city": "Plymouth", "region": "Minnesota", "country": "United States",
+        place = {"venue": "Four Seasons Mall", "city": "Plymouth", "region": "Minnesota", "country": "United States",
                  "lat": Decimal("45.03"), "lon": Decimal("-93.41")}
         items = [
             {"sk": "PROFILE", "birthday": "1981-06-14"},

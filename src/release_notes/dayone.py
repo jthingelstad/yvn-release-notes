@@ -15,11 +15,19 @@ An entry becomes one note, `NOTE#<day>#d1-<uuid>`:
   `[words](url)` link as `words <url>`, the way a mail app writes one;
 - its Day One tags, and the journal's name for any journal but the main one,
   become a closing line of hashtags (tags.py);
-- its place is its own location; else one its photos carry (named after a
-  named place within a few kilometres, if there is one); else that day's
-  other entries'; else the subscriber's city (Jamie, 2026-10-09: "assume no
-  location is Minneapolis");
-- photos, the recording and PDFs, in Day One's order, are its media.
+- its place is its own location; else the first spot its photos carry
+  (taking the town of an entry's place within a few kilometres when the
+  photo has none); else that day's other entries'; else the subscriber's
+  city (Jamie, 2026-10-09: "assume no location is Minneapolis"). A place
+  keeps everything Day One knew (Jamie, 2026-10-09: "we don't lose the
+  resolution"): label, venue or street address, town, coordinates to six
+  places and their accuracy, and `from`, which of those it came from;
+- photos, the recording and PDFs, in Day One's order, are its media, a
+  photo with its own spot and when it was taken;
+- the entry itself, as Day One wrote it, is kept whole at `raw_key`
+  (`raw/dayone/<user>/<uuid>.json`), the way a reply's raw email is: the
+  safety net for anything not carried over (Day One's weather, devices,
+  rich text).
 
 An entry with no text and no file is left out.
 """
@@ -37,7 +45,12 @@ from .version import compute_version
 
 APP = "dayone"
 MAIN_JOURNAL = "Journal"
-NEAR_KM = 5.0  # a photo's coordinates take a named place this close
+NEAR_KM = 5.0  # a photo's spot takes the town of an entry's place this close
+DIGITS = 6     # coordinates to about ten centimetres: what the device knew, less the noise
+# Day One names a spot with no venue by its street address: "5237 Morgan Ave S",
+# "300–338 Washington Ave S". "7-Eleven", "3M Center" and "7th St & 3rd Ave"
+# are venues.
+ADDRESS = re.compile(r"^\d+(?:\s?[–-]\s?\d+)?\s+\S")
 
 # Zone names Day One wrote that browsers or tzdata spell differently now.
 ZONES = {"US/Central": "America/Chicago", "US/Eastern": "America/New_York", "US/Mountain": "America/Denver",
@@ -141,20 +154,30 @@ def day_of(entry: dict) -> str:
     return written(entry).astimezone(ZoneInfo(zone(entry))).date().isoformat()
 
 
-def _round(x) -> float:
-    return round(float(x), 2)
+def _coord(x) -> float:
+    return round(float(x), DIGITS)
 
 
 def place_of(location: dict) -> dict | None:
-    """A Day One location as a note's place, or None without coordinates.
-    The writer's own label ("Cabin", "Home") is the name when there is one."""
+    """A Day One location as a place (notes.py), keeping all it says, or
+    None without coordinates: the writer's own `label` ("Cabin", "Home"),
+    the `venue` Day One found there, or the street `address` when that is
+    what Day One called it, the town, the coordinates and how far off they
+    may be (`accuracy_m`, Day One's radius)."""
     if location.get("latitude") is None or location.get("longitude") is None:
         return None
-    out = {"name": location.get("userLabel") or location.get("placeName") or "",
-           "city": location.get("localityName") or "", "region": location.get("administrativeArea") or "",
-           "country": location.get("country") or "",
-           "lat": _round(location["latitude"]), "lon": _round(location["longitude"])}
-    return {k: v for k, v in out.items() if v != ""}
+    label = (location.get("userLabel") or "").strip()
+    found = (location.get("placeName") or "").strip()
+    city = (location.get("localityName") or "").strip()
+    address = bool(ADDRESS.match(found))
+    radius = (location.get("region") or {}).get("radius")
+    out = {"label": label, "venue": "" if address or found in (label, city) else found,
+           "address": found if address else "", "city": city,
+           "region": (location.get("administrativeArea") or "").strip(),
+           "country": (location.get("country") or "").strip(),
+           "lat": _coord(location["latitude"]), "lon": _coord(location["longitude"]),
+           "accuracy_m": round(float(radius)) if radius else None}
+    return {k: v for k, v in out.items() if v not in ("", None)}
 
 
 def _km(a: dict, b: dict) -> float:
@@ -163,16 +186,19 @@ def _km(a: dict, b: dict) -> float:
     return 6371 * 2 * math.asin(math.sqrt(h))
 
 
-def nearest_named(point: dict, named: list[dict]) -> dict | None:
-    best = min(named, key=lambda p: _km(point, p), default=None)
+def nearest(point: dict, places: list[dict]) -> dict | None:
+    best = min(places, key=lambda p: _km(point, p), default=None)
     return best if best and _km(point, best) <= NEAR_KM else None
+
+
+TOWN = ("city", "region", "country")
 
 
 def home_place(profile: dict) -> dict | None:
     if profile.get("lat") is None or profile.get("lon") is None:
         return None
     out = {"city": profile.get("city") or "", "region": profile.get("region") or "",
-           "country": profile.get("country") or "", "lat": _round(profile["lat"]), "lon": _round(profile["lon"])}
+           "country": profile.get("country") or "", "lat": _coord(profile["lat"]), "lon": _coord(profile["lon"])}
     return {k: v for k, v in out.items() if v != ""}
 
 
@@ -208,6 +234,8 @@ def files_of(entry: dict, index: dict[tuple[str, str], str]) -> tuple[list[dict]
                 item["duration"] = round(float(f["duration"]), 1)
             if f.get("date"):
                 item["taken_at"] = f["date"]
+            if spot := place_of(f.get("location") or {}):
+                item["place"] = spot
             if folder == "pdfs" and f.get("pdfName"):
                 item["name"] = f"{f['pdfName']}.pdf"
             found.append(item)
@@ -243,22 +271,20 @@ def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict
     def entry_url(uuid: str) -> str | None:
         return f"{web_origin}/day/?d={days[uuid]}" if uuid in days else None
 
-    named_places = [p for e in entries if (p := place_of(e.get("location") or {})) and p.get("name")]
+    towns = [p for e in entries if (p := place_of(e.get("location") or {})) and p.get("city")]
 
-    # Where each entry was, and each day's first place.
+    # Where each entry was, and each day's first place. A photo's spot keeps
+    # what the photo says and borrows only the town from an entry nearby.
     where: dict[str, tuple[dict | None, str]] = {}
     for e in entries:
         own = place_of(e.get("location") or {})
         if own:
             where[e["uuid"]] = (own, "entry")
             continue
-        pic = next((p["location"] for p in e.get("photos") or [] if (p.get("location") or {}).get("latitude") is not None), None)
-        if pic:
-            point = {"lat": _round(pic["latitude"]), "lon": _round(pic["longitude"])}
-            near = nearest_named(point, named_places)
-            where[e["uuid"]] = ({**{k: v for k, v in near.items() if k not in ("lat", "lon")}, **point} if near else point, "photo")
-        else:
-            where[e["uuid"]] = (None, "")
+        pic = next((p for f in e.get("photos") or [] if (p := place_of(f.get("location") or {}))), None)
+        if pic and "city" not in pic and (near := nearest(pic, towns)):
+            pic.update({k: near[k] for k in TOWN if k in near})
+        where[e["uuid"]] = (pic, "photo") if pic else (None, "")
     day_place: dict[str, dict] = {}
     for e in sorted(entries, key=lambda e: e["creationDate"]):
         p, _ = where[e["uuid"]]
@@ -298,9 +324,10 @@ def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict
             "origin": {"app": APP, "journal": journal, "id": e["uuid"]},
             "written_at": written(e).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "tz": zone(e),
+            "raw_key": f"raw/{APP}/{user_id}/{e['uuid']}.json",
         }
         if place:
-            item["place"] = place
+            item["place"] = {**place, "from": source}
         if found := tags.found(text):
             item["tags"] = found
         media = []
@@ -310,6 +337,7 @@ def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict
         if media:
             item["media"] = media
         notes.append({"date": day, "id": note_id, "item": item, "named": named, "tag_line": line, "place_from": source,
+                      "original": e,
                       "zone_was": e.get("timeZone"),
                       "urls": links.urls(text), "all_day": bool(e.get("isAllDay")),
                       "starred": bool(e.get("starred")), "modified": e.get("modifiedDate")})
@@ -326,5 +354,7 @@ def weather_days(notes: list[dict]) -> dict[str, dict]:
         for n in sorted(notes, key=lambda n: n["item"]["written_at"]):
             p = n["item"].get("place")
             if p and n["date"] not in out and (n["place_from"] == "home") == home:
-                out[n["date"]] = {**p, "tz": n["item"]["tz"]}
+                # Only the town and coordinates to two places go to Open-Meteo.
+                out[n["date"]] = {**{k: p[k] for k in TOWN if k in p}, "lat": round(p["lat"], 2),
+                                  "lon": round(p["lon"], 2), "tz": n["item"]["tz"]}
     return dict(sorted(out.items()))

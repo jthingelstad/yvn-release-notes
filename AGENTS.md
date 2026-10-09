@@ -179,7 +179,8 @@ runtime and is imported lazily so the tests run without it.
   already kept. The table's stream (NEW_AND_OLD_IMAGES, read by the
   transcriber alone) starts a batch job per recording; Transcribe's job
   events bring the words back as `transcript` on the file's media entry
-  (`""` when a job failed or heard nothing). The words show under the
+  (`""` when a job failed or heard nothing). The words show in italics (Jamie: so
+  it "isn't text you typed") under the
   player, are searched, and go in both exports; not in the email. Jamie
   wanted the settings copy casual and the service unnamed ("They're sent
   off to be transcribed"). The account has no AI services opt-out (Jamie,

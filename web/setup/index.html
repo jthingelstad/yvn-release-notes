@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Set up: Release Notes</title>
-<link rel="stylesheet" href="/assets/site.css?v=8">
-<script src="/assets/app.js?v=11" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=9">
+<script src="/assets/app.js?v=12" defer></script>
 </head>
 <body data-page="setup">
 <main>
@@ -28,7 +28,10 @@
       <label>Where you are, to the city
         <input type="search" name="city" autocomplete="off" placeholder="Start typing a city" required>
       </label>
-      <div class="places" role="listbox" aria-label="Places"></div>
+      <div>
+        <div class="places" role="listbox" aria-label="Places"></div>
+        <p class="hint places-status" role="status"></p>
+      </div>
       <p class="aside picked" hidden>Time zone: <strong class="picked-tz"></strong></p>
       <p class="hint">Only the city. It sets your time zone and, later, the weather in your email. Places from <a href="https://open-meteo.com/">Open-Meteo</a>.</p>
     </div>
@@ -41,6 +44,7 @@
       <button class="go" type="submit">Start my release notes</button>
       <p class="error" role="alert" hidden></p>
       <p class="hint" id="first-email"></p>
+      <p class="hint">It comes from <strong>notes@yourversionnumber.com</strong>. Add that to your contacts so the emails don&rsquo;t land in junk.</p>
     </div>
   </form>
 </main>

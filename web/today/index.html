@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Today: Release Notes</title>
-<link rel="stylesheet" href="/assets/site.css?v=8">
-<script src="/assets/app.js?v=11" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=9">
+<script src="/assets/app.js?v=12" defer></script>
 </head>
 <body data-page="today">
 <main>
@@ -19,13 +19,14 @@
 
   <div id="day" hidden>
     <p class="dateline" id="date"></p>
-    <p class="vnum huge tight" id="v"></p>
+    <h1 class="vnum huge tight" id="v"></h1>
     <p class="dots" id="dots" aria-hidden="true"></p>
     <p class="hint" id="next"></p>
     <p class="hint" id="paused" hidden></p>
 
     <h2 class="big notes-head">Today&rsquo;s release notes</h2>
     <div class="notes" id="notes"></div>
+    <p class="hint empty-day" id="empty" hidden></p>
   <form id="note-form" class="note-form" novalidate>
     <label>Add to today
       <textarea name="text" rows="3" placeholder="Anything about the day"></textarea>

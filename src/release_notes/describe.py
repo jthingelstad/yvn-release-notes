@@ -24,6 +24,9 @@ Two ways in, one function:
 The key is `api_key` in the Secrets Manager secret named by `SECRET`, read
 by the function when it runs. Until it holds a real key (one starting
 `sk-ant-`), nothing is sent and photos stay waiting: a pass logs `no-key`.
+Invoked with `{"check": true}`, it describes a made-up blue square through
+the whole path and returns what came back, writing nothing: run it after
+the key changes, before anyone's photos go.
 
 The API takes JPEG, PNG, GIF and WebP up to 5 MB once base64-encoded
 (3.75 MB of file) and 8,000 pixels a side; the code is standard library
@@ -59,11 +62,12 @@ PROMPT = ("Describe this photo in one or two plain sentences, so it can be found
 
 
 class ApiError(Exception):
-    """An answer from the API other than 200: its status and error type."""
+    """An answer from the API other than 200: its status, error type, and
+    whether its message is about the image (the message itself is not kept)."""
 
-    def __init__(self, status: int, kind: str | None):
-        super().__init__(f"{status} {kind}")
-        self.status, self.kind = status, kind
+    def __init__(self, status: int, kind: str | None, about_image: bool = False):
+        super().__init__(f"{status} {kind}" + (" (image)" if about_image else ""))
+        self.status, self.kind, self.about_image = status, kind, about_image
 
 
 class NoKey(Exception):
@@ -96,10 +100,10 @@ def claude_with(key: str, timeout: float = 60):
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             try:
-                kind = json.loads(e.read()).get("error", {}).get("type")
+                error = json.loads(e.read()).get("error", {})
             except ValueError:
-                kind = None
-            raise ApiError(e.code, kind) from None
+                error = {}
+            raise ApiError(e.code, error.get("type"), "image" in str(error.get("message", "")).lower()) from None
     return ask
 
 
@@ -128,9 +132,12 @@ def words_for(data: bytes, ctype: str, *, claude) -> str:
                 {"type": "text", "text": PROMPT}]}],
         })
     except ApiError as e:
-        if e.status == 400 and e.kind == "invalid_request_error":  # not an image it can read
+        if e.status == 400 and e.kind == "invalid_request_error" and e.about_image:  # not an image it can read
             return ""
-        raise  # the key refused, rate limited, overloaded: tried again later
+        # Anything else (the key refused, rate limited, overloaded, or a
+        # request the API will not take for any photo) is raised and tried
+        # again later, never written as "no words" for every photo.
+        raise
     if r.get("stop_reason") == "refusal":
         return ""
     # Text blocks only: a thinking block comes first. Thinking that used the
@@ -212,6 +219,27 @@ def describe_all(user_id: str, *, store, s3, claude, lam, bucket: str, time_left
     return {"photos": done, "more": False}
 
 
+def test_image() -> bytes:
+    """A 64 x 64 PNG, all one blue: something made up to describe."""
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    rows = b"".join(b"\x00" + b"\x1f\x4f\xc8" * 64 for _ in range(64))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 64, 64, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+def check(claude) -> dict:
+    """`{"check": true}`: the whole path (secret, network, model, request)
+    with a made-up image, writing nothing. Says what came back."""
+    try:
+        return {"ok": True, "words": words_for(test_image(), "image/png", claude=claude)}
+    except ApiError as e:
+        return {"ok": False, "status": e.status, "error": e.kind, "about_image": e.about_image}
+
+
 def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secrets=None):
     """`claude` is a Messages API call (claude_with); left out, it is made
     from the secret's key, read once a run and only when a photo needs it."""
@@ -232,6 +260,13 @@ def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secre
             made["ask"] = claude_with(key_from(secrets, os.environ["SECRET"]))
         return made["ask"]
 
+    if event.get("check"):
+        try:
+            result = check(ask())
+        except NoKey:
+            result = {"ok": False, "error": "no-key"}
+        log(event="describe-check", ok=result["ok"], **{k: v for k, v in result.items() if k not in ("ok", "words")})
+        return result
     try:
         if "describe_all" in event:
             started = time.monotonic()

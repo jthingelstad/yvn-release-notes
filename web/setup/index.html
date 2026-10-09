@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Set up: Release Notes</title>
-<link rel="stylesheet" href="/assets/site.css?v=9">
-<script src="/assets/app.js?v=12" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=10">
+<script src="/assets/app.js?v=13" defer></script>
 </head>
 <body data-page="setup">
 <main>
@@ -14,14 +14,38 @@
     <a class="brand" href="/">Release Notes</a>
   </header>
 
-  <h1>Three things, then you&rsquo;re set.</h1>
+  <h1 id="setup-head">Three things, then you&rsquo;re set.</h1>
+  <!-- A birthday typed on the front page arrives here (pendingBirthday in
+       app.js): shown as a sentence, with the fields one tap away. -->
+  <div id="known" hidden>
+    <p class="lede">You&rsquo;re <span class="vnum inline" id="known-v"></span> today, born <span id="known-date"></span>. <button class="quiet inline" type="button" id="not-right">Not right?</button></p>
+    <p class="hint spaced">Your birthday numbers every day you keep, so it can&rsquo;t be changed later.</p>
+  </div>
 
   <form id="setup-form" class="roomy" novalidate>
-    <div class="stack tight">
-      <label>Your birthday
-        <input type="date" name="birthday" min="1900-01-01" required>
-      </label>
+    <div class="stack tight" id="birthday-stack">
+      <fieldset class="birthday">
+        <legend>Your birthday</legend>
+        <div class="mdy">
+          <label>Month
+            <select name="month" autocomplete="bday-month" required>
+              <option value="">&mdash;</option>
+              <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+              <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+              <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+              <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+            </select>
+          </label>
+          <label>Day
+            <input name="day" inputmode="numeric" autocomplete="bday-day" maxlength="2" placeholder="DD" required>
+          </label>
+          <label>Year
+            <input name="year" inputmode="numeric" autocomplete="bday-year" maxlength="4" placeholder="YYYY" required>
+          </label>
+        </div>
+      </fieldset>
       <p class="aside" id="that-makes" hidden>That makes you <span class="vnum inline" id="setup-v"></span> today.</p>
+      <p class="hint">It numbers every day you keep, so it can&rsquo;t be changed later.</p>
     </div>
 
     <div class="stack tight place-picker">

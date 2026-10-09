@@ -164,8 +164,8 @@ runtime and is imported lazily so the tests run without it.
   (`tests/test_compose.py` enforces it). Preview by writing `html_body()` to a
   file and screenshotting it; for phone width use a 390px iframe in a wider
   window, since headless Chrome will not lay out below ~500px.
-- **The number stands alone.** No decades/years/days breakdown under it
-  (Jamie, 2026-10-07: "super redundant"). Below it: a row of 24 text dots for
+- **The number stands alone in the email.** No decades/years/days breakdown
+  under it (Jamie, 2026-10-07: "super redundant"). Below it: a row of 24 text dots for
   how far through the year, the ask, then the reply streak.
 - **Streaks** (`streak.py`) count days in a row with a note, up to yesterday,
   from the NOTE keys alone (no new storage). A late reply fills its own day in,
@@ -208,6 +208,17 @@ runtime and is imported lazily so the tests run without it.
   once, through the sender's `send_now`, with one welcome line saying when
   the rest come; the schedule starts the next day. The ask in every email
   says photos and voice memos work too.
+- **The front page asks for the birthday first** (Jamie, 2026-10-08, option
+  A on the sign-up design canvas,
+  https://claude.ai/artifact/KzZxD1K7N9N6Rvq9SBhyxd): month, day and year
+  fields, then the number explained once (decades, years, days, the next
+  release, all from `/api/sample`), then the email. Nothing is written
+  before sign-in: the birthday waits in that browser's localStorage
+  (`pendingBirthday`, a day at most, since the emailed link often opens in
+  another tab) and setup shows it as a sentence ("Not right?" opens the
+  fields) and saves it with the city and time. "Sign in" (`/#sign-in`) is
+  the email alone, for anyone returning; links meant for signed-out
+  subscribers go there, not to `/`.
 - **Sessions last 14 days from the last visit** and every visit renews
   them, with no outer limit (Jamie, 2026-10-08). `auth.py` has the detail.
 - **No rotating prompts or nudges** for now (Jamie, 2026-10-07: "keep it

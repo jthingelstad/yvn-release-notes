@@ -356,7 +356,7 @@ function sourceName(n) {
 function noteMeta(n, tz) {
   const zone = n.tz || tz;
   let when = '';
-  if (n.at && !n.all_day) {
+  if (n.at) {
     when = n.late ? `${zoneShortDate(n.at, zone)}, ${zoneTime(n.at, zone)}` : zoneTime(n.at, zone);
     if (zone !== tz) {
       const name = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'short' })

@@ -74,7 +74,6 @@ def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | No
                     "text": item.get("text", ""),
                     "written_at": written_at(item) or None,
                     "tz": item.get("tz"),
-                    "all_day": bool(item.get("all_day")),
                     "place": _plain(item.get("place")),
                     "tags": list(item.get("tags") or []),
                     "origin": _plain(item.get("origin")),
@@ -96,7 +95,7 @@ def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | No
             n["version"] = n["version"] or str(compute_version(born, date.fromisoformat(n["date"])))
     notes.sort(key=lambda n: (n["date"], n["written_at"] or "", n["id"]))
     for n in notes:
-        for k in ("updated_at", "subject", "links", "files", "tz", "all_day", "place", "tags", "origin"):
+        for k in ("updated_at", "subject", "links", "files", "tz", "place", "tags", "origin"):
             if not n[k]:
                 del n[k]
     return {

@@ -378,15 +378,14 @@ class WebTest(WebCase):
             {"sk": "PROFILE", "birthday": "1981-06-14"},
             {"sk": "NOTE#2015-06-01#d1-ABC", "text": "Pizza.\n\n#tyler #mazie", "written_at": "2015-06-01T23:09:05Z",
              "source": "import", "tz": "America/Chicago", "tags": ["tyler", "mazie"], "place": place,
-             "origin": {"app": "dayone", "journal": "Journal", "id": "ABC"}, "all_day": True},
+             "origin": {"app": "dayone", "journal": "Journal", "id": "ABC"}},
             {"sk": "NOTE#2015-06-01#w-1", "text": "Later.", "written_at": "2015-06-02T01:00:00Z", "source": "web"},
         ]
         data = export.build(items, "2026-10-08T00:00:00Z")
         first, second = data["notes"]
         self.assertEqual((first["written_at"], first["tz"], first["tags"]), ("2015-06-01T23:09:05Z", "America/Chicago", ["tyler", "mazie"]))
         self.assertEqual((first["place"]["lat"], first["origin"]["app"]), (45.03, "dayone"))
-        self.assertTrue(first["all_day"])
-        self.assertTrue(not ({"tz", "all_day", "place", "tags", "origin"} & set(second)))
+        self.assertTrue(not ({"tz", "place", "tags", "origin"} & set(second)))
         md = export.markdown(data)
         self.assertIn("At Four Seasons Mall, Plymouth.\n\nPizza.\n\n#tyler #mazie\n\nLater.", md)
 

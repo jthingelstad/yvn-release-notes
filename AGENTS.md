@@ -167,11 +167,12 @@ runtime and is imported lazily so the tests run without it.
   own `media/<user>/` (`App.media_links`). A link is signed for 15 minutes
   and a warm function hands out the same one for 5, so the browser reuses
   its copy (2026-10-09: photos had been one API call each, and a page of
-  them started several cold functions at once). Photos load from `url`;
-  clicking one, recordings and PDFs ask
+  them started several cold functions at once). Photos, recordings and
+  PDFs all load and open from `url` (Jamie, 2026-10-09: signed links, "the
+  right approach", for every file; never public). Past nine minutes on the
+  page, or when a link fails, they use
   `/api/days/<day>/notes/<id>/media/<n>`, which checks the session and the
-  key's owner and redirects to the same kind of link, and a photo whose
-  link ran out tries that address once. Never a public URL; the key itself
+  key's owner and redirects to a fresh link of the same kind. Never a public URL; the key itself
   is never a field of an answer, only inside a signed link. **Recording on the page** (Jamie,
   2026-10-09): the new-note form's Record button (shown only where the
   browser has MediaRecorder) records the microphone, up to 30 minutes, as

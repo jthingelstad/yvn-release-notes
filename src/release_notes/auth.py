@@ -28,6 +28,7 @@ Max-Age is renewed along with the stored expiry, at most once a day.
 
 import hashlib
 import hmac
+import ipaddress
 import re
 import secrets
 from email.message import EmailMessage
@@ -38,6 +39,9 @@ from .compose import APP, BLUE, FONT, INK, INK_2, MONO, PAPER, from_header
 
 LOGIN_TTL = 15 * 60
 MAX_CODE_ATTEMPTS = 5
+# Wrong codes for one address in a day, across all its sign-ins. Five an
+# email and five emails an hour would otherwise allow 600 guesses a day.
+MAX_WRONG_CODES_A_DAY = 20
 SESSION_IDLE = 14 * 86400
 SESSION_TOUCH = 86400  # renew a session's expiry and cookie at most once a day
 COOKIE = "__Host-rn"
@@ -89,9 +93,11 @@ def valid_code(raw) -> str | None:
 def network(viewer: str) -> str:
     """The rate-limit key for a viewer address: the IPv4 address, or the
     IPv6 /64, which is what one household or phone is handed."""
-    if ":" in viewer:
-        return ":".join((viewer.split(":") + ["0"] * 4)[:4]) + "::/64"
-    return viewer
+    try:
+        ip = ipaddress.ip_address(viewer)
+    except ValueError:
+        return viewer
+    return str(ipaddress.ip_network(f"{ip}/64", strict=False)) if ip.version == 6 else str(ip)
 
 
 def session_cookie(token: str) -> str:
@@ -131,7 +137,7 @@ Or type this code where you asked: {code}
 The link and the code work once, for 15 minutes. If you didn't ask, you can
 ignore this email: nothing happens without the link or the code.
 
-This comes from the same address as the morning email. Adding it to your
+This comes from the same address as the daily email. Adding it to your
 contacts keeps both out of junk.
 """
 
@@ -139,7 +145,7 @@ contacts keeps both out of junk.
 def signin_html(link: str, code: str) -> str:
     p = f"margin:0 0 18px;font:16px/1.55 {FONT};color:{INK_2}"
     return f"""<!doctype html>
-<html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light"><title>Sign in to Release Notes</title></head>
 <body style="margin:0;padding:0;background:{PAPER}">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PAPER}"><tr><td style="padding:32px 20px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto"><tr><td>
@@ -148,7 +154,7 @@ def signin_html(link: str, code: str) -> str:
 <p style="{p}">Or type this code where you asked:</p>
 <p style="margin:0 0 24px;font:700 30px/1 {MONO};letter-spacing:.2em;color:{BLUE}">{escape(code)}</p>
 <p style="{p}">The link and the code work once, for 15 minutes. If you didn&rsquo;t ask, you can ignore this email: nothing happens without the link or the code.</p>
-<p style="margin:0;font:14px/1.55 {FONT};color:{INK_2}">This comes from the same address as the morning email. Adding it to your contacts keeps both out of junk.</p>
+<p style="margin:0;font:14px/1.55 {FONT};color:{INK_2}">This comes from the same address as the daily email. Adding it to your contacts keeps both out of junk.</p>
 </td></tr></table>
 </td></tr></table>
 </body></html>
@@ -180,7 +186,7 @@ nothing is deleted. To keep a copy first, export from {settings}
 def delete_html(code: str, settings: str) -> str:
     p = f"margin:0 0 18px;font:16px/1.55 {FONT};color:{INK_2}"
     return f"""<!doctype html>
-<html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light"><title>Delete your Release Notes</title></head>
 <body style="margin:0;padding:0;background:{PAPER}">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PAPER}"><tr><td style="padding:32px 20px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto"><tr><td>

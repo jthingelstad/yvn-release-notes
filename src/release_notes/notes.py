@@ -7,6 +7,10 @@ in the order they arrived, separated by a blank line. A reply with no text
 is shown once.
 """
 
+# The longest a note's text can be, written on the web or emailed. A longer
+# reply keeps its first MAX_NOTE characters; the raw email keeps the rest.
+MAX_NOTE = 20_000
+
 
 def combine(notes: list[dict]) -> str:
     """Join notes already sorted oldest first (Store.day_notes)."""

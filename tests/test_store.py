@@ -42,6 +42,9 @@ class FakeTable:
         self.calls.append(("get_item", kw))
         return {}
 
+    def delete_item(self, **kw):
+        self.calls.append(("delete_item", kw))
+
     def query(self, **kw):
         self.calls.append(("query", kw))
         return {"Items": [{"pk": "USER#u1", "sk": "WEATHER#2026-10-07", "code": 3}]}
@@ -115,6 +118,33 @@ class WeatherItem(unittest.TestCase):
         self.assertEqual(kw["KeyConditionExpression"], "pk = :u AND sk BETWEEN :a AND :b")
         self.assertEqual(kw["ExpressionAttributeValues"],
                          {":u": "USER#u1", ":a": "WEATHER#2026-10-01", ":b": "WEATHER#2026-10-07"})
+
+
+
+class ReviewRequests(unittest.TestCase):
+    # The exact table calls added after the 2026-10-08 review.
+
+    def test_drop_day_removes_the_reply_address_and_only_its_own_day(self):
+        table = FakeTable()
+        Store(table).drop_day("u1", "2026-10-08", "tok")
+        self.assertEqual(table.calls, [
+            ("delete_item", {"Key": {"pk": "TOKEN#tok", "sk": "TOKEN"}}),
+            ("delete_item", {"Key": {"pk": "USER#u1", "sk": "DAY#2026-10-08"}, "ConditionExpression": "#t = :t",
+                             "ExpressionAttributeNames": {"#t": "token"}, "ExpressionAttributeValues": {":t": "tok"}}),
+        ])
+
+    def test_tally_adds_one_to_the_month(self):
+        table = FakeTable()
+        Store(table).tally("2026-10", "unsubscribes")
+        self.assertEqual(table.calls, [("update_item", {
+            "Key": {"pk": "TALLY#2026-10", "sk": "TALLY"}, "UpdateExpression": "ADD #n :one",
+            "ExpressionAttributeNames": {"#n": "unsubscribes"}, "ExpressionAttributeValues": {":one": 1}})])
+
+    def test_a_daily_counter_expires_two_days_on(self):
+        table = FakeTable()
+        table.update_item = lambda **kw: table.calls.append(("update_item", kw)) or {"Attributes": {"n": Decimal(1)}}
+        self.assertEqual(Store(table).count("codefail:h", 20000, 86400), 1)
+        self.assertEqual(table.calls[0][1]["ExpressionAttributeValues"][":exp"], 20002 * 86400)
 
 
 if __name__ == "__main__":

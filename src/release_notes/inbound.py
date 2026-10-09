@@ -6,7 +6,10 @@ A reply is filed only when all of these hold:
   - the From address is that subscriber's;
   - the sender's domain authenticated it (DMARC pass, or an aligned DKIM pass
     when the domain publishes no DMARC policy);
-  - SES did not flag it as spam or a virus.
+  - SES did not flag it as spam or a virus;
+  - it is not an automatic reply (an out-of-office, a vacation notice):
+    Auto-Submitted anything but "no", X-Autoreply, or Precedence auto_reply,
+    bulk or junk. The daily email also asks Exchange not to send those.
 
 Everything else is tagged outcome=ignored and expires from S3 in 30 days.
 Filed messages are tagged outcome=note and kept. Their photos and recordings
@@ -20,6 +23,7 @@ import re
 from email.utils import getaddresses
 
 from . import links, media
+from .notes import MAX_NOTE
 from .parse import anchors, attachments, note_text, parse_message
 from .store import Store
 
@@ -30,6 +34,16 @@ _AUTH_DKIM = re.compile(r"\bdkim=pass\b[^;]*?\bheader\.[id]=@?([A-Za-z0-9.-]+)",
 def log(**fields):
     # Ids and outcomes only. Addresses and note text never go to logs.
     print(json.dumps(fields, separators=(",", ":")))
+
+
+def automatic(msg) -> bool:
+    """An out-of-office or other machine reply (RFC 3834, and the headers
+    Exchange and others use instead)."""
+    if (msg.get("Auto-Submitted") or "no").strip().lower() != "no":
+        return True
+    if msg.get("X-Autoreply") or msg.get("X-Autorespond"):
+        return True
+    return (msg.get("Precedence") or "").strip().lower() in ("auto_reply", "bulk", "junk")
 
 
 def token_from(recipient: str, inbound_domain: str) -> str | None:
@@ -96,7 +110,7 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None) -> tuple[str, dict]
         return "ignored", {"reason": "unknown-user"}
 
     froms = getaddresses(mail.get("commonHeaders", {}).get("from", []))
-    from_addr = froms[0][1].lower() if froms else ""
+    from_addr = froms[0][1].lower() if len(froms) == 1 else ""
     if from_addr != sub.email.lower():
         return "ignored", {"reason": "from-mismatch", "user": sub.user_id}
 
@@ -105,7 +119,10 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None) -> tuple[str, dict]
     if not authenticated(receipt, msg, from_addr):
         return "ignored", {"reason": "unauthenticated", "user": sub.user_id}
 
-    text = note_text(msg)
+    if automatic(msg):
+        return "ignored", {"reason": "auto-reply", "user": sub.user_id}
+
+    text = note_text(msg)[:MAX_NOTE]
     files = attachments(msg)
     if not text and not files:
         return "ignored", {"reason": "empty", "user": sub.user_id}

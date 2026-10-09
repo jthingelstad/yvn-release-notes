@@ -71,6 +71,11 @@ class FakeStore:
         self.tokens[token] = {"user_id": user_id, "date": day, "version": version}
         self.days[(user_id, day)] = {"version": version, "token": token, "sent_at": sent_at}
 
+    def drop_day(self, user_id, day, token):
+        self.tokens.pop(token, None)
+        if self.days.get((user_id, day), {}).get("token") == token:
+            del self.days[(user_id, day)]
+
     def set_day_message_id(self, user_id, day, message_id):
         self.days[(user_id, day)]["ses_message_id"] = message_id
 
@@ -214,6 +219,48 @@ class Sending(unittest.TestCase):
         send.handler({}, None, store=store, ses=ses, clock=clock("2026-10-09T01:00:00+00:00"))
         later = message_from_bytes(ses.sent[1]["Content"]["Raw"]["Data"], policy=default)
         self.assertNotIn("Welcome", later.get_body(("plain",)).get_content())
+
+    def test_a_failed_send_leaves_no_reply_address(self):
+        store = FakeStore([ada()])
+        with self.assertRaises(RuntimeError):
+            send.handler({}, None, store=store, ses=FakeSES(fail=True), clock=AT_8PM)
+        self.assertEqual((store.tokens, store.days), ({}, {}))
+
+    def test_the_slow_parts_come_before_the_claim(self):
+        # A run that times out fetching weather must not have claimed the
+        # day, or that person gets nothing until tomorrow.
+        store = FakeStore([ada(place={"lat": 44.98, "lon": -93.26, "tz": "America/Chicago", "city": "Minneapolis"})])
+        seen = []
+
+        def fetch(url):
+            seen.append(store.subs["u1"].last_sent_date)
+            raise TimeoutError("slow")
+        send.handler({}, None, store=store, ses=FakeSES(), clock=AT_8PM, fetch=fetch)
+        self.assertEqual(seen, [None])
+        self.assertEqual(store.subs["u1"].last_sent_date, "2026-10-07")
+
+    def test_stops_starting_sends_when_time_is_short(self):
+        store, ses = FakeStore([ada(), ada(user_id="u2", email="bea@example.com")]), FakeSES()
+        left = iter([60_000, 10_000])
+        context = type("Ctx", (), {"get_remaining_time_in_millis": lambda self: next(left)})()
+        out = send.handler({}, context, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual(len(ses.sent), 1)
+        self.assertEqual(len(out["results"]), 1)
+        # The next quarter hour picks up the other.
+        send.handler({}, None, store=store, ses=ses, clock=AT_8_15PM)
+        self.assertEqual(len(ses.sent), 2)
+
+    def test_weather_has_a_budget_for_the_whole_run(self):
+        now = [0.0]
+
+        def slow(url):
+            now[0] += 12.0
+            return {"url": url}
+        call = send.one_run(slow, budget=30.0, timer=lambda: now[0])
+        for n in range(3):
+            call(f"u{n}")  # 12, 24, 36 seconds spent
+        with self.assertRaises(RuntimeError):
+            call("u3")
 
     def test_send_now_only_sends_to_the_named_subscriber(self):
         store, ses = FakeStore([ada(), ada(user_id="u2", email="bea@example.com")]), FakeSES()
@@ -449,6 +496,28 @@ class Inbound(unittest.TestCase):
         self.assertEqual(outcome, "ignored")
         self.assertEqual(s3.tags["raw/m1"], "ignored")
         self.assertEqual(self.store.notes, {})
+
+    def test_two_from_addresses_ignored(self):
+        ses = ses_event()
+        ses["mail"]["commonHeaders"]["from"] = ["Ada <ada@example.com>", "Eve <eve@example.net>"]
+        self.assertEqual(self.run_one(ses)[0], "ignored")
+        self.assertEqual(self.store.notes, {})
+
+    def test_out_of_office_ignored(self):
+        for name, value in (("Auto-Submitted", "auto-replied"), ("X-Autoreply", "yes"), ("Precedence", "auto_reply")):
+            msg = message_from_bytes(reply_raw(), policy=default)
+            msg[name] = value
+            self.assertEqual(self.run_one(ses_event(), msg.as_bytes())[0], "ignored", name)
+        msg = message_from_bytes(reply_raw(), policy=default)
+        msg["Auto-Submitted"] = "no"
+        self.assertEqual(self.run_one(ses_event(), msg.as_bytes())[0], "note")
+
+    def test_a_very_long_reply_keeps_its_first_20000_characters(self):
+        msg = message_from_bytes(reply_raw(), policy=default)
+        msg.clear_content()
+        msg.set_content("word " * 10_000)
+        self.assertEqual(self.run_one(ses_event(), msg.as_bytes())[0], "note")
+        self.assertEqual(len(self.store.notes[("u1", "2026-10-07", "m1")]["text"]), 20_000)
 
     def test_unknown_token_and_plain_address_ignored(self):
         self.assertEqual(self.run_one(ses_event(recipient=f"n-{'b' * 24}@in.yourversionnumber.com"))[0], "ignored")

@@ -103,9 +103,12 @@ def clock_phrase(hhmm: str) -> str:
     return f"{(h + 11) % 12 + 1}:{m:02d} {'AM' if h < 12 else 'PM'}"
 
 
-def welcome_line(send_time: str) -> str:
+def welcome_line(send_time: str, from_addr: str) -> str:
     """The first email goes the moment someone signs up (web.send_first)."""
-    return f"Welcome to Release Notes. This first one is today's; from tomorrow it comes every day at {clock_phrase(send_time)}."
+    return (
+        f"Welcome to Release Notes. This first one is today's; from tomorrow it comes every day at {clock_phrase(send_time)}. "
+        f"Add {from_addr} to your contacts so it never lands in junk."
+    )
 
 
 def streak_lines(v: Version, s: Streak) -> tuple[str, str]:
@@ -208,8 +211,13 @@ def credited(forecast: str | None, last_year: LastYear | None) -> bool:
     return bool(forecast or (last_year and len(last_year) > 4 and last_year[4]))
 
 
+def unsubscribe_link(token: str) -> str:
+    # The page asks before stopping, so a link scanner opening it stops nothing.
+    return f"{APP}/unsubscribe/#t={token}"
+
+
 def body(v: Version, birthday: date, streak: Streak | None = None, last_year: LastYear | None = None,
-         forecast: str | None = None, welcome: str | None = None) -> str:
+         forecast: str | None = None, welcome: str | None = None, token: str | None = None) -> str:
     opening = f"You're {v} today."
     if line := birthday_line(v):
         opening = f"{opening} {line}"
@@ -235,6 +243,7 @@ def body(v: Version, birthday: date, streak: Streak | None = None, last_year: La
         "-- \n"
         "Release Notes, from Your Version Number\n"
         f"Pause or manage: {APP}/settings/\n"
+        + (f"Unsubscribe: {unsubscribe_link(token)}\n" if token else "")
         + (f"{weather.CREDIT}: {weather.CREDIT_URL}\n" if credited(forecast, last_year) else "")
     )
 
@@ -352,7 +361,7 @@ DARK_CSS = f"""
 
 def html_body(
     v: Version, birthday: date, day: date, streak: Streak | None = None, last_year: LastYear | None = None,
-    forecast: str | None = None, welcome: str | None = None,
+    forecast: str | None = None, welcome: str | None = None, token: str | None = None,
 ) -> str:
     vs = escape(str(v))
     party = birthday_line(v)
@@ -376,6 +385,9 @@ def html_body(
         if credited(forecast, last_year)
         else ""
     )
+    unsubscribe_html = (
+        f' &middot; <a class="link" href="{escape(unsubscribe_link(token))}" style="color:{BLUE};">Unsubscribe</a>' if token else ""
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -387,7 +399,7 @@ def html_body(
 <style>{DARK_CSS}</style>
 </head>
 <body class="paper" style="margin:0;padding:0;background:{PAPER};">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Reply with anything about today, and it becomes the release notes for {vs}.</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">Reply with anything about today, and it becomes the release notes for {vs}.</div>
 <table role="presentation" class="paper" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{PAPER};">
 <tr><td align="center" style="padding:40px 22px 48px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
@@ -421,7 +433,7 @@ What happened, what you made, who you saw. Whatever you send back becomes the re
 {streak_html(v, birthday, streak) if streak else ""}
 {past_html(birthday, *last_year) if last_year else ""}
 <tr><td class="ink-2" style="padding:48px 0 0;font-family:{FONT};font-size:13px;line-height:1.5;color:{INK_2};">
-Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>. <a class="link" href="{APP}/settings/" style="color:{BLUE};">Pause or manage</a>{credit_html}
+Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>. <a class="link" href="{APP}/settings/" style="color:{BLUE};">Pause or manage</a>{unsubscribe_html}{credit_html}
 </td></tr>
 
 </table>
@@ -456,6 +468,8 @@ def build_message(
     # the emails. The day's reply token names the person.
     msg["List-Unsubscribe"] = f"<{APP}/api/unsubscribe?t={token}>"
     msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
-    msg.set_content(body(v, birthday, streak, last_year, forecast, welcome))
-    msg.add_alternative(html_body(v, birthday, day, streak, last_year, forecast, welcome), subtype="html")
+    # Exchange: no out-of-office or other automatic replies to this.
+    msg["X-Auto-Response-Suppress"] = "OOF, AutoReply"
+    msg.set_content(body(v, birthday, streak, last_year, forecast, welcome, token))
+    msg.add_alternative(html_body(v, birthday, day, streak, last_year, forecast, welcome, token), subtype="html")
     return msg

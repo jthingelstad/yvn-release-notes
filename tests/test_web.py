@@ -20,6 +20,7 @@ os.environ.update(
     MAIL_BUCKET="mail-bucket",
     EXPORT_FUNCTION="yvn-release-notes-export",
     SENDER_FUNCTION="yvn-release-notes-sender",
+    ALARM_TOPIC="arn:aws:sns:us-east-1:111122223333:yvn-release-notes-alarms",
 )
 NOW = 1_791_500_000  # 2026-10-08, mid-afternoon Central
 
@@ -184,6 +185,24 @@ class WebTest(WebCase):
         _, body = self.call("POST", "/api/auth/verify", {"email": "ada@example.com", "code": code})
         self.assertEqual(body["error"], "too-many-tries")
 
+    def test_twenty_wrong_codes_a_day_stop_new_sign_ins_guessing(self):
+        # Five tries a sign-in, but a new sign-in gives five more: the
+        # address's wrong codes are also capped for the (UTC) day.
+        self.now = self.now // 86400 * 86400 + 3600
+        for n in range(auth.MAX_WRONG_CODES_A_DAY // auth.MAX_CODE_ATTEMPTS):
+            _, _, code = self.start()
+            wrong = f"{(int(code) + 1) % 1_000_000:06d}"
+            for _ in range(auth.MAX_CODE_ATTEMPTS):
+                self.call("POST", "/api/auth/verify", {"email": "ada@example.com", "code": wrong})
+            self.now += 3600  # past the hourly sign-in limit
+        _, _, code = self.start()
+        r, body = self.call("POST", "/api/auth/verify", {"email": "ada@example.com", "code": code})
+        self.assertEqual((r["statusCode"], body["error"]), (429, "limited"))
+        # The link still works: it is not a guess.
+        _, token, _ = self.start()
+        r, _ = self.call("POST", "/api/auth/verify", {"token": token})
+        self.assertEqual(r["statusCode"], 200)
+
     def test_code_is_checked_against_the_newest_sign_in(self):
         _, _, first = self.start()
         _, second_token, second = self.start()
@@ -221,6 +240,8 @@ class WebTest(WebCase):
 
     def test_ipv6_networks_share_a_limit(self):
         self.assertEqual(auth.network("2001:db8:1:2:aaaa::1"), "2001:db8:1:2::/64")
+        self.assertEqual(auth.network("2001:db8:1:2::9"), "2001:db8:1:2::/64")
+        self.assertEqual(auth.network("2001:0db8:0001:0002:ffff:0:0:1"), "2001:db8:1:2::/64")
         self.assertEqual(auth.network("198.51.100.7"), "198.51.100.7")
         req = web.Request(request("GET", "/", viewer="2001:db8:1:2::9:443"))
         self.assertEqual(req.viewer(), "2001:db8:1:2::9")

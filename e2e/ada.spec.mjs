@@ -6,6 +6,8 @@
 // Recording: Chromium's made-up microphone, kept with a new note.
 // Search: the tags, then words, found and marked.
 // Transcripts: the setting, a recording written out, and found by search.
+// Descriptions: the setting, a photo described, shown only where search
+// found it.
 import { test, expect } from '@playwright/test';
 
 // A real 1 x 1 PNG, so the browser draws it, and a small PDF.
@@ -138,4 +140,30 @@ test('turning on transcripts writes out a recording, and search finds what was s
   await page.goto('/settings/');
   await page.getByLabel('Write out what I say').uncheck();
   await expect(page.locator('#transcribe-saved')).toBeVisible();
+});
+
+test('turning on descriptions describes a photo, shown only where search found it', async ({ page }) => {
+  await page.goto('/settings/');
+  const box = page.getByLabel('Describe my photos');
+  await expect(box).not.toBeChecked();
+  await box.check();
+  await expect(page.locator('#describe-saved')).toBeVisible();
+
+  // The dev server describes it five seconds after (describe.py's stand-in);
+  // on the day it is the photo's alt text, never words on the page.
+  await page.waitForTimeout(6000);
+  await page.goto('/today/');
+  const photo = page.locator('article.note', { hasText: 'Bagels at' }).locator('.media img').first();
+  await expect(photo).toHaveAttribute('alt', /red canoe/);
+  await expect(page.locator('.media .said', { hasText: 'canoe' })).toHaveCount(0);
+
+  await page.goto('/search/#q=canoe');
+  await expect(page.locator('.media .said mark').first()).toHaveText('canoe');
+  await page.goto('/search/#q=bagels');
+  await expect(page.locator('.tday mark').first()).toBeVisible();
+  await expect(page.locator('.media .said', { hasText: 'canoe' })).toHaveCount(0);
+
+  await page.goto('/settings/');
+  await page.getByLabel('Describe my photos').uncheck();
+  await expect(page.locator('#describe-saved')).toBeVisible();
 });

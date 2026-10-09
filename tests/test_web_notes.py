@@ -585,3 +585,38 @@ class TranscriptTest(NotesCase):
         self.assertIn("> The loons were back.", self.get("/api/export", query={"format": "md"})[1])
         _, data = self.get("/api/export", query={"format": "json"})
         self.assertEqual(json.loads(data)["notes"][0]["transcripts"], ["The loons were back."])
+
+
+class DescriptionTest(NotesCase):
+    """Photos described (describe.py): the setting, alt text, search and the
+    words-only export. Shown only in search results, which the page decides."""
+
+    PIC = {"n": 1, "kind": "image", "type": "image/jpeg", "size": 9000, "key": "media/u1/2026-10-08/m1/1.jpg"}
+
+    def put_me(self, body):
+        return self.call("PUT", "/api/me", body, cookies=self.cookies)
+
+    def test_off_until_turned_on_and_only_by_a_yes_or_no(self):
+        self.assertFalse(self.get("/api/me")[1]["describe"])
+        r, body = self.put_me({"describe": True})
+        self.assertEqual((r["statusCode"], body["describe"]), (200, True))
+        self.assertIs(self.store.profiles["u1"]["describe"], True)
+        self.assertFalse(self.put_me({"describe": False})[1]["describe"])
+        self.assertEqual(self.put_me({"describe": 1})[0]["statusCode"], 400)
+
+    def test_the_page_gets_the_description_and_never_the_key(self):
+        self.emailed(TODAY, "m1", text="", media=[dict(self.PIC, description="A canoe at the dock."), dict(self.PIC, n=2)])
+        shown = self.get("/api/today")[1]["notes"][0]["media"]
+        self.assertEqual(shown[0]["description"], "A canoe at the dock.")
+        self.assertNotIn("description", shown[1])
+        self.assertNotIn("key", shown[0])
+
+    def test_search_finds_what_is_in_a_photo(self):
+        self.emailed("2026-10-02", "m1", text="", media=[dict(self.PIC, description="A canoe at the dock.")])
+        _, body = self.call("POST", "/api/search", {"q": "canoe"}, cookies=self.cookies)
+        self.assertEqual([d["date"] for d in body["days"]], ["2026-10-02"])
+
+    def test_the_words_only_export_keeps_the_descriptions(self):
+        self.emailed("2026-10-02", "m1", text="", media=[dict(self.PIC, description="A canoe at the dock.")])
+        _, data = self.get("/api/export", query={"format": "json"})
+        self.assertEqual(json.loads(data)["notes"][0]["descriptions"], ["A canoe at the dock."])

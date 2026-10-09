@@ -1010,6 +1010,102 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt TranscribeDone.Arn
 
+  # --- photo descriptions --------------------------------------------------------
+  # describe.py: Claude on Bedrock describes each photo, for subscribers who
+  # turned it on, from the same stream; turning it on starts a pass over
+  # every photo already kept, which hands on to a new pass near its limit.
+
+  DescribeLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-describe"
+      RetentionInDays: 90
+
+  DescribeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: describe
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem]
+                Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                Action: [dynamodb:DescribeStream, dynamodb:GetRecords, dynamodb:GetShardIterator]
+                Resource: !GetAtt Table.StreamArn
+              - Effect: Allow
+                Action: dynamodb:ListStreams
+                Resource: "*"
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${MailBucket.Arn}/media/*"
+              - Effect: Allow
+                # The US cross-region profile, and the model in each region
+                # it may route to.
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0"
+                  - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+              - Effect: Allow
+                # The next pass over photos already kept. By name, since the
+                # function's own ARN would make a cycle.
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-describe"
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt DescribeLogs.Arn
+
+  DescribeFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-describe"
+      Description: Describes photos in words for subscribers who turned it on
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: release_notes.describe.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt DescribeRole.Arn
+      MemorySize: 512
+      Timeout: 900
+      LoggingConfig:
+        LogGroup: !Ref DescribeLogs
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          BUCKET: !Ref MailBucket
+          SELF: !Sub "${AWS::StackName}-describe"
+
+  DescribeInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref DescribeFunction
+      Qualifier: $LATEST
+      # A pass that failed (throttled, say) tries again; photos done are
+      # skipped.
+      MaximumRetryAttempts: 2
+
+  DescribeStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref DescribeFunction
+      EventSourceArn: !GetAtt Table.StreamArn
+      StartingPosition: LATEST
+      BatchSize: 5
+      MaximumRetryAttempts: 3
+      BisectBatchOnFunctionError: true
+      FilterCriteria:
+        Filters:
+          - Pattern: '{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"NewImage": {"sk": {"S": [{"prefix": "NOTE#"}]}}}}'
+          - Pattern: '{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"NewImage": {"sk": {"S": ["PROFILE"]}, "describe": {"BOOL": [true]}}}}'
+
   # --- alarms -----------------------------------------------------------------
 
   AlarmTopic:
@@ -1113,6 +1209,22 @@ Resources:
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions: [{ Name: FunctionName, Value: !Ref TranscribeFunction }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  DescribeErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-describe-errors"
+      AlarmDescription: A photo's description could not be made or kept. The photo itself is safe.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref DescribeFunction }]
       Statistic: Sum
       Period: 900
       EvaluationPeriods: 1

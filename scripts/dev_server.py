@@ -18,7 +18,8 @@ the web post to /dev-upload/, checked as S3 checks a signed form. City search an
 unless --fake-places (the week of emails comes with made-up weather either
 way), and a link's page for its title unless --fake-links. With "Write
 out what I say" on in settings, each recording gets a made-up transcript
-five seconds later, as the transcriber would put it there (nothing is sent
+five seconds later, as the transcriber would put it there, and with
+"Describe my photos" on, each photo a made-up description (nothing is sent
 anywhere). Everything is forgotten when it stops.
 
     scripts/dev_server.py --dayone EXPORT.zip [--dayone ANOTHER.zip]
@@ -52,7 +53,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
 from fakes import FakeLambda, FakeS3, FakeSES, FakeStore  # noqa: E402
-from release_notes import dayone, export_job, importer, links, media, places, tags, transcribe, weather, web  # noqa: E402
+from release_notes import describe, dayone, export_job, importer, links, media, places, tags, transcribe, weather, web  # noqa: E402
 
 FAKE_PLACES = [
     {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
@@ -206,11 +207,13 @@ def main():
 
     def write_out():  # what transcribe.py does, with made-up words
         for user_id, p in list(store.profiles.items()):
-            if not p.get("transcribe"):
-                continue
-            for n in store.all_notes(user_id):
+            for n in store.all_notes(user_id) if p.get("transcribe") else []:
                 for m in transcribe.waiting(n):
                     m["transcript"] = "Made up on this machine: back from the lake, and the loons were out on the water."
+            if p.get("describe"):  # and what describe.py does
+                for n in store.all_notes(user_id):
+                    for m in describe.waiting(n):
+                        m["description"] = "Made up on this machine: a red canoe pulled up on a rocky shore, pines behind it."
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):

@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>Settings: Release Notes</title>
 <link rel="stylesheet" href="/assets/site.css?v=17">
-<script src="/assets/app.js?v=24" defer></script>
+<script src="/assets/app.js?v=25" defer></script>
 </head>
 <body data-page="settings">
 <main>
@@ -58,6 +58,14 @@
       <label class="check"><input type="checkbox" id="transcribe"> Write out what I say</label>
       <p class="hint">Your recordings get turned into text that shows up underneath them, so you can skim them and search them. They&rsquo;re sent off to be transcribed to do it. Turning this on writes out the ones you already have, too.</p>
       <p class="aside saved" id="transcribe-saved" role="status" hidden>Saved.</p>
+      <p class="error" role="alert" hidden></p>
+    </section>
+
+    <section class="section">
+      <h2>Photos</h2>
+      <label class="check"><input type="checkbox" id="describe"> Describe my photos</label>
+      <p class="hint">Each photo gets a sentence or two about what&rsquo;s in it, so searching for &ldquo;canoe&rdquo; finds the canoe. You only see it in search results. They&rsquo;re sent off to an AI to be described. Turning this on does the ones you already have, too.</p>
+      <p class="aside saved" id="describe-saved" role="status" hidden>Saved.</p>
       <p class="error" role="alert" hidden></p>
     </section>
 

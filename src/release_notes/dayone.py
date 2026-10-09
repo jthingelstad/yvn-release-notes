@@ -56,6 +56,7 @@ ADDRESS = re.compile(r"^\d+(?:\s?[–-]\s?\d+)?\s+\S")
 ZONES = {"US/Central": "America/Chicago", "US/Eastern": "America/New_York", "US/Mountain": "America/Denver",
          "US/Pacific": "America/Los_Angeles", "Europe/Kiev": "Europe/Kyiv"}
 
+OTHER_FILES = ("videos",)
 FILE_KINDS = {
     "photos": {"jpeg": ("image", "image/jpeg", "jpg"), "jpg": ("image", "image/jpeg", "jpg"),
                "png": ("image", "image/png", "png"), "heic": ("image", "image/heic", "heic"),
@@ -69,9 +70,12 @@ FILE_KINDS = {
 
 MOMENT = re.compile(r"!\[[^\]]*\]\(dayone-moment:[^)]*\)")
 AUTOLINK = re.compile(r"<(https?://[^\s<>]+)>")
-TAGS_HTML = re.compile(r"</?(?:strike|s|del|u|b|i|em|strong|br)\s*/?>", re.IGNORECASE)
+TAGS_HTML = re.compile(r"</?(?:strike|s|del|u|b|i|em|strong)\s*/?>", re.IGNORECASE)
+BR = re.compile(r"<br\s*/?>", re.IGNORECASE)
+HOLD = re.compile("[\ue000\ue001]")  # the marks plain() holds things with
 ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!>|~])")
-MD_LINK = re.compile(r"(?<!!)\[([^\]\n]+)\]\((https?://[^)\s]+)\)")
+# An address may have one level of brackets in it: .../wiki/Foo_(bar)
+MD_LINK = re.compile(r"(?<!!)\[([^\]\n]+)\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)")
 # A link to another entry, or into the Day One app.
 APP_LINK = re.compile(r"(?<!!)\[([^\]\n]+)\]\((dayone2?://[^)\s]*)\)")
 ENTRY_ID = re.compile(r"entryId=([0-9A-Fa-f]{32})")
@@ -102,15 +106,22 @@ def plain(markdown: str, entry_url=lambda uuid: None) -> tuple[str, dict[str, st
     counts = dict.fromkeys(("photo_markers", "headings", "emphasis", "escapes", "links", "entry_links", "app_links",
                             "bullets", "html"), 0)
     named: dict[str, str] = {}
-    t = markdown.replace("\r\n", "\n")
+    def words_of(s: str) -> str:
+        # A link's words as read: escapes back, emphasis off.
+        s = put_back(s)
+        return ITALIC.sub(lambda m: m.group(1) or m.group(2), BOLD.sub(r"\2", s))
+
+    t = HOLD.sub("", markdown.replace("\r\n", "\n"))
     t, counts["photo_markers"] = MOMENT.subn("", t)
     t = AUTOLINK.sub(r"\1", t)
+    t, br = BR.subn("\n", t)
     t, counts["html"] = TAGS_HTML.subn("", t)
+    counts["html"] += br
     t, counts["escapes"] = ESCAPE.subn(lambda m: hold(m.group(1)), t)
 
     def link(m):
         words, url = m.group(1).strip(), m.group(2)
-        named.setdefault(url, put_back(words))
+        named.setdefault(put_back(url), words_of(words))
         return f"{words} {hold('<' + url + '>')}"
 
     t, counts["links"] = MD_LINK.subn(link, t)
@@ -123,7 +134,7 @@ def plain(markdown: str, entry_url=lambda uuid: None) -> tuple[str, dict[str, st
             return m.group(1).strip()
         counts["entry_links"] += 1
         words = m.group(1).strip()
-        named.setdefault(url, put_back(words))
+        named.setdefault(url, words_of(words))
         return f"{words} {hold('<' + url + '>')}"
 
     t = APP_LINK.sub(app_link, t)
@@ -301,15 +312,19 @@ def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict
             counts[k] = counts.get(k, 0) + v
         files, missing = files_of(e, index)
         missing_files += len(missing)
+        # Kinds this does not carry yet (video): counted, and in the original.
+        if other := sum(len(e.get(k) or []) for k in OTHER_FILES):
+            counts["files_not_carried"] = counts.get("files_not_carried", 0) + other
         if not text and not files:
-            skipped.append({"date": day, "uuid": e["uuid"], "why": "empty"})
+            skipped.append({"date": day, "uuid": e["uuid"], "why": "files not carried" if other else "empty"})
             continue
         line = tags.line(list(e.get("tags") or []) + journal_tag)
+        room = MAX_NOTE - (len(line) + 2 if line else 0)
+        if len(text) > room:  # cut the words, never the tags (the original keeps it all)
+            counts["cut"] = counts.get("cut", 0) + 1
+            text = text[:room].rstrip()
         if line:
             text = f"{text}\n\n{line}" if text else line
-        if len(text) > MAX_NOTE:
-            counts["cut"] = counts.get("cut", 0) + 1
-            text = text[:MAX_NOTE]
         place, source = where[e["uuid"]]
         if not place and day in day_place:
             place, source = day_place[day], "day"
@@ -330,13 +345,16 @@ def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict
             item["place"] = {**place, "from": source}
         if found := tags.found(text):
             item["tags"] = found
-        media = []
+        media, copies = [], []
         for n, f in enumerate(files, 1):
+            key = f"media/{user_id}/{day}/{note_id}/{n}.{f['ext']}"
             media.append({"n": n, **{k: v for k, v in f.items() if k not in ("ext", "from")}, "size": names[f["from"]],
-                          "key": f"media/{user_id}/{day}/{note_id}/{n}.{f['ext']}", "from": f["from"]})
+                          "key": key})
+            copies.append({"from": f["from"], "key": key, "type": f["type"]})
         if media:
             item["media"] = media
         notes.append({"date": day, "id": note_id, "item": item, "named": named, "tag_line": line, "place_from": source,
+                      "files": copies,
                       "original": e,
                       "zone_was": e.get("timeZone"),
                       "urls": links.urls(text), "all_day": bool(e.get("isAllDay")),

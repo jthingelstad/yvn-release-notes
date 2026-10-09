@@ -44,6 +44,14 @@ class PlainTest(unittest.TestCase):
         self.assertEqual((counts["entry_links"], counts["app_links"]), (1, 1))
 
 
+    def test_awkward_markdown_keeps_its_content(self):
+        text, named, _ = dayone.plain("See [**Foo**](https://en.wikipedia.org/wiki/Foo_(bar)) now.<br>Next line"
+                                      " \ue000 [a\\_b](https://x.example/a\\_b)")
+        self.assertEqual(text, "See **Foo** <https://en.wikipedia.org/wiki/Foo_(bar)> now.\nNext line  a_b <https://x.example/a_b>"
+                         .replace("**Foo**", "Foo"))
+        self.assertEqual(named, {"https://en.wikipedia.org/wiki/Foo_(bar)": "Foo", "https://x.example/a_b": "a_b"})
+
+
 class WhenAndWhereTest(unittest.TestCase):
     def test_the_day_is_in_the_entrys_zone_and_old_zone_names_are_renamed(self):
         e = entry("E1", "2016-07-05T01:40:00Z", "Fireworks.", tz="US/Eastern")
@@ -107,8 +115,7 @@ class FilesTest(unittest.TestCase):
         p = plan([entry("A", "2020-01-01T18:00:00Z", photos=[{"md5": "p1", "type": "png"}])],
                  names={"photos/p1.png": 99})
         (m,) = p["notes"][0]["item"]["media"]
-        self.assertEqual((m["n"], m["key"], m["size"], m["from"]),
-                         (1, "media/u1/2020-01-01/d1-A/1.png", 99, "photos/p1.png"))
+        self.assertEqual((m["n"], m["key"], m["size"]), (1, "media/u1/2020-01-01/d1-A/1.png", 99))
 
 
 class PlanTest(unittest.TestCase):
@@ -129,6 +136,27 @@ class PlanTest(unittest.TestCase):
     def test_another_journals_name_is_a_tag(self):
         p = plan([entry("A", "2020-01-01T12:00:00Z", "Thankful.")], journal="Gratitude")
         self.assertEqual(p["notes"][0]["item"]["tags"], ["gratitude"])
+
+    def test_a_long_entry_is_cut_before_its_tags(self):
+        from release_notes.notes import MAX_NOTE
+        p = plan([entry("A", "2020-01-01T12:00:00Z", "word " * MAX_NOTE, tags=["Long one"])], journal="Travel")
+        item = p["notes"][0]["item"]
+        self.assertLessEqual(len(item["text"]), MAX_NOTE)
+        self.assertTrue(item["text"].endswith("\n\n#long-one #travel"))
+        self.assertEqual((item["tags"], p["counts"]["cut"]), (["long-one", "travel"], 1))
+
+    def test_an_entry_of_only_videos_is_counted_not_lost_quietly(self):
+        p = plan([entry("A", "2020-01-01T12:00:00Z", videos=[{"md5": "v1"}])])
+        self.assertEqual(p["skipped"][0]["why"], "files not carried")
+        self.assertEqual(p["counts"]["files_not_carried"], 1)
+
+    def test_files_to_copy_are_listed_apart_from_the_note(self):
+        p = plan([entry("A", "2020-01-01T18:00:00Z", "x", photos=[{"md5": "p1", "type": "png"}])],
+                 names={"photos/p1.png": 99})
+        n = p["notes"][0]
+        self.assertEqual(n["files"], [{"from": "photos/p1.png", "key": "media/u1/2020-01-01/d1-A/1.png",
+                                       "type": "image/png"}])
+        self.assertNotIn("from", n["item"]["media"][0])
 
     def test_empty_entries_are_left_out(self):
         p = plan([entry("A", "2020-01-01T12:00:00Z", "![](dayone-moment://X)")])

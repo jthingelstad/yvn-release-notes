@@ -98,10 +98,10 @@ class FakeStore:
     def note(self, user_id, day, note_id):
         return next((i for i in self.items.get(user_id, []) if i["sk"] == f"NOTE#{day}#{note_id}"), None)
 
-    def set_transcript(self, user_id, day, note_id, n, text):
+    def set_media_text(self, user_id, day, note_id, n, field, text):
         for m in (self.note(user_id, day, note_id) or {}).get("media") or []:
             if int(m["n"]) == n:
-                m["transcript"] = text
+                m[field] = text
                 return True
         return False
 

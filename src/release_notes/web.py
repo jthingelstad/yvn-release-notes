@@ -342,6 +342,7 @@ def profile_view(p: dict, now: int) -> dict:
         "send_time": p.get("send_time", "06:00"),
         "status": p.get("status", "active"),
         "transcribe": bool(p.get("transcribe")),
+        "describe": bool(p.get("describe")),
         "today": today.isoformat(),
         "version": str(compute_version(date.fromisoformat(p["birthday"]), today)),
     }
@@ -420,6 +421,11 @@ def update_me(app: App, req: Request) -> dict:
         if not isinstance(body["transcribe"], bool):
             raise Reject(400, "transcribe")
         fields["transcribe"] = body["transcribe"]
+    if "describe" in body:
+        # Turning it on describes every photo already kept (describe.py).
+        if not isinstance(body["describe"], bool):
+            raise Reject(400, "describe")
+        fields["describe"] = body["describe"]
     if "status" in body:
         if body["status"] != "active":
             raise Reject(400, "status")
@@ -432,7 +438,7 @@ def update_me(app: App, req: Request) -> dict:
         raise Reject(400, "nothing-to-change")
     remove = ("stopped_reason", "stopped_at") if "status" in fields else ()
     app.store.update_profile(user_id, fields, remove)
-    log(event="settings", user=user_id, changed=sorted(k for k in fields if k in ("send_time", "tz", "status", "transcribe")))
+    log(event="settings", user=user_id, changed=sorted(k for k in fields if k in ("send_time", "tz", "status", "transcribe", "describe")))
     p = {k: v for k, v in {**p, **fields}.items() if k not in remove}
     return respond(200, profile_view(p, app.now))
 
@@ -695,6 +701,10 @@ def note_view(item: dict, tz: str, writing_out: bool = False) -> dict:
         for shown, m in zip(view["media"], item["media"]):
             if m.get("transcript"):
                 shown["transcript"] = m["transcript"]
+            if m.get("description"):
+                # The photo's alt text, and shown in search results when it
+                # matched (Jamie: "descriptions only on search results").
+                shown["description"] = m["description"]
         if writing_out:
             for shown in view["media"]:
                 shown["writing"] = any(shown["n"] == int(m["n"]) for m in transcribe.waiting(item))
@@ -1063,8 +1073,9 @@ def search_terms(q: str) -> list[str]:
 
 def searched_text(n: dict) -> str:
     """What a note is found by: its text, its place's name, its links'
-    names and its recordings' words."""
-    words = [n.get("text") or ""] + [str(m.get("transcript") or "") for m in n.get("media") or []]
+    names, its recordings' words and its photos' descriptions."""
+    words = [n.get("text") or ""] + [str(m.get(k) or "") for m in n.get("media") or []
+                                     for k in ("transcript", "description")]
     if n.get("place"):
         words.append(place_label(n["place"]))
     words += [str(link.get("title") or "") for link in n.get("links") or []]

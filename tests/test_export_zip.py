@@ -89,6 +89,15 @@ class JobTest(ZipCase):
                                          {"path": "files/2026-10-07-2.m4a", "kind": "audio", "type": "audio/mp4"}])
         self.assertNotIn("media/u1", json.dumps(data))
 
+    def test_a_photo_described_keeps_its_words_as_alt_text(self):
+        self.store.set_media_text("u1", "2026-10-06", "0099", 1, "description", "A canoe [red] at the dock.")
+        self.call("POST", "/api/export/zip", cookies=self.cookies)
+        self.build()
+        z, top = self.the_zip(), "release-notes-2026-10-08/"
+        self.assertIn("![A canoe (red) at the dock.](files/2026-10-06-1.png)", z.read(top + "release-notes.md").decode())
+        dock = next(n for n in json.loads(z.read(top + "release-notes.json"))["notes"] if n["id"] == "0099")
+        self.assertEqual(dock["files"][0]["description"], "A canoe [red] at the dock.")
+
     def test_a_file_gone_since_is_left_out(self):
         del self.s3.objects[MEMO["key"]]
         self.call("POST", "/api/export/zip", cookies=self.cookies)

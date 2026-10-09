@@ -81,6 +81,7 @@ const SAY = {
   place: 'Pick your city from the list.',
   'send-time': 'Pick a time for your email.',
   transcribe: 'That didn’t save. Try again.',
+  describe: 'That didn’t save. Try again.',
   'places-failed': 'The city search isn’t answering. Try again in a minute.',
   token: ['This link isn’t one we sent. ', { href: '/#sign-in', text: 'Sign in to manage your emails' }, '.'],
   origin: 'That came from outside notes.yourversionnumber.com. Open Release Notes there and try again.',
@@ -395,7 +396,8 @@ function noteMedia(day, n, version, mark = null) {
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       const img = el('img');
-      img.alt = version ? `Photo from ${version}` : 'Photo';
+      // Described for those who turned it on (describe.py).
+      img.alt = m.description || (version ? `Photo from ${version}` : 'Photo');
       img.loading = 'lazy';
       img.decoding = 'async';
       img.src = src;
@@ -406,6 +408,13 @@ function noteMedia(day, n, version, mark = null) {
         (n.source === 'email' || !n.source ? ' It’s also in the original email.' : ''))));
       a.append(img);
       box.append(a);
+      // Shown only in search results, and only when the search found it
+      // there (Jamie: "descriptions only on search results").
+      if (mark && m.description && m.description.split(mark).length > 1) {
+        const seen = el('p', 'said');
+        appendMarked(seen, m.description, mark);
+        box.append(seen);
+      }
     } else if (m.kind === 'file') {
       // A PDF or any other file: a link that opens it.
       const a = el('a', 'file', m.name || (m.type === 'application/pdf' ? 'PDF' : 'File'));
@@ -1234,6 +1243,15 @@ const pages = {
       const saved = await save({ transcribe: writeOut.checked }, writeSection, writeOut);
       $('#transcribe-saved').hidden = !saved;
       if (!saved) writeOut.checked = !!p.transcribe;
+    });
+
+    const describe = $('#describe'), describeSection = describe.closest('.section');
+    describe.checked = !!p.describe;
+    describe.addEventListener('change', async () => {
+      $('#describe-saved').hidden = true;
+      const saved = await save({ describe: describe.checked }, describeSection, describe);
+      $('#describe-saved').hidden = !saved;
+      if (!saved) describe.checked = !!p.describe;
     });
 
     const picker = $('#city-picker'), changeCity = $('#change-city');

@@ -132,7 +132,13 @@ def changed(record: dict, *, store, transcribe, bucket: str, wanted: dict) -> in
         wanted[user_id] = bool((store.profile(user_id) or {}).get("transcribe"))
     if not wanted[user_id]:
         return 0
-    started = start(new, user_id, transcribe=transcribe, bucket=bucket)
+    # The stream carries this function's own writes, each with the note as
+    # it was then: a job finished since must not start again.
+    _, day, note_id = new["sk"].split("#", 2)
+    note = store.note(user_id, day, note_id)
+    if not note or not waiting(note):
+        return 0
+    started = start(note, user_id, transcribe=transcribe, bucket=bucket)
     if started:
         log(event="transcribe-start", user=user_id, started=started)
     return started
@@ -154,7 +160,7 @@ def finished(detail: dict, *, store, transcribe, s3, bucket: str) -> str:
             if _code(e) not in ("NoSuchKey", "404"):
                 raise
     text = text[:MAX_TRANSCRIPT]
-    kept = store.set_transcript(user_id, day, note_id, n, text)
+    kept = store.set_media_text(user_id, day, note_id, n, "transcript", text)
     s3.delete_object(Bucket=bucket, Key=key)
     try:
         transcribe.delete_transcription_job(TranscriptionJobName=name)

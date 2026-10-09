@@ -66,6 +66,12 @@ class TranscribeCase(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
 
+    def arrive(self, n, name="MODIFY"):
+        """The note as the table now has it, and its stream record."""
+        rows = self.store.items.setdefault("u1", [])
+        rows[:] = [r for r in rows if r["sk"] != n["sk"]] + [json.loads(json.dumps(n, default=int))]
+        return record(n, name=name)
+
     def run_it(self, event):
         with mock.patch("builtins.print"):
             transcribe.handler(event, None, store=self.store, transcribe=self.jobs, s3=self.s3)
@@ -73,7 +79,7 @@ class TranscribeCase(unittest.TestCase):
 
 class StartTest(TranscribeCase):
     def test_a_note_with_a_recording_starts_one_job_for_it_alone(self):
-        self.run_it({"Records": [record(note(M4A, PHOTO, AAC), name="INSERT")]})
+        self.run_it({"Records": [self.arrive(note(M4A, PHOTO, AAC), name="INSERT")]})
         self.assertEqual(list(self.jobs.jobs), [NAME])  # not the photo, not raw AAC Transcribe can't read
         job = self.jobs.jobs[NAME]
         self.assertEqual((job["MediaFormat"], job["Media"], job["OutputBucketName"], job["OutputKey"]),
@@ -82,17 +88,23 @@ class StartTest(TranscribeCase):
 
     def test_nothing_starts_unless_its_owner_turned_it_on(self):
         self.store.profiles["u1"]["transcribe"] = False
-        self.run_it({"Records": [record(note(M4A))]})
+        self.run_it({"Records": [self.arrive(note(M4A))]})
         del self.store.profiles["u1"]["transcribe"]
-        self.run_it({"Records": [record(note(M4A))]})
+        self.run_it({"Records": [self.arrive(note(M4A))]})
         self.assertEqual(self.jobs.jobs, {})
 
     def test_written_again_while_running_or_once_done_starts_nothing_new(self):
-        self.run_it({"Records": [record(note(M4A))]})
-        self.run_it({"Records": [record(note(M4A))]})  # ConflictException: already running
+        self.run_it({"Records": [self.arrive(note(M4A))]})
+        self.run_it({"Records": [self.arrive(note(M4A))]})  # ConflictException: already running
         self.jobs.jobs.clear()
-        self.run_it({"Records": [record(note({**M4A, "transcript": "Hello."}))]})
-        self.run_it({"Records": [record(note({**M4A, "transcript": ""}))]})  # tried, heard nothing
+        self.run_it({"Records": [self.arrive(note({**M4A, "transcript": "Hello."}))]})
+        self.run_it({"Records": [self.arrive(note({**M4A, "transcript": ""}))]})  # tried, heard nothing
+        self.assertEqual(self.jobs.jobs, {})
+
+    def test_an_old_record_of_a_note_since_written_out_starts_nothing(self):
+        stale = record(note(M4A))  # from before its words came back
+        self.arrive(note({**M4A, "transcript": "Hello."}))
+        self.run_it({"Records": [stale]})
         self.assertEqual(self.jobs.jobs, {})
 
     def test_turning_it_on_writes_out_every_recording_already_kept(self):

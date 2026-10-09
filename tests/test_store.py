@@ -191,7 +191,7 @@ class AddMedia(unittest.TestCase):
         self.assertNotIn(":had", kw["ExpressionAttributeValues"])
 
 
-class SetTranscript(unittest.TestCase):
+class SetMediaText(unittest.TestCase):
     def table(self, media):
         t = FakeTable()
         t.get_item = lambda **kw: {"Item": {"media": media}} if media is not None else {}
@@ -200,16 +200,17 @@ class SetTranscript(unittest.TestCase):
 
     def test_the_words_go_on_the_file_with_that_number_if_it_is_still_there(self):
         t = self.table([{"n": Decimal(1), "kind": "image"}, {"n": Decimal(2), "kind": "audio"}])
-        self.assertTrue(Store(t).set_transcript("u1", "2026-10-09", "w-1", 2, "Hello."))
+        self.assertTrue(Store(t).set_media_text("u1", "2026-10-09", "w-1", 2, "transcript", "Hello."))
         kw = t.calls[0][1]
-        self.assertEqual(kw["UpdateExpression"], "SET media[1].transcript = :t")
+        self.assertEqual(kw["UpdateExpression"], "SET media[1].#f = :t")
+        self.assertEqual(kw["ExpressionAttributeNames"], {"#f": "transcript"})
         self.assertEqual(kw["ConditionExpression"], "attribute_exists(pk) AND media[1].n = :n")
         self.assertEqual(kw["ExpressionAttributeValues"], {":t": "Hello.", ":n": 2})
 
     def test_no_note_or_no_such_file_writes_nothing(self):
         for media in (None, [{"n": Decimal(1)}]):
             t = self.table(media)
-            self.assertFalse(Store(t).set_transcript("u1", "2026-10-09", "w-1", 2, "Hello."))
+            self.assertFalse(Store(t).set_media_text("u1", "2026-10-09", "w-1", 2, "transcript", "Hello."))
             self.assertEqual(t.calls, [])
 
 

@@ -643,8 +643,9 @@ const pages = {
     // One of ask (the birthday), number (it explained, then the email),
     // signin (the email alone, for anyone returning) or check (the code).
     // Each element says in data-show which it belongs to.
-    let mode = null, before = 'ask', explained = false;
+    let mode = null, before = 'ask', explained = false, view = 0;
     const show = (m) => {
+      ++view; // a pending answer must not replace a later navigation
       if (m !== 'check') before = m;
       mode = m;
       for (const e of document.querySelectorAll('[data-show]')) e.hidden = !e.dataset.show.split(' ').includes(m);
@@ -666,7 +667,9 @@ const pages = {
         quiet(birthdayForm);
         const b = birthday.value();
         if (!b) return say(birthdayForm, { error: 'birthday' }, birthday.first);
+        const mine = view;
         const r = await sampleFor(b);
+        if (mine !== view) return;
         if (!r.ok) return say(birthdayForm, r.data, birthday.first);
         pendingBirthday.set(b);
         explain(r.data);
@@ -703,6 +706,7 @@ const pages = {
         const r = await api('POST', '/api/auth/start', { email });
         if (r.status !== 202) return say(startForm, r.data);
         store.set('rn-email', email);
+        store.set('rn-before', mode);
         showCheck(email);
       });
     });
@@ -734,28 +738,42 @@ const pages = {
         });
         if (!r.ok) return say(codeForm, r.data);
         store.drop('rn-email');
+        store.drop('rn-before');
         signedIn.set();
         location.replace(home(r.data.new));
       });
     });
 
-    $('#again').addEventListener('click', (e) => {
+    $('#again').addEventListener('click', async (e) => {
       e.preventDefault();
       store.drop('rn-email');
+      store.drop('rn-before');
       resent.hidden = true;
+      // A reload restores the code before the number has been fetched.
+      if (before === 'number' && !explained) {
+        await start();
+        if (mode === 'number') startForm.email.focus();
+        else if (mode === 'ask') birthday.first.focus();
+        return;
+      }
       show(before);
-      startForm.email.focus();
+      if (before === 'ask') birthday.first.focus(); else startForm.email.focus();
     });
 
     // Where this visit starts: the code if an email just went from this
     // tab, the sign-in form if asked for, the number if a birthday is
     // waiting, else the question.
     const start = async () => {
-      if (store.get('rn-email')) return showCheck(store.get('rn-email'));
+      if (store.get('rn-email')) {
+        before = store.get('rn-before') || (location.hash === '#sign-in' ? 'signin' : pendingBirthday.get() ? 'number' : 'ask');
+        return showCheck(store.get('rn-email'));
+      }
       if (location.hash === '#sign-in') return show('signin');
       const b = pendingBirthday.get();
       if (b) {
+        const mine = view;
         const r = await sampleFor(b);
+        if (mine !== view) return;
         if (r.ok) {
           birthday.set(b);
           explain(r.data);
@@ -765,6 +783,7 @@ const pages = {
       }
       show('ask');
     };
+    window.addEventListener('hashchange', () => start());
 
     // Everything starts hidden. Someone signed in here before goes straight
     // on once /api/me agrees, without the form ever showing.
@@ -811,7 +830,7 @@ const pages = {
 
     const form = $('#setup-form');
     const birthday = birthdayFields(form);
-    let place = null;
+    let place = null, askedVersion = 0;
     sendTimes(form.send_time, '06:00');
 
     // Sign-up sends today's email at once (web.send_first).
@@ -825,10 +844,12 @@ const pages = {
     // under the fields.
     const known = $('#known');
     const version = async () => {
+      const mine = ++askedVersion;
       const b = birthday.value();
       if (!b) { $('#that-makes').hidden = true; return; }
       const tz = place ? place.tz : Intl.DateTimeFormat().resolvedOptions().timeZone;
       const r = await api('GET', `/api/sample?birthday=${b}&tz=${encodeURIComponent(tz)}`);
+      if (mine !== askedVersion) return;
       if (!known.hidden) {
         if (r.ok) vnum($('#known-v'), r.data.version); else notRight();
         return;
@@ -863,6 +884,7 @@ const pages = {
       // The city text changed after a pick: that pick no longer holds.
       place = null;
       $('.picked', form).hidden = true;
+      version();
     });
     for (const f of $('.birthday', form).querySelectorAll('select, input')) f.addEventListener('change', version);
     form.addEventListener('input', () => quiet(form));
@@ -888,6 +910,12 @@ const pages = {
   },
 
   async settings() {
+    // Signing out does not depend on loading the profile successfully.
+    $('#signout').addEventListener('click', async () => {
+      await api('POST', '/api/auth/signout');
+      signedIn.drop();
+      location.replace('/#sign-in');
+    });
     const account = $('#account');
     const done = loading(account);
     const me = await api('GET', '/api/me');
@@ -957,11 +985,6 @@ const pages = {
       quiet(emails);
       const r = await api('DELETE', '/api/pause');
       if (r.ok) { p = r.data; fill(); } else say(emails, r.data, $('#resume'));
-    });
-    $('#signout').addEventListener('click', async () => {
-      await api('POST', '/api/auth/signout');
-      signedIn.drop();
-      location.replace('/#sign-in');
     });
     fill();
   },

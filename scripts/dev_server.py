@@ -16,8 +16,10 @@ the bucket's signed links. A zip export builds in a thread, two seconds
 after it is asked for, and downloads from /dev-media/ too. Files chosen on
 the web post to /dev-upload/, checked as S3 checks a signed form. City search and weather ask the real Open-Meteo
 unless --fake-places (the week of emails comes with made-up weather either
-way), and a link's page for its title unless --fake-links.
-Everything is forgotten when it stops.
+way), and a link's page for its title unless --fake-links. With "Write
+out what I say" on in settings, each recording gets a made-up transcript
+five seconds later, as the transcriber would put it there (nothing is sent
+anywhere). Everything is forgotten when it stops.
 
     scripts/dev_server.py --dayone EXPORT.zip [--dayone ANOTHER.zip]
 
@@ -50,7 +52,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
 from fakes import FakeLambda, FakeS3, FakeSES, FakeStore  # noqa: E402
-from release_notes import dayone, export_job, importer, links, media, places, tags, weather, web  # noqa: E402
+from release_notes import dayone, export_job, importer, links, media, places, tags, transcribe, weather, web  # noqa: E402
 
 FAKE_PLACES = [
     {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
@@ -202,6 +204,14 @@ def main():
         # Real weather for hundreds of days is minutes of asking: only the fake.
         load_dayone(args.dayone, store, s3, fetch, fake_weather if args.fake_places else None)
 
+    def write_out():  # what transcribe.py does, with made-up words
+        for user_id, p in list(store.profiles.items()):
+            if not p.get("transcribe"):
+                continue
+            for n in store.all_notes(user_id):
+                for m in transcribe.waiting(n):
+                    m["transcript"] = "Made up on this machine: back from the lake, and the loons were out on the water."
+
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=str(ROOT / "web"), **kw)
@@ -220,6 +230,7 @@ def main():
             }
             r = web.handler(event, None, store=store, ses=ses, s3=s3, lam=lam, geocode=geocode, fetch=fetch,
                             weather_fetch=weather_fetch)
+            threading.Timer(5, write_out).start()
             body = r["body"].encode()
             self.send_response(r["statusCode"])
             for k, v in r["headers"].items():

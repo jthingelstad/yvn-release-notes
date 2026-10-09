@@ -95,6 +95,16 @@ class FakeStore:
                 return dict(i)
         return None
 
+    def note(self, user_id, day, note_id):
+        return next((i for i in self.items.get(user_id, []) if i["sk"] == f"NOTE#{day}#{note_id}"), None)
+
+    def set_transcript(self, user_id, day, note_id, n, text):
+        for m in (self.note(user_id, day, note_id) or {}).get("media") or []:
+            if int(m["n"]) == n:
+                m["transcript"] = text
+                return True
+        return False
+
     def delete_note(self, user_id, day, note_id):
         rows = self.items.get(user_id, [])
         for n, i in enumerate(rows):

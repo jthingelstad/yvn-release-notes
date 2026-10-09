@@ -50,7 +50,8 @@ def file_paths(items: list[dict]) -> dict[str, list[dict]]:
             count[day] = count.get(day, 0) + 1
             ext = str(m["key"]).rsplit(".", 1)[-1]
             out.setdefault(note_id, []).append(
-                {"path": f"files/{day}-{count[day]}.{ext}", "kind": m["kind"], "type": m["type"], "key": m["key"]})
+                {"path": f"files/{day}-{count[day]}.{ext}", "kind": m["kind"], "type": m["type"], "key": m["key"],
+                 **({"transcript": m["transcript"]} if m.get("transcript") else {})})
     return out
 
 
@@ -81,8 +82,12 @@ def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | No
                     "subject": item.get("subject"),
                     "attachments": _plain(item.get("attachments", [])),
                     "links": _plain(item.get("links", [])),
-                    "files": [{"path": x["path"], "kind": x["kind"], "type": x["type"]}
+                    "files": [{"path": x["path"], "kind": x["kind"], "type": x["type"],
+                               **({"transcript": x["transcript"]} if x.get("transcript") else {})}
                               for x in (files or {}).get(sk.split("#", 2)[2], [])],
+                    # The words alone (no files): recordings' words still go.
+                    "transcripts": [] if files else [str(m["transcript"]) for m in item.get("media") or []
+                                                     if m.get("transcript")],
                 }
             )
         elif sk.startswith("PAUSE#"):
@@ -95,7 +100,7 @@ def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | No
             n["version"] = n["version"] or str(compute_version(born, date.fromisoformat(n["date"])))
     notes.sort(key=lambda n: (n["date"], n["written_at"] or "", n["id"]))
     for n in notes:
-        for k in ("updated_at", "subject", "links", "files", "tz", "place", "tags", "origin"):
+        for k in ("updated_at", "subject", "links", "files", "transcripts", "tz", "place", "tags", "origin"):
             if not n[k]:
                 del n[k]
     return {
@@ -147,4 +152,8 @@ def markdown(data: dict) -> str:
             # Paths inside the zip, so the Markdown reads with its pictures.
             label = {"image": "Photo", "audio": "Recording"}.get(f["kind"], "File")
             lines += ["", f"{'!' if f['kind'] == 'image' else ''}[{label}, {notes[0]['version']}]({f['path']})"]
+            if f.get("transcript"):
+                lines += ["", "> " + f["transcript"]]
+        for said in (t for n in notes for t in n.get("transcripts", [])):
+            lines += ["", "> " + said]
     return "\n".join(lines) + "\n"

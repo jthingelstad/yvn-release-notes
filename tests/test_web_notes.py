@@ -1,3 +1,5 @@
+import json
+
 from fakes import FakeS3
 from test_web import WebCase
 
@@ -543,3 +545,43 @@ class SearchTest(NotesCase):
         r, _ = self.call("POST", "/api/search", {"q": "rain"})
         self.assertEqual(r["statusCode"], 401)
 
+
+
+class TranscriptTest(NotesCase):
+    """Recordings written out (transcribe.py): the setting, and the words on
+    the page, in search and in the export."""
+
+    REC = {"n": 1, "kind": "audio", "type": "audio/mp4", "size": 9000, "key": "media/u1/2026-10-08/m1/1.m4a"}
+
+    def put_me(self, body):
+        return self.call("PUT", "/api/me", body, cookies=self.cookies)
+
+    def test_off_until_turned_on_and_only_by_a_yes_or_no(self):
+        self.assertFalse(self.get("/api/me")[1]["transcribe"])
+        r, body = self.put_me({"transcribe": True})
+        self.assertEqual((r["statusCode"], body["transcribe"]), (200, True))
+        self.assertIs(self.store.profiles["u1"]["transcribe"], True)
+        self.assertFalse(self.put_me({"transcribe": False})[1]["transcribe"])
+        self.assertEqual(self.put_me({"transcribe": "yes"})[0]["statusCode"], 400)
+
+    def test_the_words_show_under_the_recording_and_waiting_ones_say_so(self):
+        self.emailed(TODAY, "m1", text="", media=[dict(self.REC, transcript="Walked to the lake."),
+                                                  dict(self.REC, n=2, key="media/u1/2026-10-08/m1/2.m4a")])
+        shown = self.get("/api/today")[1]["notes"][0]["media"]
+        self.assertEqual(shown[0]["transcript"], "Walked to the lake.")
+        self.assertNotIn("writing", shown[1])  # off: nothing is coming
+        self.put_me({"transcribe": True})
+        shown = self.get("/api/today")[1]["notes"][0]["media"]
+        self.assertEqual((shown[0]["writing"], shown[1]["writing"]), (False, True))
+        self.assertNotIn("key", shown[0])
+
+    def test_search_finds_what_was_said(self):
+        self.emailed("2026-10-02", "m1", text="", media=[dict(self.REC, transcript="The loons were back on the lake.")])
+        r, body = self.call("POST", "/api/search", {"q": "loons"}, cookies=self.cookies)
+        self.assertEqual([d["date"] for d in body["days"]], ["2026-10-02"])
+
+    def test_the_words_only_export_keeps_what_was_said(self):
+        self.emailed("2026-10-02", "m1", text="", media=[dict(self.REC, transcript="The loons were back.")])
+        self.assertIn("> The loons were back.", self.get("/api/export", query={"format": "md"})[1])
+        _, data = self.get("/api/export", query={"format": "json"})
+        self.assertEqual(json.loads(data)["notes"][0]["transcripts"], ["The loons were back."])

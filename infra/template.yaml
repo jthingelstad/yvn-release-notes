@@ -1039,19 +1039,16 @@ Resources:
                 {"value": 0.001, "label": "Complaints: AWS reviews at 0.1%", "yAxis": "right"}
               ]}}},
             {"type": "metric", "x": 0, "y": 15, "width": 12, "height": 6, "properties": {
-              "title": "Notes added a day", "view": "timeSeries", "stacked": true, "region": "${AWS::Region}",
-              "period": 86400, "stat": "Maximum",
+              "title": "Notes, by where they came from", "view": "timeSeries", "stacked": true, "region": "${AWS::Region}",
+              "period": 3600, "stat": "Maximum",
               "metrics": [
-                [{"expression": "DIFF(email)", "label": "By email", "id": "byEmail"}],
-                [{"expression": "DIFF(web)", "label": "On the web", "id": "onWeb"}],
-                [{"expression": "DIFF(imported)", "label": "Imported", "id": "byImport"}],
-                ["ReleaseNotes", "EmailNotes", {"id": "email", "visible": false}],
-                ["ReleaseNotes", "WebNotes", {"id": "web", "visible": false}],
-                ["ReleaseNotes", "ImportedNotes", {"id": "imported", "visible": false}]
+                ["ReleaseNotes", "EmailNotes", {"label": "By email"}],
+                ["ReleaseNotes", "WebNotes", {"label": "On the web"}],
+                ["ReleaseNotes", "ImportedNotes", {"label": "Imported"}]
               ]}},
             {"type": "metric", "x": 12, "y": 15, "width": 12, "height": 6, "properties": {
               "title": "Subscribers and writers", "view": "timeSeries", "region": "${AWS::Region}",
-              "period": 86400, "stat": "Maximum",
+              "period": 3600, "stat": "Maximum",
               "metrics": [
                 ["ReleaseNotes", "Subscribers", {"label": "Getting the email"}],
                 ["ReleaseNotes", "Writers7", {"label": "Wrote in the last 7 days"}],

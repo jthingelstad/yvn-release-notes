@@ -100,7 +100,93 @@ const SAY = {
   upload: 'didn’t finish sending. Try again.',
   'too-many-files': 'A note holds up to 20 files.',
   busy: 'That note just changed. Reload the page and try again.',
+  microphone: 'Release Notes can’t use the microphone. Allow it for this site in your browser’s settings, then try again.',
 };
+
+// A recording made on the page (Jamie, 2026-10-09), in the first of these
+// the browser records: Safari and newer Chrome make MP4, older Chrome WebM,
+// Firefox Ogg. Each is a type media.py keeps. At most half an hour.
+const RECORD_TYPES = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+const MAX_RECORDING = 30 * 60; // seconds
+
+// The note form's Record button: the microphone through MediaRecorder,
+// each recording kept on the page, to listen to or remove, until the note
+// is saved. files() stops one still going and gives them as files to send.
+function recorder(form, toggle, list) {
+  const kept = []; // { file, url }
+  let live = null; // { rec, done }
+  toggle.hidden = !(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const draw = () => {
+    list.textContent = '';
+    for (const r of kept) {
+      const row = el('div', 'recording');
+      const audio = el('audio');
+      audio.controls = true;
+      audio.src = r.url;
+      audio.setAttribute('aria-label', r.file.name);
+      row.append(audio, button('Remove', 'quiet', () => {
+        URL.revokeObjectURL(r.url);
+        kept.splice(kept.indexOf(r), 1);
+        draw();
+      }));
+      list.append(row);
+    }
+  };
+  const start = async () => {
+    quiet(form);
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      return say(form, { error: 'microphone' }, toggle);
+    }
+    const type = RECORD_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
+    const rec = new MediaRecorder(stream, type ? { mimeType: type } : {});
+    const chunks = [], started = Date.now();
+    const seconds = () => Math.round((Date.now() - started) / 1000);
+    let tick;
+    const done = new Promise((resolve) => rec.addEventListener('stop', () => {
+      clearInterval(tick);
+      stream.getTracks().forEach((t) => t.stop());
+      const t = rec.mimeType || type || 'audio/webm';
+      if (chunks.length) {
+        const ext = t.startsWith('audio/mp4') ? 'm4a' : t.startsWith('audio/ogg') ? 'ogg' : 'webm';
+        const at = new Date(started).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(':', '.');
+        const file = new File(chunks, `Recording ${at}.${ext}`, { type: t });
+        kept.push({ file, url: URL.createObjectURL(file) });
+      }
+      live = null;
+      toggle.textContent = 'Record';
+      toggle.setAttribute('aria-pressed', 'false');
+      draw();
+      resolve();
+    }));
+    rec.addEventListener('dataavailable', (e) => { if (e.data.size) chunks.push(e.data); });
+    rec.start(1000);
+    live = { rec, done };
+    toggle.textContent = 'Stop · 0:00';
+    toggle.setAttribute('aria-pressed', 'true');
+    tick = setInterval(() => {
+      toggle.textContent = `Stop · ${clock(seconds())}`;
+      if (seconds() >= MAX_RECORDING) rec.stop();
+    }, 1000);
+  };
+  toggle.addEventListener('click', () => (live ? live.rec.stop() : start()));
+  // A recording not yet saved lives only on this page.
+  window.addEventListener('beforeunload', (e) => { if (live || kept.length) e.preventDefault(); });
+  return {
+    async files() {
+      if (live) { live.rec.stop(); await live.done; }
+      return kept.map((r) => r.file);
+    },
+    clear() {
+      kept.forEach((r) => URL.revokeObjectURL(r.url));
+      kept.length = 0;
+      draw();
+    },
+  };
+}
 
 // What the file pickers offer: photos, recordings and PDFs (media.py).
 const FILES = 'image/*,audio/*,application/pdf,.heic,.heif,.m4a,.pdf';
@@ -526,6 +612,7 @@ function noteForm(form, getDay, onAdded) {
     chosen.hidden = !names.length;
   };
   pick.addEventListener('change', () => { quiet(form); showChosen(); });
+  const recordings = recorder(form, $('.record', form), $('.recordings', form));
   form.text.addEventListener('input', () => {
     quiet(form);
     if (form.text.value.trim()) store.set(key(), form.text.value); else store.drop(key());
@@ -534,7 +621,7 @@ function noteForm(form, getDay, onAdded) {
     e.preventDefault();
     busy(form, async () => {
       quiet(form);
-      const files = [...pick.files];
+      const files = [...pick.files, ...(await recordings.files())];
       if (!form.text.value.trim() && !files.length) return say(form, { error: 'text' }, form.text);
       // The zone it is being written in, so its time reads as it did here.
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -557,6 +644,7 @@ function noteForm(form, getDay, onAdded) {
       form.text.value = '';
       pick.value = '';
       showChosen();
+      recordings.clear();
       onAdded();
     });
   });

@@ -290,7 +290,7 @@ def main():
                 # The same CSP CloudFront adds, so a page that breaks it breaks here.
                 self.send_header(
                     "content-security-policy",
-                    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; "
+                    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; "
                     "font-src 'self'; connect-src 'self' https://tinylytics.app; form-action 'self'; frame-ancestors 'none'",
                 )
                 self.send_header("cache-control", "no-store")

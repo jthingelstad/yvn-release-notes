@@ -204,6 +204,17 @@ class Sending(unittest.TestCase):
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         self.assertEqual(len(ses.sent), 1)
 
+    def test_only_the_first_email_says_welcome(self):
+        # Sign-up's send_now is a subscriber's first email; it says when the
+        # rest will come.
+        store, ses = FakeStore([ada()]), FakeSES()
+        send.handler({"send_now": "u1"}, None, store=store, ses=ses, clock=clock("2026-10-07T20:00:00+00:00"))
+        first = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        self.assertIn("every day at 8:00 PM", first.get_body(("plain",)).get_content())
+        send.handler({}, None, store=store, ses=ses, clock=clock("2026-10-09T01:00:00+00:00"))
+        later = message_from_bytes(ses.sent[1]["Content"]["Raw"]["Data"], policy=default)
+        self.assertNotIn("Welcome", later.get_body(("plain",)).get_content())
+
     def test_send_now_only_sends_to_the_named_subscriber(self):
         store, ses = FakeStore([ada(), ada(user_id="u2", email="bea@example.com")]), FakeSES()
         send.handler({"send_now": "u2"}, None, store=store, ses=ses, clock=AT_8PM)

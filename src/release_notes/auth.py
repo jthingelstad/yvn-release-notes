@@ -20,7 +20,10 @@ Elixir's design (elixir-mcp packages/auth/src/magic.mjs), on DynamoDB:
   links. The token rides in the fragment, which never reaches a server log.
 
 The session is a random token in an __Host- cookie (Secure, HttpOnly,
-SameSite=Lax, Path=/). It lasts 30 days from last use and 90 days at most.
+SameSite=Lax, Path=/). It lasts 14 days from last use, and every visit
+starts the 14 days again, with no outer limit (Jamie, 2026-10-08: "as long
+as I return within that time extend my login session"). The cookie's
+Max-Age is renewed along with the stored expiry, at most once a day.
 """
 
 import hashlib
@@ -35,9 +38,8 @@ from .compose import APP, BLUE, FONT, INK, INK_2, MONO, PAPER, from_header
 
 LOGIN_TTL = 15 * 60
 MAX_CODE_ATTEMPTS = 5
-SESSION_IDLE = 30 * 86400
-SESSION_MAX = 90 * 86400
-SESSION_TOUCH = 86400  # rewrite a session's expiry at most once a day
+SESSION_IDLE = 14 * 86400
+SESSION_TOUCH = 86400  # renew a session's expiry and cookie at most once a day
 COOKIE = "__Host-rn"
 
 # Sign-in emails per hour.
@@ -93,7 +95,7 @@ def network(viewer: str) -> str:
 
 
 def session_cookie(token: str) -> str:
-    return f"{COOKIE}={token}; Path=/; Max-Age={SESSION_MAX}; Secure; HttpOnly; SameSite=Lax"
+    return f"{COOKIE}={token}; Path=/; Max-Age={SESSION_IDLE}; Secure; HttpOnly; SameSite=Lax"
 
 
 def clear_cookie() -> str:
@@ -108,8 +110,8 @@ def cookie_token(cookies: list[str]) -> str | None:
     return None
 
 
-def session_expiry(created: int, now: int) -> int:
-    return min(now + SESSION_IDLE, created + SESSION_MAX)
+def session_expiry(now: int) -> int:
+    return now + SESSION_IDLE
 
 
 # --- the email ---------------------------------------------------------------

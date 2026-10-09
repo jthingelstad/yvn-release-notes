@@ -19,8 +19,20 @@ async function api(method, path, body) {
   }
   let data = {};
   try { data = await res.json(); } catch (e) { /* an empty or non-JSON answer */ }
+  if (path === '/api/me' && method === 'GET') {
+    if (res.ok) signedIn.set(); else if (res.status === 401) signedIn.drop();
+  }
   return { status: res.status, ok: res.ok, data };
 }
+
+// A hint, kept in this browser, that it was signed in last time. The
+// session cookie is HttpOnly, so the home page cannot see it; with the hint
+// it waits for /api/me instead of showing the sign-in form first.
+const signedIn = {
+  get() { try { return localStorage.getItem('rn-in') === '1'; } catch (e) { return false; } },
+  set() { try { localStorage.setItem('rn-in', '1'); } catch (e) { /* private mode */ } },
+  drop() { try { localStorage.removeItem('rn-in'); } catch (e) { /* private mode */ } },
+};
 
 // Cobalt digits, tangerine dots.
 function vnum(el, v) {
@@ -499,6 +511,7 @@ const pages = {
         });
         if (!r.ok) return say(codeForm, r.data);
         store.drop('rn-email');
+        signedIn.set();
         location.replace(home(r.data.new));
       });
     });
@@ -512,9 +525,16 @@ const pages = {
       startForm.email.focus();
     });
 
-    const [me, sample] = await Promise.all([api('GET', '/api/me'), api('GET', '/api/sample')]);
+    // The form starts hidden. Someone signed in here before goes straight
+    // on once /api/me agrees, without the form ever showing.
+    const reveal = () => { ask.hidden = false; $('#home-foot').hidden = false; };
+    if (!signedIn.get()) reveal();
+    const sampled = api('GET', '/api/sample');
+    const me = await api('GET', '/api/me');
     if (me.ok) return location.replace(home(me.data.new));
+    reveal();
     if (store.get('rn-email')) showCheck(store.get('rn-email'));
+    const sample = await sampled;
     if (sample.ok) {
       vnum($('#sample-v'), sample.data.version);
       $('#sample-who').textContent = `Someone born ${longDate(sample.data.birthday)}, today.`;
@@ -545,6 +565,7 @@ const pages = {
           form.append(again);
           return;
         }
+        signedIn.set();
         location.replace(home(r.data.new));
       });
     });
@@ -560,12 +581,12 @@ const pages = {
     sendTimes(form.send_time, '06:00');
     form.birthday.max = zoneNow(Intl.DateTimeFormat().resolvedOptions().timeZone).date;
 
+    // Sign-up sends today's email at once (web.send_first).
     const firstEmail = () => {
-      const at = clock(form.send_time.value);
-      if (!place) { $('#first-email').textContent = ''; return; }
-      const when = zoneNow(place.tz).hhmm < form.send_time.value ? 'today' : 'tomorrow';
-      $('#first-email').textContent = `Your first email arrives ${when} at ${at}.`;
+      $('#first-email').textContent =
+        `Today's email comes as soon as you start. After that, every day at ${clock(form.send_time.value)}.`;
     };
+    firstEmail();
     const version = async () => {
       if (!form.birthday.value) { $('#that-makes').hidden = true; return; }
       const tz = place ? place.tz : Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -655,6 +676,7 @@ const pages = {
     });
     $('#signout').addEventListener('click', async () => {
       await api('POST', '/api/auth/signout');
+      signedIn.drop();
       location.replace('/');
     });
     fill();

@@ -4,7 +4,8 @@ from datetime import date
 from email import policy
 from email.parser import BytesParser
 
-from release_notes.compose import PAST_MAX, body, build_message, countdown, html_body, linked, streak_lines
+from release_notes.compose import (PAST_MAX, body, build_message, clock_phrase, countdown, html_body, linked, streak_lines,
+                                   welcome_line)
 from release_notes.streak import Streak, compute_streak
 from release_notes.version import compute_version
 
@@ -49,6 +50,24 @@ class Email(unittest.TestCase):
         msg = message(date(2026, 10, 8))
         self.assertIn("Reply as often as you like", msg.get_body(("plain",)).get_content())
         self.assertIn("Reply as often as you like", msg.get_body(("html",)).get_content())
+
+    def test_says_photos_and_voice_memos_work(self):
+        # Jamie, 2026-10-08: make sure people know a reply can carry them.
+        msg = message(date(2026, 10, 8))
+        self.assertIn("Photos and voice memos work too.", msg.get_body(("plain",)).get_content())
+        self.assertIn("photos and voice memos work too", msg.get_body(("html",)).get_content())
+
+    def test_welcome_only_when_asked(self):
+        v = compute_version(BIRTHDAY, date(2026, 10, 8))
+        line = welcome_line("06:30")
+        self.assertEqual(line, "Welcome to Release Notes. This first one is today's; "
+                               "from tomorrow it comes every day at 6:30 AM.")
+        self.assertTrue(body(v, BIRTHDAY, welcome=line).startswith(line + "\n\nYou're "))
+        self.assertIn("This first one is today&#x27;s", html_body(v, BIRTHDAY, date(2026, 10, 8), welcome=line))
+        self.assertNotIn("Welcome", body(v, BIRTHDAY) + html_body(v, BIRTHDAY, date(2026, 10, 8)))
+        self.assertEqual(clock_phrase("00:15"), "12:15 AM")
+        self.assertEqual(clock_phrase("12:00"), "12:00 PM")
+        self.assertEqual(clock_phrase("20:45"), "8:45 PM")
 
     def test_nothing_remote(self):
         # No images, fonts, stylesheets or anything else fetched on open.

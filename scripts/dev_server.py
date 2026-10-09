@@ -94,11 +94,15 @@ def main():
     args = ap.parse_args()
     origin = f"http://localhost:{args.port}"
     os.environ.update(WEB_ORIGIN=origin, FROM_ADDRESS="notes@yourversionnumber.com", CONFIG_SET="dev", TABLE="dev",
-                      MAIL_BUCKET="dev", EXPORT_FUNCTION="dev-export")
+                      MAIL_BUCKET="dev", EXPORT_FUNCTION="dev-export",
+                      SENDER_FUNCTION="dev-sender")
 
     store, ses, s3 = FakeStore(), PrintingSES(), FakeS3()
 
     def build_later(payload):  # the export function, as Lambda would run it
+        if "send_now" in payload:  # sign-up's first email: the sender is not run here
+            print(f"-- sender invoked: today's email for {payload['send_now']}", flush=True)
+            return
         threading.Timer(2, export_job.handler, (payload, None), {"store": store, "s3": s3}).start()
     lam = FakeLambda(then=build_later)
     store.emails["ada@example.com"] = "u1"

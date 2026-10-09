@@ -90,6 +90,7 @@ class App:
     def __init__(self, store, ses, now: int, s3=None, lam=None):
         self._store, self._ses, self._s3, self._lam, self.now = store, ses, s3, lam, now
         self.origin = os.environ["WEB_ORIGIN"]
+        self.renewed = None  # the session cookie again, when its 14 days start over
 
     @property
     def store(self):
@@ -150,7 +151,8 @@ class App:
             return None
         s["hash"] = h
         if self.now - int(s.get("seen_at", 0)) >= auth.SESSION_TOUCH:
-            self.store.touch_session(h, self.now, auth.session_expiry(int(s["created_at"]), self.now))
+            self.store.touch_session(h, self.now, auth.session_expiry(self.now))
+            self.renewed = auth.session_cookie(token)
         return s
 
     def signed_in(self, req: Request) -> dict:
@@ -297,7 +299,7 @@ def auth_verify(app: App, req: Request) -> dict:
         user_id=user_id,
         email=None if user_id else email,
         now=app.now,
-        expires=auth.session_expiry(app.now, app.now),
+        expires=auth.session_expiry(app.now),
     )
     old = auth.cookie_token(req.cookies)
     if old:
@@ -425,11 +427,6 @@ def sign_up(app: App, s: dict, body: dict) -> dict:
         "created_at": iso(app.now),
         **fields,
     }
-    # The first email is the next send time to come: today's if it is still
-    # ahead, otherwise tomorrow's. The sender's window would otherwise send
-    # today's late, minutes after sign-up.
-    if local.strftime("%H:%M") >= send_time:
-        profile["last_sent_date"] = local.date().isoformat()
     email = s["email"]
     user_id = uuid.uuid4().hex
     if not app.store.create_subscriber(user_id, email, profile):
@@ -438,9 +435,24 @@ def sign_up(app: App, s: dict, body: dict) -> dict:
         if not user_id:
             raise Reject(409, "try-again")
         profile = app.store.profile(user_id) or {}
+    else:
+        send_first(app, user_id)
     app.store.claim_session(s["hash"], user_id)
     log(event="signup", user=user_id)
     return respond(200, profile_view({"email": email, **profile}, app.now))
+
+
+def send_first(app: App, user_id: str) -> None:
+    """Today's email, straight away, so the first one arrives while the
+    person is still here (Jamie, 2026-10-08). The sender marks the day
+    sent, so the schedule's first is tomorrow's. If the invoke fails, the
+    schedule still sends today's when the send time is ahead or under
+    three hours past; sign-up never fails over it."""
+    try:
+        app.lam.invoke(FunctionName=os.environ["SENDER_FUNCTION"], InvocationType="Event",
+                       Payload=json.dumps({"send_now": user_id}).encode())
+    except Exception:
+        log(event="first-email-failed", user=user_id)
 
 
 def find_places(app: App, req: Request) -> dict:
@@ -936,5 +948,7 @@ def handler(event, context, *, store=None, ses=None, s3=None, lam=None, geocode=
             response = route(app, req, *args)
         except Reject as r:
             response = r.response
+        if app.renewed and "cookies" not in response:
+            response["cookies"] = [app.renewed]
     log(event="web", method=req.method, path=pattern or "unmatched", status=response["statusCode"])
     return response

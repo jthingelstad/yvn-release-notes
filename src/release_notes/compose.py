@@ -97,6 +97,17 @@ def days_phrase(n: int) -> str:
     return f"{n} day" if n == 1 else f"{n} days"
 
 
+def clock_phrase(hhmm: str) -> str:
+    """'06:30' as '6:30 AM', the way the web app shows send times."""
+    h, m = (int(x) for x in hhmm.split(":"))
+    return f"{(h + 11) % 12 + 1}:{m:02d} {'AM' if h < 12 else 'PM'}"
+
+
+def welcome_line(send_time: str) -> str:
+    """The first email goes the moment someone signs up (web.send_first)."""
+    return f"Welcome to Release Notes. This first one is today's; from tomorrow it comes every day at {clock_phrase(send_time)}."
+
+
 def streak_lines(v: Version, s: Streak) -> tuple[str, str]:
     """The streak as a bold head and a quiet tail. A missed day is never
     called out: the count starts over and the longest is shown instead."""
@@ -198,12 +209,14 @@ def credited(forecast: str | None, last_year: LastYear | None) -> bool:
 
 
 def body(v: Version, birthday: date, streak: Streak | None = None, last_year: LastYear | None = None,
-         forecast: str | None = None) -> str:
+         forecast: str | None = None, welcome: str | None = None) -> str:
     opening = f"You're {v} today."
     if line := birthday_line(v):
         opening = f"{opening} {line}"
     if forecast:
         opening = f"{opening}\n{forecast}"
+    if welcome:
+        opening = f"{welcome}\n\n{opening}"
     streak_text = " ".join(streak_lines(v, streak)) + "\n\n" if streak else ""
     if last_year:
         streak_text += past_body(birthday, *last_year)
@@ -212,6 +225,7 @@ def body(v: Version, birthday: date, streak: Streak | None = None, last_year: La
         "\n"
         "Reply any time today: what happened, what you made, who you saw.\n"
         f"Whatever you send back becomes the release notes for {v}.\n"
+        "Photos and voice memos work too.\n"
         "Reply as often as you like; it all adds up to today's notes.\n"
         "\n"
         f"{streak_text}"
@@ -338,7 +352,7 @@ DARK_CSS = f"""
 
 def html_body(
     v: Version, birthday: date, day: date, streak: Streak | None = None, last_year: LastYear | None = None,
-    forecast: str | None = None,
+    forecast: str | None = None, welcome: str | None = None,
 ) -> str:
     vs = escape(str(v))
     party = birthday_line(v)
@@ -350,6 +364,12 @@ def html_body(
     )
     link = f"{SITE}/birthday/?p={birthday.isoformat()}"
     inline_v = vs.replace(".", f'<span class="sep" style="color:{ORANGE_INK};">.</span>')
+    welcome_html = (
+        f'<tr><td class="ink" style="padding:0 0 32px;font-family:{FONT};font-size:17px;line-height:1.5;color:{INK};">'
+        f"{ascii_html(welcome)}</td></tr>\n"
+        if welcome
+        else ""
+    )
     forecast_html = f'<br><span class="ink-2" style="color:{INK_2};">{ascii_html(forecast)}</span>' if forecast else ""
     credit_html = (
         f' &middot; <a class="link" href="{weather.CREDIT_URL}" style="color:{BLUE};">{weather.CREDIT}</a>'
@@ -376,7 +396,7 @@ def html_body(
 <strong class="ink" style="color:{INK};">Release notes</strong> &middot; {escape(long_date(day))}{forecast_html}
 </td></tr>
 
-<tr><td>
+{welcome_html}<tr><td>
 <p class="ink" style="margin:0 0 10px;font-family:{FONT};font-size:18px;color:{INK};">Today you&rsquo;re</p>
 <div class="vnum-hero" role="heading" aria-level="1" aria-label="{vs}">{vnum_html(v, 76)}</div>
 {party_html}
@@ -395,7 +415,7 @@ def html_body(
 What happened, what you made, who you saw. Whatever you send back becomes the release notes for
 <span class="vnum" style="font-family:{MONO};font-weight:700;letter-spacing:-0.03em;color:{BLUE};white-space:nowrap;">{inline_v}</span>.
 </p>
-<p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">Just hit reply. A line is plenty. Reply as often as you like; it all adds up to today&rsquo;s notes.</p>
+<p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">Just hit reply. A line is plenty, and photos and voice memos work too. Reply as often as you like; it all adds up to today&rsquo;s notes.</p>
 </td></tr>
 
 {streak_html(v, birthday, streak) if streak else ""}
@@ -424,6 +444,7 @@ def build_message(
     streak: Streak | None = None,
     last_year: LastYear | None = None,
     forecast: str | None = None,
+    welcome: str | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = from_header(from_addr)
@@ -435,6 +456,6 @@ def build_message(
     # the emails. The day's reply token names the person.
     msg["List-Unsubscribe"] = f"<{APP}/api/unsubscribe?t={token}>"
     msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
-    msg.set_content(body(v, birthday, streak, last_year, forecast))
-    msg.add_alternative(html_body(v, birthday, day, streak, last_year, forecast), subtype="html")
+    msg.set_content(body(v, birthday, streak, last_year, forecast, welcome))
+    msg.add_alternative(html_body(v, birthday, day, streak, last_year, forecast, welcome), subtype="html")
     return msg

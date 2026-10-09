@@ -100,9 +100,19 @@ class WebTest(WebCase):
 
     def test_sample(self):
         r, body = self.call("GET", "/api/sample")
-        self.assertEqual(body, {"birthday": "1981-06-14", "version": "4.5.116"})
+        self.assertEqual(body, {
+            "birthday": "1981-06-14", "version": "4.5.116", "age": 45,
+            "next": {"version": "4.6.0", "date": "2027-06-14", "days": 249},
+        })
         _, body = self.call("GET", "/api/sample", query={"birthday": "1976-10-07", "tz": "Asia/Tokyo"})
         self.assertEqual(body["version"], "5.0.2")  # already Friday in Tokyo
+        self.assertEqual(body["next"], {"version": "5.1.0", "date": "2027-10-07", "days": 363})
+        # Turning 10, and a Feb 29 birthday's next release in a common year
+        # (March 1, as the site counts it).
+        _, body = self.call("GET", "/api/sample", query={"birthday": "2016-12-01"})
+        self.assertEqual((body["age"], body["next"]["version"]), (9, "1.0.0"))
+        _, body = self.call("GET", "/api/sample", query={"birthday": "2000-02-29"})
+        self.assertEqual(body["next"]["date"], "2027-03-01")
         for q in ({"birthday": "2027-01-01"}, {"birthday": "x"}, {"tz": "Nowhere/Else"}):
             self.assertEqual(self.call("GET", "/api/sample", query=q)[0]["statusCode"], 400, q)
 

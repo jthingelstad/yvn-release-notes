@@ -26,7 +26,7 @@ from . import auth, export, export_job, links, media, places, weather
 from .compose import DOTS, from_header, next_release
 from .notes import MAX_NOTE
 from .streak import ONE_DAY, compute_streak, pause_days
-from .version import compute_version
+from .version import anniversary, compute_version
 
 MAX_BODY = 64 * 1024
 
@@ -202,7 +202,16 @@ def sample(app: App, req: Request) -> dict:
             raise Reject(400, "birthday") from None
         if not date(1900, 1, 1) <= birthday <= today:
             raise Reject(400, "birthday")
-    return respond(200, {"birthday": birthday.isoformat(), "version": str(compute_version(birthday, today))})
+    v = compute_version(birthday, today)
+    # The front page explains the number: the age it spells, and when the
+    # next minor release ships.
+    nxt = anniversary(birthday.year + v.age + 1, birthday.month, birthday.day)
+    return respond(200, {
+        "birthday": birthday.isoformat(),
+        "version": str(v),
+        "age": v.age,
+        "next": {"version": f"{(v.age + 1) // 10}.{(v.age + 1) % 10}.0", "date": nxt.isoformat(), "days": v.days_until},
+    })
 
 
 def over_limits(app: App, checks) -> None:

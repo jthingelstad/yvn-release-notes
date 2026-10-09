@@ -77,11 +77,11 @@ const SAY = {
   'code-used': 'That code has been used. Send yourself a new one.',
   'link-used-or-expired': 'This link has been used or has expired. Links work once, for 15 minutes.',
   network: 'Couldn’t reach Release Notes. Check your connection and try again.',
-  birthday: 'Pick your birthday: a real date, not in the future.',
+  birthday: 'Type your birthday: a real date, not in the future.',
   place: 'Pick your city from the list.',
   'send-time': 'Pick a time for your email.',
   'places-failed': 'The city search isn’t answering. Try again in a minute.',
-  token: ['This link isn’t one we sent. ', { href: '/', text: 'Sign in to manage your emails' }, '.'],
+  token: ['This link isn’t one we sent. ', { href: '/#sign-in', text: 'Sign in to manage your emails' }, '.'],
   origin: 'That came from outside notes.yourversionnumber.com. Open Release Notes there and try again.',
   date: 'Pick a day between your birthday and today.',
   text: 'Write something first.',
@@ -98,7 +98,7 @@ const SAY = {
 // elsewhere). `draft` says what happened to what was being written: 'kept'
 // (the note form keeps it in this tab) or 'copy' (an edit, which doesn't).
 function signedOutLine(draft) {
-  const again = (t) => ({ href: '/', text: t, back: true });
+  const again = (t) => ({ href: '/#sign-in', text: t, back: true });
   if (draft === 'kept') return ['You’ve been signed out. Your note is kept here; ', again('sign in again'), '.'];
   if (draft === 'copy') return ['You’ve been signed out. ', again('Sign in again'), '; copy your note first if you were writing one.'];
   return ['You’ve been signed out. ', again('Sign in again'), '.'];
@@ -147,6 +147,7 @@ function quiet(root) {
 // that was in this tab, or Today.
 function home(isNew) {
   if (isNew) return '/setup/';
+  pendingBirthday.drop();
   const back = store.get('rn-back');
   store.drop('rn-back');
   return back && /^\/[a-z]/.test(back) ? back : '/today/';
@@ -159,16 +160,6 @@ function sendTimes(select, value) {
     select.add(new Option(clock(v), v, false, v === value));
   }
   select.value = value;
-}
-
-// The time now in a zone, as "HH:MM", and that zone's date.
-function zoneNow(tz) {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    }).formatToParts(new Date()).map((p) => [p.type, p.value]),
-  );
-  return { hhmm: `${parts.hour}:${parts.minute}`, date: `${parts.year}-${parts.month}-${parts.day}` };
 }
 
 // A city search over /api/places. Calls onPick(place) with the choice, and
@@ -465,7 +456,7 @@ function streakLine(root, s) {
 function bounce(r) {
   if (r.status === 401) {
     store.set('rn-back', location.pathname + location.search);
-    location.replace('/');
+    location.replace('/#sign-in');
     return true;
   }
   if (r.status === 403 && r.data.error === 'no-account') { location.replace(home(true)); return true; }
@@ -581,18 +572,128 @@ const store = {
   drop(k) { try { sessionStorage.removeItem(k); } catch (e) { /* private mode */ } },
 };
 
+// A birthday typed on the front page, waiting for setup to save it after
+// sign-in. localStorage rather than the tab's sessionStorage, since the
+// emailed link often opens in a new tab. Kept a day at most; dropped once
+// setup saves it, or when the sign-in turns out to be an existing account.
+const pendingBirthday = {
+  get() {
+    try {
+      const p = JSON.parse(localStorage.getItem('rn-birthday'));
+      if (p && /^\d{4}-\d{2}-\d{2}$/.test(p.b) && Date.now() - p.at < 86400000) return p.b;
+    } catch (e) { /* none, or storage blocked */ }
+    return null;
+  },
+  set(b) { try { localStorage.setItem('rn-birthday', JSON.stringify({ b, at: Date.now() })); } catch (e) { /* private mode */ } },
+  drop() { try { localStorage.removeItem('rn-birthday'); } catch (e) { /* private mode */ } },
+};
+
+// Month, day and year as three fields in `root`: quicker than a date
+// picker's wheel for a year decades back. value() is 'YYYY-MM-DD', or ''
+// until the three make a real date; the API says if it is in the future.
+function birthdayFields(root) {
+  const month = $('[name=month]', root), day = $('[name=day]', root), year = $('[name=year]', root);
+  for (const f of [day, year]) {
+    f.addEventListener('input', () => { f.value = f.value.replace(/[^0-9]/g, ''); });
+  }
+  return {
+    first: month,
+    value() {
+      const m = Number(month.value), d = Number(day.value), y = Number(year.value);
+      if (!m || !/^\d{1,2}$/.test(day.value) || !/^\d{4}$/.test(year.value)) return '';
+      const t = new Date(y, m - 1, d);
+      if (t.getMonth() !== m - 1 || t.getDate() !== d) return '';
+      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    },
+    set(iso) {
+      const [y, m, d] = iso.split('-').map(Number);
+      month.value = String(m);
+      day.value = String(d);
+      year.value = String(y);
+    },
+  };
+}
+
+// The number on its own line, and its three parts named.
+const COUNT = ['None', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
+function explain(sample) {
+  const [major, minor, patch] = sample.version.split('.');
+  vnum($('#my-v'), sample.version);
+  $('#birthday-today').hidden = patch !== '0';
+  $('#v-major').textContent = major;
+  $('#v-minor').textContent = minor;
+  $('#v-patch').textContent = patch;
+  const n = Number(major);
+  $('#v-major-line').textContent = n === 0 ? 'None finished yet.'
+    : `${COUNT[n] || n} of them, done.`;
+  $('#v-minor-line').textContent = `Together: ${sample.age}.`;
+  const next = $('#v-next');
+  next.textContent = '';
+  const when = sample.next.days === 1 ? 'tomorrow' : `in ${sample.next.days} days`;
+  next.append(el('span', 'mono', sample.next.version), ` ships ${longDate(sample.next.date)}, ${when}.`);
+  $('#v-today').textContent = sample.version;
+}
+
 const pages = {
   async home() {
-    const ask = $('#ask'), check = $('#check');
-    const startForm = $('#start-form'), codeForm = $('#code-form');
+    const startForm = $('#start-form'), codeForm = $('#code-form'), birthdayForm = $('#birthday-form');
+    const birthday = birthdayFields(birthdayForm);
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    // One of ask (the birthday), number (it explained, then the email),
+    // signin (the email alone, for anyone returning) or check (the code).
+    // Each element says in data-show which it belongs to.
+    let mode = null, before = 'ask', explained = false;
+    const show = (m) => {
+      if (m !== 'check') before = m;
+      mode = m;
+      for (const e of document.querySelectorAll('[data-show]')) e.hidden = !e.dataset.show.split(' ').includes(m);
+    };
 
     const showCheck = (email) => {
       $('#sent-to').textContent = email;
-      ask.hidden = true;
-      $('#home-foot').hidden = true;
-      check.hidden = false;
+      show('check');
       codeForm.code.focus();
     };
+
+    // The number for a birthday, from the API, which keeps the arithmetic.
+    const sampleFor = (b) => api('GET', `/api/sample?birthday=${b}&tz=${encodeURIComponent(tz)}`);
+
+    birthdayForm.addEventListener('input', () => quiet(birthdayForm));
+    birthdayForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      busy(birthdayForm, async () => {
+        quiet(birthdayForm);
+        const b = birthday.value();
+        if (!b) return say(birthdayForm, { error: 'birthday' }, birthday.first);
+        const r = await sampleFor(b);
+        if (!r.ok) return say(birthdayForm, r.data, birthday.first);
+        pendingBirthday.set(b);
+        explain(r.data);
+        explained = true;
+        show('number');
+        $('#you-are').focus();
+      });
+    });
+
+    $('#change-birthday').addEventListener('click', () => {
+      quiet(startForm);
+      show('ask');
+      birthday.first.focus();
+    });
+    $('#to-sign-in').addEventListener('click', (e) => {
+      e.preventDefault();
+      history.replaceState(null, '', '/#sign-in');
+      show('signin');
+      startForm.email.focus();
+    });
+    $('#to-ask').addEventListener('click', (e) => {
+      e.preventDefault();
+      history.replaceState(null, '', '/');
+      quiet(startForm);
+      show(explained && pendingBirthday.get() ? 'number' : 'ask');
+      if (mode === 'ask') birthday.first.focus(); else $('#you-are').focus();
+    });
 
     startForm.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -642,29 +743,38 @@ const pages = {
       e.preventDefault();
       store.drop('rn-email');
       resent.hidden = true;
-      check.hidden = true;
-      ask.hidden = false;
-      $('#home-foot').hidden = false;
+      show(before);
       startForm.email.focus();
     });
 
-    // The form starts hidden. Someone signed in here before goes straight
+    // Where this visit starts: the code if an email just went from this
+    // tab, the sign-in form if asked for, the number if a birthday is
+    // waiting, else the question.
+    const start = async () => {
+      if (store.get('rn-email')) return showCheck(store.get('rn-email'));
+      if (location.hash === '#sign-in') return show('signin');
+      const b = pendingBirthday.get();
+      if (b) {
+        const r = await sampleFor(b);
+        if (r.ok) {
+          birthday.set(b);
+          explain(r.data);
+          explained = true;
+          return show('number');
+        }
+      }
+      show('ask');
+    };
+
+    // Everything starts hidden. Someone signed in here before goes straight
     // on once /api/me agrees, without the form ever showing.
     // If /api/me is slow (a cold start), a quiet line after a moment.
-    const reveal = () => { ask.hidden = false; $('#home-foot').hidden = false; };
-    const waited = signedIn.get() ? loading(ask, 'Opening your notes…', 600) : () => {};
-    if (!signedIn.get()) reveal();
-    const sampled = api('GET', '/api/sample');
+    const waited = signedIn.get() ? loading($('#ask'), 'Opening your notes…', 600) : () => {};
+    const started = signedIn.get() ? null : start();
     const me = await api('GET', '/api/me');
     if (me.ok) return location.replace(home(me.data.new));
     waited();
-    reveal();
-    if (store.get('rn-email')) showCheck(store.get('rn-email'));
-    const sample = await sampled;
-    if (sample.ok) {
-      vnum($('#sample-v'), sample.data.version);
-      $('#sample-who').textContent = `Someone born ${longDate(sample.data.birthday)}, today.`;
-    }
+    if (!started) start();
   },
 
   signin() {
@@ -676,7 +786,7 @@ const pages = {
     const spent = (data) => {
       $('button', form).hidden = true;
       const again = el('a', '', 'Send a new link');
-      again.href = '/';
+      again.href = '/#sign-in';
       form.append(again);
       say(form, data, again);
     };
@@ -696,13 +806,13 @@ const pages = {
 
   async setup() {
     const me = await api('GET', '/api/me');
-    if (!me.ok) return location.replace('/');
+    if (!me.ok) return location.replace('/#sign-in');
     if (!me.data.new) return location.replace(home(false));
 
     const form = $('#setup-form');
+    const birthday = birthdayFields(form);
     let place = null;
     sendTimes(form.send_time, '06:00');
-    form.birthday.max = zoneNow(Intl.DateTimeFormat().resolvedOptions().timeZone).date;
 
     // Sign-up sends today's email at once (web.send_first).
     const firstEmail = () => {
@@ -710,13 +820,38 @@ const pages = {
         `Today’s email comes as soon as you start. After that, every day at ${clock(form.send_time.value)}.`;
     };
     firstEmail();
+    // The number the birthday makes, in the picked city's time zone once
+    // there is one: in the sentence for a birthday from the front page, or
+    // under the fields.
+    const known = $('#known');
     const version = async () => {
-      if (!form.birthday.value) { $('#that-makes').hidden = true; return; }
+      const b = birthday.value();
+      if (!b) { $('#that-makes').hidden = true; return; }
       const tz = place ? place.tz : Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const r = await api('GET', `/api/sample?birthday=${form.birthday.value}&tz=${encodeURIComponent(tz)}`);
+      const r = await api('GET', `/api/sample?birthday=${b}&tz=${encodeURIComponent(tz)}`);
+      if (!known.hidden) {
+        if (r.ok) vnum($('#known-v'), r.data.version); else notRight();
+        return;
+      }
       $('#that-makes').hidden = !r.ok;
       if (r.ok) vnum($('#setup-v'), r.data.version);
     };
+    const notRight = () => {
+      known.hidden = true;
+      $('#birthday-stack').hidden = false;
+      $('#setup-head').textContent = 'Three things, then you’re set.';
+      version();
+    };
+    const waiting = pendingBirthday.get();
+    if (waiting) {
+      birthday.set(waiting);
+      $('#known-date').textContent = longDate(waiting);
+      $('#setup-head').textContent = 'Two more things.';
+      $('#birthday-stack').hidden = true;
+      known.hidden = false;
+      version();
+    }
+    $('#not-right').addEventListener('click', () => { notRight(); birthday.first.focus(); });
 
     placePicker($('.place-picker', form), (p) => {
       place = p;
@@ -729,7 +864,7 @@ const pages = {
       place = null;
       $('.picked', form).hidden = true;
     });
-    form.birthday.addEventListener('change', version);
+    for (const f of $('.birthday', form).querySelectorAll('select, input')) f.addEventListener('change', version);
     form.addEventListener('input', () => quiet(form));
     form.addEventListener('click', (e) => { if (e.target.closest('.place')) quiet(form); });
     form.send_time.addEventListener('change', firstEmail);
@@ -738,13 +873,15 @@ const pages = {
       e.preventDefault();
       busy(form, async () => {
         quiet(form);
-        if (!form.birthday.value) return say(form, { error: 'birthday' }, form.birthday);
+        if (!birthday.value()) { notRight(); return say(form, { error: 'birthday' }, birthday.first); }
         if (!place) return say(form, { error: 'place' }, form.city);
-        const r = await api('PUT', '/api/me', { birthday: form.birthday.value, place, send_time: form.send_time.value });
+        const r = await api('PUT', '/api/me', { birthday: birthday.value(), place, send_time: form.send_time.value });
         if (!r.ok) {
-          const field = { birthday: form.birthday, place: form.city, 'send-time': form.send_time }[r.data.error];
+          if (r.data.error === 'birthday') notRight();
+          const field = { birthday: birthday.first, place: form.city, 'send-time': form.send_time }[r.data.error];
           return say(form, r.data, field || $('button[type=submit]', form));
         }
+        pendingBirthday.drop();
         location.replace(home(false));
       });
     });
@@ -824,7 +961,7 @@ const pages = {
     $('#signout').addEventListener('click', async () => {
       await api('POST', '/api/auth/signout');
       signedIn.drop();
-      location.replace('/');
+      location.replace('/#sign-in');
     });
     fill();
   },

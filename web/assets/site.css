@@ -168,3 +168,21 @@ label.until { margin-top: 10px; }
 .go.danger { background: var(--orange-ink); color: var(--paper); }
 .go.danger:hover { color: var(--paper); }
 .spaced-lg { margin-top: 40px; }
+
+/* the front page: a birthday, then the number explained */
+.vnum.unknown { color: var(--ink-3); }
+fieldset.birthday { margin: 0; padding: 0; border: 0; min-width: 0; }
+fieldset.birthday legend { padding: 0; margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+.mdy { display: grid; grid-template-columns: 1.6fr 0.8fr 1fr; gap: 16px; }
+.mdy label { gap: 4px; font-size: 13px; font-weight: 400; color: var(--ink-2); }
+.you-are { margin: 56px 0 0; }
+.you-are:focus { outline: none; }
+.you-are .lead { display: block; font-size: 18px; font-weight: 400; color: var(--ink-2); }
+.you-are .vnum.huge { display: block; margin-top: 8px; font-size: 60px; letter-spacing: -0.03em; }
+.birthday-today { margin: 14px 0 0; font-size: 20px; font-weight: 800; color: var(--orange-ink); }
+.explain { margin: 28px 0 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: 16px; row-gap: 14px; align-items: baseline; }
+.explain dt { font-size: 22px; text-align: right; }
+.explain dd { margin: 0; font-size: 16px; line-height: 1.4; }
+.explain dd span { color: var(--ink-2); }
+.get-it { margin-top: 48px; font-size: 26px; line-height: 1.15; }
+.quiet.inline { display: inline; padding: 0; min-height: 0; font-size: inherit; }

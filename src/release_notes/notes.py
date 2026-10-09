@@ -23,6 +23,8 @@ any kind of data can come from any channel):
                  places), accuracy_m, and `from`: how it is known (entry,
                  photo, day: another note that day, home: the
                  subscriber's city)
+    all_day      optional: true for a note about the whole day, not a
+                 moment in it (a Day One all-day entry); no time is shown
     source       email, web or import; an import also has `origin`:
                  {"app", "journal", "id"}, the entry it came from
     version, links, media, updated_at as before; an emailed note also has

@@ -666,6 +666,8 @@ def note_view(item: dict, tz: str) -> dict:
     at = written_at(item)
     zone = item["tz"] if places.valid_tz(item.get("tz")) else tz
     view = {"id": note_id, "source": item.get("source", "email"), "text": item.get("text", ""), "at": at, "tz": zone}
+    if item.get("all_day"):
+        view["all_day"] = True  # about the day, not a moment in it: no time shown
     # The text as shown: strings, links by name (links.segments) and tags.
     view["parts"] = tags.split(links.segments(view["text"], item.get("links")))
     if item.get("tags"):

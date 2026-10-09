@@ -29,7 +29,9 @@ An entry becomes one note, `NOTE#<day>#d1-<uuid>`:
   safety net for anything not carried over (Day One's weather, devices,
   rich text).
 
-An entry with no text and no file is left out.
+An entry with no text and no file is left out, and so is one Day One
+wrote itself (its welcome guide). An all-day entry is `all_day`: its page
+shows no time.
 """
 
 import json
@@ -57,6 +59,9 @@ ZONES = {"US/Central": "America/Chicago", "US/Eastern": "America/New_York", "US/
          "US/Pacific": "America/Los_Angeles", "Europe/Kiev": "Europe/Kyiv"}
 
 OTHER_FILES = ("videos",)
+# Entries Day One writes itself, by their first line: not the writer's
+# (Jamie, 2026-10-09: skip the welcome guide).
+APP_OWN = ("Day One Essentials Guide",)
 FILE_KINDS = {
     "photos": {"jpeg": ("image", "image/jpeg", "jpg"), "jpg": ("image", "image/jpeg", "jpg"),
                "png": ("image", "image/png", "png"), "heic": ("image", "image/heic", "heic"),
@@ -315,6 +320,9 @@ def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict
         # Kinds this does not carry yet (video): counted, and in the original.
         if other := sum(len(e.get(k) or []) for k in OTHER_FILES):
             counts["files_not_carried"] = counts.get("files_not_carried", 0) + other
+        if text.split("\n", 1)[0].strip() in APP_OWN:
+            skipped.append({"date": day, "uuid": e["uuid"], "why": "day one's own"})
+            continue
         if not text and not files:
             skipped.append({"date": day, "uuid": e["uuid"], "why": "files not carried" if other else "empty"})
             continue
@@ -341,6 +349,8 @@ def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict
             "tz": zone(e),
             "raw_key": f"raw/{APP}/{user_id}/{e['uuid']}.json",
         }
+        if e.get("isAllDay"):
+            item["all_day"] = True
         if place:
             item["place"] = {**place, "from": source}
         if found := tags.found(text):

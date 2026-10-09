@@ -271,6 +271,11 @@ runtime and is imported lazily so the tests run without it.
   an MX on the inbound subdomain to SES inbound, and an MX plus SPF on the
   MAIL FROM subdomain. DMARC is Jamie's own record. All were live on
   2026-10-07. Read current values from DNS or the stack, not from this repo.
+- The root domain's mail is Jamie's Fastmail (MX, SPF and `fm1-3._domainkey`,
+  2026-10-08): notes@, postmaster@ and abuse@ reach Jamie. It is separate from
+  the stack's records; the root SPF stays Fastmail-only, since SES mail's SPF
+  is checked on the MAIL FROM subdomain. In Namecheap, Mail Settings stays
+  "Custom MX"; any other choice rewrites the MX records, `in.` included.
 - The web app adds two records: the ACM validation CNAME for
   `notes.yourversionnumber.com` and `notes` CNAME to the stack output
   `WebDistributionDomain`. The certificate lives outside the stack (an

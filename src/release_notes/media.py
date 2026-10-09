@@ -1,8 +1,8 @@
 """Photos and recordings from a reply.
 
 Jamie, 2026-10-08: "move forward with attachments (images and audio)
-support… have those attached to those entries." They arrive by email only
-(no upload on the web).
+support… have those attached to those entries." Any channel may bring them
+(Jamie, 2026-10-09); this module handles the ones that come by email.
 
 The raw message stays the source of truth. When a reply is filed, each photo
 and recording in it is copied to the mail bucket at

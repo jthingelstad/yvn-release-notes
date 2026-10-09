@@ -238,6 +238,14 @@ class MediaTest(NotesCase):
         _, days = self.get("/api/days")
         self.assertNotIn("media/u1", str(days))
 
+    def test_an_imported_pdf_lists_with_its_name(self):
+        pdf = {"n": 1, "kind": "file", "type": "application/pdf", "size": 9, "name": "Menu.pdf",
+               "key": "media/u1/2026-10-06/d1-A/1.pdf"}
+        self.store.add_note("u1", "2026-10-06", "d1-A", text="Dinner.", source="import", media=[pdf])
+        _, day = self.get("/api/days/2026-10-06")
+        self.assertEqual(day["notes"][0]["media"],
+                         [{"n": 1, "kind": "file", "type": "application/pdf", "name": "Menu.pdf"}])
+
     def test_a_file_is_a_short_lived_redirect_for_its_owner(self):
         r, _ = self.file(1)
         self.assertEqual(r["statusCode"], 302)

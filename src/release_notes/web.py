@@ -678,7 +678,8 @@ def note_view(item: dict, tz: str) -> dict:
         view["edited_at"] = item["updated_at"]
     if item.get("media"):
         # Each file by number; its address is the API's, never the bucket's.
-        view["media"] = [{"n": int(m["n"]), "kind": m["kind"], "type": m["type"]} for m in item["media"]]
+        view["media"] = [{"n": int(m["n"]), "kind": m["kind"], "type": m["type"], **({"name": m["name"]} if m.get("name") else {})}
+                         for m in item["media"]]
     if others := media.others(item):
         view["attachments"] = others
     try:

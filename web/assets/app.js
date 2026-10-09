@@ -280,6 +280,13 @@ function noteMedia(day, n, version) {
         'This photo couldn’t load. Reload, or sign in again if you’ve been signed out. It’s also in the original email.')));
       a.append(img);
       box.append(a);
+    } else if (m.kind === 'file') {
+      // A PDF or any other file: a link that opens it.
+      const a = el('a', 'file', m.name || (m.type === 'application/pdf' ? 'PDF' : 'File'));
+      a.href = src;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      box.append(a);
     } else {
       const audio = el('audio');
       audio.controls = true;

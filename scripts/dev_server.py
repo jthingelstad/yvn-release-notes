@@ -17,6 +17,12 @@ after it is asked for, and downloads from /dev-media/ too. City search and weath
 unless --fake-places (the week of emails comes with made-up weather either
 way), and a link's page for its title unless --fake-links.
 Everything is forgotten when it stops.
+
+    scripts/dev_server.py --dayone EXPORT.zip [--dayone ANOTHER.zip]
+
+adds what a Day One import would make (dayone.py) to Ada's notes, to see a
+real journal in the app before any of it is imported; its files are read
+from the zip when asked for.
 """
 
 import argparse
@@ -28,6 +34,7 @@ import struct
 import sys
 import threading
 import wave
+import zipfile
 import zlib
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -41,7 +48,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
 from fakes import FakeLambda, FakeS3, FakeSES, FakeStore  # noqa: E402
-from release_notes import export_job, links, media, places, tags, weather, web  # noqa: E402
+from release_notes import dayone, export_job, links, media, places, tags, weather, web  # noqa: E402
 
 FAKE_PLACES = [
     {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
@@ -96,11 +103,27 @@ class PrintingSES(FakeSES):
         return super().send_email(**kw)
 
 
+def load_dayone(path: str, store, s3) -> None:
+    """A Day One export's notes as Ada's, and its files as objects that
+    point into the zip."""
+    journal, entries, names = dayone.read(path)
+    plan = dayone.plan(journal, entries, names, store.profiles["u1"], "u1", web_origin=os.environ["WEB_ORIGIN"])
+    for n in plan["notes"]:
+        item = dict(n["item"])
+        if item.get("media"):
+            for m in item["media"]:
+                s3.objects[m["key"]] = {"Zip": path, "Member": m["from"], "ContentType": m["type"]}
+            item["media"] = [{k: v for k, v in m.items() if k != "from"} for m in item["media"]]
+        store.put_note("u1", n["date"], n["id"], item)
+    print(f"-- {len(plan['notes'])} notes from a Day One export ({journal})", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--fake-places", action="store_true", help="answer city searches and weather without Open-Meteo")
     ap.add_argument("--fake-links", action="store_true", help="title every link 'A page at <host>', fetching nothing")
+    ap.add_argument("--dayone", action="append", default=[], metavar="ZIP", help="add a Day One export's notes to Ada's")
     args = ap.parse_args()
     origin = f"http://localhost:{args.port}"
     os.environ.update(WEB_ORIGIN=origin, FROM_ADDRESS="notes@yourversionnumber.com", CONFIG_SET="dev", TABLE="dev",
@@ -154,6 +177,8 @@ def main():
     lake["attachments"] = [{"content_type": e["type"], "filename": "", "size": e["size"]} for e in kept]
     store.items["u1"].append({"pk": "USER#u1", "sk": f"PAUSE#{today - timedelta(days=12)}",
                               "through": (today - timedelta(days=9)).isoformat()})
+    for path in args.dayone:
+        load_dayone(path, store, s3)
     store.tokens["abcdefghijklmnopqrstuvwx"] = {"user_id": "u1", "date": "2026-10-01", "version": "4.5.109"}
     fetch = (lambda u: {"title": f"A page at {urlsplit(u).hostname}", "site": urlsplit(u).hostname}) if args.fake_links else links.fetch_title
     geocode = (lambda q: [p for p in FAKE_PLACES if p["name"].lower().startswith(q.lower())]) if args.fake_places else places.search
@@ -205,6 +230,9 @@ def main():
                 obj = s3.objects.get(self.path.split("?")[0][len("/dev-media/"):])
                 if not obj:
                     return self.send_error(404)
+                if "Zip" in obj:  # a Day One file, read when it is asked for
+                    with zipfile.ZipFile(obj["Zip"]) as z:
+                        obj = {**obj, "Body": z.read(obj["Member"])}
                 self.send_response(200)
                 self.send_header("content-type", obj["ContentType"])
                 if self.path.startswith("/dev-media/exports/"):

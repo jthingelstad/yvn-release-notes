@@ -92,6 +92,8 @@ const SAY = {
   through: 'Pick a day within the next 60.',
   stopped: 'Your emails are stopped. Start them again in settings first.',
   'delete-failed': 'Couldn’t delete everything just now. Nothing is lost; try again in a minute.',
+  query: 'Type a word to look for.',
+  'query-too-long': 'That’s more than one search takes. Try fewer words.',
   'file-type': 'isn’t a photo, recording or PDF, so it can’t be added.',
   'file-size': 'is empty.',
   'file-too-big': 'is over 50 MB, more than one file can be.',
@@ -349,13 +351,22 @@ function linkTo(url, label) {
   return a;
 }
 
-function noteBody(n, cls = 'text') {
+// Text into an element, with what a search found (`mark`, a RegExp with
+// one group) in <mark>.
+function appendMarked(root, text, mark) {
+  if (!mark) return root.append(text);
+  text.split(mark).forEach((piece, i) => {
+    if (piece) root.append(i % 2 ? el('mark', '', piece) : piece);
+  });
+}
+
+function noteBody(n, cls = 'text', mark = null) {
   const p = el('p', cls);
   p.hidden = !noteText(n);
   if (n.text && Array.isArray(n.parts)) {
     for (const part of n.parts) {
       if (typeof part === 'string') {
-        p.append(part);
+        appendMarked(p, part, mark);
       } else if (part.tag) {
         // A hashtag: its tag's page (tags.py).
         const a = el('a', 'tag', part.text);
@@ -752,6 +763,29 @@ function explain(sample) {
   const when = sample.next.days === 1 ? 'tomorrow' : `in ${sample.next.days} days`;
   next.append(el('span', 'mono', sample.next.version), ` ships ${longDate(sample.next.date)}, ${when}.`);
   $('#v-today').textContent = sample.version;
+}
+
+const count = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
+
+// Days newest first, each with its number and its notes, for a tag or a
+// search (`mark` shows what the search found).
+function dayList(list, data, mark = null) {
+  const thisYear = Number(data.today.slice(0, 4));
+  for (const d of data.days) {
+    const sec = el('section', 'tday');
+    const head = el('a', 'tday-head');
+    head.href = d.date === data.today ? '/today/' : `/day/?d=${d.date}`;
+    const v = el('span', 'vnum small');
+    vnum(v, d.version, true);
+    head.append(v, el('span', 'when', dayName(d.date, thisYear)));
+    sec.append(head);
+    for (const n of d.notes) {
+      sec.append(noteBody(n, 'text', mark));
+      if (n.media && n.media.length) sec.append(noteMedia(d.date, n, d.version));
+      sec.append(noteMeta(n, data.tz, 'count'));
+    }
+    list.append(sec);
+  }
 }
 
 const pages = {
@@ -1453,56 +1487,91 @@ const pages = {
     });
   },
 
-  // One tag's days, newest first, with the notes that carry it (?t=), or
-  // every tag, most used first.
+  // One tag's days, newest first, with the notes that carry it (?t=).
+  // Every tag is on Search.
   async tag() {
     const list = $('#tagged'), title = $('#tag-title'), lede = $('#tag-lede');
     const tag = new URLSearchParams(location.search).get('t');
+    if (!tag) return location.replace('/search/');
     const done = loading(list);
-    const r = await api('GET', tag ? `/api/tags/${encodeURIComponent(tag)}` : '/api/tags');
+    const r = await api('GET', `/api/tags/${encodeURIComponent(tag)}`);
     done();
     if (bounce(r)) return;
     if (!r.ok) {
-      if (r.status === 404) return location.replace('/tag/');
+      if (r.status === 404) return location.replace('/search/');
       return failed(list);
-    }
-    const count = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
-    if (!tag) {
-      title.textContent = 'Tags';
-      lede.textContent = r.data.tags.length
-        ? 'Every hashtag in your notes. Write one, like #cabin, in an email or here, and the note has that tag.'
-        : 'No tags yet. Write a hashtag, like #cabin, in a note or a reply, and it shows here.';
-      const ul = el('ul', 'tags');
-      for (const t of r.data.tags) {
-        const li = el('li');
-        const a = el('a', 'tag', `#${t.tag}`);
-        a.href = `/tag/?t=${encodeURIComponent(t.tag)}`;
-        li.append(a, el('span', 'hint', ` ${count(t.days, 'day', 'days')}`));
-        ul.append(li);
-      }
-      list.append(ul);
-      return;
     }
     $('#every-tag').hidden = false;
     document.title = `#${r.data.tag}: Release Notes`;
     title.textContent = `#${r.data.tag}`;
     lede.textContent = r.data.days.length ? count(r.data.days.length, 'day', 'days') : 'No notes have this tag now.';
-    const thisYear = Number(r.data.today.slice(0, 4));
-    for (const d of r.data.days) {
-      const sec = el('section', 'tday');
-      const head = el('a', 'tday-head');
-      head.href = d.date === r.data.today ? '/today/' : `/day/?d=${d.date}`;
-      const v = el('span', 'vnum small');
-      vnum(v, d.version, true);
-      head.append(v, el('span', 'when', dayName(d.date, thisYear)));
-      sec.append(head);
-      for (const n of d.notes) {
-        sec.append(noteBody(n));
-        if (n.media && n.media.length) sec.append(noteMedia(d.date, n, d.version));
-        sec.append(noteMeta(n, r.data.tz, 'count'));
-      }
-      list.append(sec);
+    dayList(list, r.data);
+  },
+
+  // Every tag, most used first, and the notes with some words. The words
+  // live in the address's # (#q=), so back and reload work and no server,
+  // CloudFront's logs included, ever sees them.
+  async search() {
+    const form = $('#search-form'), results = $('#results'), lede = $('#search-lede');
+    const tagBox = $('#every-tag-list');
+    const words = () => new URLSearchParams(location.hash.slice(1)).get('q') || '';
+    let asked = 0;
+    const show = async () => {
+      const q = words().trim(), mine = ++asked;
+      form.q.value = q;
+      quiet(form);
+      results.textContent = '';
+      lede.hidden = true;
+      tagBox.hidden = !!q;
+      document.title = q ? `${q}: Search: Release Notes` : 'Search: Release Notes';
+      if (!q) return;
+      const done = loading(results);
+      const r = await api('POST', '/api/search', { q });
+      done();
+      if (mine !== asked) return; // a newer search has started
+      if (bounce(r)) return;
+      if (!r.ok) return r.status === 400 ? say(form, r.data, form.q) : failed(results);
+      const d = r.data;
+      lede.textContent = !d.notes ? 'No notes have all of those words.'
+        : `${count(d.notes, 'note', 'notes')} on ${count(d.day_count, 'day', 'days')}`
+          + (d.day_count > d.days.length ? `. The newest ${d.days.length} days are here; more words narrow it.` : '.');
+      lede.hidden = false;
+      const escaped = d.terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      dayList(results, d, new RegExp(`(${escaped.join('|')})`, 'gi'));
+    };
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const q = form.q.value.trim();
+      if (!q) return say(form, { error: 'query' }, form.q);
+      const hash = `#q=${encodeURIComponent(q)}`;
+      if (location.hash === hash) show(); else location.hash = hash;
+    });
+    // Clearing the box with its own × goes back to the tags. (The same
+    // event comes with Enter, which the submit handles.)
+    form.q.addEventListener('search', () => {
+      if (form.q.value || !words()) return;
+      history.pushState(null, '', location.pathname);
+      show();
+    });
+    window.addEventListener('hashchange', show);
+    show();
+
+    const tagsLede = $('#tags-lede');
+    const r = await api('GET', '/api/tags');
+    if (bounce(r)) return;
+    if (!r.ok) return failed(tagBox);
+    tagsLede.textContent = r.data.tags.length
+      ? 'Every hashtag in your notes. Write one, like #cabin, in an email or here, and the note has that tag.'
+      : 'No tags yet. Write a hashtag, like #cabin, in a note or a reply, and it shows here.';
+    const ul = el('ul', 'tags');
+    for (const t of r.data.tags) {
+      const li = el('li');
+      const a = el('a', 'tag', `#${t.tag}`);
+      a.href = `/tag/?t=${encodeURIComponent(t.tag)}`;
+      li.append(a, el('span', 'hint', ` ${count(t.days, 'day', 'days')}`));
+      ul.append(li);
     }
+    tagBox.append(ul);
   },
 
   unsubscribe() {

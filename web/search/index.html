@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Search: Release Notes</title>
+<link rel="stylesheet" href="/assets/site.css?v=14">
+<script src="/assets/app.js?v=22" defer></script>
+</head>
+<body data-page="search">
+<main>
+  <header class="bar">
+    <a class="brand" href="/">Release Notes</a>
+    <a href="/today/">Today</a>
+    <a href="/timeline/">Timeline</a>
+    <a href="/search/" aria-current="page">Search</a>
+    <a href="/settings/">Settings</a>
+  </header>
+
+  <h1>Search</h1>
+  <form id="search-form" class="search-form" role="search" novalidate>
+    <label>Words in your notes
+      <input type="search" name="q" maxlength="200" autocomplete="off" enterkeyhint="search" placeholder="cabin, &quot;first snow&quot;">
+    </label>
+    <button class="go" type="submit">Search</button>
+    <p class="error" role="alert" hidden></p>
+  </form>
+  <p class="hint spaced" id="search-lede" role="status" hidden></p>
+  <div class="days" id="results"></div>
+
+  <section id="every-tag-list">
+    <h2 class="big">Tags</h2>
+    <p class="hint spaced" id="tags-lede"></p>
+  </section>
+</main>
+</body>
+</html>

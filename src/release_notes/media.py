@@ -77,8 +77,9 @@ def extension(ctype: str) -> str:
 def upload_type(content_type: str, filename: str) -> str | None:
     """What a file chosen on the web is kept as: a photo, a recording or a
     PDF. Browsers leave the type empty for some files, so the name decides
-    then."""
-    ctype = (content_type or "").lower()
+    then, and a recording made in the browser says its codec
+    ("audio/webm;codecs=opus"), which is dropped."""
+    ctype = (content_type or "").split(";")[0].strip().lower()
     if ctype in PDF or (ctype in ("", "application/octet-stream") and filename.lower().endswith(".pdf")):
         return "application/pdf"
     return media_type(ctype, filename)

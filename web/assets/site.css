@@ -142,6 +142,11 @@ select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 /* The note form's file picker: a quiet link that opens the device's own. */
 label.picker { position: relative; display: inline-block; font-size: 15px; font-weight: 700; }
 label.picker input { position: absolute; inset: 0; opacity: 0; width: 1px; height: 1px; padding: 0; border: 0; }
+.recordings { display: flex; flex-direction: column; gap: 8px; }
+.recordings:empty { display: none; }
+.recording { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.recording audio { max-width: 100%; }
+.quiet.record[aria-pressed="true"] { color: var(--orange-ink); font-variant-numeric: tabular-nums; }
 label.picker:focus-within { outline: 2px solid var(--orange); outline-offset: 4px; }
 form.edit, form.note-form { gap: 12px; }
 form.edit { margin-top: 0; }

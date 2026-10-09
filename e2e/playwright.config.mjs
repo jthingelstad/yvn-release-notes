@@ -20,7 +20,16 @@ export default defineConfig({
     timezoneId: 'America/Chicago',
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 520, height: 1000 } } }],
+  projects: [{
+    name: 'chromium',
+    use: {
+      ...devices['Desktop Chrome'],
+      viewport: { width: 520, height: 1000 },
+      // A made-up microphone (a tone) for the Record button, allowed without asking.
+      launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] },
+      permissions: ['microphone'],
+    },
+  }],
   webServer: {
     command: `python3 scripts/dev_server.py --port ${PORT} --fake-places --fake-links`,
     cwd: '..',

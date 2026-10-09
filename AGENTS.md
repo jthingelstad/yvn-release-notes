@@ -161,7 +161,15 @@ runtime and is imported lazily so the tests run without it.
   `/api/days/<day>/notes/<id>/media/<n>`, which checks the session and the
   key's owner and redirects to a ten-minute signed link on the bucket's own
   host, the one host the CSP adds (`img-src`, `media-src`). Never a public
-  URL, never a key in an API answer. The email's "A year ago" links to the
+  URL, never a key in an API answer. **Recording on the page** (Jamie,
+  2026-10-09): the new-note form's Record button (shown only where the
+  browser has MediaRecorder) records the microphone, up to 30 minutes, as
+  MP4 where the browser makes it (Safari, newer Chrome) else WebM or Ogg.
+  Each recording plays back from a `blob:` URL (hence `blob:` in
+  media-src) and can be removed before the note is added; adding the note
+  sends it like a chosen file. `upload_type` drops codec parameters
+  (`audio/webm;codecs=opus`). The e2e test records Chromium's fake
+  microphone. The email's "A year ago" links to the
   day ("See 2 photos") and carries no file. Transcribing a recording is
   model processing: it needs each subscriber's opt-in.
   `scripts/extract_media.py` fills in notes filed before this.

@@ -3,6 +3,7 @@
 // Files from the web: a photo with a new note, then a PDF added to it, as a
 // person does it. The dev server takes the signed form at /dev-upload/ the
 // way S3 would (FakeS3.form_upload), so this runs the page's whole path.
+// Recording: Chromium's made-up microphone, kept with a new note.
 // Search: the tags, then words, found and marked.
 import { test, expect } from '@playwright/test';
 
@@ -83,4 +84,25 @@ test('search lists every tag, finds words, marks them, and the box clears back t
   const name = await first.textContent();
   await first.click();
   await expect(page.locator('#tag-title')).toHaveText(name);
+});
+
+test('a recording made on the page plays back, then goes with the note', async ({ page }) => {
+  await page.goto('/today/');
+  const form = page.locator('#note-form');
+  const record = form.locator('button.record'); // its name becomes the timer
+  await record.click();
+  await expect(record).toHaveAttribute('aria-pressed', 'true');
+  await expect(record).toHaveText('Stop · 0:02', { timeout: 5000 });
+  await record.click();
+  await expect(record).toHaveText('Record');
+  const preview = form.locator('.recordings audio');
+  await expect(preview).toHaveCount(1);
+  expect(await preview.getAttribute('src')).toMatch(/^blob:/);
+
+  const words = `Said aloud ${Date.now()}`;
+  await form.locator('textarea').fill(words);
+  await form.getByRole('button', { name: 'Add note' }).click();
+  const note = page.locator('article.note', { hasText: words });
+  await expect(note.locator('.media audio')).toHaveCount(1);
+  await expect(form.locator('.recordings audio')).toHaveCount(0);
 });

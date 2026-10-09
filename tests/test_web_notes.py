@@ -431,6 +431,10 @@ class UploadTest(NotesCase):
                                          ("big.m4a", "audio/mp4", 50 * 1024 * 1024 + 1, "file-too-big")]:
             r, body = self.call("POST", "/api/uploads", {"name": name, "type": ctype, "size": size}, cookies=self.cookies)
             self.assertEqual((r["statusCode"], body["error"]), (400, error), name)
+        # A recording made in the browser says its codec.
+        r, body = self.call("POST", "/api/uploads", {"name": "Recording.webm", "type": "audio/webm;codecs=opus", "size": 9},
+                            cookies=self.cookies)
+        self.assertEqual(body["type"], "audio/webm")
         # No type from the browser: the name decides.
         r, body = self.call("POST", "/api/uploads", {"name": "Menu.PDF", "type": "", "size": 9}, cookies=self.cookies)
         self.assertEqual(body["type"], "application/pdf")

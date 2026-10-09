@@ -16,6 +16,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 import uuid
 from base64 import b64decode
 from datetime import date, datetime, timedelta, timezone
@@ -1019,6 +1020,68 @@ def tagged_days(app: App, req: Request, tag: str) -> dict:
     })
 
 
+# --- search -------------------------------------------------------------------
+# Jamie, 2026-10-09: a Search page "to pull posts by tag, showing all tags
+# that have been used, as well as search by string across notes". The tags
+# are tag_list's; this is the words. Like the tags, it reads every note:
+# one person's notes are few enough. The words come in a POST body and are
+# never logged, since they are as private as the notes (the page keeps them
+# in the address's #, which no server sees).
+
+MAX_QUERY = 200
+SEARCH_DAYS = 100  # days of results shown, newest first
+
+
+def fold(text: str) -> str:
+    """Text as search compares it: no case, no accents ("Café" is "cafe")."""
+    return "".join(c for c in unicodedata.normalize("NFKD", text.casefold()) if not unicodedata.combining(c))
+
+
+def search_terms(q: str) -> list[str]:
+    """Words, or "a phrase" in quotes, every one of which a note must have."""
+    found = [fold(a or b.strip('"')).strip() for a, b in re.findall(r'"([^"]*)"|(\S+)', q)]
+    return [t for t in found if t][:10]
+
+
+def searched_text(n: dict) -> str:
+    """What a note is found by: its text, its place's name and its links'
+    names."""
+    words = [n.get("text") or ""]
+    if n.get("place"):
+        words.append(place_label(n["place"]))
+    words += [str(link.get("title") or "") for link in n.get("links") or []]
+    return fold("\n".join(words))
+
+
+def search(app: App, req: Request) -> dict:
+    """The notes with every term, by day, newest first: the newest
+    SEARCH_DAYS days, with how many notes and days matched in all."""
+    user_id, p = app.account(req)
+    q = req.json().get("q")
+    if not isinstance(q, str) or not q.strip():
+        raise Reject(400, "query")
+    if len(q) > MAX_QUERY:
+        raise Reject(400, "query-too-long")
+    terms = search_terms(q)
+    if not terms:
+        raise Reject(400, "query")
+    by_day: dict[str, list[dict]] = {}
+    for n in app.store.all_notes(user_id):
+        text = searched_text(n)
+        if all(t in text for t in terms):
+            by_day.setdefault(n["sk"].split("#")[1], []).append(n)
+    days = sorted(by_day, reverse=True)
+    log(event="search", user=user_id, terms=len(terms), days=len(days))
+    return respond(200, {
+        "terms": terms,
+        "today": local_today(p, app.now).isoformat(),
+        "tz": p["tz"],
+        "notes": sum(len(v) for v in by_day.values()),
+        "day_count": len(days),
+        "days": [day_view(p, d, sorted(by_day[d], key=written_at)) for d in days[:SEARCH_DAYS]],
+    })
+
+
 # --- pause --------------------------------------------------------------------
 
 MAX_PAUSE = 60
@@ -1159,6 +1222,7 @@ ROUTES = [
     ("POST", "/api/uploads", start_upload),
     ("GET", "/api/tags", tag_list),
     ("GET", "/api/tags/{tag}", tagged_days),
+    ("POST", "/api/search", search),
     ("PUT", "/api/pause", pause),
     ("DELETE", "/api/pause", resume),
     ("GET", "/api/unsubscribe", unsubscribe),

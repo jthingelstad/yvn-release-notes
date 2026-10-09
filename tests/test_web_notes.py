@@ -480,3 +480,62 @@ class UploadTest(NotesCase):
         self.emailed("2026-10-06", note_id="0100abc-2", text="Words only.")
         r, body = self.call("PUT", "/api/days/2026-10-06/notes/0100abc-2", {"text": ""}, cookies=self.cookies)
         self.assertEqual((r["statusCode"], body["error"]), (400, "text"))
+
+
+class SearchTest(NotesCase):
+    def find(self, q):
+        return self.call("POST", "/api/search", {"q": q}, cookies=self.cookies)
+
+    def setUp(self):
+        super().setUp()
+        self.emailed("2026-10-01", "m1", text="Coffee at the Café with Tyler before the rain.")
+        self.add("2026-10-03", "Rain all day. #cabin")
+        self.emailed("2026-10-05", "m2", text="Pier walk.", source="import",
+                     place={"venue": "Town Pier", "city": "Bar Harbor", "lat": 44.39, "lon": -68.2})
+        self.emailed("2026-10-06", "m3", text="Read https://news.example/x",
+                     links=[{"url": "https://news.example/x", "title": "Lighthouses of Maine"}])
+
+    def days(self, q):
+        r, body = self.find(q)
+        self.assertEqual(r["statusCode"], 200, body)
+        return [d["date"] for d in body["days"]]
+
+    def test_every_word_anywhere_without_case_or_accents_newest_first(self):
+        self.assertEqual(self.days("rain"), ["2026-10-03", "2026-10-01"])
+        self.assertEqual(self.days("CAFE tyler"), ["2026-10-01"])
+        self.assertEqual(self.days("rain tyler"), ["2026-10-01"])
+        self.assertEqual(self.days("#cabin"), ["2026-10-03"])
+        self.assertEqual(self.days("snow"), [])
+
+    def test_a_quoted_phrase_is_one_term(self):
+        self.assertEqual(self.days('"before the rain"'), ["2026-10-01"])
+        self.assertEqual(self.days('"the rain before"'), [])
+        self.assertEqual(self.days('"rain'), ["2026-10-03", "2026-10-01"])
+
+    def test_places_and_link_names_are_found_too(self):
+        self.assertEqual(self.days("bar harbor"), ["2026-10-05"])
+        self.assertEqual(self.days("lighthouses"), ["2026-10-06"])
+
+    def test_the_answer_counts_all_and_shows_the_newest_100_days(self):
+        for n in range(105):
+            self.store.add_note("u1", f"2020-{1 + n // 28:02d}-{1 + n % 28:02d}", f"x{n}", text="Kubb.", version="x")
+        r, body = self.find("kubb")
+        self.assertEqual((body["notes"], body["day_count"], len(body["days"])), (105, 105, 100))
+        self.assertEqual(body["days"][0]["date"], "2020-04-21")
+        self.assertEqual(body["terms"], ["kubb"])
+
+    def test_the_words_are_needed_and_never_logged(self):
+        for q, error in [("", "query"), ("  ", "query"), (None, "query"), ('""', "query"), ("x" * 201, "query-too-long")]:
+            r, body = self.find(q)
+            self.assertEqual((r["statusCode"], body["error"]), (400, error), repr(q))
+        self.find("tyler")
+        self.assertIn('"event":"search"', self.out.getvalue())
+        self.assertNotIn("tyler", self.out.getvalue().lower())
+
+    def test_only_the_signed_in_persons_notes(self):
+        self.subscribe("bo@example.com", "u2")
+        r, body = self.call("POST", "/api/search", {"q": "rain"}, cookies=[self.signed_in("bo@example.com")])
+        self.assertEqual(body["days"], [])
+        r, _ = self.call("POST", "/api/search", {"q": "rain"})
+        self.assertEqual(r["statusCode"], 401)
+

@@ -114,9 +114,17 @@ runtime and is imported lazily so the tests run without it.
   hashtags in its text (`tags.py`), worked out again on every write and
   edit, so the text is the one place a tag lives and removing a hashtag
   removes it. An import writes its tags as a closing line of hashtags; a
-  journal other than the main one comes in tagged with its name. `/tag/`
-  lists them; `/tag/?t=<tag>` shows the days. No index: one person's notes
+  journal other than the main one comes in tagged with its name.
+  `/search/` lists every tag and `/tag/?t=<tag>` shows a tag's days.
+  No index: one person's notes
   are read whole.
+- **Search** (Jamie, 2026-10-09: "pull posts by tag, showing all tags
+  that have been used, as well as search by string across notes"):
+  `/search/`, every tag, and `POST /api/search {q}`: notes with every word
+  or "quoted phrase" in their text, place name or link names, without case
+  or accents, newest 100 days shown. It reads every note, like the tags.
+  The words go in a POST body and the page's `#q=`, never a URL a server
+  sees, and are never logged.
 - **Imported days count** toward streaks and every lifetime count (Jamie,
   2026-10-09). The dashboard splits notes into email, web and imported.
 - **Day One imports are planned before anything is written** (Jamie,

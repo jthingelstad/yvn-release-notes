@@ -23,7 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from . import auth, export, export_job, links, media, places, tags, weather
+from . import auth, export, export_job, links, media, places, tags, transcribe, weather
 from .compose import DOTS, MAIL_TAG, from_header, next_release
 from .notes import MAX_NOTE, map_url, place_label, written_at
 from .streak import ONE_DAY, compute_streak, pause_days
@@ -341,6 +341,7 @@ def profile_view(p: dict, now: int) -> dict:
         "tz": p["tz"],
         "send_time": p.get("send_time", "06:00"),
         "status": p.get("status", "active"),
+        "transcribe": bool(p.get("transcribe")),
         "today": today.isoformat(),
         "version": str(compute_version(date.fromisoformat(p["birthday"]), today)),
     }
@@ -414,6 +415,11 @@ def update_me(app: App, req: Request) -> dict:
         fields["send_time"] = send_time_from(body)
     if "place" in body:
         fields.update(place_fields(body))
+    if "transcribe" in body:
+        # Turning it on writes out every recording already kept (transcribe.py).
+        if not isinstance(body["transcribe"], bool):
+            raise Reject(400, "transcribe")
+        fields["transcribe"] = body["transcribe"]
     if "status" in body:
         if body["status"] != "active":
             raise Reject(400, "status")
@@ -426,7 +432,7 @@ def update_me(app: App, req: Request) -> dict:
         raise Reject(400, "nothing-to-change")
     remove = ("stopped_reason", "stopped_at") if "status" in fields else ()
     app.store.update_profile(user_id, fields, remove)
-    log(event="settings", user=user_id, changed=sorted(k for k in fields if k in ("send_time", "tz", "status")))
+    log(event="settings", user=user_id, changed=sorted(k for k in fields if k in ("send_time", "tz", "status", "transcribe")))
     p = {k: v for k, v in {**p, **fields}.items() if k not in remove}
     return respond(200, profile_view(p, app.now))
 
@@ -661,9 +667,11 @@ def text_from(body: dict, empty_ok: bool = False) -> str:
 APPS = {"dayone": "Day One"}
 
 
-def note_view(item: dict, tz: str) -> dict:
+def note_view(item: dict, tz: str, writing_out: bool = False) -> dict:
     """One note for the page. Its time reads in the zone it was written in
-    (`tz` on the note), the subscriber's for notes without one."""
+    (`tz` on the note), the subscriber's for notes without one. With
+    `writing_out` (the subscriber has transcripts on), a recording still
+    waiting for its text says so."""
     _, day, note_id = item["sk"].split("#", 2)
     at = written_at(item)
     zone = item["tz"] if places.valid_tz(item.get("tz")) else tz
@@ -684,6 +692,12 @@ def note_view(item: dict, tz: str) -> dict:
         # Each file by number; its address is the API's, never the bucket's.
         view["media"] = [{"n": int(m["n"]), "kind": m["kind"], "type": m["type"], **({"name": m["name"]} if m.get("name") else {})}
                          for m in item["media"]]
+        for shown, m in zip(view["media"], item["media"]):
+            if m.get("transcript"):
+                shown["transcript"] = m["transcript"]
+        if writing_out:
+            for shown in view["media"]:
+                shown["writing"] = any(shown["n"] == int(m["n"]) for m in transcribe.waiting(item))
     if others := media.others(item):
         view["attachments"] = others
     try:
@@ -695,9 +709,13 @@ def note_view(item: dict, tz: str) -> dict:
     return view
 
 
+def writes_out(p: dict) -> bool:
+    return bool(p.get("transcribe"))
+
+
 def day_view(p: dict, day: str, notes: list[dict], sky: dict | None = None) -> dict:
     v = compute_version(date.fromisoformat(p["birthday"]), date.fromisoformat(day))
-    view = {"date": day, "version": str(v), "notes": [note_view(n, p["tz"]) for n in notes]}
+    view = {"date": day, "version": str(v), "notes": [note_view(n, p["tz"], writes_out(p)) for n in notes]}
     if sky:
         # As words, in the subscriber's units: "Partly cloudy, 61° / 44° in Minneapolis".
         view["weather"] = weather.day_line(sky, weather.fahrenheit(weather.place_of(p) or sky))
@@ -795,7 +813,7 @@ def add_note(app: App, req: Request, value: str) -> dict:
     app.store.put_note(user_id, day.isoformat(), note_id, item)
     log(event="note-added", user=user_id, date=day.isoformat(), files=len(files))
     keep_weather(app, user_id, p, day)
-    return respond(201, note_view({"sk": f"NOTE#{day.isoformat()}#{note_id}", **item}, p["tz"]))
+    return respond(201, note_view({"sk": f"NOTE#{day.isoformat()}#{note_id}", **item}, p["tz"], writes_out(p)))
 
 
 def keep_weather(app: App, user_id: str, p: dict, day: date) -> None:
@@ -829,7 +847,7 @@ def edit_note(app: App, req: Request, value: str, note_id: str) -> dict:
     if not item:
         raise Reject(404, "note")
     log(event="note-edited", user=user_id, date=day)
-    return respond(200, note_view(item, p["tz"]))
+    return respond(200, note_view(item, p["tz"], writes_out(p)))
 
 
 def delete_note(app: App, req: Request, value: str, note_id: str) -> dict:
@@ -960,7 +978,7 @@ def add_files(app: App, req: Request, value: str, note_id: str) -> dict:
                                    len(had), iso(app.now))
         if item:
             log(event="files-added", user=user_id, date=day, files=len(files))
-            return respond(200, note_view(item, p["tz"]))
+            return respond(200, note_view(item, p["tz"], writes_out(p)))
         had = note()
     raise Reject(409, "busy")
 
@@ -1044,9 +1062,9 @@ def search_terms(q: str) -> list[str]:
 
 
 def searched_text(n: dict) -> str:
-    """What a note is found by: its text, its place's name and its links'
-    names."""
-    words = [n.get("text") or ""]
+    """What a note is found by: its text, its place's name, its links'
+    names and its recordings' words."""
+    words = [n.get("text") or ""] + [str(m.get("transcript") or "") for m in n.get("media") or []]
     if n.get("place"):
         words.append(place_label(n["place"]))
     words += [str(link.get("title") or "") for link in n.get("links") or []]

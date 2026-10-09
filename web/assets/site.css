@@ -135,6 +135,11 @@ select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 .media img { display: block; max-width: 100%; max-height: 440px; width: auto; height: auto; }
 .media audio { width: 100%; max-width: 440px; }
 .media .hint { margin: 0; }
+/* What a recording said (transcribe.py), under its player. */
+.media .said { flex-basis: 100%; margin: 0 0 4px; max-width: 60ch; color: var(--ink-2); font-size: 15px; line-height: 1.5; }
+.media .said:not(.hint) { padding-left: 12px; border-left: 3px solid var(--orange); }
+label.check { flex-direction: row; align-items: center; gap: 12px; min-height: 44px; font-size: 16px; cursor: pointer; }
+input[type=checkbox] { accent-color: var(--orange); width: 20px; height: 20px; margin: 0; padding: 0; border: 0; flex: none; }
 .tday .media img { max-height: 180px; }
 .note .actions { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
 .note .actions .quiet { min-height: 40px; padding: 8px 0; font-size: 14px; }

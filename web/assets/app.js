@@ -80,6 +80,7 @@ const SAY = {
   birthday: 'Type your birthday: a real date, not in the future.',
   place: 'Pick your city from the list.',
   'send-time': 'Pick a time for your email.',
+  transcribe: 'That didn’t save. Try again.',
   'places-failed': 'The city search isn’t answering. Try again in a minute.',
   token: ['This link isn’t one we sent. ', { href: '/#sign-in', text: 'Sign in to manage your emails' }, '.'],
   origin: 'That came from outside notes.yourversionnumber.com. Open Release Notes there and try again.',
@@ -384,7 +385,7 @@ function noteText(n) {
 // A note's photos and recordings. Each address is the API's, which checks
 // the session and redirects to a link that lasts ten minutes; the page
 // never sees the bucket's own key.
-function noteMedia(day, n, version) {
+function noteMedia(day, n, version, mark = null) {
   const box = el('div', 'media');
   for (const m of n.media || []) {
     const src = `/api/days/${day}/notes/${encodeURIComponent(n.id)}/media/${m.n}`;
@@ -419,6 +420,14 @@ function noteMedia(day, n, version) {
       audio.src = src;
       audio.setAttribute('aria-label', 'Recording');
       box.append(audio);
+      // What was said, for those who turned it on (transcribe.py).
+      if (m.transcript) {
+        const said = el('p', 'said');
+        appendMarked(said, m.transcript, mark);
+        box.append(said);
+      } else if (m.writing) {
+        box.append(el('p', 'hint said', 'Writing this out. It shows up here in a minute or two.'));
+      }
     }
   }
   return box;
@@ -595,6 +604,21 @@ function renderNotes(root, day, notes, tz, onChange, version) {
     if (n.media && n.media.length) item.append(noteMedia(day, n, version));
     item.append(actions);
     root.append(item);
+  }
+  // A recording being written out: look again shortly, unless a note is
+  // being edited or asked about (onChange redraws them all).
+  clearTimeout(root.writingOut);
+  if (notes.some((n) => (n.media || []).some((m) => m.writing))) {
+    const tries = (root.writingTries || 0) + 1;
+    const look = () => {
+      const busy = root.querySelector('textarea, input[type="file"]') || root.contains(document.activeElement);
+      if (busy) return (root.writingOut = setTimeout(look, 30000));
+      root.writingTries = tries;
+      onChange();
+    };
+    if (tries <= 20) root.writingOut = setTimeout(look, 30000);
+  } else {
+    root.writingTries = 0;
   }
 }
 
@@ -869,7 +893,7 @@ function dayList(list, data, mark = null) {
     sec.append(head);
     for (const n of d.notes) {
       sec.append(noteBody(n, 'text', mark));
-      if (n.media && n.media.length) sec.append(noteMedia(d.date, n, d.version));
+      if (n.media && n.media.length) sec.append(noteMedia(d.date, n, d.version, mark));
       sec.append(noteMeta(n, data.tz, 'count'));
     }
     list.append(sec);
@@ -1201,6 +1225,15 @@ const pages = {
       const saved = await save({ send_time: sendTime.value }, timeSection, sendTime);
       $('#send-time-saved').hidden = !saved;
       if (!saved) sendTime.value = p.send_time; // back to what is stored
+    });
+
+    const writeOut = $('#transcribe'), writeSection = writeOut.closest('.section');
+    writeOut.checked = !!p.transcribe;
+    writeOut.addEventListener('change', async () => {
+      $('#transcribe-saved').hidden = true;
+      const saved = await save({ transcribe: writeOut.checked }, writeSection, writeOut);
+      $('#transcribe-saved').hidden = !saved;
+      if (!saved) writeOut.checked = !!p.transcribe;
     });
 
     const picker = $('#city-picker'), changeCity = $('#change-city');

@@ -5,21 +5,32 @@
 // way S3 would (FakeS3.form_upload), so this runs the page's whole path.
 // Recording: Chromium's made-up microphone, kept with a new note.
 // Search: the tags, then words, found and marked.
+// Transcripts: the setting, a recording written out, and found by search.
 import { test, expect } from '@playwright/test';
 
 // A real 1 x 1 PNG, so the browser draws it, and a small PDF.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n');
 
-// Each signs in as Ada, and a second code replaces the first: one at a time.
+// One sign-in as Ada, shared: a second code would replace the first, and
+// an address gets five sign-in emails an hour.
 test.describe.configure({ mode: 'serial' });
+let session;
 
-test.beforeEach(async ({ page, baseURL }) => {
-  const post = (path, data) => page.request.post(path, { data, headers: { Origin: baseURL } });
+test.beforeAll(async ({ browser }) => {
+  const baseURL = test.info().project.use.baseURL;
+  const context = await browser.newContext({ baseURL });
+  const post = (path, data) => context.request.post(path, { data, headers: { Origin: baseURL } });
   await post('/api/auth/start', { email: 'ada@example.com' });
-  const mail = await (await page.request.get('/dev-mail/?to=ada@example.com')).text();
+  const mail = await (await context.request.get('/dev-mail/?to=ada@example.com')).text();
   const code = mail.match(/type this code where you asked: (\d{6})/)[1];
   expect((await post('/api/auth/verify', { email: 'ada@example.com', code })).ok()).toBeTruthy();
+  session = await context.storageState();
+  await context.close();
+});
+
+test.beforeEach(async ({ context }) => {
+  await context.addCookies(session.cookies);
 });
 
 test('a photo goes with a new note, and a PDF joins it later', async ({ page }) => {
@@ -105,4 +116,26 @@ test('a recording made on the page plays back, then goes with the note', async (
   const note = page.locator('article.note', { hasText: words });
   await expect(note.locator('.media audio')).toHaveCount(1);
   await expect(form.locator('.recordings audio')).toHaveCount(0);
+});
+
+test('turning on transcripts writes out a recording, and search finds what was said', async ({ page }) => {
+  await page.goto('/settings/');
+  const box = page.getByLabel('Write out what I say');
+  await expect(box).not.toBeChecked();
+  await box.check();
+  await expect(page.locator('#transcribe-saved')).toBeVisible();
+
+  // The dev server writes it out five seconds after (transcribe.py's stand-in).
+  await page.goto('/timeline/');
+  await expect(page.getByText('Writing this out.').first()).toBeVisible();
+  await page.waitForTimeout(6000);
+  await page.reload();
+  await expect(page.locator('.media .said', { hasText: 'loons were out' }).first()).toBeVisible();
+
+  await page.goto('/search/#q=loons');
+  await expect(page.locator('.media .said mark').first()).toHaveText('loons');
+
+  await page.goto('/settings/');
+  await page.getByLabel('Write out what I say').uncheck();
+  await expect(page.locator('#transcribe-saved')).toBeVisible();
 });

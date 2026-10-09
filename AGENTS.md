@@ -51,6 +51,8 @@ notes.yourversionnumber.com (CloudFront)
 - `parse.py`: MIME to note text, quote and signature stripping. Standard
   library only. `links.py`: addresses in notes, their saved titles, and the
   guarded fetch. `media.py`: photos and recordings out of a reply.
+  `transcribe.py`: recordings written out by Amazon Transcribe, for those
+  who turn it on (its docstring is the design).
 - `send.py`, `inbound.py`, `events.py`: the mail handlers. `store.py`: the one table and its
   key layout (documented at the top of the file). `census.py`: the
   dashboard's counts, put out by the sender (its docstring lists them).
@@ -170,8 +172,18 @@ runtime and is imported lazily so the tests run without it.
   sends it like a chosen file. `upload_type` drops codec parameters
   (`audio/webm;codecs=opus`). The e2e test records Chromium's fake
   microphone. The email's "A year ago" links to the
-  day ("See 2 photos") and carries no file. Transcribing a recording is
-  model processing: it needs each subscriber's opt-in.
+  day ("See 2 photos") and carries no file. **Transcripts** (Jamie,
+  2026-10-09: "speech to text on audio notes", Amazon Transcribe): off
+  until the subscriber ticks "Write out what I say" in settings
+  (`transcribe` on the profile), which also writes out every recording
+  already kept. The table's stream (NEW_AND_OLD_IMAGES, read by the
+  transcriber alone) starts a batch job per recording; Transcribe's job
+  events bring the words back as `transcript` on the file's media entry
+  (`""` when a job failed or heard nothing). The words show under the
+  player, are searched, and go in both exports; not in the email. Jamie
+  wanted the settings copy casual and the service unnamed ("They're sent
+  off to be transcribed"). The account has no AI services opt-out (Jamie,
+  2026-10-09: "I don't care if they keep it"), so Amazon may keep the audio.
   `scripts/extract_media.py` fills in notes filed before this.
 - A subscriber who deletes an emailed note deletes its message and its
   files too (the web function may delete `raw/*` and `media/*`; old

@@ -61,6 +61,10 @@ Resources:
       TimeToLiveSpecification:
         AttributeName: expires_at
         Enabled: true
+      # Read by the transcriber only: a note with a recording, or the
+      # setting just turned on (transcribe.py).
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
 
   # Raw inbound mail under raw/. Filed replies are kept; their photos and
   # recordings are copied to media/ (media.py) and kept too. Ignored mail
@@ -110,6 +114,14 @@ Resources:
             Status: Enabled
             NoncurrentVersionExpiration:
               NoncurrentDays: 30
+          - Id: expire-transcripts
+            # A finished job's JSON, which the transcriber deletes once the
+            # words are on the note; any it missed go here.
+            Status: Enabled
+            Prefix: transcripts/
+            ExpirationInDays: 2
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
           - Id: expire-exports
             Status: Enabled
             Prefix: exports/
@@ -888,6 +900,116 @@ Resources:
       Principal: sns.amazonaws.com
       SourceArn: !Ref MailEventsTopic
 
+  # --- transcripts -------------------------------------------------------------
+  # Recordings written out as text for subscribers who turn it on
+  # (transcribe.py): the table's stream starts Amazon Transcribe jobs, and
+  # each job's state change brings the words back to the note.
+
+  TranscribeLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-transcribe"
+      RetentionInDays: 90
+
+  TranscribeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: transcribe
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem]
+                Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                Action: [dynamodb:DescribeStream, dynamodb:GetRecords, dynamodb:GetShardIterator]
+                Resource: !GetAtt Table.StreamArn
+              - Effect: Allow
+                Action: dynamodb:ListStreams
+                Resource: "*"
+              - Effect: Allow
+                Action: [transcribe:StartTranscriptionJob, transcribe:DeleteTranscriptionJob]
+                Resource: "*"
+              - Effect: Allow
+                # Transcribe reads the recording and writes its JSON as
+                # this role.
+                Action: s3:GetObject
+                Resource: !Sub "${MailBucket.Arn}/media/*"
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
+                Resource: !Sub "${MailBucket.Arn}/transcripts/*"
+              - Effect: Allow
+                # Transcribe's empty test write before a job, should it go
+                # to the top of the bucket rather than beside the output.
+                Action: s3:PutObject
+                Resource: !Sub "${MailBucket.Arn}/.write_access_check_file.temp"
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt TranscribeLogs.Arn
+
+  TranscribeFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-transcribe"
+      Description: Writes out recordings as text for subscribers who turned it on
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: release_notes.transcribe.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt TranscribeRole.Arn
+      MemorySize: 256
+      Timeout: 120
+      LoggingConfig:
+        LogGroup: !Ref TranscribeLogs
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          BUCKET: !Ref MailBucket
+
+  TranscribeStream:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref TranscribeFunction
+      EventSourceArn: !GetAtt Table.StreamArn
+      StartingPosition: LATEST
+      BatchSize: 25
+      MaximumRetryAttempts: 3
+      BisectBatchOnFunctionError: true
+      FilterCriteria:
+        Filters:
+          - Pattern: '{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"NewImage": {"sk": {"S": [{"prefix": "NOTE#"}]}}}}'
+          - Pattern: '{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"NewImage": {"sk": {"S": ["PROFILE"]}, "transcribe": {"BOOL": [true]}}}}'
+
+  TranscribeDone:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: A Release Notes transcription job finished
+      EventPattern:
+        source: [aws.transcribe]
+        detail-type: [Transcribe Job State Change]
+        detail:
+          TranscriptionJobStatus: [COMPLETED, FAILED]
+          TranscriptionJobName: [{ prefix: release-notes. }]
+      State: ENABLED
+      Targets:
+        - Id: transcribe
+          Arn: !GetAtt TranscribeFunction.Arn
+
+  TranscribeDonePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TranscribeFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt TranscribeDone.Arn
+
   # --- alarms -----------------------------------------------------------------
 
   AlarmTopic:
@@ -975,6 +1097,22 @@ Resources:
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions: [{ Name: FunctionName, Value: !Ref ExportFunction }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  TranscribeErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-transcribe-errors"
+      AlarmDescription: A recording's transcript could not be started or kept. The recording itself is safe.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref TranscribeFunction }]
       Statistic: Sum
       Period: 900
       EvaluationPeriods: 1

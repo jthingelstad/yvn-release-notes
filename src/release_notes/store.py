@@ -331,6 +331,29 @@ class Store:
                 return None
             raise
 
+    def note(self, user_id: str, day: str, note_id: str) -> dict | None:
+        return self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}"}).get("Item")
+
+    def set_transcript(self, user_id: str, day: str, note_id: str, n: int, text: str) -> bool:
+        """Put a recording's words on its entry in the note's media, found
+        by its number. False if the note or the file is gone."""
+        note = self.note(user_id, day, note_id)
+        at = next((i for i, m in enumerate((note or {}).get("media") or []) if int(m["n"]) == n), None)
+        if at is None:
+            return False
+        try:
+            self.table.update_item(
+                Key={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}"},
+                UpdateExpression=f"SET media[{at}].transcript = :t",
+                ConditionExpression=f"attribute_exists(pk) AND media[{at}].n = :n",
+                ExpressionAttributeValues={":t": text, ":n": n},
+            )
+            return True
+        except Exception as e:
+            if _failed_condition(e):
+                return False
+            raise
+
     def delete_note(self, user_id: str, day: str, note_id: str) -> dict | None:
         """Delete a note. Returns what it was (the caller deletes its raw
         email), or None if there was none."""

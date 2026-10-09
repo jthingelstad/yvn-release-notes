@@ -400,6 +400,12 @@ runtime and is imported lazily so the tests run without it.
   `projects-ops-alerts` queue. The queue's policy must list the topic. SES
   events go to `yvn-release-notes-mail-events`, read only by the events
   function, which puts a scrubbed line on the alarms topic.
+- SQS `yvn-release-notes-failed` holds what gave up after its retries: a
+  bounce or complaint the events function could not apply (the SNS message,
+  address included, so it never goes to the ops queue) and a transcribe or
+  describe stream batch (shard and sequence numbers only). Kept 14 days;
+  alarm `yvn-release-notes-failed-queue` fires on anything in it. Apply a
+  stuck bounce by hand, then delete the message.
 - The monthly counts: `scripts/tally.py` (reads only).
 - The dashboard: stack output `DashboardUrl`. Alarm `yvn-release-notes-overdue`
   fires when anyone's email is over half an hour late for two quarter

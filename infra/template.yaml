@@ -747,7 +747,9 @@ Resources:
       Handler: release_notes.web.handler
       Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
       Role: !GetAtt WebRole.Arn
-      MemorySize: 256
+      # CPU comes with memory. At 256 MB a fresh start spent 2.3 to 3 seconds
+      # loading boto3 and building its clients before the first answer.
+      MemorySize: 1024
       # Under the HTTP API's 30 seconds, for deleting a long-kept account.
       Timeout: 28
       LoggingConfig:
@@ -868,6 +870,9 @@ Resources:
                 Action: sns:Publish
                 Resource: !Ref AlarmTopic
               - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt FailedQueue.Arn
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt EventsLogs.Arn
 
@@ -883,6 +888,10 @@ Resources:
       Role: !GetAtt EventsRole.Arn
       MemorySize: 128
       Timeout: 30
+      # A bounce or complaint that could not be applied, after Lambda's two
+      # retries, waits here rather than being lost.
+      DeadLetterConfig:
+        TargetArn: !GetAtt FailedQueue.Arn
       LoggingConfig:
         LogGroup: !Ref EventsLogs
       Environment:
@@ -956,6 +965,10 @@ Resources:
                 Action: s3:PutObject
                 Resource: !Sub "${MailBucket.Arn}/.write_access_check_file.temp"
               - Effect: Allow
+                # Where a stream batch goes after its last retry.
+                Action: sqs:SendMessage
+                Resource: !GetAtt FailedQueue.Arn
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt TranscribeLogs.Arn
 
@@ -984,6 +997,9 @@ Resources:
       FunctionName: !Ref TranscribeFunction
       EventSourceArn: !GetAtt Table.StreamArn
       StartingPosition: LATEST
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt FailedQueue.Arn
       BatchSize: 25
       MaximumRetryAttempts: 3
       BisectBatchOnFunctionError: true
@@ -1064,6 +1080,10 @@ Resources:
                 Action: lambda:InvokeFunction
                 Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-describe"
               - Effect: Allow
+                # Where a stream batch goes after its last retry.
+                Action: sqs:SendMessage
+                Resource: !GetAtt FailedQueue.Arn
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt DescribeLogs.Arn
 
@@ -1103,6 +1123,9 @@ Resources:
       FunctionName: !Ref DescribeFunction
       EventSourceArn: !GetAtt Table.StreamArn
       StartingPosition: LATEST
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt FailedQueue.Arn
       BatchSize: 5
       MaximumRetryAttempts: 3
       BisectBatchOnFunctionError: true
@@ -1141,6 +1164,35 @@ Resources:
       Protocol: sqs
       Endpoint: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${OpsQueueName}"
       RawMessageDelivery: true
+
+  # What would otherwise be dropped after its retries: a bounce or complaint
+  # event the events function could not apply (the SNS message, which names
+  # the address, so it stays here and never goes to the ops queue), and a
+  # stream batch the transcriber or describer gave up on (the shard and
+  # sequence numbers only, no note text). Kept 14 days. Read it, fix the
+  # cause, and apply or replay by hand.
+  FailedQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-failed"
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  FailedQueueAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-failed-queue"
+      AlarmDescription: Something gave up after its retries and is waiting in the failed queue. A bounce may not have stopped its subscriber.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions: [{ Name: QueueName, Value: !GetAtt FailedQueue.QueueName }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
 
   SenderErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -1286,7 +1338,7 @@ Resources:
               "markdown": "# Release Notes\nCounts only: no addresses, no note text. Subscribers, notes and writers come from the sender's census line every quarter hour (`census.py`); emails from SES; mail in and account events from the functions' logs, kept 90 days. One row per person: `scripts/subscribers.py`."}},
             {"type": "alarm", "x": 0, "y": 2, "width": 24, "height": 3, "properties": {
               "title": "Alarms",
-              "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${InboundErrorsAlarm.Arn}", "${EventsErrorsAlarm.Arn}", "${WebErrorsAlarm.Arn}", "${ExportErrorsAlarm.Arn}"]}},
+              "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${InboundErrorsAlarm.Arn}", "${EventsErrorsAlarm.Arn}", "${WebErrorsAlarm.Arn}", "${ExportErrorsAlarm.Arn}", "${FailedQueueAlarm.Arn}"]}},
             {"type": "metric", "x": 0, "y": 5, "width": 24, "height": 4, "properties": {
               "title": "Right now", "view": "singleValue", "region": "${AWS::Region}",
               "period": 900, "stat": "Maximum", "setPeriodToTimeRange": false, "sparkline": true,

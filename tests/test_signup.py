@@ -4,7 +4,7 @@ from contextlib import redirect_stdout
 from decimal import Decimal
 from io import StringIO
 
-from fakes import FakeStore
+from fakes import FakeLambda, FakeStore
 from release_notes import events, places
 from test_web import NOW, WebCase
 
@@ -32,17 +32,29 @@ class SignUpTest(WebCase):
         p = self.store.profiles[user_id]
         self.assertEqual((p["lat"], p["lon"]), (Decimal("44.98"), Decimal("-93.26")))
         self.assertEqual(p["status"], "active")
-        # 06:00 has passed in Chicago, so the first email is tomorrow's.
-        self.assertEqual(p["last_sent_date"], "2026-10-08")
+        # Today's email goes at once (the sender marks the day sent); the
+        # schedule's first is tomorrow's.
+        self.assertNotIn("last_sent_date", p)
+        self.assertEqual(self.lam.invoked, [{"FunctionName": "yvn-release-notes-sender", "InvocationType": "Event",
+                                             "Payload": {"send_now": user_id}}])
         _, again = self.call("GET", "/api/me", cookies=cookies)
         self.assertFalse(again["new"])
         self.assertNotIn("new@example.com", self.out.getvalue())
         self.assertNotIn("Minneapolis", self.out.getvalue())
 
-    def test_first_email_is_today_when_the_send_time_is_still_ahead(self):
+    def test_first_email_goes_now_even_with_the_send_time_ahead(self):
         cookies = self.new_session()
         self.put_me({"birthday": "1981-06-14", "place": MINNEAPOLIS, "send_time": "20:00"}, cookies)
-        self.assertNotIn("last_sent_date", self.store.profiles[self.store.emails["new@example.com"]])
+        self.assertEqual([i["Payload"] for i in self.lam.invoked], [{"send_now": self.store.emails["new@example.com"]}])
+
+    def test_sign_up_stands_when_the_first_email_cannot_start(self):
+        # The schedule still sends today's if its send time is ahead or
+        # under three hours past.
+        self.lam = FakeLambda(fail=True)
+        cookies = self.new_session()
+        r, body = self.put_me({"birthday": "1981-06-14", "place": MINNEAPOLIS, "send_time": "20:00"}, cookies)
+        self.assertEqual((r["statusCode"], body["new"]), (200, False))
+        self.assertIn('"event":"first-email-failed"', self.out.getvalue())
 
     def test_sign_up_checks_everything(self):
         cookies = self.new_session()
@@ -70,6 +82,7 @@ class SignUpTest(WebCase):
         r, again = self.put_me(body, second)
         self.assertEqual((r["statusCode"], again["new"]), (200, False))
         self.assertEqual(len(self.store.profiles), 1)
+        self.assertEqual(len(self.lam.invoked), 1)  # one first email
 
     def test_settings_change_send_time_and_city(self):
         self.subscribe()

@@ -642,6 +642,11 @@ Resources:
                 Action: lambda:InvokeFunction
                 Resource: !GetAtt ExportFunction.Arn
               - Effect: Allow
+                # Sends a new subscriber today's email at sign-up, without
+                # waiting for it (web.send_first).
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt SenderFunction.Arn
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt WebLogs.Arn
 
@@ -668,6 +673,7 @@ Resources:
           CONFIG_SET: !Ref ConfigurationSet
           MAIL_BUCKET: !Ref MailBucket
           EXPORT_FUNCTION: !Ref ExportFunction
+          SENDER_FUNCTION: !Ref SenderFunction
 
   # --- the zip export ---------------------------------------------------------
   # Every note, photo and recording in one zip, built in the background

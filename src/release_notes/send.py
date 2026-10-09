@@ -11,6 +11,8 @@ email actually went.
 
 Invoke with {"send_now": "<user id>"} to send that subscriber today's email
 straight away, outside their send window. It is still once per local day.
+Sign-up does this (web.send_first), so a new subscriber's first email is
+today's, at once, with a welcome line, and the schedule starts tomorrow.
 
 The email carries the notes from a year ago, by version (5.3.279 for
 5.4.279), when there are any. A dry run reports that day, never the text.
@@ -31,7 +33,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from . import media, weather
-from .compose import build_message, from_header, new_token
+from .compose import build_message, from_header, new_token, welcome_line
 from .notes import combine, day_links
 from .store import Store, Subscriber
 from .streak import Streak, compute_streak, pause_days
@@ -223,6 +225,8 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None)
             streak=streak,
             last_year=last_year,
             forecast=forecast,
+            # Nothing sent before means this is the one sign-up sends.
+            welcome=welcome_line(sub.send_time) if previous is None else None,
         )
         resp = ses.send_email(
             FromEmailAddress=from_header(os.environ["FROM_ADDRESS"]),

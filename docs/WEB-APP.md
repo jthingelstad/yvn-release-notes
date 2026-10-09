@@ -18,8 +18,10 @@ there links here until this is up and done.
      and the morning forecast, `weather.py`). No street address, no device location.
    - **Send time**, on a quarter hour. The default is 06:00.
 
-   The first email comes the next morning. An address that already subscribes
-   goes straight to its notes.
+   Today's email goes as soon as they finish, with a welcome line, and the
+   schedule starts the next day (Jamie, 2026-10-08: they "get the email and
+   connect the dots shortly after signing in"). An address that already
+   subscribes goes straight to its notes.
 2. **Today**: the version number, today's notes from email and the web
    together, a box to write one, and the streak.
 3. **Timeline**: days by version, newest first, with their notes.
@@ -82,7 +84,7 @@ notes.yourversionnumber.com
   | Item | Key | Lifetime |
   |---|---|---|
   | Sign-in link and code | `LOGIN#<hash>` | 15 minutes |
-  | Session | `SESSION#<hash>` | 30 days idle, 90 days at most |
+  | Session | `SESSION#<hash>` | 14 days from last use, renewed by each visit, no outer limit |
   | Rate-limit counter | `RATE#<bucket>#<hour>` | about an hour |
   | Pause | `USER#<id>` / `PAUSE#<start>` | kept |
   | Note written on the web | `USER#<id>` / `NOTE#<day>#w-<id>`, `source=web` | kept |
@@ -138,8 +140,14 @@ notes.yourversionnumber.com
   `complaint`. Hard bounces and complaints arrive through the alarms topic
   (which the configuration set already publishes to) at
   `yvn-release-notes-events`.
-- **Sign-up's first email** is the next send time to come in the chosen
-  city: today's if it is still ahead, otherwise tomorrow's.
+- **Sign-up's first email** is today's, at once: the web function invokes
+  the sender with `send_now` (`web.send_first`), which marks the day sent,
+  so the schedule's first is tomorrow's. Only a subscriber's first email
+  (no `last_sent_date` before it) carries the welcome line. If the invoke
+  fails, sign-up still succeeds and the schedule sends today's when it can.
+- **The home page** goes straight to `/today/` for someone signed in: a
+  `rn-in` hint in localStorage (the cookie is HttpOnly) keeps the form
+  hidden until `/api/me` answers.
 - **Logs**: ids, routes and outcomes. Never note text, addresses or cities.
 
 ## API

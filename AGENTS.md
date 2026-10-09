@@ -187,6 +187,12 @@ runtime and is imported lazily so the tests run without it.
   Open-Meteo. Tests never fetch: pass `fetch` to the sender and
   `weather_fetch` to `web.handler`. `scripts/fill_weather.py` fills in days
   with notes written before this.
+- **The first email goes at sign-up** (Jamie, 2026-10-08): today's, at
+  once, through the sender's `send_now`, with one welcome line saying when
+  the rest come; the schedule starts the next day. The ask in every email
+  says photos and voice memos work too.
+- **Sessions last 14 days from the last visit** and every visit renews
+  them, with no outer limit (Jamie, 2026-10-08). `auth.py` has the detail.
 - **No rotating prompts or nudges** for now (Jamie, 2026-10-07: "keep it
   simple"). The ask is the same every day.
 - **No model processing of notes** (summaries, prompts, anything) without an

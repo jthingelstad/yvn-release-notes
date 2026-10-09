@@ -19,6 +19,7 @@ os.environ.update(
     TABLE="t",
     MAIL_BUCKET="mail-bucket",
     EXPORT_FUNCTION="yvn-release-notes-export",
+    SENDER_FUNCTION="yvn-release-notes-sender",
 )
 NOW = 1_791_500_000  # 2026-10-08, mid-afternoon Central
 
@@ -244,14 +245,26 @@ class WebTest(WebCase):
             r, body = self.call("GET", "/api/me", cookies=cookies)
             self.assertEqual((r["statusCode"], body["error"]), (401, "signed-out"))
 
-    def test_session_ends_90_days_after_sign_in_however_often_used(self):
+    def test_each_visit_starts_the_14_days_again(self):
+        # Jamie, 2026-10-08: "as long as I return within that time extend
+        # my login session". No outer limit.
+        self.assertEqual(auth.SESSION_IDLE, 14 * 86400)
         self.subscribe()
         cookie = self.signed_in()
-        for _ in range(3):  # days 29, 58 and 87
+        for _ in range(30):  # 13 days apart, well past a year
             self.now += auth.SESSION_IDLE - 86400
-            self.assertEqual(self.call("GET", "/api/me", cookies=[cookie])[0]["statusCode"], 200)
-        self.now = NOW + auth.SESSION_MAX
-        self.assertEqual(self.call("GET", "/api/me", cookies=[cookie])[0]["statusCode"], 401)
+            r, _ = self.call("GET", "/api/me", cookies=[cookie])
+            self.assertEqual(r["statusCode"], 200)
+            # The browser's copy is renewed too.
+            self.assertEqual(r["cookies"], [auth.session_cookie(cookie.split("=", 1)[1])])
+        self.assertIn(f"Max-Age={14 * 86400};", r["cookies"][0])
+
+    def test_session_cookie_is_renewed_at_most_once_a_day(self):
+        self.subscribe()
+        cookie = self.signed_in()
+        self.now += 3600
+        r, _ = self.call("GET", "/api/me", cookies=[cookie])
+        self.assertNotIn("cookies", r)
 
     def test_idle_session_expires(self):
         self.subscribe()

@@ -120,7 +120,7 @@ class StreamTest(DescribeCase):
         self.assertEqual(self.model.calls, [])
 
     def test_a_photo_the_model_cannot_read_gets_no_words_and_is_not_tried_again(self):
-        self.model.fail = (400, "invalid_request_error")
+        self.model.fail = (400, "invalid_request_error", True)
         n = self.keep("2026-10-09", "w-1", photo(1))
         self.run_it({"Records": [record(n)]})
         self.assertEqual(self.media()[0]["description"], "")
@@ -133,6 +133,13 @@ class StreamTest(DescribeCase):
             with self.assertRaises(describe.ApiError):
                 self.run_it({"Records": [record(n)]})
         self.assertNotIn("description", self.media()[0])
+
+    def test_a_request_the_api_refuses_for_every_photo_leaves_them_waiting(self):
+        self.model.fail = (400, "invalid_request_error", False)  # not about the image: a bad request
+        n = self.keep("2026-10-09", "w-1", photo(1))
+        with self.assertRaises(describe.ApiError):
+            self.run_it({"Records": [record(n)]})
+        self.assertEqual(len(describe.waiting(self.store.note("u1", "2026-10-09", "w-1"))), 1)
 
     def test_a_refusal_or_thinking_that_used_every_token_gets_no_words(self):
         for stop, words in [("refusal", "Sorry."), ("max_tokens", "")]:
@@ -241,6 +248,26 @@ class KeyTest(DescribeCase):
         self.assertEqual(sent, [("https://api.anthropic.com/v1/messages", "sk-ant-test", "2023-06-01")] * 2)
         self.assertEqual(len(secrets.asked), 1)
         self.assertEqual([m["description"] for m in self.media()], ["A dock.", "A dock."])
+
+
+class CheckTest(DescribeCase):
+    def test_a_check_describes_a_made_up_image_and_writes_nothing(self):
+        before = json.dumps(self.store.items, default=str)
+        with mock.patch("builtins.print"):
+            out = describe.handler({"check": True}, None, store=self.store, s3=self.s3, claude=self.model, lam=self.lam)
+        self.assertEqual(out, {"ok": True, "words": self.model.words})
+        self.assertEqual(describe.media.image_size(describe.test_image()), (64, 64))
+        self.assertEqual(json.dumps(self.store.items, default=str), before)
+
+    def test_a_check_says_what_went_wrong(self):
+        self.model.fail = (401, "authentication_error", False)
+        with mock.patch("builtins.print"):
+            out = describe.handler({"check": True}, None, store=self.store, s3=self.s3, claude=self.model, lam=self.lam)
+        self.assertEqual(out, {"ok": False, "status": 401, "error": "authentication_error", "about_image": False})
+        with mock.patch("builtins.print"):
+            out = describe.handler({"check": True}, None, store=self.store, s3=self.s3, lam=self.lam,
+                                   secrets=FakeSecrets("PASTE-ANTHROPIC-API-KEY-HERE"))
+        self.assertEqual(out, {"ok": False, "error": "no-key"})
 
 
 if __name__ == "__main__":

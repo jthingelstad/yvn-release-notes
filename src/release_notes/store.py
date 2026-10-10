@@ -22,7 +22,8 @@
     TOKEN#<token>    TOKEN                      reply address -> user, day, version, sent_at (epoch seconds;
                                                 missing before 2026-10-09). Replies are filed for 72 hours
                                                 after sent_at (inbound.py), but the item has no TTL: the
-                                                email's unsubscribe link uses it as long as the account lasts
+                                                email's unsubscribe link uses it as long as the account lasts.
+                                                late_notice_at once a late reply has been told so (once only)
     EMAIL#<address>  EMAIL                      address -> user (one subscriber per address)
     LOGIN#<hash>     LOGIN                      a sign-in's link and code (auth.py), 15 minutes; purpose
                                                 signin or delete (none: a sign-in from before purposes)
@@ -32,7 +33,8 @@
     SESSION#<hash>   SESSION                    a signed-in browser: user, or the address of one signing up
     RATE#<key>#<hr>  RATE                       a counter for one hour of sign-in emails
     RATE#<key>#<day> RATE                       a counter for one day of wrong sign-in codes, or of one
-                                                subscriber's transcription jobs (transcribe:<user>)
+                                                subscriber's transcription jobs (transcribe:<user>) or
+                                                late-reply notices (latenotice:<user>, inbound.py)
     RATE#upload:<user>#<day> RATE               a subscriber's upload forms that UTC day: n, and bytes
                                                 (their declared sizes), checked against the ceilings
     LOCK#<name>      LOCK                       one job running at a time (describe:<user>, describe.py):
@@ -42,7 +44,8 @@
 
 expires_at (epoch seconds) is the table's TTL. DynamoDB deletes late, up to
 a couple of days, so every read checks it as well. Hashes are SHA-256 of
-the secret (or, for LOGINFOR and RATE, of the address or network).
+the secret (or, for LOGINFOR and the sign-in counters, of the address or
+network; a subscriber's own counters name the user id, which is no secret).
 
 Sessions begun before 2026-10-09 have no USER# copy until their next daily
 renewal makes one. One never used again is not deleted with its account,
@@ -237,6 +240,23 @@ class Store:
 
     def get_token(self, token: str) -> dict | None:
         return self.table.get_item(Key={"pk": f"TOKEN#{token}", "sk": "TOKEN"}).get("Item")
+
+    def claim_late_notice(self, token: str, at: str) -> bool:
+        """Mark a reply address as having sent its one late-reply notice
+        (inbound.py). False if it already has, or the address is gone (an
+        account deleted meanwhile): the condition never makes the item anew."""
+        try:
+            self.table.update_item(
+                Key={"pk": f"TOKEN#{token}", "sk": "TOKEN"},
+                UpdateExpression="SET late_notice_at = :t",
+                ConditionExpression="attribute_exists(pk) AND attribute_not_exists(late_notice_at)",
+                ExpressionAttributeValues={":t": at},
+            )
+            return True
+        except Exception as e:
+            if _failed_condition(e):
+                return False
+            raise
 
     def _dates(self, user_id: str, prefix: str) -> set[str]:
         return {sk.split("#")[1] for sk in self._keys(user_id, prefix)}

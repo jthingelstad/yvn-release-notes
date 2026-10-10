@@ -93,13 +93,30 @@ runtime and is imported lazily so the tests run without it.
   (Jamie, 2026-10-09: "72 hours after it was sent. After that, the user
   can add a note via the web interface"). So the Thursday reply counts
   when it comes inside that window; a later one is ignored as `expired`
-  (logged with the user id only, no email back) and the note goes in
-  through the web, on any day. The token item carries `sent_at` (epoch
+  (with a short email back, below) and the note goes in through the web,
+  on any day. The token item carries `sent_at` (epoch
   seconds) for this; tokens from before 2026-10-09 have only their day and
   take replies until midnight UTC ending the fourth day after it, which is
   at least 72 hours in every zone (`inbound.deadline`). The token item
   itself never expires: the email's `List-Unsubscribe` and unsubscribe
   page use it, for as long as anyone keeps the email.
+- **A late reply gets a short email back** (Jamie, 2026-10-09: "Yes this
+  should not fail silently"): too late for that day's notes, with a link
+  to the day on the web (`/day/?d=<day>`) to add it there
+  (`compose.late_message`). Only for a reply that passes every other
+  check (SES's verdicts, the From in SES's reading and the message's own,
+  the domain's authentication, not automatic), so a forged sender never
+  gets one, and never to a stopped subscriber. The expiry is checked after
+  those header checks, and the body is never read. It threads under the
+  reply (`In-Reply-To`), carries `Auto-Submitted: auto-replied` and the
+  daily email's `X-Auto-Response-Suppress`, and goes through the
+  configuration set tagged `account`. At most one per reply address
+  (`late_notice_at` on the token, set conditionally) and
+  `inbound.LATE_NOTICES_A_DAY` (3) a subscriber a UTC day
+  (`RATE#latenotice:<user>`). Logged as `{"event":"late-notice"}` with the
+  user id and `sent`, `skipped` (`stopped`, `limited`, `already-sent`) or
+  `failed`; a failure never fails the function, and the reply is tagged
+  `ignored` either way.
 - **Reply as often as you like.** Each reply is its own note
   (`NOTE#<day>#<messageId>`); together, oldest first, they are that day's
   release notes (Jamie, 2026-10-08: "keep them in the database as separate

@@ -42,7 +42,7 @@ def recipients(msg: dict) -> tuple[str | None, list[str]]:
 
 def mail_kind(msg: dict) -> str:
     """'daily' for the daily email (it alone has List-Unsubscribe),
-    otherwise 'account' (sign-in and delete codes)."""
+    otherwise 'account' (sign-in and delete codes, a late reply's notice)."""
     names = {h.get("name", "").lower() for h in msg.get("mail", {}).get("headers", [])}
     return "daily" if "list-unsubscribe" in names else "account"
 

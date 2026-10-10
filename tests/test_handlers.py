@@ -41,7 +41,7 @@ class FakeStore:
         self.days, self.tokens, self.notes = {}, {}, {}
         self.note_days_fail = self.day_notes_fail = False
         self.paused = []
-        self.weather = {}
+        self.weather, self.rates = {}, {}
 
     def put_weather(self, user_id, day, fields):
         if (user_id, day) in self.weather:
@@ -89,6 +89,20 @@ class FakeStore:
 
     def get_token(self, token):
         return self.tokens.get(token)
+
+    def claim_late_notice(self, token, at):
+        tok = self.tokens.get(token)
+        if tok is None or "late_notice_at" in tok:
+            return False
+        tok["late_notice_at"] = at
+        return True
+
+    def peek(self, key, period):
+        return self.rates.get((key, period), 0)
+
+    def count(self, key, period, span=3600):
+        self.rates[(key, period)] = self.rates.get((key, period), 0) + 1
+        return self.rates[(key, period)]
 
     def note_days(self, user_id):
         if self.note_days_fail:
@@ -430,6 +444,7 @@ def reply_raw(from_addr="ada@example.com", auth="amazonses.com; spf=pass; dkim=p
     msg["From"] = from_addr
     msg["To"] = f"n-{TOKEN}@in.yourversionnumber.com"
     msg["Subject"] = "Re: You're 5.0.0 today"
+    msg["Message-ID"] = "<reply-1@mail.example.com>"
     msg.set_content("Fifty. Cake with the family.\n\nOn Tue, Oct 7, 2026 at 8:00 PM Release Notes wrote:\n> You're 5.0.0 today.\n")
     return msg.as_bytes()
 
@@ -458,6 +473,7 @@ class Inbound(unittest.TestCase):
         self.store = FakeStore([ada()])
         self.store.tokens[TOKEN] = {"user_id": "u1", "date": "2026-10-07", "version": "5.0.0"}
         self.titles, self.fetched = {}, []
+        self.ses = FakeSES()
 
     def fetch(self, url):
         self.fetched.append(url)
@@ -465,7 +481,7 @@ class Inbound(unittest.TestCase):
 
     def run_one(self, ses, raw=None):
         s3 = FakeS3(raw or reply_raw())
-        return inbound.process(ses, self.store, s3, fetch=self.fetch), s3
+        return inbound.process(ses, self.store, s3, fetch=self.fetch, mailer=self.ses), s3
 
     def test_files_note_under_the_emails_day(self):
         outcome, s3 = self.run_one(ses_event())
@@ -702,6 +718,153 @@ class Inbound(unittest.TestCase):
         self.assertEqual(s3.objects["media/u1/2026-10-07/m1/1.jpg"]["Body"], jpeg(1200, 900, pad=100))
         self.assertEqual([a.get("refused", False) for a in note["attachments"]], [True, False])
         self.assertEqual(media.others(note), 1)
+
+
+# Sent 2026-10-08T01:15:00Z: the reply address closes 2026-10-11T01:15:00Z.
+LATE = "2026-10-12T15:00:00.000Z"
+
+
+class LateReply(unittest.TestCase):
+    """Jamie, 2026-10-09: a late reply "should not fail silently"."""
+
+    def setUp(self):
+        self.store = FakeStore([ada()])
+        self.store.tokens[TOKEN] = {"user_id": "u1", "date": "2026-10-07", "version": "5.0.0", "sent_at": 1791422100}
+        self.ses = FakeSES()
+
+    def late(self, raw=None, message_id="m9", **kw):
+        out = StringIO()
+        s3 = FakeS3(raw or reply_raw())
+        with redirect_stdout(out):
+            outcome = inbound.process(ses_event(message_id=message_id, timestamp=LATE, **kw), self.store, s3,
+                                      fetch=self.fail_fetch, mailer=self.ses)
+        lines = [json.loads(line) for line in out.getvalue().splitlines()]
+        notice = [line for line in lines if line["event"] == "late-notice"]
+        return outcome, s3, lines[-1], notice[0] if notice else None
+
+    def fail_fetch(self, url):
+        self.fail("a late reply fetches nothing")
+
+    def sent(self):
+        self.assertEqual(len(self.ses.sent), 1)
+        return message_from_bytes(self.ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+
+    def test_a_late_reply_gets_one_short_email_back(self):
+        outcome, s3, line, notice = self.late()
+        self.assertEqual((outcome, s3.tags["raw/m9"]), ("ignored", "ignored"))
+        self.assertEqual(line, {"event": "inbound", "message": "m9", "outcome": "ignored", "reason": "expired", "user": "u1"})
+        self.assertEqual(notice, {"event": "late-notice", "user": "u1", "outcome": "sent", "date": "2026-10-07"})
+        self.assertEqual(self.store.notes, {})
+        call = self.ses.sent[0]
+        self.assertEqual(call["Destination"], {"ToAddresses": ["ada@example.com"]})
+        self.assertEqual(call["FromEmailAddress"], "Release Notes <notes@yourversionnumber.com>")
+        self.assertEqual(call["ConfigurationSetName"], "yvn-release-notes")
+        self.assertEqual(call["EmailTags"], [{"Name": "release-notes-mail", "Value": "account"}])
+        msg = self.sent()
+        self.assertEqual(msg["To"], "ada@example.com")
+        self.assertEqual(msg["Subject"], "Re: You're 5.0.0 today")
+        self.assertEqual(msg["In-Reply-To"], "<reply-1@mail.example.com>")
+        self.assertEqual(msg["References"], "<reply-1@mail.example.com>")
+        self.assertEqual(msg["Auto-Submitted"], "auto-replied")
+        self.assertEqual(msg["X-Auto-Response-Suppress"], "OOF, AutoReply")
+        self.assertIsNone(msg["List-Unsubscribe"])  # an account email, to events.py
+        self.assertIsNone(msg["Reply-To"])
+        link = "https://notes.yourversionnumber.com/day/?d=2026-10-07"
+        for part in (msg.get_body(("plain",)).get_content(), msg.get_body(("html",)).get_content()):
+            self.assertIn(link, part)
+            self.assertIn("too late", part)
+            self.assertIn("5.0.0", part)
+        # Nothing in the log names the person or says what they wrote.
+        self.assertNotIn("ada@", json.dumps([line, notice]))
+        self.assertIn("late_notice_at", self.store.tokens[TOKEN])
+        # inbound would ignore the notice itself, were it ever to come back.
+        self.assertTrue(inbound.automatic(msg))
+
+    def test_one_notice_per_reply_address(self):
+        self.late()
+        outcome, _, line, notice = self.late(message_id="m10")
+        self.assertEqual((outcome, line["reason"]), ("ignored", "expired"))
+        self.assertEqual(notice, {"event": "late-notice", "user": "u1", "outcome": "skipped", "reason": "already-sent"})
+        self.assertEqual(len(self.ses.sent), 1)
+
+    def test_a_few_notices_a_day_at_most(self):
+        for n in range(5):
+            token = chr(ord("a") + n) * 24
+            self.store.tokens[token] = {"user_id": "u1", "date": f"2026-10-0{n + 1}", "version": "5.0.0", "sent_at": 1791000000}
+            *_, notice = self.late(message_id=f"m{n}", recipient=f"n-{token}@in.yourversionnumber.com")
+            self.assertEqual(notice["outcome"], "sent" if n < inbound.LATE_NOTICES_A_DAY else "skipped", n)
+        self.assertEqual(notice["reason"], "limited")
+        self.assertEqual(len(self.ses.sent), inbound.LATE_NOTICES_A_DAY)
+        # One held back by the limit has not used up its address's notice.
+        self.assertNotIn("late_notice_at", self.store.tokens["e" * 24])
+
+    def test_no_notice_unless_the_sender_is_proven(self):
+        cases = {
+            "unauthenticated": (dict(dmarc="FAIL", dkim="FAIL"), None),
+            "from-mismatch": (dict(from_addr="eve@example.net"), reply_raw("eve@example.net")),
+            "spam-or-virus": (dict(spam="FAIL"), None),
+        }
+        for reason, (kw, raw) in cases.items():
+            outcome, s3, line, notice = self.late(raw, **kw)
+            self.assertEqual((outcome, line["reason"], s3.tags["raw/m9"], notice), ("ignored", reason, "ignored", None), reason)
+        # SES read the right From, but the message's own header names another.
+        outcome, _, line, notice = self.late(reply_raw(from_addr="ada@example.com, eve@example.net"))
+        self.assertEqual((line["reason"], notice), ("from-mismatch", None))
+        # A DKIM pass that is not the From domain's.
+        bad = reply_raw(auth="amazonses.com; spf=pass; dkim=pass header.i=@attacker.example")
+        outcome, _, line, notice = self.late(bad, dmarc="GRAY")
+        self.assertEqual((line["reason"], notice), ("unauthenticated", None))
+        self.assertEqual(self.ses.sent, [])
+        self.assertNotIn("late_notice_at", self.store.tokens[TOKEN])
+
+    def test_no_notice_to_an_automatic_reply(self):
+        for name, value in (("Auto-Submitted", "auto-replied"), ("X-Autoreply", "yes"), ("Precedence", "bulk")):
+            msg = message_from_bytes(reply_raw(), policy=default)
+            msg[name] = value
+            outcome, _, line, notice = self.late(msg.as_bytes())
+            self.assertEqual((line["reason"], notice), ("auto-reply", None), name)
+        self.assertEqual(self.ses.sent, [])
+
+    def test_a_stopped_subscriber_gets_nothing(self):
+        self.store.subs["u1"].status = "stopped"
+        outcome, _, line, notice = self.late()
+        self.assertEqual((outcome, line["reason"]), ("ignored", "expired"))
+        self.assertEqual(notice, {"event": "late-notice", "user": "u1", "outcome": "skipped", "reason": "stopped"})
+        self.assertEqual(self.ses.sent, [])
+        self.assertNotIn("late_notice_at", self.store.tokens[TOKEN])
+
+    def test_a_failed_send_is_logged_and_the_reply_still_ignored(self):
+        self.ses = FakeSES(fail=True)
+        outcome, s3, line, notice = self.late()
+        self.assertEqual((outcome, s3.tags["raw/m9"], line["reason"]), ("ignored", "ignored", "expired"))
+        self.assertEqual(notice, {"event": "late-notice", "user": "u1", "outcome": "failed", "error": "ConnectionError", "code": None})
+
+    def test_a_failed_table_call_is_logged_too(self):
+        def boom(*a):
+            raise ConnectionError("boom")
+        self.store.claim_late_notice = boom
+        outcome, _, line, notice = self.late()
+        self.assertEqual((outcome, line["reason"], notice["outcome"]), ("ignored", "expired", "failed"))
+        self.assertEqual(self.ses.sent, [])
+
+    def test_a_reply_without_a_usable_message_id_is_answered_unthreaded(self):
+        for bad in (None, "not-an-id", "<a b@example.com>", "<" + "x" * 300 + "@example.com>"):
+            self.ses.sent.clear()
+            self.store.tokens[TOKEN].pop("late_notice_at", None)
+            self.store.rates.clear()
+            msg = message_from_bytes(reply_raw(), policy=default)
+            del msg["Message-ID"]
+            if bad:
+                msg["Message-ID"] = bad
+            self.late(msg.as_bytes())
+            sent = self.sent()
+            self.assertIsNone(sent["In-Reply-To"], bad)
+            self.assertIsNone(sent["References"], bad)
+
+    def test_a_late_replys_body_is_never_read(self):
+        # MIME nested too deep to parse: the headers alone decide.
+        outcome, _, line, notice = self.late(Inbound.deep(self, 1500))
+        self.assertEqual((line["reason"], notice["outcome"]), ("expired", "sent"))
 
 
 if __name__ == "__main__":

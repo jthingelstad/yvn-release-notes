@@ -4,8 +4,8 @@ from datetime import date
 from email import policy
 from email.parser import BytesParser
 
-from release_notes.compose import (PAST_MAX, body, build_message, clock_phrase, countdown, html_body, linked, streak_lines,
-                                   welcome_line)
+from release_notes.compose import (PAST_MAX, body, build_message, clock_phrase, countdown, html_body, late_message, linked,
+                                   message_id, streak_lines, welcome_line)
 from release_notes.streak import Streak, compute_streak
 from release_notes.version import compute_version
 
@@ -230,6 +230,40 @@ class AYearAgo(unittest.TestCase):
 
     def test_no_section_without_notes(self):
         self.assertNotIn("A year ago", html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY))
+
+
+class LateReply(unittest.TestCase):
+    # The note back when a reply comes in past its 72 hours (inbound.py).
+
+    def message(self, in_reply_to="<reply-1@mail.example.com>"):
+        msg = late_message(to="ada@example.com", from_addr="notes@yourversionnumber.com", version="5.0.0",
+                           day=date(2026, 10, 7), in_reply_to=in_reply_to)
+        return BytesParser(policy=policy.default).parsebytes(msg.as_bytes())
+
+    def test_says_too_late_and_links_to_the_day(self):
+        msg = self.message()
+        text = msg.get_body(("plain",)).get_content()
+        self.assertIn("too late to be added to the release notes for 5.0.0,\nWednesday, October 7, 2026.", text)
+        self.assertIn("https://notes.yourversionnumber.com/day/?d=2026-10-07", text)
+        html = msg.get_body(("html",)).get_content()
+        self.assertIn('href="https://notes.yourversionnumber.com/day/?d=2026-10-07"', html)
+        self.assertEqual((msg["Subject"], msg["Auto-Submitted"]), ("Re: You're 5.0.0 today", "auto-replied"))
+
+    def test_type_on_paper_nothing_remote_ascii(self):
+        html = self.message().get_body(("html",)).get_content()
+        for banned in ("border:", "border-radius", "box-shadow", "<img", "@import", "url(", "<link"):
+            self.assertNotIn(banned, html)
+        self.assertNotRegex(html, r"\ssrc=")
+        for href in re.findall(r'href="([^"]+)"', html):
+            self.assertTrue(href.startswith("https://notes.yourversionnumber.com/"), href)
+        html.encode("ascii")
+
+    def test_threads_only_under_a_well_formed_message_id(self):
+        self.assertEqual(message_id(" <reply-1@mail.example.com> "), "<reply-1@mail.example.com>")
+        for bad in (None, "", "reply-1@mail.example.com", "<a b@example.com>", "<a>\r\nBcc: eve@example.net",
+                    "<a@example.com> <b@example.com>", "<" + "x" * 300 + ">"):
+            self.assertIsNone(message_id(bad), bad)
+        self.assertIsNone(self.message(None)["In-Reply-To"])
 
 
 if __name__ == "__main__":

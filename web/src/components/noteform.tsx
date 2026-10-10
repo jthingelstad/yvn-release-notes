@@ -1,11 +1,15 @@
 // The form that adds a note to a day, with files from this device and
 // recordings made here. What is being written is kept in this tab, by day,
 // until it is saved, so a sign-out mid-note (or a reload) doesn't lose it.
+// Once any files are sent, the note shows in the list at once ("Saving…")
+// and the form empties; a write that fails puts it all back.
+import { useQueryClient } from '@tanstack/react-query';
 import { useBlocker } from '@tanstack/react-router';
 import { useCallback, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { api } from '../lib/api.ts';
 import { browserZone } from '../lib/format.ts';
 import { FILES, sendFiles } from '../lib/files.ts';
+import { addPending, dropNote } from '../lib/notecache.ts';
 import { store } from '../lib/storage.ts';
 import { ErrorLine, useBusy, useProblem } from './common.tsx';
 import { useRefresh } from './notelist.tsx';
@@ -29,6 +33,7 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
   const pick = useRef<HTMLInputElement>(null);
   const recordButton = useRef<HTMLButtonElement>(null);
   const refresh = useRefresh();
+  const client = useQueryClient();
   const { show } = problem;
   const refused = useCallback(() => show({ error: 'microphone' }, recordButton.current), [show]);
   const rec = useRecorder(refused);
@@ -61,16 +66,21 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
         }
         body.uploads = out.sent;
       }
-      const r = await api('POST', `/api/days/${day}/notes`, body);
-      if (!r.ok) {
-        store.set(key, text);
-        return problem.show({ ...r.data, draft: 'kept' }, area.current);
-      }
+      const pending = await addPending(client, day, text);
       store.drop(key);
       setText('');
       if (pick.current) pick.current.value = '';
       showChosen();
       rec.clear();
+      const r = await api('POST', `/api/days/${day}/notes`, body);
+      if (!r.ok) {
+        await dropNote(client, day, pending);
+        setText(text);
+        store.set(key, text);
+        putBack(pick.current, files);
+        showChosen();
+        return problem.show({ ...r.data, draft: 'kept' }, area.current);
+      }
       await refresh();
     });
   };
@@ -141,4 +151,17 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
       <ErrorLine line={problem.line} />
     </form>
   );
+}
+
+// The files a failed note was sent with, back in the picker (recordings made
+// here come back as files), where the browser allows it.
+function putBack(input: HTMLInputElement | null, files: File[]) {
+  if (!input || !files.length) return;
+  try {
+    const all = new DataTransfer();
+    for (const f of files) all.items.add(f);
+    input.files = all.files;
+  } catch {
+    /* the browser keeps the picker's files to itself */
+  }
 }

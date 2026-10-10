@@ -1,8 +1,8 @@
 // The timeline's paused runs and the pages' polling.
 import { describe, expect, it } from 'vitest';
 import type { Day } from '../lib/types.ts';
+import { POLL, pollWhileWriting } from '../lib/queries.ts';
 import { groupPaused } from './Timeline.tsx';
-import { POLL, pollWhileWriting } from './Today.tsx';
 
 const day = (date: string, more: Partial<Day> = {}): Day => ({ date, version: '1.2.3', notes: [], ...more });
 const note = { id: 'w-1', source: 'web' as const, text: 'hi' };

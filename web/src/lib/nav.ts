@@ -2,9 +2,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect } from 'react';
-import { get } from './api.ts';
-import { home } from './storage.ts';
-import type { Me } from './types.ts';
+import { ApiError } from './api.ts';
+import { meQuery } from './queries.ts';
+import { home, store } from './storage.ts';
 
 // To another page in place of this one (location.replace): nothing to come
 // back to with Back.
@@ -26,14 +26,21 @@ export function useSignedInAs() {
   );
 }
 
-// The profile. Someone signed in without one yet goes to setup.
+// The profile. The gate (main.tsx) has it before a signed-in page shows;
+// this follows it after, when it is fetched again: someone signed in
+// without one yet goes to setup, and a session that ran out to sign in.
 export function useMe() {
-  const me = useQuery({ queryKey: ['me'], queryFn: () => get<Me>('/api/me') });
+  const me = useQuery(meQuery);
   const go = useGo();
   const isNew = !!me.data?.new;
+  const signedOut = me.error instanceof ApiError && me.error.answer.status === 401;
   useEffect(() => {
     if (isNew) go(home(true));
-  }, [isNew, go]);
+    else if (signedOut) {
+      store.set('rn-back', location.pathname + location.search);
+      go('/#sign-in');
+    }
+  }, [isNew, signedOut, go]);
   return me;
 }
 

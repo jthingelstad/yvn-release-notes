@@ -4,19 +4,15 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { AppLink, Bar, Failed, Loading, useTitle } from '../components/common.tsx';
 import { DayList } from '../components/days.tsx';
-import { ApiError, get } from '../lib/api.ts';
+import { ApiError } from '../lib/api.ts';
 import { count } from '../lib/format.ts';
 import { useGo, useQueryParam } from '../lib/nav.ts';
-import type { TaggedDays } from '../lib/types.ts';
+import { tagQuery } from '../lib/queries.ts';
 
 export function Tag() {
   const go = useGo();
   const tag = useQueryParam('t');
-  const tagged = useQuery({
-    queryKey: ['tag', tag],
-    queryFn: () => get<TaggedDays>(`/api/tags/${encodeURIComponent(tag!)}`),
-    enabled: !!tag
-  });
+  const tagged = useQuery(tagQuery(tag));
   const d = tagged.data;
   useTitle(d ? `#${d.tag}` : 'Tags');
   const gone = tagged.error instanceof ApiError && tagged.error.answer.status === 404;

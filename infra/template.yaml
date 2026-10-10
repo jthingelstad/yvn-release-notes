@@ -494,24 +494,23 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  # /settings/ -> /settings/index.html, the app's page the build writes in
-  # each page's folder (vite.config.ts). /api/* never runs it.
+  # The web app is one page: any address but a file (/settings/,
+  # /day/?d=...) is index.html, and the app's router shows the page. A file
+  # (a name with a dot) is served as is. /api/* never runs it.
   WebIndexFunction:
     Type: AWS::CloudFront::Function
     Properties:
       Name: !Sub "${AWS::StackName}-index"
       AutoPublish: true
       FunctionConfig:
-        Comment: Resolve directory indexes for the static pages
+        Comment: Serve the app for every address that is not a file
         Runtime: cloudfront-js-2.0
       FunctionCode: |
         function handler(event) {
           var request = event.request;
           var uri = request.uri;
-          if (uri.charAt(uri.length - 1) === '/') {
-            request.uri = uri + 'index.html';
-          } else if (uri.lastIndexOf('.') < uri.lastIndexOf('/')) {
-            request.uri = uri + '/index.html';
+          if (uri.lastIndexOf('.') < uri.lastIndexOf('/')) {
+            request.uri = '/index.html';
           }
           return request;
         }

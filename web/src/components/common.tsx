@@ -4,7 +4,6 @@ import { Link, useRouterState } from '@tanstack/react-router';
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { sayFor, type Line, type Problem } from '../lib/say.ts';
 import { signedIn, store } from '../lib/storage.ts';
-import { titleOf } from '../paths.ts';
 
 // A same-site address as a router link: path, ?query and #hash.
 export function splitHref(href: string) {
@@ -194,6 +193,8 @@ export function Failed() {
     </p>
   );
 }
+
+export const titleOf = (title: string) => (title ? `${title}: Release Notes` : 'Release Notes');
 
 export function useTitle(title: string | null) {
   useEffect(() => {

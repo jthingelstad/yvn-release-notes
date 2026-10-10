@@ -5,26 +5,19 @@ import { useNavigate } from '@tanstack/react-router';
 import { AppLink, Bar, Digits, Failed, Loading, useTitle, WeatherCredit } from '../components/common.tsx';
 import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
-import { get } from '../lib/api.ts';
 import { addDays, dayName, shortDay, thisYearOf } from '../lib/format.ts';
 import { useMe, useQueryParam } from '../lib/nav.ts';
-import type { DayPage, Me } from '../lib/types.ts';
-import { pollWhileWriting } from './Today.tsx';
+import { dayQuery, pickDay } from '../lib/queries.ts';
+import type { Me } from '../lib/types.ts';
 
 export function Day() {
   useTitle('Another day');
   const me = useMe();
   const asked = useQueryParam('d');
   const p = me.data && !me.data.new ? me.data : null;
-  const current = p ? pick(asked, p) : null;
-  const day = useQuery({
-    queryKey: ['day', current],
-    queryFn: () => get<DayPage>(`/api/days/${current}`),
-    enabled: !!current,
-    // The day on show stays while the next one loads.
-    placeholderData: keepPreviousData,
-    refetchInterval: pollWhileWriting
-  });
+  const current = p ? pickDay(asked, p) : null;
+  // The day on show stays while the next one loads.
+  const day = useQuery({ ...dayQuery(current), placeholderData: keepPreviousData });
   const d = day.data;
 
   return (
@@ -81,14 +74,6 @@ export function Day() {
   );
 }
 
-// The day asked for, if it is one there can be notes for, else yesterday
-// (or the birthday itself, on someone's first day).
-function pick(asked: string | null, p: Me): string {
-  if (asked && asked >= p.birthday && asked <= p.today) return asked;
-  const yesterday = addDays(p.today, -1);
-  return yesterday < p.birthday ? p.birthday : yesterday;
-}
-
 function DayPicker({ p, current }: { p: Me | null; current: string | null }) {
   const navigate = useNavigate();
   return (
@@ -104,7 +89,7 @@ function DayPicker({ p, current }: { p: Me | null; current: string | null }) {
         onChange={(e) => {
           const v = e.target.value;
           if (!p || !v || v < p.birthday || v > p.today) return;
-          navigate({ to: '/day/', search: { d: v }, replace: true });
+          navigate({ to: '/day/', search: { d: v } });
         }}
       />
     </label>

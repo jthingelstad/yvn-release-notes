@@ -289,6 +289,9 @@ def main():
                 self.send_header("content-length", str(len(body)))
                 self.end_headers()
                 return self.wfile.write(body)
+            # As CloudFront does: an address that is no file is the app.
+            if "." not in urlsplit(self.path).path.rsplit("/", 1)[-1]:
+                self.path = "/index.html"
             return super().do_GET()
 
         def do_POST(self):

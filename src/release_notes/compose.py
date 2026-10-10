@@ -1,4 +1,6 @@
 """The daily email: one message per subscriber per day, plain text and HTML.
+(And, at the end, the short note inbound sends back when a reply comes in
+too late, `late_message`.)
 
 The HTML takes the site's colours (assets/site.css in yourversionnumber.com):
 warm paper and the number in mono with cobalt digits and tangerine dots. It is
@@ -57,8 +59,9 @@ def new_token() -> str:
 
 
 # SES counts every email under this tag in CloudWatch (the stack's
-# MailMetrics destination): "daily" from the sender, "account" (sign-in and
-# delete codes) from the web app. A count, never a person.
+# MailMetrics destination): "daily" from the sender, "account" for the rest
+# (sign-in and delete codes from the web app, inbound's note that a reply
+# came too late). A count, never a person.
 MAIL_TAG = "release-notes-mail"
 
 
@@ -481,4 +484,65 @@ def build_message(
     msg["X-Auto-Response-Suppress"] = "OOF, AutoReply"
     msg.set_content(body(v, birthday, streak, last_year, forecast, welcome, token))
     msg.add_alternative(html_body(v, birthday, day, streak, last_year, forecast, welcome, token), subtype="html")
+    return msg
+
+
+# --- a late reply -----------------------------------------------------------------
+# A reply address takes notes for 72 hours (inbound.REPLY_WINDOW). A reply
+# after that gets this, once per email, so it never fails silently (Jamie,
+# 2026-10-09). Shaped like the sign-in email: type on paper, nothing remote.
+# It answers what they wrote, so it threads under it, and it is marked as an
+# automatic reply (RFC 3834) so their mail app's own robots leave it alone.
+
+_MSG_ID = re.compile(r"<[\x21-\x3b\x3d\x3f-\x7e]{1,250}>")
+
+
+def message_id(raw) -> str | None:
+    """A Message-ID fit to repeat in In-Reply-To: one <id>, printable ASCII,
+    of a sane length. Anything else is None, and the notice goes unthreaded."""
+    value = str(raw or "").strip()
+    return value if _MSG_ID.fullmatch(value) else None
+
+
+def late_text(version: str, day: date) -> str:
+    return f"""Your reply came in too late to be added to the release notes for {version},
+{long_date(day)}, {day.year}. A day's email takes replies for 72 hours.
+
+You can still add it on the web, on that day's page:
+
+{past_link(day)}
+"""
+
+
+def late_html(version: str, day: date) -> str:
+    p = f"margin:0 0 18px;font:16px/1.55 {FONT};color:{INK_2}"
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light"><title>Too late for {escape(version)}</title></head>
+<body style="margin:0;padding:0;background:{PAPER}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PAPER}"><tr><td style="padding:32px 20px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto"><tr><td>
+<p style="margin:0 0 24px;font:800 18px/1.3 {FONT};color:{INK}">Release Notes</p>
+<p style="{p}">Your reply came in too late to be added to the release notes for <span style="font-family:{MONO};font-weight:700;color:{BLUE};white-space:nowrap">{escape(version)}</span>, {escape(long_date(day))}, {day.year}. A day&rsquo;s email takes replies for 72 hours.</p>
+<p style="margin:0;font:800 22px/1.3 {FONT};color:{INK}"><a href="{escape(past_link(day))}" style="color:{BLUE}">Add it on the web, on that day&rsquo;s page</a></p>
+</td></tr></table>
+</td></tr></table>
+</body></html>
+"""
+
+
+def late_message(*, to: str, from_addr: str, version: str, day: date, in_reply_to: str | None) -> EmailMessage:
+    msg = EmailMessage()
+    msg["From"] = from_header(from_addr)
+    msg["To"] = to
+    msg["Subject"] = f"Re: You're {version} today"
+    msg["Message-ID"] = make_msgid(domain=from_addr.split("@", 1)[1])
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+        msg["References"] = in_reply_to
+    # RFC 3834: a machine's answer. Mail apps and servers do not answer it
+    # (no out-of-office loop), and inbound ignores one that comes back.
+    msg["Auto-Submitted"] = "auto-replied"
+    msg["X-Auto-Response-Suppress"] = "OOF, AutoReply"
+    msg.set_content(late_text(version, day))
+    msg.add_alternative(late_html(version, day), subtype="html")
     return msg

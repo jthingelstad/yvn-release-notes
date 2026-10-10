@@ -340,8 +340,16 @@ Resources:
                 Action: s3:PutObject
                 Resource: !Sub "${MailBucket.Arn}/media/*"
               - Effect: Allow
-                Action: [dynamodb:GetItem, dynamodb:PutItem]
+                # UpdateItem: a late reply's notice, marked on its reply
+                # address and counted against the subscriber's day.
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
                 Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                # The late-reply notice, as raw MIME through SESv2 (see SenderRole).
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource:
+                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSet}"
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt InboundLogs.Arn
@@ -386,6 +394,8 @@ Resources:
           TABLE: !Ref Table
           BUCKET: !Ref MailBucket
           INBOUND_DOMAIN: !Ref InboundDomain
+          FROM_ADDRESS: !Ref FromAddress
+          CONFIG_SET: !Ref ConfigurationSet
 
   InboundInvokePermission:
     Type: AWS::Lambda::Permission

@@ -185,6 +185,28 @@ class ReviewRequests(unittest.TestCase):
         self.assertEqual(table.calls[0][1]["ExpressionAttributeValues"][":exp"], 20002 * 86400)
 
 
+class LateNotice(unittest.TestCase):
+    # inbound.py: one late-reply notice per reply address, and never an
+    # item made anew for an address deleted with its account.
+
+    def test_marks_the_reply_address_once(self):
+        table = FakeTable()
+        self.assertTrue(Store(table).claim_late_notice("tok", "2026-10-12T15:00:00Z"))
+        self.assertEqual(table.calls, [("update_item", {
+            "Key": {"pk": "TOKEN#tok", "sk": "TOKEN"},
+            "UpdateExpression": "SET late_notice_at = :t",
+            "ConditionExpression": "attribute_exists(pk) AND attribute_not_exists(late_notice_at)",
+            "ExpressionAttributeValues": {":t": "2026-10-12T15:00:00Z"},
+        })])
+
+    def test_already_marked_or_gone_is_false(self):
+        self.assertFalse(Store(FakeTable(fail=ConditionFailed())).claim_late_notice("tok", "2026-10-12T15:00:00Z"))
+
+    def test_any_other_failure_is_an_error(self):
+        with self.assertRaises(ConnectionError):
+            Store(FakeTable(fail=ConnectionError("boom"))).claim_late_notice("tok", "2026-10-12T15:00:00Z")
+
+
 
 class SignInPurposes(unittest.TestCase):
     # The 2026-10-09 review: a deletion code also signed in, and the other

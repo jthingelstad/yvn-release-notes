@@ -10,9 +10,10 @@ A reply is filed only when all of these hold:
     out (Jamie, 2026-10-09: "72 hours after it was sent. After that, the
     user can add a note via the web interface"). The token says when that
     was (`sent_at`); one written before tokens did has only its day (see
-    `deadline`). A late reply is ignored as `expired`, with no reply sent.
-    The token itself never expires: the email's unsubscribe link uses it
-    too, for as long as anyone keeps the email;
+    `deadline`). A late reply is ignored as `expired`, and gets one short
+    email back pointing to that day on the web (below). The token itself
+    never expires: the email's unsubscribe link uses it too, for as long as
+    anyone keeps the email;
   - the From address is that subscriber's, both in SES's reading and in the
     message itself, which has exactly one From header with one address;
   - the sender's domain authenticated it: a DMARC pass or, when the domain
@@ -23,10 +24,23 @@ A reply is filed only when all of these hold:
     Auto-Submitted anything but "no", X-Autoreply, or Precedence auto_reply,
     bulk or junk. The daily email also asks Exchange not to send those.
 
-Those checks read the headers alone. The body is parsed after them, and a
-message too broken to parse (MIME nested a thousand deep, say) is ignored as
-`unparseable` rather than failing, so SES does not retry it and it expires
-like any other.
+Those checks read the headers alone, and the 72 hours are checked last of
+them. The body is parsed after them, and a message too broken to parse (MIME
+nested a thousand deep, say) is ignored as `unparseable` rather than
+failing, so SES does not retry it and it expires like any other.
+
+A late reply should not fail silently (Jamie, 2026-10-09: "Yes this should
+not fail silently"). One that passes every other check above, from a
+subscriber who is not stopped, gets a short email back
+(compose.late_message): too late for that day's notes, and a link to the
+day on the web, where it can still go in. It threads under the reply
+(In-Reply-To), so their words are right there, and is marked
+Auto-Submitted: auto-replied (RFC 3834). A forged or unauthenticated sender
+never gets one (no backscatter), and neither does an automatic reply. At
+most one per reply address (`late_notice_at` on the token, set
+conditionally) and LATE_NOTICES_A_DAY per subscriber a UTC day (a RATE
+counter). Whatever goes wrong sending it is logged and the reply is still
+tagged ignored, so SES never retries the delivery over it.
 
 Everything else is tagged outcome=ignored and expires from S3 in 30 days.
 Filed messages are tagged outcome=note and kept. Their photos and recordings
@@ -41,12 +55,14 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import getaddresses
 
 from . import links, media, tags
+from .compose import MAIL_TAG, from_header, late_message, message_id
 from .notes import MAX_NOTE
 from .parse import anchors, attachments, note_text, parse_headers, parse_message
 from .store import Store
 
 PARSER_VERSION = 3  # 2: HTML-only replies keep link addresses; links named. 3: photos and audio copied out
 REPLY_WINDOW = timedelta(hours=72)
+LATE_NOTICES_A_DAY = 3  # late-reply emails to one subscriber, a UTC day
 _DOMAIN = re.compile(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\.?")
 
 
@@ -192,28 +208,78 @@ def sole_from(msg) -> str:
     return found[0][1].lower() if len(found) == 1 else ""
 
 
-def handler(event, context, *, store: Store | None = None, s3=None):
+def handler(event, context, *, store: Store | None = None, s3=None, mailer=None):
     if store is None or s3 is None:
         import boto3
 
         store = store or Store(boto3.resource("dynamodb").Table(os.environ["TABLE"]))
         s3 = s3 or boto3.client("s3")
     for record in event.get("Records", []):
-        process(record["ses"], store, s3)
+        process(record["ses"], store, s3, mailer=mailer)
 
 
-def process(ses: dict, store: Store, s3, fetch=None) -> str:
+_clients: dict = {}
+
+
+def ses_client():
+    # Only a late reply sends anything, so SES's client is made then.
+    if "ses" not in _clients:
+        import boto3
+
+        _clients["ses"] = boto3.client("sesv2")
+    return _clients["ses"]
+
+
+def process(ses: dict, store: Store, s3, fetch=None, mailer=None) -> str:
+    """`mailer` is SESv2's client (a fake in the tests); without one it is
+    made when a late reply needs it."""
     mail, receipt = ses["mail"], ses["receipt"]
-    message_id = mail["messageId"]
-    bucket, key = os.environ["BUCKET"], f"raw/{message_id}"
+    bucket, key = os.environ["BUCKET"], f"raw/{mail['messageId']}"
 
-    outcome, detail = _file(mail, receipt, store, s3, bucket, key, fetch)
+    outcome, detail = _file(mail, receipt, store, s3, bucket, key, fetch, mailer)
     s3.put_object_tagging(Bucket=bucket, Key=key, Tagging={"TagSet": [{"Key": "outcome", "Value": outcome}]})
-    log(event="inbound", message=message_id, outcome=outcome, **detail)
+    log(event="inbound", message=mail["messageId"], outcome=outcome, **detail)
     return outcome
 
 
-def _file(mail, receipt, store, s3, bucket, key, fetch=None) -> tuple[str, dict]:
+def late_notice(store: Store, mailer, sub, token: str, tok: dict, head, at: datetime) -> None:
+    """Tell a subscriber their reply came too late, at most once per reply
+    address and LATE_NOTICES_A_DAY a day. The caller has proven who sent
+    it. Logs what happened and never raises: a notice that fails must not
+    make SES deliver the reply again."""
+    def done(outcome, **more):
+        log(event="late-notice", user=sub.user_id, outcome=outcome, **more)
+
+    if sub.status != "active":
+        return done("skipped", reason="stopped")  # a stopped subscriber gets nothing
+    try:
+        counter, day = f"latenotice:{sub.user_id}", int(at.timestamp()) // 86400
+        if store.peek(counter, day) >= LATE_NOTICES_A_DAY:
+            return done("skipped", reason="limited")
+        if not store.claim_late_notice(token, at.strftime("%Y-%m-%dT%H:%M:%SZ")):
+            return done("skipped", reason="already-sent")
+        store.count(counter, day, 86400)
+        try:
+            in_reply_to = message_id(head.get("Message-ID"))
+        except Exception:  # a Message-ID too broken to read: unthreaded, then
+            in_reply_to = None
+        from_addr = os.environ["FROM_ADDRESS"]
+        msg = late_message(to=sub.email, from_addr=from_addr, version=str(tok["version"]),
+                           day=date.fromisoformat(tok["date"]), in_reply_to=in_reply_to)
+        (mailer or ses_client()).send_email(
+            FromEmailAddress=from_header(from_addr),
+            Destination={"ToAddresses": [sub.email]},
+            Content={"Raw": {"Data": msg.as_bytes()}},
+            ConfigurationSetName=os.environ["CONFIG_SET"],
+            EmailTags=[{"Name": MAIL_TAG, "Value": "account"}],
+        )
+    except Exception as e:
+        code = (getattr(e, "response", None) or {}).get("Error", {}).get("Code")
+        return done("failed", error=type(e).__name__, code=code)
+    done("sent", date=tok["date"])
+
+
+def _file(mail, receipt, store, s3, bucket, key, fetch=None, mailer=None) -> tuple[str, dict]:
     if (receipt.get("virusVerdict", {}).get("status") in ("FAIL", "PROCESSING_FAILED")
             or receipt.get("spamVerdict", {}).get("status") == "FAIL"):
         return "ignored", {"reason": "spam-or-virus"}
@@ -234,10 +300,6 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None) -> tuple[str, dict]
     if from_addr != sub.email.lower():
         return "ignored", {"reason": "from-mismatch", "user": sub.user_id}
 
-    if received(mail) > deadline(tok):
-        # Too late for the reply address; the web app takes the note now.
-        return "ignored", {"reason": "expired", "user": sub.user_id}
-
     raw = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
     try:
         head = parse_headers(raw)
@@ -250,6 +312,12 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None) -> tuple[str, dict]
         return "ignored", {"reason": "unauthenticated", "user": sub.user_id}
     if automatic(head):
         return "ignored", {"reason": "auto-reply", "user": sub.user_id}
+
+    if received(mail) > deadline(tok):
+        # Too late for the reply address; the web app takes the note now.
+        # Only here, with the sender proven, does anything go back to them.
+        late_notice(store, mailer, sub, tokens[0], tok, head, received(mail))
+        return "ignored", {"reason": "expired", "user": sub.user_id}
 
     # Only now the body. Reading it touches nothing outside the message, so
     # whatever it raises is the message's doing: ignored, never retried.

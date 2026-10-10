@@ -104,14 +104,14 @@ notes.yourversionnumber.com
   The limits are 5 sign-in emails per address, 20 per network (an IPv4
   address or an IPv6 /64) and 200 in all, each per hour; past one, the
   answer is 429. The network comes from CloudFront's `CloudFront-Viewer-Address`,
-  which the API's own origin request policy passes on. Someone calling the
-  API's execute-api URL directly can forge that header, so the total is the
-  limit that holds; a shared origin secret would close the gap, and is not
-  worth a secret yet.
+  which the API's own origin request policy passes on. The API answers only
+  CloudFront: CloudFront adds `X-Origin-Verify` with a secret the stack
+  generates, and the web function refuses anything without it (403), so
+  calling the execute-api URL directly cannot forge that header.
 - **Session**: an `__Host-` cookie, Secure, HttpOnly, SameSite=Lax. Every
   write must carry `Origin: https://notes.yourversionnumber.com`. The API
   receives only the headers it reads (Origin, Content-Type, Accept, the
-  viewer address) and only that cookie.
+  viewer address, and CloudFront's own `X-Origin-Verify`) and only that cookie.
 - **Pages**: `/` (sign in, with a live example number from `/api/sample`),
   `/signin/` (the link lands here, token in the fragment), `/setup/` (a new
   address's three questions), `/today/` (where sign-in lands), `/timeline/`,

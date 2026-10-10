@@ -11,9 +11,10 @@ Elixir's design (elixir-mcp packages/auth/src/magic.mjs), on DynamoDB:
   session token. The address itself sits on the sign-in row for its 15
   minutes, because a new address needs it to sign up.
 - Limits on sign-in emails, per address, per network and in total, all per
-  hour (web.py). The total is what bounds the shared SES account: the network
-  limit trusts CloudFront's viewer address, which a caller going straight to
-  the API's own URL can set to anything.
+  hour (web.py). The network limit reads CloudFront's viewer address, which
+  a caller cannot set: the API answers only requests carrying CloudFront's
+  X-Origin-Verify secret, so going straight to its own URL gets a 403. The
+  total still bounds the shared SES account against many networks at once.
 - The answer to "send me a link" is the same whether or not the address has
   an account, and so is the email.
 - The link opens a page with a "Sign in" button, because mail scanners open

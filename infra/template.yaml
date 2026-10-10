@@ -541,6 +541,8 @@ Resources:
   # What the API sees of a request: only what it reads. The viewer's address
   # (for the sign-in email limits) is a CloudFront header, which the managed
   # AllViewer policies leave out; Host stays out so API Gateway gets its own.
+  # X-Origin-Verify is not listed: it is the api origin's custom header,
+  # which CloudFront always sends, over any viewer's header of that name.
   WebApiRequestPolicy:
     Type: AWS::CloudFront::OriginRequestPolicy
     Properties:
@@ -581,6 +583,10 @@ Resources:
               OriginAccessIdentity: ""
           - Id: api
             DomainName: !Sub "${WebApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}"
+            # The web function answers only requests carrying this (OriginSecret).
+            OriginCustomHeaders:
+              - HeaderName: X-Origin-Verify
+                HeaderValue: !Sub "{{resolve:secretsmanager:${OriginSecret}:SecretString}}"
             CustomOriginConfig:
               HTTPSPort: 443
               OriginProtocolPolicy: https-only
@@ -608,6 +614,23 @@ Resources:
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
             OriginRequestPolicyId: !Ref WebApiRequestPolicy
             ResponseHeadersPolicyId: !Ref WebHeadersPolicy
+
+  # The API's own execute-api URL cannot be turned off (it is CloudFront's
+  # origin), so CloudFront proves itself: it sends this value as
+  # X-Origin-Verify on every request to the API, and the web function refuses
+  # any request without it. That makes CloudFront-Viewer-Address, which the
+  # sign-in limits trust, and Origin CloudFront's own. Generated here and
+  # resolved by CloudFormation into the distribution and the function's
+  # environment; nobody needs to read it.
+  OriginSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}-origin"
+      Description: Release Notes - the header value CloudFront sends the web API, so the API answers only through CloudFront
+      GenerateSecretString:
+        PasswordLength: 48
+        ExcludePunctuation: true
+        IncludeSpace: false
 
   WebApi:
     Type: AWS::ApiGatewayV2::Api
@@ -737,8 +760,13 @@ Resources:
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt WebLogs.Arn
 
+  # After the distribution: CloudFormation waits for a distribution update to
+  # reach every edge location before moving on, so the function starts
+  # asking for X-Origin-Verify only once CloudFront sends it everywhere. Run
+  # the other way round, the API would refuse CloudFront for those minutes.
   WebFunction:
     Type: AWS::Lambda::Function
+    DependsOn: WebDistribution
     Properties:
       FunctionName: !Sub "${AWS::StackName}-web"
       Description: The Release Notes web app's API
@@ -758,6 +786,7 @@ Resources:
         Variables:
           TABLE: !Ref Table
           WEB_ORIGIN: !Sub "https://${WebDomain}"
+          ORIGIN_SECRET: !Sub "{{resolve:secretsmanager:${OriginSecret}:SecretString}}"
           FROM_ADDRESS: !Ref FromAddress
           CONFIG_SET: !Ref ConfigurationSet
           MAIL_BUCKET: !Ref MailBucket

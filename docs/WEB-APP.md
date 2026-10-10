@@ -101,10 +101,14 @@ notes.yourversionnumber.com
 
   SES production access is account-wide and shared with Elixir's sign-in
   mail, so these limits protect both.
-  The limits are 5 sign-in emails per address, 20 per network (an IPv4
-  address or an IPv6 /64) and 200 in all, each per hour; past one, the
-  answer is 429. The network comes from CloudFront's `CloudFront-Viewer-Address`,
-  which the API's own origin request policy passes on. The API answers only
+  The limits are 5 sign-in emails per address (without any +tag), 20 per
+  network (an IPv4 address or an IPv6 /64), 60 per IPv6 /48 and 200 in all,
+  each per hour; past one, the answer is 429. They are checked narrowest
+  first and only an email that goes counts, so one network past its own
+  limit cannot use up the total (2026-10-09); alarm
+  `yvn-release-notes-signin-total` fires when the total is reached. The
+  network comes from CloudFront's `CloudFront-Viewer-Address`, which the
+  API's own origin request policy passes on. The API answers only
   CloudFront: CloudFront adds `X-Origin-Verify` with a secret the stack
   generates, and the web function refuses anything without it (403), so
   calling the execute-api URL directly cannot forge that header.
@@ -125,11 +129,14 @@ notes.yourversionnumber.com
   drops it if it has not begun. The timeline folds paused days without
   notes into one row.
 - **Deleting an account** takes a code mailed to the account's own address
-  (`POST /api/me/delete-code`; it is a sign-in row, so the same limits and
-  attempt count apply). Then, in order so a failure can be retried: the raw
-  emails, the reply tokens, every item under the user, the address, the
-  profile. Other signed-in browsers keep a session pointing at nobody until
-  it expires; it can read and write nothing. Old versions in the mail
+  (`POST /api/me/delete-code`; it is a sign-in row with `purpose=delete`,
+  so the same limits and attempt count apply, but it never signs in and a
+  sign-in's code never deletes). Then, in order so a failure can be
+  retried: the raw emails, the reply tokens, every item under the user and
+  the session of every browser they list, the address's newest sign-in and
+  deletion code, the address, the profile. A session begun before
+  2026-10-09 and not renewed since is not listed; it points at nobody until it
+  expires, and can read and write nothing. Old versions in the mail
   bucket expire 30 days later, which the page says.
 - **The timeline** lists every day with an email or a note, newest first,
   and today. Days with neither (before sign-up, or while stopped) are left

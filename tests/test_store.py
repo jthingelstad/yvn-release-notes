@@ -174,6 +174,108 @@ class ReviewRequests(unittest.TestCase):
 
 
 
+class SignInPurposes(unittest.TestCase):
+    # The 2026-10-09 review: a deletion code also signed in, and the other
+    # way round. Each sign-in carries its purpose, and each use checks it.
+
+    def test_a_deletion_code_has_its_own_newest(self):
+        table = FakeTable()
+        Store(table).put_login("t1", "ada@example.com", "e1", "c1", 1000, 900, "delete")
+        (_, login), (_, newest) = table.calls
+        self.assertEqual(login["Item"], {"pk": "LOGIN#t1", "sk": "LOGIN", "email": "ada@example.com", "email_hash": "e1",
+                                         "code_hash": "c1", "purpose": "delete", "attempts": 0, "created_at": 1000,
+                                         "expires_at": 1900})
+        self.assertEqual(newest["Item"], {"pk": "LOGINFOR#e1", "sk": "DELETE", "token_hash": "t1", "expires_at": 1900})
+        Store(table).newest_login("e1", "delete")
+        self.assertEqual(table.calls[-1], ("get_item", {"Key": {"pk": "LOGINFOR#e1", "sk": "DELETE"}}))
+
+    def test_a_sign_in_keeps_its_keys(self):
+        table = FakeTable()
+        Store(table).put_login("t1", "ada@example.com", "e1", "c1", 1000, 900)
+        self.assertEqual(table.calls[0][1]["Item"]["purpose"], "signin")
+        self.assertEqual(table.calls[1][1]["Item"]["sk"], "LOGIN")
+        Store(table).newest_login("e1")
+        self.assertEqual(table.calls[-1], ("get_item", {"Key": {"pk": "LOGINFOR#e1", "sk": "LOGIN"}}))
+
+    def updates(self):
+        t = FakeTable()
+        t.update_item = lambda **kw: t.calls.append(("update_item", kw)) or {"Attributes": {}}
+        return t
+
+    def test_a_sign_in_takes_one_with_no_purpose_from_before(self):
+        t = self.updates()
+        Store(t).spend_attempt("t1", 1000, 5)
+        Store(t).burn_login("t1", 1000)
+        (_, spend), (_, burn) = t.calls
+        self.assertEqual(spend["ConditionExpression"],
+                         "attribute_exists(pk) AND attribute_not_exists(used_at) AND expires_at > :now AND attempts < :max"
+                         " AND (attribute_not_exists(#purpose) OR #purpose = :purpose)")
+        self.assertEqual(spend["ExpressionAttributeNames"], {"#purpose": "purpose"})
+        self.assertEqual(spend["ExpressionAttributeValues"], {":one": 1, ":now": 1000, ":max": 5, ":purpose": "signin"})
+        self.assertEqual(burn["ConditionExpression"],
+                         "attribute_exists(pk) AND attribute_not_exists(used_at) AND expires_at > :now"
+                         " AND (attribute_not_exists(#purpose) OR #purpose = :purpose)")
+        self.assertEqual(burn["ExpressionAttributeNames"], {"#purpose": "purpose"})
+        self.assertEqual(burn["ExpressionAttributeValues"], {":now": 1000, ":purpose": "signin"})
+
+    def test_a_deletion_takes_only_a_deletion_code(self):
+        t = self.updates()
+        Store(t).spend_attempt("t1", 1000, 5, "delete")
+        Store(t).burn_login("t1", 1000, "delete")
+        for _, kw in t.calls:
+            self.assertTrue(kw["ConditionExpression"].endswith(" AND #purpose = :purpose"))
+            self.assertEqual(kw["ExpressionAttributeValues"][":purpose"], "delete")
+
+    def test_a_code_for_something_else_is_gone(self):
+        t = FakeTable(fail=ConditionFailed())
+        t.get_item = lambda **kw: {"Item": {"expires_at": Decimal(2000), "attempts": Decimal(0), "purpose": "delete"}}
+        self.assertEqual(Store(t).spend_attempt("t1", 1000, 5), "gone")
+        t.get_item = lambda **kw: {"Item": {"expires_at": Decimal(2000), "attempts": Decimal(0)}}
+        self.assertEqual(Store(t).spend_attempt("t1", 1000, 5, "delete"), "gone")
+        self.assertEqual(Store(t).spend_attempt("t1", 1000, 5), "attempts")
+
+    def test_deleting_the_account_finds_both_newest_and_what_they_name(self):
+        t = FakeTable()
+        rows = {"LOGIN": {"token_hash": "t1"}, "DELETE": {"token_hash": "t2"}}
+        t.get_item = lambda **kw: t.calls.append(("get_item", kw)) or {"Item": rows[kw["Key"]["sk"]]}
+        self.assertEqual(Store(t).login_keys("e1"), [
+            {"pk": "LOGINFOR#e1", "sk": "LOGIN"}, {"pk": "LOGIN#t1", "sk": "LOGIN"},
+            {"pk": "LOGINFOR#e1", "sk": "DELETE"}, {"pk": "LOGIN#t2", "sk": "LOGIN"},
+        ])
+        self.assertEqual([kw for _, kw in t.calls], [{"Key": {"pk": "LOGINFOR#e1", "sk": "LOGIN"}},
+                                                     {"Key": {"pk": "LOGINFOR#e1", "sk": "DELETE"}}])
+        t.get_item = lambda **kw: {}
+        self.assertEqual(Store(t).login_keys("e1"), [])
+
+
+class SessionsListed(unittest.TestCase):
+    # So deleting an account ends its sessions in every browser.
+
+    def test_a_subscribers_session_is_listed_under_them(self):
+        t = FakeTable()
+        Store(t).put_session("s1", user_id="u1", email=None, now=1000, expires=2000)
+        self.assertEqual(t.calls, [
+            ("put_item", {"Item": {"pk": "SESSION#s1", "sk": "SESSION", "created_at": 1000, "seen_at": 1000,
+                                   "expires_at": 2000, "user_id": "u1"}}),
+            ("put_item", {"Item": {"pk": "USER#u1", "sk": "SESSION#s1", "expires_at": 2000}}),
+        ])
+
+    def test_one_signing_up_is_not_until_it_is_claimed(self):
+        t = FakeTable()
+        Store(t).put_session("s1", user_id=None, email="new@example.com", now=1000, expires=2000)
+        self.assertEqual([c for c, _ in t.calls], ["put_item"])
+        Store(t).claim_session("s1", "u1", 2000)
+        self.assertEqual(t.calls[-1], ("put_item", {"Item": {"pk": "USER#u1", "sk": "SESSION#s1", "expires_at": 2000}}))
+
+    def test_renewing_renews_the_listing(self):
+        t = FakeTable()
+        Store(t).touch_session("s1", 1500, 3000, "u1")
+        self.assertEqual(t.calls[-1], ("put_item", {"Item": {"pk": "USER#u1", "sk": "SESSION#s1", "expires_at": 3000}}))
+        t = FakeTable()
+        Store(t).touch_session("s1", 1500, 3000)
+        self.assertEqual([c for c, _ in t.calls], ["update_item"])
+
+
 class UpdateNote(unittest.TestCase):
     def table(self):
         t = FakeTable()

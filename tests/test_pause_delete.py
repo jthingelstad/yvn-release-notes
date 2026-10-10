@@ -3,6 +3,7 @@ from email import message_from_bytes
 from email.policy import default
 
 from fakes import FakeS3
+from release_notes import auth
 from test_web import WebCase
 
 # NOW is 17:53 in Chicago on 2026-10-08; Ada's email goes at 06:00.
@@ -157,11 +158,69 @@ class DeleteTest(PauseCase):
         self.assertIn({"Bucket": "mail-bucket", "Key": "raw/0100late"}, self.s3.deleted)
         self.assertEqual(self.store.tallied, {("2026-10", "deletes"): 1})
 
-    def test_the_code_is_used_up(self):
+    def test_the_code_is_used_up_and_the_sign_ins_go_with_the_account(self):
         code = self.code()
+        self.assertEqual(len(self.store.logins), 2)  # the sign-in setUp used, and the deletion code
         self.delete(code)
+        self.assertEqual((self.store.logins, self.store.newest), ({}, {}))
         r, body = self.call("POST", "/api/auth/verify", {"email": "ada@example.com", "code": code})
+        self.assertEqual((r["statusCode"], body["error"]), (400, "code-expired"))
+
+    def test_every_browser_is_signed_out(self):
+        # Another browser signed in before, and one from before the
+        # sessions were listed under the subscriber, renewed since.
+        other = self.signed_in()
+        older = self.signed_in()
+        old_hash = auth.digest(older.split("=", 1)[1])
+        self.store.items["u1"] = [i for i in self.store.items["u1"] if i["sk"] != f"SESSION#{old_hash}"]
+        self.now += auth.SESSION_TOUCH
+        self.assertEqual(self.call("GET", "/api/me", cookies=[older])[0]["statusCode"], 200)
+        self.assertIn(f"SESSION#{old_hash}", [i["sk"] for i in self.store.items["u1"]])
+        code = self.code()
+        r, _ = self.delete(code)
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual(self.store.sessions, {})
+        for cookie in (other, older):
+            self.assertEqual(self.call("GET", "/api/me", cookies=[cookie])[0]["statusCode"], 401)
+
+    def test_a_sign_in_code_does_not_delete(self):
+        self.code()
+        _, _, signin = self.start()
+        r, body = self.delete(signin)
+        self.assertEqual(r["statusCode"], 400)
+        self.assertIn("u1", self.store.profiles)
+        self.assertEqual(self.store.emails, {"ada@example.com": "u1"})
+
+    def test_a_deletion_code_does_not_sign_in(self):
+        code = self.code()
+        sessions = dict(self.store.sessions)
+        r, body = self.call("POST", "/api/auth/verify", {"email": "ada@example.com", "code": code})
+        # It is checked against the newest sign-in, the one setUp used.
         self.assertEqual((r["statusCode"], body["error"]), (400, "code-used"))
+        self.assertNotIn("cookies", r)
+        self.assertEqual(self.store.sessions, sessions)
+        # And it still deletes: asking to sign in spent none of its tries.
+        self.assertEqual(self.delete(code)[0]["statusCode"], 200)
+
+    def test_each_kind_keeps_its_own_newest(self):
+        _, _, signin = self.start()
+        code = self.code()  # does not replace the sign-in
+        r, _ = self.call("POST", "/api/auth/verify", {"email": "ada@example.com", "code": signin})
+        self.assertEqual(r["statusCode"], 200)
+        self.cookies = [r["cookies"][0].split(";")[0]]
+        self.start()  # nor a new sign-in the deletion code
+        self.assertEqual(self.delete(code)[0]["statusCode"], 200)
+
+    def test_a_sign_in_from_before_purposes_still_signs_in_and_never_deletes(self):
+        self.code()
+        _, _, signin = self.start()
+        for row in self.store.logins.values():
+            if row["purpose"] == "signin":
+                del row["purpose"]
+        r, _ = self.delete(signin)
+        self.assertEqual(r["statusCode"], 400)
+        r, _ = self.call("POST", "/api/auth/verify", {"email": "ada@example.com", "code": signin})
+        self.assertEqual(r["statusCode"], 200)
 
     def test_if_the_emails_cannot_be_deleted_nothing_is(self):
         code = self.code()
@@ -169,7 +228,7 @@ class DeleteTest(PauseCase):
         r, body = self.delete(code)
         self.assertEqual((r["statusCode"], body["error"]), (502, "delete-failed"))
         self.assertIn("u1", self.store.profiles)
-        self.assertEqual(len(self.store.items["u1"]), 4)
+        self.assertEqual(len(self.store.items["u1"]), 5)  # with this browser's session
 
     def test_needs_a_code_a_session_and_our_origin(self):
         r, body = self.delete("")

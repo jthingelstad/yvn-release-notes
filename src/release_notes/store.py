@@ -19,6 +19,8 @@
                                                 size, files; gone a day after it is built
     USER#<id>        SESSION#<hash>             one of the subscriber's sessions, so deleting the account
                                                 ends it in every browser; expires_at renewed with it
+    USER#<id>        IMPORT#<app>#<journal>     ids: every entry an import brought in, kept or deleted since,
+                                                so a repeat skips them (importer.py)
     TOKEN#<token>    TOKEN                      reply address -> user, day, version, sent_at (epoch seconds;
                                                 missing before 2026-10-09). Replies are filed for 72 hours
                                                 after sent_at (inbound.py), but the item has no TTL: the

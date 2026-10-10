@@ -8,8 +8,9 @@ It is its own repo and stack, separate from `~/Projects/yourversionnumber.com`
 (the birthday and work sites). Those sites keep everything in the URL because
 that was a fun way to build them, not because of a rule (Jamie, 2026-10-08:
 "This is a hobby project. It's just fun."). This product stores data, and it
-has a web app at `notes.yourversionnumber.com` (`docs/WEB-APP.md` is the plan).
-Leave the sites alone while the web app is built.
+has a web app at `notes.yourversionnumber.com` (`docs/WEB-APP.md` is its
+design). Nothing on the sites links here yet: whether to add a link is
+Jamie's call, so leave the sites alone.
 
 ## Who can write
 
@@ -43,6 +44,10 @@ notes.yourversionnumber.com (CloudFront)
   default -> S3 web bucket              web/: the React app, built by Vite (dist/web)
   /api/*  -> HTTP API -> Lambda yvn-release-notes-web
                             -> Lambda yvn-release-notes-export   (async) the zip export -> S3 exports/
+
+DynamoDB stream (for subscribers who turn them on)
+  -> Lambda yvn-release-notes-transcribe  recordings -> Amazon Transcribe -> transcript on the note
+  -> Lambda yvn-release-notes-describe    photos -> Claude Haiku 5.5 -> description on the note
 ```
 
 - `src/release_notes/version.py`: the version arithmetic, ported from the site's
@@ -58,8 +63,10 @@ notes.yourversionnumber.com (CloudFront)
 - `send.py`, `inbound.py`, `events.py`: the mail handlers. `store.py`: the one table and its
   key layout (documented at the top of the file). `census.py`: the
   dashboard's counts, put out by the sender (its docstring lists them).
-- `infra/template.yaml`: the whole stack. `deploy.sh` packages, deploys and
-  activates the receipt rule set.
+- `infra/template.yaml`: the whole stack. `deploy.sh` checks it is
+  deploying a green `origin/main`, runs the tests, builds the web app,
+  packages and deploys the stack, makes its receipt rule set the active one
+  (only if no other set is active), then syncs the web app (Operating, below).
 
 **Standard library only.** No `requirements.txt`; `boto3` comes from the Lambda
 runtime and is imported lazily so the tests run without it.
@@ -80,7 +87,7 @@ runtime and is imported lazily so the tests run without it.
   page. The signed-in pages sit behind one gate in `main.tsx` that has the
   profile before any of them shows; each page's data (`lib/queries.ts`)
   loads before it shows, from the moment its link is pointed at; every page
-  but the front one is its own chunk. Back and forward restore the scroll,
+  but the front one, Not found and the error page is its own chunk. Back and forward restore the scroll,
   and a new page moves focus to its heading. A note added, edited or deleted
   shows at once and comes back, saying why, if the write fails
   (`lib/notecache.ts`, `components/notelist.tsx`). A page that breaks
@@ -102,8 +109,8 @@ runtime and is imported lazily so the tests run without it.
   is `'self'`), so no inline script or style (nothing inlined by the
   build, no `style` props), nothing remote; anything another service
   answers goes through `/api`. The exceptions are named in the CSP:
-  Tinylytics (connect) and the mail bucket's host for signed photo links
-  (img, media). `npm run verify` (prettier, oxlint, `tsc`, vitest, the
+  Tinylytics (connect) and the mail bucket's host (img and media for
+  signed file links, connect for uploads). `npm run verify` (prettier, oxlint, `tsc`, vitest, the
   build) is part of `validate`.
 - `tests/fakes.py`: an in-memory table, SES, S3 and Lambda for the web tests, also used
   by `scripts/dev_server.py`. The fakes do not check DynamoDB's request
@@ -165,10 +172,11 @@ runtime and is imported lazily so the tests run without it.
   fields): `written_at` (notes filed before 2026-10-09 have `received_at`,
   which `notes.written_at` reads), `tz`, the zone it was written in, so its
   time reads as it did there (email: the subscriber's; web: the browser's;
-  an import: the entry's), an optional `place` (name, city, region,
-  country, coordinates; shown by name, never the coordinates, the name
-  linking to Apple Maps at them unless the place is only the subscriber's
-  city, `notes.map_url`, Jamie 2026-10-09), and `source`: `email`, `web` or `import`, an import with
+  an import: the entry's), an optional `place` (label, venue, address,
+  city, region, country, coordinates, and `from`, how it is known;
+  shown by name, never the coordinates, the name linking to Apple Maps at
+  them unless the place is only the subscriber's city, `from: home`,
+  `notes.map_url`, Jamie 2026-10-09), and `source`: `email`, `web` or `import`, an import with
   `origin` (`{app, journal, id}`, the entry it came from).
 - **Tags are hashtags** (Jamie, 2026-10-09: on the note, "hashtags",
   lowercase with hyphens, "maine-2016"). A note's `tags` are the slugs of the
@@ -194,7 +202,9 @@ runtime and is imported lazily so the tests run without it.
   notes it would make (`NOTE#<day>#d1-<uuid>`) and touches nothing;
   `scripts/import_dayone.py EMAIL ZIP...` reads the subscriber and prints
   what an import would do, as counts (`--plan-out` to a folder outside the
-  repo for the full plan, note text included). `--write` then imports
+  repo for the full plan, note text included; `--weather-sample N` asks
+  Open-Meteo for N of the days, to see that the archive answers for the
+  places). `--write` then imports
   (`importer.py`): files and the original first, then each note
   conditionally, then the plan's weather before anything else fills those
   days, with the writer's own link words kept. The ledger item
@@ -234,8 +244,8 @@ runtime and is imported lazily so the tests run without it.
   (`web.UPLOADS_A_DAY`, `UPLOAD_BYTES_A_DAY`; past either, 429
   `upload-limit`), since sign-up is open. So the CSP's connect-src and
   the bucket's CORS name each other. Each file on a note in an API answer
-  carries `url`, a signed link on the bucket's own host, the one host the
-  CSP adds (`img-src`, `media-src`), only for keys under the subscriber's
+  carries `url`, a signed link on the bucket's own host (the CSP's
+  `img-src` and `media-src` name it), only for keys under the subscriber's
   own `media/<user>/` (`App.media_links`). A link is signed for 15 minutes
   and a warm function hands out the same one for 5, so the browser reuses
   its copy (2026-10-09: photos had been one API call each, and a page of
@@ -375,7 +385,8 @@ runtime and is imported lazily so the tests run without it.
 - **The web app counts pages in Tinylytics** (site 3816, Jamie 2026-10-08),
   from `web/src/lib/pagecount.ts` on each page shown, rather than the embed script, so script-src
   stays `'self'` and only connect-src names `https://tinylytics.app`. Send
-  the path only, never a query string (sign-in and unsubscribe tokens live
+  the page's address without its query string, and on a visit's first page
+  the referring site's origin only, never a query string (sign-in and unsubscribe tokens live
   there), no cookies, nothing that names a person. No other analytics.
 - **The email is plain text plus HTML** (`compose.py`). The HTML is type on
   paper in the site's colours: cobalt digits, tangerine dots, its own dark
@@ -424,7 +435,7 @@ runtime and is imported lazily so the tests run without it.
   thread the caller stops waiting for), 256 KB, HTML only, three fetches a
   note, so six seconds at most; anything else is just no title. `links.segments` is the
   one rendering for the email (`compose.linked`), the web (`parts` in each
-  note, drawn by `noteBody`) and the Markdown export. Tests never fetch:
+  note, drawn by `NoteBody` in `components/notes.tsx`) and the Markdown export. Tests never fetch:
   pass a fake `fetch` to `web.handler` and `inbound.process`.
   `scripts/fill_link_titles.py` fills in notes written before this.
 - **Weather** (Jamie, 2026-10-08: "Record + today's forecast"). Each
@@ -480,9 +491,11 @@ runtime and is imported lazily so the tests run without it.
 - `validate` (`.github/workflows/validate.yml`) runs the workflow lint, the
   unit tests, cfn-lint and the web app's `npm run verify`. Workflows stay SHA-pinned with `permissions: {}`,
   per-job grants and `persist-credentials: false`;
-  `sh scripts/test-workflows.sh` checks that. Dependabot moves the pins
-  monthly in one PR, which is reviewed like any other: it does not
-  auto-merge, because a merged action runs with the repository's token.
+  `sh scripts/test-workflows.sh` checks that. Dependabot opens two grouped
+  PRs a month, one for the action pins and one for the web app's npm
+  packages, each reviewed like any other: they do not auto-merge, because
+  a merged action runs with the repository's token and a package runs in
+  the build.
   cfn-lint is pinned too (`pipx run --spec cfn-lint==<version>`), which
   Dependabot cannot see: bump it by hand to PyPI's latest, after a local
   run, when the template needs a newer one.
@@ -517,14 +530,21 @@ runtime and is imported lazily so the tests run without it.
   `scripts/dev_server.py` serves the built `dist/web` and the real API
   against in-memory fakes, prints sign-in emails instead of sending them, and
   starts with a fictional subscriber, ada@example.com. `--fake-places`
-  answers city search and weather without Open-Meteo. Use it (and this
-  repo's Playwright) to see pages; never sign in on
-  live to check something. For hot reload, run the dev server on 8790 and
-  `npm run dev` (Vite on 5173, sending `/api` and the dev routes to it).
-- Add a subscriber (phase 1 has no sign-up): `scripts/add_subscriber.py EMAIL YYYY-MM-DD`
-- Read someone's release notes (phase 1 has no reader):
-  `scripts/read_notes.py EMAIL [YYYY-MM-DD]`. It prints note text, so run it
-  only for the subscriber's own notes; agents do not run it to check things.
+  answers city search and weather without Open-Meteo, and `--fake-links`
+  names every link without fetching it (the browser tests use both). Use
+  it (and this repo's Playwright) to see pages; never sign in on
+  live to check something. For hot reload, run `scripts/dev_server.py
+  --port 8790` and `npm run dev` (Vite on 5173, sending `/api` and the dev
+  routes to it).
+- Sign-up is on the web. `scripts/add_subscriber.py EMAIL YYYY-MM-DD
+  [--tz ZONE] [--send-time HH:MM]` adds one by hand, a phase 1 leftover:
+  it writes no city (so no weather), no tally and sends no first email.
+- `scripts/read_notes.py EMAIL [YYYY-MM-DD]` prints someone's release
+  notes, from before the web app had a reader. It prints note text, so run
+  it only for the subscriber's own notes; agents do not run it to check
+  things.
+- The fill-in scripts (`extract_media.py`, `fill_link_titles.py`,
+  `fill_weather.py`) take `EMAIL [--dry-run]`; run the dry run first.
 - Send someone today's email now, outside their window: invoke the sender
   with `{"send_now": "<user id>"}` (add `"dry_run": true` first to see it).
   Still once per local day; never fake the clock with `now` to do it.
@@ -593,9 +613,12 @@ runtime and is imported lazily so the tests run without it.
    by email link or code, export, notes for today and past days, pause,
    settings (the send time included), `List-Unsubscribe`, bounces stop a
    subscriber.
-3. **Around it** (started 2026-10-08): photos and audio from replies
-   (built); the export as a zip with the files (built); weather from the
+3. **Around it** (started 2026-10-08). Built: photos and audio from
+   replies; the export as a zip with the files; weather from the
    subscriber's city (Open-Meteo, no key, CC BY 4.0), each day's actual
    weather recorded with its city plus one forecast line in the morning
-   email (Jamie, 2026-10-08; built); a yearly "release notes for 5.2" collection on
-   the birthday.
+   email (Jamie, 2026-10-08); "On this day" and lifetime counts; tags and
+   search; files and recordings on the web; opt-in transcripts and photo
+   descriptions; the Day One import; the CloudWatch dashboard; the React
+   app and Home Screen app (2026-10-09). Not yet: a yearly "release notes
+   for 5.2" collection on the birthday.

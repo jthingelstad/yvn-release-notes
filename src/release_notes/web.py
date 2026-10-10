@@ -1094,8 +1094,8 @@ def add_files(app: App, req: Request, value: str, note_id: str) -> dict:
 
 
 def media_file(app: App, req: Request, value: str, note_id: str, n: str) -> dict:
-    """A photo or recording, for its owner only: a redirect to a link to the
-    file that lasts ten minutes. The browser may reuse the redirect for five."""
+    """A file, for its owner only: a redirect to a link to it that lasts at
+    least ten minutes (MEDIA_LINK). The browser may reuse the redirect for five."""
     user_id, p = app.account(req)
     day = day_from(p, value, app.now).isoformat()
     note = next((x for x in app.store.notes_between(user_id, day, day) if x["sk"].split("#", 2)[2] == note_id), None)

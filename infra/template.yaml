@@ -533,9 +533,10 @@ Resources:
 
   # Pages load only their own files: no inline script or style, nothing
   # remote. Lookups that need another service (the city search) go through
-  # /api. connect-src adds only Tinylytics, for the app's page count. Photos
-  # and recordings come from the mail bucket's own host, by a link the API
-  # signs for their owner (img-src and media-src name only that host).
+  # /api. connect-src adds Tinylytics, for the app's page count, and the
+  # mail bucket's host, for uploads. Photos and recordings come from that
+  # host, by a link the API signs for their owner (img-src and media-src
+  # name only that host).
   # media-src also takes blob:, so a recording made on the page plays back
   # before it is sent. Permissions-Policy lets the page itself use the
   # microphone (the new-note form's Record button) and turns off the
@@ -920,9 +921,10 @@ Resources:
       MaximumRetryAttempts: 0
 
   # --- bounces and complaints -----------------------------------------------
-  # The configuration set already publishes delivery events to the alarms
-  # topic for the ops queue. This function takes the hard bounces and
-  # complaints from the same topic and stops that subscriber's emails.
+  # The configuration set publishes SES's events to their own topic
+  # (MailEventsTopic), never the ops queue: they carry addresses. This
+  # function stops the subscriber on a hard bounce or complaint and puts
+  # one scrubbed line on the alarms topic.
 
   EventsLogs:
     Type: AWS::Logs::LogGroup

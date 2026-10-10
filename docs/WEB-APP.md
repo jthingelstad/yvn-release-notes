@@ -1,18 +1,24 @@
 # The web app: notes.yourversionnumber.com
 
-Agreed with Jamie on 2026-10-08. This is the plan the pull requests follow.
-Change it here when the plan changes.
+Agreed with Jamie on 2026-10-08 and built that day; the front end moved to
+React on 2026-10-09. This is the design of what runs: change it with the
+code. AGENTS.md has the rules for everything since (files, tags, search,
+transcripts, descriptions, imports), and `src/release_notes/store.py` the
+table's full key layout.
 
-Release Notes gets a standalone web app at `notes.yourversionnumber.com`. The
-birthday and work sites at `yourversionnumber.com` stay as they are, and nothing
-there links here until this is up and done.
+Release Notes has a standalone web app at `notes.yourversionnumber.com`. The
+birthday and work sites at `yourversionnumber.com` stay as they are, and
+nothing there links here yet: that is Jamie's call (Order, step 6).
 
 ## What it does
 
-1. **Sign up or sign in: one screen, one email field.** We send a link and a
-   six-digit code. The code covers the case where you asked on the laptop and
-   read the mail on the phone. A new address then picks:
-   - **Birthday.**
+1. **Sign up or sign in.** The front page asks for the birthday first,
+   explains the number it makes, then asks for the email; "Sign in"
+   (`/#sign-in`) is the email alone (AGENTS.md has the detail). We send a
+   link and a six-digit code. The code covers the case where you asked on
+   the laptop and read the mail on the phone. A new address then confirms
+   or picks:
+   - **Birthday**, carried over from the front page.
    - **Location, to the city.** It is chosen from a search, and gives the
      time zone and coordinates rounded to the city (for the day's weather
      and the morning forecast, `weather.py`). No street address, no device location.
@@ -36,7 +42,10 @@ there links here until this is up and done.
 7. **Settings**: send time and location, sign out, delete account (after an
    export is offered, and with a fresh code).
 8. **The daily email** gains a "Pause or manage" link and one-click
-   `List-Unsubscribe`. A bounce or complaint pauses the subscriber.
+   `List-Unsubscribe`. A hard bounce or complaint stops the subscriber.
+9. **Since**: tags (`/tag/?t=`) and search (`/search/`), photos,
+   recordings and PDFs added on the web, recording on the page. AGENTS.md
+   has their rules.
 
 ## Defaults (Jamie can change any)
 
@@ -47,9 +56,11 @@ there links here until this is up and done.
   bucket is versioned, so the old version lingers 30 days, then expires.
 - The birthday is locked after sign-up, because changing it renumbers every
   day you have kept.
-- Photos and recordings show with their note, by a signed link that lasts
-  ten minutes, for their owner only (`media.py`). Today they come from
-  emailed replies; any channel may bring them (Jamie, 2026-10-09).
+- Photos, recordings and PDFs show with their note, by a signed link that
+  lasts at least ten minutes once handed out (each is signed for 15 and
+  reused for 5), for their owner only (`media.py`). They come from emailed
+  replies, web uploads and imports; any channel may bring them (Jamie,
+  2026-10-09).
 - A link in a note shows by name: the words you linked, or the page's
   title, fetched once when the note is saved (`links.py`; AGENTS.md has the
   guards). The text keeps the address as written, and the exports carry
@@ -68,6 +79,7 @@ notes.yourversionnumber.com
     default  -> S3 web bucket (private, OAC)     web/: React app built by Vite (2026-10-09)
     /api/*   -> HTTP API -> Lambda yvn-release-notes-web    Python, standard library
                               -> the same DynamoDB table
+                              -> Lambda yvn-release-notes-export (async, the zip)
 ```
 
 - **Language: Python, standard library.** The sender and inbound handlers are
@@ -77,11 +89,15 @@ notes.yourversionnumber.com
   `version.py`, and buy nothing a JSON API over one table needs. (The
   front end did move to TypeScript and React on 2026-10-09, on the thingy
   stack; the API stays Python.)
-- **Security headers** on every response: a CSP of `'self'` only (no inline
-  script or style, nothing remote), HSTS, `DENY` framing. The city search
-  goes through `/api`, which asks Open-Meteo's geocoder (no key, CC BY 4.0),
-  so the page never talks to another host.
-- **New items in the table.** `expires_at` (epoch seconds) is the table's TTL.
+- **Security headers** on every response: a CSP of `'self'` (no inline
+  script or style), HSTS, `DENY` framing, and a Permissions-Policy that
+  allows only the microphone. The CSP names its few exceptions: Tinylytics
+  for the page count, and the mail bucket's host for signed file links and
+  uploads. Everything else goes through `/api`: the city search asks
+  Open-Meteo's geocoder (no key, CC BY 4.0) from there.
+- **New items in the table.** `expires_at` (epoch seconds) is the table's
+  TTL. The web app's first items were these; the docstring at the top of
+  `store.py` is the full, current layout.
 
   | Item | Key | Lifetime |
   |---|---|---|
@@ -96,7 +112,7 @@ notes.yourversionnumber.com
 - **Sign-in** follows Elixir's design (`packages/auth/src/magic.mjs`):
   - The link and the code burn one shared single-use row. Code attempts are
     counted before comparing, capped at 5, compared in constant time.
-  - At most 5 sign-in emails per address per hour, plus a per-IP limit.
+  - At most 20 wrong codes per address a day, across all its sign-ins.
   - Only hashes are stored.
   - The answer is the same whether or not the address has an account.
   - The link lands on a "Sign in" button, because mail scanners open links.
@@ -118,11 +134,12 @@ notes.yourversionnumber.com
   write must carry `Origin: https://notes.yourversionnumber.com`. The API
   receives only the headers it reads (Origin, Content-Type, Accept, the
   viewer address, and CloudFront's own `X-Origin-Verify`) and only that cookie.
-- **Pages**: `/` (sign in, with a live example number from `/api/sample`),
-  `/signin/` (the link lands here, token in the fragment), `/setup/` (a new
-  address's three questions), `/today/` (where sign-in lands), `/timeline/`,
-  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/settings/`, `/pause/`,
-  `/delete/`, `/unsubscribe/`.
+- **Pages**: `/` (the birthday, the number it makes from `/api/sample`,
+  then the email; `/#sign-in` the email alone), `/signin/` (the link lands
+  here, token in the fragment), `/setup/` (a new address's three
+  questions), `/today/` (where sign-in lands), `/timeline/`,
+  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/search/`,
+  `/tag/?t=<tag>`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`.
 - **A pause** starts on the next day an email would go (today, unless
   today's has gone) and runs 1 to 60 days. It is `PAUSE#<from>` with
   `through`, and the profile carries the latest one (`pause_from`,
@@ -132,7 +149,7 @@ notes.yourversionnumber.com
   notes into one row.
 - **Deleting an account** takes a code mailed to the account's own address
   (`POST /api/me/delete-code`; it is a sign-in row with `purpose=delete`,
-  so the same limits and attempt count apply, but it never signs in and a
+  so the same attempt count and the address and total limits apply, but it never signs in and a
   sign-in's code never deletes). Then, in order so a failure can be
   retried: the raw emails, the reply tokens, every item under the user and
   the session of every browser they list, the address's newest sign-in and
@@ -146,15 +163,17 @@ notes.yourversionnumber.com
   its day is "added later".
 - **The sender** skips a paused subscriber, and a stopped one: `status` is
   `active` or `stopped`, with `stopped_reason` `unsubscribed`, `bounce` or
-  `complaint`. Hard bounces and complaints arrive through the alarms topic
-  (which the configuration set already publishes to) at
-  `yvn-release-notes-events`.
+  `complaint`. The configuration set publishes SES's events to their own
+  topic, `yvn-release-notes-mail-events`; the function
+  `yvn-release-notes-events` stops the subscriber on a hard bounce or
+  complaint and puts one scrubbed line on the alarms topic.
 - **Sign-up's first email** is today's, at once: the web function invokes
   the sender with `send_now` (`web.send_first`), which marks the day sent,
   so the schedule's first is tomorrow's. Only a subscriber's first email
   (no `last_sent_date` before it) carries the welcome line. If the invoke
   fails, sign-up still succeeds and the schedule sends today's when it can.
-- **The home page** goes straight to `/today/` for someone signed in: a
+- **The home page** goes straight on for someone signed in (to `/today/`,
+  the page they were sent back from, or `/setup/` for a new account): a
   `rn-in` hint in localStorage (the cookie is HttpOnly) keeps the form
   hidden until `/api/me` answers.
 - **Logs**: ids, routes and outcomes. Never note text, addresses or cities.
@@ -178,9 +197,14 @@ notes.yourversionnumber.com
 | `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
 | `GET /api/days/{date}` | one day: version, notes (each note's `parts` is its text split into strings and links by name) and `weather`, the day's recorded weather as a line, when kept |
-| `POST /api/days/{date}/notes` | write for today or a past day |
+| `POST /api/days/{date}/notes` | write for today or a past day; `uploads` attaches files, and a note with files may have no text |
 | `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete (an emailed note's email and files go with it) |
-| `GET /api/days/{date}/notes/{id}/media/{n}` | a photo or recording: a redirect to a ten-minute signed link, for its owner |
+| `POST /api/days/{date}/notes/{id}/media` `{uploads}` | add files to a note already there |
+| `GET /api/days/{date}/notes/{id}/media/{n}` | a file: a redirect to a fresh signed link, for its owner. Every file in an answer already carries `url`; this is the fallback once it has run out |
+| `POST /api/uploads` | a signed form for one file, of the type and exact size given, for five minutes; 429 `upload-limit` past the day's ceilings |
+| `GET /api/tags` | every tag, most used first |
+| `GET /api/tags/{tag}` | every day with a note tagged so, newest first |
+| `POST /api/search` `{q}` | notes with every word or "quoted phrase"; the words never go in a URL |
 | `PUT /api/pause` `{days}` or `{through}` | pause, or change the pause |
 | `DELETE /api/pause` | resume now |
 | `POST /api/me/delete-code` | mails the account's address a code to confirm deleting |
@@ -190,12 +214,15 @@ notes.yourversionnumber.com
 
 ## Order
 
+The order the web app was built in, kept as history: PRs 0 to 5 shipped
+on 2026-10-08. Step 6 is open.
+
 | PR | What ships | How it is checked |
 |---|---|---|
 | 0 | A design canvas for the screens | Jamie reviews it alongside PR 1 |
 | 1 | CloudFront, web bucket, HTTP API, stub function, table TTL, a placeholder page | `/api/health` and the page answer on the cloudfront.net name, then on `notes.` once DNS is in |
 | 2 | Sign-in, sessions, the sign-in email, **export** | Jamie signs in and exports |
-| 3 | Sign-up with city search, settings, "Pause or manage" and `List-Unsubscribe` in the email, bounces pause | a new account works |
+| 3 | Sign-up with city search, settings, "Pause or manage" and `List-Unsubscribe` in the email, bounces stop the emails | a new account works |
 | 4 | Today, timeline, day view, write, backfill, edit, delete | daily use |
 | 5 | Pause, delete account | feature-complete |
 | 6 | Jamie uses it, invites a few people, then decides on a link from yourversionnumber.com | |

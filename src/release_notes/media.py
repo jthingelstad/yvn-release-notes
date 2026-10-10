@@ -31,7 +31,8 @@ reader takes as it takes any key under `media/<user>/`. A PDF is kind
 `file`, as an imported one is.
 
 Nobody but the owner sees a file: the web app asks the API, which checks the
-session and redirects to a link that lasts ten minutes (web.media_file).
+session and signs a link that lasts 15 minutes (App.media_links, with
+web.media_file for a fresh one).
 Deleting a note or the account deletes its files too.
 """
 

@@ -4,7 +4,7 @@ from email.message import EmailMessage
 
 from release_notes import media
 from release_notes.compose import files_phrase, past_more
-from release_notes.parse import parse_message
+from release_notes.parse import attachments, parse_message
 
 
 def jpeg(w, h, pad=0):
@@ -16,6 +16,15 @@ def jpeg(w, h, pad=0):
 
 def png(w, h, pad=0):
     return b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", w, h) + b"\x08\x02\x00\x00\x00" + b"\x00" * pad
+
+
+def m4a(size):
+    """A recording's first box: ftyp, brand M4A."""
+    return (b"\x00\x00\x00\x20ftypM4A " + b"\x00" * size)[:max(size, 12)]
+
+
+def heic(size):
+    return (b"\x00\x00\x00\x18ftypheic" + b"\x00" * size)[:max(size, 12)]
 
 
 def reply(*files, text="Lake day.\n"):
@@ -56,12 +65,31 @@ class Found(unittest.TestCase):
         msg = reply(
             (jpeg(4032, 3024, pad=2000), "image", "jpeg", "image0.jpeg", "inline"),
             (png(64, 64, pad=500), "image", "png", "logo.png", "inline"),  # a signature logo
-            (b"\x00" * 4096, "audio", "x-m4a", "Memo.m4a", "attachment"),
+            (m4a(4096), "audio", "x-m4a", "Memo.m4a", "attachment"),
             (b"%PDF-1.4" + b"\x00" * 4096, "application", "pdf", "menu.pdf", "attachment"),
-            (b"\x00" * 30000, "application", "octet-stream", "IMG_0002.HEIC", "attachment"),  # unmeasured, photo-sized
-            (b"\x00" * 900, "application", "octet-stream", "tiny.heic", "attachment"),  # unmeasured, too small
+            (heic(30000), "application", "octet-stream", "IMG_0002.HEIC", "attachment"),  # unmeasured, photo-sized
+            (heic(900), "application", "octet-stream", "tiny.heic", "attachment"),  # unmeasured, too small
         )
         self.assertEqual([t for t, _ in media.found(msg)], ["image/jpeg", "audio/mp4", "image/heic"])
+
+    def test_a_file_that_is_not_what_it_says_is_left_in_the_email(self):
+        # The type and name are the sender's to write; the first bytes decide.
+        msg = reply(
+            (b"<html><script>x</script></html>" + b" " * 30000, "image", "jpeg", "photo.jpg", "attachment"),
+            (b"\x00" * 4096, "audio", "x-m4a", "Memo.m4a", "attachment"),
+            (b"%PDF-1.4" + b"\x00" * 4096, "application", "pdf", "menu.pdf", "attachment"),
+            (jpeg(4032, 3024, pad=2000), "image", "jpeg", "real.jpeg", "attachment"),
+            (png(800, 600, pad=10), "image", "jpeg", "mislabelled.jpg", "attachment"),
+        )
+        refused = []
+        self.assertEqual([t for t, _ in media.found(msg, refused)], ["image/jpeg"])
+        self.assertEqual(refused, [0, 1, 4])  # places in parse.attachments' list
+        files = attachments(msg)
+        self.assertEqual([f["filename"] for f in files], ["photo.jpg", "Memo.m4a", "menu.pdf", "real.jpeg", "mislabelled.jpg"])
+        for n in refused:
+            files[n]["refused"] = True
+        # The PDF and the three refused: all in the original email.
+        self.assertEqual(media.others({"attachments": files}), 4)
 
     def test_text_alone_has_none(self):
         self.assertEqual(media.found(reply()), [])

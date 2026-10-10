@@ -150,6 +150,18 @@ class NoteQueries(unittest.TestCase):
 class ReviewRequests(unittest.TestCase):
     # The exact table calls added after the 2026-10-08 review.
 
+    def test_put_day_gives_the_reply_address_its_send_time(self):
+        # Epoch seconds on the token, for inbound's 72 hours; no expires_at,
+        # since the unsubscribe link reads the same item.
+        table = FakeTable()
+        Store(table).put_day("u1", "2026-10-07", "5.0.0", "tok", "2026-10-08T01:15:00.123456+00:00")
+        self.assertEqual(table.calls, [
+            ("put_item", {"Item": {"pk": "TOKEN#tok", "sk": "TOKEN", "user_id": "u1", "date": "2026-10-07",
+                                   "version": "5.0.0", "sent_at": 1791422100}}),
+            ("put_item", {"Item": {"pk": "USER#u1", "sk": "DAY#2026-10-07", "version": "5.0.0", "token": "tok",
+                                   "sent_at": "2026-10-08T01:15:00.123456+00:00"}}),
+        ])
+
     def test_drop_day_removes_the_reply_address_and_only_its_own_day(self):
         table = FakeTable()
         Store(table).drop_day("u1", "2026-10-08", "tok")

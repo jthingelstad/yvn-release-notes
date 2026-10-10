@@ -75,7 +75,8 @@ class FakeStore:
         self.subs[user_id].last_sent_date = previous
 
     def put_day(self, user_id, day, version, token, sent_at):
-        self.tokens[token] = {"user_id": user_id, "date": day, "version": version}
+        self.tokens[token] = {"user_id": user_id, "date": day, "version": version,
+                              "sent_at": int(datetime.fromisoformat(sent_at).timestamp())}
         self.days[(user_id, day)] = {"version": version, "token": token, "sent_at": sent_at}
 
     def drop_day(self, user_id, day, token):
@@ -226,7 +227,10 @@ class Sending(unittest.TestCase):
     def test_sent_at_is_the_real_send_time(self):
         store = FakeStore([ada()])
         send.handler({}, None, store=store, ses=FakeSES(), clock=AT_8_15PM)
-        self.assertEqual(store.days[("u1", "2026-10-07")]["sent_at"], "2026-10-08T01:15:00+00:00")
+        day = store.days[("u1", "2026-10-07")]
+        self.assertEqual(day["sent_at"], "2026-10-08T01:15:00+00:00")
+        # The reply address carries it too, for inbound's 72 hours.
+        self.assertEqual(store.tokens[day["token"]]["sent_at"], 1791422100)
 
     def test_now_is_refused_on_a_real_send(self):
         store, ses = FakeStore([ada()]), FakeSES()
@@ -494,11 +498,11 @@ class Inbound(unittest.TestCase):
         self.assertEqual(self.fetched, ["https://example.com/q"])
 
     def test_photos_and_recordings_are_copied_out(self):
-        from test_media import jpeg, png
+        from test_media import jpeg, m4a, png
         msg = message_from_bytes(reply_raw(), policy=default)
         msg.add_attachment(jpeg(3024, 4032, pad=5000), maintype="image", subtype="jpeg", filename="image0.jpeg", disposition="inline")
         msg.add_attachment(png(48, 48, pad=100), maintype="image", subtype="png", filename="sig.png", disposition="inline")
-        msg.add_attachment(b"\x00" * 2048, maintype="audio", subtype="x-m4a", filename="Memo.m4a")
+        msg.add_attachment(m4a(2048), maintype="audio", subtype="x-m4a", filename="Memo.m4a")
         out = StringIO()
         with redirect_stdout(out):
             outcome, s3 = self.run_one(ses_event(), msg.as_bytes())
@@ -591,6 +595,113 @@ class Inbound(unittest.TestCase):
     def test_forged_results_header_not_trusted(self):
         forged = reply_raw(auth="evil.example; dkim=pass header.i=@example.com")
         self.assertEqual(self.run_one(ses_event(dmarc="GRAY"), forged)[0], "ignored")
+
+    # --- the 2026-10-09 inbound review ------------------------------------------
+
+    def run_logged(self, ses, raw=None):
+        out = StringIO()
+        with redirect_stdout(out):
+            outcome, s3 = self.run_one(ses, raw)
+        return outcome, s3, json.loads(out.getvalue().splitlines()[-1])
+
+    def test_a_dkim_local_part_is_not_its_domain(self):
+        # header.i=example.com@evil.example is evil.example's signature.
+        for auth in ("amazonses.com; dkim=pass header.i=example.com@evil.example",
+                     "amazonses.com; dkim=pass header.i=@example.com@evil.example",
+                     'amazonses.com; dkim=pass header.i="example.com;"@evil.example',
+                     "amazonses.com; dkim=pass header.d=evil.example header.i=@example.com",
+                     "amazonses.com; dkim=pass header.i=example.com",
+                     "amazonses.com; dkim=pass (header.i=@example.com) header.i=@evil.example"):
+            outcome, _, line = self.run_logged(ses_event(dmarc="GRAY"), reply_raw(auth=auth))
+            self.assertEqual((outcome, line["reason"]), ("ignored", "unauthenticated"), auth)
+        self.assertEqual(inbound.dkim_domains("amazonses.com; dkim=pass header.i=example.com@evil.example"), ["evil.example"])
+
+    def test_header_d_names_the_signer(self):
+        for auth in ("amazonses.com; spf=pass (spfCheck: a; b) smtp.mailfrom=example.com; dkim=pass header.d=example.com header.s=s1",
+                     "amazonses.com; dkim=pass header.i=@mail.example.com",
+                     "amazonses.com; dkim=fail header.i=@evil.example; dkim=pass header.i=ada@example.com"):
+            self.assertEqual(self.run_one(ses_event(dmarc="GRAY"), reply_raw(auth=auth))[0], "note", auth)
+            self.store.notes.clear()
+
+    def test_a_dmarc_fail_is_not_rescued_by_dkim(self):
+        aligned = reply_raw(auth="amazonses.com; spf=pass; dkim=pass header.i=@example.com; dmarc=fail header.from=example.com")
+        for dmarc in ("FAIL", "PROCESSING_FAILED", None):
+            ses = ses_event(dmarc=dmarc)
+            if dmarc is None:
+                del ses["receipt"]["dmarcVerdict"]
+            outcome, _, line = self.run_logged(ses, aligned)
+            self.assertEqual((outcome, line["reason"]), ("ignored", "unauthenticated"), dmarc)
+        # No policy (GRAY) with a real aligned DKIM pass still files.
+        self.assertEqual(self.run_one(ses_event(dmarc="GRAY"), aligned)[0], "note")
+
+    def test_a_reply_is_filed_for_72_hours_after_its_email(self):
+        # Sent 2026-10-08T01:15:00Z, so the window closes 2026-10-11T01:15:00Z.
+        self.store.tokens[TOKEN]["sent_at"] = 1791422100
+        self.assertEqual(self.run_one(ses_event(timestamp="2026-10-11T01:15:00.000Z"))[0], "note")
+        outcome, s3, line = self.run_logged(ses_event(message_id="m2", timestamp="2026-10-11T01:15:01.000Z"))
+        self.assertEqual((outcome, s3.tags["raw/m2"]), ("ignored", "ignored"))
+        self.assertEqual(line, {"event": "inbound", "message": "m2", "outcome": "ignored", "reason": "expired", "user": "u1"})
+        self.assertEqual(list(self.store.notes), [("u1", "2026-10-07", "m1")])
+        # The reply address stays: its unsubscribe link keeps working.
+        self.assertIn(TOKEN, self.store.tokens)
+
+    def test_a_token_from_before_sent_at_runs_to_the_end_of_four_days_on(self):
+        # The token for 2026-10-07 has no sent_at: filed until 2026-10-12T00:00:00Z.
+        self.assertNotIn("sent_at", self.store.tokens[TOKEN])
+        self.assertEqual(self.run_one(ses_event(timestamp="2026-10-11T23:59:59.000Z"))[0], "note")
+        outcome, _, line = self.run_logged(ses_event(message_id="m2", timestamp="2026-10-12T00:00:01.000Z"))
+        self.assertEqual((outcome, line["reason"]), ("ignored", "expired"))
+
+    def test_the_raw_from_must_be_the_one_address_too(self):
+        two = b"From: eve@example.net\n" + reply_raw()  # a second From header
+        other = reply_raw(from_addr="eve@example.net")
+        both = reply_raw(from_addr="ada@example.com, eve@example.net")
+        for raw in (two, other, both):
+            outcome, s3, line = self.run_logged(ses_event(), raw)
+            self.assertEqual((outcome, line["reason"], s3.tags["raw/m1"]), ("ignored", "from-mismatch", "ignored"))
+        self.assertEqual(self.store.notes, {})
+        self.assertEqual(self.run_one(ses_event(), reply_raw(from_addr="Ada <ADA@example.com>"))[0], "note")
+
+    def test_a_virus_scan_that_failed_is_a_virus(self):
+        ses = ses_event()
+        ses["receipt"]["virusVerdict"]["status"] = "PROCESSING_FAILED"
+        self.assertEqual(self.run_one(ses)[0], "ignored")
+        for spam in ("GRAY", "PROCESSING_FAILED"):
+            self.store.notes.clear()
+            self.assertEqual(self.run_one(ses_event(spam=spam))[0], "note", spam)
+
+    def deep(self, depth, auth="amazonses.com; dmarc=pass header.from=example.com"):
+        head = (f"Authentication-Results: {auth}\r\nFrom: ada@example.com\r\n"
+                f"To: n-{TOKEN}@in.yourversionnumber.com\r\nSubject: Re: hi\r\nMIME-Version: 1.0\r\n").encode()
+        body = b"Content-Type: text/plain\r\n\r\nhello\r\n"
+        for i in range(depth):
+            b = b"b%d" % i
+            body = b"Content-Type: multipart/mixed; boundary=" + b + b"\r\n\r\n--" + b + b"\r\n" + body + b"\r\n--" + b + b"--\r\n"
+        return head + body
+
+    def test_mime_nested_too_deep_is_ignored_not_retried(self):
+        outcome, s3, line = self.run_logged(ses_event(), self.deep(1500))
+        self.assertEqual((outcome, s3.tags["raw/m1"], line["reason"], line["error"]),
+                         ("ignored", "ignored", "unparseable", "RecursionError"))
+        self.assertEqual(self.store.notes, {})
+        # Who sent it is checked first, from the headers alone.
+        self.assertEqual(self.run_logged(ses_event(dmarc="FAIL"), self.deep(1500))[2]["reason"], "unauthenticated")
+        # A little nesting is just a reply.
+        self.assertEqual(self.run_one(ses_event(message_id="m3"), self.deep(5))[0], "note")
+
+    def test_an_emailed_file_that_is_not_what_it_says_stays_in_the_email(self):
+        from release_notes import media
+        from test_media import jpeg
+        msg = message_from_bytes(reply_raw(), policy=default)
+        msg.add_attachment(b"<svg onload=alert(1)>" + b" " * 30000, maintype="image", subtype="jpeg", filename="photo.jpg")
+        msg.add_attachment(jpeg(1200, 900, pad=100), maintype="image", subtype="jpeg", filename="real.jpg")
+        outcome, s3 = self.run_one(ses_event(), msg.as_bytes())
+        note = self.store.notes[("u1", "2026-10-07", "m1")]
+        self.assertEqual(outcome, "note")
+        self.assertEqual([m["key"] for m in note["media"]], ["media/u1/2026-10-07/m1/1.jpg"])
+        self.assertEqual(s3.objects["media/u1/2026-10-07/m1/1.jpg"]["Body"], jpeg(1200, 900, pad=100))
+        self.assertEqual([a.get("refused", False) for a in note["attachments"]], [True, False])
+        self.assertEqual(media.others(note), 1)
 
 
 if __name__ == "__main__":

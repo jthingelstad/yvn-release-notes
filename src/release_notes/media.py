@@ -13,7 +13,9 @@ else stay listed in `attachments` and live in the raw message only.
 Small images are signature logos and icons, not photos: an image whose
 longest side is under MIN_SIDE pixels (read from its header, standard
 library only) is left out, and one whose size cannot be read is kept only
-if it is big enough to be a photo.
+if it is big enough to be a photo. So is a file whose first bytes are not
+the photo or recording it claims to be (looks_like, as for uploads): its
+attachment entry is marked `refused`.
 
 On the web (Jamie, 2026-10-09: "add a file to an entry via the web ...
 image, audio, PDF"), the browser sends each file straight to the bucket,
@@ -30,9 +32,27 @@ audit). Notes from before keep their `media/<user>/web/` keys, which every
 reader takes as it takes any key under `media/<user>/`. A PDF is kind
 `file`, as an imported one is.
 
-Nobody but the owner sees a file: the web app asks the API, which checks the
-session and signs a link that lasts 15 minutes (App.media_links, with
-web.media_file for a fresh one).
+A new note or one already there takes photos, recordings and PDFs, up to
+50 MB each and 20 a note, and a note with files may have no words. A form
+lasts 5 minutes, and since sign-up is open each subscriber gets at most
+200 forms or 2 GB of declared size a UTC day (web.UPLOADS_A_DAY,
+UPLOAD_BYTES_A_DAY; past either, 429 `upload-limit`). The page's CSP
+connect-src and the bucket's CORS name each other for this. upload_type
+drops codec parameters (`audio/webm;codecs=opus`), which a recording made
+on the page carries.
+
+Nobody but the owner sees a file, and never by a public URL (Jamie,
+2026-10-09: signed links, "the right approach", for every file). Each file
+on a note in an API answer carries `url`, a link signed on the bucket's own
+host, only for keys under the subscriber's own `media/<user>/`
+(App.media_links); the key itself is never a field of an answer. A link is
+signed for 15 minutes and a warm function hands out the same one for 5, so
+the browser reuses its copy (2026-10-09: photos had been one API call each,
+and a page of them started several cold functions at once). Past nine
+minutes on the page, or when a link fails, the page asks
+web.media_file, which checks the session and the key's owner and
+redirects to a fresh link. The email's "On this day" links to the day
+("See 2 photos") and carries no file.
 Deleting a note or the account deletes its files too.
 """
 

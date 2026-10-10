@@ -21,7 +21,8 @@ A reply is filed only when all of these hold:
     the From domain, its parent or a subdomain. A DMARC FAIL stays a fail
     whatever DKIM says;
   - it is not an automatic reply (an out-of-office, a vacation notice):
-    Auto-Submitted anything but "no", X-Autoreply, or Precedence auto_reply,
+    Auto-Submitted anything but "no", X-Autoreply, X-Autorespond, or
+    Precedence auto_reply,
     bulk or junk. The daily email also asks Exchange not to send those.
 
 Those checks read the headers alone, and the 72 hours are checked last of
@@ -35,12 +36,16 @@ subscriber who is not stopped, gets a short email back
 (compose.late_message): too late for that day's notes, and a link to the
 day on the web, where it can still go in. It threads under the reply
 (In-Reply-To), so their words are right there, and is marked
-Auto-Submitted: auto-replied (RFC 3834). A forged or unauthenticated sender
+Auto-Submitted: auto-replied (RFC 3834) and the daily email's
+X-Auto-Response-Suppress, and goes through the configuration set tagged
+`account`. A forged or unauthenticated sender
 never gets one (no backscatter), and neither does an automatic reply. At
 most one per reply address (`late_notice_at` on the token, set
 conditionally) and LATE_NOTICES_A_DAY per subscriber a UTC day (a RATE
-counter). Whatever goes wrong sending it is logged and the reply is still
-tagged ignored, so SES never retries the delivery over it.
+counter, `RATE#latenotice:<user>`). Logged as {"event": "late-notice"}
+with the user id and `sent`, `skipped` (`stopped`, `limited`,
+`already-sent`) or `failed`. Whatever goes wrong sending it is logged and
+the reply is still tagged ignored, so SES never retries the delivery over it.
 
 Everything else is tagged outcome=ignored and expires from S3 in 30 days.
 Filed messages are tagged outcome=note and kept. Their photos and recordings

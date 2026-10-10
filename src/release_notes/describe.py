@@ -8,8 +8,10 @@ processed by a model without their say (AGENTS.md). The description is one
 or two sentences on the photo's entry in the note's media (`description`,
 "" when the model could not or would not describe it, so it is not tried
 again). It is searched, it is the photo's alt text, and search results show
-it when it matched (Jamie: "descriptions only on search results"); it is
-not shown anywhere else.
+it, in italics and marked, when it matched (Jamie: "descriptions only on
+search results"); it is not shown anywhere else on the page. In the zip it
+is the Markdown's alt text and on the JSON's file entry. The settings copy
+says the photos go to "an AI", without naming it.
 
 Two ways in, one function:
 
@@ -34,9 +36,12 @@ starts a photo (a pass, or the stream for a new note), the note is read
 again just before each photo goes to the model, so a photo described
 meanwhile is not sent twice.
 
-The key is `api_key` in the Secrets Manager secret named by `SECRET`, read
-by the function when it runs. Until it holds a real key (one starting
-`sk-ant-`), nothing is sent and photos stay waiting: a pass logs `no-key`.
+The key is `api_key` in the Secrets Manager secret named by `SECRET`
+(`yvn-release-notes-anthropic`, made by hand outside the stack; Jamie keeps
+its value), read by the function when it runs. Until it holds a real key
+(one starting `sk-ant-`), nothing is sent and photos stay waiting: a pass
+logs `no-key`, and once the key is in, turning the setting off and on
+describes them.
 Invoked with `{"check": true}`, it describes a made-up blue square through
 the whole path and returns what came back, writing nothing: run it after
 the key changes, before anyone's photos go.

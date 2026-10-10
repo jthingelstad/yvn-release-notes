@@ -2,7 +2,8 @@
 
 Each reply is stored as its own note (store.py), so nothing is lost and a
 later phase can show them apart. Read together they are one day: the texts
-in the order they arrived, separated by a blank line. A reply with no text
+in the order they were written (written_at; note ids are random, so never
+key order), separated by a blank line. A reply with no text
 (a photo alone) adds nothing to the text, and a reply sent twice (same text)
 is shown once.
 
@@ -14,7 +15,8 @@ any kind of data can come from any channel):
     written_at   when it was written (UTC); notes filed before 2026-10-09
                  have received_at instead, which written_at() reads
     tz           the zone it was written in, so its time reads as it did
-                 there; without one, the subscriber's
+                 there (email: the subscriber's; web: the browser's; an
+                 import: the entry's); without one, the subscriber's
     place        optional: where it was written, with all that is known
                  (Jamie, 2026-10-09: "we don't lose the resolution"):
                  label (the writer's own name for it: "Cabin"), venue

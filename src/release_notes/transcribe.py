@@ -4,8 +4,11 @@
 Off unless the subscriber sets `transcribe` in settings: notes are never
 processed by a model without their say (AGENTS.md). Jamie, 2026-10-09: "I
 don't care if they keep it", so the account has no AI services opt-out and
-Amazon may keep the audio; the settings copy says recordings are sent off
-to be written out.
+Amazon may keep the audio. Jamie wanted the settings copy casual and the
+service unnamed ("They're sent off to be transcribed").
+
+The words show in italics under the player (Jamie: so it "isn't text you
+typed"), are searched, and go in both exports; not in the email.
 
 One function, two triggers:
 

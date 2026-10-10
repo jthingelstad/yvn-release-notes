@@ -12,9 +12,14 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
 
 ## What it does
 
-1. **Sign up or sign in.** The front page asks for the birthday first,
-   explains the number it makes, then asks for the email; "Sign in"
-   (`/#sign-in`) is the email alone (AGENTS.md has the detail). We send a
+1. **Sign up or sign in.** The front page asks for the birthday first
+   (month, day and year fields), then explains the number once (decades,
+   years, days, the next release, all from `/api/sample`), then asks for
+   the email. Nothing is written before sign-in: the birthday waits in that
+   browser's localStorage (`pendingBirthday`, a day at most, since the
+   emailed link often opens in another tab), and setup shows it as a
+   sentence ("Not right?" opens the fields) and saves it with the city and
+   time. "Sign in" (`/#sign-in`) is the email alone. We send a
    link and a six-digit code. The code covers the case where you asked on
    the laptop and read the mail on the phone. A new address then confirms
    or picks:
@@ -44,8 +49,8 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
 8. **The daily email** gains a "Pause or manage" link and one-click
    `List-Unsubscribe`. A hard bounce or complaint stops the subscriber.
 9. **Since**: tags (`/tag/?t=`) and search (`/search/`), photos,
-   recordings and PDFs added on the web, recording on the page. AGENTS.md
-   has their rules.
+   recordings and PDFs added on the web (`media.py`), recording on the
+   page (Front end, below). AGENTS.md has their rules.
 
 ## Defaults (Jamie can change any)
 
@@ -62,7 +67,7 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
   replies, web uploads and imports; any channel may bring them (Jamie,
   2026-10-09).
 - A link in a note shows by name: the words you linked, or the page's
-  title, fetched once when the note is saved (`links.py`; AGENTS.md has the
+  title, fetched once when the note is saved (`links.py` has the
   guards). The text keeps the address as written, and the exports carry
   both. No Markdown.
 - Page counts go to Tinylytics site 3816, its own site beside the main
@@ -177,6 +182,64 @@ notes.yourversionnumber.com
   `rn-in` hint in localStorage (the cookie is HttpOnly) keeps the form
   hidden until `/api/me` answers.
 - **Logs**: ids, routes and outcomes. Never note text, addresses or cities.
+
+## Front end
+
+`web/` (decided 2026-10-09, replacing hand-written pages and one `app.js`):
+a single-page React app on the thingy stack (React 19, Vite, TypeScript,
+TanStack Router and Query). `web/src/main.tsx` holds the routes, `pages/`
+one component a page, `components/` the shared pieces, `lib/` the API
+client and helpers, `styles/site.css` the one stylesheet, and the two
+fonts are served from here.
+
+- CloudFront's function answers every address that is not a file with
+  `index.html` (the dev server does the same), and the router shows the
+  page.
+- The signed-in pages sit behind one gate in `main.tsx` that has the
+  profile before any of them shows. Each page's data (`lib/queries.ts`)
+  loads before it shows, from the moment its link is pointed at. Every
+  page but the front one, Not found and the error page is its own chunk.
+- Back and forward restore the scroll, and a new page moves focus to its
+  heading.
+- A note added, edited or deleted shows at once and comes back, saying
+  why, if the write fails (`lib/notecache.ts`, `components/notelist.tsx`).
+  A note's text is drawn by `NoteBody` (`components/notes.tsx`) from its
+  `parts`.
+- A page that breaks shows the app's error page (`pages/AppError.tsx`, the
+  router's `defaultErrorComponent`), which reloads or goes to Today. A tab
+  left open on an earlier build loads the app again when it reaches for a
+  page's code that is gone.
+- The city search is React Aria's `Autocomplete`
+  (`components/placepicker.tsx`): the places stay on the page under the
+  field, arrow keys move through them and Enter picks. It is its own
+  chunk, so React Aria loads only with setup and settings. React Aria
+  would add a `<style>` tag the CSP refuses; `index.html` carries an
+  element with its id so it does not, and `site.css` has the rule.
+- **The CSP** is `'self'`: no inline script or style (nothing inlined by
+  the build, no `style` props), nothing remote. The exceptions it names:
+  Tinylytics (connect) and the mail bucket's host (img and media for
+  signed file links, connect for uploads), plus `blob:` in media-src.
+- **Recording on the page** (Jamie, 2026-10-09): the new-note form's
+  Record button, shown only where the browser has MediaRecorder, records
+  the microphone up to 30 minutes, as MP4 where the browser makes it
+  (Safari, newer Chrome) else WebM or Ogg. Each recording plays back from
+  a `blob:` URL and can be removed before the note is added; adding the
+  note sends it like a chosen file. The Permissions-Policy allows the
+  microphone to the page itself and turns off the camera, location,
+  payment and USB. The e2e test records Chromium's fake microphone.
+- **Home Screen**: `web/public/manifest.webmanifest` (standalone, opening
+  on `/today/`) and the icons in `web/public/icons/`, drawn by
+  `scripts/make_icons.mjs` (the version number's "v" and its tangerine
+  dot). No service worker: every page needs the API, and one would only
+  risk an old build. On an iPhone the Home Screen app keeps its own
+  cookies, so the emailed link signs in Safari, not the app; there the
+  sign-in page points at the code.
+- **Page counts** (`lib/pagecount.ts`) go to Tinylytics on each page shown,
+  without the embed script: the page's address without its query string,
+  and on a visit's first page the referring site's origin only. No
+  cookies, nothing that names a person.
+- `npm run verify` (prettier, oxlint, `tsc`, vitest, the build) is part of
+  `validate`. `deploy.sh` builds from HEAD and syncs `dist/web`.
 
 ## API
 

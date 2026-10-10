@@ -6,7 +6,8 @@ One function, a small router. API Gateway hands it the HTTP API's payload
 - Only CloudFront is answered. The HTTP API's own execute-api URL stays
   reachable (it is CloudFront's origin), so CloudFront sends X-Origin-Verify
   with the stack's generated secret (ORIGIN_SECRET here) and anything
-  without it gets a fixed 403 before any route. Behind that,
+  without it gets a fixed 403 before any route, compared in constant time,
+  the header never logged. Behind that,
   CloudFront-Viewer-Address and Origin are CloudFront's own. With no
   ORIGIN_SECRET (the tests, scripts/dev_server.py) there is no CloudFront
   and no check.

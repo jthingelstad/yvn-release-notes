@@ -10,7 +10,8 @@ safe to stop and repeat:
       so a repeat writes the same objects;
    b. its links: the writer's own words where it named them, else the
       page's title (links.collect);
-   c. the note, only if it is not there (Store.put_note);
+   c. the note, only if it is not there (Store.put_note, which turns
+      floats into Decimal all the way down);
    d. its entry goes on the ledger, `IMPORT#<app>#<journal>`.
 2. Then each day's weather from the plan (dayone.weather_days: that day's
    first place), for finished days with none kept yet. It runs straight

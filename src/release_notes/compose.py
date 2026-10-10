@@ -26,8 +26,12 @@ Rules for it:
   every earlier release with notes for today's patch number
   (version.same_day_before), newest first, after the streak, only when
   there are some. The first SHOWN each get a block sharing PAST_MAX
-  characters, with that day's tags on their own line; the rest are year
-  links. Links in notes show by name (links.py): the words the writer
+  characters, with that day's tags on their own line as links to their
+  pages (Jamie: "just have the tags on the posts", no trip counts or tag
+  anniversaries); a closing line of hashtags alone is left out of the
+  words, so no tag shows twice. The rest are year links. One read of every
+  note's key and media (Store.note_index) gives the counts and which days
+  have notes; only the shown days are read whole. Links in notes show by name (links.py): the words the writer
   linked, or the page title saved when the note was written, else the
   short address.
 - Weather (weather.py) is one quiet line of today's forecast under the

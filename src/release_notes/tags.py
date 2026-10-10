@@ -10,6 +10,10 @@ out again on every write and edit, so removing a hashtag removes the tag.
 A hashtag is `#` and a word that has a letter in it, not inside a word or an
 address: `#Maine-2016` is the tag `maine-2016`; `#1`, `PR #31`, a page's
 `#section` and a Markdown heading (`# Title`) are not tags.
+
+No index: one person's notes are read whole. The tag list brings back keys
+and tags only (Store.note_tags) and a tag's page only its notes
+(Store.tagged_notes, a filter).
 """
 
 import re

@@ -21,7 +21,15 @@ a few fields (Store.census_items), never a note's text.
     ReplyRate30     of the emails sent in the 30 days before today, the
                     percent whose day has a note. Left out when none went.
 
-"Today" is each subscriber's own, in their zone.
+"Today" is each subscriber's own, in their zone. The line goes out only
+after a scheduled run, never a dry run or send_now, and a failure is logged
+and never fails the run.
+
+The dashboard (`yvn-release-notes`, behind AWS sign-in) has two other
+sources: SES's `mail-metrics` event destination (sends, deliveries,
+bounces, complaints, rejects, by the `release-notes-mail` tag, `daily` or
+`account`; never opens or clicks), and Logs Insights over the functions'
+logs.
 """
 
 from datetime import datetime, time, timedelta

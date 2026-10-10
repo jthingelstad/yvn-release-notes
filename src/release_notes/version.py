@@ -51,15 +51,17 @@ def compute_version(birthday: date, today: date) -> Version:
     )
 
 
-def a_year_before(birthday: date, today: date) -> date | None:
-    """The day a year back with the same patch number: 5.3.279 for 5.4.279.
-    By version, not calendar: the same count of days into the previous
-    release. None before the first birthday, or on the last day of a 366-day
-    cycle, which the 365-day one before it has no match for."""
+def same_day_before(birthday: date, today: date) -> list[date]:
+    """The days with today's patch number in every earlier release, newest
+    first: 5.3.279, 5.2.279 ... 0.0.279 for 5.4.279. By version, not
+    calendar: the same count of days into each release. A 365-day release
+    has no match for the last day of a 366-day one, so it is left out."""
     v = compute_version(birthday, today)
-    if v.age == 0:
-        return None
-    start = anniversary(birthday.year + v.age - 1, birthday.month, birthday.day)
-    end = anniversary(birthday.year + v.age, birthday.month, birthday.day)
-    day = start + timedelta(days=v.patch)
-    return day if day < end else None
+    out = []
+    for age in range(v.age - 1, -1, -1):
+        start = anniversary(birthday.year + age, birthday.month, birthday.day)
+        end = anniversary(birthday.year + age + 1, birthday.month, birthday.day)
+        day = start + timedelta(days=v.patch)
+        if day < end:
+            out.append(day)
+    return out

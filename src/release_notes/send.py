@@ -14,8 +14,10 @@ straight away, outside their send window. It is still once per local day.
 Sign-up does this (web.send_first), so a new subscriber's first email is
 today's, at once, with a welcome line, and the schedule starts tomorrow.
 
-The email carries the notes from a year ago, by version (5.3.279 for
-5.4.279), when there are any. A dry run reports that day, never the text.
+The email carries "On this day": the notes from every earlier release on
+today's patch number (5.3.279, 5.2.279 ... for 5.4.279), when there are
+any, and a line of lifetime counts. A dry run reports those days and the
+note count, never the text.
 
 A paused subscriber gets nothing on the days of the pause (pause_from through
 pause_through, in their own zone), send_now included.
@@ -33,12 +35,13 @@ import time as time_module
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import census, media, weather
-from .compose import MAIL_TAG, build_message, from_header, new_token, welcome_line
+from . import census, media, tags, weather
+from .compose import (MAIL_TAG, SHOWN, Lifetime, OnThisDay, PastDay, build_message, from_header, new_token,
+                      welcome_line)
 from .notes import combine, day_links
 from .store import Store, Subscriber
 from .streak import Streak, compute_streak, pause_days
-from .version import a_year_before, compute_version
+from .version import compute_version, same_day_before
 
 WINDOW = timedelta(hours=3)
 # Stop starting sends with this much of the function's time left; the next
@@ -86,19 +89,37 @@ def read_streak(store: Store, user_id: str, day: date) -> Streak | None:
         return None
 
 
-def read_last_year(store: Store, sub: Subscriber, day: date) -> tuple[date, str, list, dict, str | None] | None:
-    # Also a nicety: if last year's notes cannot be read, the email goes without.
+def read_history(store: Store, sub: Subscriber, day: date) -> tuple[OnThisDay | None, Lifetime | None]:
+    """"On this day" and the lifetime counts, from one read of every note's
+    key and media. Both are niceties: on any failure the email goes without."""
     try:
-        then = a_year_before(sub.birthday, day)
-        notes = store.day_notes(sub.user_id, then.isoformat()) if then else []
-        text, files = combine(notes), media.counts(notes)
-        if not (text or any(files.values())):
-            return None
-        kept = store.weather_between(sub.user_id, then.isoformat(), then.isoformat()).get(then.isoformat())
-        sky = weather.day_line(kept, weather.fahrenheit(sub.place or kept)) if kept else None
-        return then, text, day_links(notes), files, sky
+        index = store.note_index(sub.user_id)
     except Exception as e:
-        log(event="last-year-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
+        log(event="history-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
+        return None, None
+    days = {d for d, _ in index}
+    life = Lifetime(notes=len(index), days=len(days), photos=sum(n for _, n in index),
+                    since=int(min(days)[:4])) if index else None
+    return read_on_this_day(store, sub, day, days), life
+
+
+def read_on_this_day(store: Store, sub: Subscriber, day: date, have: set[str]) -> OnThisDay | None:
+    try:
+        found = [d for d in same_day_before(sub.birthday, day) if d.isoformat() in have]
+        shown = []
+        for then in found[:SHOWN]:
+            notes = store.day_notes(sub.user_id, then.isoformat())
+            text, files = combine(notes), media.counts(notes)
+            if not (text or any(files.values())):
+                continue
+            kept = store.weather_between(sub.user_id, then.isoformat(), then.isoformat()).get(then.isoformat())
+            sky = weather.day_line(kept, weather.fahrenheit(sub.place or kept)) if kept else None
+            shown.append(PastDay(then, text, day_links(notes), files, sky, tuple(tags.found(text))))
+        if not shown:
+            return None
+        return OnThisDay(tuple(shown), tuple(found[SHOWN:]))
+    except Exception as e:
+        log(event="on-this-day-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
         return None
 
 
@@ -190,7 +211,7 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
             continue
         if dry_run:
             streak = read_streak(store, sub.user_id, here.date())
-            last_year = read_last_year(store, sub, here.date())
+            past, life = read_history(store, sub, here.date())
             forecast = read_weather(store, sub, here.date(), fetch, False, clock)
             results.append(
                 {
@@ -200,8 +221,10 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
                     "local": here.isoformat(),
                     "streak": streak.current if streak else None,
                     "longest": streak.longest if streak else None,
-                    "last_year": last_year[0].isoformat() if last_year else None,
-                    "last_year_weather": bool(last_year and last_year[4]),
+                    "on_this_day": [p.day.isoformat() for p in past.shown] + [d.isoformat() for d in past.more]
+                    if past else [],
+                    "on_this_day_weather": bool(past and any(p.sky for p in past.shown)),
+                    "notes": life.notes if life else None,
                     "forecast": bool(forecast),
                 }
             )
@@ -237,7 +260,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None)
     # The slow parts come before the claim, so a run that times out in them
     # has claimed nothing and the next run sends this one.
     streak = read_streak(store, sub.user_id, date.fromisoformat(day))
-    last_year = read_last_year(store, sub, date.fromisoformat(day))
+    past, life = read_history(store, sub, date.fromisoformat(day))
     forecast = read_weather(store, sub, date.fromisoformat(day), fetch or weather.fetch_morning, True, clock)
     if not store.claim_day(sub.user_id, day):
         log(event="skip", user=sub.user_id, date=day, reason="already-claimed")
@@ -254,7 +277,8 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None)
             birthday=sub.birthday,
             day=date.fromisoformat(day),
             streak=streak,
-            last_year=last_year,
+            past=past,
+            lifetime=life,
             forecast=forecast,
             # Nothing sent before means this is the one sign-up sends.
             welcome=welcome_line(sub.send_time, os.environ["FROM_ADDRESS"]) if previous is None else None,

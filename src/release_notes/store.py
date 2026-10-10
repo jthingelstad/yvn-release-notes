@@ -284,6 +284,23 @@ class Store:
         """The days this subscriber has a note for."""
         return {date.fromisoformat(d) for d in self._dates(user_id, "NOTE#")}
 
+    def note_index(self, user_id: str) -> list[tuple[str, int]]:
+        """(day, photos) for every note: its key and media list only, no
+        text. The email's lifetime counts and which earlier days have notes."""
+        items, kwargs = [], {
+            "KeyConditionExpression": "pk = :u AND begins_with(sk, :n)",
+            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":n": "NOTE#"},
+            "ProjectionExpression": "sk, #m",
+            "ExpressionAttributeNames": {"#m": "media"},
+        }
+        while True:
+            page = self.table.query(**kwargs)
+            items.extend(page.get("Items", []))
+            if "LastEvaluatedKey" not in page:
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        return [(i["sk"].split("#")[1], sum(1 for m in i.get("media") or [] if m.get("kind") == "image")) for i in items]
+
     def sent_days(self, user_id: str) -> set[str]:
         """The days an email went out, as ISO dates."""
         return self._dates(user_id, "DAY#")

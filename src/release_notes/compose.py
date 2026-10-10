@@ -19,25 +19,33 @@ Rules for it:
 - Non-ASCII goes in as entities, so the HTML part stays 7-bit.
 - The plain-text part says the same thing. Replies are parsed from the
   replier's own plain text, never from this HTML.
-- "A year ago" shows the notes from the same patch number a release back
-  (version.a_year_before), after the streak, only when there are some.
-  Links in them show by name (links.py): the words the writer linked, or
-  the page title saved when the note was written, else the short address.
+- Under the streak, one quiet line of lifetime counts: notes, days, photos
+  and the year they began (Jamie, 2026-10-09: "a good reminder of
+  creating value").
+- "On this day" (Jamie, 2026-10-09, option A of the design session) shows
+  every earlier release with notes for today's patch number
+  (version.same_day_before), newest first, after the streak, only when
+  there are some. The first SHOWN each get a block sharing PAST_MAX
+  characters, with that day's tags on their own line; the rest are year
+  links. Links in notes show by name (links.py): the words the writer
+  linked, or the page title saved when the note was written, else the
+  short address.
 - Weather (weather.py) is one quiet line of today's forecast under the
-  date, and that day's weather in "A year ago", both as text; the footer
+  date, and each past day's weather in "On this day", both as text; the footer
   credits Open-Meteo whenever either shows. Without it, the email is the
   same as ever.
 """
 
 import re
 import secrets
+from dataclasses import dataclass
 from base64 import b32encode
 from datetime import date
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 from html import escape
 
-from . import links, weather
+from . import links, tags, weather
 from .streak import Streak
 from .version import Version, compute_version
 
@@ -137,20 +145,66 @@ def long_date(day: date) -> str:
     return f"{day:%A, %B} {day.day}"
 
 
-# --- a year ago -------------------------------------------------------------------
+# --- on this day -----------------------------------------------------------------
 
-PAST_MAX = 1000  # characters of last year's notes before "Read the rest"
+PAST_MAX = 1000  # characters of past notes in all, shared by the days shown
+SHOWN = 4  # past days with a block; any more are year links
 
 
-def past_text(text: str) -> tuple[str, bool]:
-    """Last year's notes, cut between words near PAST_MAX. True if cut."""
-    if len(text) <= PAST_MAX:
+@dataclass(frozen=True)
+class PastDay:
+    """One earlier release's day: its notes' text, their links, how many
+    photos and recordings (media.counts), its weather as a line if it was
+    kept, and its tags. The email never carries a file: it links to the day."""
+    day: date
+    text: str
+    links: list | None = None
+    files: dict | None = None
+    sky: str | None = None
+    tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OnThisDay:
+    shown: tuple[PastDay, ...]  # newest first, at most SHOWN
+    more: tuple[date, ...] = ()  # the older days beyond those, newest first
+
+    @property
+    def count(self) -> int:
+        return len(self.shown) + len(self.more)
+
+
+@dataclass(frozen=True)
+class Lifetime:
+    notes: int
+    days: int
+    photos: int
+    since: int  # the year of the first note
+
+
+def count_phrase(n: int, one: str, many: str) -> str:
+    return f"{n:,} {one if n == 1 else many}"
+
+
+def lifetime_line(life: Lifetime) -> str:
+    """'1,064 notes across 908 days since 2011, and 847 photos.'"""
+    line = f"{count_phrase(life.notes, 'note', 'notes')} across {count_phrase(life.days, 'day', 'days')} since {life.since}"
+    return line + (f", and {count_phrase(life.photos, 'photo', 'photos')}." if life.photos else ".")
+
+
+def past_text(text: str, limit: int = PAST_MAX) -> tuple[str, bool]:
+    """Past notes, cut between words near `limit`. True if cut."""
+    if len(text) <= limit:
         return text, False
-    return text[:PAST_MAX].rsplit(None, 1)[0].rstrip(), True
+    return text[:limit].rsplit(None, 1)[0].rstrip(), True
 
 
 def past_link(day: date) -> str:
     return f"{APP}/day/?d={day.isoformat()}"
+
+
+def tag_link(tag: str) -> str:
+    return f"{APP}/tag/?t={tag}"
 
 
 def ascii_html(text: str) -> str:
@@ -169,12 +223,6 @@ def linked(text: str, found: list[dict] | None = None) -> str:
         if seg.get("site"):
             out.append(f'<span class="ink-2" style="color:{INK_2};"> &middot; {ascii_html(seg["site"])}</span>')
     return "".join(out)
-
-
-# The day, its notes' text, their links, how many photos and recordings
-# (media.counts), and that day's weather as a line, if it was kept. The
-# email never carries a file: it links to the day.
-LastYear = tuple[date, str, list, dict, str | None]
 
 
 FILE_WORDS = (("image", "photo"), ("audio", "recording"), ("file", "file"))
@@ -204,23 +252,47 @@ def past_more(cut: bool, files: dict | None) -> str:
     return f"{verb} {phrase}"
 
 
-def past_body(birthday: date, then: date, text: str, found: list | None = None, files: dict | None = None,
-              sky: str | None = None) -> str:
-    shown, cut = past_text(text)
-    shown = links.plain(shown, found)
-    notes = f"{shown}{' ...' if cut else ''}\n\n" if shown else ""
-    return (
-        f"A year ago you were {compute_version(birthday, then)} ({long_date(then)}, {then.year}):\n"
-        f"{sky + '.' + chr(10) if sky else ''}"
-        "\n"
-        f"{notes}"
-        f"{past_more(cut, files)}: {past_link(then)}\n"
-        "\n"
-    )
+def years_ago(v: Version, then: Version) -> str:
+    n = v.age - then.age
+    return "A year ago" if n == 1 else f"{n} years ago"
 
 
-def credited(forecast: str | None, last_year: LastYear | None) -> bool:
-    return bool(forecast or (last_year and len(last_year) > 4 and last_year[4]))
+def section_lede(v: Version, past: OnThisDay) -> str:
+    n = past.count
+    return f"{'One earlier release has' if n == 1 else f'{n} earlier releases have'} notes for day {v.patch}."
+
+
+def budget(past: OnThisDay) -> int:
+    return PAST_MAX // max(1, len(past.shown))
+
+
+def shown_text(p: PastDay, limit: int) -> tuple[str, bool]:
+    """The words shown for a past day: its closing tag lines left off (they
+    show as the tag line), cut near `limit`."""
+    return past_text(tags.without_closing(p.text), limit)
+
+
+def past_body(v: Version, birthday: date, past: OnThisDay) -> str:
+    out = [f"On this day: {section_lede(v, past)}\n\n"]
+    for p in past.shown:
+        then = compute_version(birthday, p.day)
+        shown, cut = shown_text(p, budget(past))
+        shown = links.plain(shown, p.links)
+        out.append(
+            f"{years_ago(v, then)} you were {then} ({long_date(p.day)}, {p.day.year}):\n"
+            + (f"{p.sky}.\n" if p.sky else "")
+            + "\n"
+            + (f"{shown}{' ...' if cut else ''}\n\n" if shown else "")
+            + (" ".join(f"#{t}" for t in p.tags) + "\n\n" if p.tags else "")
+            + f"{past_more(cut, p.files)}: {past_link(p.day)}\n\n"
+        )
+    if past.more:
+        out.append(f"And {len(past.more)} more:\n" + "".join(f"{d.year}: {past_link(d)}\n" for d in past.more) + "\n")
+    return "".join(out)
+
+
+def credited(forecast: str | None, past: OnThisDay | None) -> bool:
+    return bool(forecast or (past and any(p.sky for p in past.shown)))
 
 
 def unsubscribe_link(token: str) -> str:
@@ -228,8 +300,9 @@ def unsubscribe_link(token: str) -> str:
     return f"{APP}/unsubscribe/#t={token}"
 
 
-def body(v: Version, birthday: date, streak: Streak | None = None, last_year: LastYear | None = None,
-         forecast: str | None = None, welcome: str | None = None, token: str | None = None) -> str:
+def body(v: Version, birthday: date, streak: Streak | None = None, past: OnThisDay | None = None,
+         forecast: str | None = None, welcome: str | None = None, token: str | None = None,
+         lifetime: Lifetime | None = None) -> str:
     opening = f"You're {v} today."
     if line := birthday_line(v):
         opening = f"{opening} {line}"
@@ -237,9 +310,13 @@ def body(v: Version, birthday: date, streak: Streak | None = None, last_year: La
         opening = f"{opening}\n{forecast}"
     if welcome:
         opening = f"{welcome}\n\n{opening}"
-    streak_text = " ".join(streak_lines(v, streak)) + "\n\n" if streak else ""
-    if last_year:
-        streak_text += past_body(birthday, *last_year)
+    streak_text = " ".join(streak_lines(v, streak)) + "\n" if streak else ""
+    if lifetime:
+        streak_text += lifetime_line(lifetime) + "\n"
+    if streak_text:
+        streak_text += "\n"
+    if past:
+        streak_text += past_body(v, birthday, past)
     return (
         f"{opening}\n"
         "\n"
@@ -256,7 +333,7 @@ def body(v: Version, birthday: date, streak: Streak | None = None, last_year: La
         "Release Notes, from Your Version Number\n"
         f"Pause or manage: {APP}/settings/\n"
         + (f"Unsubscribe: {unsubscribe_link(token)}\n" if token else "")
-        + (f"{weather.CREDIT}: {weather.CREDIT_URL}\n" if credited(forecast, last_year) else "")
+        + (f"{weather.CREDIT}: {weather.CREDIT_URL}\n" if credited(forecast, past) else "")
     )
 
 
@@ -291,65 +368,88 @@ def year_dots(v: Version) -> str:
     )
 
 
-def streak_html(v: Version, birthday: date, s: Streak) -> str:
-    # Each day in the run by its patch number, then today's, still open.
-    past = "".join(
-        f'<span class="vnum" style="font-weight:700;color:{BLUE};">{compute_version(birthday, d).patch}</span>'
-        f'<span class="sep" style="color:{ORANGE};"> {MIDDOT} </span>'
-        for d in s.days[-STREAK_SHOWN:]
-    )
-    today = (
-        f'<span class="today" style="font-weight:700;color:{ORANGE_INK};text-decoration:underline;'
-        f'text-decoration-style:dotted;text-underline-offset:5px;">{v.patch}</span>'
-    )
-    # With no run going, a lone "today" number says nothing: the sentence alone.
-    row = (
-        f'<p class="streak-row" style="margin:0 0 8px;font-family:{MONO};font-size:17px;line-height:1.5;'
-        f'letter-spacing:-0.02em;">{past}{today}</p>\n'
-        if s.days
-        else ""
-    )
-    head, tail = streak_lines(v, s)
-    return f"""<tr><td style="padding:36px 0 0;">
-{row}<p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
+def streak_html(v: Version, birthday: date, s: Streak | None, life: Lifetime | None = None) -> str:
+    """The streak, then the lifetime counts under it, quietly."""
+    if not (s or life):
+        return ""
+    parts = []
+    if s:
+        # Each day in the run by its patch number, then today's, still open.
+        past = "".join(
+            f'<span class="vnum" style="font-weight:700;color:{BLUE};">{compute_version(birthday, d).patch}</span>'
+            f'<span class="sep" style="color:{ORANGE};"> {MIDDOT} </span>'
+            for d in s.days[-STREAK_SHOWN:]
+        )
+        today = (
+            f'<span class="today" style="font-weight:700;color:{ORANGE_INK};text-decoration:underline;'
+            f'text-decoration-style:dotted;text-underline-offset:5px;">{v.patch}</span>'
+        )
+        # With no run going, a lone "today" number says nothing: the sentence alone.
+        if s.days:
+            parts.append(f'<p class="streak-row" style="margin:0 0 8px;font-family:{MONO};font-size:17px;line-height:1.5;'
+                         f'letter-spacing:-0.02em;">{past}{today}</p>\n')
+        head, tail = streak_lines(v, s)
+        parts.append(f'''<p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
 <strong class="ink" style="color:{INK};">{escape(head)}</strong> {"&nbsp;".join(escape(tail).rsplit(" ", 1))}
 </p>
-</td></tr>
-"""
+''')
+    if life:
+        parts.append(f'<p class="ink-2" style="margin:{10 if s else 0}px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;'
+                     f'color:{INK_2};">{ascii_html(lifetime_line(life))}</p>\n')
+    return f'<tr><td style="padding:36px 0 0;">\n{"".join(parts)}</td></tr>\n'
 
 
-def past_html(birthday: date, then: date, text: str, found: list | None = None, files: dict | None = None,
-              sky: str | None = None) -> str:
-    v = compute_version(birthday, then)
+def past_day_html(v: Version, birthday: date, p: PastDay, limit: int) -> str:
+    then = compute_version(birthday, p.day)
     sky_html = (
-        f'<p class="ink-2" style="margin:0 0 16px;font-family:{FONT};font-size:14px;line-height:1.45;color:{INK_2};">'
-        f"{ascii_html(sky)}</p>\n"
-        if sky
+        f'<p class="ink-2" style="margin:0 0 12px;font-family:{FONT};font-size:14px;line-height:1.45;color:{INK_2};">'
+        f"{ascii_html(p.sky)}</p>\n"
+        if p.sky
         else ""
     )
-    shown, cut = past_text(text)
-    paras = [p.strip() for p in re.split(r"\n\s*\n", shown) if p.strip()]
-    if cut:
+    shown, cut = shown_text(p, limit)
+    paras = [x.strip() for x in re.split(r"\n\s*\n", shown) if x.strip()]
+    if cut and paras:
         paras[-1] += "\u2026"
-    notes = "\n".join(
+    notes = "".join(
         f'<p class="ink" style="margin:0 0 12px;font-family:{FONT};font-size:17px;line-height:1.5;color:{INK};">'
-        + "<br>".join(linked(line, found) for line in p.split("\n"))
-        + "</p>"
-        for p in paras
+        + "<br>".join(linked(line, p.links) for line in x.split("\n"))
+        + "</p>\n"
+        for x in paras
     )
-    more = escape(past_more(cut, files))
-    return f"""<tr><td style="padding:48px 0 0;">
-<p class="ink-2" style="margin:0 0 6px;font-family:{FONT};font-size:14px;color:{INK_2};">
-<strong class="ink" style="color:{INK};">A year ago</strong> &middot; {escape(long_date(then))}, {then.year}
+    tag_html = (
+        f'<p style="margin:0 0 10px;font-family:{FONT};font-size:14px;line-height:1.6;">'
+        + " ".join(f'<a class="link" href="{escape(tag_link(t))}" style="color:{BLUE};text-decoration:none;">#{escape(t)}</a>'
+                   for t in p.tags)
+        + "</p>\n"
+        if p.tags
+        else ""
+    )
+    return f"""<p class="ink-2" style="margin:28px 0 6px;font-family:{FONT};font-size:14px;color:{INK_2};">
+<strong class="ink" style="color:{INK};">{escape(years_ago(v, then))}</strong> &middot; {escape(long_date(p.day))}, {p.day.year}
 </p>
-<p style="margin:0 0 {10 if sky else 16}px;">{vnum_html(v, 30)}</p>
-{sky_html}{notes}
-<p class="ink-2" style="margin:4px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
-<a class="link" href="{escape(past_link(then))}" style="color:{BLUE};font-weight:700;text-decoration:underline;">{more}</a>
+<p style="margin:0 0 {8 if p.sky else 12}px;">{vnum_html(then, 26)}</p>
+{sky_html}{notes}{tag_html}<p class="ink-2" style="margin:2px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
+<a class="link" href="{escape(past_link(p.day))}" style="color:{BLUE};font-weight:700;text-decoration:underline;">{escape(past_more(cut, p.files))}</a>
 </p>
-</td></tr>
 """
 
+
+def past_html(v: Version, birthday: date, past: OnThisDay) -> str:
+    days = "".join(past_day_html(v, birthday, p, budget(past)) for p in past.shown)
+    more = (
+        f'<p class="ink-2" style="margin:24px 0 0;font-family:{FONT};font-size:15px;line-height:1.6;color:{INK_2};">'
+        f"And {len(past.more)} more: "
+        + " &middot; ".join(f'<a class="link" href="{escape(past_link(d))}" style="color:{BLUE};">{d.year}</a>' for d in past.more)
+        + "</p>\n"
+        if past.more
+        else ""
+    )
+    return f"""<tr><td style="padding:48px 0 0;">
+<p class="ink" style="margin:0 0 4px;font-family:{FONT};font-size:22px;line-height:1.2;font-weight:800;color:{INK};">On this day</p>
+<p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">{escape(section_lede(v, past))}</p>
+{days}{more}</td></tr>
+"""
 
 DARK_CSS = f"""
 :root {{ color-scheme: light dark; supported-color-schemes: light dark; }}
@@ -372,8 +472,9 @@ DARK_CSS = f"""
 
 
 def html_body(
-    v: Version, birthday: date, day: date, streak: Streak | None = None, last_year: LastYear | None = None,
+    v: Version, birthday: date, day: date, streak: Streak | None = None, past: OnThisDay | None = None,
     forecast: str | None = None, welcome: str | None = None, token: str | None = None,
+    lifetime: Lifetime | None = None,
 ) -> str:
     vs = escape(str(v))
     party = birthday_line(v)
@@ -394,7 +495,7 @@ def html_body(
     forecast_html = f'<br><span class="ink-2" style="color:{INK_2};">{ascii_html(forecast)}</span>' if forecast else ""
     credit_html = (
         f' &middot; <a class="link" href="{weather.CREDIT_URL}" style="color:{BLUE};">{weather.CREDIT}</a>'
-        if credited(forecast, last_year)
+        if credited(forecast, past)
         else ""
     )
     unsubscribe_html = (
@@ -442,8 +543,8 @@ What happened, what you made, who you saw. Whatever you send back becomes the re
 <p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">Just hit reply. A line is plenty, and photos and voice memos work too. Reply as often as you like; it all adds up to today&rsquo;s notes.</p>
 </td></tr>
 
-{streak_html(v, birthday, streak) if streak else ""}
-{past_html(birthday, *last_year) if last_year else ""}
+{streak_html(v, birthday, streak, lifetime)}
+{past_html(v, birthday, past) if past else ""}
 <tr><td class="ink-2" style="padding:48px 0 0;font-family:{FONT};font-size:13px;line-height:1.5;color:{INK_2};">
 Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>. <a class="link" href="{APP}/settings/" style="color:{BLUE};">Pause or manage</a>{unsubscribe_html}{credit_html}
 </td></tr>
@@ -466,9 +567,10 @@ def build_message(
     birthday: date,
     day: date,
     streak: Streak | None = None,
-    last_year: LastYear | None = None,
+    past: OnThisDay | None = None,
     forecast: str | None = None,
     welcome: str | None = None,
+    lifetime: Lifetime | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = from_header(from_addr)
@@ -482,8 +584,8 @@ def build_message(
     msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     # Exchange: no out-of-office or other automatic replies to this.
     msg["X-Auto-Response-Suppress"] = "OOF, AutoReply"
-    msg.set_content(body(v, birthday, streak, last_year, forecast, welcome, token))
-    msg.add_alternative(html_body(v, birthday, day, streak, last_year, forecast, welcome, token), subtype="html")
+    msg.set_content(body(v, birthday, streak, past, forecast, welcome, token, lifetime))
+    msg.add_alternative(html_body(v, birthday, day, streak, past, forecast, welcome, token, lifetime), subtype="html")
     return msg
 
 

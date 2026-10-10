@@ -5,6 +5,7 @@ import base64
 import json
 import os
 import struct
+import time
 import unittest
 import zlib
 from decimal import Decimal
@@ -186,12 +187,51 @@ class DescribeAllTest(DescribeCase):
     def test_short_on_time_it_hands_the_rest_to_another_pass(self):
         self.run_it({"describe_all": "u1"}, Context(describe.LEFT_FOR_NEXT - 1))
         self.assertEqual(self.model.calls, [])
-        self.assertEqual(self.lam.invoked[0]["Payload"], {"describe_all": "u1"})
+        payload = self.lam.invoked[0]["Payload"]
+        self.assertEqual((payload["describe_all"], len(payload["chain"])), ("u1", 32))
+        self.assertEqual(self.store.locks["describe:u1"]["holder"], payload["chain"])  # still the chain's
 
     def test_turned_off_meanwhile_it_stops(self):
         self.store.profiles["u1"]["describe"] = False
         self.run_it({"describe_all": "u1"}, Context(900))
         self.assertEqual((self.model.calls, self.lam.invoked), ([], []))
+        self.assertTrue(self.store.take_lock("describe:u1", "another", int(time.time()), 60))  # let go
+
+    def test_one_chain_at_a_time_however_often_it_is_turned_on(self):
+        # 2026-10-09 audit: each off and on started another chain over the same photos.
+        self.run_it({"describe_all": "u1"}, Context(describe.LEFT_FOR_NEXT - 1))  # the first chain, handed on
+        chain = self.lam.invoked[0]["Payload"]["chain"]
+        logged = self.run_it({"describe_all": "u1"}, Context(900))  # turned off and on again meanwhile
+        self.assertIn('"outcome":"already-running"', logged)
+        self.assertEqual((self.model.calls, len(self.lam.invoked)), ([], 1))
+        self.run_it({"describe_all": "u1", "chain": chain}, Context(900))  # the first chain's next pass
+        self.assertEqual(len(self.model.calls), 3)
+        self.run_it({"describe_all": "u1"}, Context(900))  # done and let go: a new chain may run, and finds nothing
+        self.assertEqual(len(self.model.calls), 3)
+        self.assertLessEqual(self.store.locks["describe:u1"]["expires_at"], time.time())
+
+    def test_a_failed_pass_lets_go_and_its_retry_takes_the_lock_back(self):
+        self.model.fail = (529, "overloaded_error")
+        with self.assertRaises(describe.ApiError):
+            self.run_it({"describe_all": "u1", "chain": "c1"}, Context(900))
+        self.model.fail = None
+        self.run_it({"describe_all": "u1", "chain": "c1"}, Context(900))
+        self.assertTrue(all(m["description"] for m in self.media()))
+
+    def test_a_photo_described_meanwhile_is_not_sent_again(self):
+        note = self.store.note("u1", "2016-07-04", "d1-A")
+        read_before = {**note, "media": [dict(m) for m in note["media"]]}
+        ask = self.model
+
+        def and_the_stream_too(body):  # the stream describes photo 2 while this pass does photo 1
+            self.store.set_media_text("u1", "2016-07-04", "d1-A", 2, "description", "A boat.")
+            return ask(body)
+
+        with mock.patch("builtins.print"):
+            done = describe.describe(read_before, "u1", store=self.store, s3=self.s3, claude=and_the_stream_too,
+                                     bucket=BUCKET)
+        self.assertEqual((done, len(self.model.calls)), (1, 1))
+        self.assertEqual(self.media("2016-07-04", "d1-A")[1]["description"], "A boat.")
 
     def test_a_photo_gone_from_the_bucket_is_skipped(self):
         del self.s3.objects[photo(1)["key"]]

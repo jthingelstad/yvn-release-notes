@@ -740,9 +740,19 @@ Resources:
                 # Files from the web (media.py): signs the form that sends one
                 # straight to the bucket, tagged pending (the form posts as
                 # this role, so it needs the put and the tag), reads its
-                # tags and first bytes, and tags it kept once a note takes it.
-                Action: [s3:PutObject, s3:PutObjectTagging, s3:GetObjectTagging]
+                # tags and first bytes, then copies the version it checked
+                # and deletes that version once a note takes it.
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectTagging
+                  - s3:GetObjectTagging
+                  - s3:GetObjectVersion
+                  - s3:DeleteObjectVersion
                 Resource: !Sub "${MailBucket.Arn}/media/*/web/*"
+              - Effect: Allow
+                # Where that copy is kept, tagged kept: no form writes here.
+                Action: [s3:PutObject, s3:PutObjectTagging]
+                Resource: !Sub "${MailBucket.Arn}/media/*/files/*"
               - Effect: Allow
                 # A new zip export replaces the last; deleting the account
                 # deletes it.
@@ -853,6 +863,10 @@ Resources:
       Role: !GetAtt ExportRole.Arn
       MemorySize: 1024
       Timeout: 900
+      # At most two builds at once, whoever asks. A build started past that
+      # is throttled, and Lambda tries an async event again for up to six
+      # hours (MaximumRetryAttempts counts function errors, not throttles).
+      ReservedConcurrentExecutions: 2
       # The zip is written to local disk before it is uploaded. Billed only
       # while a build runs.
       EphemeralStorage:
@@ -1029,6 +1043,10 @@ Resources:
       Role: !GetAtt TranscribeRole.Arn
       MemorySize: 256
       Timeout: 120
+      # A ceiling on jobs started at once. A throttled stream batch waits
+      # and is tried again (throttles do not use up its retries); a
+      # throttled job event is an async event, tried for up to six hours.
+      ReservedConcurrentExecutions: 2
       LoggingConfig:
         LogGroup: !Ref TranscribeLogs
       Environment:
@@ -1144,6 +1162,11 @@ Resources:
       Role: !GetAtt DescribeRole.Arn
       MemorySize: 512
       Timeout: 900
+      # A ceiling on photos going to the model at once: a pass and a stream
+      # batch, say. A throttled stream batch waits and is tried again
+      # (throttles do not use up its retries); a throttled next pass is an
+      # async event, tried for up to six hours, carrying its chain (describe.py).
+      ReservedConcurrentExecutions: 2
       LoggingConfig:
         LogGroup: !Ref DescribeLogs
       Environment:

@@ -101,6 +101,7 @@ const SAY = {
   'file-too-big': 'is over 50 MB, more than one file can be.',
   upload: 'didn’t finish sending. Try again.',
   'too-many-files': 'A note holds up to 20 files.',
+  'upload-limit': 'That’s more files than one day takes. Try again tomorrow.',
   busy: 'That note just changed. Reload the page and try again.',
   microphone: 'Release Notes can’t use the microphone. Allow it for this site in your browser’s settings, then try again.',
 };

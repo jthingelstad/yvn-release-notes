@@ -1,6 +1,8 @@
 import json
+from unittest import mock
 
 from fakes import FakeS3
+from release_notes import web
 from test_web import WebCase
 
 # NOW is 17:53 in Chicago on 2026-10-08. Ada, born 1981-06-14, is 4.5.116.
@@ -424,15 +426,69 @@ class UploadTest(NotesCase):
                           {"n": 3, "kind": "file", "type": "application/pdf", "name": "Menu.pdf"}])
         kept = self.store.notes_between("u1", TODAY, TODAY)[0]["media"]
         self.assertEqual((kept[0]["width"], kept[0]["height"], kept[0]["size"]), (640, 480, len(PNG)))
-        self.assertTrue(all(m["key"].startswith("media/u1/web/") for m in kept))
+        # Kept where no form can write, tagged kept; the pending uploads are gone.
+        self.assertTrue(all(m["key"].startswith("media/u1/files/") for m in kept))
         self.assertEqual({self.s3.objects[m["key"]]["Tagging"] for m in kept}, {"outcome=note"})
+        self.assertEqual([self.s3.objects[m["key"]]["Body"] for m in kept], [PNG, M4A, PDF])
+        self.assertEqual([self.s3.objects[m["key"]]["ContentType"] for m in kept], ["image/png", "audio/mp4", "application/pdf"])
+        self.assertFalse(any(k.startswith("media/u1/web/") for k in self.s3.objects))
         self.assertNotIn("'key'", str(note))
         self.assertEqual([m["url"] for m in note["media"]], [f"/dev-media/{m['key']}" for m in kept])
         # It opens like any other, and deleting the note deletes the files.
         r, _ = self.call("GET", f"/api/days/{TODAY}/notes/{note['id']}/media/3", cookies=self.cookies)
         self.assertEqual(r["statusCode"], 302)
         self.call("DELETE", f"/api/days/{TODAY}/notes/{note['id']}", cookies=self.cookies)
-        self.assertFalse(any(k.startswith("media/u1/web/") for k in self.s3.objects))
+        self.assertFalse(any(k.startswith("media/u1/") for k in self.s3.objects))
+
+    def test_the_form_cannot_send_other_bytes_over_a_file_once_checked(self):
+        # 2026-10-09 audit: the form still works for a few minutes after the
+        # note takes its file. Whatever it sends then is not the note's file.
+        _, form = self.form("a.png", PNG, "image/png")
+        self.s3.form_upload(form["fields"], PNG)
+        other = b"\x89PNG\r\n\x1a\n" + b"y" * (len(PNG) - 8)  # the same size, different bytes
+        read = self.s3.get_object
+
+        def then_resent(**kw):  # sent again between the check and the copy
+            got = read(**kw)
+            self.s3.form_upload(form["fields"], other)
+            return got
+
+        self.s3.get_object = then_resent
+        r, _ = self.call("POST", f"/api/days/{TODAY}/notes",
+                         {"text": "", "uploads": [{"upload": form["upload"], "type": "image/png"}]}, cookies=self.cookies)
+        self.s3.get_object = read
+        self.assertEqual(r["statusCode"], 201)
+        key = self.store.notes_between("u1", TODAY, TODAY)[0]["media"][0]["key"]
+        self.assertEqual(self.s3.objects[key]["Body"], PNG)
+        self.assertTrue(self.s3.form_upload(form["fields"], other))  # and again after
+        self.assertEqual(self.s3.objects[key]["Body"], PNG)
+        # What it sent is pending, on no note, and expires.
+        self.assertEqual(self.s3.objects[form["fields"]["key"]]["Tagging"], "outcome=pending")
+
+    def test_a_note_from_before_keeps_its_upload_key(self):
+        # Files on notes written before kept files moved are still read, opened and deleted.
+        old = {"n": 1, "kind": "image", "type": "image/png", "size": len(PNG), "key": "media/u1/web/" + "a" * 32 + ".png"}
+        self.s3.put_object("mail", old["key"], PNG, ContentType="image/png", Tagging="outcome=note")
+        self.emailed("2026-10-07", text="", media=[old])
+        r, _ = self.call("GET", "/api/days/2026-10-07/notes/0100abc-1/media/1", cookies=self.cookies)
+        self.assertEqual((r["statusCode"], r["headers"]["location"]), (302, f"/dev-media/{old['key']}"))
+        self.call("DELETE", "/api/days/2026-10-07/notes/0100abc-1", cookies=self.cookies)
+        self.assertNotIn(old["key"], self.s3.objects)
+
+    def test_a_day_of_upload_forms_has_a_ceiling_by_count_and_by_size(self):
+        with mock.patch.object(web, "UPLOADS_A_DAY", 3), mock.patch.object(web, "UPLOAD_BYTES_A_DAY", 100):
+            sizes = [(40, 200), (40, 200), (40, 429), (20, 200), (5, 429)]  # 80 + 40 > 100; then a fourth form
+            for size, status in sizes:
+                r, body = self.call("POST", "/api/uploads", {"name": "a.png", "type": "image/png", "size": size},
+                                    cookies=self.cookies)
+                self.assertEqual(r["statusCode"], status, (size, body))
+            self.assertEqual(body, {"error": "upload-limit"})
+            self.assertIn("upload-limited", self.out.getvalue())
+            self.now += 86400  # a new UTC day
+            r, _ = self.call("POST", "/api/uploads", {"name": "a.png", "type": "image/png", "size": 40}, cookies=self.cookies)
+            self.assertEqual(r["statusCode"], 200)
+        self.assertEqual(self.s3.posts[next(iter(self.s3.posts))]["ExpiresIn"], web.UPLOAD_FORM)
+        self.assertLessEqual(web.UPLOAD_FORM, 300)
 
     def test_the_form_is_for_that_type_and_exact_size_only(self):
         r, form = self.form("a.png", PNG, "image/png")

@@ -21,6 +21,19 @@ Two ways in, one function:
    reads the setting first, so turning it off stops it.
 2. That `describe_all` invocation.
 
+One chain of passes runs per subscriber (2026-10-09 audit: each off and on
+of the setting started another, and each sent the same photos again). A
+pass holds the lock `LOCK#describe:<user>` (store.take_lock) for LOCK_FOR,
+a little longer than one pass can run; the chain's id goes along when it
+hands on, so the next pass renews the lock as its own, and the last lets
+it go, as does a pass that fails (Lambda's retry of it, the same chain,
+takes it back). A `describe_all` that finds another chain holding it does
+nothing. A pass stopped at the function's time limit keeps the lock until
+it runs out; after that, the next off and on starts afresh. And whatever
+starts a photo (a pass, or the stream for a new note), the note is read
+again just before each photo goes to the model, so a photo described
+meanwhile is not sent twice.
+
 The key is `api_key` in the Secrets Manager secret named by `SECRET`, read
 by the function when it runs. Until it holds a real key (one starting
 `sk-ant-`), nothing is sent and photos stay waiting: a pass logs `no-key`.
@@ -43,6 +56,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 from . import media
 from .store import Store
@@ -57,6 +71,7 @@ MAX_BYTES = 3_750_000
 MAX_SIDE = 8000
 MAX_DESCRIPTION = 600  # characters
 LEFT_FOR_NEXT = 60  # seconds: a pass hands over with this much time left
+LOCK_FOR = 960  # seconds a pass holds its chain's lock: the function's 900, and a minute more
 PROMPT = ("Describe this photo in one or two plain sentences, so it can be found by searching later: what is in it, "
           "where it seems to be, and any words you can read in it, such as signs. Answer with only those sentences: "
           "no preamble, no headings, no list of keywords or search terms.")
@@ -148,10 +163,18 @@ def words_for(data: bytes, ctype: str, *, claude) -> str:
 
 
 def describe(note: dict, user_id: str, *, store, s3, claude, bucket: str) -> int:
-    """Describe each waiting photo on a note. Returns how many."""
+    """Describe each waiting photo on a note. Returns how many. The note is
+    read again before each photo, so one another pass or the stream has
+    described since is skipped, and a note deleted meanwhile stops it."""
     _, day, note_id = note["sk"].split("#", 2)
     done = 0
     for m in waiting(note):
+        now = store.note(user_id, day, note_id)
+        entry = next((x for x in (now or {}).get("media") or [] if int(x["n"]) == int(m["n"])), None)
+        if entry is None:
+            break  # the note or the photo is gone
+        if "description" in entry:
+            continue  # described meanwhile
         try:
             data = s3.get_object(Bucket=bucket, Key=str(m["key"]))["Body"].read()
         except Exception as e:
@@ -200,24 +223,41 @@ def changed(record: dict, *, store, s3, claude, lam, bucket: str, cache: dict) -
     return done
 
 
-def describe_all(user_id: str, *, store, s3, claude, lam, bucket: str, time_left) -> dict:
-    """One pass over a subscriber's photos. Hands the rest to a new pass
-    when time runs short."""
-    if not wanted(store, user_id):
-        log(event="describe-all", user=user_id, outcome="turned-off")
+def describe_all(user_id: str, *, store, s3, claude, lam, bucket: str, time_left, chain: str | None = None,
+                 clock=time.time) -> dict:
+    """One pass over a subscriber's photos, in the chain `chain` (a new one
+    when None), if no other chain holds the subscriber's lock. Hands the
+    rest to a new pass when time runs short."""
+    chain = chain or uuid.uuid4().hex
+    lock = f"describe:{user_id}"
+    if not store.take_lock(lock, chain, int(clock()), LOCK_FOR):
+        log(event="describe-all", user=user_id, outcome="already-running")
         return {"photos": 0, "more": False}
-    done = 0
-    for note in store.all_notes(user_id):
-        if not waiting(note):
-            continue
-        if time_left() < LEFT_FOR_NEXT:
-            lam.invoke(FunctionName=os.environ["SELF"], InvocationType="Event",
-                       Payload=json.dumps({"describe_all": user_id}).encode())
-            log(event="describe-all", user=user_id, photos=done, outcome="continued")
-            return {"photos": done, "more": True}
-        done += describe(note, user_id, store=store, s3=s3, claude=claude(), bucket=bucket)
-    log(event="describe-all", user=user_id, photos=done, outcome="done")
-    return {"photos": done, "more": False}
+    handed_on = False
+    try:
+        if not wanted(store, user_id):
+            log(event="describe-all", user=user_id, outcome="turned-off")
+            return {"photos": 0, "more": False}
+        done = 0
+        for note in store.all_notes(user_id):
+            if not waiting(note):
+                continue
+            if time_left() < LEFT_FOR_NEXT:
+                # Renewed first, so the lock is the chain's until the next pass starts.
+                store.take_lock(lock, chain, int(clock()), LOCK_FOR)
+                lam.invoke(FunctionName=os.environ["SELF"], InvocationType="Event",
+                           Payload=json.dumps({"describe_all": user_id, "chain": chain}).encode())
+                handed_on = True
+                log(event="describe-all", user=user_id, photos=done, outcome="continued")
+                return {"photos": done, "more": True}
+            done += describe(note, user_id, store=store, s3=s3, claude=claude(), bucket=bucket)
+        log(event="describe-all", user=user_id, photos=done, outcome="done")
+        return {"photos": done, "more": False}
+    finally:
+        # Done, turned off, or failed (Lambda tries the same pass again, with
+        # the same chain, which takes the lock back).
+        if not handed_on:
+            store.release_lock(lock, chain, int(clock()))
 
 
 def test_image() -> bytes:
@@ -273,7 +313,7 @@ def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secre
             started = time.monotonic()
             limit = context.get_remaining_time_in_millis() / 1000 if context else 900
             describe_all(event["describe_all"], store=store, s3=s3, claude=ask, lam=lam, bucket=bucket,
-                         time_left=lambda: limit - (time.monotonic() - started))
+                         time_left=lambda: limit - (time.monotonic() - started), chain=event.get("chain"))
             return
         cache = {}
         for record in event.get("Records", []):

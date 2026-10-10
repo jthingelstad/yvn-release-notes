@@ -249,6 +249,26 @@ class FakeStore:
     def peek(self, key, period):
         return self.counts.get((key, period), 0)
 
+    def count_upload(self, user_id, day, size, max_files, max_bytes):
+        n, used = self.counts.get((f"upload:{user_id}", day), (0, 0))
+        if n and (n >= max_files or used > max_bytes - size):
+            return False
+        self.counts[(f"upload:{user_id}", day)] = (n + 1, used + size)
+        return True
+
+    def take_lock(self, name, holder, now, hold_for):
+        self.locks = getattr(self, "locks", {})
+        held = self.locks.get(name)
+        if held and held["expires_at"] > now and held["holder"] != holder:
+            return False
+        self.locks[name] = {"holder": holder, "expires_at": now + hold_for}
+        return True
+
+    def release_lock(self, name, holder, now):
+        held = getattr(self, "locks", {}).get(name)
+        if held and held["holder"] == holder:
+            held["expires_at"] = now
+
     def tally(self, month, name):
         self.tallied[(month, name)] = self.tallied.get((month, name), 0) + 1
 
@@ -304,18 +324,41 @@ class FakeSES:
 
 
 class FakeS3:
-    """Puts, gets, deletes and signed links. `objects` holds what was put, by
-    key; a signed link is /dev-media/<key>, which scripts/dev_server.py serves."""
+    """Puts, gets, copies, deletes and signed links. `objects` holds what was
+    put, by key; `versions` every version put, by version id, as the bucket
+    is versioned. A signed link is /dev-media/<key>, which
+    scripts/dev_server.py serves."""
 
     def __init__(self, fail=False):
         self.deleted, self.fail = [], fail
         self.objects: dict[str, dict] = {}
+        self.versions: dict[str, tuple[str, dict]] = {}  # version id -> (key, object)
+
+    def _keep(self, Key, obj):
+        obj["VersionId"] = f"v{len(self.versions) + 1}"
+        self.versions[obj["VersionId"]] = (Key, obj)
+        self.objects[Key] = obj
 
     def put_object(self, Bucket, Key, Body, **kw):
         if self.fail:
             raise ConnectionError("down")
-        self.objects[Key] = {"Body": Body, **kw}
+        self._keep(Key, {"Body": Body, **kw})
         return {}
+
+    def copy_object(self, Bucket, Key, CopySource, MetadataDirective="COPY", TaggingDirective="COPY", Tagging=""):
+        """Copy a version (CopySource's VersionId) or the current object."""
+        if "VersionId" in CopySource:
+            key, source = self.versions.get(CopySource["VersionId"], (None, None))
+            if key != CopySource["Key"]:
+                e = KeyError(CopySource["Key"])
+                e.response = {"Error": {"Code": "NoSuchVersion"}}
+                raise e
+        else:
+            source = self._there(CopySource["Key"])
+        copy = {k: v for k, v in source.items() if k not in ("VersionId", "Tagging")}
+        copy["Tagging"] = Tagging if TaggingDirective == "REPLACE" else source.get("Tagging", "")
+        self._keep(Key, copy)
+        return {"VersionId": copy["VersionId"]}
 
     def _there(self, Key):
         if Key not in self.objects:
@@ -329,7 +372,7 @@ class FakeS3:
 
         obj = self._there(Key)
         body = bytes(obj["Body"])
-        got = {"ContentType": obj.get("ContentType"), "ContentLength": len(body)}
+        got = {"ContentType": obj.get("ContentType"), "ContentLength": len(body), "VersionId": obj.get("VersionId", "null")}
         if Range:  # bytes=<first>-<last>
             first, last = (int(x) for x in Range[len("bytes="):].split("-"))
             got.update(ContentRange=f"bytes {first}-{min(last, len(body) - 1)}/{len(body)}", ContentLength=None)
@@ -362,8 +405,8 @@ class FakeS3:
         if not low <= len(body) <= high:
             return False
         tags = re.findall(r"<Key>(.*?)</Key><Value>(.*?)</Value>", fields.get("tagging", ""))
-        self.objects[fields["key"]] = {"Body": body, "ContentType": fields["Content-Type"],
-                                       "Tagging": "&".join(f"{k}={v}" for k, v in tags)}
+        self._keep(fields["key"], {"Body": body, "ContentType": fields["Content-Type"],
+                                   "Tagging": "&".join(f"{k}={v}" for k, v in tags)})
         return True
 
     def upload_file(self, Filename, Bucket, Key, ExtraArgs=None):
@@ -378,7 +421,12 @@ class FakeS3:
         if self.fail:
             raise ConnectionError("down")
         self.deleted.append(kw)
-        self.objects.pop(kw["Key"], None)
+        if "VersionId" in kw:  # that version only, for good; a newer one stays
+            key, _ = self.versions.pop(kw["VersionId"], (None, None))
+            if key == kw["Key"] and self.objects.get(key, {}).get("VersionId") == kw["VersionId"]:
+                del self.objects[key]
+        else:
+            self.objects.pop(kw["Key"], None)
         return {}
 
     def delete_objects(self, Bucket, Delete):

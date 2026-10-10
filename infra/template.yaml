@@ -350,6 +350,12 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSet}"
+                Condition:
+                  # Only as Release Notes, like the sender and web roles.
+                  StringLike:
+                    ses:FromAddress:
+                      - !Ref FromAddress
+                      - !Sub "*<${FromAddress}>"
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt InboundLogs.Arn

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Add a subscriber by hand. Phase 1 has no sign-up; this is the sign-up.
+"""Add a subscriber by hand, from phase 1, before sign-up was on the web. It
+skips what sign-up does besides: no city (so no weather), no tally, no first
+email.
 
     scripts/add_subscriber.py EMAIL YYYY-MM-DD [--tz America/Chicago] [--send-time 06:00]
 

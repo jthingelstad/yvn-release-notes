@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Print a subscriber's release notes, one block per day. Phase 1 has no
-reader; this is the reader.
+"""Print a subscriber's release notes, one block per day. From phase 1,
+before the web app had a reader.
 
     scripts/read_notes.py EMAIL [YYYY-MM-DD]
 

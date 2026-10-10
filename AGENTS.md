@@ -526,6 +526,11 @@ runtime and is imported lazily so the tests run without it.
   never a fixed string, since it depends on today. The dev server's sign-in
   limits still apply (20 emails an hour from one network), so
   `--repeat-each` past about 4 trips them.
+- **Node 24** everywhere (`.node-version`, both workflows; `engines` says 24 or later). This
+  Mac's default `node` is newer, so put Homebrew's
+  `/opt/homebrew/opt/node@24/bin` first on PATH for npm here; `deploy.sh`
+  does that itself and refuses any other major. Moving to a new major
+  changes all of those together, with `@types/node`.
 - The web app locally: `npm ci --ignore-scripts` and `npm run build`, then
   `scripts/dev_server.py` serves the built `dist/web` and the real API
   against in-memory fakes, prints sign-in emails instead of sending them, and

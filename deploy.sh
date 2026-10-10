@@ -74,6 +74,13 @@ aws s3api put-bucket-policy --bucket "$CODE_BUCKET" --policy "$(printf '%s' \
   '"Action":"s3:*","Resource":["arn:aws:s3:::'"$CODE_BUCKET"'","arn:aws:s3:::'"$CODE_BUCKET"'/*"],' \
   '"Condition":{"Bool":{"aws:SecureTransport":"false"}}}]}')"
 
+# Build with the Node that CI uses (.node-version). This Mac's default node
+# can be newer; Homebrew's node@<major> is used when it is installed.
+NODE_MAJOR=$(cat .node-version)
+[[ -d "/opt/homebrew/opt/node@$NODE_MAJOR/bin" ]] && PATH="/opt/homebrew/opt/node@$NODE_MAJOR/bin:$PATH"
+[[ "$(node -p 'process.versions.node.split(".")[0]')" == "$NODE_MAJOR" ]] \
+  || { echo "refusing: node is $(node -v), want $NODE_MAJOR (brew install node@$NODE_MAJOR)" >&2; exit 1; }
+
 BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
 # The web app as committed, built before anything deploys: a file git

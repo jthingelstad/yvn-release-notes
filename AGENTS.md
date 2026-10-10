@@ -83,7 +83,21 @@ runtime and is imported lazily so the tests run without it.
   but the front one is its own chunk. Back and forward restore the scroll,
   and a new page moves focus to its heading. A note added, edited or deleted
   shows at once and comes back, saying why, if the write fails
-  (`lib/notecache.ts`, `components/notelist.tsx`). `deploy.sh` syncs
+  (`lib/notecache.ts`, `components/notelist.tsx`). A page that breaks
+  shows the app's error page (`pages/AppError.tsx`, the router's
+  `defaultErrorComponent`), which reloads or goes to Today. The city
+  search is React Aria's `Autocomplete` (`components/placepicker.tsx`):
+  the places stay on the page under the field, arrow keys move through
+  them and Enter picks; it is its own chunk, so React Aria loads only with
+  setup and settings. React Aria would add a `<style>` tag the CSP refuses;
+  `index.html` carries an element with its id so it does not, and
+  `site.css` has the rule. **Home Screen**: `web/public/manifest.webmanifest`
+  (standalone, opening on `/today/`) and the icons in `web/public/icons/`,
+  drawn by `scripts/make_icons.mjs` (the version number's "v" and its
+  tangerine dot). No service worker: every page needs the API, and one
+  would only risk an old build. On an iPhone the Home Screen app keeps its
+  own cookies, so the emailed link signs in Safari, not the app; there the
+  sign-in page points at the code. `deploy.sh` syncs
   `dist/web`. Pages load only their own files (the CSP
   is `'self'`), so no inline script or style (nothing inlined by the
   build, no `style` props), nothing remote; anything another service
@@ -566,7 +580,8 @@ runtime and is imported lazily so the tests run without it.
   before deploying the stack, and refuses to deploy if the build fails. It
   syncs `dist/web` to the web bucket, deleting whatever the build no
   longer has: `assets/` (Vite's hashed names) cached for a year as
-  immutable, `index.html` at max-age 60, other files 600. A tab left open
+  immutable, `index.html` at max-age 60, other files (the manifest, the icons, the
+  font licences) 600. A tab left open
   on an earlier build loads the app again when it reaches for a page's
   code that is gone. Then it invalidates the distribution.
 

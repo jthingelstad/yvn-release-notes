@@ -12,7 +12,8 @@ import {
   useProblem,
   useTitle
 } from '../components/common.tsx';
-import { PlacePicker, SendTimeSelect, ZipExport } from '../components/fields.tsx';
+import { SendTimeSelect, ZipExport } from '../components/fields.tsx';
+import { PlacePicker } from '../components/placepicker.tsx';
 import { api } from '../lib/api.ts';
 import { clock, longDate, pauseLine } from '../lib/format.ts';
 import { useMe, useSignedInAs } from '../lib/nav.ts';

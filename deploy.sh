@@ -123,7 +123,7 @@ WEB_BUCKET=$(output WebBucketName)
 # tab still open on an earlier one loads the app again when a page's code
 # is gone (main.tsx). Then index.html, which every address serves (the
 # CloudFront function) and which revalidates within a minute, and the rest
-# (the font licences).
+# (the Home Screen manifest, the icons and the font licences).
 aws s3 sync "$WEB/assets/" "s3://$WEB_BUCKET/assets/" --delete --only-show-errors \
   --cache-control 'public, max-age=31536000, immutable'
 aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include '*.html' \

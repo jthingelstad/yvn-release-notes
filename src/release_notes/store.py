@@ -17,10 +17,15 @@
     USER#<id>        EXPORT                     the latest zip export (export_job.py): id, status
                                                 building|ready|failed, started_at; when ready, export_key,
                                                 size, files; gone a day after it is built
+    USER#<id>        SESSION#<hash>             one of the subscriber's sessions, so deleting the account
+                                                ends it in every browser; expires_at renewed with it
     TOKEN#<token>    TOKEN                      reply address -> user and day
     EMAIL#<address>  EMAIL                      address -> user (one subscriber per address)
-    LOGIN#<hash>     LOGIN                      a sign-in's link and code (auth.py), 15 minutes
+    LOGIN#<hash>     LOGIN                      a sign-in's link and code (auth.py), 15 minutes; purpose
+                                                signin or delete (none: a sign-in from before purposes)
     LOGINFOR#<hash>  LOGIN                      an address's newest sign-in, the one a code is checked against
+    LOGINFOR#<hash>  DELETE                     its newest code to confirm deleting the account, kept apart
+                                                so neither kind of code replaces the other
     SESSION#<hash>   SESSION                    a signed-in browser: user, or the address of one signing up
     RATE#<key>#<hr>  RATE                       a counter for one hour of sign-in emails
     RATE#<key>#<day> RATE                       a counter for one day of wrong sign-in codes
@@ -30,6 +35,10 @@
 expires_at (epoch seconds) is the table's TTL. DynamoDB deletes late, up to
 a couple of days, so every read checks it as well. Hashes are SHA-256 of
 the secret (or, for LOGINFOR and RATE, of the address or network).
+
+Sessions begun before 2026-10-09 have no USER# copy until their next daily
+renewal makes one. One never used again is not deleted with its account,
+and fails closed: with the profile gone it reaches nothing.
 
 A note is filed under the day of the email it answers, not the day it
 arrived, so a reply to Tuesday's email sent on Thursday is Tuesday's note.
@@ -57,6 +66,14 @@ def numbers(v):
     if isinstance(v, list):
         return [numbers(x) for x in v]
     return v
+
+
+# What a sign-in's code is for (auth.SIGNIN, auth.DELETE): the sort key of
+# the address's newest one, and the condition each use of it carries. A
+# sign-in from before purposes has none, and is a sign-in.
+SIGNIN, DELETE = "signin", "delete"
+NEWEST = {SIGNIN: "LOGIN", DELETE: "DELETE"}
+_FOR = {SIGNIN: "(attribute_not_exists(#purpose) OR #purpose = :purpose)", DELETE: "#purpose = :purpose"}
 
 
 def _failed_condition(e: Exception) -> bool:
@@ -562,7 +579,8 @@ class Store:
 
     # sign-in ---------------------------------------------------------------
 
-    def put_login(self, token_hash: str, email: str, email_hash: str, code_hash: str, now: int, ttl: int) -> None:
+    def put_login(self, token_hash: str, email: str, email_hash: str, code_hash: str, now: int, ttl: int,
+                  purpose: str = SIGNIN) -> None:
         expires = now + ttl
         self.table.put_item(
             Item={
@@ -571,51 +589,72 @@ class Store:
                 "email": email,
                 "email_hash": email_hash,
                 "code_hash": code_hash,
+                "purpose": purpose,
                 "attempts": 0,
                 "created_at": now,
                 "expires_at": expires,
             }
         )
         self.table.put_item(
-            Item={"pk": f"LOGINFOR#{email_hash}", "sk": "LOGIN", "token_hash": token_hash, "expires_at": expires}
+            Item={"pk": f"LOGINFOR#{email_hash}", "sk": NEWEST[purpose], "token_hash": token_hash, "expires_at": expires}
         )
 
-    def newest_login(self, email_hash: str) -> str | None:
-        item = self.table.get_item(Key={"pk": f"LOGINFOR#{email_hash}", "sk": "LOGIN"}).get("Item")
+    def newest_login(self, email_hash: str, purpose: str = SIGNIN) -> str | None:
+        item = self.table.get_item(Key={"pk": f"LOGINFOR#{email_hash}", "sk": NEWEST[purpose]}).get("Item")
         return item["token_hash"] if item else None
 
-    def spend_attempt(self, token_hash: str, now: int, max_attempts: int) -> dict | str:
+    def login_keys(self, email_hash: str) -> list[dict]:
+        """For deleting an account: the address's newest sign-in and newest
+        deletion code (each holds the address) and the items that point at
+        them. An older one from the same quarter hour is not listed
+        anywhere; it stops working at its 15 minutes and its TTL takes it."""
+        keys = []
+        for sk in NEWEST.values():
+            key = {"pk": f"LOGINFOR#{email_hash}", "sk": sk}
+            item = self.table.get_item(Key=key).get("Item")
+            if item:
+                keys += [key, {"pk": f"LOGIN#{item['token_hash']}", "sk": "LOGIN"}]
+        return keys
+
+    def spend_attempt(self, token_hash: str, now: int, max_attempts: int, purpose: str = SIGNIN) -> dict | str:
         """Count a code attempt before the code is compared. Returns the
-        sign-in, or why it cannot take a code: gone, used or attempts."""
+        sign-in, or why it cannot take a code: gone (or for something
+        else), used or attempts."""
         try:
             return self.table.update_item(
                 Key={"pk": f"LOGIN#{token_hash}", "sk": "LOGIN"},
                 UpdateExpression="SET attempts = attempts + :one",
                 ConditionExpression=(
                     "attribute_exists(pk) AND attribute_not_exists(used_at) AND expires_at > :now AND attempts < :max"
+                    f" AND {_FOR[purpose]}"
                 ),
-                ExpressionAttributeValues={":one": 1, ":now": now, ":max": max_attempts},
+                ExpressionAttributeNames={"#purpose": "purpose"},
+                ExpressionAttributeValues={":one": 1, ":now": now, ":max": max_attempts, ":purpose": purpose},
                 ReturnValues="ALL_NEW",
             )["Attributes"]
         except Exception as e:
             if not _failed_condition(e):
                 raise
         item = self.table.get_item(Key={"pk": f"LOGIN#{token_hash}", "sk": "LOGIN"}).get("Item")
-        if not item or _number(item, "expires_at") <= now:
+        if not item or _number(item, "expires_at") <= now or item.get("purpose", SIGNIN) != purpose:
             return "gone"
         if "used_at" in item:
             return "used"
         return "attempts"
 
-    def burn_login(self, token_hash: str, now: int) -> dict | None:
+    def burn_login(self, token_hash: str, now: int, purpose: str = SIGNIN) -> dict | None:
         """Use a sign-in, once. The link and the code both end here, so
-        whichever comes first wins and the other finds it used."""
+        whichever comes first wins and the other finds it used. One made
+        for another purpose is left as it is."""
         try:
             return self.table.update_item(
                 Key={"pk": f"LOGIN#{token_hash}", "sk": "LOGIN"},
                 UpdateExpression="SET used_at = :now",
-                ConditionExpression="attribute_exists(pk) AND attribute_not_exists(used_at) AND expires_at > :now",
-                ExpressionAttributeValues={":now": now},
+                ConditionExpression=(
+                    f"attribute_exists(pk) AND attribute_not_exists(used_at) AND expires_at > :now AND {_FOR[purpose]}"
+                ),
+                ExpressionAttributeNames={"#purpose": "purpose"},
+                ExpressionAttributeValues={":now": now, ":purpose": purpose},
                 ReturnValues="ALL_NEW",
             )["Attributes"]
         except Exception as e:
@@ -666,19 +705,30 @@ class Store:
         else:
             item["email"] = email  # signing up: no account yet
         self.table.put_item(Item=item)
+        if user_id:
+            self._list_session(session_hash, user_id, expires)
+
+    def _list_session(self, session_hash: str, user_id: str, expires: int) -> None:
+        # The subscriber's copy of a session, so deleting the account finds
+        # every one (web.delete_me). It expires with the session.
+        self.table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"SESSION#{session_hash}", "expires_at": expires})
 
     def get_session(self, session_hash: str) -> dict | None:
         return self.table.get_item(Key={"pk": f"SESSION#{session_hash}", "sk": "SESSION"}).get("Item")
 
-    def touch_session(self, session_hash: str, now: int, expires: int) -> None:
+    def touch_session(self, session_hash: str, now: int, expires: int, user_id: str | None = None) -> None:
+        """Start a session's 14 days again, and its subscriber's copy's
+        with it (which gives a session from before the copies one)."""
         self.table.update_item(
             Key={"pk": f"SESSION#{session_hash}", "sk": "SESSION"},
             UpdateExpression="SET seen_at = :now, expires_at = :exp",
             ConditionExpression="attribute_exists(pk)",
             ExpressionAttributeValues={":now": now, ":exp": expires},
         )
+        if user_id:
+            self._list_session(session_hash, user_id, expires)
 
-    def claim_session(self, session_hash: str, user_id: str) -> None:
+    def claim_session(self, session_hash: str, user_id: str, expires: int) -> None:
         """A signing-up session becomes the new subscriber's."""
         self.table.update_item(
             Key={"pk": f"SESSION#{session_hash}", "sk": "SESSION"},
@@ -686,6 +736,7 @@ class Store:
             ConditionExpression="attribute_exists(pk)",
             ExpressionAttributeValues={":u": user_id},
         )
+        self._list_session(session_hash, user_id, expires)
 
     def delete_session(self, session_hash: str) -> None:
         self.table.delete_item(Key={"pk": f"SESSION#{session_hash}", "sk": "SESSION"})

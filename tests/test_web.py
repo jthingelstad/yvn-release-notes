@@ -7,6 +7,7 @@ from email import message_from_bytes
 from email.policy import default
 from decimal import Decimal
 from io import StringIO
+from pathlib import Path
 
 from fakes import FakeLambda, FakeS3, FakeSES, FakeStore
 from release_notes import auth, export, web
@@ -242,21 +243,78 @@ class WebTest(WebCase):
             self.assertEqual(self.start()[0]["statusCode"], 202)
         r, _, _ = self.start()
         self.assertEqual(r["statusCode"], 429)
-        # Another address from the same network still works, up to its limit.
-        for i in range(auth.LIMIT_PER_NETWORK - auth.LIMIT_PER_ADDRESS - 1):
+        # Another address from the same network still works, up to its
+        # limit; the refused email counted against neither.
+        for i in range(auth.LIMIT_PER_NETWORK - auth.LIMIT_PER_ADDRESS):
             self.assertEqual(self.start(f"p{i}@example.com")[0]["statusCode"], 202)
         self.assertEqual(self.start("last@example.com")[0]["statusCode"], 429)
         # A new hour starts over.
         self.now += 3600
         self.assertEqual(self.start()[0]["statusCode"], 202)
 
+    def test_one_network_cannot_use_up_everyones_total(self):
+        # The 2026-10-09 review: every request used to count against the
+        # total before any limit was checked, so 201 from one network
+        # locked everyone out of signing in for the hour.
+        for i in range(auth.LIMIT_TOTAL + 1):
+            self.start(f"p{i}@example.com", viewer="203.0.113.9:4433")
+        hour = self.now // 3600
+        self.assertEqual(self.store.counts[("all", hour)], auth.LIMIT_PER_NETWORK)
+        self.assertEqual(len(self.ses.sent), auth.LIMIT_PER_NETWORK)
+        self.assertEqual(self.start("ada@example.com", viewer="198.51.100.7:4433")[0]["statusCode"], 202)
+
+    def test_a_refused_request_counts_nowhere(self):
+        for _ in range(auth.LIMIT_PER_ADDRESS + 3):
+            self.start()
+        hour = self.now // 3600
+        self.assertEqual(self.store.counts, {(key, hour): auth.LIMIT_PER_ADDRESS
+                                             for _, key, _ in web.mail_limits("ada@example.com", "198.51.100.7")})
+
+    def test_the_total_is_logged_by_name(self):
+        # The alarm on the total (infra/template.yaml) reads this line.
+        self.store.counts[("all", self.now // 3600)] = auth.LIMIT_TOTAL
+        r, _, _ = self.start()
+        self.assertEqual(r["statusCode"], 429)
+        self.assertIn('{"event":"mail-limited","limit":"total"}', self.out.getvalue().splitlines())
+        template = (Path(__file__).resolve().parent.parent / "infra" / "template.yaml").read_text()
+        self.assertIn("""FilterPattern: '{ $.event = "mail-limited" && $.limit = "total" }'""", template)
+
+    def test_a_plus_tag_shares_its_address_limit(self):
+        self.assertEqual(auth.limit_address("ada+news@example.com"), "ada@example.com")
+        self.assertEqual(auth.limit_address("ada+a+b@example.com"), "ada@example.com")
+        self.assertEqual(auth.limit_address("ada@example.com"), "ada@example.com")
+        for i in range(auth.LIMIT_PER_ADDRESS):
+            self.assertEqual(self.start(f"ada+{i}@example.com")[0]["statusCode"], 202)
+        self.assertEqual(self.start("ada+more@example.com")[0]["statusCode"], 429)
+        self.assertEqual(self.start("ada@example.com")[0]["statusCode"], 429)
+        # The email goes to the address as typed.
+        self.assertEqual(self.ses.sent[0]["Destination"], {"ToAddresses": ["ada+0@example.com"]})
+        self.assertEqual(self.start("grace@example.com")[0]["statusCode"], 202)
+
     def test_ipv6_networks_share_a_limit(self):
         self.assertEqual(auth.network("2001:db8:1:2:aaaa::1"), "2001:db8:1:2::/64")
         self.assertEqual(auth.network("2001:db8:1:2::9"), "2001:db8:1:2::/64")
         self.assertEqual(auth.network("2001:0db8:0001:0002:ffff:0:0:1"), "2001:db8:1:2::/64")
         self.assertEqual(auth.network("198.51.100.7"), "198.51.100.7")
+        self.assertEqual(auth.network("2001:db8:1:2::9", 48), "2001:db8:1::/48")
+        self.assertEqual(auth.network("198.51.100.7", 48), "198.51.100.7")
         req = web.Request(request("GET", "/", viewer="2001:db8:1:2::9:443"))
         self.assertEqual(req.viewer(), "2001:db8:1:2::9")
+
+    def test_an_ipv6_48_has_its_own_limit(self):
+        names = [name for name, _, _ in web.mail_limits("ada@example.com", "2001:db8:1:2::9")]
+        self.assertEqual(names, ["address", "network", "network48", "total"])
+        names = [name for name, _, _ in web.mail_limits("ada@example.com", "198.51.100.7")]
+        self.assertEqual(names, ["address", "network", "total"])
+        self.assertEqual(auth.LIMIT_PER_NETWORK48, 3 * auth.LIMIT_PER_NETWORK)
+        # Moving to a new /64 inside the same /48 gets a fresh 20, but not past the /48's 60.
+        sent = 0
+        for subnet in range(10):
+            for i in range(auth.LIMIT_PER_NETWORK):
+                r, _, _ = self.start(f"p{subnet}-{i}@example.com", viewer=f"2001:db8:1:{subnet:x}::9:443")
+                sent += r["statusCode"] == 202
+        self.assertEqual(sent, auth.LIMIT_PER_NETWORK48)
+        self.assertEqual(self.start("ada@example.com", viewer="2001:db8:2:1::9:443")[0]["statusCode"], 202)
 
     def test_mail_failure_says_so(self):
         self.ses.fail = True
@@ -291,6 +349,19 @@ class WebTest(WebCase):
             # The browser's copy is renewed too.
             self.assertEqual(r["cookies"], [auth.session_cookie(cookie.split("=", 1)[1])])
         self.assertIn(f"Max-Age={14 * 86400};", r["cookies"][0])
+
+    def test_a_subscribers_sessions_are_listed_under_them_and_renewed_with_them(self):
+        self.subscribe()
+        cookie = self.signed_in()
+        h = auth.digest(cookie.split("=", 1)[1])
+
+        def listed():
+            return [(i["sk"], i["expires_at"]) for i in self.store.items["u1"]]
+
+        self.assertEqual(listed(), [(f"SESSION#{h}", self.now + auth.SESSION_IDLE)])
+        self.now += auth.SESSION_TOUCH
+        self.call("GET", "/api/me", cookies=[cookie])
+        self.assertEqual(listed(), [(f"SESSION#{h}", self.now + auth.SESSION_IDLE)])
 
     def test_session_cookie_is_renewed_at_most_once_a_day(self):
         self.subscribe()

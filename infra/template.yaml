@@ -1271,6 +1271,34 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlarmTopic]
 
+  # The hour's sign-in emails, for everyone, have all gone (auth.LIMIT_TOTAL):
+  # until the hour turns nobody can sign in or get a deletion code. The web
+  # function logs {"event":"mail-limited","limit":"total"} for each refusal.
+  SignInTotalMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogs
+      FilterPattern: '{ $.event = "mail-limited" && $.limit = "total" }'
+      MetricTransformations:
+        - MetricNamespace: ReleaseNotes
+          MetricName: SignInTotalLimited
+          MetricValue: "1"
+
+  SignInTotalAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-signin-total"
+      AlarmDescription: The hour's sign-in emails for everyone are used up. Nobody can sign in until the hour turns; someone may be sending from many networks.
+      Namespace: ReleaseNotes
+      MetricName: SignInTotalLimited
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
   EventsErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:

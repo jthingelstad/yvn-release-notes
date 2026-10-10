@@ -198,7 +198,8 @@ class App:
             return None
         s["hash"] = h
         if self.now - int(s.get("seen_at", 0)) >= auth.SESSION_TOUCH:
-            self.store.touch_session(h, self.now, auth.session_expiry(self.now))
+            s["expires_at"] = auth.session_expiry(self.now)
+            self.store.touch_session(h, self.now, s["expires_at"], s.get("user_id"))
             self.renewed = auth.session_cookie(token)
         return s
 
@@ -260,13 +261,38 @@ def sample(app: App, req: Request) -> dict:
     })
 
 
+def mail_limits(email: str, viewer: str | None = None) -> list[tuple[str, str, int]]:
+    """The hourly limits one more email to an address meets, narrowest
+    first: the address (without its +tag), the network (an IPv6 address's
+    /64, then its /48) and the total."""
+    checks = [("address", "email:" + auth.digest(auth.limit_address(email)), auth.LIMIT_PER_ADDRESS)]
+    if viewer is not None:
+        net = auth.network(viewer)
+        checks.append(("network", "net:" + auth.digest(net), auth.LIMIT_PER_NETWORK))
+        wide = auth.network(viewer, 48)
+        if wide != net:  # IPv6 only: an IPv4 address is its own network
+            checks.append(("network48", "net48:" + auth.digest(wide), auth.LIMIT_PER_NETWORK48))
+    checks.append(("total", "all", auth.LIMIT_TOTAL))
+    return checks
+
+
 def over_limits(app: App, checks) -> None:
-    """Count one more email against each (name, key, limit); 429 past any."""
+    """429 at the first (name, key, limit), narrowest first, that has had
+    its hour's emails; otherwise count this email against every one.
+
+    The counts are read first and only added to for an email that goes, so
+    a request refused for its own address or network adds nothing to the
+    total, and one network cannot lock everyone out of signing in. Two
+    requests at once can both read a count just under its limit and both
+    go: an overshoot of at most the requests in flight (the API allows a
+    burst of 20), which the limits can stand."""
     hour = app.now // 3600
-    over = [name for name, key, limit in checks if app.store.count(key, hour) > limit]
-    if over:
-        log(event="mail-limited", limits=over)
-        raise Reject(429, "limited")
+    for name, key, limit in checks:
+        if app.store.peek(key, hour) >= limit:
+            log(event="mail-limited", limit=name)
+            raise Reject(429, "limited")
+    for _, key, _ in checks:
+        app.store.count(key, hour)
 
 
 def send_mail(app: App, email: str, msg) -> None:
@@ -285,11 +311,13 @@ def send_mail(app: App, email: str, msg) -> None:
         raise Reject(502, "mail-failed") from None
 
 
-def new_login(app: App, email: str) -> tuple[str, str]:
-    """A fresh link token and code for an address; the newest one is the
-    one a code is checked against."""
+def new_login(app: App, email: str, purpose: str = auth.SIGNIN) -> tuple[str, str]:
+    """A fresh link token and code for an address, for signing in or for
+    confirming a deletion; the newest of each is the one a code is checked
+    against. A deletion's token is never sent."""
     token, code = auth.new_token(), auth.new_code()
-    app.store.put_login(auth.digest(token), email, auth.digest(email), auth.digest(code), app.now, auth.LOGIN_TTL)
+    app.store.put_login(auth.digest(token), email, auth.digest(email), auth.digest(code), app.now, auth.LOGIN_TTL,
+                        purpose)
     return token, code
 
 
@@ -297,14 +325,7 @@ def auth_start(app: App, req: Request) -> dict:
     email = auth.normal_email(req.json().get("email"))
     if not email:
         raise Reject(400, "email")
-    over_limits(
-        app,
-        (
-            ("total", "all", auth.LIMIT_TOTAL),
-            ("network", "net:" + auth.digest(auth.network(req.viewer())), auth.LIMIT_PER_NETWORK),
-            ("address", "email:" + auth.digest(email), auth.LIMIT_PER_ADDRESS),
-        ),
-    )
+    over_limits(app, mail_limits(email, req.viewer()))
     token, code = new_login(app, email)
     from_addr = os.environ["FROM_ADDRESS"]
     send_mail(app, email, auth.signin_message(to=email, from_addr=from_addr, link=f"{app.origin}/signin/#t={token}", code=code))
@@ -315,24 +336,24 @@ def auth_start(app: App, req: Request) -> dict:
 CODE_ERRORS = {"gone": "code-expired", "used": "code-used", "attempts": "too-many-tries"}
 
 
-def check_code(app: App, email: str, code: str) -> dict:
-    """Spend one of the address's newest sign-in's code attempts, then
-    compare; a match uses the sign-in up."""
-    token_hash = app.store.newest_login(auth.digest(email))
+def check_code(app: App, email: str, code: str, purpose: str = auth.SIGNIN) -> dict:
+    """Spend one of the code attempts of the address's newest sign-in for
+    this purpose, then compare; a match uses the sign-in up."""
+    token_hash = app.store.newest_login(auth.digest(email), purpose)
     if not token_hash:
         raise Reject(400, "code-expired")
     wrong, day = "codefail:" + auth.digest(email), app.now // 86400
     if app.store.peek(wrong, day) >= auth.MAX_WRONG_CODES_A_DAY:
         log(event="code-limited")
         raise Reject(429, "limited")
-    spent = app.store.spend_attempt(token_hash, app.now, auth.MAX_CODE_ATTEMPTS)
+    spent = app.store.spend_attempt(token_hash, app.now, auth.MAX_CODE_ATTEMPTS, purpose)
     if isinstance(spent, str):
         raise Reject(400, CODE_ERRORS[spent])
     if not auth.same(auth.digest(code), spent["code_hash"]):
         app.store.count(wrong, day, 86400)
         left = auth.MAX_CODE_ATTEMPTS - int(spent["attempts"])
         raise Reject(400, "wrong-code" if left else "too-many-tries", tries_left=left)
-    login = app.store.burn_login(token_hash, app.now)
+    login = app.store.burn_login(token_hash, app.now, purpose)
     if not login:
         raise Reject(400, "code-used")
     return login
@@ -541,7 +562,7 @@ def sign_up(app: App, s: dict, body: dict) -> dict:
     else:
         send_first(app, user_id)
         tally(app, "signups")
-    app.store.claim_session(s["hash"], user_id)
+    app.store.claim_session(s["hash"], user_id, int(s["expires_at"]))
     log(event="signup", user=user_id)
     return respond(200, profile_view({"email": email, **profile}, app.now))
 
@@ -1217,23 +1238,30 @@ def resume(app: App, req: Request) -> dict:
 
 
 def delete_code(app: App, req: Request) -> dict:
-    """Mail the account's own address a code that confirms deleting it."""
+    """Mail the account's own address a code that confirms deleting it. It
+    confirms nothing else: it does not sign in, and a sign-in's code does
+    not delete (auth.DELETE)."""
     user_id, p = app.account(req)
     email = p["email"]
-    over_limits(
-        app,
-        (("total", "all", auth.LIMIT_TOTAL), ("address", "email:" + auth.digest(email), auth.LIMIT_PER_ADDRESS)),
-    )
-    _, code = new_login(app, email)
+    over_limits(app, mail_limits(email))
+    _, code = new_login(app, email, auth.DELETE)
     send_mail(app, email, auth.delete_message(to=email, from_addr=os.environ["FROM_ADDRESS"], code=code))
     log(event="delete-code-sent", user=user_id)
     return respond(202, {"ok": True})
 
 
+def sessions_of(items: list[dict]) -> list[dict]:
+    """The keys of the sessions a subscriber's items list (USER#<id> /
+    SESSION#<hash>, store.py)."""
+    return [{"pk": i["sk"], "sk": "SESSION"} for i in items if i["sk"].startswith("SESSION#")]
+
+
 def delete_me(app: App, req: Request) -> dict:
     """Delete everything: the original emails, the reply addresses, every
-    item under the subscriber, the address, and the profile last, so a
-    failure part way leaves an account that can try again."""
+    item under the subscriber, the sessions those list (every browser
+    signed in, not only this one), the address's newest sign-in and
+    deletion code, the address, and the profile last, so a failure part way
+    leaves an account that can try again."""
     s = app.subscriber(req)
     user_id = s["user_id"]
     p = app.store.profile(user_id)
@@ -1242,7 +1270,7 @@ def delete_me(app: App, req: Request) -> dict:
     code = auth.valid_code(req.json().get("code"))
     if not code:
         raise Reject(400, "email-and-code")
-    check_code(app, p["email"], code)
+    check_code(app, p["email"], code, auth.DELETE)
 
     items = app.store.user_items(user_id)
     raw = [i["raw_key"] for i in items if str(i.get("raw_key", "")).startswith("raw/")]
@@ -1256,7 +1284,9 @@ def delete_me(app: App, req: Request) -> dict:
             log(event="delete-failed", user=user_id, step="mail", errors=len(out["Errors"]))
             raise Reject(502, "delete-failed")
     keys = [{"pk": f"TOKEN#{i['token']}", "sk": "TOKEN"} for i in items if i["sk"].startswith("DAY#") and i.get("token")]
+    keys += sessions_of(items)
     keys += [{"pk": i["pk"], "sk": i["sk"]} for i in items if i["sk"] != "PROFILE"]
+    keys += app.store.login_keys(auth.digest(p["email"]))
     keys.append({"pk": f"EMAIL#{p['email']}", "sk": "EMAIL"})
     app.store.delete_keys(keys)
     app.store.delete_keys([{"pk": f"USER#{user_id}", "sk": "PROFILE"}])
@@ -1270,7 +1300,7 @@ def delete_me(app: App, req: Request) -> dict:
             app.s3.delete_objects(Bucket=os.environ["MAIL_BUCKET"],
                                   Delete={"Objects": [{"Key": k} for k in late_files[:1000]], "Quiet": True})
         app.store.delete_keys([{"pk": f"TOKEN#{i['token']}", "sk": "TOKEN"} for i in late if i["sk"].startswith("DAY#") and i.get("token")]
-                              + [{"pk": i["pk"], "sk": i["sk"]} for i in late])
+                              + sessions_of(late) + [{"pk": i["pk"], "sk": i["sk"]} for i in late])
     app.store.delete_session(s["hash"])
     tally(app, "deletes")
     log(event="account-deleted", user=user_id, items=len(items) + len(late), emails=len(raw), files=len(files) - len(raw))

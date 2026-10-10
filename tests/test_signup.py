@@ -42,6 +42,16 @@ class SignUpTest(WebCase):
         self.assertNotIn("new@example.com", self.out.getvalue())
         self.assertNotIn("Minneapolis", self.out.getvalue())
 
+    def test_the_new_subscriber_lists_the_session(self):
+        # So deleting the account signs this browser out too (web.delete_me).
+        cookies = self.new_session()
+        self.assertEqual(self.store.items, {})  # no account yet, nothing to list it under
+        self.put_me({"birthday": "1981-06-14", "place": MINNEAPOLIS, "send_time": "06:00"}, cookies)
+        user_id = self.store.emails["new@example.com"]
+        (h, s), = self.store.sessions.items()
+        self.assertEqual(self.store.items[user_id], [{"pk": f"USER#{user_id}", "sk": f"SESSION#{h}",
+                                                      "expires_at": s["expires_at"]}])
+
     def test_first_email_goes_now_even_with_the_send_time_ahead(self):
         cookies = self.new_session()
         self.put_me({"birthday": "1981-06-14", "place": MINNEAPOLIS, "send_time": "20:00"}, cookies)

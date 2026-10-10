@@ -4,6 +4,7 @@ tests and scripts/dev_server.py."""
 import re
 
 from release_notes.notes import written_at
+from release_notes.store import NEWEST, SIGNIN
 
 
 
@@ -150,6 +151,12 @@ class FakeStore:
                 self.emails.pop(pk[6:], None)
             elif sk == "PROFILE":
                 self.profiles.pop(pk[5:], None)
+            elif pk.startswith("SESSION#"):
+                self.sessions.pop(pk[8:], None)
+            elif pk.startswith("LOGIN#"):
+                self.logins.pop(pk[6:], None)
+            elif pk.startswith("LOGINFOR#"):
+                self.newest.pop(f"{sk}#{pk[9:]}", None)
             else:
                 rows = self.items.get(pk[5:], [])
                 rows[:] = [i for i in rows if i["sk"] != sk]
@@ -199,16 +206,27 @@ class FakeStore:
         profile = [{"pk": f"USER#{user_id}", "sk": "PROFILE", **self.profiles[user_id]}] if user_id in self.profiles else []
         return profile + self.items.get(user_id, [])
 
-    def put_login(self, token_hash, email, email_hash, code_hash, now, ttl):
-        self.logins[token_hash] = dict(email=email, code_hash=code_hash, attempts=0, expires_at=now + ttl)
-        self.newest[email_hash] = token_hash
+    # newest is keyed "<sort key>#<address hash>", as LOGINFOR#<hash> / LOGIN or DELETE
 
-    def newest_login(self, email_hash):
-        return self.newest.get(email_hash)
+    def put_login(self, token_hash, email, email_hash, code_hash, now, ttl, purpose=SIGNIN):
+        self.logins[token_hash] = dict(email=email, code_hash=code_hash, purpose=purpose, attempts=0,
+                                       expires_at=now + ttl)
+        self.newest[f"{NEWEST[purpose]}#{email_hash}"] = token_hash
 
-    def spend_attempt(self, token_hash, now, max_attempts):
+    def newest_login(self, email_hash, purpose=SIGNIN):
+        return self.newest.get(f"{NEWEST[purpose]}#{email_hash}")
+
+    def login_keys(self, email_hash):
+        keys = []
+        for sk in NEWEST.values():
+            if f"{sk}#{email_hash}" in self.newest:
+                keys += [{"pk": f"LOGINFOR#{email_hash}", "sk": sk},
+                         {"pk": f"LOGIN#{self.newest[f'{sk}#{email_hash}']}", "sk": "LOGIN"}]
+        return keys
+
+    def spend_attempt(self, token_hash, now, max_attempts, purpose=SIGNIN):
         row = self.logins.get(token_hash)
-        if not row or row["expires_at"] <= now:
+        if not row or row["expires_at"] <= now or row.get("purpose", SIGNIN) != purpose:
             return "gone"
         if "used_at" in row:
             return "used"
@@ -217,9 +235,9 @@ class FakeStore:
         row["attempts"] += 1
         return dict(row)
 
-    def burn_login(self, token_hash, now):
+    def burn_login(self, token_hash, now, purpose=SIGNIN):
         row = self.logins.get(token_hash)
-        if not row or "used_at" in row or row["expires_at"] <= now:
+        if not row or "used_at" in row or row["expires_at"] <= now or row.get("purpose", SIGNIN) != purpose:
             return None
         row["used_at"] = now
         return dict(row)
@@ -238,18 +256,28 @@ class FakeStore:
         s = {"created_at": now, "seen_at": now, "expires_at": expires}
         s.update({"user_id": user_id} if user_id else {"email": email})
         self.sessions[session_hash] = s
+        if user_id:
+            self._list_session(session_hash, user_id, expires)
+
+    def _list_session(self, session_hash, user_id, expires):
+        rows = self.items.setdefault(user_id, [])
+        rows[:] = [i for i in rows if i["sk"] != f"SESSION#{session_hash}"]
+        rows.append({"pk": f"USER#{user_id}", "sk": f"SESSION#{session_hash}", "expires_at": expires})
 
     def get_session(self, session_hash):
         s = self.sessions.get(session_hash)
         return dict(s) if s else None
 
-    def touch_session(self, session_hash, now, expires):
+    def touch_session(self, session_hash, now, expires, user_id=None):
         self.sessions[session_hash].update(seen_at=now, expires_at=expires)
+        if user_id:
+            self._list_session(session_hash, user_id, expires)
 
-    def claim_session(self, session_hash, user_id):
+    def claim_session(self, session_hash, user_id, expires):
         s = self.sessions[session_hash]
         s.pop("email", None)
         s["user_id"] = user_id
+        self._list_session(session_hash, user_id, expires)
 
     def delete_session(self, session_hash):
         self.sessions.pop(session_hash, None)

@@ -15,6 +15,15 @@ Elixir's design (elixir-mcp packages/auth/src/magic.mjs), on DynamoDB:
   a caller cannot set: the API answers only requests carrying CloudFront's
   X-Origin-Verify secret, so going straight to its own URL gets a 403. The
   total still bounds the shared SES account against many networks at once.
+  The narrowest limit is checked first, and a refused request counts
+  against none of them, so one network past its own limit cannot use up
+  everyone's total (2026-10-09 review). The address limit counts the
+  address without any +tag, so ada+1@example.com and ada+2@example.com
+  share ada@example.com's five.
+- A code is for one thing: signing in or confirming a deletion (`purpose`
+  on the sign-in, SIGNIN or DELETE). Each has its own newest, so a deletion
+  code never signs anyone in, a sign-in code never deletes an account, and
+  asking for one leaves the other's code working.
 - The answer to "send me a link" is the same whether or not the address has
   an account, and so is the email.
 - The link opens a page with a "Sign in" button, because mail scanners open
@@ -25,6 +34,9 @@ SameSite=Lax, Path=/). It lasts 14 days from last use, and every visit
 starts the 14 days again, with no outer limit (Jamie, 2026-10-08: "as long
 as I return within that time extend my login session"). The cookie's
 Max-Age is renewed along with the stored expiry, at most once a day.
+A subscriber's session is also listed under the subscriber
+(USER#<id> / SESSION#<hash>, renewed with it), so deleting the account ends
+it in every browser, not only the one that asked.
 """
 
 import hashlib
@@ -50,7 +62,16 @@ COOKIE = "__Host-rn"
 # Sign-in emails per hour.
 LIMIT_PER_ADDRESS = 5
 LIMIT_PER_NETWORK = 20
+# An IPv6 /48 is what many providers hand a site, and some a household:
+# 65,536 /64s, each with its own 20. The /48 gets three times a /64's limit,
+# so a few households behind one provider's /48 still get theirs.
+LIMIT_PER_NETWORK48 = 60
 LIMIT_TOTAL = 200
+
+# What a sign-in's code is for. A sign-in stored before purposes were
+# written is a sign-in.
+SIGNIN = "signin"
+DELETE = "delete"
 
 _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
@@ -91,14 +112,23 @@ def valid_code(raw) -> str | None:
     return code if _CODE.fullmatch(code) else None
 
 
-def network(viewer: str) -> str:
+def limit_address(email: str) -> str:
+    """The address the per-address limit counts: without any +tag, which
+    most mail services deliver to the same mailbox. The email itself goes
+    to the address as typed."""
+    local, _, domain = email.rpartition("@")
+    return f"{local.split('+', 1)[0] or local}@{domain}"
+
+
+def network(viewer: str, prefix: int = 64) -> str:
     """The rate-limit key for a viewer address: the IPv4 address, or the
-    IPv6 /64, which is what one household or phone is handed."""
+    IPv6 /64, which is what one household or phone is handed (or, with
+    prefix=48, the /48 it sits in)."""
     try:
         ip = ipaddress.ip_address(viewer)
     except ValueError:
         return viewer
-    return str(ipaddress.ip_network(f"{ip}/64", strict=False)) if ip.version == 6 else str(ip)
+    return str(ipaddress.ip_network(f"{ip}/{prefix}", strict=False)) if ip.version == 6 else str(ip)
 
 
 def session_cookie(token: str) -> str:

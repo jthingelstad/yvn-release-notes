@@ -264,8 +264,13 @@ runtime and is imported lazily so the tests run without it.
   dashboard's JSON and that every census metric it shows exists. The
   per-person view is `scripts/subscribers.py`, on this Mac only.
 - **Deleting an account deletes it**: raw emails, photos and recordings,
-  any zip export, tokens, every `USER#` item, the address and the profile, after a code mailed to the address.
-  Nothing is kept; the export is offered first.
+  any zip export, tokens, every `USER#` item, the session in every browser
+  (each is listed under the subscriber, `USER#<id>` / `SESSION#<hash>`), the
+  address's newest sign-in and deletion code, the address and the profile, after a code mailed to the address.
+  That code only confirms a deletion and a sign-in's code only signs in
+  (`purpose` on the sign-in, `auth.py`). Nothing is kept; the export is
+  offered first. Old versions of deleted files expire 30 days later, as
+  backups.
 - **The export is a zip** (Jamie, 2026-10-08): the Markdown and JSON plus
   every photo and recording under `files/`, the Markdown showing each photo
   by its path in the zip. Settings starts a build (`POST /api/export/zip`);
@@ -446,6 +451,14 @@ runtime and is imported lazily so the tests run without it.
   fires when anyone's email is over half an hour late for two quarter
   hours (census `Overdue`); a send time moved past today's window also
   trips it, for that day.
+- Alarm `yvn-release-notes-signin-total` fires when the hour's sign-in
+  emails for everyone (200, `auth.LIMIT_TOTAL`) are used up, from the web
+  function's `{"event":"mail-limited","limit":"total"}` line: nobody can
+  sign in until the hour turns. The narrower limits (an address without
+  its +tag, an IPv4 address or IPv6 /64, an IPv6 /48) are checked first and
+  a refused request counts against none, so reaching the total takes many
+  networks, or someone forging CloudFront's viewer address on the API's
+  own URL.
 - One row per subscriber (address, state, sign-up day, send time, last
   email, last note, notes, 30-day reply rate): `scripts/subscribers.py`.
   Reads keys and a few fields, never note text. It prints addresses, so its

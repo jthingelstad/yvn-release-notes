@@ -19,7 +19,10 @@
                                                 size, files; gone a day after it is built
     USER#<id>        SESSION#<hash>             one of the subscriber's sessions, so deleting the account
                                                 ends it in every browser; expires_at renewed with it
-    TOKEN#<token>    TOKEN                      reply address -> user and day
+    TOKEN#<token>    TOKEN                      reply address -> user, day, version, sent_at (epoch seconds;
+                                                missing before 2026-10-09). Replies are filed for 72 hours
+                                                after sent_at (inbound.py), but the item has no TTL: the
+                                                email's unsubscribe link uses it as long as the account lasts
     EMAIL#<address>  EMAIL                      address -> user (one subscriber per address)
     LOGIN#<hash>     LOGIN                      a sign-in's link and code (auth.py), 15 minutes; purpose
                                                 signin or delete (none: a sign-in from before purposes)
@@ -49,7 +52,7 @@ notes.written_at.
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from .notes import written_at
@@ -194,7 +197,11 @@ class Store:
         )
 
     def put_day(self, user_id: str, day: str, version: str, token: str, sent_at: str) -> None:
-        self.table.put_item(Item={"pk": f"TOKEN#{token}", "sk": "TOKEN", "user_id": user_id, "date": day, "version": version})
+        """The day's reply address and its DAY item. `sent_at` is ISO 8601;
+        the token keeps it as epoch seconds, for inbound's 72 hours."""
+        sent = int(datetime.fromisoformat(sent_at).timestamp())
+        self.table.put_item(Item={"pk": f"TOKEN#{token}", "sk": "TOKEN", "user_id": user_id, "date": day,
+                                  "version": version, "sent_at": sent})
         self.table.put_item(
             Item={"pk": f"USER#{user_id}", "sk": f"DAY#{day}", "version": version, "token": token, "sent_at": sent_at}
         )

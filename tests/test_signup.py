@@ -186,6 +186,16 @@ class SignUpTest(WebCase):
         r, _ = self.call("POST", "/api/unsubscribe", origin=None, query={"t": "../../etc"})
         self.assertEqual(r["statusCode"], 400)
 
+    def test_an_old_emails_unsubscribe_link_still_works(self):
+        # Replies through a token stop after 72 hours (inbound.py); its
+        # unsubscribe link never does.
+        self.subscribe()
+        self.store.tokens["cccccccccccccccccccccccc"] = {"user_id": "u1", "date": "2026-01-01", "version": "4.5.1",
+                                                         "sent_at": 1767225600}  # 2026-01-01T00:00:00Z
+        r, _ = self.call("POST", "/api/unsubscribe", origin=None, query={"t": "cccccccccccccccccccccccc"})
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual(self.store.profiles["u1"]["status"], "stopped")
+
     def test_opening_the_unsubscribe_link_shows_a_page(self):
         r, _ = self.call("GET", "/api/unsubscribe", query={"t": "abcdefghijklmnopqrstuvwx"})
         self.assertEqual((r["statusCode"], r["headers"]["location"]), (302, "/unsubscribe/#t=abcdefghijklmnopqrstuvwx"))

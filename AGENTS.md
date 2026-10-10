@@ -16,8 +16,9 @@ Leave the sites alone while the web app is built.
 Every write proves the writer owns the subscriber's address:
 
 - **By email**: through a reply address that names the person and day with
-  120 random bits, from the subscriber's own address, with a DMARC or aligned
-  DKIM pass.
+  120 random bits, within 72 hours of that email going out, from the
+  subscriber's own address (the message's one From), with a DMARC pass or,
+  where the domain publishes no DMARC policy, an aligned DKIM pass.
 - **On the web**: inside a session that began with a link or code sent to
   that address.
 
@@ -88,6 +89,17 @@ runtime and is imported lazily so the tests run without it.
 
 - **A note belongs to the day of the email it answers**, not the day it
   arrived. A Thursday reply to Tuesday's email is Tuesday's note.
+- **Reply addresses take notes for 72 hours** after their email went out
+  (Jamie, 2026-10-09: "72 hours after it was sent. After that, the user
+  can add a note via the web interface"). So the Thursday reply counts
+  when it comes inside that window; a later one is ignored as `expired`
+  (logged with the user id only, no email back) and the note goes in
+  through the web, on any day. The token item carries `sent_at` (epoch
+  seconds) for this; tokens from before 2026-10-09 have only their day and
+  take replies until midnight UTC ending the fourth day after it, which is
+  at least 72 hours in every zone (`inbound.deadline`). The token item
+  itself never expires: the email's `List-Unsubscribe` and unsubscribe
+  page use it, for as long as anyone keeps the email.
 - **Reply as often as you like.** Each reply is its own note
   (`NOTE#<day>#<messageId>`); together, oldest first, they are that day's
   release notes (Jamie, 2026-10-08: "keep them in the database as separate
@@ -155,8 +167,11 @@ runtime and is imported lazily so the tests run without it.
   whatever channel brought them. From an emailed reply, inbound copies each one to
   `media/<user>/<day>/<message id>/<n>.<ext>` in the same bucket and lists it
   on the note as `media` (`media.py`); signature logos (longest side under
-  200 px) are left out. Video, PDFs and the rest of an emailed reply stay in
-  the raw message and show as "in the original email". A note's media can
+  200 px) are left out, and so is a file whose first bytes are not the
+  photo or recording it claims to be (`looks_like`, as for uploads; its
+  attachment entry is marked `refused`). Video, PDFs and the rest of an
+  emailed reply stay in the raw message and show as "in the original
+  email". A note's media can
   also be a `file` (a PDF), shown as a link. **On the web** (Jamie,
   2026-10-09: "add a file to an entry via the web ... image, audio, PDF")
   a new note or one already there takes photos, recordings and PDFs, up
@@ -243,8 +258,11 @@ runtime and is imported lazily so the tests run without it.
 - **Automatic replies are not notes.** Inbound ignores mail marked
   `Auto-Submitted` (other than `no`), `X-Autoreply`, `X-Autorespond`, or
   `Precedence: auto_reply`, `bulk` or `junk`, and mail with more than one
-  From. A note is at most 20,000 characters (`notes.MAX_NOTE`), emailed or
-  typed.
+  From (in SES's reading or the message's own headers). These checks, and
+  those on who sent it, read the headers alone; a body too broken to parse (MIME
+  nested a thousand deep) is ignored as `unparseable`, not retried. A
+  virus scan SES could not finish counts as a virus. A note is at most
+  20,000 characters (`notes.MAX_NOTE`), emailed or typed.
 - **Counts, not people** (`TALLY#<YYYY-MM>`): sign-ups, unsubscribes,
   restarts, bounces, complaints and deletes, one number each a month, read
   with `scripts/tally.py`. Never per person. A stopped subscriber gets
@@ -331,8 +349,10 @@ runtime and is imported lazily so the tests run without it.
   address), never when it is shown. The fetch is guarded because the address
   is whatever someone typed: http(s) on the usual port, no userinfo, every
   resolved address public and the connection pinned to it, at most three
-  redirects each checked again, two seconds, 256 KB, HTML only, three
-  fetches a note; anything else is just no title. `links.segments` is the
+  redirects each checked again, two seconds by the wall clock for the
+  lookup, connection, headers and body together (the fetch runs on a
+  thread the caller stops waiting for), 256 KB, HTML only, three fetches a
+  note, so six seconds at most; anything else is just no title. `links.segments` is the
   one rendering for the email (`compose.linked`), the web (`parts` in each
   note, drawn by `noteBody`) and the Markdown export. Tests never fetch:
   pass a fake `fetch` to `web.handler` and `inbound.process`.

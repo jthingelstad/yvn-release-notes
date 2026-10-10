@@ -15,7 +15,9 @@ guarded, because the address is whatever someone typed:
   redirects, each one checked again;
 - every address the host resolves to must be public, and the connection goes
   to the address that was checked (no second lookup to rebind);
-- two seconds in all, the first 256 KB, HTML only;
+- two seconds in all by the wall clock, the lookup, the connection, the
+  headers and the body together, the first 256 KB, HTML only; three
+  fetches a note, so a note's titles take six seconds at most;
 - any failure is just no title: the address shows short instead.
 
 segments() splits a note's text into text and links for the email and the
@@ -27,6 +29,7 @@ import ipaddress
 import re
 import socket
 import ssl
+import threading
 import time
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
@@ -208,8 +211,61 @@ def _connect(scheme, host, ip, port, timeout):
     return (_HTTPS if scheme == "https" else _HTTP)(host, ip, port, timeout)
 
 
-def fetch_title(url: str, *, resolve=socket.getaddrinfo, connect=_connect, clock=time.monotonic) -> dict | None:
-    """{"title", "site"} for a page, or None. Never raises."""
+def fetch_title(url: str, *, resolve=socket.getaddrinfo, connect=_connect, clock=time.monotonic,
+                limit: float = TIMEOUT) -> dict | None:
+    """{"title", "site"} for a page, or None. Never raises, and never takes
+    more than `limit` seconds by the wall clock.
+
+    The socket timeouts alone do not hold that: the lookup has none, and a
+    server that trickles its headers a byte at a time never lets one read
+    time out. So the fetch runs on a daemon thread, and once the time is up
+    it is left behind with its socket shut, and this answers no title. That
+    works the same in Lambda and in the dev server's threads."""
+    box: dict = {}
+    opened: list = []
+    late = threading.Event()
+
+    def run():
+        box["meta"] = _fetch(url, resolve, _tracked(connect, opened, late), clock)
+
+    worker = threading.Thread(target=run, name="link-title", daemon=True)
+    worker.start()
+    worker.join(limit)
+    if worker.is_alive():
+        late.set()
+        for conn in list(opened):
+            _shut(conn)
+        return None
+    return box.get("meta")
+
+
+def _tracked(connect, opened: list, late: threading.Event):
+    """connect, noting each connection so a fetch out of time can be cut,
+    and opening none once it is."""
+    def call(*args):
+        if late.is_set():
+            raise TimeoutError("out of time")
+        conn = connect(*args)
+        opened.append(conn)
+        return conn
+    return call
+
+
+def _shut(conn) -> None:
+    # shutdown wakes a read blocked on the socket; close alone may not.
+    sock = getattr(conn, "sock", None)
+    try:
+        if sock is not None:
+            sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
+def _fetch(url: str, resolve, connect, clock) -> dict | None:
     deadline = clock() + TIMEOUT
     try:
         for _ in range(MAX_REDIRECTS + 1):

@@ -1,4 +1,6 @@
 import socket
+import threading
+import time
 import unittest
 
 from release_notes import links
@@ -115,6 +117,46 @@ class Fetch(unittest.TestCase):
         web = Web({})
         self.assertIsNone(fetch_title("https://example.com/", resolve=resolver(PUBLIC), connect=web, clock=lambda: next(ticks)))
         self.assertEqual(web.opened, [])
+
+    def test_a_server_that_trickles_its_headers_is_cut_off(self):
+        # Each byte comes in under the socket's timeout, so only the wall
+        # clock stops it: no title, on time, and the connection shut.
+        release, closed = threading.Event(), []
+
+        class Trickle:
+            sock = None
+
+            def request(self, method, path, headers):
+                pass
+
+            def getresponse(self):
+                release.wait(10)
+                return page("Too late")
+
+            def close(self):
+                closed.append(True)
+
+        start = time.monotonic()
+        self.assertIsNone(fetch_title("https://example.com/", resolve=resolver(PUBLIC), connect=lambda *a: Trickle(), limit=0.2))
+        self.assertLess(time.monotonic() - start, 2)
+        self.assertEqual(closed, [True])
+        release.set()
+
+    def test_a_lookup_that_hangs_is_cut_off(self):
+        release = threading.Event()
+
+        def slow(host, port, type=None):
+            release.wait(10)
+            return resolver(PUBLIC)(host, port, type)
+
+        start = time.monotonic()
+        self.assertIsNone(fetch_title("https://example.com/", resolve=slow, connect=Web({}), limit=0.2))
+        self.assertLess(time.monotonic() - start, 2)
+        release.set()
+
+    def test_the_whole_fetch_has_one_limit(self):
+        self.assertEqual(links.TIMEOUT, 2.0)
+        self.assertEqual(fetch_title.__kwdefaults__["limit"], links.TIMEOUT)
 
 
 class Guards(unittest.TestCase):

@@ -8,12 +8,20 @@ attachments; media.py copies out the photos and recordings.
 import re
 from email import policy
 from email.message import EmailMessage
-from email.parser import BytesParser
+from email.parser import BytesHeaderParser, BytesParser
 from html.parser import HTMLParser
 
 
 def parse_message(raw: bytes) -> EmailMessage:
     return BytesParser(policy=policy.default).parsebytes(raw)
+
+
+def parse_headers(raw: bytes) -> EmailMessage:
+    """The headers alone; the body is left as one unread string. Inbound
+    checks who sent a reply with these before it parses the body, which a
+    sender can build to break the parser (MIME nested a thousand deep raises
+    RecursionError)."""
+    return BytesHeaderParser(policy=policy.default).parsebytes(raw)
 
 
 # --- body text -------------------------------------------------------------

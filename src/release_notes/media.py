@@ -158,19 +158,30 @@ def worth_keeping(ctype: str, data: bytes) -> bool:
     return len(data) >= MIN_UNREAD
 
 
-def found(msg) -> list[tuple[str, bytes]]:
+def found(msg, refused: list[int] | None = None) -> list[tuple[str, bytes]]:
     """(type, bytes) for each photo and recording in a parsed message, in
-    order. Body text is never a file."""
+    order. Body text is never a file. Like an upload, each is checked by its
+    first bytes (looks_like), since its type and name are whatever the
+    sender wrote. One that is not what it says stays in the raw message
+    only: its place in parse.attachments' list goes in `refused`, and
+    inbound marks that entry so it shows as "in the original email"
+    (others)."""
     out = []
+    n = -1  # the part's place in parse.attachments, which skips the same parts
     for part in msg.walk():
         if part.is_multipart():
             continue
         if part.get_content_disposition() != "attachment" and part.get_content_type().startswith("text/"):
             continue
+        n += 1
         ctype = media_type(part.get_content_type(), part.get_filename() or "")
         if not ctype:
             continue
         data = part.get_payload(decode=True) or b""
+        if not looks_like(ctype, data[:HEAD]):
+            if refused is not None:
+                refused.append(n)
+            continue
         if worth_keeping(ctype, data):
             out.append((ctype, data))
         if len(out) == MAX_FILES:
@@ -208,7 +219,8 @@ def counts(notes: list[dict]) -> dict[str, int]:
 
 
 def others(note: dict) -> int:
-    """Attachments the app does not show (video, PDFs and the like): still
-    in the original email."""
+    """Attachments the app does not show (video, PDFs and the like, and a
+    photo or recording whose bytes were not what it said, marked `refused`):
+    still in the original email."""
     return sum(1 for a in note.get("attachments") or []
-               if not media_type(a.get("content_type", ""), a.get("filename", "")))
+               if a.get("refused") or not media_type(a.get("content_type", ""), a.get("filename", "")))

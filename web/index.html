@@ -8,6 +8,16 @@
       name="description"
       content="A daily email with your version number. Reply, and your reply becomes that day's release notes."
     />
+    <!-- Added to a Home Screen, it opens on Today as an app of its own. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Release Notes" />
+    <meta name="theme-color" content="#fffbf2" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#14163a" media="(prefers-color-scheme: dark)" />
+    <!-- React Aria adds a style element unless this id is taken; the CSP
+         refuses inline styles, so site.css carries its one rule instead. -->
+    <meta name="react-aria-pressable-style" id="react-aria-pressable-style" content="site.css" />
     <script type="module" src="/src/main.tsx"></script>
   </head>
   <body>

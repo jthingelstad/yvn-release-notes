@@ -1,12 +1,11 @@
-// Fields more than one page uses: the birthday, the city search, the send
-// time, and the zip export.
+// Fields more than one page uses: the birthday, the send time, and the zip
+// export. The city search is placepicker.tsx, so React Aria loads only with
+// the pages that have it.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { api, get } from '../lib/api.ts';
 import { clock, megabytes, SEND_TIMES } from '../lib/format.ts';
-import { SAY, signedOutLine, type Line } from '../lib/say.ts';
-import type { Place, ZipStatus } from '../lib/types.ts';
-import { LineText } from './common.tsx';
+import type { ZipStatus } from '../lib/types.ts';
 
 // --- the birthday ------------------------------------------------------------
 // Month, day and year as three fields: quicker than a date picker's wheel
@@ -112,114 +111,6 @@ export function BirthdayFields({
         </label>
       </div>
     </fieldset>
-  );
-}
-
-// --- the city ----------------------------------------------------------------
-// A search over /api/places. Calls onPick(place) with the choice, and
-// onClear() when the text changes after a pick. "No city by that name" and
-// failures go to the picker's status line, outside the listbox. A new
-// `key` starts it over.
-
-export function PlacePicker({
-  label,
-  placeholder,
-  required,
-  inputRef,
-  onPick,
-  onClear = () => {}
-}: {
-  label: string;
-  placeholder: string;
-  required?: boolean;
-  inputRef?: React.Ref<HTMLInputElement>;
-  onPick: (p: Place) => void;
-  onClear?: () => void;
-}) {
-  const [q, setQ] = useState('');
-  const [places, setPlaces] = useState<Place[]>([]);
-  const [picked, setPicked] = useState<Place | null>(null);
-  const [status, setStatus] = useState<Line>('');
-  const asked = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
-
-  const type = (value: string) => {
-    setQ(value);
-    clearTimeout(timer.current);
-    if (picked) {
-      setPicked(null);
-      onClear();
-    }
-    setStatus('');
-    const query = value.trim();
-    if (query.length < 2) {
-      ++asked.current;
-      setPlaces([]);
-      return;
-    }
-    timer.current = setTimeout(async () => {
-      const mine = ++asked.current;
-      const r = await api<{ places: Place[] }>('GET', '/api/places?q=' + encodeURIComponent(query));
-      if (mine !== asked.current) return; // a later search has gone out
-      if (!r.ok) {
-        setPlaces([]);
-        setStatus(
-          r.data.error === 'signed-out' ? signedOutLine() : (r.data.error && SAY[r.data.error]) || SAY['places-failed']
-        );
-        return;
-      }
-      if (!r.data.places.length) {
-        setPlaces([]);
-        setStatus('No city by that name. Try the nearest larger one.');
-        return;
-      }
-      setPlaces(r.data.places);
-    }, 300);
-  };
-
-  return (
-    <>
-      <label>
-        {label}
-        <input
-          ref={inputRef}
-          type="search"
-          name="city"
-          autoComplete="off"
-          placeholder={placeholder}
-          required={required}
-          value={q}
-          onChange={(e) => type(e.target.value)}
-        />
-      </label>
-      <div>
-        <div className="places" role="listbox" aria-label="Places">
-          {places.map((p, i) => (
-            <button
-              key={i}
-              type="button"
-              className="place"
-              role="option"
-              aria-selected={p === picked}
-              onClick={() => {
-                setPicked(p);
-                onPick(p);
-              }}
-            >
-              <span className="mark">{p === picked ? '•' : ''}</span>
-              <span>
-                <span className="name">{p.name}</span>
-                <span className="where">{[p.region, p.country].filter(Boolean).join(', ')}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-        <p className="hint places-status" role="status">
-          <LineText line={status} />
-        </p>
-      </div>
-    </>
   );
 }
 

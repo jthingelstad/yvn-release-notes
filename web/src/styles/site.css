@@ -93,6 +93,7 @@ input.code { font-family: var(--mono); font-size: 32px; font-weight: 700; letter
 }
 .quiet.danger { color: var(--orange-ink); }
 .row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.lede + .row { margin-top: 32px; }
 .error { margin: 0; font-size: 15px; font-weight: 600; color: var(--orange-ink); }
 
 /* settings */
@@ -113,6 +114,10 @@ form.roomy { margin-top: 32px; gap: 36px; }
 .place .name { display: block; font-size: 17px; }
 .place .where { display: block; font-size: 13px; color: var(--ink-2); }
 .place[aria-selected="true"] .name { font-weight: 800; }
+.place[data-focused] .name { text-decoration: underline; text-decoration-color: var(--orange); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.place-field { display: contents; }
+/* React Aria would add this as a <style> tag, which the CSP refuses; index.html marks it as already here. */
+[data-react-aria-pressable] { touch-action: pan-x pan-y pinch-zoom; }
 .saved { margin: 0; }
 select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 .section label { color: var(--ink-2); }

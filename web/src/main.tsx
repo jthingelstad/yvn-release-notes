@@ -23,6 +23,7 @@ import { ApiError } from './lib/api.ts';
 import { countPage } from './lib/pagecount.ts';
 import { daysQuery, dayQuery, meQuery, pickDay, tagQuery, tagsQuery, todayQuery } from './lib/queries.ts';
 import { home, store } from './lib/storage.ts';
+import { AppError } from './pages/AppError.tsx';
 import { Home } from './pages/Home.tsx';
 import { NotFound } from './pages/NotFound.tsx';
 import './styles/site.css';
@@ -165,6 +166,8 @@ const router = createRouter({
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0,
   defaultPendingComponent: () => <Loading />,
+  // A page that breaks says so in the app's own words.
+  defaultErrorComponent: AppError,
   // Back and forward return to where the page was scrolled.
   scrollRestoration: true,
   parseSearch: (s) => Object.fromEntries(new URLSearchParams(s)),

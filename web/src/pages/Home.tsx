@@ -46,6 +46,11 @@ const COUNT = [
 const sampleFor = (b: string) =>
   api<Sample>('GET', `/api/sample?birthday=${b}&tz=${encodeURIComponent(browserZone())}`);
 
+// Opened from the Home Screen, the app keeps its own cookies: the email's
+// link would sign in the browser instead, so the code is the way in.
+const fromHomeScreen = () =>
+  matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
+
 export function Home() {
   useTitle('');
   const navigate = useNavigate();
@@ -387,7 +392,16 @@ export function Home() {
       <section id="check" hidden={!shows('check')}>
         <h1 className="top">Check your email.</h1>
         <p className="lede">
-          We sent a link and a code to <strong id="sent-to">{sentTo}</strong>. Open the link, or type the code here.
+          {fromHomeScreen() ? (
+            <>
+              We sent a code to <strong id="sent-to">{sentTo}</strong>. Type it here: the email’s link signs in your
+              browser, not this app.
+            </>
+          ) : (
+            <>
+              We sent a link and a code to <strong id="sent-to">{sentTo}</strong>. Open the link, or type the code here.
+            </>
+          )}
         </p>
 
         <form id="code-form" noValidate onSubmit={onCode} onInput={codeProblem.clear}>

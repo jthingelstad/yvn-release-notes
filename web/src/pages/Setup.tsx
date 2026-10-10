@@ -2,7 +2,8 @@
 // front page already has it), the city, and the send time.
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { BirthdayFields, emptyMdy, mdyOf, mdyValue, PlacePicker, SendTimeSelect } from '../components/fields.tsx';
+import { BirthdayFields, emptyMdy, mdyOf, mdyValue, SendTimeSelect } from '../components/fields.tsx';
+import { PlacePicker } from '../components/placepicker.tsx';
 import { Bar, Digits, ErrorLine, useBusy, useFocusLater, useProblem, useTitle } from '../components/common.tsx';
 import { api, get } from '../lib/api.ts';
 import { browserZone, clock, longDate } from '../lib/format.ts';

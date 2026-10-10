@@ -499,6 +499,11 @@ runtime and is imported lazily so the tests run without it.
   cfn-lint is pinned too (`pipx run --spec cfn-lint==<version>`), which
   Dependabot cannot see: bump it by hand to PyPI's latest, after a local
   run, when the template needs a newer one.
+- `tests/test_docs.py` fails when the docs miss something the code has:
+  a route in `web.ROUTES` not in `docs/WEB-APP.md`'s API table (or a row
+  with no route), a page in `main.tsx` not in its Pages, a key prefix not
+  in `store.py`'s docstring, or a module or script AGENTS.md never names.
+  Update the doc in the same PR.
 - The repository is public. Never commit subscriber data, note text, DNS
   values or anything from the live table or bucket, including in tests and
   fixtures (the tests use a fictional subscriber at example.com).
@@ -541,9 +546,9 @@ runtime and is imported lazily so the tests run without it.
   live to check something. For hot reload, run `scripts/dev_server.py
   --port 8790` and `npm run dev` (Vite on 5173, sending `/api` and the dev
   routes to it).
-- Sign-up is on the web. `scripts/add_subscriber.py EMAIL YYYY-MM-DD
-  [--tz ZONE] [--send-time HH:MM]` adds one by hand, a phase 1 leftover:
-  it writes no city (so no weather), no tally and sends no first email.
+- Subscribers sign up on the web; there is no way to add one by hand
+  (`scripts/add_subscriber.py` was retired 2026-10-09: it skipped the
+  city, the tally and the first email).
 - `scripts/read_notes.py EMAIL [YYYY-MM-DD]` prints someone's release
   notes, from before the web app had a reader. It prints note text, so run
   it only for the subscriber's own notes; agents do not run it to check

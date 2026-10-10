@@ -9,3 +9,5 @@ __pycache__/
 node_modules/
 test-results/
 playwright-report/
+# the web app's build (npm run build; deploy.sh builds its own)
+dist/

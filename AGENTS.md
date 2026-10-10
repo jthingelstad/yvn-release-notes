@@ -40,7 +40,7 @@ SES delivery events, on their own topic (yvn-release-notes-mail-events)
                                          one scrubbed line (kinds, user ids) -> the alarms topic
 
 notes.yourversionnumber.com (CloudFront)
-  default -> S3 web bucket              web/: static HTML, CSS, vanilla JS
+  default -> S3 web bucket              web/: the React app, built by Vite (dist/web)
   /api/*  -> HTTP API -> Lambda yvn-release-notes-web
                             -> Lambda yvn-release-notes-export   (async) the zip export -> S3 exports/
 ```
@@ -69,13 +69,22 @@ runtime and is imported lazily so the tests run without it.
   is the design). `places.py`: city search through Open-Meteo. `weather.py`: each day's
   weather and the morning forecast, from Open-Meteo (its docstring is the design). `export.py`: everything a subscriber has, as JSON and
   Markdown; `export_job.py` builds the zip with every photo and recording,
-  in the background. `web/` is the static site, synced to the web bucket by
-  `deploy.sh`: one `assets/app.js` for every page (`<body data-page>`),
-  `assets/site.css`, and the two fonts served from here. Pages load only
-  their own files (the CSP is `'self'`), so no inline script or style,
-  nothing remote; anything another service answers goes through `/api`.
-  The exceptions are named in the CSP: Tinylytics (connect) and the mail
-  bucket's host for signed photo links (img, media).
+  in the background. `web/` is the web app (decided 2026-10-09, replacing
+  hand-written pages and one `app.js`): a single-page React app on the
+  thingy stack (React 19, Vite, TypeScript, TanStack Router and Query),
+  `web/src/main.tsx` the routes, `pages/` one component a page,
+  `components/` the shared pieces, `lib/` the API client and helpers,
+  `styles/site.css` the one stylesheet, and the two fonts served from here.
+  `paths.ts` lists the pages; the build (`vite.config.ts`) writes a copy of
+  `index.html` into each page's folder with its title, so CloudFront's
+  `/x/` -> `/x/index.html` function serves every address unchanged, and
+  `deploy.sh` syncs `dist/web`. Pages load only their own files (the CSP
+  is `'self'`), so no inline script or style (nothing inlined by the
+  build, no `style` props), nothing remote; anything another service
+  answers goes through `/api`. The exceptions are named in the CSP:
+  Tinylytics (connect) and the mail bucket's host for signed photo links
+  (img, media). `npm run verify` (prettier, oxlint, `tsc`, vitest, the
+  build) is part of `validate`.
 - `tests/fakes.py`: an in-memory table, SES, S3 and Lambda for the web tests, also used
   by `scripts/dev_server.py`. The fakes do not check DynamoDB's request
   shapes, so a new kind of table call also gets a test of the exact request
@@ -344,7 +353,7 @@ runtime and is imported lazily so the tests run without it.
   outcomes only.
 - **No open or click tracking**, consistent with Jamie's email tracking policy.
 - **The web app counts pages in Tinylytics** (site 3816, Jamie 2026-10-08),
-  from the bottom of `app.js` rather than the embed script, so script-src
+  from `web/src/lib/pagecount.ts` on each page shown, rather than the embed script, so script-src
   stays `'self'` and only connect-src names `https://tinylytics.app`. Send
   the path only, never a query string (sign-in and unsubscribe tokens live
   there), no cookies, nothing that names a person. No other analytics.
@@ -449,7 +458,7 @@ runtime and is imported lazily so the tests run without it.
   ruleset requires that check, rebase merges and linear history, with 0
   approvals and no bypass, Jamie's account included (agents push as it).
 - `validate` (`.github/workflows/validate.yml`) runs the workflow lint, the
-  unit tests and cfn-lint. Workflows stay SHA-pinned with `permissions: {}`,
+  unit tests, cfn-lint and the web app's `npm run verify`. Workflows stay SHA-pinned with `permissions: {}`,
   per-job grants and `persist-credentials: false`;
   `sh scripts/test-workflows.sh` checks that. Dependabot moves the pins
   monthly in one PR, which is reviewed like any other: it does not
@@ -478,18 +487,20 @@ runtime and is imported lazily so the tests run without it.
   `npx playwright install chromium` once, then `npm run e2e`. On GitHub: the
   `e2e` workflow, from the Actions tab or by labelling a PR `e2e`. It is
   not a required check and `deploy.sh` does not wait for it; run it for
-  any change to `web/assets/app.js` or the pages. Node is dev tooling only
-  (`package.json` holds one dev dependency): nothing under `node_modules`
-  is packaged or synced. The expected number comes from `/api/sample`,
+  any change under `web/` that a page shows. `npm run e2e` builds the app
+  first. Node builds the web app and runs the tools; only the built
+  `dist/web` is synced, and nothing under `node_modules` is packaged. The expected number comes from `/api/sample`,
   never a fixed string, since it depends on today. The dev server's sign-in
   limits still apply (20 emails an hour from one network), so
   `--repeat-each` past about 4 trips them.
-- The web app locally: `scripts/dev_server.py` serves `web/` and the real API
+- The web app locally: `npm ci --ignore-scripts` and `npm run build`, then
+  `scripts/dev_server.py` serves the built `dist/web` and the real API
   against in-memory fakes, prints sign-in emails instead of sending them, and
   starts with a fictional subscriber, ada@example.com. `--fake-places`
-  answers city search and weather without Open-Meteo. Use it (and Playwright
-  from a sibling project's `node_modules`) to see pages; never sign in on
-  live to check something.
+  answers city search and weather without Open-Meteo. Use it (and this
+  repo's Playwright) to see pages; never sign in on
+  live to check something. For hot reload, run the dev server on 8790 and
+  `npm run dev` (Vite on 5173, sending `/api` and the dev routes to it).
 - Add a subscriber (phase 1 has no sign-up): `scripts/add_subscriber.py EMAIL YYYY-MM-DD`
 - Read someone's release notes (phase 1 has no reader):
   `scripts/read_notes.py EMAIL [YYYY-MM-DD]`. It prints note text, so run it
@@ -544,9 +555,12 @@ runtime and is imported lazily so the tests run without it.
   `WebDistributionDomain`. The certificate lives outside the stack (an
   in-stack one would hold every deploy until DNS validated); `deploy.sh`
   finds it once ACM says ISSUED and only then attaches the alias.
-- `deploy.sh` syncs HEAD's `web/` (a `git archive` export, so nothing git
-  ignores goes up) to the web bucket (HTML at max-age 60, other files
-  600; bump `?v=N` on an asset whose change must land with a page) and
+- `deploy.sh` builds the web app from HEAD (a `git archive` export, so
+  nothing git ignores goes in; `npm ci --ignore-scripts`, `npm run build`)
+  before deploying the stack, and refuses to deploy if the build fails. It
+  syncs `dist/web` to the web bucket: `assets/` (Vite's hashed names) cached
+  for a year as immutable and never deleted, so a page still open keeps
+  its files; HTML at max-age 60, with `--delete`; other files 600. Then it
   invalidates the distribution.
 
 ## Phases

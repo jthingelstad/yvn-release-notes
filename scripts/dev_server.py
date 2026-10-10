@@ -3,7 +3,7 @@
 
     scripts/dev_server.py [--port 8000]
 
-Serves web/ and hands /api/* to web.handler with the in-memory fakes from
+Serves the built web app (dist/web, from `npm run build`) and hands /api/* to web.handler with the in-memory fakes from
 tests/fakes.py: no AWS, no mail. A sign-in email is printed here instead of
 sent, link and code included, and the newest one to each address is at
 /dev-mail/?to=<address> (the browser tests in e2e/ read it). A fictional subscriber, ada@example.com
@@ -231,9 +231,13 @@ def main():
 
     threading.Thread(target=write_out, daemon=True).start()
 
+    site = ROOT / "dist" / "web"
+    if not (site / "index.html").exists():
+        sys.exit("No web app built: run `npm ci --ignore-scripts && npm run build` first.")
+
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
-            super().__init__(*a, directory=str(ROOT / "web"), **kw)
+            super().__init__(*a, directory=str(site), **kw)
 
         def api(self):
             url = urlsplit(self.path)

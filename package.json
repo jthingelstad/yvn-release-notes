@@ -1,11 +1,42 @@
 {
-  "name": "yvn-release-notes-e2e",
+  "name": "yvn-release-notes-web",
   "private": true,
-  "description": "Browser tests for the sign-up flow. Dev tooling only: nothing here is deployed.",
+  "description": "The Release Notes web app (web/, React on Vite) and its browser tests (e2e/).",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "e2e": "playwright test --config e2e/playwright.config.mjs"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint web/src --deny-warnings",
+    "format": "prettier --write \"web/**/*.{ts,tsx,html}\" \"*.{ts,json}\"",
+    "format:check": "prettier --check \"web/**/*.{ts,tsx,html}\" \"*.{ts,json}\"",
+    "test": "vitest run",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "e2e": "vite build && playwright test --config e2e/playwright.config.mjs"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.104.1",
+    "@tanstack/react-router": "^1.170.41",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0"
+    "@playwright/test": "1.63.0",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "happy-dom": "^20.14.6",
+    "oxlint": "^1.87.0",
+    "prettier": "^3.9.9",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^4.1.11"
   }
 }

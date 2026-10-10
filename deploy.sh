@@ -15,8 +15,9 @@
 # 2. Deploy infra/template.yaml as stack yvn-release-notes.
 # 3. Make the stack's receipt rule set the account's active one. SES allows
 #    one active set per region; refuse rather than replace someone else's.
-# 4. Sync HEAD's web/ (exported, so nothing git ignores goes up) to the web
-#    bucket and invalidate the distribution.
+# 4. Sync the web app, built from HEAD (exported, so nothing git ignores
+#    goes in) before the stack deploys, to the web bucket and invalidate
+#    the distribution.
 #
 # The notes.yourversionnumber.com certificate is issued outside the stack, as
 # Drop's is: an in-stack certificate would hold the whole deploy until the
@@ -75,8 +76,14 @@ aws s3api put-bucket-policy --bucket "$CODE_BUCKET" --policy "$(printf '%s' \
 
 BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
-# The site as committed: a file git ignores under web/ never reaches the bucket.
-git archive HEAD web | tar -x -f - -C "$BUILD"
+# The web app as committed, built before anything deploys: a file git
+# ignores never reaches the bucket, and a build that fails stops here.
+# The lockfile pins every package; none of their install scripts run.
+mkdir "$BUILD/repo"
+git archive HEAD | tar -x -f - -C "$BUILD/repo"
+(cd "$BUILD/repo" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && npm run build >/dev/null) \
+  || { echo "web build failed; not deploying" >&2; exit 1; }
+WEB="$BUILD/repo/dist/web"
 (cd src && find release_notes -name '*.py' | sort | TZ=UTC zip -q -X -D "$BUILD/code.zip" -@)
 KEY="code/$(shasum -a 256 "$BUILD/code.zip" | cut -c1-16).zip"
 aws s3 cp "$BUILD/code.zip" "s3://$CODE_BUCKET/$KEY" --only-show-errors
@@ -111,10 +118,15 @@ output() {
     --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
 }
 WEB_BUCKET=$(output WebBucketName)
-# Pages revalidate within a minute; versioned assets (?v=N) may sit longer.
-aws s3 sync "$BUILD/web/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include '*.html' \
+# The build's script, styles and fonts first, named by their content so
+# they never change: cached for good. Earlier builds' stay, so a page
+# loaded just before this still finds its script. Then the pages, which
+# revalidate within a minute, and the rest (the font licences).
+aws s3 sync "$WEB/assets/" "s3://$WEB_BUCKET/assets/" --only-show-errors \
+  --cache-control 'public, max-age=31536000, immutable'
+aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include '*.html' \
   --cache-control 'public, max-age=60'
-aws s3 sync "$BUILD/web/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*.html' \
+aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --only-show-errors --exclude '*.html' --exclude 'assets/*' \
   --cache-control 'public, max-age=600'
 aws cloudfront create-invalidation --distribution-id "$(output WebDistributionId)" --paths '/*' \
   --query Invalidation.Id --output text >/dev/null

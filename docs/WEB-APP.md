@@ -55,7 +55,7 @@ there links here until this is up and done.
   guards). The text keeps the address as written, and the exports carry
   both. No Markdown.
 - Page counts go to Tinylytics site 3816, its own site beside the main
-  site's 3343 (Jamie, 2026-10-08), sent by `app.js` without the embed
+  site's 3343 (Jamie, 2026-10-08), sent by the app (`lib/pagecount.ts`) without the embed
   script. Path only, no cookies, nothing per person.
 
 ## Shape
@@ -65,7 +65,7 @@ The same as Drop and Thingy, inside this stack:
 ```
 notes.yourversionnumber.com
   CloudFront (PriceClass_100, ACM certificate issued outside the stack)
-    default  -> S3 web bucket (private, OAC)     web/: HTML, CSS, vanilla JS, no build step
+    default  -> S3 web bucket (private, OAC)     web/: React app built by Vite (2026-10-09)
     /api/*   -> HTTP API -> Lambda yvn-release-notes-web    Python, standard library
                               -> the same DynamoDB table
 ```
@@ -74,7 +74,9 @@ notes.yourversionnumber.com
   Python, `version.py` is checked against fixtures generated from the site's
   own code, and the tests need nothing installed. TypeScript would bring a
   `package.json`, a bundler and a second language to keep in step with
-  `version.py`, and buy nothing a JSON API over one table needs.
+  `version.py`, and buy nothing a JSON API over one table needs. (The
+  front end did move to TypeScript and React on 2026-10-09, on the thingy
+  stack; the API stays Python.)
 - **Security headers** on every response: a CSP of `'self'` only (no inline
   script or style, nothing remote), HSTS, `DENY` framing. The city search
   goes through `/api`, which asks Open-Meteo's geocoder (no key, CC BY 4.0),

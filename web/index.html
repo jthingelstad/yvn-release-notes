@@ -1,106 +1,16 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Release Notes</title>
-<meta name="description" content="A daily email with your version number. Reply, and your reply becomes that day's release notes.">
-<link rel="stylesheet" href="/assets/site.css?v=18">
-<script src="/assets/app.js?v=29" defer></script>
-</head>
-<body data-page="home">
-<main>
-  <header class="bar">
-    <a class="brand" href="/">Release Notes</a>
-    <a href="/#sign-in" id="to-sign-in" data-show="ask number">Sign in</a>
-  </header>
-
-  <!-- The front page asks for a birthday first and shows the number it
-       makes, then asks for an email. The birthday waits in this browser
-       (pendingBirthday in app.js) and setup saves it after sign-in.
-       "Sign in" skips straight to the email for anyone returning. -->
-  <section id="ask" data-show="ask" hidden>
-    <p class="vnum huge unknown" aria-hidden="true">?<span class="dot">.</span>?<span class="dot">.</span>???</p>
-    <h1>What&rsquo;s your version number?</h1>
-    <p class="lede">Your age, written like software: decades, years, and the days since your last birthday.</p>
-
-    <form id="birthday-form" novalidate>
-      <fieldset class="birthday">
-        <legend>Your birthday</legend>
-        <div class="mdy">
-          <label>Month
-            <select name="month" autocomplete="bday-month" required>
-              <option value="">&mdash;</option>
-              <option value="1">January</option><option value="2">February</option><option value="3">March</option>
-              <option value="4">April</option><option value="5">May</option><option value="6">June</option>
-              <option value="7">July</option><option value="8">August</option><option value="9">September</option>
-              <option value="10">October</option><option value="11">November</option><option value="12">December</option>
-            </select>
-          </label>
-          <label>Day
-            <input name="day" inputmode="numeric" autocomplete="bday-day" maxlength="2" placeholder="DD" required>
-          </label>
-          <label>Year
-            <input name="year" inputmode="numeric" autocomplete="bday-year" maxlength="4" placeholder="YYYY" required>
-          </label>
-        </div>
-      </fieldset>
-      <button class="go" type="submit">Show me my number</button>
-      <p class="error" role="alert" hidden></p>
-      <p class="hint">Nothing is kept until you sign up.</p>
-    </form>
-  </section>
-
-  <section id="number" data-show="number" hidden>
-    <h1 class="you-are" id="you-are" tabindex="-1"><span class="lead">Today you&rsquo;re</span> <span class="vnum huge" id="my-v"></span></h1>
-    <p class="birthday-today" id="birthday-today" hidden>Happy birthday: a new release.</p>
-    <dl class="explain">
-      <dt class="vnum" id="v-major"></dt>
-      <dd><strong>Decades.</strong> <span id="v-major-line"></span></dd>
-      <dt class="vnum" id="v-minor"></dt>
-      <dd><strong>Years into this one.</strong> <span id="v-minor-line"></span></dd>
-      <dt class="vnum" id="v-patch"></dt>
-      <dd><strong>Days since your birthday.</strong> <span>It goes up by one every day.</span></dd>
-    </dl>
-    <p class="sub" id="v-next"></p>
-
-    <h2 class="big get-it">Get it every day.</h2>
-    <p class="lede">One email a day, at the time you choose, with that day&rsquo;s number. Reply with anything about the day, and your reply becomes the release notes for <span class="mono" id="v-today"></span>.</p>
-  </section>
-
-  <section id="sign-in" data-show="signin" hidden>
-    <h1 class="top">Sign in.</h1>
-    <p class="lede">Type the email your release notes come to. New here? <a href="/" id="to-ask">Find your version number first</a>.</p>
-  </section>
-
-  <form id="start-form" data-show="number signin" novalidate hidden>
-    <label>Your email
-      <input type="email" name="email" autocomplete="email" placeholder="you@example.com" required>
-    </label>
-    <button class="go" type="submit">Send me a link</button>
-    <p class="error" role="alert" hidden></p>
-    <p class="hint" data-show="number">We&rsquo;ll email a link and a six-digit code. Your birthday comes along once you confirm. <button class="quiet inline" type="button" id="change-birthday">Change birthday</button></p>
-    <p class="hint" data-show="signin">We&rsquo;ll email you a link and a six-digit code.</p>
-  </form>
-
-  <section id="check" data-show="check" hidden>
-    <h1 class="top">Check your email.</h1>
-    <p class="lede">We sent a link and a code to <strong id="sent-to"></strong>. Open the link, or type the code here.</p>
-
-    <form id="code-form" novalidate>
-      <label>Six-digit code
-        <input class="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000000" required>
-      </label>
-      <button class="go" type="submit">Sign in</button>
-      <p class="error" role="alert" hidden></p>
-    </form>
-
-    <p class="hint">The link and the code work once, for 15 minutes. Nothing there? Look in junk, <a href="/" id="resend">send it again</a>, or <a href="/" id="again">use a different address</a>.</p>
-    <p class="hint spaced" id="resent" role="status" hidden></p>
-    <p class="foot">The email comes from <strong>notes@yourversionnumber.com</strong>. Adding it to your contacts keeps your daily emails out of junk.</p>
-  </section>
-
-  <p class="foot" id="home-foot" data-show="ask number signin" hidden>A hobby by <a href="https://www.thingelstad.com/">Jamie Thingelstad</a>. Your notes are yours: export or delete them any time. Jamie runs it and can read what&rsquo;s stored; nothing is sold or shared. No ads. Page counts by Tinylytics, without cookies. From <a href="https://yourversionnumber.com/">Your Version Number</a>.</p>
-</main>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Release Notes</title>
+    <meta
+      name="description"
+      content="A daily email with your version number. Reply, and your reply becomes that day's release notes."
+    />
+    <script type="module" src="/src/main.tsx"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
 </html>

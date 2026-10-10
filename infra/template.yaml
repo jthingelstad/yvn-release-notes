@@ -494,7 +494,8 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  # /settings/ -> /settings/index.html. Static pages only; /api/* never runs it.
+  # /settings/ -> /settings/index.html, the app's page the build writes in
+  # each page's folder (vite.config.ts). /api/* never runs it.
   WebIndexFunction:
     Type: AWS::CloudFront::Function
     Properties:
@@ -533,13 +534,13 @@ Resources:
 
   # Pages load only their own files: no inline script or style, nothing
   # remote. Lookups that need another service (the city search) go through
-  # /api. connect-src adds only Tinylytics, for app.js's page count. Photos
+  # /api. connect-src adds only Tinylytics, for the app's page count. Photos
   # and recordings come from the mail bucket's own host, by a link the API
   # signs for their owner (img-src and media-src name only that host).
   # media-src also takes blob:, so a recording made on the page plays back
   # before it is sent. Permissions-Policy lets the page itself use the
   # microphone (the new-note form's Record button) and turns off the
-  # camera, location, payment and USB, which app.js never asks for.
+  # camera, location, payment and USB, which the app never asks for.
   WebHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:

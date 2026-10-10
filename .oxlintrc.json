@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "builtin": true,
+    "browser": true,
+    "es2026": true
+  },
+  "rules": {
+    "eqeqeq": ["error", "smart"],
+    "no-else-return": "error",
+    "no-implicit-coercion": ["error", { "allow": ["!!"] }],
+    "no-unused-expressions": "error",
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "caughtErrors": "none" }],
+    "no-var": "error",
+    "object-shorthand": ["error", "always"],
+    "prefer-const": ["error", { "destructuring": "all" }],
+    "react/exhaustive-deps": "warn",
+    "react/rules-of-hooks": "error",
+    "react/no-danger": "error",
+    "typescript/ban-ts-comment": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error"
+  }
+}

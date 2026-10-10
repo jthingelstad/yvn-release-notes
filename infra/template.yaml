@@ -306,6 +306,14 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSet}"
+                Condition:
+                  # Only as Release Notes (compose.from_header hands SES
+                  # "Release Notes <notes@...>"), never as another identity
+                  # in this shared account.
+                  StringLike:
+                    ses:FromAddress:
+                      - !Ref FromAddress
+                      - !Sub "*<${FromAddress}>"
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt SenderLogs.Arn
@@ -720,6 +728,14 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
                   - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSet}"
+                Condition:
+                  # Only as Release Notes (compose.from_header hands SES
+                  # "Release Notes <notes@...>"), never as another identity
+                  # in this shared account.
+                  StringLike:
+                    ses:FromAddress:
+                      - !Ref FromAddress
+                      - !Sub "*<${FromAddress}>"
               - Effect: Allow
                 # Deleting an emailed note (or the account) deletes the emails
                 # behind it. The bucket is versioned: old versions expire 30

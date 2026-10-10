@@ -390,6 +390,33 @@ function noteText(n) {
 // the API's own address instead, which checks the session and redirects to
 // a fresh link, so a page left open longer still opens them.
 const LINK_MS = 9 * 60 * 1000;
+
+// A photo opened over the page, as large as the window allows, with Close
+// (Jamie, 2026-10-09: "a popup at a larger size with a 'close' option to
+// not lose the current page"). One <dialog> for every photo: Escape and a
+// click outside the photo close it too, and focus goes back to the photo
+// that opened it. A link that has run out tries the API's address once.
+let viewer = null;
+function viewPhoto(href, fallback, alt) {
+  if (!viewer) {
+    viewer = el('dialog', 'viewer');
+    viewer.setAttribute('aria-label', 'Photo');
+    const img = el('img');
+    img.addEventListener('error', () => {
+      const api = new URL(img.dataset.fallback, location.href).href;
+      if (img.src && img.src !== api) img.src = api;
+    });
+    viewer.append(button('Close', 'close', () => viewer.close()), img);
+    viewer.addEventListener('click', (e) => { if (e.target === viewer) viewer.close(); });
+    viewer.addEventListener('close', () => viewer.querySelector('img').removeAttribute('src'));
+    document.body.append(viewer);
+  }
+  const img = viewer.querySelector('img');
+  img.dataset.fallback = fallback;
+  img.alt = alt;
+  img.src = href;
+  viewer.showModal();
+}
 function noteMedia(day, n, version, mark = null) {
   const box = el('div', 'media');
   const given = Date.now();
@@ -425,6 +452,13 @@ function noteMedia(day, n, version, mark = null) {
           (n.source === 'email' || !n.source ? ' It’s also in the original email.' : '')));
       });
       a.append(img);
+      // A plain click opens the photo over the page; a click meant for a
+      // new tab or a download still follows the link.
+      a.addEventListener('click', (e) => {
+        if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !window.HTMLDialogElement) return;
+        e.preventDefault();
+        viewPhoto(link(), src, img.alt);
+      });
       box.append(a);
       // Shown only in search results, and only when the search found it
       // there (Jamie: "descriptions only on search results").

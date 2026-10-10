@@ -40,5 +40,8 @@ jobs:
       # The handlers' JSON log lines go to stdout; the test report to stderr.
       - name: unit tests
         run: PYTHONPATH=src python -m unittest discover -s tests -q > /dev/null
+      # cfn-lint is pinned like the actions, but Dependabot's github-actions
+      # run cannot see a pipx spec: bump it by hand (the latest on PyPI,
+      # run locally first) when a new resource or property needs it.
       - name: lint template
-        run: pipx run cfn-lint infra/template.yaml
+        run: pipx run --spec cfn-lint==1.57.2 cfn-lint infra/template.yaml

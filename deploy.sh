@@ -3,16 +3,20 @@
 # never needs a console or SSO login.
 #
 #   ./deploy.sh                 deploy origin/main, once `validate` is green on it
-#   ./deploy.sh --break-glass   skip the GitHub check (GitHub down, never a red check)
+#   ./deploy.sh --break-glass   skip GitHub (GitHub down, never a red check)
 #
 # 0. Refuse anything but a clean checkout of origin/main with a green
-#    `validate` check: production runs only what main's gate passed.
+#    `validate` check run by GitHub Actions: production runs only
+#    what main's gate passed. --break-glass skips only what needs GitHub
+#    (the fetch and the check lookup); HEAD must still be a clean checkout
+#    of origin/main as last fetched.
 # 1. Package src/ (standard library only, nothing to install) and upload it
-#    to the code bucket, keyed by content hash.
+#    to the code bucket, keyed by content hash. The bucket refuses plain HTTP.
 # 2. Deploy infra/template.yaml as stack yvn-release-notes.
 # 3. Make the stack's receipt rule set the account's active one. SES allows
 #    one active set per region; refuse rather than replace someone else's.
-# 4. Sync web/ to the web bucket and invalidate the distribution.
+# 4. Sync HEAD's web/ (exported, so nothing git ignores goes up) to the web
+#    bucket and invalidate the distribution.
 #
 # The notes.yourversionnumber.com certificate is issued outside the stack, as
 # Drop's is: an in-stack certificate would hold the whole deploy until the
@@ -29,14 +33,21 @@ ARN=$(aws sts get-caller-identity --query Arn --output text)
 [[ "$ACCOUNT" == 999153317627 && "$ARN" == *assumed-role/ProjectsCloudEngineer/* ]] \
   || { echo "refusing: caller is $ARN" >&2; exit 1; }
 
-if [[ "${1:-}" != --break-glass ]]; then
-  git fetch -q origin main
-  HEAD_SHA=$(git rev-parse HEAD)
-  [[ -z "$(git status --porcelain)" ]] || { echo "refusing: uncommitted changes" >&2; exit 1; }
-  [[ "$HEAD_SHA" == "$(git rev-parse origin/main)" ]] \
-    || { echo "refusing: HEAD is not origin/main; land it through a pull request" >&2; exit 1; }
+case "${1:-}" in
+  "") BREAK_GLASS="" ;;
+  --break-glass) BREAK_GLASS=1 ;;
+  *) echo "usage: $0 [--break-glass]" >&2; exit 2 ;;
+esac
+
+[[ -n "$BREAK_GLASS" ]] || git fetch -q origin main
+HEAD_SHA=$(git rev-parse HEAD)
+[[ -z "$(git status --porcelain)" ]] || { echo "refusing: uncommitted changes" >&2; exit 1; }
+[[ "$HEAD_SHA" == "$(git rev-parse origin/main)" ]] \
+  || { echo "refusing: HEAD is not origin/main; land it through a pull request" >&2; exit 1; }
+if [[ -z "$BREAK_GLASS" ]]; then
+  # Only the workflow's own run counts, not any app's check named validate.
   GREEN=$(gh api "repos/jthingelstad/yvn-release-notes/commits/$HEAD_SHA/check-runs?check_name=validate" \
-    --jq '[.check_runs[] | select(.conclusion == "success")] | length')
+    --jq '[.check_runs[] | select(.conclusion == "success" and .app.slug == "github-actions")] | length')
   [[ "$GREEN" -gt 0 ]] || { echo "refusing: validate is not green on $HEAD_SHA" >&2; exit 1; }
 fi
 
@@ -54,9 +65,18 @@ if ! aws s3api head-bucket --bucket "$CODE_BUCKET" >/dev/null 2>&1; then
   aws s3api put-bucket-tagging --bucket "$CODE_BUCKET" --tagging \
     'TagSet=[{Key=Application,Value=YourVersionNumber},{Key=Project,Value=yvn-release-notes},{Key=ManagedBy,Value=repository},{Key=Environment,Value=production},{Key=Repository,Value=jthingelstad/yvn-release-notes}]'
 fi
+# Every run, so a bucket made before this has it too: plain HTTP refused, as
+# the stack's buckets do. Keys are content hashes, never overwritten, so the
+# bucket keeps no versions.
+aws s3api put-bucket-policy --bucket "$CODE_BUCKET" --policy "$(printf '%s' \
+  '{"Version":"2012-10-17","Statement":[{"Sid":"DenyInsecureTransport","Effect":"Deny","Principal":"*",' \
+  '"Action":"s3:*","Resource":["arn:aws:s3:::'"$CODE_BUCKET"'","arn:aws:s3:::'"$CODE_BUCKET"'/*"],' \
+  '"Condition":{"Bool":{"aws:SecureTransport":"false"}}}]}')"
 
 BUILD=$(mktemp -d)
 trap 'rm -rf "$BUILD"' EXIT
+# The site as committed: a file git ignores under web/ never reaches the bucket.
+git archive HEAD web | tar -x -f - -C "$BUILD"
 (cd src && find release_notes -name '*.py' | sort | TZ=UTC zip -q -X -D "$BUILD/code.zip" -@)
 KEY="code/$(shasum -a 256 "$BUILD/code.zip" | cut -c1-16).zip"
 aws s3 cp "$BUILD/code.zip" "s3://$CODE_BUCKET/$KEY" --only-show-errors
@@ -92,9 +112,9 @@ output() {
 }
 WEB_BUCKET=$(output WebBucketName)
 # Pages revalidate within a minute; versioned assets (?v=N) may sit longer.
-aws s3 sync web/ "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include '*.html' \
+aws s3 sync "$BUILD/web/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include '*.html' \
   --cache-control 'public, max-age=60'
-aws s3 sync web/ "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*.html' --exclude '.DS_Store' \
+aws s3 sync "$BUILD/web/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*.html' \
   --cache-control 'public, max-age=600'
 aws cloudfront create-invalidation --distribution-id "$(output WebDistributionId)" --paths '/*' \
   --query Invalidation.Id --output text >/dev/null

@@ -513,7 +513,9 @@ Resources:
   # and recordings come from the mail bucket's own host, by a link the API
   # signs for their owner (img-src and media-src name only that host).
   # media-src also takes blob:, so a recording made on the page plays back
-  # before it is sent.
+  # before it is sent. Permissions-Policy lets the page itself use the
+  # microphone (the new-note form's Record button) and turns off the
+  # camera, location, payment and USB, which app.js never asks for.
   WebHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
@@ -537,6 +539,11 @@ Resources:
             IncludeSubdomains: false
             Preload: false
             Override: true
+        CustomHeadersConfig:
+          Items:
+            - Header: Permissions-Policy
+              Value: "microphone=(self), camera=(), geolocation=(), payment=(), usb=()"
+              Override: true
 
   # What the API sees of a request: only what it reads. The viewer's address
   # (for the sign-in email limits) is a CloudFront header, which the managed
@@ -978,8 +985,17 @@ Resources:
                 Action: dynamodb:ListStreams
                 Resource: "*"
               - Effect: Allow
-                Action: [transcribe:StartTranscriptionJob, transcribe:DeleteTranscriptionJob]
+                # Starting a job names no resource, so "*", but only with
+                # its output in the mail bucket (transcribe.py's OutputBucketName).
+                Action: transcribe:StartTranscriptionJob
                 Resource: "*"
+                Condition:
+                  StringEquals:
+                    transcribe:OutputBucketName: !Ref MailBucket
+              - Effect: Allow
+                # Only this product's jobs (transcribe.job_name's prefix).
+                Action: transcribe:DeleteTranscriptionJob
+                Resource: !Sub "arn:${AWS::Partition}:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/release-notes.*"
               - Effect: Allow
                 # Transcribe reads the recording and writes its JSON as
                 # this role.

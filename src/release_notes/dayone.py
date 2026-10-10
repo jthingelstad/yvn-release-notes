@@ -30,7 +30,12 @@ An entry becomes one note, `NOTE#<day>#d1-<uuid>`:
   rich text).
 
 An entry with no text and no file is left out, and so is one Day One
-wrote itself (its welcome guide). An all-day entry is a note at midnight
+wrote itself (its welcome guide). An entry whose uuid is not Day One's 32
+hex digits is left out too ("bad id"), since the uuid goes into keys. The
+export is read as untrusted: the journal's JSON is refused before it is
+read past MAX_JSON unpacked, only files named `<folder>/<name>.<ext>` in
+the three folders are looked up, and a key's extension comes from
+FILE_KINDS, never from the zip. An all-day entry is a note at midnight
 (Jamie, 2026-10-09: "just accept the 12:00 AM timestamp"); its original
 keeps Day One's mark.
 """
@@ -58,6 +63,14 @@ ADDRESS = re.compile(r"^\d+(?:\s?[–-]\s?\d+)?\s+\S")
 # Zone names Day One wrote that browsers or tzdata spell differently now.
 ZONES = {"US/Central": "America/Chicago", "US/Eastern": "America/New_York", "US/Mountain": "America/Denver",
          "US/Pacific": "America/Los_Angeles", "Europe/Kiev": "Europe/Kyiv"}
+
+# An entry's id as Day One writes it (uppercase hex; any case taken), and a
+# file where the export keeps it, named by its md5.
+UUID = re.compile(r"[0-9A-Fa-f]{32}")
+FILE_NAME = re.compile(r"(photos|audios|pdfs)/([0-9A-Za-z]+)\.([0-9A-Za-z]{1,8})")
+# The journal's JSON, unpacked: room for decades of writing, and a refusal
+# for a zip bomb.
+MAX_JSON = 512 * 1024 * 1024
 
 OTHER_FILES = ("videos",)
 # Entries Day One writes itself, by their first line: not the writer's
@@ -226,9 +239,8 @@ def by_md5(names) -> dict[tuple[str, str], str]:
     the extension is not always the type the entry gives (an "aac" is .m4a)."""
     out = {}
     for n in names:
-        folder, _, base = n.partition("/")
-        if base and "." in base:
-            out[(folder, base.rsplit(".", 1)[0])] = n
+        if m := FILE_NAME.fullmatch(n):
+            out[(m.group(1), m.group(2))] = n
     return out
 
 
@@ -261,18 +273,34 @@ def files_of(entry: dict, index: dict[tuple[str, str], str]) -> tuple[list[dict]
 
 # --- the plan -----------------------------------------------------------------
 
+class ExportError(ValueError):
+    """A zip this will not read as a Day One export; the message says why."""
+
+
 def journal_name(zip_names: list[str]) -> str:
-    json_name = next(n for n in zip_names if n.endswith(".json") and "/" not in n)
+    json_name = next((n for n in zip_names if n.endswith(".json") and "/" not in n), None)
+    if json_name is None:
+        raise ExportError("no journal JSON at the top of the zip: not a Day One export")
     return json_name[: -len(".json")]
 
 
 def read(zip_path: str) -> tuple[str, list[dict], dict[str, int]]:
-    """(journal name, entries, every path in the zip with its size)."""
+    """(journal name, entries, every path in the zip with its size). The
+    JSON's unpacked size is checked before it is read: zipfile stops a
+    member at the size its header gives, so that is the most it can take."""
     with zipfile.ZipFile(zip_path) as z:
         names = {i.filename: i.file_size for i in z.infolist()}
         journal = journal_name(list(names))
+        size = names[f"{journal}.json"]
+        if size > MAX_JSON:
+            raise ExportError(f"{journal}.json unpacks to {size:,} bytes, over the {MAX_JSON:,} this reads")
         entries = json.loads(z.read(f"{journal}.json"))["entries"]
     return journal, entries, names
+
+
+def good_id(entry: dict) -> bool:
+    uuid = entry.get("uuid")
+    return isinstance(uuid, str) and bool(UUID.fullmatch(uuid))
 
 
 def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict, user_id: str,
@@ -281,6 +309,9 @@ def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict
     place for weather, plus what was skipped and counted. Writes nothing."""
     born = datetime.fromisoformat(profile["birthday"]).date()
     home = home_place(profile)
+    # The uuid goes into the note's id and S3 keys: any other id is left out.
+    skipped = [{"date": "", "uuid": str(e.get("uuid"))[:40], "why": "bad id"} for e in entries if not good_id(e)]
+    entries = [e for e in entries if good_id(e)]
     journal_tag = [] if journal == MAIN_JOURNAL else [journal]
     index = by_md5(names)
     days = {e["uuid"].upper(): day_of(e) for e in entries}
@@ -308,7 +339,7 @@ def plan(journal: str, entries: list[dict], names: dict[str, int], profile: dict
         if p:
             day_place.setdefault(day_of(e), p)
 
-    notes, skipped, missing_files = [], [], 0
+    notes, missing_files = [], 0
     counts: dict[str, int] = {}
     place_from: dict[str, int] = {}
     for e in sorted(entries, key=lambda e: e["creationDate"]):

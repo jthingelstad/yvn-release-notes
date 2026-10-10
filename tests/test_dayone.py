@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 from release_notes import dayone
 
@@ -13,6 +14,7 @@ PROFILE = {"birthday": "1981-06-14", "tz": "America/Chicago", "city": "Minneapol
 HARBOR = {"userLabel": "", "placeName": "Town Pier", "localityName": "Bar Harbor", "administrativeArea": "Maine",
           "country": "United States", "latitude": 44.39123456789012, "longitude": -68.2043,
           "region": {"center": {}, "radius": 75.0}}
+A, B, C, D, E = (c * 32 for c in "ABCDE")  # entry ids: Day One's are 32 hex digits
 
 
 def entry(uuid, when, text="", tz="America/Chicago", **kw):
@@ -54,7 +56,7 @@ class PlainTest(unittest.TestCase):
 
 class WhenAndWhereTest(unittest.TestCase):
     def test_the_day_is_in_the_entrys_zone_and_old_zone_names_are_renamed(self):
-        e = entry("E1", "2016-07-05T01:40:00Z", "Fireworks.", tz="US/Eastern")
+        e = entry(E,"2016-07-05T01:40:00Z", "Fireworks.", tz="US/Eastern")
         self.assertEqual(dayone.zone(e), "America/New_York")
         self.assertEqual(dayone.day_of(e), "2016-07-04")
 
@@ -78,28 +80,28 @@ class WhenAndWhereTest(unittest.TestCase):
         far = {"md5": "p2", "type": "jpeg", "location": {"latitude": 10.0, "longitude": 10.0}}
         names = {"photos/p1.jpeg": 10, "photos/p2.jpeg": 10}
         p = plan([
-            entry("A", "2016-07-04T14:00:00Z", "Pier.", location=HARBOR),
-            entry("B", "2016-07-04T15:00:00Z", "Near it.", photos=[photo]),
-            entry("C", "2016-07-04T16:00:00Z", "No place."),
-            entry("D", "2016-07-06T16:00:00Z", "Far off.", photos=[far]),
-            entry("E", "2016-07-08T16:00:00Z", "Home."),
+            entry(A, "2016-07-04T14:00:00Z", "Pier.", location=HARBOR),
+            entry(B, "2016-07-04T15:00:00Z", "Near it.", photos=[photo]),
+            entry(C, "2016-07-04T16:00:00Z", "No place."),
+            entry(D, "2016-07-06T16:00:00Z", "Far off.", photos=[far]),
+            entry(E, "2016-07-08T16:00:00Z", "Home."),
         ], names=names)
-        by = {n["id"]: n for n in p["notes"]}
+        by = {n["item"]["origin"]["id"]: n for n in p["notes"]}
         # The photo's own spot, with the town of an entry within a few km, not its venue.
-        self.assertEqual(by["d1-B"]["item"]["place"], {"city": "Bar Harbor", "region": "Maine", "country": "United States",
-                                                       "lat": 44.4, "lon": -68.21, "from": "photo"})
-        self.assertEqual(by["d1-B"]["item"]["media"][0]["place"], {"lat": 44.4, "lon": -68.21})
-        self.assertEqual(by["d1-C"]["item"]["place"]["venue"], "Town Pier")
-        self.assertEqual(by["d1-C"]["item"]["place"]["from"], "day")
-        self.assertEqual(by["d1-D"]["item"]["place"], {"lat": 10.0, "lon": 10.0, "from": "photo"})
-        self.assertEqual(by["d1-E"]["item"]["place"]["city"], "Minneapolis")
-        self.assertEqual(by["d1-E"]["item"]["place"]["from"], "home")
+        self.assertEqual(by[B]["item"]["place"], {"city": "Bar Harbor", "region": "Maine", "country": "United States",
+                                                  "lat": 44.4, "lon": -68.21, "from": "photo"})
+        self.assertEqual(by[B]["item"]["media"][0]["place"], {"lat": 44.4, "lon": -68.21})
+        self.assertEqual(by[C]["item"]["place"]["venue"], "Town Pier")
+        self.assertEqual(by[C]["item"]["place"]["from"], "day")
+        self.assertEqual(by[D]["item"]["place"], {"lat": 10.0, "lon": 10.0, "from": "photo"})
+        self.assertEqual(by[E]["item"]["place"]["city"], "Minneapolis")
+        self.assertEqual(by[E]["item"]["place"]["from"], "home")
         self.assertEqual(p["place_from"], {"entry": 1, "photo": 2, "day": 1, "home": 1})
 
 
 class FilesTest(unittest.TestCase):
     def test_files_are_found_by_md5_whatever_their_extension(self):
-        e = entry("A", "2020-01-01T12:00:00Z", "", audios=[{"md5": "a1", "format": "aac", "duration": 12.34}],
+        e = entry(A, "2020-01-01T12:00:00Z", "", audios=[{"md5": "a1", "format": "aac", "duration": 12.34}],
                   photos=[{"md5": "p2", "type": "jpeg", "orderInEntry": 1, "width": 30, "height": 20},
                           {"md5": "p1", "type": "jpeg", "orderInEntry": 0}],
                   pdfAttachments=[{"md5": "f1", "pdfName": "Menu"}, {"md5": "gone"}])
@@ -112,69 +114,81 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(missing, ["gone"])
 
     def test_media_keys_follow_the_note(self):
-        p = plan([entry("A", "2020-01-01T18:00:00Z", photos=[{"md5": "p1", "type": "png"}])],
+        p = plan([entry(A, "2020-01-01T18:00:00Z", photos=[{"md5": "p1", "type": "png"}])],
                  names={"photos/p1.png": 99})
         (m,) = p["notes"][0]["item"]["media"]
-        self.assertEqual((m["n"], m["key"], m["size"]), (1, "media/u1/2020-01-01/d1-A/1.png", 99))
+        self.assertEqual((m["n"], m["key"], m["size"]), (1, f"media/u1/2020-01-01/d1-{A}/1.png", 99))
 
 
 class PlanTest(unittest.TestCase):
     def test_an_entry_becomes_a_note_like_any_other(self):
-        p = plan([entry("A", "2016-07-05T01:40:00Z", "Fireworks.", tz="US/Eastern", tags=["Maine 2016", "vacation"],
+        p = plan([entry(A, "2016-07-05T01:40:00Z", "Fireworks.", tz="US/Eastern", tags=["Maine 2016", "vacation"],
                         location=HARBOR)])
         (n,) = p["notes"]
-        self.assertEqual((n["date"], n["id"]), ("2016-07-04", "d1-A"))
+        self.assertEqual((n["date"], n["id"]), ("2016-07-04", f"d1-{A}"))
         item = n["item"]
         self.assertEqual(item["text"], "Fireworks.\n\n#maine-2016 #vacation")
         self.assertEqual(item["tags"], ["maine-2016", "vacation"])
         self.assertEqual((item["source"], item["tz"], item["written_at"], item["version"]),
                          ("import", "America/New_York", "2016-07-05T01:40:00Z", "3.5.20"))
-        self.assertEqual(item["origin"], {"app": "dayone", "journal": "Journal", "id": "A"})
-        self.assertEqual(item["raw_key"], "raw/dayone/u1/A.json")
+        self.assertEqual(item["origin"], {"app": "dayone", "journal": "Journal", "id": A})
+        self.assertEqual(item["raw_key"], f"raw/dayone/u1/{A}.json")
         self.assertEqual(n["original"]["location"], HARBOR)  # kept whole, to store at raw_key
 
     def test_another_journals_name_is_a_tag(self):
-        p = plan([entry("A", "2020-01-01T12:00:00Z", "Thankful.")], journal="Gratitude")
+        p = plan([entry(A, "2020-01-01T12:00:00Z", "Thankful.")], journal="Gratitude")
         self.assertEqual(p["notes"][0]["item"]["tags"], ["gratitude"])
 
     def test_a_long_entry_is_cut_before_its_tags(self):
         from release_notes.notes import MAX_NOTE
-        p = plan([entry("A", "2020-01-01T12:00:00Z", "word " * MAX_NOTE, tags=["Long one"])], journal="Travel")
+        p = plan([entry(A, "2020-01-01T12:00:00Z", "word " * MAX_NOTE, tags=["Long one"])], journal="Travel")
         item = p["notes"][0]["item"]
         self.assertLessEqual(len(item["text"]), MAX_NOTE)
         self.assertTrue(item["text"].endswith("\n\n#long-one #travel"))
         self.assertEqual((item["tags"], p["counts"]["cut"]), (["long-one", "travel"], 1))
 
     def test_an_entry_of_only_videos_is_counted_not_lost_quietly(self):
-        p = plan([entry("A", "2020-01-01T12:00:00Z", videos=[{"md5": "v1"}])])
+        p = plan([entry(A, "2020-01-01T12:00:00Z", videos=[{"md5": "v1"}])])
         self.assertEqual(p["skipped"][0]["why"], "files not carried")
         self.assertEqual(p["counts"]["files_not_carried"], 1)
 
     def test_files_to_copy_are_listed_apart_from_the_note(self):
-        p = plan([entry("A", "2020-01-01T18:00:00Z", "x", photos=[{"md5": "p1", "type": "png"}])],
+        p = plan([entry(A, "2020-01-01T18:00:00Z", "x", photos=[{"md5": "p1", "type": "png"}])],
                  names={"photos/p1.png": 99})
         n = p["notes"][0]
-        self.assertEqual(n["files"], [{"from": "photos/p1.png", "key": "media/u1/2020-01-01/d1-A/1.png",
+        self.assertEqual(n["files"], [{"from": "photos/p1.png", "key": f"media/u1/2020-01-01/d1-{A}/1.png",
                                        "type": "image/png"}])
         self.assertNotIn("from", n["item"]["media"][0])
 
     def test_day_ones_own_guide_is_left_out(self):
-        p = plan([entry("A", "2024-02-17T12:00:00Z", "Day One Essentials Guide\nWelcome to Day One, we are glad.")])
+        p = plan([entry(A, "2024-02-17T12:00:00Z", "Day One Essentials Guide\nWelcome to Day One, we are glad.")])
         self.assertEqual((p["notes"], p["skipped"][0]["why"]), ([], "day one's own"))
 
     def test_an_all_day_entry_is_a_note_at_midnight_on_its_date(self):
-        p = plan([entry("A", "2016-12-25T06:00:00Z", "Christmas.", isAllDay=True)])
+        p = plan([entry(A, "2016-12-25T06:00:00Z", "Christmas.", isAllDay=True)])
         n = p["notes"][0]
         self.assertEqual((n["date"], n["item"]["written_at"], "all_day" in n["item"]),
                          ("2016-12-25", "2016-12-25T06:00:00Z", False))
 
     def test_empty_entries_are_left_out(self):
-        p = plan([entry("A", "2020-01-01T12:00:00Z", "![](dayone-moment://X)")])
-        self.assertEqual((p["notes"], p["skipped"]), ([], [{"date": "2020-01-01", "uuid": "A", "why": "empty"}]))
+        p = plan([entry(A, "2020-01-01T12:00:00Z", "![](dayone-moment://X)")])
+        self.assertEqual((p["notes"], p["skipped"]), ([], [{"date": "2020-01-01", "uuid": A, "why": "empty"}]))
+
+    def test_an_entry_whose_id_is_not_day_ones_is_left_out_and_counted(self):
+        p = plan([entry(A.lower(), "2020-01-01T12:00:00Z", "Any case."),
+                  entry("../../other-user/x", "2020-01-01T12:00:00Z", "Escape."),
+                  entry(A[:31], "2020-01-01T12:00:00Z", "Short."), entry(None, "2020-01-01T12:00:00Z", "None.")])
+        self.assertEqual([n["id"] for n in p["notes"]], [f"d1-{A.lower()}"])
+        self.assertEqual([s["why"] for s in p["skipped"]], ["bad id"] * 3)
+
+    def test_only_export_shaped_file_names_are_looked_up(self):
+        names = {"photos/p1.jpeg": 1, "photos/../p2.jpeg": 1, "photos/sub/p3.jpeg": 1, "videos/v1.mov": 1,
+                 "pdfs/f 1.pdf": 1, "audios/a1.m4a": 1}
+        self.assertEqual(dayone.by_md5(names), {("photos", "p1"): "photos/p1.jpeg", ("audios", "a1"): "audios/a1.m4a"})
 
     def test_weather_takes_the_days_first_real_place_across_journals(self):
-        home = plan([entry("A", "2016-07-04T12:00:00Z", "Early, no place.")])
-        away = plan([entry("B", "2016-07-04T18:00:00Z", "Pier.", tz="America/New_York", location=HARBOR)])
+        home = plan([entry(A, "2016-07-04T12:00:00Z", "Early, no place.")])
+        away = plan([entry(B, "2016-07-04T18:00:00Z", "Pier.", tz="America/New_York", location=HARBOR)])
         days = dayone.weather_days(home["notes"] + away["notes"])
         # The town and coordinates to two places: all that goes to Open-Meteo.
         self.assertEqual(days["2016-07-04"], {"city": "Bar Harbor", "region": "Maine", "country": "United States",
@@ -187,10 +201,28 @@ class ReadTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d, "export.zip")
             with zipfile.ZipFile(path, "w") as z:
-                z.writestr("Travel.json", json.dumps({"entries": [entry("A", "2020-01-01T12:00:00Z", "Hi")]}))
+                z.writestr("Travel.json", json.dumps({"entries": [entry(A, "2020-01-01T12:00:00Z", "Hi")]}))
                 z.writestr("photos/p1.jpeg", b"12345")
             journal, entries, names = dayone.read(str(path))
         self.assertEqual((journal, len(entries), names["photos/p1.jpeg"]), ("Travel", 1, 5))
+
+    def test_refuses_a_journal_too_big_unpacked_before_reading_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d, "export.zip")
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+                z.writestr("Travel.json", json.dumps({"entries": [], "pad": " " * 5000}))
+            with mock.patch.object(dayone, "MAX_JSON", 4096), \
+                    mock.patch.object(zipfile.ZipFile, "read", side_effect=AssertionError("read")):
+                with self.assertRaisesRegex(dayone.ExportError, "Travel.json unpacks to"):
+                    dayone.read(str(path))
+
+    def test_refuses_a_zip_with_no_journal(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d, "export.zip")
+            with zipfile.ZipFile(path, "w") as z:
+                z.writestr("photos/p1.jpeg", b"12345")
+            with self.assertRaisesRegex(dayone.ExportError, "no journal JSON"):
+                dayone.read(str(path))
 
 
 if __name__ == "__main__":

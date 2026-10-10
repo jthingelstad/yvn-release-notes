@@ -142,7 +142,12 @@ runtime and is imported lazily so the tests run without it.
   days, with the writer's own link words kept. The ledger item
   `IMPORT#<app>#<journal>` lists every entry imported, so a repeat skips
   them and never brings back a note the subscriber deleted; a `d1-` id on
-  any day is skipped too. `Store.put_note` turns floats into Decimal all
+  any day is skipped too. The export is read as untrusted: an entry whose
+  uuid is not 32 hex digits is left out (`bad id`, counted), the journal's
+  JSON is refused past 512 MB unpacked before it is read, and only files
+  named `<folder>/<name>.<ext>` are looked up; S3 keys are built from the
+  user, day, note id and a known extension, never a name from the zip.
+  `Store.put_note` turns floats into Decimal all
   the way down. Writing uses boto3 (a virtualenv); every live run needs
   Jamie's go. `scripts/dev_server.py --dayone ZIP` runs the same importer
   into the fakes, to see an import locally first.
@@ -179,7 +184,9 @@ runtime and is imported lazily so the tests run without it.
   MP4 where the browser makes it (Safari, newer Chrome) else WebM or Ogg.
   Each recording plays back from a `blob:` URL (hence `blob:` in
   media-src) and can be removed before the note is added; adding the note
-  sends it like a chosen file. `upload_type` drops codec parameters
+  sends it like a chosen file. The `Permissions-Policy` header allows the
+  microphone to the page itself and turns off the camera, location,
+  payment and USB. `upload_type` drops codec parameters
   (`audio/webm;codecs=opus`). The e2e test records Chromium's fake
   microphone. The email's "A year ago" links to the
   day ("See 2 photos") and carries no file. **Transcripts** (Jamie,
@@ -381,6 +388,9 @@ runtime and is imported lazily so the tests run without it.
   `sh scripts/test-workflows.sh` checks that. Dependabot moves the pins
   monthly in one PR, which is reviewed like any other: it does not
   auto-merge, because a merged action runs with the repository's token.
+  cfn-lint is pinned too (`pipx run --spec cfn-lint==<version>`), which
+  Dependabot cannot see: bump it by hand to PyPI's latest, after a local
+  run, when the template needs a newer one.
 - The repository is public. Never commit subscriber data, note text, DNS
   values or anything from the live table or bucket, including in tests and
   fixtures (the tests use a fictional subscriber at example.com).
@@ -388,9 +398,12 @@ runtime and is imported lazily so the tests run without it.
 ## Operating
 
 - Deploy: `./deploy.sh` (cloud-engineer profile, us-east-1), from a clean
-  checkout of `origin/main` with a green `validate`; it refuses anything
-  else (`--break-glass` is for GitHub being down, never a red check). It
-  runs the tests again first.
+  checkout of `origin/main` with a green `validate` run by GitHub Actions;
+  it refuses anything else. `--break-glass` is for GitHub being down, never
+  a red check: it skips only the fetch and the check lookup, so HEAD must
+  still be a clean checkout of `origin/main` as last fetched. It runs the
+  tests again first. The code bucket it made itself refuses plain HTTP
+  (its policy is put on every run).
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests`
 - Browser tests (optional, Jamie 2026-10-08: quick deploys for most
   changes, the browser run when wanted): `e2e/` drives sign-up in Chromium
@@ -452,7 +465,8 @@ runtime and is imported lazily so the tests run without it.
   `WebDistributionDomain`. The certificate lives outside the stack (an
   in-stack one would hold every deploy until DNS validated); `deploy.sh`
   finds it once ACM says ISSUED and only then attaches the alias.
-- `deploy.sh` syncs `web/` to the web bucket (HTML at max-age 60, other files
+- `deploy.sh` syncs HEAD's `web/` (a `git archive` export, so nothing git
+  ignores goes up) to the web bucket (HTML at max-age 60, other files
   600; bump `?v=N` on an asset whose change must land with a page) and
   invalidates the distribution.
 

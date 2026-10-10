@@ -157,7 +157,10 @@ def main():
     today = datetime.now(ZoneInfo(profile["tz"])).date()
     plans, journals = [], []
     for path in args.zips:
-        journal, entries, names = dayone.read(path)
+        try:
+            journal, entries, names = dayone.read(path)
+        except dayone.ExportError as e:
+            sys.exit(f"{path}: {e}")
         plan = dayone.plan(journal, entries, names, profile, user_id)
         plans.append(plan)
         journals.append({"entries": len(entries), **summary(plan)})

@@ -3,6 +3,13 @@
 One function, a small router. API Gateway hands it the HTTP API's payload
 2.0: headers lowercased, cookies as a list, the body maybe base64.
 
+- Only CloudFront is answered. The HTTP API's own execute-api URL stays
+  reachable (it is CloudFront's origin), so CloudFront sends X-Origin-Verify
+  with the stack's generated secret (ORIGIN_SECRET here) and anything
+  without it gets a fixed 403 before any route. Behind that,
+  CloudFront-Viewer-Address and Origin are CloudFront's own. With no
+  ORIGIN_SECRET (the tests, scripts/dev_server.py) there is no CloudFront
+  and no check.
 - Every write (POST, PUT, DELETE) must carry the site's own Origin. With the
   SameSite=Lax cookie that keeps other sites from acting as a signed-in
   person.
@@ -54,12 +61,18 @@ class Reject(Exception):
         self.response = respond(status, {"error": error, **extra})
 
 
+# Sent by CloudFront on every request to the API origin (infra/template.yaml).
+ORIGIN_HEADER = "x-origin-verify"
+
+
 class Request:
     def __init__(self, event: dict):
         http = event.get("requestContext", {}).get("http", {})
         self.method = http.get("method", "")
         self.path = event.get("rawPath", "")
         self.headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+        # Taken out at once, so nothing after the check can read or log it.
+        self._verify = self.headers.pop(ORIGIN_HEADER, "")
         self.cookies = event.get("cookies") or []
         self.query = event.get("queryStringParameters") or {}
         self.source_ip = http.get("sourceIp", "")
@@ -78,9 +91,16 @@ class Request:
             raise Reject(400, "bad-json")
         return body
 
+    def via_cloudfront(self) -> bool:
+        # Compared in constant time, so how long a wrong guess takes says
+        # nothing about how much of it was right.
+        secret = os.environ.get("ORIGIN_SECRET", "")
+        return not secret or auth.same(self._verify, secret)
+
     def viewer(self) -> str:
-        # CloudFront's "198.51.100.10:46532" or "2001:db8::1:46532". A caller
-        # using the API's own URL can forge it, which the total limit covers.
+        # CloudFront's "198.51.100.10:46532" or "2001:db8::1:46532". The
+        # handler answers only requests that came through CloudFront, which
+        # sets this header itself, so a caller cannot choose it.
         addr = self.headers.get("cloudfront-viewer-address", "")
         return addr.rsplit(":", 1)[0].strip("[]") if ":" in addr else self.source_ip
 
@@ -1306,6 +1326,10 @@ def match(method: str, path: str):
 def handler(event, context, *, store=None, ses=None, s3=None, lam=None, geocode=places.search, fetch=links.fetch_title,
             weather_fetch=weather.fetch_json, clock=time.time):
     req = Request(event)
+    if not req.via_cloudfront():
+        # Straight to the API's own URL: one fixed answer, whatever the route.
+        log(event="web", method=req.method, path="direct", status=403)
+        return respond(403, {"error": "forbidden"})
     pattern, route, args = match(req.method, req.path)
     if not route:
         response = respond(404, {"error": "not-found"})

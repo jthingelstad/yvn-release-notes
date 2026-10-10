@@ -2,7 +2,7 @@
 
 Jamie, 2026-10-08: "Record + today's forecast". Each finished day's high,
 low and conditions are kept with the city they are for, and shown on day
-pages, in the email's "A year ago" and in the export. The morning email
+pages, in the email's "On this day" and in the export. The morning email
 carries one quiet line of today's forecast. Days filled in later get their
 weather from history when a note is written for them.
 

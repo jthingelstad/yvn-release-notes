@@ -226,7 +226,7 @@ runtime and is imported lazily so the tests run without it.
   microphone to the page itself and turns off the camera, location,
   payment and USB. `upload_type` drops codec parameters
   (`audio/webm;codecs=opus`). The e2e test records Chromium's fake
-  microphone. The email's "A year ago" links to the
+  microphone. The email's "On this day" links to the
   day ("See 2 photos") and carries no file. **Transcripts** (Jamie,
   2026-10-09: "speech to text on audio notes", Amazon Transcribe): off
   until the subscriber ticks "Write out what I say" in settings
@@ -365,10 +365,22 @@ runtime and is imported lazily so the tests run without it.
   day resets the count quietly and the email shows the longest instead; never
   call a break out. If the streak cannot be read, the email goes without it.
   The design canvas: https://claude.ai/artifact/C9AZwHtrMBVzyRZrrrZSKm
-- **A year ago** (Jamie, 2026-10-08): the email shows the notes from the
-  same patch number one release back (`version.a_year_before`: 5.3.279 for
-  5.4.279, by version, not calendar), after the streak, only when there are
-  some, cut near 1000 characters with a link to that day.
+- **Lifetime counts** (Jamie, 2026-10-09: "a good reminder of creating
+  value"): one quiet line under the streak, "1,064 notes across 908 days
+  since 2011, and 847 photos." Every note counts, imported ones too.
+- **On this day** (Jamie, 2026-10-09, option A of the design session; it
+  replaced "A year ago", 2026-10-08): the email shows the notes from the
+  same patch number in every earlier release (`version.same_day_before`:
+  5.3.279, 5.2.279 ... for 5.4.279, by version, not calendar), newest
+  first, after the streak, only when there are some. The first four
+  (`compose.SHOWN`) each get a block, sharing about 1000 characters
+  (`PAST_MAX`) and linking to their day; older ones are year links. Each
+  block shows that day's tags as a line of links to their pages (Jamie:
+  "just have the tags on the posts", no trip counts or tag anniversaries);
+  closing lines of hashtags alone are left out of the words so no tag
+  shows twice. One read of every note's key and media
+  (`Store.note_index`) gives the counts and which days have notes; only
+  the shown days are read whole.
 - **Links show by name, never raw, and there is no Markdown** (Jamie,
   2026-10-08). The note's text keeps every address as written; the note's
   `links` list names them (`links.py`). A phrase the writer linked in their
@@ -391,7 +403,7 @@ runtime and is imported lazily so the tests run without it.
   the city they are for, so a move never rewrites the past. The sender keeps
   yesterday's and puts one forecast line in the email, from one Open-Meteo
   call; a note written for an earlier day fetches that day's history. Shown
-  on day pages, in "A year ago" and in the export, in Fahrenheit for
+  on day pages, in "On this day" and in the export, in Fahrenheit for
   places that use it. Open-Meteo is CC BY 4.0: credit it wherever weather
   shows. Weather is a nicety: a failure is no weather, never a held email
   or a failed note. Only the city's rounded coordinates and time zone go to

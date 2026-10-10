@@ -4,7 +4,7 @@ from datetime import date
 from email import policy
 from email.parser import BytesParser
 
-from release_notes.compose import (PAST_MAX, body, build_message, clock_phrase, countdown, html_body, late_message, linked,
+from release_notes.compose import (PAST_MAX, Lifetime, OnThisDay, PastDay, body, build_message, clock_phrase, countdown, html_body, late_message, linked,
                                    message_id, streak_lines, welcome_line)
 from release_notes.streak import Streak, compute_streak
 from release_notes.version import compute_version
@@ -179,8 +179,11 @@ class AYearAgo(unittest.TestCase):
     DAY = date(2026, 10, 8)  # 4.5.110; a year back is 4.4.110 on 2025-10-08
     THEN = date(2025, 10, 8)
 
+    def past(self, text, found=None, **kw):
+        return OnThisDay((PastDay(self.THEN, text, found, **kw),))
+
     def html(self, text):
-        return html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY, None, (self.THEN, text))
+        return html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY, None, self.past(text))
 
     def test_the_section(self):
         html = self.html("Walked the river.\n\nWrote it up: https://www.example.com/2025/10/08/river/.")
@@ -191,8 +194,8 @@ class AYearAgo(unittest.TestCase):
         self.assertIn('Wrote it up: <a class="link" href="https://www.example.com/2025/10/08/river/" style="color:#1a4fe0;">'
                       'example.com/2025/10/08/river</a>.</p>', html)
         self.assertIn('href="https://notes.yourversionnumber.com/day/?d=2025-10-08"', html)
-        text = body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, None, (self.THEN, "Walked the river."))
-        self.assertIn("A year ago you were 4.4.110 (Wednesday, October 8, 2025):\n\nWalked the river.\n\n"
+        text = body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, None, self.past("Walked the river."))
+        self.assertIn("On this day: One earlier release has notes for day 110.\n\nA year ago you were 4.4.110 (Wednesday, October 8, 2025):\n\nWalked the river.\n\n"
                       "See it: https://notes.yourversionnumber.com/day/?d=2025-10-08\n", text)
 
     def test_still_type_on_paper_and_ascii(self):
@@ -214,12 +217,12 @@ class AYearAgo(unittest.TestCase):
         found = [{"url": "https://www.example.com/river/", "title": "Walking the river", "site": "Example Blog"},
                  {"url": "https://example.com/p", "title": "my post", "named": True}]
         text = "Wrote it up: https://www.example.com/river/ and my post <https://example.com/p>."
-        html = html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY, None, (self.THEN, text, found))
+        html = html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY, None, self.past(text, found))
         self.assertIn('Wrote it up: <a class="link" href="https://www.example.com/river/" style="color:#1a4fe0;">Walking the river</a>'
                       '<span class="ink-2" style="color:#3b3d63;"> &middot; Example Blog</span> and '
                       '<a class="link" href="https://example.com/p" style="color:#1a4fe0;">my post</a>.</p>', html)
         self.assertNotIn("&lt;https://example.com/p&gt;", html)
-        text_part = body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, None, (self.THEN, text, found))
+        text_part = body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, None, self.past(text, found))
         self.assertIn("Wrote it up: Walking the river <https://www.example.com/river/> and my post <https://example.com/p>.", text_part)
 
     def test_long_notes_are_cut_between_words(self):
@@ -229,7 +232,52 @@ class AYearAgo(unittest.TestCase):
         self.assertLess(html.count("word"), PAST_MAX // 5 + 1)
 
     def test_no_section_without_notes(self):
-        self.assertNotIn("A year ago", html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY))
+        self.assertNotIn("On this day", html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY))
+
+    def test_every_year_shares_the_length_newest_first(self):
+        v = compute_version(BIRTHDAY, self.DAY)
+        days = [date(y, 10, 8) for y in (2025, 2020, 2015, 2010)]
+        past = OnThisDay(tuple(PastDay(d, "word " * 400) for d in days), (date(2005, 10, 8), date(1999, 10, 8)))
+        html = html_body(v, BIRTHDAY, self.DAY, None, past)
+        self.assertIn("6 earlier releases have notes for day 110.", html)
+        self.assertLess(html.count("word"), PAST_MAX // 5 + 4)
+        self.assertEqual(html.count(">Read the rest</a>"), 4)
+        order = [html.index(x) for x in ("A year ago</strong>", "6 years ago</strong>", "11 years ago</strong>",
+                                         "16 years ago</strong>", ">2005</a>", ">1999</a>")]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("And 2 more: ", html)
+
+    def test_tags_have_their_own_line_of_links(self):
+        v = compute_version(BIRTHDAY, self.DAY)
+        past = self.past("Up north for the weekend.\n\n#cabin #fall-2025", tags=("cabin", "fall-2025"))
+        html = html_body(v, BIRTHDAY, self.DAY, None, past)
+        self.assertIn('>Up north for the weekend.</p>', html)
+        self.assertIn('<a class="link" href="https://notes.yourversionnumber.com/tag/?t=cabin" style="color:#1a4fe0;'
+                      'text-decoration:none;">#cabin</a> <a class="link" href="https://notes.yourversionnumber.com/tag/?t=fall-2025"', html)
+        self.assertEqual(html.count("#cabin"), 1)
+        text = body(v, BIRTHDAY, None, past)
+        self.assertIn("Up north for the weekend.\n\n#cabin #fall-2025\n\nSee it:", text)
+        self.assertEqual(text.count("#cabin"), 1)
+
+
+class LifetimeLine(unittest.TestCase):
+    DAY = date(2026, 10, 8)
+
+    def test_under_the_streak(self):
+        v = compute_version(BIRTHDAY, self.DAY)
+        life = Lifetime(notes=1064, days=908, photos=847, since=2011)
+        streak = Streak(current=2, longest=5, days=(date(2026, 10, 6), date(2026, 10, 7)))
+        html = html_body(v, BIRTHDAY, self.DAY, streak, lifetime=life)
+        self.assertIn(">1,064 notes across 908 days since 2011, and 847 photos.</p>", html)
+        self.assertLess(html.index("in a row"), html.index("1,064 notes"))
+        text = body(v, BIRTHDAY, streak, lifetime=life)
+        self.assertIn("Reply today and 4.5.110 makes it 3.\n1,064 notes across 908 days since 2011, and 847 photos.\n\n", text)
+
+    def test_singular_and_no_photos(self):
+        v = compute_version(BIRTHDAY, self.DAY)
+        html = html_body(v, BIRTHDAY, self.DAY, lifetime=Lifetime(notes=1, days=1, photos=0, since=2026))
+        self.assertIn(">1 note across 1 day since 2026.</p>", html)
+        self.assertNotIn("across", html_body(v, BIRTHDAY, self.DAY))
 
 
 class LateReply(unittest.TestCase):

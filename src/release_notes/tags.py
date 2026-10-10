@@ -81,3 +81,20 @@ def split(parts: list) -> list:
         if last < len(part):
             out.append(part[last:])
     return out
+
+
+def without_closing(text: str) -> str:
+    """The text without its closing lines of hashtags alone (an import's
+    tags, `line`). The email cuts a note short and shows the day's tags on
+    a line of their own, so a cut never loses them and none shows twice."""
+    lines = (text or "").rstrip().split("\n")
+    while lines:
+        last = lines[-1]
+        found_ = spans(last)
+        rest = last
+        for start, end, _ in reversed(found_):
+            rest = rest[:start] + rest[end:]
+        if not found_ or rest.strip():
+            break
+        lines.pop()
+    return "\n".join(lines).rstrip()

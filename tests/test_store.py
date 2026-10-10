@@ -138,6 +138,16 @@ class NoteQueries(unittest.TestCase):
                                              "ExpressionAttributeNames": {"#g": "tags"},
                                              "ProjectionExpression": "sk, #g"})
 
+    def test_the_note_index_brings_back_keys_and_media_only(self):
+        table = FakeTable()
+        items = [{"sk": "NOTE#2015-10-14#d1-a", "media": [{"kind": "image"}, {"kind": "audio"}]}, {"sk": "NOTE#2026-10-09#w-b"}]
+        table.query = lambda **kw: table.calls.append(("query", kw)) or {"Items": items}
+        self.assertEqual(Store(table).note_index("u1"), [("2015-10-14", 1), ("2026-10-09", 0)])
+        self.assertEqual(table.calls[0][1], {"KeyConditionExpression": "pk = :u AND begins_with(sk, :n)",
+                                             "ExpressionAttributeValues": {":u": "USER#u1", ":n": "NOTE#"},
+                                             "ExpressionAttributeNames": {"#m": "media"},
+                                             "ProjectionExpression": "sk, #m"})
+
     def test_a_tag_brings_back_only_its_notes(self):
         table = FakeTable()
         Store(table).tagged_notes("u1", "maine-2016")

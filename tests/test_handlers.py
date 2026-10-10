@@ -112,6 +112,12 @@ class FakeStore:
     def pauses(self, user_id):
         return self.paused
 
+    def note_index(self, user_id):
+        if getattr(self, "note_index_fail", False):
+            raise ConnectionError("boom")
+        return [(d, sum(1 for m in n.get("media") or [] if m["kind"] == "image"))
+                for (u, d, _), n in self.notes.items() if u == user_id]
+
     def day_notes(self, user_id, day):
         if self.day_notes_fail:
             raise ConnectionError("boom")
@@ -352,7 +358,8 @@ class Sending(unittest.TestCase):
         store, ses = FakeStore([ada()]), FakeSES()
         store.notes[("u1", "2025-10-07", "m1")] = {"text": "Birthday dinner. https://example.com/post/"}
         out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
-        self.assertEqual(out["results"][0]["last_year"], "2025-10-07")
+        self.assertEqual(out["results"][0]["on_this_day"], ["2025-10-07"])
+        self.assertEqual(out["results"][0]["notes"], 1)
         self.assertNotIn("Birthday dinner", str(out))
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
@@ -366,7 +373,8 @@ class Sending(unittest.TestCase):
             {"n": 2, "kind": "image", "type": "image/jpeg", "size": 9, "key": "media/u1/2025-10-07/m1/2.jpg"}]}
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
-        self.assertIn("A year ago you were 4.9.0 (Tuesday, October 7, 2025):\n\n"
+        self.assertIn("On this day: One earlier release has notes for day 0.\n\n"
+                      "A year ago you were 4.9.0 (Tuesday, October 7, 2025):\n\n"
                       "See 2 photos: https://notes.yourversionnumber.com/day/?d=2025-10-07\n", msg.get_body(("plain",)).get_content())
         html = msg.get_body(("html",)).get_content()
         self.assertIn(">See 2 photos</a>", html)
@@ -389,16 +397,56 @@ class Sending(unittest.TestCase):
         store, ses = FakeStore([ada()]), FakeSES()
         store.notes[("u1", "2025-10-06", "m1")] = {"text": "The day before."}
         out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
-        self.assertIsNone(out["results"][0]["last_year"])
+        self.assertEqual(out["results"][0]["on_this_day"], [])
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
-        self.assertNotIn("A year ago", ses.sent[0]["Content"]["Raw"]["Data"].decode())
+        raw = ses.sent[0]["Content"]["Raw"]["Data"].decode()
+        self.assertNotIn("On this day", raw)
+        self.assertIn("1 note across 1 day since 2025.", raw)
 
-    def test_last_year_read_failure_still_sends(self):
+    def test_every_earlier_release_on_this_day(self):
+        # Ada is 5.0.0 on 2026-10-07: day 0 of every release is her birthday.
         store, ses = FakeStore([ada()]), FakeSES()
+        years = (2025, 2021, 2019, 2016, 2012, 2001)
+        for y in years:
+            store.notes[("u1", f"{y}-10-07", "m1")] = {"text": f"Birthday in {y}.\n\n#cake #y{y}"}
+        store.notes[("u1", "2016-10-07", "m1")]["media"] = [{"n": 1, "kind": "image"}]
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
+        self.assertEqual(out["results"][0]["on_this_day"], [f"{y}-10-07" for y in years])
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        text, html = msg.get_body(("plain",)).get_content(), msg.get_body(("html",)).get_content()
+        self.assertIn("On this day: 6 earlier releases have notes for day 0.", text)
+        self.assertIn("6 notes across 6 days since 2001, and 1 photo.", text)
+        for y, ago in ((2025, "A year ago"), (2021, "5 years ago"), (2019, "7 years ago"), (2016, "10 years ago")):
+            self.assertIn(f"{ago} you were", text)
+            self.assertIn(f"Birthday in {y}.\n\n#cake #y{y}\n\n", text)
+            self.assertIn(f'href="https://notes.yourversionnumber.com/tag/?t=y{y}"', html)
+        self.assertIn("See the photo: https://notes.yourversionnumber.com/day/?d=2016-10-07", text)
+        self.assertIn("And 2 more:\n2012: https://notes.yourversionnumber.com/day/?d=2012-10-07\n"
+                      "2001: https://notes.yourversionnumber.com/day/?d=2001-10-07\n", text)
+        self.assertNotIn("Birthday in 2012", text)
+        self.assertEqual(html.count("#cake</a>"), 4)  # the tag line only: the closing hashtags are not repeated
+        self.assertIn('>2001</a></p>', html)
+
+    def test_on_this_day_read_failure_still_sends(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2025-10-07", "m1")] = {"text": "Birthday dinner."}
         store.day_notes_fail = True
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         self.assertEqual(len(ses.sent), 1)
-        self.assertNotIn("A year ago", ses.sent[0]["Content"]["Raw"]["Data"].decode())
+        raw = ses.sent[0]["Content"]["Raw"]["Data"].decode()
+        self.assertNotIn("On this day", raw)
+        self.assertIn("1 note across 1 day since 2025.", raw)
+
+    def test_history_read_failure_still_sends(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2025-10-07", "m1")] = {"text": "Birthday dinner."}
+        store.note_index_fail = True
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual(len(ses.sent), 1)
+        raw = ses.sent[0]["Content"]["Raw"]["Data"].decode()
+        self.assertNotIn("On this day", raw)
+        self.assertNotIn("across", raw)
 
     def test_streak_read_failure_still_sends(self):
         store, ses = FakeStore([ada()]), FakeSES()

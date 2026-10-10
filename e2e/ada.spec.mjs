@@ -59,6 +59,30 @@ test('a photo goes with a new note, and a PDF joins it later', async ({ page }) 
   await expect(note.locator('.media a.file')).toHaveAttribute('href', /^\/dev-media\/media\/.*\.pdf$/);
 });
 
+test('a photo opens over the page and closes back to it', async ({ page }) => {
+  await page.goto('/timeline/');
+  const photo = page.locator('.media img').first();
+  await expect(photo).toBeVisible();
+  const url = page.url();
+  await photo.click();
+  const viewer = page.getByRole('dialog', { name: 'Photo' });
+  await expect(viewer).toBeVisible();
+  await expect(viewer.locator('img')).toHaveAttribute('src', /^\/dev-media\/media\//);
+  await expect(viewer.locator('img')).not.toHaveJSProperty('naturalWidth', 0);
+  await viewer.getByRole('button', { name: 'Close' }).click();
+  await expect(viewer).toBeHidden();
+  expect(page.url()).toBe(url);
+  expect(page.context().pages()).toHaveLength(1);
+  // Escape closes it too, and so does a click outside the photo.
+  await photo.click();
+  await expect(viewer).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(viewer).toBeHidden();
+  await photo.click();
+  await page.mouse.click(5, 5);
+  await expect(viewer).toBeHidden();
+});
+
 test('a file that is not a photo, recording or PDF is refused by name, and nothing is saved', async ({ page }) => {
   await page.goto('/today/');
   const form = page.locator('#note-form');

@@ -4,18 +4,13 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { AppLink, Bar, Digits, Failed, Loading, useTitle } from '../components/common.tsx';
 import { dayHref } from '../components/days.tsx';
 import { NoteBody, NoteMedia } from '../components/notes.tsx';
-import { get } from '../lib/api.ts';
 import { addDays, dayName } from '../lib/format.ts';
-import type { Day, DaysPage } from '../lib/types.ts';
+import { daysQuery } from '../lib/queries.ts';
+import type { Day } from '../lib/types.ts';
 
 export function Timeline() {
   useTitle('Timeline');
-  const days = useInfiniteQuery({
-    queryKey: ['days'],
-    queryFn: ({ pageParam }) => get<DaysPage>('/api/days' + (pageParam ? `?before=${pageParam}` : '')),
-    initialPageParam: '',
-    getNextPageParam: (last) => last.before || undefined
-  });
+  const days = useInfiniteQuery(daysQuery);
   const list = useRef<HTMLDivElement>(null);
   const more = useRef<HTMLButtonElement>(null);
   // Set by a click on "Earlier releases": how many rows there were, and

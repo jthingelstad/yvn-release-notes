@@ -281,4 +281,3 @@ export function NoteMedia({ day, n, version, mark }: Props) {
 }
 
 // A recording still being written out, anywhere in these notes.
-export const writingOut = (notes: Note[] | undefined) => !!notes?.some((n) => (n.media || []).some((m) => m.writing));

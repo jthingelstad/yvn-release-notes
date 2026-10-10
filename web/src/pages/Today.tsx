@@ -4,24 +4,14 @@ import { AppLink, Bar, Digits, Failed, Loading, useTitle } from '../components/c
 import { StreakLine } from '../components/days.tsx';
 import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
-import { writingOut } from '../components/notes.tsx';
-import { get } from '../lib/api.ts';
 import { dayName } from '../lib/format.ts';
 import { useMe } from '../lib/nav.ts';
+import { todayQuery } from '../lib/queries.ts';
 import type { Me, Today as TodayData } from '../lib/types.ts';
-
-// A recording being written out: look again every 30 seconds, 20 times.
-export const POLL = 30000;
-export const pollWhileWriting = (q: { state: { data?: { notes: TodayData['notes'] }; dataUpdateCount: number } }) =>
-  writingOut(q.state.data?.notes) && q.state.dataUpdateCount <= 20 ? POLL : false;
 
 export function Today() {
   useTitle('Today');
-  const today = useQuery({
-    queryKey: ['today'],
-    queryFn: () => get<TodayData>('/api/today'),
-    refetchInterval: pollWhileWriting
-  });
+  const today = useQuery(todayQuery);
   // The address, for the line that stands in for an empty day.
   const me = useMe();
   const t = today.data;

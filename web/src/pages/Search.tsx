@@ -6,9 +6,10 @@ import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { AppLink, Bar, ErrorLine, Failed, Loading, useProblem, useTitle } from '../components/common.tsx';
 import { DayList } from '../components/days.tsx';
-import { ApiError, get, load } from '../lib/api.ts';
+import { ApiError, load } from '../lib/api.ts';
 import { count } from '../lib/format.ts';
 import { useHashParam } from '../lib/nav.ts';
+import { tagsQuery } from '../lib/queries.ts';
 import { sayFor, type Problem } from '../lib/say.ts';
 import type { SearchResult } from '../lib/types.ts';
 
@@ -22,10 +23,7 @@ export function Search() {
     queryFn: () => load<SearchResult>('POST', '/api/search', { q }),
     enabled: !!q
   });
-  const tags = useQuery({
-    queryKey: ['tags'],
-    queryFn: () => get<{ tags: { tag: string; days: number }[] }>('/api/tags')
-  });
+  const tags = useQuery(tagsQuery);
   // Words the API refuses (too many) say so at the box.
   const refused = found.error instanceof ApiError && found.error.answer.status === 400 ? found.error.answer.data : null;
 

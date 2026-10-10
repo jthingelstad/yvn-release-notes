@@ -17,7 +17,7 @@ import {
 } from '../components/common.tsx';
 import { api } from '../lib/api.ts';
 import { browserZone, longDate } from '../lib/format.ts';
-import { useSignedInAs } from '../lib/nav.ts';
+import { useGo, useSignedInAs } from '../lib/nav.ts';
 import { home, pendingBirthday, signedIn, store } from '../lib/storage.ts';
 import type { Sample } from '../lib/types.ts';
 
@@ -50,6 +50,7 @@ export function Home() {
   useTitle('');
   const navigate = useNavigate();
   const signIn = useSignedInAs();
+  const go = useGo();
   const hash = useLocation({ select: (l) => l.hash });
 
   const [mode, setMode] = useState<Mode | null>(null);
@@ -131,7 +132,8 @@ export function Home() {
     if (!hinted) start();
     api<{ new: boolean }>('GET', '/api/me').then((me) => {
       if (gone) return;
-      if (me.ok) return signIn(home(me.data.new));
+      // Already signed in: the same session, so what is cached stays.
+      if (me.ok) return go(home(me.data.new));
       setOpening(false);
       if (hinted) start();
     });

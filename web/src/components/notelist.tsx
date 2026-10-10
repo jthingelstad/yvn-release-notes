@@ -1,12 +1,15 @@
-// A day's notes, each with Edit, Add files and Delete. After any of them
-// the pages' data is fetched again, so every list shows the change.
+// A day's notes, each with Edit, Add files and Delete. An edit shows its
+// new words at once and a deleted note goes at once; a write that fails
+// puts the note back as it was, saying why. After any of them the pages'
+// data is fetched again, so every list shows the change.
 import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type FormEvent } from 'react';
 import { api } from '../lib/api.ts';
 import { FILES, sendFiles } from '../lib/files.ts';
-import { sayFor, type Line } from '../lib/say.ts';
+import { isPending } from '../lib/notecache.ts';
+import { sayFor, type Line, type Problem } from '../lib/say.ts';
 import type { Note } from '../lib/types.ts';
-import { ErrorLine, LineText, useBusy, useFocusLater, useProblem } from './common.tsx';
+import { ErrorLine, LineText, useFocusLater } from './common.tsx';
 import { NoteBody, NoteMedia, NoteMeta } from './notes.tsx';
 
 export function useRefresh() {
@@ -31,13 +34,33 @@ export function NoteList({ day, notes, tz, version }: ListProps) {
   );
 }
 
-type Mode = { is: 'view' } | { is: 'edit' } | { is: 'ask' } | { is: 'files'; line: Line; done: boolean };
+type Mode =
+  | { is: 'view' }
+  | { is: 'edit'; draft?: string; problem?: Problem }
+  | { is: 'saving'; text: string }
+  | { is: 'ask'; line?: Line }
+  | { is: 'deleting' }
+  | { is: 'files'; line: Line; done: boolean };
 
 function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; version: string }) {
   const [mode, setMode] = useState<Mode>({ is: 'view' });
   const refresh = useRefresh();
   const pick = useRef<HTMLInputElement>(null);
+  const article = useRef<HTMLElement>(null);
+  const focusLater = useFocusLater();
   const path = `/api/days/${day}/notes/${encodeURIComponent(n.id)}`;
+
+  // Written here a moment ago and not yet saved: the words alone.
+  if (isPending(n)) {
+    return (
+      <article className="note pending">
+        <p className="meta" role="status">
+          Saving…
+        </p>
+        <NoteBody n={n} />
+      </article>
+    );
+  }
 
   // Photos, recordings or PDFs from this device, after the note's own.
   const addFiles = async (files: File[]) => {
@@ -53,10 +76,44 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
     setMode({ is: 'files', line: sayFor(out.problem || r!.data), done: true });
   };
 
+  // The new words show while they save; a failure opens the edit again,
+  // with them in it.
+  const save = async (text: string) => {
+    setMode({ is: 'saving', text });
+    const r = await api('PUT', path, { text });
+    if (!r.ok) return setMode({ is: 'edit', draft: text, problem: { ...r.data, draft: 'copy' } });
+    await refresh();
+    setMode({ is: 'view' });
+  };
+
+  // Gone from the list at once, focus on to the next note (or the form).
+  // A failure brings it back, asking again.
+  const remove = async () => {
+    const next =
+      article.current?.nextElementSibling?.querySelector<HTMLElement>('.actions button') ||
+      document.querySelector<HTMLElement>('#note-form textarea');
+    setMode({ is: 'deleting' });
+    focusLater(() => next);
+    const r = await api('DELETE', path);
+    if (r.ok || r.status === 404) return refresh();
+    setMode({ is: 'ask', line: sayFor(r.data, 'That didn’t work. Try again.') });
+  };
+
+  const shown = mode.is === 'saving' ? { ...n, text: mode.text, parts: undefined } : n;
   return (
-    <article className="note">
+    <article className="note" ref={article} hidden={mode.is === 'deleting'}>
       <NoteMeta n={n} tz={tz} cls="meta" />
-      {mode.is === 'edit' ? <EditForm path={path} n={n} onDone={() => setMode({ is: 'view' })} /> : <NoteBody n={n} />}
+      {mode.is === 'edit' ? (
+        <EditForm
+          n={n}
+          draft={mode.draft}
+          problem={mode.problem}
+          onSave={save}
+          onCancel={() => setMode({ is: 'view' })}
+        />
+      ) : (
+        <NoteBody n={shown} />
+      )}
       <NoteMedia day={day} n={n} version={version} />
       <div className="actions" hidden={mode.is === 'edit'}>
         {mode.is === 'view' && (
@@ -72,7 +129,14 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
             </button>
           </>
         )}
-        {mode.is === 'ask' && <AskDelete n={n} path={path} onKeep={() => setMode({ is: 'view' })} />}
+        {mode.is === 'saving' && (
+          <span className="confirm" role="status">
+            Saving…
+          </span>
+        )}
+        {mode.is === 'ask' && (
+          <AskDelete n={n} line={mode.line} onDelete={remove} onKeep={() => setMode({ is: 'view' })} />
+        )}
         {mode.is === 'files' && (
           <>
             <span className="confirm" role="status">
@@ -102,21 +166,24 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
   );
 }
 
-function EditForm({ path, n, onDone }: { path: string; n: Note; onDone: () => void }) {
-  const [text, setText] = useState(n.text);
-  const [busy, run] = useBusy();
-  const problem = useProblem();
+function EditForm({
+  n,
+  draft,
+  problem: failed,
+  onSave,
+  onCancel
+}: {
+  n: Note;
+  draft?: string;
+  problem?: Problem;
+  onSave: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(draft ?? n.text);
   const area = useRef<HTMLTextAreaElement>(null);
-  const refresh = useRefresh();
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    run(async () => {
-      problem.clear();
-      const r = await api('PUT', path, { text });
-      if (!r.ok) return problem.show({ ...r.data, draft: 'copy' }, area.current);
-      await refresh();
-      onDone();
-    });
+    onSave(text);
   };
   return (
     <form className="edit" noValidate onSubmit={submit}>
@@ -124,25 +191,25 @@ function EditForm({ path, n, onDone }: { path: string; n: Note; onDone: () => vo
         ref={area}
         name="text"
         autoFocus
-        rows={Math.min(12, Math.max(3, n.text.split('\n').length + 1))}
+        rows={Math.min(12, Math.max(3, text.split('\n').length + 1))}
         value={text}
         onChange={(e) => setText(e.target.value)}
         aria-label="Edit this note"
       />
       <div className="row">
-        <button className="go small" type="submit" disabled={busy}>
+        <button className="go small" type="submit">
           Save
         </button>
-        <button className="quiet" type="button" onClick={onDone}>
+        <button className="quiet" type="button" onClick={onCancel}>
           Cancel
         </button>
       </div>
-      <ErrorLine line={problem.line} />
+      <ErrorLine line={failed ? sayFor(failed) : null} />
     </form>
   );
 }
 
-function AskDelete({ n, path, onKeep }: { n: Note; path: string; onKeep: () => void }) {
+function AskDelete({ n, line, onDelete, onKeep }: { n: Note; line?: Line; onDelete: () => void; onKeep: () => void }) {
   const files = !!(n.media && n.media.length);
   const question =
     n.source === 'email'
@@ -152,33 +219,13 @@ function AskDelete({ n, path, onKeep }: { n: Note; path: string; onKeep: () => v
       : files
         ? 'Delete this note, with its photos and recordings?'
         : 'Delete this note?';
-  const [line, setLine] = useState<Line>(question);
-  const [busy, setBusy] = useState(false);
-  const yes = useRef<HTMLButtonElement>(null);
-  const focusLater = useFocusLater();
-  const refresh = useRefresh();
   return (
     <>
-      <span className="confirm">
-        <LineText line={line} />
+      <span className="confirm" role={line ? 'alert' : undefined}>
+        <LineText line={line || question} />
       </span>
-      <button
-        ref={yes}
-        className="quiet danger"
-        type="button"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          const r = await api('DELETE', path);
-          if (!r.ok && r.status !== 404) {
-            setBusy(false);
-            setLine(sayFor(r.data, 'That didn’t work. Try again.'));
-            focusLater(() => yes.current);
-            return;
-          }
-          await refresh();
-        }}
-      >
+      {/* Asked again after a failure: focus on Delete, to try again. */}
+      <button className="quiet danger" type="button" autoFocus={!!line} onClick={onDelete}>
         Delete
       </button>
       <button className="quiet" type="button" onClick={onKeep}>

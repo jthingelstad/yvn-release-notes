@@ -75,10 +75,16 @@ runtime and is imported lazily so the tests run without it.
   `web/src/main.tsx` the routes, `pages/` one component a page,
   `components/` the shared pieces, `lib/` the API client and helpers,
   `styles/site.css` the one stylesheet, and the two fonts served from here.
-  `paths.ts` lists the pages; the build (`vite.config.ts`) writes a copy of
-  `index.html` into each page's folder with its title, so CloudFront's
-  `/x/` -> `/x/index.html` function serves every address unchanged, and
-  `deploy.sh` syncs `dist/web`. Pages load only their own files (the CSP
+  CloudFront's function answers every address that is not a file with
+  `index.html` (the dev server does the same), and the router shows the
+  page. The signed-in pages sit behind one gate in `main.tsx` that has the
+  profile before any of them shows; each page's data (`lib/queries.ts`)
+  loads before it shows, from the moment its link is pointed at; every page
+  but the front one is its own chunk. Back and forward restore the scroll,
+  and a new page moves focus to its heading. A note added, edited or deleted
+  shows at once and comes back, saying why, if the write fails
+  (`lib/notecache.ts`, `components/notelist.tsx`). `deploy.sh` syncs
+  `dist/web`. Pages load only their own files (the CSP
   is `'self'`), so no inline script or style (nothing inlined by the
   build, no `style` props), nothing remote; anything another service
   answers goes through `/api`. The exceptions are named in the CSP:
@@ -558,10 +564,11 @@ runtime and is imported lazily so the tests run without it.
 - `deploy.sh` builds the web app from HEAD (a `git archive` export, so
   nothing git ignores goes in; `npm ci --ignore-scripts`, `npm run build`)
   before deploying the stack, and refuses to deploy if the build fails. It
-  syncs `dist/web` to the web bucket: `assets/` (Vite's hashed names) cached
-  for a year as immutable and never deleted, so a page still open keeps
-  its files; HTML at max-age 60, with `--delete`; other files 600. Then it
-  invalidates the distribution.
+  syncs `dist/web` to the web bucket, deleting whatever the build no
+  longer has: `assets/` (Vite's hashed names) cached for a year as
+  immutable, `index.html` at max-age 60, other files 600. A tab left open
+  on an earlier build loads the app again when it reaches for a page's
+  code that is gone. Then it invalidates the distribution.
 
 ## Phases
 

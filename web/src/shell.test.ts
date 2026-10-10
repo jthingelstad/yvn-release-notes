@@ -1,16 +1,10 @@
-// The pages: one route and one built copy of index.html each
-// (vite.config.ts), and the shell that loads only its own files.
+// The page every address is served (CloudFront and the dev server answer
+// any address but a file with it), and the titles the pages give it.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { PAGES, titleOf } from './paths.ts';
+import { titleOf } from './components/common.tsx';
 
-describe('PAGES', () => {
-  it('lists each page once, as a folder', () => {
-    const paths = PAGES.map(([p]) => p);
-    expect(new Set(paths).size).toBe(paths.length);
-    for (const p of paths) expect(p).toMatch(/^\/([a-z]+\/)?$/);
-  });
-
+describe('titleOf', () => {
   it('titles a page after the product', () => {
     expect(titleOf('')).toBe('Release Notes');
     expect(titleOf('Today')).toBe('Today: Release Notes');

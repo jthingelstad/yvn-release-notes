@@ -119,14 +119,16 @@ output() {
 }
 WEB_BUCKET=$(output WebBucketName)
 # The build's script, styles and fonts first, named by their content so
-# they never change: cached for good. Earlier builds' stay, so a page
-# loaded just before this still finds its script. Then the pages, which
-# revalidate within a minute, and the rest (the font licences).
-aws s3 sync "$WEB/assets/" "s3://$WEB_BUCKET/assets/" --only-show-errors \
+# they never change: cached for good. The bucket holds this build alone; a
+# tab still open on an earlier one loads the app again when a page's code
+# is gone (main.tsx). Then index.html, which every address serves (the
+# CloudFront function) and which revalidates within a minute, and the rest
+# (the font licences).
+aws s3 sync "$WEB/assets/" "s3://$WEB_BUCKET/assets/" --delete --only-show-errors \
   --cache-control 'public, max-age=31536000, immutable'
 aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include '*.html' \
   --cache-control 'public, max-age=60'
-aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --only-show-errors --exclude '*.html' --exclude 'assets/*' \
+aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*.html' --exclude 'assets/*' \
   --cache-control 'public, max-age=600'
 aws cloudfront create-invalidation --distribution-id "$(output WebDistributionId)" --paths '/*' \
   --query Invalidation.Id --output text >/dev/null

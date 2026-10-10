@@ -128,6 +128,8 @@ select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 .notes { margin-top: 16px; display: flex; flex-direction: column; gap: 18px; }
 .notes:empty { display: none; }
 .note { display: flex; flex-direction: column; gap: 4px; }
+/* written a moment ago, still saving */
+.note.pending { opacity: 0.6; }
 .meta, .count { margin: 0; font-size: 13px; font-weight: 600; color: var(--orange-ink); }
 .meta a, .count a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 .text { margin: 0; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -205,6 +207,8 @@ fieldset.birthday legend { padding: 0; margin-bottom: 12px; font-size: 14px; fon
 .mdy label { gap: 4px; font-size: 13px; font-weight: 400; color: var(--ink-2); }
 .you-are { margin: 56px 0 0; }
 .you-are:focus { outline: none; }
+/* a new page's heading, given focus so it is read out (main.tsx) */
+h1[tabindex="-1"]:focus, main[tabindex="-1"]:focus { outline: none; }
 .you-are .lead { display: block; font-size: 18px; font-weight: 400; color: var(--ink-2); }
 .you-are .vnum.huge { display: block; margin-top: 8px; font-size: 60px; letter-spacing: -0.03em; }
 .birthday-today { margin: 14px 0 0; font-size: 20px; font-weight: 800; color: var(--orange-ink); }

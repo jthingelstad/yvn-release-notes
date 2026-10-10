@@ -124,6 +124,58 @@ class StartTest(TranscribeCase):
         self.assertIsNone(transcribe.parse_job("someone-else.u1.2026-10-09.w-1.1"))
         self.assertEqual(transcribe.parse_job(NAME), ("u1", "2026-10-09", "w-1", 1))
 
+    def test_a_recording_bigger_than_any_upload_is_never_sent(self):
+        big = {**M4A, "size": Decimal(transcribe.MAX_BYTES + 1)}
+        self.run_it({"Records": [self.arrive(note(big))]})
+        self.assertEqual(self.jobs.jobs, {})
+        self.assertEqual(transcribe.waiting(note(big)), [])
+
+
+class DailyCapTest(TranscribeCase):
+    """At most MAX_A_DAY jobs a subscriber a UTC day (2026-10-09 audit);
+    the rest stay waiting for a later look."""
+
+    DAY = 20370  # 2025-10-09, as days since the epoch
+
+    def setUp(self):
+        super().setUp()
+        cap = mock.patch.object(transcribe, "MAX_A_DAY", 2)
+        cap.start()
+        self.addCleanup(cap.stop)
+        for i in range(1, 4):
+            self.store.add_note("u1", f"2016-07-0{i}", "d1-A", media=[dict(M4A, key=f"media/u1/2016-07-0{i}/d1-A/1.m4a")])
+
+    def run_at(self, day, event):
+        with mock.patch("builtins.print") as printed:
+            transcribe.handler(event, None, store=self.store, transcribe=self.jobs, s3=self.s3,
+                               clock=lambda: day * 86400 + 3600)
+        return "\n".join(str(c.args[0]) for c in printed.call_args_list)
+
+    def turned_on(self):
+        profile = {"pk": "USER#u1", "sk": "PROFILE", "transcribe": True}
+        return {"Records": [record(profile, {**profile, "transcribe": False})]}
+
+    def test_turning_it_on_starts_the_days_share_and_leaves_the_rest_waiting(self):
+        logged = self.run_at(self.DAY, self.turned_on())
+        self.assertEqual(sorted(self.jobs.jobs), ["release-notes.u1.2016-07-01.d1-A.1", "release-notes.u1.2016-07-02.d1-A.1"])
+        self.assertIn('"event":"transcribe-capped"', logged)
+        waiting = [n for n in self.store.all_notes("u1") if transcribe.waiting(n)]
+        self.assertEqual(len(waiting), 3)  # none marked done: two running, one not started
+        self.assertEqual(self.store.counts[("transcribe:u1", self.DAY)], 3)  # stopped asking once full
+        # A new note the same day waits too.
+        self.run_at(self.DAY, {"Records": [self.arrive(note(M4A))]})
+        self.assertNotIn(NAME, self.jobs.jobs)
+
+    def test_a_later_day_picks_up_what_waited(self):
+        self.run_at(self.DAY, self.turned_on())
+        self.jobs.jobs.clear()  # those two finished
+        self.store.note("u1", "2016-07-01", "d1-A")["media"][0]["transcript"] = "One."
+        self.store.note("u1", "2016-07-02", "d1-A")["media"][0]["transcript"] = "Two."
+        # The note written again (an edit) the next day.
+        n = self.store.note("u1", "2016-07-03", "d1-A")
+        self.run_at(self.DAY + 1, {"Records": [record({**n, "pk": "USER#u1"})]})
+        self.assertEqual(list(self.jobs.jobs), ["release-notes.u1.2016-07-03.d1-A.1"])
+
 
 class FinishTest(TranscribeCase):
     def setUp(self):

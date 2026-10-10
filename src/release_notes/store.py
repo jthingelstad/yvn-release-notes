@@ -31,7 +31,12 @@
                                                 so neither kind of code replaces the other
     SESSION#<hash>   SESSION                    a signed-in browser: user, or the address of one signing up
     RATE#<key>#<hr>  RATE                       a counter for one hour of sign-in emails
-    RATE#<key>#<day> RATE                       a counter for one day of wrong sign-in codes
+    RATE#<key>#<day> RATE                       a counter for one day of wrong sign-in codes, or of one
+                                                subscriber's transcription jobs (transcribe:<user>)
+    RATE#upload:<user>#<day> RATE               a subscriber's upload forms that UTC day: n, and bytes
+                                                (their declared sizes), checked against the ceilings
+    LOCK#<name>      LOCK                       one job running at a time (describe:<user>, describe.py):
+                                                holder, until expires_at
     TALLY#<YYYY-MM>  TALLY                      that month's counts: signups, unsubscribes, restarts,
                                                 bounces, complaints, deletes. Numbers only, no one named
 
@@ -679,6 +684,59 @@ class Store:
             ReturnValues="UPDATED_NEW",
         )["Attributes"]
         return _number(item, "n")
+
+    def count_upload(self, user_id: str, day: int, size: int, max_files: int, max_bytes: int) -> bool:
+        """Count one more upload form of `size` bytes against a subscriber's
+        UTC day (`day` is days since the epoch), unless the day already has
+        max_files forms or this one would take it past max_bytes. False,
+        counting nothing, if so."""
+        try:
+            self.table.update_item(
+                Key={"pk": f"RATE#upload:{user_id}#{day}", "sk": "RATE"},
+                UpdateExpression="ADD n :one, #b :size SET expires_at = :exp",
+                ConditionExpression="attribute_not_exists(pk) OR (n < :files AND #b <= :room)",
+                ExpressionAttributeNames={"#b": "bytes"},
+                ExpressionAttributeValues={":one": 1, ":size": size, ":exp": (day + 2) * 86400,
+                                           ":files": max_files, ":room": max_bytes - size},
+            )
+            return True
+        except Exception as e:
+            if _failed_condition(e):
+                return False
+            raise
+
+    def take_lock(self, name: str, holder: str, now: int, hold_for: int) -> bool:
+        """Hold LOCK#<name> for `holder` until now + hold_for, if it is free,
+        has run out, or is already this holder's (which renews it). False if
+        someone else holds it."""
+        try:
+            self.table.update_item(
+                Key={"pk": f"LOCK#{name}", "sk": "LOCK"},
+                UpdateExpression="SET #h = :h, expires_at = :exp",
+                ConditionExpression="attribute_not_exists(pk) OR expires_at <= :now OR #h = :h",
+                ExpressionAttributeNames={"#h": "holder"},
+                ExpressionAttributeValues={":h": holder, ":exp": now + hold_for, ":now": now},
+            )
+            return True
+        except Exception as e:
+            if _failed_condition(e):
+                return False
+            raise
+
+    def release_lock(self, name: str, holder: str, now: int) -> None:
+        """Let go of a lock this holder has: it runs out now, and the TTL
+        clears it. Nothing if another holder has taken it since."""
+        try:
+            self.table.update_item(
+                Key={"pk": f"LOCK#{name}", "sk": "LOCK"},
+                UpdateExpression="SET expires_at = :now",
+                ConditionExpression="#h = :h",
+                ExpressionAttributeNames={"#h": "holder"},
+                ExpressionAttributeValues={":h": holder, ":now": now},
+            )
+        except Exception as e:
+            if not _failed_condition(e):
+                raise
 
     def peek(self, key: str, period: int) -> int:
         item = self.table.get_item(Key={"pk": f"RATE#{key}#{period}", "sk": "RATE"}).get("Item")

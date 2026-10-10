@@ -22,14 +22,28 @@ One function, two triggers:
    bucket and the job itself are deleted. A note deleted meanwhile just
    loses them.
 
+Transcribe bills by the minute, and sign-up is open, so each subscriber
+gets at most MAX_A_DAY jobs a UTC day (2026-10-09 audit), counted as each
+starts (`RATE#transcribe:<user>#<day>`, store.count). Past that, a
+recording is left waiting, never marked done: it has no `transcript`, so
+the next thing that looks at it starts its job. Nothing comes back for it
+on its own, though: it is written out when its note is written again (an
+edit, a file added), or when the setting is turned off and on, which
+starts the next day's share of every recording still waiting. A recording
+over MAX_BYTES (bigger than anything the web or an email brings; only an
+import could) is never sent and stays without words, as a photo too big
+to describe does.
+
 Logs ids and counts, never the words.
 """
 
 import json
 import os
 import re
+import time
 from decimal import Decimal
 
+from .media import MAX_UPLOAD
 from .store import Store
 
 PREFIX = "release-notes"
@@ -38,6 +52,11 @@ LANGUAGE = "en-US"
 FORMATS = {"audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/ogg": "ogg",
            "audio/webm": "webm", "audio/flac": "flac"}
 MAX_TRANSCRIPT = 50_000  # characters, about an hour of talking
+# Jobs one subscriber may start in a UTC day: a recording every hour they
+# are awake and then some, and a ceiling on what one account can spend.
+MAX_A_DAY = 30
+MAX_BYTES = MAX_UPLOAD  # 50 MB, the most one file from the web can be
+ONE_DAY = 86400
 _ID = re.compile(r"[A-Za-z0-9-]{1,80}")
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -68,15 +87,30 @@ def waiting(note: dict) -> list[dict]:
     """The note's recordings Transcribe can read that have no text yet."""
     return [m for m in note.get("media") or []
             if m.get("kind") == "audio" and m.get("type") in FORMATS and "transcript" not in m
-            and str(m.get("key", "")).startswith("media/")]
+            and int(m.get("size") or 0) <= MAX_BYTES and str(m.get("key", "")).startswith("media/")]
 
 
 def _code(e: Exception) -> str | None:
     return (getattr(e, "response", None) or {}).get("Error", {}).get("Code")
 
 
-def start(note: dict, user_id: str, *, transcribe, bucket: str) -> int:
-    """Start a job for each waiting recording. Returns how many started."""
+class Allowance:
+    """One subscriber's jobs for one UTC day: each start takes one, and
+    past MAX_A_DAY none is given (and the counter is not asked again)."""
+
+    def __init__(self, store, user_id: str, day: int):
+        self.store, self.user_id, self.day, self.full = store, user_id, day, False
+
+    def take(self) -> bool:
+        if not self.full and self.store.count(f"transcribe:{self.user_id}", self.day, ONE_DAY) > MAX_A_DAY:
+            self.full = True
+            log(event="transcribe-capped", user=self.user_id)
+        return not self.full
+
+
+def start(note: dict, user_id: str, *, transcribe, bucket: str, allowance: Allowance) -> int:
+    """Start a job for each waiting recording, while the day's allowance
+    lasts. Returns how many started; the rest stay waiting."""
     _, day, note_id = note["sk"].split("#", 2)
     started = 0
     for m in waiting(note):
@@ -84,6 +118,8 @@ def start(note: dict, user_id: str, *, transcribe, bucket: str) -> int:
         name = job_name(user_id, day, note_id, n)
         if not name:
             continue
+        if not allowance.take():
+            break
         try:
             transcribe.start_transcription_job(
                 TranscriptionJobName=name, LanguageCode=LANGUAGE, MediaFormat=FORMATS[m["type"]],
@@ -110,20 +146,26 @@ def plain(value):
     return v  # S, BOOL, and the sets as lists
 
 
-def changed(record: dict, *, store, transcribe, bucket: str, wanted: dict) -> int:
-    """One stream record. `wanted` caches each user's setting for the batch."""
+def changed(record: dict, *, store, transcribe, bucket: str, wanted: dict, allowances: dict, today: int) -> int:
+    """One stream record. `wanted` caches each user's setting for the batch,
+    `allowances` their Allowance for `today` (days since the epoch, UTC)."""
     images = record.get("dynamodb", {})
     new = {k: plain(v) for k, v in images.get("NewImage", {}).items()}
     old = {k: plain(v) for k, v in images.get("OldImage", {}).items()}
     if not str(new.get("pk", "")).startswith("USER#"):
         return 0
     user_id = new["pk"][5:]
+    allowance = allowances.setdefault(user_id, Allowance(store, user_id, today))
     if new.get("sk") == "PROFILE":
         if not new.get("transcribe") or old.get("transcribe"):
             return 0
-        # Just turned on: everything already kept.
-        started = sum(start(n, user_id, transcribe=transcribe, bucket=bucket)
-                      for n in store.all_notes(user_id) if waiting(n))
+        # Just turned on: everything already kept, as far as today's allowance goes.
+        started = 0
+        for n in store.all_notes(user_id):
+            if allowance.full:
+                break
+            if waiting(n):
+                started += start(n, user_id, transcribe=transcribe, bucket=bucket, allowance=allowance)
         log(event="transcribe-all", user=user_id, started=started)
         return started
     if not str(new.get("sk", "")).startswith("NOTE#") or not waiting(new):
@@ -138,7 +180,7 @@ def changed(record: dict, *, store, transcribe, bucket: str, wanted: dict) -> in
     note = store.note(user_id, day, note_id)
     if not note or not waiting(note):
         return 0
-    started = start(note, user_id, transcribe=transcribe, bucket=bucket)
+    started = start(note, user_id, transcribe=transcribe, bucket=bucket, allowance=allowance)
     if started:
         log(event="transcribe-start", user=user_id, started=started)
     return started
@@ -174,7 +216,7 @@ def finished(detail: dict, *, store, transcribe, s3, bucket: str) -> str:
     return outcome
 
 
-def handler(event, context, *, store=None, transcribe=None, s3=None):
+def handler(event, context, *, store=None, transcribe=None, s3=None, clock=time.time):
     if store is None or transcribe is None or s3 is None:
         import boto3
 
@@ -185,6 +227,6 @@ def handler(event, context, *, store=None, transcribe=None, s3=None):
     if event.get("source") == "aws.transcribe":
         finished(event.get("detail", {}), store=store, transcribe=transcribe, s3=s3, bucket=bucket)
         return
-    wanted = {}
+    wanted, allowances, today = {}, {}, int(clock()) // ONE_DAY
     for record in event.get("Records", []):
-        changed(record, store=store, transcribe=transcribe, bucket=bucket, wanted=wanted)
+        changed(record, store=store, transcribe=transcribe, bucket=bucket, wanted=wanted, allowances=allowances, today=today)

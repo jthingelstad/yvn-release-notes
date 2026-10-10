@@ -354,6 +354,46 @@ class SetMediaText(unittest.TestCase):
             self.assertEqual(t.calls, [])
 
 
+class CostCeilings(unittest.TestCase):
+    # The exact table calls added for the 2026-10-09 cost ceilings.
+
+    def test_an_upload_counts_its_form_and_size_unless_the_day_is_full(self):
+        t = FakeTable()
+        self.assertTrue(Store(t).count_upload("u1", 20370, 5000, 200, 2_000_000_000))
+        self.assertEqual(t.calls, [("update_item", {
+            "Key": {"pk": "RATE#upload:u1#20370", "sk": "RATE"},
+            "UpdateExpression": "ADD n :one, #b :size SET expires_at = :exp",
+            "ConditionExpression": "attribute_not_exists(pk) OR (n < :files AND #b <= :room)",
+            "ExpressionAttributeNames": {"#b": "bytes"},
+            "ExpressionAttributeValues": {":one": 1, ":size": 5000, ":exp": 20372 * 86400, ":files": 200,
+                                          ":room": 2_000_000_000 - 5000}})])
+        self.assertFalse(Store(FakeTable(fail=ConditionFailed())).count_upload("u1", 20370, 5000, 200, 2_000_000_000))
+        with self.assertRaises(ValueError):
+            Store(FakeTable(fail=ValueError("down"))).count_upload("u1", 20370, 5000, 200, 2_000_000_000)
+
+    def test_a_lock_is_taken_if_free_run_out_or_already_the_holders(self):
+        t = FakeTable()
+        self.assertTrue(Store(t).take_lock("describe:u1", "c1", 1000, 960))
+        self.assertEqual(t.calls, [("update_item", {
+            "Key": {"pk": "LOCK#describe:u1", "sk": "LOCK"},
+            "UpdateExpression": "SET #h = :h, expires_at = :exp",
+            "ConditionExpression": "attribute_not_exists(pk) OR expires_at <= :now OR #h = :h",
+            "ExpressionAttributeNames": {"#h": "holder"},
+            "ExpressionAttributeValues": {":h": "c1", ":exp": 1960, ":now": 1000}})])
+        self.assertFalse(Store(FakeTable(fail=ConditionFailed())).take_lock("describe:u1", "c1", 1000, 960))
+
+    def test_a_lock_is_let_go_only_by_its_holder(self):
+        t = FakeTable()
+        Store(t).release_lock("describe:u1", "c1", 1500)
+        self.assertEqual(t.calls, [("update_item", {
+            "Key": {"pk": "LOCK#describe:u1", "sk": "LOCK"},
+            "UpdateExpression": "SET expires_at = :now",
+            "ConditionExpression": "#h = :h",
+            "ExpressionAttributeNames": {"#h": "holder"},
+            "ExpressionAttributeValues": {":h": "c1", ":now": 1500}})])
+        Store(FakeTable(fail=ConditionFailed())).release_lock("describe:u1", "c1", 1500)  # someone else's now: nothing
+
+
 if __name__ == "__main__":
     unittest.main()
 

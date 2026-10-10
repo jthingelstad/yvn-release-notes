@@ -21,8 +21,14 @@ since the API takes at most a few megabytes. web.start_upload signs a
 form for one file of one type and exact size, to
 `media/<user>/web/<upload id>.<ext>`, tagged `outcome=pending`; the
 bucket expires pending files after a day. web.attach then reads the
-file's first bytes (looks_like), tags it `outcome=note` and lists it on
-the note. A PDF is kind `file`, as an imported one is.
+file's first bytes (looks_like) and copies that very version (by its
+VersionId) to `media/<user>/files/<file id>.<ext>`, tagged `outcome=note`,
+a key no upload form can write; then it deletes the pending version and
+lists the copy on the note. So the form, still good for a few minutes,
+cannot send other bytes over a file once it was checked (2026-10-09
+audit). Notes from before keep their `media/<user>/web/` keys, which every
+reader takes as it takes any key under `media/<user>/`. A PDF is kind
+`file`, as an imported one is.
 
 Nobody but the owner sees a file: the web app asks the API, which checks the
 session and redirects to a link that lasts ten minutes (web.media_file).
@@ -86,7 +92,14 @@ def upload_type(content_type: str, filename: str) -> str | None:
 
 
 def upload_key(user_id: str, upload_id: str, ctype: str) -> str:
+    """Where an upload form sends a file, pending until a note takes it."""
     return f"media/{user_id}/web/{upload_id}.{extension(ctype)}"
+
+
+def kept_key(user_id: str, file_id: str, ctype: str) -> str:
+    """Where a checked upload is kept once a note takes it: no form signs
+    for this key, so its bytes are the ones attach checked."""
+    return f"media/{user_id}/files/{file_id}.{extension(ctype)}"
 
 
 def looks_like(ctype: str, head: bytes) -> bool:

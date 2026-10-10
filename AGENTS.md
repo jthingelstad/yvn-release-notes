@@ -179,8 +179,14 @@ runtime and is imported lazily so the tests run without it.
   browser sends each file straight to the bucket with a form the API signs
   for that type and exact size (`POST /api/uploads`), to
   `media/<user>/web/<id>.<ext>` tagged `outcome=pending`, which the bucket
-  expires after a day; the note's write checks its first bytes and tags it
-  `outcome=note` (`media.py` has the design). So the CSP's connect-src and
+  expires after a day; the note's write checks its first bytes and copies
+  that version to `media/<user>/files/<id>.<ext>` tagged `outcome=note`, a
+  key no form writes, then deletes the pending version, so the form cannot
+  swap the bytes after the check (notes from before keep their `web/`
+  keys; `media.py` has the design). A form lasts 5 minutes, and each
+  subscriber gets at most 200 forms or 2 GB of declared size a UTC day
+  (`web.UPLOADS_A_DAY`, `UPLOAD_BYTES_A_DAY`; past either, 429
+  `upload-limit`), since sign-up is open. So the CSP's connect-src and
   the bucket's CORS name each other. Each file on a note in an API answer
   carries `url`, a signed link on the bucket's own host, the one host the
   CSP adds (`img-src`, `media-src`), only for keys under the subscriber's
@@ -211,7 +217,11 @@ runtime and is imported lazily so the tests run without it.
   already kept. The table's stream (NEW_AND_OLD_IMAGES, read by the
   transcriber alone) starts a batch job per recording; Transcribe's job
   events bring the words back as `transcript` on the file's media entry
-  (`""` when a job failed or heard nothing). The words show in italics (Jamie: so
+  (`""` when a job failed or heard nothing). At most 30 jobs a subscriber
+  a UTC day (`transcribe.MAX_A_DAY`), and none for a file over 50 MB; past
+  the cap a recording just waits, until its note is written again or the
+  setting is turned off and on another day (nothing retries it on its
+  own). The words show in italics (Jamie: so
   it "isn't text you typed") under the
   player, are searched, and go in both exports; not in the email. Jamie
   wanted the settings copy casual and the service unnamed ("They're sent
@@ -223,7 +233,9 @@ runtime and is imported lazily so the tests run without it.
   rather than Haiku 4.5 on Bedrock): off until the
   subscriber ticks "Describe my photos" (`describe` on the profile), which
   also describes every photo already kept, in passes the function hands
-  on to itself. The same stream sends each new photo to the model; one or
+  on to itself, one chain per subscriber however often it is turned on
+  (a `LOCK#describe:<user>` item), each photo read again just before it
+  goes so none is sent twice. The same stream sends each new photo to the model; one or
   two sentences come back as `description` on its media entry (`""` when
   the model could not read it). JPEG, PNG, GIF and WebP up to 3.75 MB;
   nothing is shrunk, so bigger photos and HEIC go without. It is the
@@ -466,6 +478,11 @@ runtime and is imported lazily so the tests run without it.
   describe stream batch (shard and sequence numbers only). Kept 14 days;
   alarm `yvn-release-notes-failed-queue` fires on anything in it. Apply a
   stuck bounce by hand, then delete the message.
+- The describe, transcribe and export functions each run at most two at
+  once (reserved concurrency 2, 2026-10-09 audit). Throttled stream
+  batches wait and are tried again without using up their retries, and
+  throttled async events (a describe pass, a job event, an export build)
+  are tried for up to six hours, so a busy moment is slower, not lost.
 - The monthly counts: `scripts/tally.py` (reads only).
 - The dashboard: stack output `DashboardUrl`. Alarm `yvn-release-notes-overdue`
   fires when anyone's email is over half an hour late for two quarter

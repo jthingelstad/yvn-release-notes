@@ -960,14 +960,26 @@ _links: dict[str, tuple[str, int]] = {}  # key -> (link, signed at); warm invoca
 # with a form signed here (the API takes a few megabytes at most), then a
 # note takes it: a new one (add_note) or one already there (add_files).
 
-UPLOAD_FORM = 900  # seconds a signed upload form lasts
+# Seconds a signed upload form lasts. The page asks for each file's form just
+# before sending that file, so a form need only outlast one file: 50 MB, the
+# most one can be, takes about 200 seconds over a slow phone connection
+# (2 Mbit/s up). Shorter than it was (900) so a form is no use for long after.
+UPLOAD_FORM = 300
+# What one subscriber may ask to send in a UTC day, counted as each form is
+# signed, by the size it is signed for: far past what one person adds to their
+# notes in a day (a holiday's photos, a long recording), and a ceiling on what
+# an open sign-up lets anyone store at the bucket's expense.
+UPLOADS_A_DAY = 200
+UPLOAD_BYTES_A_DAY = 2 * 1024 ** 3  # 2 GB
 PENDING = "<Tagging><TagSet><Tag><Key>outcome</Key><Value>pending</Value></Tag></TagSet></Tagging>"
 UPLOAD_ID = re.compile(r"[0-9a-f]{32}")
 
 
 def start_upload(app: App, req: Request) -> dict:
     """A form for one file, of the type and exact size the page says, to a
-    key of its own. Nothing joins a note until attach() has checked it."""
+    key of its own. Nothing joins a note until attach() has checked it.
+    Past the day's ceilings (UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY), 429
+    `upload-limit` and no form."""
     user_id, _ = app.account(req)
     body = req.json()
     name, ctype = body.get("name"), body.get("type")
@@ -979,6 +991,9 @@ def start_upload(app: App, req: Request) -> dict:
         raise Reject(400, "file-size")
     if size > media.MAX_UPLOAD:
         raise Reject(400, "file-too-big")
+    if not app.store.count_upload(user_id, app.now // 86400, size, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY):
+        log(event="upload-limited", user=user_id)
+        raise Reject(429, "upload-limit")
     upload_id = uuid.uuid4().hex
     form = app.s3.generate_presigned_post(
         Bucket=os.environ["MAIL_BUCKET"], Key=media.upload_key(user_id, upload_id, ctype),
@@ -1007,13 +1022,16 @@ def attach(app: App, user_id: str, uploads) -> list[dict]:
     """Note entries (without `n`) for files sent with start_upload's forms.
     Each must be there, still pending (on no note yet), of the type it was
     signed for, and start like one; any that is not stops them all. Then
-    each is tagged as kept, which takes it out of the bucket's expiry."""
+    the version checked (by its VersionId, so bytes the form sent since
+    are not it) is copied to a key of its own that no form can write
+    (media.kept_key), tagged as kept, which keeps it out of the bucket's
+    expiry, and the pending version is deleted."""
     if (not isinstance(uploads, list) or not uploads or len(uploads) > media.MAX_FILES
             or not all(isinstance(u, dict) for u in uploads)
             or len({u.get("upload") for u in uploads}) != len(uploads)):
         raise Reject(400, "upload")
     bucket = os.environ["MAIL_BUCKET"]
-    entries = []
+    entries, checked = [], []
     for u in uploads:
         upload_id, ctype = u.get("upload"), u.get("type")
         if not isinstance(upload_id, str) or not UPLOAD_ID.fullmatch(upload_id) or ctype not in media.UPLOADABLE:
@@ -1031,15 +1049,20 @@ def attach(app: App, user_id: str, uploads) -> list[dict]:
             raise Reject(400, "upload")
         total = str(got.get("ContentRange") or "").rpartition("/")[2]
         entry = {"kind": media.kind(ctype), "type": ctype, "size": int(total) if total.isdigit() else len(head),
-                 "key": key}
+                 "key": media.kept_key(user_id, uuid.uuid4().hex, ctype)}
         if name := file_name(u.get("name")):
             entry["name"] = name
         if ctype in media.IMAGES and (wh := media.image_size(head)):
             entry["width"], entry["height"] = wh
         entries.append(entry)
-    for e in entries:
-        app.s3.put_object_tagging(Bucket=bucket, Key=e["key"],
-                                  Tagging={"TagSet": [{"Key": "outcome", "Value": "note"}]})
+        checked.append((key, got["VersionId"]))  # the bucket is versioned: this is the version read
+    for e, (key, version) in zip(entries, checked):
+        app.s3.copy_object(Bucket=bucket, Key=e["key"], CopySource={"Bucket": bucket, "Key": key, "VersionId": version},
+                           MetadataDirective="COPY", TaggingDirective="REPLACE", Tagging="outcome=note")
+    # That version for good, so the bucket keeps no second copy for 30 days;
+    # anything the form sent since stays pending and expires.
+    for key, version in checked:
+        app.s3.delete_object(Bucket=bucket, Key=key, VersionId=version)
     return entries
 
 

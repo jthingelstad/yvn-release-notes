@@ -152,11 +152,16 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
     their city; for a day with a place of its own, again whenever that
     place is not the one the kept weather is for. `changed`: the day's
     place was just set or cleared, so a reading for another place is
-    replaced either way. Returns what it did, for the log."""
+    replaced either way; when none can be had for the place it has now,
+    one for another place is dropped, so the next call tries again. Reads
+    consistently: it follows the write of a place or a note. Returns what
+    it did, for the log."""
     if day >= today:
         return "not-yet"
     d = day.isoformat()
-    where = day_place(store.day_place(user_id, d), store.notes_between(user_id, d, d), tz)
+    # Consistent reads: this follows the write of a place or a note.
+    where = day_place(store.day_place(user_id, d, consistent=True),
+                      store.notes_between(user_id, d, d, ConsistentRead=True), tz)
     place = where or home
     if not place:
         return "no-place"
@@ -165,6 +170,11 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
         return "kept"
     found = history(place, day, today, fetch)
     if not found:
+        if kept and not same_place(kept, place):
+            # For a place the day no longer has: dropped, so the next
+            # call for the day fetches again.
+            store.drop_weather(user_id, d)
+            return "dropped"
         return "none"
     if kept:
         store.replace_weather(user_id, d, record(found, place, fetched_at))

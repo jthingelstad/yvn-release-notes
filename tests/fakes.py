@@ -61,7 +61,7 @@ class FakeStore:
     def sent_days(self, user_id):
         return {i["sk"].split("#")[1] for i in self._rows(user_id, "DAY#")}
 
-    def notes_between(self, user_id, first, last):
+    def notes_between(self, user_id, first, last, **query):
         rows = [dict(i) for i in self._rows(user_id, "NOTE#") if first <= i["sk"].split("#")[1] <= last]
         return sorted(rows, key=lambda i: (i["sk"].split("#")[1], written_at(i), i["sk"]))
 
@@ -196,7 +196,11 @@ class FakeStore:
         rows[:] = [i for i in rows if i["sk"] != f"WEATHER#{day}"]
         rows.append({"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **fields})
 
-    def day_place(self, user_id, day):
+    def drop_weather(self, user_id, day):
+        rows = self.items.setdefault(user_id, [])
+        rows[:] = [i for i in rows if i["sk"] != f"WEATHER#{day}"]
+
+    def day_place(self, user_id, day, consistent=False):
         found = [i for i in self.items.get(user_id, []) if i["sk"] == f"PLACE#{day}"]
         return dict(found[0]) if found else None
 

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Note } from '../lib/types.ts';
 import { StreakLine } from './days.tsx';
 import { Marked, NoteBody, noteText } from './notes.tsx';
+import { answered } from './where.tsx';
 
 afterEach(cleanup);
 
@@ -74,5 +75,15 @@ describe('Marked', () => {
     const { container } = render(<Marked text="A canoe, two Canoes" mark={/(canoe)/i} />);
     expect([...container.querySelectorAll('mark')].map((m) => m.textContent)).toEqual(['canoe', 'Canoe']);
     expect(container.textContent).toBe('A canoe, two Canoes');
+  });
+});
+
+describe('answered', () => {
+  it('is the day changed, and Today only while it is that day', () => {
+    expect(answered(['day', '2026-09-12'], undefined, '2026-09-12')).toBe(true);
+    expect(answered(['day', '2026-09-13'], undefined, '2026-09-12')).toBe(false);
+    expect(answered(['today'], { date: '2026-09-12' }, '2026-09-12')).toBe(true);
+    expect(answered(['today'], { date: '2026-10-12' }, '2026-09-12')).toBe(false);
+    expect(answered(['days'], undefined, '2026-09-12')).toBe(false);
   });
 });

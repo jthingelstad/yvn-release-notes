@@ -660,16 +660,17 @@ class Store:
 
     def rename_weather(self, user_id: str, day: str, kept: dict, names: dict) -> bool:
         """A day's weather under another name for the same spot
-        (weather.keep_day): only while it is still for `kept`'s spot. False
-        if it was not."""
+        (weather.keep_day): only while it is still `kept`, at its spot under
+        its names, so a newer move or rename stands. False if it was not."""
         try:
             self.table.update_item(
                 Key={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}"},
                 UpdateExpression="SET " + ", ".join(f"#{k} = :{k}" for k in names),
-                ConditionExpression="lat = :lat AND lon = :lon",
+                ConditionExpression=" AND ".join(["lat = :lat", "lon = :lon"] + [f"#{k} = :was_{k}" for k in names]),
                 ExpressionAttributeNames={f"#{k}": k for k in names},
-                ExpressionAttributeValues={**{f":{k}": v for k, v in names.items()}, ":lat": numbers(kept.get("lat")),
-                                           ":lon": numbers(kept.get("lon"))})
+                ExpressionAttributeValues={**{f":{k}": v for k, v in names.items()},
+                                           **{f":was_{k}": kept.get(k, "") for k in names},
+                                           ":lat": numbers(kept.get("lat")), ":lon": numbers(kept.get("lon"))})
             return True
         except Exception as e:
             if _failed_condition(e):

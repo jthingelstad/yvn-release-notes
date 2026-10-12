@@ -317,6 +317,39 @@ class WebTest(NotesCase):
         self.call("PUT", "/api/days/2026-09-12/place", {"place": {**DULUTH, "name": "Hermantown"}}, cookies=self.cookies)
         self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
 
+    def test_a_rename_racing_another_rename_ends_under_the_days_name(self):
+        self.add("2026-09-12", "Backfilled.")
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        rename = self.store.rename_weather
+
+        def meanwhile(user_id, day, kept, names):
+            # Another tab names the day Proctor (the same spot) and renames
+            # the reading first; this call's Hermantown must not win.
+            self.store.rename_weather = rename
+            self.call("PUT", "/api/days/2026-09-12/place", {"place": {**DULUTH, "name": "Proctor"}}, cookies=self.cookies)
+            return rename(user_id, day, kept, names)
+        self.store.rename_weather = meanwhile
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": {**DULUTH, "name": "Hermantown"}}, cookies=self.cookies)
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Proctor")
+
+    def test_a_place_renamed_just_after_a_rename_is_renamed_again(self):
+        self.add("2026-09-12", "Backfilled.")
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        rename = self.store.rename_weather
+
+        def then(user_id, day, kept, names):
+            # The rename lands, then another tab names the day Proctor,
+            # read before this one's rename: only this call's recheck sees it.
+            self.store.rename_weather = rename
+            done = rename(user_id, day, kept, names)
+            self.store.set_day_place("u1", "2026-09-12", {"city": "Proctor", "region": "Minnesota",
+                                                          "country": "United States", "tz": "America/Chicago",
+                                                          "lat": Decimal("46.78"), "lon": Decimal("-92.11")})
+            return done
+        self.store.rename_weather = then
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": {**DULUTH, "name": "Hermantown"}}, cookies=self.cookies)
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Proctor")
+
     def test_the_answer_to_a_place_change_is_read_consistently(self):
         self.add("2026-09-12", "Backfilled.")
         seen = []

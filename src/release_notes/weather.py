@@ -188,10 +188,15 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
     if kept and (same_place(kept, place) or not (where or changed)):
         if changed and same_place(kept, place) and any(kept.get(k, "") != place.get(k, "") for k in NAMED):
             # Another name for the same spot: the reading stands, under it,
-            # unless another call has replaced it since; that call read last.
-            if store.rename_weather(user_id, d, kept, {k: place.get(k, "") for k in NAMED}):
-                return "renamed"
-            return "moved"
+            # unless another call has replaced or renamed it since. Then the
+            # place again: if it moved or was renamed meanwhile, once more.
+            names = {k: place.get(k, "") for k in NAMED}
+            if not store.rename_weather(user_id, d, kept, names):
+                return "moved"
+            now = where_now() or home
+            if again and (spot(now) != spot(place) or any(now.get(k, "") != v for k, v in names.items())):
+                return keep_day(store, user_id, home, tz, day, today, fetch, fetched_at, changed=True, again=False)
+            return "renamed"
         return "kept"
 
     def still():

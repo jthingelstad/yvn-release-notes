@@ -221,7 +221,7 @@ class FakeStore:
 
     def rename_weather(self, user_id, day, kept, names):
         for i in self._rows(user_id, f"WEATHER#{day}"):
-            if all(i.get(k) == kept.get(k) for k in ("lat", "lon")):
+            if all(i.get(k) == kept.get(k) for k in ("lat", "lon")) and all(i.get(k, "") == kept.get(k, "") for k in names):
                 i.update(names)
                 return True
         return False

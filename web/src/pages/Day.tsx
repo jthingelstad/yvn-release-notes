@@ -5,6 +5,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { AppLink, Bar, Digits, Failed, Loading, useTitle, WeatherCredit } from '../components/common.tsx';
 import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
+import { DayWhere } from '../components/where.tsx';
 import { addDays, dayName, shortDay, thisYearOf } from '../lib/format.ts';
 import { useMe, useQueryParam } from '../lib/nav.ts';
 import { dayQuery, pickDay } from '../lib/queries.ts';
@@ -37,6 +38,7 @@ export function Day() {
           <p className="weather" id="weather" hidden={!d.weather}>
             {d.weather}
           </p>
+          <DayWhere key={d.date} day={d.date} where={d.where} />
           <NoteList day={d.date} notes={d.notes} tz={d.tz} version={d.version} />
           <p className="hint" id="none" hidden={d.notes.length > 0}>
             No notes for this release yet.

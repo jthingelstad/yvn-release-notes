@@ -41,6 +41,8 @@ export interface Day {
   version: string;
   notes: Note[];
   weather?: string;
+  // the day's own place, by name, when set
+  where?: string;
   paused?: boolean;
 }
 

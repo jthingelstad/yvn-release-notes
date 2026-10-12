@@ -19,6 +19,12 @@ one function the stream already brings photos to. Thumbnails come first,
 then descriptions for those who turned them on. Its `{"thumbs_all": ...}`
 invocation is the one-off pass over photos already kept.
 
+And it gives a note its photo's place (places.py): reading a photo for its
+thumbnail reads its EXIF too, and a note with no place of its own then
+takes its first photo's, named by Amazon Location once, `from: "photo"`.
+A past day's weather follows (weather.keep_day). Email has no other way
+to say where: no text convention.
+
 Two ways in, one function:
 
 1. The table's stream (as transcribe.py reads it): a note written with
@@ -68,8 +74,10 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
-from . import media, thumbs
+from . import media, places, thumbs, weather
 from .store import Store
 from .transcribe import plain
 
@@ -203,7 +211,8 @@ def wanted(store, user_id: str) -> bool:
     return bool((store.profile(user_id) or {}).get("describe"))
 
 
-def changed(record: dict, *, store, s3, claude, lam, bucket: str, cache: dict, maker=None) -> int:
+def changed(record: dict, *, store, s3, claude, lam, bucket: str, cache: dict, maker=None, geo=None,
+            fetch=weather.fetch_json) -> int:
     images = record.get("dynamodb", {})
     new = {k: plain(v) for k, v in images.get("NewImage", {}).items()}
     old = {k: plain(v) for k, v in images.get("OldImage", {}).items()}
@@ -217,6 +226,16 @@ def changed(record: dict, *, store, s3, claude, lam, bucket: str, cache: dict, m
         if (note := store.note(user_id, day, note_id)) and thumbs.waiting(note):
             made = thumbs.thumbnail(note, user_id, store=store, s3=s3, bucket=bucket, maker=maker)
             log(event="thumbs", user=user_id, photos=made)
+    if geo and str(new.get("sk", "")).startswith("NOTE#") and not new.get("place") and places.first_photo(new):
+        # The EXIF this function writes comes back on the stream: named then.
+        _, day, note_id = new["sk"].split("#", 2)
+        note = store.note(user_id, day, note_id)
+        try:
+            if note and (outcome := place_note(note, user_id, store=store, geo=geo, fetch=fetch)):
+                log(event="place", user=user_id, date=day, outcome=outcome)
+        except Exception as e:
+            # Tried again with the note's next change; never its words or place.
+            log(event="place", user=user_id, date=day, outcome="error", error=type(e).__name__)
     if new.get("sk") == "PROFILE":
         if new.get("describe") and not old.get("describe"):
             # Just turned on: everything already kept, in passes of its own.
@@ -299,6 +318,28 @@ def check(claude) -> dict:
         return {"ok": False, "status": e.status, "error": e.kind, "about_image": e.about_image}
 
 
+def place_note(note: dict, user_id: str, *, store, geo, fetch) -> str | None:
+    """Give a note with no place its first photo's, named by Amazon
+    Location, and move a past day's weather to it. What happened, for the
+    log; None when there was nothing to do."""
+    if note.get("place") or not (spot := places.first_photo(note)):
+        return None
+    _, day, note_id = note["sk"].split("#", 2)
+    named = places.reverse(spot["lat"], spot["lon"], geo())
+    if not store.set_note_place(user_id, day, note_id, {**(named or {}), **spot, "from": "photo"}):
+        return "gone"
+    profile = store.profile(user_id) or {}
+    if places.valid_tz(profile.get("tz")):
+        now = datetime.now(timezone.utc)
+        try:
+            weather.keep_day(store, user_id, weather.place_of(profile), profile["tz"], date.fromisoformat(day),
+                             now.astimezone(ZoneInfo(profile["tz"])).date(), fetch,
+                             now.strftime("%Y-%m-%dT%H:%M:%SZ"), changed=True)
+        except Exception as e:
+            log(event="weather-error", user=user_id, date=day, error=type(e).__name__)
+    return "named" if named else "unnamed"
+
+
 def pillow():
     """thumbs.make if Pillow is here (the function's layer), else None:
     without it, photos wait for their thumbnails rather than being marked
@@ -311,10 +352,12 @@ def pillow():
     return thumbs.make
 
 
-def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secrets=None, maker=None):
+def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secrets=None, maker=None, geo=None,
+            fetch=weather.fetch_json):
     """`claude` is a Messages API call (claude_with); left out, it is made
     from the secret's key, read once a run and only when a photo needs it.
-    `maker` makes a thumbnail (thumbs.make, when Pillow is here)."""
+    `maker` makes a thumbnail (thumbs.make, when Pillow is here). `geo` is
+    Amazon Location's geo-places client, made when a photo needs naming."""
     if store is None or s3 is None or lam is None or (claude is None and secrets is None):
         import boto3
 
@@ -324,6 +367,15 @@ def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secre
         secrets = secrets or boto3.client("secretsmanager")
     bucket = os.environ["BUCKET"]
     made = {}
+
+    def places_client():
+        if geo is not None:
+            return geo
+        if "geo" not in made:
+            import boto3
+
+            made["geo"] = boto3.client("geo-places")
+        return made["geo"]
 
     def ask():
         if claude is not None:
@@ -370,7 +422,7 @@ def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secre
             # batch its thumbnails: the stream does not send them again.
             try:
                 changed(record, store=store, s3=s3, claude=no_claude if no_key else ask, lam=lam, bucket=bucket,
-                        cache=cache, maker=maker)
+                        cache=cache, maker=maker, geo=places_client, fetch=fetch)
             except NoKey:
                 no_key = True
         if no_key:

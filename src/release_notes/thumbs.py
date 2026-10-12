@@ -43,11 +43,17 @@ the rest to a new pass of itself near its time limit (describe.handler).
 Each thumbnail is deleted with its photo (media.keys), and its key once
 more after the note has gone, for one made meanwhile. Logs ids and
 counts only.
+
+The same read gives a JPEG's EXIF time and place (exif.py, standard
+library): `taken_at` and `place` ({"lat", "lon"}) on the photo's entry,
+before its thumbnail is listed, so a photo is read once for both.
 """
 
 import io
 import json
 import os
+
+from . import exif
 
 LONGEST = 640  # pixels, the longest side
 TARGET = 80 * 1024  # bytes: lower the quality until a thumbnail is this or less
@@ -151,6 +157,14 @@ def thumbnail(note: dict, user_id: str, *, store, s3, bucket: str, maker=make) -
             if _code(e) != "NoSuchKey":
                 raise
             data = None
+        if data and m.get("type") == "image/jpeg" and "taken_at" not in m and "place" not in m:
+            # When and where it was taken (exif.py), read from the same bytes.
+            found = exif.read(data)
+            if found.get("taken_at"):
+                store.set_media_field(user_id, day, note_id, int(m["n"]), "taken_at", found["taken_at"])
+            if "lat" in found:
+                store.set_media_field(user_id, day, note_id, int(m["n"]), "place",
+                                      {"lat": found["lat"], "lon": found["lon"]})
         made = maker(data) if data else None
         entry = {}
         if made:

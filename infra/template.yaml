@@ -1142,7 +1142,8 @@ Resources:
   # Claude, through the Anthropic API, describes each photo, for subscribers who
   # turned it on, from the same stream; turning it on starts a pass over
   # every photo already kept, which hands on to a new pass near its limit.
-  # One function for both: a third reader of the stream would pass the
+  # A JPEG's EXIF spot names a note with no place (Amazon Location, places.py).
+  # One function for all of it: a third reader of the stream would pass the
   # two readers a shard DynamoDB Streams allows without throttling.
 
   PillowLayer:
@@ -1176,7 +1177,9 @@ Resources:
             Statement:
               - Effect: Allow
                 # Scan: the one-off thumbnail pass over everyone, profiles' keys only.
-                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem, dynamodb:Scan]
+                # PutItem: a past day's weather, kept again where a photo
+                # says the day was (weather.keep_day).
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem, dynamodb:PutItem, dynamodb:Scan]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
                 Action: [dynamodb:DescribeStream, dynamodb:GetRecords, dynamodb:GetShardIterator]
@@ -1199,6 +1202,10 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AnthropicSecretName}-??????"
               - Effect: Allow
+                # Naming a photo's place, at the city, to keep (places.reverse).
+                Action: geo-places:ReverseGeocode
+                Resource: !Sub "arn:${AWS::Partition}:geo-places:${AWS::Region}::provider/default"
+              - Effect: Allow
                 # The next pass over photos already kept. By name, since the
                 # function's own ARN would make a cycle.
                 Action: lambda:InvokeFunction
@@ -1215,7 +1222,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-describe"
-      Description: Makes photo thumbnails, and describes photos in words for subscribers who turned it on
+      Description: Makes photo thumbnails, names notes' places from photos, and describes photos for subscribers who turned it on
       Runtime: python3.13
       Architectures: [arm64]
       Handler: release_notes.describe.handler

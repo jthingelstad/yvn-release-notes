@@ -386,6 +386,44 @@ class SetMediaText(unittest.TestCase):
             self.assertEqual(t.calls, [])
 
 
+class Places(unittest.TestCase):
+    # The exact table calls a day's own place and a photo's place add.
+    KEY = {"pk": "USER#u1", "sk": "PLACE#2026-10-07"}
+    DULUTH = {"city": "Duluth", "region": "Minnesota", "country": "United States", "tz": "America/Chicago",
+              "lat": 46.78, "lon": -92.11}
+
+    def test_a_days_own_place(self):
+        t = FakeTable()
+        store = Store(t)
+        self.assertIsNone(store.day_place("u1", "2026-10-07"))
+        store.set_day_place("u1", "2026-10-07", self.DULUTH)
+        store.clear_day_place("u1", "2026-10-07")
+        self.assertEqual(t.calls, [
+            ("get_item", {"Key": self.KEY}),
+            ("put_item", {"Item": {**self.KEY, **self.DULUTH, "lat": Decimal("46.78"), "lon": Decimal("-92.11")}}),
+            ("delete_item", {"Key": self.KEY}),
+        ])
+
+    def test_a_photo_names_a_note_with_no_place_only(self):
+        t = FakeTable()
+        place = {"city": "Duluth", "lat": 46.786672, "lon": -92.100485, "from": "photo"}
+        self.assertTrue(Store(t).set_note_place("u1", "2026-10-07", "w-1", place))
+        self.assertEqual(t.calls[0][1], {
+            "Key": {"pk": "USER#u1", "sk": "NOTE#2026-10-07#w-1"},
+            "UpdateExpression": "SET #p = :p",
+            "ConditionExpression": "attribute_exists(pk) AND attribute_not_exists(#p)",
+            "ExpressionAttributeNames": {"#p": "place"},
+            "ExpressionAttributeValues": {":p": {**place, "lat": Decimal("46.786672"), "lon": Decimal("-92.100485")}},
+        })
+        self.assertFalse(Store(FakeTable(fail=ConditionFailed())).set_note_place("u1", "2026-10-07", "w-1", place))
+
+    def test_weather_again_for_a_new_place(self):
+        t = FakeTable()
+        Store(t).replace_weather("u1", "2026-10-07", {"high_c": 12.5, "code": 3, "city": "Duluth", "lat": 46.78})
+        self.assertEqual(t.calls, [("put_item", {"Item": {"pk": "USER#u1", "sk": "WEATHER#2026-10-07", "high_c": Decimal("12.5"),
+                                                          "code": 3, "city": "Duluth", "lat": Decimal("46.78")}})])
+
+
 class Thumbnails(unittest.TestCase):
     # The exact table calls thumbs.py adds.
 

@@ -65,7 +65,8 @@ Where things are (each module's docstring is its design):
 - Notes: `notes.py` (the record, the same from every channel), `tags.py`,
   `links.py` (link titles and the guarded fetch), `media.py` (photos,
   recordings and PDFs, by email and on the web), `streak.py`, `weather.py`,
-  `places.py` (city search).
+  `places.py` (city search, and naming a photo's place), `exif.py` (a
+  JPEG's time and place, standard library).
 - The web: `web.py` (the API, a small router), `auth.py` (sign-in,
   sessions, limits), `export.py` (JSON and Markdown), `export_job.py` (the
   zip). `web/` is the React app (`docs/WEB-APP.md`, Front end); its Home
@@ -141,6 +142,17 @@ failed on live until 2026-10-08 because of it).
   fields). Its `place` shows by name, never the coordinates, the name
   linking to Apple Maps unless the place is only the subscriber's city
   (`notes.map_url`, Jamie 2026-10-09).
+- **Where a note was** (Jamie, 2026-10-12): chosen on the web (the
+  optional "Where" on the Today and Day forms, from the city search), or
+  else its first photo's, read from the JPEG's EXIF GPS (`exif.py`) and
+  named once, at city or locality level, by Amazon Location (`places.py`),
+  which is told the coordinates alone. By email only a reply's photos give
+  a place; there is no text convention. A day can have its own place with
+  no note (`PLACE#<day>`), and it comes before any note's. A past day's
+  weather follows the day's place; days with none keep the subscriber's
+  city, and the morning forecast is always the subscriber's city
+  (`weather.py`). The original photo is never changed. Coordinates and
+  place names are never logged.
 - **Raw mail is the source of truth.** Every filed reply stays whole in S3
   (`raw/`, tagged `outcome=note`, kept indefinitely); never expire those.
   Ignored mail is tagged `outcome=ignored` and expires in 30 days.
@@ -188,7 +200,8 @@ failed on live until 2026-10-08 because of it).
 - **Thumbnails** (Jamie, 2026-10-12: photos in the email) are made for
   every photo, opted in or not, once, when it is filed: about 640px, a
   JPEG under 80 KB, beside the original, with no EXIF or GPS. The email
-  reads only these, never an original. `thumbs.py` has the rest.
+  reads only these, never an original. The same read records a JPEG's
+  `taken_at` and spot on its media entry. `thumbs.py` has the rest.
 - **Day One imports are planned before anything is written** (Jamie,
   2026-10-09: "keep it to dry-run"). `scripts/import_dayone.py EMAIL
   ZIP...` prints what an import would do, as counts (`--plan-out` to a

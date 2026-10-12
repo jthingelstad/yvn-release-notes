@@ -2,7 +2,8 @@
 // recordings made here. What is being written is kept in this tab, by day,
 // until it is saved, so a sign-out mid-note (or a reload) doesn't lose it.
 // Once any files are sent, the note shows in the list at once ("Saving…")
-// and the form empties; a write that fails puts it all back.
+// and the form empties; a write that fails puts it all back. "Where" is
+// optional (where.tsx).
 import { useQueryClient } from '@tanstack/react-query';
 import { useBlocker } from '@tanstack/react-router';
 import { useCallback, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -11,9 +12,11 @@ import { browserZone } from '../lib/format.ts';
 import { FILES, sendFiles } from '../lib/files.ts';
 import { addPending, dropNote } from '../lib/notecache.ts';
 import { store } from '../lib/storage.ts';
+import type { Place } from '../lib/types.ts';
 import { ErrorLine, useBusy, useProblem } from './common.tsx';
 import { useRefresh } from './notelist.tsx';
 import { canRecord, recordClock, useRecorder } from './recorder.ts';
+import { NoteWhere } from './where.tsx';
 
 interface Props {
   day: string;
@@ -27,6 +30,7 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
   const key = `rn-draft-${day}`;
   const [text, setText] = useState(() => store.get(key) || '');
   const [chosen, setChosen] = useState<string>('');
+  const [place, setPlace] = useState<Place | null>(null);
   const [busy, run] = useBusy();
   const problem = useProblem();
   const area = useRef<HTMLTextAreaElement>(null);
@@ -56,7 +60,8 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
       const files = [...(pick.current?.files || []), ...(await rec.files())];
       if (!text.trim() && !files.length) return problem.show({ error: 'text' }, area.current);
       // The zone it is being written in, so its time reads as it did here.
-      const body: { text: string; tz: string; uploads?: unknown } = { text, tz: browserZone() };
+      const body: { text: string; tz: string; uploads?: unknown; place?: Place } = { text, tz: browserZone() };
+      if (place) body.place = place;
       if (files.length) {
         const out = await sendFiles(files, setChosen);
         showChosen();
@@ -72,6 +77,7 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
       if (pick.current) pick.current.value = '';
       showChosen();
       rec.clear();
+      setPlace(null);
       const r = await api('POST', `/api/days/${day}/notes`, body);
       if (!r.ok) {
         await dropNote(client, day, pending);
@@ -79,6 +85,7 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
         store.set(key, text);
         putBack(pick.current, files);
         showChosen();
+        setPlace(place);
         return problem.show({ ...r.data, draft: 'kept' }, area.current);
       }
       await refresh();
@@ -147,6 +154,7 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
         >
           {rec.seconds === null ? 'Record' : `Stop · ${recordClock(rec.seconds)}`}
         </button>
+        <NoteWhere place={place} onPick={setPlace} />
       </div>
       <ErrorLine line={problem.line} />
     </form>

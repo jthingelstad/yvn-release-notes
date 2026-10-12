@@ -43,6 +43,10 @@ class FakeStore:
         self.note_days_fail = self.day_notes_fail = False
         self.paused = []
         self.weather, self.rates = {}, {}
+        self.day_places = {}
+
+    def day_place(self, user_id, day):
+        return self.day_places.get((user_id, day))
 
     def put_weather(self, user_id, day, fields):
         if (user_id, day) in self.weather:

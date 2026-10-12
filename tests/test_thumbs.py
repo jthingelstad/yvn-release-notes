@@ -14,6 +14,7 @@ from unittest import mock
 from fakes import FakeLambda, FakeS3, FakeStore
 from release_notes import describe, media, thumbs
 from test_describe import FakeSecrets, png
+from test_exif import jpeg as exif_jpeg, tiff
 from test_transcribe import record
 
 BUCKET = "mail"
@@ -138,6 +139,108 @@ class Making(Case):
                              store=self.store, s3=self.s3, claude=mock.Mock(), lam=self.lam)
         self.assertNotIn("thumb", self.store.note("u1", "2026-10-09", "w-1")["media"][0])
         self.assertIn('"outcome":"no-pillow"', " ".join(str(c.args[0]) for c in printed.call_args_list))
+
+
+class FakeGeo:
+    def __init__(self, items=None, fail=None):
+        self.asked, self.fail = [], fail
+        self.items = items if items is not None else [{
+            "Address": {"Locality": "Duluth", "Region": {"Name": "Minnesota", "Code": "MN"},
+                        "Country": {"Code2": "US", "Code3": "USA", "Name": "United States of America"},
+                        "Street": "Superior St", "AddressNumber": "1"},
+            "TimeZone": {"Name": "America/Chicago", "Offset": "-05:00"}}]
+
+    def reverse_geocode(self, **kw):
+        self.asked.append(kw)
+        if self.fail:
+            raise self.fail
+        return {"ResultItems": self.items, "PricingBucket": "Stored"}
+
+
+class Where(Case):
+    """A JPEG's EXIF on its entry; a note with no place takes its first
+    photo's, named by Amazon Location; a past day's weather follows."""
+
+    def setUp(self):
+        super().setUp()
+        self.store.profiles["u1"].update(city="Minneapolis", region="Minnesota", country="United States",
+                                         lat=Decimal("44.98"), lon=Decimal("-93.26"))
+        self.sky_urls = []
+
+    def sky(self, url):
+        self.sky_urls.append(url)
+        day = url.split("start_date=")[1][:10]
+        return {"daily": {"time": [day], "weather_code": [3], "temperature_2m_max": [12.0], "temperature_2m_min": [4.0]}}
+
+    def run_stream(self, note, geo):
+        """The stream as it comes: the note, then each of this function's own
+        writes to it, until nothing changes."""
+        seen = None
+        while True:
+            now = self.store.note("u1", note["day"], note["id"])
+            if now == seen:
+                return
+            seen = json.loads(json.dumps(now, default=str))
+            r = record({"pk": "USER#u1", **{k: v for k, v in now.items() if k != "pk"}})
+            r["dynamodb"]["Keys"] = {"pk": {"S": "USER#u1"}, "sk": {"S": now["sk"]}}
+            describe.handler({"Records": [r]}, None, store=self.store, s3=self.s3, claude=mock.Mock(), lam=self.lam,
+                             maker=fake_maker, geo=geo(), fetch=self.sky)
+            now = self.store.note("u1", note["day"], note["id"])
+            if json.loads(json.dumps(now, default=str)) == seen:
+                return
+
+    def test_a_photos_place_names_its_note_and_moves_the_days_weather(self):
+        self.keep(photo(1), body=exif_jpeg(tiff()))
+        self.store.put_weather("u1", "2026-10-09", {"high_c": 1, "low_c": 0, "code": 0, "city": "Minneapolis",
+                                                    "lat": Decimal("44.98"), "lon": Decimal("-93.26")})
+        geo = FakeGeo()
+        with mock.patch("builtins.print") as printed:
+            self.run_stream({"day": "2026-10-09", "id": "w-1"}, lambda: geo)
+        note = self.store.note("u1", "2026-10-09", "w-1")
+        self.assertEqual((note["media"][0]["taken_at"], note["media"][0]["place"]),
+                         ("2026-10-11T14:03:22-05:00", {"lat": 44.9778, "lon": -93.265}))
+        self.assertEqual(note["place"], {"city": "Duluth", "region": "Minnesota", "country": "United States",
+                                         "tz": "America/Chicago", "lat": 44.9778, "lon": -93.265, "from": "photo"})
+        # Told the coordinates alone, to three places, for the locality, to keep.
+        self.assertEqual(geo.asked, [{"QueryPosition": [-93.265, 44.978], "IntendedUse": "Storage", "MaxResults": 1,
+                                      "Language": "en", "Filter": {"IncludePlaceTypes": ["Locality"]},
+                                      "AdditionalFeatures": ["TimeZone"]}])
+        kept = self.store.weather_between("u1", "2026-10-09", "2026-10-09")["2026-10-09"]
+        self.assertEqual((kept["city"], len(self.sky_urls)), ("Duluth", 1))
+        logged = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertNotIn("Duluth", logged)
+        self.assertNotIn("44.97", logged)
+        self.assertIn('"event":"place"', logged)
+
+    def test_a_note_with_a_place_keeps_it(self):
+        self.keep(photo(1), body=exif_jpeg(tiff()))
+        self.store.note("u1", "2026-10-09", "w-1")["place"] = {"city": "Cabin", "from": "chosen"}
+        geo = FakeGeo()
+        with mock.patch("builtins.print"):
+            self.run_stream({"day": "2026-10-09", "id": "w-1"}, lambda: geo)
+        self.assertEqual((geo.asked, self.store.note("u1", "2026-10-09", "w-1")["place"]["city"]), ([], "Cabin"))
+
+    def test_no_locality_keeps_the_spot_without_a_name(self):
+        self.keep(photo(1), body=exif_jpeg(tiff()))
+        with mock.patch("builtins.print"):
+            self.run_stream({"day": "2026-10-09", "id": "w-1"}, lambda: FakeGeo(items=[]))
+        self.assertEqual(self.store.note("u1", "2026-10-09", "w-1")["place"], {"lat": 44.9778, "lon": -93.265,
+                                                                               "from": "photo"})
+
+    def test_a_geocoder_failure_leaves_it_for_the_next_change(self):
+        self.keep(photo(1), body=exif_jpeg(tiff()))
+        with mock.patch("builtins.print") as printed:
+            self.run_stream({"day": "2026-10-09", "id": "w-1"}, lambda: FakeGeo(fail=ConnectionError("down")))
+        self.assertNotIn("place", self.store.note("u1", "2026-10-09", "w-1"))
+        self.assertIn('"outcome":"error"', " ".join(str(c.args[0]) for c in printed.call_args_list))
+
+    def test_no_gps_no_question(self):
+        self.keep(photo(1), body=exif_jpeg(tiff(lat=None, lon=None)))
+        geo = FakeGeo()
+        with mock.patch("builtins.print"):
+            self.run_stream({"day": "2026-10-09", "id": "w-1"}, lambda: geo)
+        note = self.store.note("u1", "2026-10-09", "w-1")
+        self.assertEqual((geo.asked, "place" in note, note["media"][0]["taken_at"]), ([], False, "2026-10-11T14:03:22-05:00"))
 
 
 class AllOfThem(Case):

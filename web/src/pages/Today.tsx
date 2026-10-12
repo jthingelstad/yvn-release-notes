@@ -4,6 +4,7 @@ import { AppLink, Bar, Digits, Failed, Loading, useTitle } from '../components/c
 import { StreakLine } from '../components/days.tsx';
 import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
+import { DayWhere } from '../components/where.tsx';
 import { dayName } from '../lib/format.ts';
 import { useMe } from '../lib/nav.ts';
 import { todayQuery } from '../lib/queries.ts';
@@ -53,6 +54,8 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
       <NoteList day={t.date} notes={t.notes} tz={t.tz} version={t.version} />
       <EmptyLine t={t} me={me} />
       <NoteForm key={t.date} day={t.date} label="Add to today" placeholder="Anything about the day" submit="Add note" />
+
+      <DayWhere key={t.date} day={t.date} where={t.where} />
 
       <StreakLine s={t.streak} />
       <p className="hint">

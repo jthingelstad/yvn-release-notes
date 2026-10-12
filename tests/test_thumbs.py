@@ -191,6 +191,20 @@ class RealPillow(unittest.TestCase):
         self.assertEqual((width, height), (640, 320))
         self.assertEqual(Image.open(io.BytesIO(body)).getpixel((10, 10))[:2], thumbs.PAPER[:2])
 
+    def test_a_busy_photo_is_made_smaller_until_it_fits(self):
+        import random
+
+        from PIL import Image
+
+        rnd = random.Random(7)
+        img = Image.frombytes("RGB", (640, 480), bytes(rnd.getrandbits(8) for _ in range(640 * 480 * 3)))
+        out = io.BytesIO()
+        img.save(out, "JPEG", quality=95)
+        body, width, height = thumbs.make(out.getvalue())
+        self.assertLessEqual(len(body), thumbs.TARGET)
+        self.assertLess(width, thumbs.LONGEST)
+        self.assertGreaterEqual(width, thumbs.SMALLEST)
+
     def test_not_an_image_or_a_bomb_is_none(self):
         self.assertIsNone(thumbs.make(b"\xff\xd8\xff not really"))
         self.assertIsNone(thumbs.make(png(30000, 30000)))

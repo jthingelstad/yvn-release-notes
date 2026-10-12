@@ -891,7 +891,10 @@ def add_note(app: App, req: Request, value: str) -> dict:
     body = req.json()
     uploads = body.get("uploads")
     text = text_from(body, empty_ok=bool(uploads))
-    # Its files first: one that is not there or not what it says stops the note.
+    # "Where", picked with the note (optional), checked before its files are
+    # moved. Without one, a photo's place may give it one later (describe.py).
+    place = chosen_place(body["place"]) if body.get("place") is not None else None
+    # Its files next: one that is not there or not what it says stops the note.
     files = attach(app, user_id, uploads) if uploads else []
     note_id = "w-" + uuid.uuid4().hex[:20]
     item = {
@@ -909,10 +912,8 @@ def add_note(app: App, req: Request, value: str) -> dict:
         item["tags"] = tagged
     if files:
         item["media"] = [{"n": n, **f} for n, f in enumerate(files, 1)]
-    if body.get("place") is not None:
-        # "Where", picked with the note (optional). Without one, a photo's
-        # place may give it one later (describe.py).
-        item["place"] = chosen_place(body["place"])
+    if place is not None:
+        item["place"] = place
     app.store.put_note(user_id, day.isoformat(), note_id, item)
     log(event="note-added", user=user_id, date=day.isoformat(), files=len(files))
     keep_weather(app, user_id, p, day)

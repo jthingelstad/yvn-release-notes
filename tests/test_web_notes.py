@@ -557,6 +557,16 @@ class UploadTest(NotesCase):
         r, body = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "Again.", "uploads": [good]}, cookies=self.cookies)
         self.assertEqual((r["statusCode"], body["error"]), (400, "upload"))  # one file, one note
 
+    def test_a_bad_place_stops_the_note_before_its_files_move(self):
+        good = self.upload("a.png", PNG, "image/png")
+        before = set(self.s3.objects)
+        r, body = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "", "uploads": [good], "place": {"name": "x"}},
+                            cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body["error"]), (400, "place"))
+        self.assertEqual(set(self.s3.objects), before)  # nothing copied, nothing taken
+        r, _ = self.call("POST", f"/api/days/{TODAY}/notes", {"text": "", "uploads": [good]}, cookies=self.cookies)
+        self.assertEqual(r["statusCode"], 201)  # the upload is still there to use
+
     def test_another_persons_upload_is_not_found(self):
         good = self.upload("a.png", PNG, "image/png")
         self.subscribe("bo@example.com", "u2")

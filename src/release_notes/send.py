@@ -64,6 +64,8 @@ RESERVE_MS = 20_000
 WEATHER_BUDGET = 30.0
 # The dashboard's counts need this much of the function's time left.
 CENSUS_MS = 10_000
+# Yesterday's own place, when Yesterday did not read it (no notes).
+UNREAD = object()
 
 # Fail at cold start, not at someone's send time, if the runtime ever ships
 # without a zone database (zoneinfo reads the system's; there is no tzdata pin).
@@ -103,43 +105,46 @@ def read_streak(store: Store, user_id: str, day: date) -> Streak | None:
 
 
 def read_history(store: Store, sub: Subscriber, day: date) -> tuple[OnThisDay | None, Lifetime | None, Yesterday | None,
-                                                                   list[dict]]:
-    """"On this day", the lifetime counts and yesterday's notes (shown, and
-    as read, for where yesterday's weather was), from one read of every
+                                                                   list[dict], object]:
+    """"On this day", the lifetime counts and yesterday's notes and own
+    place (shown, and as read, for where yesterday's weather was: the place
+    is UNREAD when Yesterday did not need it), from one read of every
     note's key and media. All are niceties: on any failure the email goes
     without."""
     try:
         index = store.note_index(sub.user_id)
     except Exception as e:
         log(event="history-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
-        return None, None, None, []
+        return None, None, None, [], UNREAD
     days = {d for d, _ in index}
     life = Lifetime(notes=len(index), days=len(days), photos=sum(n for _, n in index),
                     since=int(min(days)[:4])) if index else None
-    yesterday, notes = read_yesterday(store, sub, day, days)
-    return read_on_this_day(store, sub, day, days), life, yesterday, notes
+    yesterday, notes, own = read_yesterday(store, sub, day, days)
+    return read_on_this_day(store, sub, day, days), life, yesterday, notes, own
 
 
-def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> tuple[Yesterday | None, list[dict]]:
+def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> tuple[Yesterday | None, list[dict],
+                                                                                    object]:
     """The subscriber's yesterday (`day` is already their local today), read
-    whole only when the index says it has notes, and its notes."""
+    whole only when the index says it has notes, its notes and its own
+    place (UNREAD when it was not read)."""
     then = day - timedelta(days=1)
     if then.isoformat() not in have:
-        return None, []
+        return None, [], UNREAD
     try:
         notes = store.day_notes(sub.user_id, then.isoformat())
         if not notes:
-            return None, []
+            return None, [], UNREAD
+        own = store.day_place(sub.user_id, then.isoformat())
         # Any note shows, even one whose only file stayed in the email (a
         # PDF, a video): the block is there to say it came through.
         text = combine(notes)
         return Yesterday(then, text, day_links(notes), media.counts(notes), tuple(tags.found(text)),
                          sum(media.others(n) for n in notes),
-                         places=places_of(notes, store.day_place(sub.user_id, then.isoformat())),
-                         thumbs=thumbs_of(sub, notes)), notes
+                         places=places_of(notes, own), thumbs=thumbs_of(sub, notes)), notes, own
     except Exception as e:
         log(event="yesterday-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
-        return None, []
+        return None, [], UNREAD
 
 
 def places_of(notes: list[dict], own: dict | None = None) -> tuple[tuple[str, str | None], ...]:
@@ -229,19 +234,22 @@ def read_on_this_day(store: Store, sub: Subscriber, day: date, have: set[str]) -
         return None
 
 
-def read_weather(store: Store, sub: Subscriber, day: date, fetch, keep: bool, clock, notes=()) -> str | None:
+def read_weather(store: Store, sub: Subscriber, day: date, fetch, keep: bool, clock, notes=(),
+                 own=UNREAD) -> str | None:
     """Today's forecast as the email's line; yesterday's weather is kept
     (unless `keep` is False, for a dry run) where the subscriber was
-    (weather.day_place: the day's own place, else its notes'), which for
-    another place than their city costs one more fetch. None without a
-    city or on any failure."""
+    (weather.day_place: the day's own place, `own` if Yesterday read it,
+    else its notes'), which for another place than their city costs one
+    more fetch. None without a city or on any failure."""
     if not sub.place:
         return None
     try:
         yesterday, today = weather.morning(sub.place, day, fetch)
         if keep:
             then = day - timedelta(days=1)
-            where = weather.day_place(store.day_place(sub.user_id, then.isoformat()), list(notes), sub.tz)
+            if own is UNREAD:
+                own = store.day_place(sub.user_id, then.isoformat())
+            where = weather.day_place(own, list(notes), sub.tz)
             if where and not weather.same_place(sub.place, where):
                 yesterday, at = weather.history(where, then, day, fetch), where
             else:
@@ -336,9 +344,9 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
             continue
         if dry_run:
             streak = read_streak(store, sub.user_id, here.date())
-            past, life, yesterday, notes = read_history(store, sub, here.date())
+            past, life, yesterday, notes, own = read_history(store, sub, here.date())
             yesterday, past, images = with_photos(sub, here.date(), yesterday, past, bucket)
-            forecast = read_weather(store, sub, here.date(), fetch, False, clock, notes)
+            forecast = read_weather(store, sub, here.date(), fetch, False, clock, notes, own)
             results.append(
                 {
                     "user": sub.user_id,
@@ -391,10 +399,11 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None,
     # The slow parts come before the claim, so a run that times out in them
     # has claimed nothing and the next run sends this one.
     streak = read_streak(store, sub.user_id, date.fromisoformat(day))
-    past, life, yesterday, notes = read_history(store, sub, date.fromisoformat(day))
+    past, life, yesterday, notes, own = read_history(store, sub, date.fromisoformat(day))
     yesterday, past, images = with_photos(sub, date.fromisoformat(day), yesterday, past, bucket) if bucket \
         else (yesterday, past, {})
-    forecast = read_weather(store, sub, date.fromisoformat(day), fetch or weather.fetch_morning, True, clock, notes)
+    forecast = read_weather(store, sub, date.fromisoformat(day), fetch or weather.fetch_morning, True, clock, notes,
+                            own)
     if not store.claim_day(sub.user_id, day):
         log(event="skip", user=sub.user_id, date=day, reason="already-claimed")
         return {"user": sub.user_id, "date": day, "outcome": "already-claimed"}

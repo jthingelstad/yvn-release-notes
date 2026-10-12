@@ -64,6 +64,12 @@ test('a new person sees their number, signs in with the code, and setup has the 
   await page.getByRole('button', { name: 'Start my release notes' }).click();
   await expect(page).toHaveURL(/\/today\/$/);
   expect(await waiting(page)).toBeNull();
+
+  // Before a first note, the Timeline still lists the current release.
+  await page.goto('/timeline/');
+  const release = s.version.split('.').slice(0, 2).join('.');
+  await expect(page.locator('#releases li')).toHaveCount(1);
+  await expect(page.locator('#releases a[aria-current]')).toHaveAttribute('href', `/release/?v=${release}`);
 });
 
 test('the emailed link opens in a new tab and still brings the birthday', async ({ page, context, request }) => {

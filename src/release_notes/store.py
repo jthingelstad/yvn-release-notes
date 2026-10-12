@@ -611,9 +611,16 @@ class Store:
 
     def weather_between(self, user_id: str, first: str, last: str) -> dict[str, dict]:
         """Day -> its weather, for days first through last."""
+        return self._by_day(user_id, "WEATHER#", first, last)
+
+    def places_between(self, user_id: str, first: str, last: str) -> dict[str, dict]:
+        """Day -> its own place (PLACE#), for days first through last."""
+        return self._by_day(user_id, "PLACE#", first, last)
+
+    def _by_day(self, user_id: str, prefix: str, first: str, last: str) -> dict[str, dict]:
         items, kwargs = [], {
             "KeyConditionExpression": "pk = :u AND sk BETWEEN :a AND :b",
-            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":a": f"WEATHER#{first}", ":b": f"WEATHER#{last}"},
+            "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":a": f"{prefix}{first}", ":b": f"{prefix}{last}"},
         }
         while True:
             page = self.table.query(**kwargs)
@@ -621,7 +628,7 @@ class Store:
             if "LastEvaluatedKey" not in page:
                 break
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
-        return {i["sk"][8:]: i for i in items}
+        return {i["sk"][len(prefix):]: i for i in items}
 
     # a day's own place --------------------------------------------------------
 

@@ -28,6 +28,7 @@ export function DayList({
             </span>
             <span className="when">{dayName(d.date, thisYear)}</span>
           </AppLink>
+          {d.where && <p className="hint">Where: {d.where}</p>}
           {d.notes.map((n) => (
             <NoteParts key={n.id} day={d} n={n} tz={data.tz} mark={mark} />
           ))}

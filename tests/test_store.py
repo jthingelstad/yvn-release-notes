@@ -418,6 +418,14 @@ class Places(unittest.TestCase):
         self.assertEqual(t.calls[2], ("get_item", {"Key": {"pk": "USER#u1", "sk": "NOTE#2026-10-07#w-1"},
                                                    "ConsistentRead": True}))
 
+    def test_a_ranges_own_places_are_one_query(self):
+        t = FakeTable()
+        Store(t).places_between("u1", "2026-10-01", "2026-10-07")
+        _, kw = t.calls[0]
+        self.assertEqual((kw["KeyConditionExpression"], kw["ExpressionAttributeValues"]),
+                         ("pk = :u AND sk BETWEEN :a AND :b",
+                          {":u": "USER#u1", ":a": "PLACE#2026-10-01", ":b": "PLACE#2026-10-07"}))
+
     def test_weather_for_a_place_gone_is_dropped(self):
         t = FakeTable()
         Store(t).drop_weather("u1", "2026-10-07")

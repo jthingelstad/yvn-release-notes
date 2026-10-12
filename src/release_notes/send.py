@@ -105,17 +105,18 @@ def read_streak(store: Store, user_id: str, day: date) -> Streak | None:
 
 
 def read_history(store: Store, sub: Subscriber, day: date) -> tuple[OnThisDay | None, Lifetime | None, Yesterday | None,
-                                                                   list[dict], object]:
+                                                                   list[dict] | None, object]:
     """"On this day", the lifetime counts and yesterday's notes and own
-    place (shown, and as read, for where yesterday's weather was: the place
-    is UNREAD when Yesterday did not need it), from one read of every
+    place (shown, and as read, for where yesterday's weather was: the notes
+    are None when they could not be read, the place UNREAD when Yesterday
+    did not need it), from one read of every
     note's key and media. All are niceties: on any failure the email goes
     without."""
     try:
         index = store.note_index(sub.user_id)
     except Exception as e:
         log(event="history-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
-        return None, None, None, [], UNREAD
+        return None, None, None, None, UNREAD
     days = {d for d, _ in index}
     life = Lifetime(notes=len(index), days=len(days), photos=sum(n for _, n in index),
                     since=int(min(days)[:4])) if index else None
@@ -123,11 +124,11 @@ def read_history(store: Store, sub: Subscriber, day: date) -> tuple[OnThisDay | 
     return read_on_this_day(store, sub, day, days), life, yesterday, notes, own
 
 
-def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> tuple[Yesterday | None, list[dict],
-                                                                                    object]:
+def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> tuple[Yesterday | None,
+                                                                                    list[dict] | None, object]:
     """The subscriber's yesterday (`day` is already their local today), read
-    whole only when the index says it has notes, its notes and its own
-    place (UNREAD when it was not read)."""
+    whole only when the index says it has notes, its notes (None when they
+    could not be read) and its own place (UNREAD when it was not read)."""
     then = day - timedelta(days=1)
     if then.isoformat() not in have:
         return None, [], UNREAD
@@ -144,7 +145,7 @@ def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> 
                          places=places_of(notes, own), thumbs=thumbs_of(sub, notes)), notes, own
     except Exception as e:
         log(event="yesterday-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
-        return None, [], UNREAD
+        return None, None, UNREAD
 
 
 def places_of(notes: list[dict], own: dict | None = None) -> tuple[tuple[str, str | None], ...]:
@@ -240,12 +241,14 @@ def read_weather(store: Store, sub: Subscriber, day: date, fetch, keep: bool, cl
     (unless `keep` is False, for a dry run) where the subscriber was
     (weather.day_place: the day's own place, `own` if Yesterday read it,
     else its notes'), which for another place than their city costs one
-    more fetch. None without a city or on any failure."""
+    more fetch. Not kept when yesterday's notes could not be read (`notes`
+    None): one of them may have named the place, and a later note or place
+    keeps it then. None without a city or on any failure."""
     if not sub.place:
         return None
     try:
         yesterday, today = weather.morning(sub.place, day, fetch)
-        if keep:
+        if keep and notes is not None:
             then = day - timedelta(days=1)
             if own is UNREAD:
                 own = store.day_place(sub.user_id, then.isoformat())

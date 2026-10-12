@@ -200,6 +200,9 @@ class FakeStore:
         rows = self.items.setdefault(user_id, [])
         rows[:] = [i for i in rows if i["sk"] != f"WEATHER#{day}"]
 
+    def places_between(self, user_id, first, last):
+        return {i["sk"][6:]: dict(i) for i in self._rows(user_id, "PLACE#") if first <= i["sk"][6:] <= last}
+
     def day_place(self, user_id, day, consistent=False):
         found = [i for i in self.items.get(user_id, []) if i["sk"] == f"PLACE#{day}"]
         return dict(found[0]) if found else None

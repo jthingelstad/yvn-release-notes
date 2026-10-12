@@ -210,6 +210,11 @@ class Yesterday:
     files: dict | None = None
     tags: tuple[str, ...] = ()
     others: int = 0  # attachments kept only in the original email (media.others)
+    places: tuple[tuple[str, str | None], ...] = ()  # (name, map link or None), as the notes show them
+
+
+def where_line(places) -> str:
+    return "Where: " + "; ".join(name for name, _ in places) if places else ""
 
 
 def count_phrase(n: int, one: str, many: str) -> str:
@@ -364,6 +369,7 @@ def yesterday_body(birthday: date, y: Yesterday) -> str:
     files = files_line(y.files, y.others)
     return (
         f"Yesterday you were {then} ({long_date(y.day)}):\n\n"
+        + (f"{where_line(y.places)}\n\n" if y.places else "")
         + (f"{shown}{' ...' if cut_mark(shown, cut) else ''}\n\n" if shown else "")
         + (" ".join(f"#{t}" for t in y.tags) + "\n\n" if y.tags else "")
         + (f"{files}\n" if files else "")
@@ -516,11 +522,19 @@ def yesterday_html(birthday: date, y: Yesterday) -> str:
         if files
         else ""
     )
+    where_html = (
+        f'<p class="ink-2" style="margin:0 0 12px;font-family:{FONT};font-size:14px;line-height:1.45;color:{INK_2};">'
+        "Where: " + "; ".join(
+            f'<a class="link" href="{escape(url)}" style="color:{BLUE};text-decoration:underline;">{ascii_html(name)}</a>'
+            if url else ascii_html(name) for name, url in y.places) + "</p>\n"
+        if y.places
+        else ""
+    )
     return f"""<tr><td style="padding:48px 0 0;">
 <p class="ink" style="margin:0 0 4px;font-family:{FONT};font-size:22px;line-height:1.2;font-weight:800;color:{INK};">Yesterday</p>
 <p class="ink-2" style="margin:0 0 8px;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">{escape(long_date(y.day))}</p>
 <p style="margin:0 0 12px;">{vnum_html(then, 26)}</p>
-{notes_html(shown, y.links, cut_mark(shown, cut))}{tags_html(y.tags)}{files_html}<p class="ink-2" style="margin:2px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
+{where_html}{notes_html(shown, y.links, cut_mark(shown, cut))}{tags_html(y.tags)}{files_html}<p class="ink-2" style="margin:2px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
 <a class="link" href="{escape(past_link(y.day))}" style="color:{BLUE};font-weight:700;text-decoration:underline;">{"Read the rest" if cut else "See it"}</a>
 </p>
 </td></tr>

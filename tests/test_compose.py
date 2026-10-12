@@ -346,6 +346,15 @@ class YesterdayBlock(unittest.TestCase):
         order = [text.index(x) for x in ("1 day in a row", "2 notes across", "Yesterday you were", "On this day:")]
         self.assertEqual(order, sorted(order))
 
+    def test_where_it_was_as_the_web_shows_it(self):
+        y = Yesterday(self.THEN, "Up north.", places=(("Cabin, Minnesota", "https://maps.apple.com/?ll=47.1,-91.2&q=Cabin"),
+                                                      ("Z\u00fcrich, Switzerland", None)))
+        text, html = self.both(y)
+        self.assertIn("(Wednesday, October 7):\n\nWhere: Cabin, Minnesota; Z\u00fcrich, Switzerland\n\nUp north.", text)
+        self.assertIn('Where: <a class="link" href="https://maps.apple.com/?ll=47.1,-91.2&amp;q=Cabin"', html)
+        self.assertIn(">Cabin, Minnesota</a>; Z&#252;rich, Switzerland</p>", html)
+        html.encode("ascii")
+
     def test_still_type_on_paper_ascii_and_escaped(self):
         text, html = self.both(Yesterday(self.THEN, 'Caf\u00e9 <script>x</script> \U0001F389'))
         for banned in ("border:", "border-radius", "box-shadow", "<img", "<script>"):

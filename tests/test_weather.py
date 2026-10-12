@@ -302,6 +302,21 @@ class WebTest(NotesCase):
         self.assertIn('"outcome":"set"', self.out.getvalue())
         self.assertNotIn("Hermantown", self.out.getvalue())
 
+    def test_a_rename_leaves_weather_another_call_wrote_since(self):
+        self.add("2026-09-12", "Backfilled.")
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        rename = self.store.rename_weather
+
+        def meanwhile(user_id, day, kept, names):
+            # Another tab clears the place, and keeps home's weather, first.
+            self.store.clear_day_place("u1", "2026-09-12")
+            self.store.replace_weather(user_id, day, {"high_c": 1, "low_c": 0, "code": 0, "city": "Minneapolis",
+                                                      "lat": MPLS["lat"], "lon": MPLS["lon"]})
+            return rename(user_id, day, kept, names)
+        self.store.rename_weather = meanwhile
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": {**DULUTH, "name": "Hermantown"}}, cookies=self.cookies)
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
+
     def test_the_answer_to_a_place_change_is_read_consistently(self):
         self.add("2026-09-12", "Backfilled.")
         seen = []

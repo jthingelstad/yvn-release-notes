@@ -450,6 +450,18 @@ class Places(unittest.TestCase):
                                                     "ConditionExpression": "lat = :lat AND lon = :lon",
                                                     "ExpressionAttributeValues": {":lat": Decimal("46.78"),
                                                                                   ":lon": Decimal("-92.1")}})])
+        # Another name for the same spot, while it is still that spot's reading.
+        t = FakeTable()
+        self.assertTrue(Store(t).rename_weather("u1", "2026-10-07", {"lat": Decimal("46.78"), "lon": Decimal("-92.1")},
+                                                {"city": "Hermantown", "region": "Minnesota", "country": "United States"}))
+        self.assertEqual(t.calls, [("update_item", {
+            "Key": {"pk": "USER#u1", "sk": "WEATHER#2026-10-07"},
+            "UpdateExpression": "SET #city = :city, #region = :region, #country = :country",
+            "ConditionExpression": "lat = :lat AND lon = :lon",
+            "ExpressionAttributeNames": {"#city": "city", "#region": "region", "#country": "country"},
+            "ExpressionAttributeValues": {":city": "Hermantown", ":region": "Minnesota", ":country": "United States",
+                                          ":lat": Decimal("46.78"), ":lon": Decimal("-92.1")}})])
+        self.assertFalse(Store(FakeTable(fail=ConditionFailed())).rename_weather("u1", "2026-10-07", {}, {"city": "x"}))
         # A reading just written carries floats: DynamoDB takes them as Decimal.
         t = FakeTable()
         Store(t).drop_weather("u1", "2026-10-07", {"lat": 46.78, "lon": -92.1})

@@ -219,6 +219,13 @@ class FakeStore:
         rows[:] = [i for i in rows if i["sk"] != f"WEATHER#{day}"]
         rows.append({"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **fields})
 
+    def rename_weather(self, user_id, day, kept, names):
+        for i in self._rows(user_id, f"WEATHER#{day}"):
+            if all(i.get(k) == kept.get(k) for k in ("lat", "lon")):
+                i.update(names)
+                return True
+        return False
+
     def drop_weather(self, user_id, day, kept):
         rows = self.items.setdefault(user_id, [])
         gone = [i for i in rows if i["sk"] == f"WEATHER#{day}" and (i.get("lat"), i.get("lon")) == (kept.get("lat"), kept.get("lon"))]

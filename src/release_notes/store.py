@@ -292,32 +292,35 @@ class Store:
 
     # the standing address -------------------------------------------------
 
-    def get_inbox(self, token: str) -> dict | None:
-        return self.table.get_item(Key={"pk": f"INBOX#{token}", "sk": "INBOX"}).get("Item")
+    def get_inbox(self, token: str, consistent: bool = False) -> dict | None:
+        return self.table.get_item(Key={"pk": f"INBOX#{token}", "sk": "INBOX"}, ConsistentRead=consistent).get("Item")
 
     def set_inbox(self, user_id: str, token: str, now: str, old: str | None = None) -> bool:
         """Make `token` the subscriber's standing address, in place of `old`
-        (None: they have none yet). The new item first, then the profile,
-        on the condition that it still names `old`, then the old item goes.
-        False, with nothing left behind, if the profile moved on meanwhile
-        (another tab, the sender) or is gone (a deleted account)."""
-        self.table.put_item(Item={"pk": f"INBOX#{token}", "sk": "INBOX", "user_id": user_id, "created_at": now},
-                            ConditionExpression="attribute_not_exists(pk)")
+        (None: they have none yet), in one transaction: the new item, the
+        profile on the condition that it still names `old`, and the old
+        item's end, so no address is ever left behind. False if the
+        profile moved on meanwhile (another tab, the sender) or is gone (a
+        deleted account). Plain values, as in create_subscriber."""
+        items = [
+            {"Put": {"TableName": self.table.name, "ConditionExpression": "attribute_not_exists(pk)",
+                     "Item": {"pk": f"INBOX#{token}", "sk": "INBOX", "user_id": user_id, "created_at": now}}},
+            {"Update": {"TableName": self.table.name, "Key": {"pk": f"USER#{user_id}", "sk": "PROFILE"},
+                        "UpdateExpression": "SET inbox = :t",
+                        "ConditionExpression": "attribute_exists(pk) AND "
+                                               + ("inbox = :old" if old else "attribute_not_exists(inbox)"),
+                        "ExpressionAttributeValues": {":t": token, **({":old": old} if old else {})}}},
+        ]
+        if old:
+            items.append({"Delete": {"TableName": self.table.name, "Key": {"pk": f"INBOX#{old}", "sk": "INBOX"}}})
         try:
-            self.table.update_item(
-                Key={"pk": f"USER#{user_id}", "sk": "PROFILE"},
-                UpdateExpression="SET inbox = :t",
-                ConditionExpression="attribute_exists(pk) AND " + ("inbox = :old" if old else "attribute_not_exists(inbox)"),
-                ExpressionAttributeValues={":t": token, **({":old": old} if old else {})},
-            )
+            self.table.meta.client.transact_write_items(TransactItems=items)
+            return True
         except Exception as e:
-            self.table.delete_item(Key={"pk": f"INBOX#{token}", "sk": "INBOX"})
-            if _failed_condition(e):
+            reasons = (getattr(e, "response", None) or {}).get("CancellationReasons") or []
+            if any(r.get("Code") == "ConditionalCheckFailed" for r in reasons):
                 return False
             raise
-        if old:
-            self.table.delete_item(Key={"pk": f"INBOX#{old}", "sk": "INBOX"})
-        return True
 
     def _dates(self, user_id: str, prefix: str) -> set[str]:
         return {sk.split("#")[1] for sk in self._keys(user_id, prefix)}

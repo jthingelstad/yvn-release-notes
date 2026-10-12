@@ -310,10 +310,12 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None, mailer=None) -> tup
     if not tokens:
         return "ignored", {"reason": "no-token"}
     token, standing = tokens[0]
-    tok = store.get_inbox(token) if standing else store.get_token(token)
+    # A standing address is read consistently, with its profile: one just
+    # replaced, or a subscriber just stopped, files nothing from then on.
+    tok = store.get_inbox(token, consistent=True) if standing else store.get_token(token)
     if not tok:
         return "ignored", {"reason": "unknown-token"}
-    sub = store.get_subscriber(tok["user_id"])
+    sub = store.get_subscriber(tok["user_id"], consistent=standing)
     if not sub:
         return "ignored", {"reason": "unknown-user"}
     if standing and sub.inbox != token:

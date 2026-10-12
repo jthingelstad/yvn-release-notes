@@ -478,36 +478,42 @@ class StandingAddress(unittest.TestCase):
 
     def test_read(self):
         t = FakeTable()
-        self.assertIsNone(Store(t).get_inbox(self.NEW))
-        self.assertEqual(t.calls, [("get_item", {"Key": {"pk": f"INBOX#{self.NEW}", "sk": "INBOX"}})])
+        self.assertIsNone(Store(t).get_inbox(self.NEW, consistent=True))
+        self.assertEqual(t.calls, [("get_item", {"Key": {"pk": f"INBOX#{self.NEW}", "sk": "INBOX"}, "ConsistentRead": True})])
+
+    def put(self):
+        return {"Put": {"TableName": "release-notes", "ConditionExpression": "attribute_not_exists(pk)",
+                        "Item": {"pk": f"INBOX#{self.NEW}", "sk": "INBOX", "user_id": "u1", "created_at": self.AT}}}
 
     def test_a_first_one(self):
-        t = FakeTable()
-        self.assertTrue(Store(t).set_inbox("u1", self.NEW, self.AT))
-        self.assertEqual(t.calls, [
-            ("put_item", {"Item": {"pk": f"INBOX#{self.NEW}", "sk": "INBOX", "user_id": "u1", "created_at": self.AT},
-                          "ConditionExpression": "attribute_not_exists(pk)"}),
-            ("update_item", {"Key": self.PROFILE, "UpdateExpression": "SET inbox = :t",
-                             "ConditionExpression": "attribute_exists(pk) AND attribute_not_exists(inbox)",
-                             "ExpressionAttributeValues": {":t": self.NEW}}),
-        ])
+        c = FakeClient()
+        self.assertTrue(Store(FakeTable(c)).set_inbox("u1", self.NEW, self.AT))
+        self.assertEqual(c.calls, [{"TransactItems": [
+            self.put(),
+            {"Update": {"TableName": "release-notes", "Key": self.PROFILE, "UpdateExpression": "SET inbox = :t",
+                        "ConditionExpression": "attribute_exists(pk) AND attribute_not_exists(inbox)",
+                        "ExpressionAttributeValues": {":t": self.NEW}}},
+        ]}])
 
-    def test_a_new_one_in_place_of_the_old(self):
-        t = FakeTable()
-        self.assertTrue(Store(t).set_inbox("u1", self.NEW, self.AT, old=self.OLD))
-        self.assertEqual(t.calls[1:], [
-            ("update_item", {"Key": self.PROFILE, "UpdateExpression": "SET inbox = :t",
-                             "ConditionExpression": "attribute_exists(pk) AND inbox = :old",
-                             "ExpressionAttributeValues": {":t": self.NEW, ":old": self.OLD}}),
-            ("delete_item", {"Key": {"pk": f"INBOX#{self.OLD}", "sk": "INBOX"}}),
-        ])
+    def test_a_new_one_in_place_of_the_old_in_one_transaction(self):
+        c = FakeClient()
+        self.assertTrue(Store(FakeTable(c)).set_inbox("u1", self.NEW, self.AT, old=self.OLD))
+        self.assertEqual(c.calls, [{"TransactItems": [
+            self.put(),
+            {"Update": {"TableName": "release-notes", "Key": self.PROFILE, "UpdateExpression": "SET inbox = :t",
+                        "ConditionExpression": "attribute_exists(pk) AND inbox = :old",
+                        "ExpressionAttributeValues": {":t": self.NEW, ":old": self.OLD}}},
+            {"Delete": {"TableName": "release-notes", "Key": {"pk": f"INBOX#{self.OLD}", "sk": "INBOX"}}},
+        ]}])
 
     def test_a_profile_that_moved_on_keeps_neither(self):
-        t = FakeTable(fail=ConditionFailed())
-        self.assertFalse(Store(t).set_inbox("u1", self.NEW, self.AT, old=self.OLD))
-        # The new item taken back; the old one, still the profile's, kept.
-        self.assertEqual(t.calls[-1], ("delete_item", {"Key": {"pk": f"INBOX#{self.NEW}", "sk": "INBOX"}}))
-        self.assertEqual(len(t.calls), 3)
+        c = FakeClient(fail=Cancelled("None", "ConditionalCheckFailed", "None"))
+        self.assertFalse(Store(FakeTable(c)).set_inbox("u1", self.NEW, self.AT, old=self.OLD))
+
+    def test_any_other_failure_raises(self):
+        c = FakeClient(fail=ConnectionError("down"))
+        with self.assertRaises(ConnectionError):
+            Store(FakeTable(c)).set_inbox("u1", self.NEW, self.AT)
 
 
 class Thumbnails(unittest.TestCase):

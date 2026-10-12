@@ -56,6 +56,10 @@ test('a photo goes with a new note, and a PDF joins it later', async ({ page }) 
   await note.getByRole('button', { name: 'Add files' }).click();
   await (await chooser).setFiles({ name: 'Menu.pdf', mimeType: 'application/pdf', buffer: PDF });
   await expect(note.locator('.media a.file')).toHaveText('Menu.pdf');
+  // A file's name keeps a line height of its own, so a long one wraps
+  // without its lines drawn over each other (photo links have none).
+  const lineHeight = await note.locator('.media a.file').evaluate((a) => parseFloat(getComputedStyle(a).lineHeight));
+  expect(lineHeight).toBeGreaterThan(15);
   await expect(note.locator('.media img')).toHaveCount(1);
   // Each opens from its signed link (the dev server's /dev-media/), not an API call.
   await expect(note.locator('.media img')).toHaveAttribute('src', /^\/dev-media\/media\//);

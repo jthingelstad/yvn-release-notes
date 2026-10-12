@@ -181,6 +181,7 @@ function PausedRun({ run, thisYear }: { run: Day[]; thisYear: number }) {
 function Releases() {
   const releases = useQuery(releasesQuery);
   const list = releases.data?.releases || [];
+  if (releases.isError && !list.length) return <Failed />;
   if (!list.length) return null;
   return (
     <nav aria-label="Releases" className="releases" id="releases">

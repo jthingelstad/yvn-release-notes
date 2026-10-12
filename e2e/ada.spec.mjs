@@ -293,3 +293,11 @@ test('the timeline lists the releases, and a release shows its days oldest first
   await page.goto('/release/?v=9.9');
   await expect(page).toHaveURL(/\/timeline\/$/);
 });
+
+test('a release index that fails to load says so, and the days still show', async ({ page }) => {
+  await page.route('**/api/releases', (route) => route.fulfill({ status: 500, json: { error: 'server' } }));
+  await page.goto('/timeline/');
+  await expect(page.locator('#releases')).toHaveCount(0);
+  await expect(page.getByRole('status')).toHaveText('Couldn’t load this just now. Reload to try again.');
+  await expect(page.locator('.tday').first()).toBeVisible();
+});

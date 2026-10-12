@@ -234,8 +234,10 @@ def changed(record: dict, *, store, s3, claude, lam, bucket: str, cache: dict, m
             if note and (outcome := place_note(note, user_id, store=store, geo=geo, fetch=fetch)):
                 log(event="place", user=user_id, date=day, outcome=outcome)
         except Exception as e:
-            # Tried again with the note's next change; never its words or place.
+            # Never its words or place. Raised, so the stream sends the
+            # batch again (handler); after its retries, the failed queue.
             log(event="place", user=user_id, date=day, outcome="error", error=type(e).__name__)
+            raise
     if new.get("sk") == "PROFILE":
         if new.get("describe") and not old.get("describe"):
             # Just turned on: everything already kept, in passes of its own.
@@ -417,14 +419,21 @@ def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secre
         maker = maker or (pillow() if any("NOTE#" in json.dumps(r.get("dynamodb", {}).get("Keys", {})) for r in records)
                           else None)
         no_key = False
+        failed = None
         for record in records:
-            # One record without the key must not cost the rest of the
-            # batch its thumbnails: the stream does not send them again.
+            # One record without the key, or whose place could not be named,
+            # must not cost the rest of the batch its thumbnails. A failed
+            # place is raised once the batch is through, so the stream sends
+            # it again; what was done is skipped the second time.
             try:
                 changed(record, store=store, s3=s3, claude=no_claude if no_key else ask, lam=lam, bucket=bucket,
                         cache=cache, maker=maker, geo=places_client, fetch=fetch)
             except NoKey:
                 no_key = True
+            except Exception as e:
+                failed = failed or e
+        if failed:
+            raise failed
         if no_key:
             raise NoKey()
     except NoKey:

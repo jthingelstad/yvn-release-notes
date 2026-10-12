@@ -227,12 +227,39 @@ class Where(Case):
         self.assertEqual(self.store.note("u1", "2026-10-09", "w-1")["place"], {"lat": 44.9778, "lon": -93.265,
                                                                                "from": "photo"})
 
-    def test_a_geocoder_failure_leaves_it_for_the_next_change(self):
+    def test_a_geocoder_failure_fails_the_batch_after_the_rest_so_the_stream_sends_it_again(self):
         self.keep(photo(1), body=exif_jpeg(tiff()))
-        with mock.patch("builtins.print") as printed:
-            self.run_stream({"day": "2026-10-09", "id": "w-1"}, lambda: FakeGeo(fail=ConnectionError("down")))
+        self.keep(photo(1, note_id="w-2"), note_id="w-2")
+        with mock.patch("builtins.print"):
+            self.run_stream({"day": "2026-10-09", "id": "w-1"}, lambda: FakeGeo())  # its EXIF read, no place yet
+        self.store.note("u1", "2026-10-09", "w-1").pop("place")
+        records = []
+        for note_id in ("w-1", "w-2"):
+            now = self.store.note("u1", "2026-10-09", note_id)
+            r = record({"pk": "USER#u1", **{k: v for k, v in now.items() if k != "pk"}})
+            r["dynamodb"]["Keys"] = {"pk": {"S": "USER#u1"}, "sk": {"S": now["sk"]}}
+            records.append(r)
+        self.store.note("u1", "2026-10-09", "w-2")["media"][0].pop("thumb", None)
+        with mock.patch("builtins.print") as printed, self.assertRaises(ConnectionError):
+            describe.handler({"Records": records}, None, store=self.store, s3=self.s3, claude=mock.Mock(),
+                             lam=self.lam, maker=fake_maker, geo=FakeGeo(fail=ConnectionError("down")), fetch=self.sky)
         self.assertNotIn("place", self.store.note("u1", "2026-10-09", "w-1"))
-        self.assertIn('"outcome":"error"', " ".join(str(c.args[0]) for c in printed.call_args_list))
+        self.assertIn("thumb", self.store.note("u1", "2026-10-09", "w-2")["media"][0])  # the rest went on
+        logged = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn('"outcome":"error"', logged)
+        self.assertNotIn("44.97", logged)
+        # The stream sends the batch again, and this time it is named.
+        with mock.patch("builtins.print"):
+            describe.handler({"Records": records}, None, store=self.store, s3=self.s3, claude=mock.Mock(),
+                             lam=self.lam, maker=fake_maker, geo=FakeGeo(), fetch=self.sky)
+        self.assertEqual(self.store.note("u1", "2026-10-09", "w-1")["place"]["city"], "Duluth")
+
+    def test_exif_fills_in_only_what_the_entry_lacks(self):
+        self.keep({**photo(1), "taken_at": "2020-01-01T00:00:00Z"}, body=exif_jpeg(tiff()))
+        with mock.patch("builtins.print"):
+            self.run_stream({"day": "2026-10-09", "id": "w-1"}, lambda: FakeGeo())
+        m = self.store.note("u1", "2026-10-09", "w-1")["media"][0]
+        self.assertEqual((m["taken_at"], m["place"]), ("2020-01-01T00:00:00Z", {"lat": 44.9778, "lon": -93.265}))
 
     def test_no_gps_no_question(self):
         self.keep(photo(1), body=exif_jpeg(tiff(lat=None, lon=None)))

@@ -129,12 +129,14 @@ def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> 
 
 def places_of(notes: list[dict]) -> tuple[tuple[str, str | None], ...]:
     """Each place the day's notes name, once, in the order written, with its
-    map link, as the web shows them (web.note_view)."""
-    out: dict[str, str | None] = {}
+    map link, as the web shows them (web.note_view). Once is the name and
+    the link together: the same name somewhere else, or linked where the
+    first was the unlinked home city, is shown too."""
+    out: dict[tuple[str, str | None], None] = {}
     for n in sorted(notes, key=written_at):
-        if n.get("place") and (name := place_label(n["place"])) and name not in out:
-            out[name] = map_url(n["place"])
-    return tuple(out.items())
+        if n.get("place") and (name := place_label(n["place"])):
+            out.setdefault((name, map_url(n["place"])), None)
+    return tuple(out)
 
 
 def read_on_this_day(store: Store, sub: Subscriber, day: date, have: set[str]) -> OnThisDay | None:

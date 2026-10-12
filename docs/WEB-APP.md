@@ -156,7 +156,7 @@ notes.yourversionnumber.com
   `pause_through`) so the sender skips it without another read. Changing a
   pause that is running keeps its start; resuming ends it yesterday, or
   drops it if it has not begun. The timeline folds paused days without
-  notes into one row.
+  notes or a place of their own into one row.
 - **Deleting an account** takes a code mailed to the account's own address
   (`POST /api/me/delete-code`; it is a sign-in row with `purpose=delete`,
   so the same attempt count and the address and total limits apply, but it never signs in and a
@@ -167,9 +167,10 @@ notes.yourversionnumber.com
   2026-10-09 and not renewed since is not listed; it points at nobody until it
   expires, and can read and write nothing. Old versions in the mail
   bucket expire 30 days later, which the page says.
-- **The timeline** lists every day with an email or a note, newest first,
-  and today. Days with neither (before sign-up, or while stopped) are left
-  out unless a note is written for them. A note written or replied after
+- **The timeline** lists every day with an email, a note or a place of
+  its own, newest first, and today, with the day's own place under its
+  weather. Days with none of them (before sign-up, or while stopped) are
+  left out unless a note or a place is given them. A note written or replied after
   its day is "added later".
 - **The sender** skips a paused subscriber, and a stopped one: `status` is
   `active` or `stopped`, with `stopped_reason` `unsubscribed`, `bounce` or

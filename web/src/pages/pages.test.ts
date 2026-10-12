@@ -25,6 +25,19 @@ describe('groupPaused', () => {
       ['2026-10-03']
     ]);
   });
+
+  it('keeps a paused day with a place of its own as its own row', () => {
+    const rows = groupPaused([
+      day('2026-10-08', { paused: true }),
+      day('2026-10-07', { paused: true, where: 'Duluth, Minnesota' }),
+      day('2026-10-06', { paused: true })
+    ]);
+    expect(rows.map((r) => ('run' in r ? r.run.map((d) => d.date) : r.day.date))).toEqual([
+      ['2026-10-08'],
+      '2026-10-07',
+      ['2026-10-06']
+    ]);
+  });
 });
 
 describe('pollWhileWriting', () => {

@@ -24,6 +24,13 @@ class FakeStore:
     def profile(self, user_id):
         return self.profiles.get(user_id)
 
+    def delete_profile(self, user_id, inbox):
+        p = self.profiles.get(user_id)
+        if p is not None and p.get("inbox") != inbox:
+            return False
+        self.profiles.pop(user_id, None)
+        return True
+
     def create_subscriber(self, user_id, email, profile):
         if email in self.emails or user_id in self.profiles:
             return False

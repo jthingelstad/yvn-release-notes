@@ -1392,9 +1392,16 @@ def delete_me(app: App, req: Request) -> dict:
     keys += app.store.login_keys(auth.digest(p["email"]))
     keys.append({"pk": f"EMAIL#{p['email']}", "sk": "EMAIL"})
     app.store.delete_keys(keys)
-    # A standing address the sender made since the first read goes too.
-    again = app.store.profile(user_id) or {}
-    app.store.delete_keys([k for k in inbox_keys(again) if k not in keys] + [{"pk": f"USER#{user_id}", "sk": "PROFILE"}])
+    # A standing address made since the first read (the sender, another
+    # tab) goes too: the profile goes only while it names the one deleted.
+    for _ in range(3):
+        again = app.store.profile(user_id) or {}
+        app.store.delete_keys([k for k in inbox_keys(again) if k not in keys])
+        if app.store.delete_profile(user_id, again.get("inbox")):
+            break
+    else:
+        log(event="delete-failed", user=user_id, step="profile")
+        raise Reject(409, "busy")
     # A send or a reply already past its checks may have written something
     # since the first read. With the profile gone, no new one gets that far.
     late = app.store.user_items(user_id)

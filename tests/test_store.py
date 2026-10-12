@@ -433,6 +433,15 @@ class Places(unittest.TestCase):
         Store(t).weather_between("u1", "2026-10-07", "2026-10-07")
         self.assertNotIn("ConsistentRead", t.calls[1][1])
 
+    def test_the_profile_goes_only_while_it_names_the_address_deleted(self):
+        t = FakeTable()
+        Store(t).delete_profile("u1", "tok")
+        Store(t).delete_profile("u1", None)
+        key = {"pk": "USER#u1", "sk": "PROFILE"}
+        self.assertEqual(t.calls, [("delete_item", {"Key": key, "ConditionExpression": "inbox = :t",
+                                                    "ExpressionAttributeValues": {":t": "tok"}}),
+                                   ("delete_item", {"Key": key, "ConditionExpression": "attribute_not_exists(inbox)"})])
+
     def test_weather_for_a_place_gone_is_dropped(self):
         t = FakeTable()
         # Only while it is still the reading for the place the day left.

@@ -1187,11 +1187,13 @@ def tagged_days(app: App, req: Request, tag: str) -> dict:
     for n in app.store.tagged_notes(user_id, tag):
         if tag in (n.get("tags") or []):
             by_day.setdefault(n["sk"].split("#")[1], []).append(n)
+    own = app.store.places_between(user_id, min(by_day), max(by_day)) if by_day else {}
     return respond(200, {
         "tag": tag,
         "today": local_today(p, app.now).isoformat(),
         "tz": p["tz"],
-        "days": [day_view(p, d, by_day[d], link=app.media_links(user_id)) for d in sorted(by_day, reverse=True)],
+        "days": [day_view(p, d, by_day[d], link=app.media_links(user_id), own=own.get(d))
+                 for d in sorted(by_day, reverse=True)],
     })
 
 
@@ -1247,6 +1249,8 @@ def search(app: App, req: Request) -> dict:
         if all(t in text for t in terms):
             by_day.setdefault(n["sk"].split("#")[1], []).append(n)
     days = sorted(by_day, reverse=True)
+    shown = days[:SEARCH_DAYS]
+    own = app.store.places_between(user_id, shown[-1], shown[0]) if shown else {}
     log(event="search", user=user_id, terms=len(terms), days=len(days))
     return respond(200, {
         "terms": terms,
@@ -1254,7 +1258,8 @@ def search(app: App, req: Request) -> dict:
         "tz": p["tz"],
         "notes": sum(len(v) for v in by_day.values()),
         "day_count": len(days),
-        "days": [day_view(p, d, sorted(by_day[d], key=written_at), link=app.media_links(user_id)) for d in days[:SEARCH_DAYS]],
+        "days": [day_view(p, d, sorted(by_day[d], key=written_at), link=app.media_links(user_id), own=own.get(d))
+                 for d in shown],
     })
 
 

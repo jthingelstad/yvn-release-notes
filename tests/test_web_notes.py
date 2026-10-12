@@ -366,6 +366,16 @@ class TagsTest(NotesCase):
         self.assertEqual([len(d["notes"]) for d in body["days"]], [1, 1])
         self.assertEqual(body["days"][1]["version"], "4.5.109")
 
+    def test_a_tags_days_and_searches_show_each_days_own_place(self):
+        self.add("2026-10-01", "Cake. #birthday")
+        self.add("2026-10-03", "More. #birthday")
+        self.store.set_day_place("u1", "2026-10-01", {"city": "Duluth", "region": "Minnesota", "country": "United States",
+                                                      "tz": "America/Chicago", "lat": 46.78, "lon": -92.1})
+        _, body = self.get("/api/tags/birthday")
+        self.assertEqual([d.get("where") for d in body["days"]], [None, "Duluth, Minnesota"])
+        _, body = self.call("POST", "/api/search", {"q": "cake"}, cookies=self.cookies)
+        self.assertEqual([d.get("where") for d in body["days"]], ["Duluth, Minnesota"])
+
     def test_a_tag_nobody_used_is_no_days_and_a_bad_one_not_found(self):
         _, body = self.get("/api/tags/nothing-here")
         self.assertEqual(body["days"], [])

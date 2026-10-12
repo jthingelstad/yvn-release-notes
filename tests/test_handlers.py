@@ -493,6 +493,20 @@ class Sending(unittest.TestCase):
         self.assertEqual(len(ses.sent), 1)
         self.assertNotIn("Yesterday you were", ses.sent[0]["Content"]["Raw"]["Data"].decode())
 
+    def test_yesterdays_weather_waits_when_its_notes_cannot_be_read(self):
+        # One of them may say it was somewhere else; the forecast still goes.
+        from test_weather import answer
+
+        store, ses = FakeStore([ada(place={"lat": 44.98, "lon": -93.26, "tz": "America/Chicago", "city": "Minneapolis",
+                                           "country": "United States"})]), FakeSES()
+        store.notes[("u1", "2026-10-06", "m1")] = {"text": "Yesterday's.", "place": {"city": "Duluth", "lat": 46.78,
+                                                                                     "lon": -92.1}}
+        store.day_notes_fail = True
+        sky = answer(("2026-10-06", 0, 20.0, 10.0), ("2026-10-07", 3, 19.0, 8.0))
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM, fetch=lambda url: sky)
+        self.assertEqual(store.weather, {})
+        self.assertIn("Minneapolis", ses.sent[0]["Content"]["Raw"]["Data"].decode())
+
     def photos(self, store, s3, day, count, size=30_000, described=False):
         media = []
         for n in range(1, count + 1):

@@ -158,6 +158,12 @@ def spot(place: dict) -> tuple | None:
         return None
 
 
+def named(place: dict | None) -> tuple | None:
+    """A place's spot and the names a reading carries for it: what a
+    day's weather must still match after a slow fetch or a rename."""
+    return (spot(place), tuple(place.get(k, "") for k in NAMED)) if place else None
+
+
 def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: date, fetch, fetched_at: str,
              changed: bool = False, again: bool = True) -> str:
     """Keep a finished day's weather where the subscriber was. Once for
@@ -193,17 +199,15 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
             names = {k: place.get(k, "") for k in NAMED}
             if not store.rename_weather(user_id, d, kept, names):
                 return "moved"
-            now = where_now() or home
-            if again and (spot(now) != spot(place) or any(now.get(k, "") != v for k, v in names.items())):
+            if again and named(where_now() or home) != named(place):
                 return keep_day(store, user_id, home, tz, day, today, fetch, fetched_at, changed=True, again=False)
             return "renamed"
         return "kept"
 
     def still():
-        # The place again, after the slow fetch: if it moved meanwhile, the
-        # call for the new place writes (or drops) the day's weather.
-        now = where_now() or home
-        return bool(now) and spot(now) == spot(place)
+        # The place again, after the slow fetch: if it moved or was renamed
+        # meanwhile, the call for the change writes (or drops) the weather.
+        return named(where_now() or home) == named(place)
 
     # Here, anything kept is for a place the day no longer has. If none
     # can be had for the place it has now, it is dropped, so the next call
@@ -227,8 +231,8 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
     if kept or not store.put_weather(user_id, d, reading):
         store.replace_weather(user_id, d, reading)
     if not still():
-        # The place moved between the check and the write, and the call for
-        # the new place may have written first: this reading goes, while it
+        # The place moved or was renamed between the check and the write,
+        # and the call for the change may have written first: this reading goes, while it
         # is still this one, and the day is kept again, once, where it is.
         if store.drop_weather(user_id, d, reading) and again:
             return keep_day(store, user_id, home, tz, day, today, fetch, fetched_at, changed=True, again=False)

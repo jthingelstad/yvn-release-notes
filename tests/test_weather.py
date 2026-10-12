@@ -290,6 +290,23 @@ class WebTest(NotesCase):
         self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
         self.assertEqual(len(self.sky.urls), 3)  # home, Duluth, home again
 
+    def test_a_rename_just_before_the_write_ends_under_the_days_name(self):
+        self.add("2026-09-12", "Backfilled.")  # home's weather, kept
+        replace = self.store.replace_weather
+
+        def late(user_id, day, fields):
+            # Another tab names the day Hermantown (Duluth's spot) after this
+            # call's last look, and finishes first; then this one's Duluth lands.
+            self.store.replace_weather = replace
+            self.call("PUT", "/api/days/2026-09-12/place", {"place": {**DULUTH, "name": "Hermantown"}},
+                      cookies=self.cookies)
+            replace(user_id, day, fields)
+        self.store.replace_weather = late
+        r, body = self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        self.assertEqual((body["where"], body["weather"]),
+                         ("Hermantown, Minnesota", "Light rain, 65° / 48° in Hermantown"))
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Hermantown")
+
     def test_another_name_for_the_same_spot_renames_the_weather(self):
         self.add("2026-09-12", "Backfilled.")
         self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)

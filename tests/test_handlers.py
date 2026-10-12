@@ -8,6 +8,7 @@ from email import message_from_bytes
 from email.message import EmailMessage
 from email.policy import default
 
+from fakes import FakeS3 as Bucket
 from release_notes import inbound, send
 from release_notes.store import Subscriber
 
@@ -465,6 +466,94 @@ class Sending(unittest.TestCase):
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         self.assertEqual(len(ses.sent), 1)
         self.assertNotIn("Yesterday you were", ses.sent[0]["Content"]["Raw"]["Data"].decode())
+
+    def photos(self, store, s3, day, count, size=30_000, described=False):
+        media = []
+        for n in range(1, count + 1):
+            thumb = f"media/u1/{day}/m1/{n}.thumb.jpg"
+            s3.objects[thumb] = {"Body": bytes([n]) * size}
+            media.append({"n": n, "kind": "image", "type": "image/jpeg", "size": 900_000,
+                          "key": f"media/u1/{day}/m1/{n}.jpg",
+                          "thumb": {"key": thumb, "size": size, "width": 640, "height": 480},
+                          **({"description": f"A photo {n}"} if described else {})})
+        store.notes[("u1", day, "m1")] = {"text": f"On {day}.", "media": media}
+
+    def sent_photos(self, ses):
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        parts = [p for p in msg.walk() if p.get_content_type() == "image/jpeg"]
+        return msg, parts
+
+    def test_photos_go_inside_the_email_yesterdays_first(self):
+        store, ses, s3 = FakeStore([ada()]), FakeSES(), Bucket()
+        self.photos(store, s3, "2026-10-06", 5)
+        self.photos(store, s3, "2025-10-07", 3)
+        read = []
+        get = s3.get_object
+        s3.get_object = lambda **kw: read.append(kw["Key"]) or get(**kw)
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store, s3=s3)
+        self.assertEqual((out["results"][0]["photos"], out["results"][0]["photo_bytes"]), (6, 180_000))
+        read.clear()
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM, s3=s3)
+        # 4 of yesterday's 5 (a day's most), then 2 of the year before's (the email's 6).
+        self.assertEqual(read, [f"media/u1/2026-10-06/m1/{n}.thumb.jpg" for n in (1, 2, 3, 4)]
+                         + [f"media/u1/2025-10-07/m1/{n}.thumb.jpg" for n in (1, 2)])
+        msg, parts = self.sent_photos(ses)
+        self.assertEqual(len(parts), 6)
+        related = next(p for p in msg.walk() if p.get_content_type() == "multipart/related")
+        self.assertEqual(related.get_payload()[0].get_content_type(), "text/html")
+        html, text = msg.get_body(("html",)).get_content(), msg.get_body(("plain",)).get_content()
+        for p in parts:
+            self.assertEqual(p.get_content_disposition(), "inline")
+            self.assertIn(f'src="cid:{p["Content-ID"][1:-1]}"', html)
+        self.assertEqual(html.count('alt="Photo"'), 6)
+        self.assertNotIn("media/", html)
+        self.assertNotIn("cid:", text)
+        self.assertIn(">See 3 photos</a>", html)  # 2 of the 2025 day's 3 shown: the link has them all
+        self.assertIn("See 3 photos: https://notes.yourversionnumber.com/day/?d=2025-10-07", text)
+        self.assertIn("5 photos\n", text)  # Yesterday's files line still counts the whole day
+
+    def test_alt_text_is_the_description_only_when_turned_on(self):
+        for describe, alt in ((False, 'alt="Photo"'), (True, 'alt="A photo 1"')):
+            store, ses, s3 = FakeStore([ada(describe=describe)]), FakeSES(), Bucket()
+            self.photos(store, s3, "2026-10-06", 1, described=True)
+            send.handler({}, None, store=store, ses=ses, clock=AT_8PM, s3=s3)
+            self.assertIn(alt, self.sent_photos(ses)[0].get_body(("html",)).get_content())
+
+    def test_at_most_about_400_kb_of_photos(self):
+        store, ses, s3 = FakeStore([ada()]), FakeSES(), Bucket()
+        self.photos(store, s3, "2026-10-06", 4, size=150_000)
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM, s3=s3)
+        self.assertEqual(len(self.sent_photos(ses)[1]), 2)
+
+    def test_a_photo_without_a_thumbnail_or_gone_is_left_as_a_link(self):
+        store, ses, s3 = FakeStore([ada()]), FakeSES(), Bucket()
+        self.photos(store, s3, "2026-10-06", 3)
+        del s3.objects["media/u1/2026-10-06/m1/2.thumb.jpg"]
+        store.notes[("u1", "2026-10-06", "m1")]["media"][2].pop("thumb")
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM, s3=s3)
+        msg, parts = self.sent_photos(ses)
+        self.assertEqual([p.get_content()[:1] for p in parts], [b"\x01"])
+        self.assertIn(">3 photos</p>", msg.get_body(("html",)).get_content())
+
+    def test_only_its_own_thumbnails(self):
+        store, ses, s3 = FakeStore([ada()]), FakeSES(), Bucket()
+        self.photos(store, s3, "2026-10-06", 1)
+        store.notes[("u1", "2026-10-06", "m1")]["media"][0]["thumb"]["key"] = "media/u2/2026-10-06/x/1.thumb.jpg"
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store, s3=s3)
+        self.assertEqual(out["results"][0]["photos"], 0)
+
+    def test_a_bucket_failure_sends_without_photos(self):
+        store, ses, s3 = FakeStore([ada()]), FakeSES(), Bucket()
+        self.photos(store, s3, "2026-10-06", 2)
+
+        def down(**kw):
+            raise ConnectionError("down")
+        s3.get_object = down
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM, s3=s3)
+        msg, parts = self.sent_photos(ses)
+        self.assertEqual(parts, [])
+        self.assertNotIn("cid:", msg.get_body(("html",)).get_content())
+        self.assertIn(">2 photos</p>", msg.get_body(("html",)).get_content())
 
     def test_no_notes_a_year_ago_no_section(self):
         store, ses = FakeStore([ada()]), FakeSES()

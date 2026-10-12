@@ -11,7 +11,8 @@
     USER#<id>        NOTE#<YYYY-MM-DD>#d1-<id>  one imported Day One entry: source=import, origin
                                                 (every kind has the same fields, notes.py: tags, written_at,
                                                 tz, place; links, named once when written, links.py; media,
-                                                its photos and recordings, media.py)
+                                                its photos and recordings, media.py; a photo's
+                                                thumbnail, thumbs.py)
     USER#<id>        WEATHER#<YYYY-MM-DD>       that day's weather where the subscriber was (weather.py): high_c,
                                                 low_c, code, city, region, country, lat, lon; kept for good
     USER#<id>        EXPORT                     the latest zip export (export_job.py): id, status
@@ -112,6 +113,7 @@ class Subscriber:
     pause_from: str | None = None
     pause_through: str | None = None
     place: dict | None = None  # the city, for weather (weather.place_of)
+    describe: bool = False  # photo descriptions on: they are the email's alt text
 
     def paused_on(self, day: str) -> bool:
         return bool(self.pause_from and self.pause_through and self.pause_from <= day <= self.pause_through)
@@ -129,6 +131,7 @@ class Subscriber:
             pause_from=item.get("pause_from"),
             pause_through=item.get("pause_through"),
             place=place_of(item),
+            describe=bool(item.get("describe")),
         )
 
 
@@ -170,6 +173,21 @@ class Store:
                 break
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
         return items
+
+    def user_ids(self) -> list[str]:
+        """Every subscriber's id, active or not: the profiles' keys only."""
+        ids, kwargs = [], {
+            "FilterExpression": "sk = :p",
+            "ProjectionExpression": "pk",
+            "ExpressionAttributeValues": {":p": "PROFILE"},
+        }
+        while True:
+            page = self.table.scan(**kwargs)
+            ids.extend(i["pk"].removeprefix("USER#") for i in page.get("Items", []) if i["pk"].startswith("USER#"))
+            if "LastEvaluatedKey" not in page:
+                break
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        return sorted(ids)
 
     def get_subscriber(self, user_id: str) -> Subscriber | None:
         item = self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": "PROFILE"}).get("Item")
@@ -423,6 +441,12 @@ class Store:
         """Put words about one file (a recording's `transcript`, a photo's
         `description`) on its entry in the note's media, found by its
         number. False if the note or the file is gone."""
+        return self.set_media_field(user_id, day, note_id, n, field, text)
+
+    def set_media_field(self, user_id: str, day: str, note_id: str, n: int, field: str, value) -> bool:
+        """Set one field of one file's entry in the note's media (words, or
+        a photo's `thumb`, thumbs.py), found by its number. False if the
+        note or the file is gone."""
         note = self.note(user_id, day, note_id)
         at = next((i for i, m in enumerate((note or {}).get("media") or []) if int(m["n"]) == n), None)
         if at is None:
@@ -433,7 +457,7 @@ class Store:
                 UpdateExpression=f"SET media[{at}].#f = :t",
                 ConditionExpression=f"attribute_exists(pk) AND media[{at}].n = :n",
                 ExpressionAttributeNames={"#f": field},
-                ExpressionAttributeValues={":t": text, ":n": n},
+                ExpressionAttributeValues={":t": numbers(value), ":n": n},
             )
             return True
         except Exception as e:

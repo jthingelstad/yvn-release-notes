@@ -4,7 +4,7 @@ from datetime import date
 from email import policy
 from email.parser import BytesParser
 
-from release_notes.compose import (PAST_MAX, YESTERDAY_MAX, Lifetime, OnThisDay, PastDay, Yesterday, body, build_message, clock_phrase, countdown, html_body, late_message, linked,
+from release_notes.compose import (PAST_MAX, YESTERDAY_MAX, Inline, Lifetime, OnThisDay, PastDay, Yesterday, body, build_message, clock_phrase, countdown, html_body, late_message, linked,
                                    message_id, notes_html, streak_lines, welcome_line)
 from release_notes.streak import Streak, compute_streak
 from release_notes.version import compute_version
@@ -374,6 +374,51 @@ class YesterdayBlock(unittest.TestCase):
         self.assertEqual(html.count("background:"), 3)
         html.encode("ascii")
         self.assertIn("Caf&#233; &lt;script&gt;x&lt;/script&gt; &#127881;", html)
+
+
+class Photos(unittest.TestCase):
+    DAY = date(2026, 10, 8)
+    THEN = date(2026, 10, 7)
+    ONE = Inline("photo.1@yourversionnumber.com", "Photo", 640, 480)
+    TWO = Inline("photo.2@yourversionnumber.com", 'A dog & "a ball"', 480, 640)
+
+    def html(self, y=None, past=None):
+        return html_body(compute_version(BIRTHDAY, self.DAY), BIRTHDAY, self.DAY, None, past, yesterday=y)
+
+    def test_inline_by_content_id_still_type_on_paper_and_ascii(self):
+        y = Yesterday(self.THEN, "Walked the river.", files={"image": 2}, photos=(self.ONE, self.TWO))
+        past = OnThisDay((PastDay(date(2025, 10, 8), "A year back.", files={"image": 1}, photos=(self.ONE,)),))
+        html = self.html(y, past)
+        srcs = re.findall(r'\ssrc="([^"]+)"', html)
+        self.assertEqual(srcs, ["cid:photo.1@yourversionnumber.com", "cid:photo.2@yourversionnumber.com",
+                                "cid:photo.1@yourversionnumber.com"])
+        self.assertIn('alt="A dog &amp; &quot;a ball&quot;"', html)
+        for banned in ("border:", "border-radius", "box-shadow", "@import", "url(", "<link"):
+            self.assertNotIn(banned, html)
+        self.assertEqual(html.count("background:"), 3)
+        html.encode("ascii")
+        # Every photo of the year-back day shows, so its link just says "See it".
+        self.assertIn(">See it</a>", html)
+
+    def test_one_photo_full_width_two_side_by_side(self):
+        self.assertIn('width="520"', self.html(Yesterday(self.THEN, "x", files={"image": 1}, photos=(self.ONE,))))
+        two = self.html(Yesterday(self.THEN, "x", files={"image": 2}, photos=(self.ONE, self.TWO)))
+        self.assertEqual(two.count('width="254"'), 2)
+
+    def test_the_message_carries_them_as_related_parts(self):
+        y = Yesterday(self.THEN, "x", files={"image": 1}, photos=(self.ONE,))
+        msg = build_message(to="ada@example.com", from_addr="notes@yourversionnumber.com", token="t" * 24,
+                            inbound_domain="in.yourversionnumber.com", v=compute_version(BIRTHDAY, self.DAY),
+                            birthday=BIRTHDAY, day=self.DAY, yesterday=y, images={self.ONE.cid: b"\xff\xd8jpeg"})
+        msg = BytesParser(policy=policy.default).parsebytes(bytes(msg))
+        self.assertEqual(msg.get_content_type(), "multipart/alternative")
+        related = msg.get_payload()[1]
+        self.assertEqual(related.get_content_type(), "multipart/related")
+        part = related.get_payload()[1]
+        self.assertEqual((part.get_content_type(), part["Content-ID"], part.get_content_disposition()),
+                         ("image/jpeg", "<photo.1@yourversionnumber.com>", "inline"))
+        self.assertEqual(part.get_content(), b"\xff\xd8jpeg")
+        self.assertNotIn("cid:", msg.get_body(("plain",)).get_content())
 
 
 class LifetimeLine(unittest.TestCase):

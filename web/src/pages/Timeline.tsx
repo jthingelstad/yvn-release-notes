@@ -139,7 +139,7 @@ function NoteParts({ d, n }: { d: Day; n: Day['notes'][number] }) {
   return (
     <>
       <NoteBody n={n} />
-      <NoteMedia day={d.date} n={n} version={d.version} />
+      <NoteMedia day={d.date} n={n} version={d.version} small />
     </>
   );
 }

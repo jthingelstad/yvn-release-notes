@@ -106,11 +106,17 @@ class FakeStore:
         return next((i for i in self.items.get(user_id, []) if i["sk"] == f"NOTE#{day}#{note_id}"), None)
 
     def set_media_text(self, user_id, day, note_id, n, field, text):
+        return self.set_media_field(user_id, day, note_id, n, field, text)
+
+    def set_media_field(self, user_id, day, note_id, n, field, value):
         for m in (self.note(user_id, day, note_id) or {}).get("media") or []:
             if int(m["n"]) == n:
-                m[field] = text
+                m[field] = value
                 return True
         return False
+
+    def user_ids(self):
+        return sorted(self.profiles)
 
     def delete_note(self, user_id, day, note_id):
         rows = self.items.get(user_id, [])

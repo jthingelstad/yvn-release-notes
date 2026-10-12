@@ -7,9 +7,20 @@ warm paper and the number in mono with cobalt digits and tangerine dots. It is
 type on paper: no borders, boxes, shadows or filled panels (Jamie, 2026-10-07).
 Rules for it:
 
-- Nothing remote. No images, no web fonts, no tracking of any kind. Martian
-  Mono and Bricolage are named first in the stacks, so they show where
-  installed; everyone else gets the system fonts.
+- Nothing remote. No remote images, no web fonts, no tracking of any kind.
+  Martian Mono and Bricolage are named first in the stacks, so they show
+  where installed; everyone else gets the system fonts.
+- Photos (Jamie, 2026-10-12) travel inside the message: each is a part of
+  a multipart/related HTML part, by Content-ID, referenced as `cid:`,
+  never a link to the bucket or any URL. They are the photos' thumbnails
+  (thumbs.py), never an original: at most PHOTOS_A_DAY in a day's block
+  and PHOTOS_AN_EMAIL, about PHOTO_BYTES, in all (the sender chooses,
+  Yesterday first, then "On this day" newest first). One shows full width,
+  more go two to a row. Past those, or for a photo with no thumbnail yet,
+  the day's link says "See 3 photos" as before; a day whose photos all
+  show says only "See it". Alt text is the photo's description for a
+  subscriber who turned descriptions on, else "Photo". The plain text
+  keeps the link.
 - Tables and inline styles, because that is what mail clients render. The
   <style> block only adds dark mode and the narrow-screen tweaks; the email
   must read correctly without it (Gmail strips some of it).
@@ -166,6 +177,21 @@ PAST_MAX = 1000  # characters of past notes in all, shared by the days shown
 SHOWN = 4  # past days with a block; any more are year links
 
 
+PHOTOS_A_DAY = 4
+PHOTOS_AN_EMAIL = 6
+PHOTO_BYTES = 400 * 1024
+
+
+@dataclass(frozen=True)
+class Inline:
+    """A photo carried in the email: its Content-ID (no brackets), alt text
+    and size. The bytes go to build_message as `images`."""
+    cid: str
+    alt: str
+    width: int
+    height: int
+
+
 @dataclass(frozen=True)
 class PastDay:
     """One earlier release's day: its notes' text, their links, how many
@@ -177,6 +203,8 @@ class PastDay:
     files: dict | None = None
     sky: str | None = None
     tags: tuple[str, ...] = ()
+    thumbs: tuple[dict, ...] = ()  # the day's photos' thumbnails, for the sender to choose from
+    photos: tuple[Inline, ...] = ()  # the ones this email carries
 
 
 @dataclass(frozen=True)
@@ -210,6 +238,8 @@ class Yesterday:
     files: dict | None = None
     tags: tuple[str, ...] = ()
     others: int = 0  # attachments kept only in the original email (media.others)
+    thumbs: tuple[dict, ...] = ()
+    photos: tuple[Inline, ...] = ()
     places: tuple[tuple[str, str | None], ...] = ()  # (name, map link or None), as the notes show them
 
 
@@ -313,6 +343,15 @@ def past_more(cut: bool, files: dict | None) -> str:
         return "See it"
     verb = "Hear" if set(k for k, n in (files or {}).items() if n) == {"audio"} else "See"
     return f"{verb} {phrase}"
+
+
+def unshown(files: dict | None, photos: tuple) -> dict:
+    """The day's files the email does not show: all of them, less the
+    photos when every one of them is in the email."""
+    files = dict(files or {})
+    if photos and len(photos) >= files.get("image", 0):
+        files["image"] = 0
+    return files
 
 
 def years_ago(v: Version, then: Version) -> str:
@@ -504,6 +543,36 @@ def notes_html(shown: str, found: list | None, mark: str = "") -> str:
     )
 
 
+COLUMN = 254  # pixels: a photo's width two to a row in the 520 column
+
+
+def img_html(p: Inline, width: int) -> str:
+    # Width as an attribute too, for Outlook; height follows.
+    return (f'<img src="cid:{escape(p.cid)}" alt="{ascii_html(p.alt)}" width="{min(width, p.width)}" '
+            f'style="display:block;width:100%;max-width:{min(width, p.width)}px;height:auto;">')
+
+
+def photos_html(photos: tuple[Inline, ...]) -> str:
+    """A day's photos from inside the message: one full width, more two to
+    a row."""
+    if not photos:
+        return ""
+    if len(photos) == 1:
+        return f'<p style="margin:0 0 12px;">{img_html(photos[0], 520)}</p>\n'
+    rows = []
+    for i in range(0, len(photos), 2):
+        pair = photos[i:i + 2]
+        cells = "".join(
+            f'<td width="50%" valign="top" style="padding:0 {4 if j == 0 else 0}px 8px {4 if j == 1 else 0}px;">'
+            f"{img_html(p, COLUMN)}</td>"
+            for j, p in enumerate(pair))
+        if len(pair) == 1:
+            cells += '<td width="50%"></td>'
+        rows.append(f"<tr>{cells}</tr>")
+    return ('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 4px;">'
+            + "".join(rows) + "</table>\n")
+
+
 def tags_html(day_tags: tuple[str, ...]) -> str:
     """A day's tags on their own line, each a link to its page."""
     if not day_tags:
@@ -538,7 +607,7 @@ def yesterday_html(birthday: date, y: Yesterday) -> str:
 <p class="ink" style="margin:0 0 4px;font-family:{FONT};font-size:22px;line-height:1.2;font-weight:800;color:{INK};">Yesterday</p>
 <p class="ink-2" style="margin:0 0 8px;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">{escape(long_date(y.day))}</p>
 <p style="margin:0 0 12px;">{vnum_html(then, 26)}</p>
-{where_html}{notes_html(shown, y.links, cut_mark(shown, cut))}{tags_html(y.tags)}{files_html}<p class="ink-2" style="margin:2px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
+{where_html}{notes_html(shown, y.links, cut_mark(shown, cut))}{photos_html(y.photos)}{tags_html(y.tags)}{files_html}<p class="ink-2" style="margin:2px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
 <a class="link" href="{escape(past_link(y.day))}" style="color:{BLUE};font-weight:700;text-decoration:underline;">{"Read the rest" if cut else "See it"}</a>
 </p>
 </td></tr>
@@ -554,14 +623,14 @@ def past_day_html(v: Version, birthday: date, p: PastDay, limit: int) -> str:
         else ""
     )
     shown, cut = shown_text(p, limit)
-    notes = notes_html(shown, p.links, "\u2026" if cut else "")
+    notes = notes_html(shown, p.links, "\u2026" if cut else "") + photos_html(p.photos)
     tag_html = tags_html(p.tags)
     return f"""<p class="ink-2" style="margin:28px 0 6px;font-family:{FONT};font-size:14px;color:{INK_2};">
 <strong class="ink" style="color:{INK};">{escape(years_ago(v, then))}</strong> &middot; {escape(long_date(p.day))}, {p.day.year}
 </p>
 <p style="margin:0 0 {8 if p.sky else 12}px;">{vnum_html(then, 26)}</p>
 {sky_html}{notes}{tag_html}<p class="ink-2" style="margin:2px 0 0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
-<a class="link" href="{escape(past_link(p.day))}" style="color:{BLUE};font-weight:700;text-decoration:underline;">{escape(past_more(cut, p.files))}</a>
+<a class="link" href="{escape(past_link(p.day))}" style="color:{BLUE};font-weight:700;text-decoration:underline;">{escape(past_more(cut, unshown(p.files, p.photos)))}</a>
 </p>
 """
 
@@ -704,6 +773,7 @@ def build_message(
     welcome: str | None = None,
     lifetime: Lifetime | None = None,
     yesterday: Yesterday | None = None,
+    images: dict[str, bytes] | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = from_header(from_addr)
@@ -720,6 +790,13 @@ def build_message(
     msg.set_content(body(v, birthday, streak, past, forecast, welcome, token, lifetime, yesterday))
     msg.add_alternative(html_body(v, birthday, day, streak, past, forecast, welcome, token, lifetime, yesterday),
                         subtype="html")
+    if images:
+        # The photos the HTML names by cid:, inside the message
+        # (multipart/related), each a thumbnail (thumbs.py).
+        html = msg.get_payload()[1]
+        for cid, data in images.items():
+            html.add_related(data, maintype="image", subtype="jpeg", cid=f"<{cid}>", disposition="inline",
+                             filename=f"{cid.split('@', 1)[0]}.jpg")
     return msg
 
 

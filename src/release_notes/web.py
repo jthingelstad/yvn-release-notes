@@ -769,6 +769,10 @@ def note_view(item: dict, tz: str, writing_out: bool = False, link=None) -> dict
         for shown, m in zip(view["media"], item["media"]):
             if link and (url := link(m.get("key"), m["type"])):
                 shown["url"] = url
+                # The photo's small copy (thumbs.py) for the page's lists; the
+                # original stays the link that opens it.
+                if (thumb := (m.get("thumb") or {}).get("key")) and (small := link(thumb, "image/jpeg")):
+                    shown["thumb"] = small
             if m.get("transcript"):
                 shown["transcript"] = m["transcript"]
             if m.get("description"):

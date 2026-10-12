@@ -129,10 +129,11 @@ export function NoteMeta({ n, tz, cls }: { n: Note; tz: string; cls: string }) {
   );
 }
 
-// One photo: a link to open it, drawn from its signed link. A plain click
-// opens it over the page; a click meant for a new tab or a download still
+// One photo: a link to open it, drawn from its small copy (`thumb`, in
+// lists, when it has one) or its signed link. A plain click opens the
+// original over the page; a click meant for a new tab or a download still
 // follows the link.
-function Photo({ n, m, src, link, version }: Props & { m: Media; src: string; link: () => string }) {
+function Photo({ n, m, src, link, version, small }: Props & { m: Media; src: string; link: () => string }) {
   const view = useViewer();
   const [broken, setBroken] = useState(false);
   // Described for those who turned it on (describe.py).
@@ -159,16 +160,17 @@ function Photo({ n, m, src, link, version }: Props & { m: Media; src: string; li
       }}
     >
       <img
-        src={m.url || src}
+        src={(small && m.thumb) || m.url || src}
         alt={alt}
         loading="lazy"
         decoding="async"
         onError={(e) => {
-          // A signed link that has run out tries the API's address once.
-          // After that, a session that has run out or a HEIC outside Safari:
-          // say so rather than show a broken image.
+          // The small copy, or a signed link that has run out, tries the
+          // API's address (the original) once. After that, a session that
+          // has run out or a HEIC outside Safari: say so rather than show a
+          // broken image.
           const img = e.currentTarget;
-          if (m.url && img.src !== absolute(src)) img.src = src;
+          if (((small && m.thumb) || m.url) && img.src !== absolute(src)) img.src = src;
           else setBroken(true);
         }}
       />
@@ -215,6 +217,9 @@ interface Props {
   n: Note;
   version?: string;
   mark?: RegExp | null;
+  // Lists of many days (Timeline, Search, a tag's page) show photos' small
+  // copies; a day's own page shows the originals.
+  small?: boolean;
 }
 
 // When a note's links came, by the list they came in: a refetch with new
@@ -232,7 +237,7 @@ function cameAt(media: Media[]): number {
 // A note's photos, recordings and files, each from the signed link the API
 // put on it. Past nine minutes, or when a link fails, they use the API's own
 // address instead (files.ts).
-export function NoteMedia({ day, n, version, mark }: Props) {
+export function NoteMedia({ day, n, version, mark, small }: Props) {
   if (!n.media || !n.media.length) return null;
   const given = cameAt(n.media);
   return (
@@ -243,7 +248,7 @@ export function NoteMedia({ day, n, version, mark }: Props) {
         if (m.kind === 'image') {
           return (
             <Fragment key={m.n}>
-              <Photo n={n} m={m} src={src} link={link} version={version} day={day} />
+              <Photo n={n} m={m} src={src} link={link} version={version} day={day} small={small} />
               {/* Shown only in search results, and only when the search found
                   it there (Jamie: "descriptions only on search results"). */}
               {mark && m.description && m.description.split(mark).length > 1 && (

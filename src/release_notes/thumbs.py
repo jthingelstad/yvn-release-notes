@@ -40,7 +40,8 @@ Photos already kept get theirs from a one-off pass through the same
 function: `{"thumbs_all": "<user id>" | "*", "dry_run": true}` counts what
 it would make and writes nothing; without dry_run it makes them, handing
 the rest to a new pass of itself near its time limit (describe.handler).
-Each thumbnail is deleted with its photo (media.keys). Logs ids and
+Each thumbnail is deleted with its photo (media.keys), and its key once
+more after the note has gone, for one made meanwhile. Logs ids and
 counts only.
 """
 

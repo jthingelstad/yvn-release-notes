@@ -949,6 +949,11 @@ def delete_note(app: App, req: Request, value: str, note_id: str) -> dict:
     for key in ([raw] if raw.startswith("raw/") else []) + media.keys(note):
         app.s3.delete_object(Bucket=os.environ["MAIL_BUCKET"], Key=key)
     app.store.delete_note(user_id, day, note_id)
+    # A thumbnail (thumbs.py) made while this ran was listed on the note
+    # before the note went (after, its maker deletes it), so with the note
+    # gone its key is cleared once more.
+    for key in media.thumb_keys(note):
+        app.s3.delete_object(Bucket=os.environ["MAIL_BUCKET"], Key=key)
     log(event="note-deleted", user=user_id, date=day, source=note.get("source", "email"))
     return respond(200, {"ok": True})
 
@@ -1329,6 +1334,11 @@ def delete_me(app: App, req: Request) -> dict:
                                   Delete={"Objects": [{"Key": k} for k in late_files[:1000]], "Quiet": True})
         app.store.delete_keys([{"pk": f"TOKEN#{i['token']}", "sk": "TOKEN"} for i in late if i["sk"].startswith("DAY#") and i.get("token")]
                               + sessions_of(late) + [{"pk": i["pk"], "sk": i["sk"]} for i in late])
+    # Thumbnails made while this ran, as in delete_note: cleared once more.
+    again = [k for i in items + late for k in media.thumb_keys(i)]
+    for n in range(0, len(again), 1000):
+        app.s3.delete_objects(Bucket=os.environ["MAIL_BUCKET"],
+                              Delete={"Objects": [{"Key": k} for k in again[n : n + 1000]], "Quiet": True})
     app.store.delete_session(s["hash"])
     tally(app, "deletes")
     log(event="account-deleted", user=user_id, items=len(items) + len(late), emails=len(raw), files=len(files) - len(raw))

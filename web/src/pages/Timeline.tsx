@@ -90,7 +90,7 @@ export function groupPaused(days: Day[]): Row[] {
   const rows: Row[] = [];
   for (const d of days) {
     const last = rows[rows.length - 1];
-    if (d.paused && !d.notes.length) {
+    if (d.paused && !d.notes.length && !d.where) {
       if (last && 'run' in last && addDays(d.date, 1) === last.run[last.run.length - 1].date) last.run.push(d);
       else rows.push({ run: [d] });
       continue;
@@ -130,6 +130,7 @@ function DayRow({ d, today, thisYear }: { d: Day; today: string; thisYear: numbe
         <span className="when">{(d.date === today ? 'Today, ' : '') + dayName(d.date, thisYear)}</span>
       </AppLink>
       {d.weather && <p className="weather">{d.weather}</p>}
+      {d.where && <p className="hint">Where: {d.where}</p>}
       {body}
     </section>
   );

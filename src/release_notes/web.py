@@ -842,8 +842,8 @@ def today(app: App, req: Request) -> dict:
 
 
 def days(app: App, req: Request) -> dict:
-    """The timeline, newest first: every day with an email, a note or a
-    pause, and today. ?before= pages back from a day."""
+    """The timeline, newest first: every day with an email, a note, a place
+    of its own or a pause, and today. ?before= pages back from a day."""
     user_id, p = app.account(req)
     day = local_today(p, app.now).isoformat()
     try:
@@ -854,7 +854,9 @@ def days(app: App, req: Request) -> dict:
     if before is not None:
         before = day_from(p, before, app.now).isoformat()
     paused = {d.isoformat() for d in pause_days(app.store.pauses(user_id), local_today(p, app.now))}
-    dated = app.store.sent_days(user_id) | {d.isoformat() for d in app.store.note_days(user_id)} | paused
+    # Every day's own place, in one read: a handful a year, so whole.
+    placed = app.store.places_between(user_id, p["birthday"], day)
+    dated = app.store.sent_days(user_id) | {d.isoformat() for d in app.store.note_days(user_id)} | paused | set(placed)
     if before is None:
         dated.add(day)
     picked = sorted((d for d in dated if p["birthday"] <= d <= day and (before is None or d < before)), reverse=True)
@@ -870,7 +872,8 @@ def days(app: App, req: Request) -> dict:
         {
             "today": day,
             "tz": p["tz"],
-            "days": [{**day_view(p, d, by_day[d], skies.get(d), app.media_links(user_id)), **({"paused": True} if d in paused else {})} for d in page],
+            "days": [{**day_view(p, d, by_day[d], skies.get(d), app.media_links(user_id), placed.get(d)),
+                      **({"paused": True} if d in paused else {})} for d in page],
             "before": page[-1] if len(picked) > limit else None,
         },
     )

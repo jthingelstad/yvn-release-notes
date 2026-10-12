@@ -169,6 +169,16 @@ class DaysTest(NotesCase):
         self.assertIsNone(body["before"])
         self.assertNotIn("Seventh", self.out.getvalue())
 
+    def test_timeline_shows_a_days_own_place_and_a_day_with_only_one(self):
+        self.emailed("2026-10-05", "b", text="Fifth.")
+        duluth = {"city": "Duluth", "region": "Minnesota", "lat": 46.78, "lon": -92.1}
+        self.store.set_day_place("u1", "2026-10-05", duluth)
+        self.store.set_day_place("u1", "2026-09-30", duluth)  # no note, no email
+        _, body = self.get("/api/days")
+        shown = {d["date"]: (len(d["notes"]), d.get("where")) for d in body["days"]}
+        self.assertEqual((shown["2026-10-05"], shown["2026-09-30"]), ((1, "Duluth, Minnesota"), (0, "Duluth, Minnesota")))
+        self.assertNotIn("Duluth", self.out.getvalue())
+
     def test_timeline_limits(self):
         r, body = self.get("/api/days", query={"limit": "lots"})
         self.assertEqual((r["statusCode"], body["error"]), (400, "limit"))

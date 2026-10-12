@@ -50,7 +50,7 @@ class FakeStore:
     def get_token(self, token):
         return self.tokens.get(token)
 
-    def get_inbox(self, token):
+    def get_inbox(self, token, consistent=False):
         return self.inboxes.get(token)
 
     def set_inbox(self, user_id, token, now, old=None):

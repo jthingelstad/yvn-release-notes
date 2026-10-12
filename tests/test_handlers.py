@@ -46,7 +46,7 @@ class FakeStore:
         self.day_places = {}
         self.inboxes = {}
 
-    def get_inbox(self, token):
+    def get_inbox(self, token, consistent=False):
         return self.inboxes.get(token)
 
     def set_inbox(self, user_id, token, now, old=None):
@@ -1007,6 +1007,14 @@ class StandingAddress(unittest.TestCase):
         with redirect_stdout(out):
             outcome = inbound.process(ses_event(**kw), self.store, s3, fetch=lambda url: None, mailer=self.ses)
         return outcome, s3, out.getvalue()
+
+    def test_the_address_and_its_profile_are_read_consistently(self):
+        asked = []
+        inbox, sub = self.store.get_inbox, self.store.get_subscriber
+        self.store.get_inbox = lambda t, consistent=False: asked.append(("inbox", consistent)) or inbox(t)
+        self.store.get_subscriber = lambda u, consistent=False: asked.append(("profile", consistent)) or sub(u)
+        outcome, _, _ = self.run_one()
+        self.assertEqual((outcome, asked), ("note", [("inbox", True), ("profile", True)]))
 
     def test_filed_on_their_own_day_at_receipt_with_no_window(self):
         # Five days after any email went out: there is no 72 hours here.

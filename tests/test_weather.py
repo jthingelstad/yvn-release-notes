@@ -251,6 +251,14 @@ class WebTest(NotesCase):
         self.add("2026-09-12", "Again.")  # the next note fetches it again, for home
         self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
 
+    def test_weather_written_since_the_read_is_replaced_for_the_new_place(self):
+        self.add("2026-09-12", "Backfilled.")  # home's weather, kept
+        between = self.store.weather_between
+        self.store.weather_between = lambda u, a, b, consistent=False: {}  # a read that missed it
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        self.store.weather_between = between
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Duluth")
+
     def test_a_place_for_today_waits_and_a_bad_one_is_refused(self):
         r, body = self.call("PUT", "/api/days/2026-10-08/place", {"place": DULUTH}, cookies=self.cookies)
         self.assertEqual((r["statusCode"], body["where"], self.sky.urls), (200, "Duluth, Minnesota", []))

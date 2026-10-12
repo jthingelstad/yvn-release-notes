@@ -426,6 +426,13 @@ class Places(unittest.TestCase):
                          ("pk = :u AND sk BETWEEN :a AND :b",
                           {":u": "USER#u1", ":a": "PLACE#2026-10-01", ":b": "PLACE#2026-10-07"}))
 
+    def test_weather_read_just_after_a_write_is_consistent(self):
+        t = FakeTable()
+        Store(t).weather_between("u1", "2026-10-07", "2026-10-07", consistent=True)
+        self.assertTrue(t.calls[0][1]["ConsistentRead"])
+        Store(t).weather_between("u1", "2026-10-07", "2026-10-07")
+        self.assertNotIn("ConsistentRead", t.calls[1][1])
+
     def test_weather_for_a_place_gone_is_dropped(self):
         t = FakeTable()
         Store(t).drop_weather("u1", "2026-10-07")

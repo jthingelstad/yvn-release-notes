@@ -166,7 +166,7 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
     place = where or home
     if not place:
         return "no-place"
-    kept = store.weather_between(user_id, d, d).get(d)
+    kept = store.weather_between(user_id, d, d, consistent=True).get(d)
     if kept and (same_place(kept, place) or not (where or changed)):
         return "kept"
     # Here, anything kept is for a place the day no longer has. If none
@@ -183,10 +183,10 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
             store.drop_weather(user_id, d)
             return "dropped"
         return "none"
-    if kept:
+    # One written since the read (another page, the describe function) is
+    # replaced: this call read the place last.
+    if kept or not store.put_weather(user_id, d, record(found, place, fetched_at)):
         store.replace_weather(user_id, d, record(found, place, fetched_at))
-    else:
-        store.put_weather(user_id, d, record(found, place, fetched_at))
     return "fetched"
 
 

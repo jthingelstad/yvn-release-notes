@@ -325,6 +325,13 @@ class YesterdayBlock(unittest.TestCase):
         self.assertIn("word ...\n\nRead the rest:", text)
         self.assertIn("word&#8230;</p>", html)
 
+    def test_an_address_longer_than_the_cut_is_left_out_not_cut(self):
+        long = "https://example.com/" + "a" * 1200
+        text, html = self.both(Yesterday(self.THEN, long + " was the page."))
+        self.assertNotIn("example.com", text.split("Read the rest:")[0])
+        self.assertNotIn("example.com", html)
+        self.assertIn(">Read the rest</a>", html)
+
     def test_a_cut_right_after_an_address_keeps_the_link_whole(self):
         html = notes_html("Read https://example.com/path", [], "\u2026")
         self.assertIn('href="https://example.com/path"', html)

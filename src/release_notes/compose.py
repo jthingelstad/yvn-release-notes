@@ -229,10 +229,13 @@ def lifetime_line(life: Lifetime) -> str:
 
 
 def past_text(text: str, limit: int = PAST_MAX) -> tuple[str, bool]:
-    """Past notes, cut between words near `limit`. True if cut."""
+    """Past notes, cut between words near `limit`. True if cut. The word
+    the limit falls in goes; one word longer than the limit (an address,
+    say) goes whole, since part of an address would link somewhere else."""
     if len(text) <= limit:
         return text, False
-    return text[:limit].rsplit(None, 1)[0].rstrip(), True
+    words = text[:limit].rsplit(None, 1)
+    return (words[0].rstrip() if len(words) > 1 else ""), True
 
 
 _SENTENCE_END = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]]*(?=\s)|\n\s*\n")

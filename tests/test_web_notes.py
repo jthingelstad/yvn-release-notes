@@ -306,7 +306,8 @@ class MediaTest(NotesCase):
     def test_deleting_the_note_deletes_its_files(self):
         r, _ = self.call("DELETE", "/api/days/2026-10-07/notes/0100abc-1", cookies=self.cookies)
         self.assertEqual(r["statusCode"], 200)
-        self.assertEqual([d["Key"] for d in self.s3.deleted], ["raw/0100abc-1", PHOTO["key"], MEMO["key"]])
+        self.assertEqual([d["Key"] for d in self.s3.deleted], ["raw/0100abc-1", PHOTO["key"],
+                                                         "media/u1/2026-10-07/0100abc-1/1.thumb.jpg", MEMO["key"]])
 
 
 class TagsTest(NotesCase):

@@ -60,6 +60,8 @@ Deleting a note or the account deletes its files too.
 
 import struct
 
+from . import thumbs
+
 IMAGES = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp",
           "image/heic": "heic", "image/heif": "heif"}
 AUDIO = {"audio/mp4": "m4a", "audio/aac": "aac", "audio/mpeg": "mp3", "audio/wav": "wav",
@@ -245,10 +247,15 @@ def store(s3, bucket: str, user_id: str, day: str, note_id: str, files: list[tup
 
 def keys(note: dict) -> list[str]:
     """Every file a note keeps: its media and their thumbnails (thumbs.py).
-    Deleting the note deletes these."""
+    Deleting the note deletes these. A photo's thumbnail key is named
+    whether or not its entry lists one yet: a thumbnail made between a
+    delete's read and its delete would otherwise be left behind."""
     out = []
     for m in note.get("media") or []:
-        out += [str(k) for k in (m.get("key"), (m.get("thumb") or {}).get("key")) if str(k or "").startswith("media/")]
+        found = [m.get("key"), (m.get("thumb") or {}).get("key")]
+        if m.get("kind") == "image" and str(m.get("key") or "").startswith("media/"):
+            found.append(thumbs.thumb_key(str(m["key"])))
+        out += [k for k in dict.fromkeys(str(k) for k in found if k) if k.startswith("media/")]
     return out
 
 

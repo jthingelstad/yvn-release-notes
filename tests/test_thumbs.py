@@ -64,8 +64,12 @@ class Keys(unittest.TestCase):
 
     def test_deleting_a_note_deletes_its_thumbnails(self):
         note = {"media": [photo(1, thumb={"key": "media/u1/2026-10-09/w-1/1.thumb.jpg", "size": 9}), photo(2, thumb={})]}
+        # The second has none listed (or none yet): its key is named all the same,
+        # so one made between a delete's read and the delete still goes.
         self.assertEqual(media.keys(note), ["media/u1/2026-10-09/w-1/1.jpg", "media/u1/2026-10-09/w-1/1.thumb.jpg",
-                                            "media/u1/2026-10-09/w-1/2.jpg"])
+                                            "media/u1/2026-10-09/w-1/2.jpg", "media/u1/2026-10-09/w-1/2.thumb.jpg"])
+        recording = {"media": [{"n": 1, "kind": "audio", "type": "audio/mp4", "key": "media/u1/2026-10-09/w-1/1.m4a"}]}
+        self.assertEqual(media.keys(recording), ["media/u1/2026-10-09/w-1/1.m4a"])
 
 
 class Making(Case):

@@ -100,10 +100,11 @@ class Found(unittest.TestCase):
 
     def test_those_past_twenty_are_counted_as_in_the_original_email(self):
         photos = [(png(800, 600, pad=10), "image", "png", f"p{i}.png", "attachment") for i in range(25)]
-        msg = reply(*photos)
+        logo = (png(64, 64), "image", "png", "logo.png", "inline")  # still nothing, past the twentieth too
+        msg = reply(*photos[:22], logo, *photos[22:])
         refused: list[int] = []
         self.assertEqual(len(media.found(msg, refused)), media.MAX_FILES)
-        self.assertEqual(refused, [20, 21, 22, 23, 24])
+        self.assertEqual(refused, [20, 21, 23, 24, 25])
         files = attachments(msg)
         for n in refused:
             files[n]["refused"] = True

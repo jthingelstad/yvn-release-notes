@@ -98,6 +98,17 @@ class Found(unittest.TestCase):
         photos = [(png(800, 600, pad=10), "image", "png", f"p{i}.png", "attachment") for i in range(25)]
         self.assertEqual(len(media.found(reply(*photos))), media.MAX_FILES)
 
+    def test_those_past_twenty_are_counted_as_in_the_original_email(self):
+        photos = [(png(800, 600, pad=10), "image", "png", f"p{i}.png", "attachment") for i in range(25)]
+        msg = reply(*photos)
+        refused: list[int] = []
+        self.assertEqual(len(media.found(msg, refused)), media.MAX_FILES)
+        self.assertEqual(refused, [20, 21, 22, 23, 24])
+        files = attachments(msg)
+        for n in refused:
+            files[n]["refused"] = True
+        self.assertEqual(media.others({"attachments": files}), 5)
+
 
 class Store(unittest.TestCase):
     def test_keys_and_entries(self):

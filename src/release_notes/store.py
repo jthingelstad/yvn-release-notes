@@ -666,7 +666,7 @@ class Store:
         try:
             self.table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}"},
                                    ConditionExpression="lat = :lat AND lon = :lon",
-                                   ExpressionAttributeValues={":lat": kept.get("lat"), ":lon": kept.get("lon")})
+                                   ExpressionAttributeValues={":lat": numbers(kept.get("lat")), ":lon": numbers(kept.get("lon"))})
             return True
         except Exception as e:
             if _failed_condition(e):

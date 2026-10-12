@@ -86,6 +86,10 @@ class Read(unittest.TestCase):
     def test_bad_values_are_left_out(self):
         self.assertNotIn("taken_at", exif.read(jpeg(tiff(taken=b"0000:00:00 00:00:00\x00"))))
         self.assertNotIn("taken_at", exif.read(jpeg(tiff(taken=b"yesterday\x00"))))
+        self.assertNotIn("taken_at", exif.read(jpeg(tiff(taken=b"2026:02:31 14:03:22\x00"))))  # no such day
+        self.assertNotIn("taken_at", exif.read(jpeg(tiff(taken=b"2026:10:11 24:03:22\x00"))))
+        self.assertEqual(exif.read(jpeg(tiff(taken=b"2028:02:29 23:59:60\x00", offset=b"")))["taken_at"],
+                         "2028-02-29T23:59:60")  # a leap day, and a leap second
         self.assertNotIn("lat", exif.read(jpeg(tiff(lat=((95, 1), (0, 1), (0, 1))))))
         self.assertNotIn("lat", exif.read(jpeg(tiff(lat=((44, 0), (0, 1), (0, 1))))))
         self.assertNotIn("lat", exif.read(jpeg(tiff(lat_ref=b"X\x00"))))

@@ -24,6 +24,7 @@ on the same bytes; the photo's entry gets `taken_at` and `place`
 """
 
 import struct
+from datetime import datetime
 
 MAX_SCAN = 256 * 1024  # APP1 comes first; never walk further than this
 
@@ -120,8 +121,10 @@ def _taken(t: _Tiff, exif: dict) -> str | None:
         day, time = raw.split(" ")
         y, mo, d = (int(x) for x in day.split(":"))
         h, mi, s = (int(x) for x in time.split(":"))
-        if not (1900 < y < 2200 and 1 <= mo <= 12 and 1 <= d <= 31 and 0 <= h < 24 and 0 <= mi < 60 and 0 <= s < 61):
+        if not (1900 < y < 2200 and 0 <= s < 61):
             return None
+        # A real date and time (Feb 31 is not); a leap second passes.
+        datetime(y, mo, d, h, mi, min(s, 59))
     except ValueError:
         return None
     out = f"{y:04d}-{mo:02d}-{d:02d}T{h:02d}:{mi:02d}:{s:02d}"

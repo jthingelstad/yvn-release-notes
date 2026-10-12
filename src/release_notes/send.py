@@ -115,10 +115,13 @@ def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> 
         return None
     try:
         notes = store.day_notes(sub.user_id, then.isoformat())
-        text, files = combine(notes), media.counts(notes)
-        if not (text or any(files.values())):
+        if not notes:
             return None
-        return Yesterday(then, text, day_links(notes), files, tuple(tags.found(text)))
+        # Any note shows, even one whose only file stayed in the email (a
+        # PDF, a video): the block is there to say it came through.
+        text = combine(notes)
+        return Yesterday(then, text, day_links(notes), media.counts(notes), tuple(tags.found(text)),
+                         sum(media.others(n) for n in notes))
     except Exception as e:
         log(event="yesterday-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
         return None
@@ -246,7 +249,8 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
                     if past else [],
                     "on_this_day_weather": bool(past and any(p.sky for p in past.shown)),
                     "yesterday": yesterday.day.isoformat() if yesterday else None,
-                    "yesterday_files": {k: n for k, n in (yesterday.files or {}).items() if n} if yesterday else {},
+                    "yesterday_files": {**{k: n for k, n in (yesterday.files or {}).items() if n},
+                                        **({"others": yesterday.others} if yesterday.others else {})} if yesterday else {},
                     "notes": life.notes if life else None,
                     "forecast": bool(forecast),
                 }

@@ -38,7 +38,8 @@ Rules for it:
   the day before came through) sits under the streak and before "On this
   day": yesterday's version, then its notes as the day reads on the web
   (notes.combine, links by name), its tags, one short line for its files
-  ("2 photos, 1 recording") and a link to the day. Its words share
+  ("2 photos, 1 recording", and any attachment kept only in the original
+  email) and a link to the day. Its words share
   YESTERDAY_MAX characters, cut at a sentence. Yesterday is the
   subscriber's own, in their zone. A day with no notes has no block: the
   streak already says what it needs to, and a missed day is never called
@@ -208,6 +209,7 @@ class Yesterday:
     links: list | None = None
     files: dict | None = None
     tags: tuple[str, ...] = ()
+    others: int = 0  # attachments kept only in the original email (media.others)
 
 
 def count_phrase(n: int, one: str, many: str) -> str:
@@ -243,9 +245,12 @@ def sentence_text(text: str, limit: int = YESTERDAY_MAX) -> tuple[str, bool]:
     return past_text(text, limit)
 
 
-def files_line(files: dict | None) -> str:
-    """'2 photos, 1 recording', or ''."""
-    return ", ".join(count_phrase(n, word, word + "s") for kind, word in FILE_WORDS if (n := (files or {}).get(kind, 0)))
+def files_line(files: dict | None, others: int = 0) -> str:
+    """'2 photos, 1 recording', '1 attachment in the original email', or ''."""
+    parts = [count_phrase(n, word, word + "s") for kind, word in FILE_WORDS if (n := (files or {}).get(kind, 0))]
+    if others:
+        parts.append(count_phrase(others, "attachment", "attachments") + " in the original email")
+    return ", ".join(parts)
 
 
 def past_link(day: date) -> str:
@@ -356,7 +361,7 @@ def yesterday_body(birthday: date, y: Yesterday) -> str:
     then = compute_version(birthday, y.day)
     shown, cut = yesterday_shown(y)
     shown = links.plain(shown, y.links)
-    files = files_line(y.files)
+    files = files_line(y.files, y.others)
     return (
         f"Yesterday you were {then} ({long_date(y.day)}):\n\n"
         + (f"{shown}{' ...' if cut_mark(shown, cut) else ''}\n\n" if shown else "")
@@ -504,7 +509,7 @@ def tags_html(day_tags: tuple[str, ...]) -> str:
 def yesterday_html(birthday: date, y: Yesterday) -> str:
     then = compute_version(birthday, y.day)
     shown, cut = yesterday_shown(y)
-    files = files_line(y.files)
+    files = files_line(y.files, y.others)
     files_html = (
         f'<p class="ink-2" style="margin:0 0 10px;font-family:{FONT};font-size:14px;line-height:1.45;color:{INK_2};">'
         f"{escape(files)}</p>\n"

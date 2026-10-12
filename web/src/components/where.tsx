@@ -72,6 +72,10 @@ export function NoteWhere({ place, onPick }: { place: Place | null; onPick: (p: 
   );
 }
 
+// The queries a place change's answer has already brought up to date.
+export const answered = (key: readonly unknown[], data: unknown, day: string) =>
+  (key[0] === 'day' && key[1] === day) || (key[0] === 'today' && (data as Today | undefined)?.date === day);
+
 // A day's own place, with or without a note: set, change or clear it.
 // Its weather follows (for a past day), so the day is read again after.
 export function DayWhere({ day, where }: { day: string; where?: string }) {
@@ -92,14 +96,13 @@ export function DayWhere({ day, where }: { day: string; where?: string }) {
       );
       if (!r.ok) return problem.show(r.data, input.current);
       setOpen(false);
-      // Everything, as a note's change does: the Timeline, search and
-      // the export show the day's place or its weather too.
-      await client.invalidateQueries();
-      // Then this answer, read just after the write, over the refetch,
-      // which may not have seen it yet.
+      // This day from the answer, read just after the write: a refetch
+      // may not see it yet. Then everything else, as a note's change
+      // does: the Timeline, search and the export show it too.
       const fresh = r.data;
       client.setQueryData<DayPage>(['day', day], (d) => d && { ...d, where: fresh.where, weather: fresh.weather });
       client.setQueryData<Today>(['today'], (t) => (t?.date === day ? { ...t, where: fresh.where } : t));
+      await client.invalidateQueries({ predicate: (q) => !answered(q.queryKey, q.state.data, day) });
     });
 
   return (

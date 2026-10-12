@@ -41,7 +41,7 @@ from zoneinfo import ZoneInfo
 from . import census, media, tags, weather
 from .compose import (MAIL_TAG, SHOWN, Lifetime, OnThisDay, PastDay, Yesterday, build_message, from_header,
                       new_token, welcome_line)
-from .notes import combine, day_links
+from .notes import combine, day_links, map_url, place_label, written_at
 from .store import Store, Subscriber
 from .streak import Streak, compute_streak, pause_days
 from .version import compute_version, same_day_before
@@ -121,10 +121,20 @@ def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> 
         # PDF, a video): the block is there to say it came through.
         text = combine(notes)
         return Yesterday(then, text, day_links(notes), media.counts(notes), tuple(tags.found(text)),
-                         sum(media.others(n) for n in notes))
+                         sum(media.others(n) for n in notes), places_of(notes))
     except Exception as e:
         log(event="yesterday-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
         return None
+
+
+def places_of(notes: list[dict]) -> tuple[tuple[str, str | None], ...]:
+    """Each place the day's notes name, once, in the order written, with its
+    map link, as the web shows them (web.note_view)."""
+    out: dict[str, str | None] = {}
+    for n in sorted(notes, key=written_at):
+        if n.get("place") and (name := place_label(n["place"])) and name not in out:
+            out[name] = map_url(n["place"])
+    return tuple(out.items())
 
 
 def read_on_this_day(store: Store, sub: Subscriber, day: date, have: set[str]) -> OnThisDay | None:

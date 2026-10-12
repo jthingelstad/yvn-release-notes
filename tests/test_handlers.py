@@ -410,6 +410,18 @@ class Sending(unittest.TestCase):
                       "#web\n\n1 photo, 1 recording\n", text)
         self.assertIn(">Sent a reply.</p>", html)
 
+    def test_yesterdays_places_once_each_in_the_order_written(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        cabin = {"label": "Cabin", "region": "Minnesota", "lat": 47.1, "lon": -91.2, "from": "entry"}
+        store.notes[("u1", "2026-10-06", "b")] = {"text": "Later.", "written_at": "2026-10-06T20:00:00+00:00", "place": cabin}
+        store.notes[("u1", "2026-10-06", "a")] = {"text": "Earlier.", "written_at": "2026-10-06T12:00:00+00:00",
+                                                   "place": {"city": "Duluth", "region": "Minnesota", "from": "home"}}
+        store.notes[("u1", "2026-10-06", "c")] = {"text": "Again.", "written_at": "2026-10-06T21:00:00+00:00", "place": cabin}
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        self.assertIn("Where: Duluth, Minnesota; Cabin, Minnesota\n", msg.get_body(("plain",)).get_content())
+        self.assertIn("https://maps.apple.com/?ll=47.1,-91.2&amp;q=Cabin,%20Minnesota", msg.get_body(("html",)).get_content())
+
     def test_no_yesterday_block_and_no_read_without_notes(self):
         store, ses = FakeStore([ada()]), FakeSES()
         store.notes[("u1", "2026-10-05", "m1")] = {"text": "Two days back."}

@@ -187,10 +187,11 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
     kept = store.weather_between(user_id, d, d, consistent=True).get(d)
     if kept and (same_place(kept, place) or not (where or changed)):
         if changed and same_place(kept, place) and any(kept.get(k, "") != place.get(k, "") for k in NAMED):
-            # Another name for the same spot: the reading stands, under it.
-            store.replace_weather(user_id, d, {**{k: v for k, v in kept.items() if k not in ("pk", "sk")},
-                                               **{k: place.get(k, "") for k in NAMED}})
-            return "renamed"
+            # Another name for the same spot: the reading stands, under it,
+            # unless another call has replaced it since; that call read last.
+            if store.rename_weather(user_id, d, kept, {k: place.get(k, "") for k in NAMED}):
+                return "renamed"
+            return "moved"
         return "kept"
 
     def still():

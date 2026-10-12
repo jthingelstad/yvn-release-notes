@@ -658,6 +658,24 @@ class Store:
         """A day's weather again, for the place it now has (weather.keep_day)."""
         self.table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **numbers(fields)})
 
+    def rename_weather(self, user_id: str, day: str, kept: dict, names: dict) -> bool:
+        """A day's weather under another name for the same spot
+        (weather.keep_day): only while it is still for `kept`'s spot. False
+        if it was not."""
+        try:
+            self.table.update_item(
+                Key={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}"},
+                UpdateExpression="SET " + ", ".join(f"#{k} = :{k}" for k in names),
+                ConditionExpression="lat = :lat AND lon = :lon",
+                ExpressionAttributeNames={f"#{k}": k for k in names},
+                ExpressionAttributeValues={**{f":{k}": v for k, v in names.items()}, ":lat": numbers(kept.get("lat")),
+                                           ":lon": numbers(kept.get("lon"))})
+            return True
+        except Exception as e:
+            if _failed_condition(e):
+                return False
+            raise
+
     def drop_weather(self, user_id: str, day: str, kept: dict) -> bool:
         """A day's weather, for a place the day no longer has, when none
         could be had for the place it has now (weather.keep_day): only

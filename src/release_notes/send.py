@@ -134,19 +134,23 @@ def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> 
         # PDF, a video): the block is there to say it came through.
         text = combine(notes)
         return Yesterday(then, text, day_links(notes), media.counts(notes), tuple(tags.found(text)),
-                         sum(media.others(n) for n in notes), places=places_of(notes),
+                         sum(media.others(n) for n in notes),
+                         places=places_of(notes, store.day_place(sub.user_id, then.isoformat())),
                          thumbs=thumbs_of(sub, notes)), notes
     except Exception as e:
         log(event="yesterday-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
         return None, []
 
 
-def places_of(notes: list[dict]) -> tuple[tuple[str, str | None], ...]:
-    """Each place the day's notes name, once, in the order written, with its
-    map link, as the web shows them (web.note_view). Once is the name and
-    the link together: the same name somewhere else, or linked where the
-    first was the unlinked home city, is shown too."""
+def places_of(notes: list[dict], own: dict | None = None) -> tuple[tuple[str, str | None], ...]:
+    """The day's own place (PLACE#<day>) first, as the web shows it, then
+    each place the day's notes name, once, in the order written, with its
+    map link (web.note_view). Once is the name and the link together: the
+    same name somewhere else, or linked where the first was the unlinked
+    home city, is shown too."""
     out: dict[tuple[str, str | None], None] = {}
+    if own and (name := place_label(own)):
+        out[(name, map_url(own))] = None
     for n in sorted(notes, key=written_at):
         if n.get("place") and (name := place_label(n["place"])):
             out.setdefault((name, map_url(n["place"])), None)

@@ -274,8 +274,9 @@ failed on live until 2026-10-08 because of it).
   day before came through): under the streak, the subscriber's own
   yesterday as the day reads on the web, cut at a sentence, with its files
   as one short line. A day with no notes has no block (a missed day is never
-  called out). It costs one read, only when the note index says yesterday
-  has notes. `compose.py` has the layout.
+  called out). It costs two small reads (the day's notes and its own
+  place), only when the note index says yesterday has notes. `compose.py`
+  has the layout.
 - **Photos in the email** (Jamie, 2026-10-12) travel inside the message
   as inline parts (`multipart/related`, `cid:`), never a link to the
   bucket: the thumbnails only, at most 4 a day block, 6 an email and about

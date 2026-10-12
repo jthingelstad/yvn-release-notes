@@ -153,7 +153,8 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
     place is not the one the kept weather is for. `changed`: the day's
     place was just set or cleared, so a reading for another place is
     replaced either way; when none can be had for the place it has now,
-    one for another place is dropped, so the next call tries again. Reads
+    one for another place is dropped, so the next call tries again, and so
+    it is when the fetch fails. Reads
     consistently: it follows the write of a place or a note. Returns what
     it did, for the log."""
     if day >= today:
@@ -168,11 +169,17 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
     kept = store.weather_between(user_id, d, d).get(d)
     if kept and (same_place(kept, place) or not (where or changed)):
         return "kept"
-    found = history(place, day, today, fetch)
+    # Here, anything kept is for a place the day no longer has. If none
+    # can be had for the place it has now, it is dropped, so the next call
+    # for the day fetches again; a failed fetch drops it too, then raises.
+    try:
+        found = history(place, day, today, fetch)
+    except Exception:
+        if kept:
+            store.drop_weather(user_id, d)
+        raise
     if not found:
-        if kept and not same_place(kept, place):
-            # For a place the day no longer has: dropped, so the next
-            # call for the day fetches again.
+        if kept:
             store.drop_weather(user_id, d)
             return "dropped"
         return "none"

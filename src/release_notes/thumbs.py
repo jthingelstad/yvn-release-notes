@@ -157,12 +157,13 @@ def thumbnail(note: dict, user_id: str, *, store, s3, bucket: str, maker=make) -
             if _code(e) != "NoSuchKey":
                 raise
             data = None
-        if data and m.get("type") == "image/jpeg" and "taken_at" not in m and "place" not in m:
-            # When and where it was taken (exif.py), read from the same bytes.
+        if data and m.get("type") == "image/jpeg" and ("taken_at" not in m or "place" not in m):
+            # When and where it was taken (exif.py), read from the same bytes;
+            # only what the entry does not have yet.
             found = exif.read(data)
-            if found.get("taken_at"):
+            if found.get("taken_at") and "taken_at" not in m:
                 store.set_media_field(user_id, day, note_id, int(m["n"]), "taken_at", found["taken_at"])
-            if "lat" in found:
+            if "lat" in found and "place" not in m:
                 store.set_media_field(user_id, day, note_id, int(m["n"]), "place",
                                       {"lat": found["lat"], "lon": found["lon"]})
         made = maker(data) if data else None

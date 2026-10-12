@@ -432,6 +432,16 @@ class Sending(unittest.TestCase):
                       "Duluth, Minnesota <https://maps.apple.com/?ll=46.8,-92.1&q=Duluth,%20Minnesota>\n", msg.get_body(("plain",)).get_content())
         self.assertIn("https://maps.apple.com/?ll=47.1,-91.2&amp;q=Cabin,%20Minnesota", msg.get_body(("html",)).get_content())
 
+    def test_yesterdays_own_place_comes_first(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2026-10-06", "a")] = {"text": "Earlier.", "written_at": "2026-10-06T12:00:00+00:00",
+                                                   "place": {"city": "Duluth", "region": "Minnesota", "from": "home"}}
+        store.day_places[("u1", "2026-10-06")] = {"label": "Cabin", "region": "Minnesota", "lat": 47.1, "lon": -91.2}
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        self.assertIn("Where: Cabin, Minnesota <https://maps.apple.com/?ll=47.1,-91.2&q=Cabin,%20Minnesota>; "
+                      "Duluth, Minnesota\n", msg.get_body(("plain",)).get_content())
+
     def test_no_yesterday_block_and_no_read_without_notes(self):
         store, ses = FakeStore([ada()]), FakeSES()
         store.notes[("u1", "2026-10-05", "m1")] = {"text": "Two days back."}
@@ -454,7 +464,7 @@ class Sending(unittest.TestCase):
         text = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default).get_body(("plain",)).get_content()
         self.assertIn("Yesterday you were 4.9.364 (Tuesday, October 6):\n\n1 attachment in the original email\n", text)
 
-    def test_yesterday_is_one_read(self):
+    def test_yesterday_is_one_read_of_its_notes(self):
         store, ses = FakeStore([ada()]), FakeSES()
         store.notes[("u1", "2026-10-06", "m1")] = {"text": "Yesterday's."}
         read = []

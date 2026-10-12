@@ -133,7 +133,8 @@ class DeleteTest(PauseCase):
         self.assertEqual((self.store.profiles, self.store.emails, self.store.tokens), ({}, {}, {}))
         self.assertEqual(self.store.items["u1"], [])
         self.assertEqual(self.s3.deleted, [{"Bucket": "mail-bucket", "Key": "raw/0100abc"},
-                                           {"Bucket": "mail-bucket", "Key": "media/u1/2026-10-07/0100abc/1.jpg"}])
+                                           {"Bucket": "mail-bucket", "Key": "media/u1/2026-10-07/0100abc/1.jpg"},
+                                           {"Bucket": "mail-bucket", "Key": "media/u1/2026-10-07/0100abc/1.thumb.jpg"}])
         r, _ = self.call("GET", "/api/me", cookies=self.cookies)
         self.assertEqual(r["statusCode"], 401)
         self.assertNotIn("ada@example.com", self.out.getvalue())

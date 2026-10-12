@@ -130,7 +130,8 @@ class Store(unittest.TestCase):
         note = {"media": entries, "attachments": [{"content_type": "image/jpeg", "filename": "image0.jpeg"},
                                                   {"content_type": "video/quicktime", "filename": "IMG.MOV"},
                                                   {"content_type": "image/png", "filename": "logo.png"}]}
-        self.assertEqual(media.keys(note), ["media/u1/2026-10-07/m1/1.jpg", "media/u1/2026-10-07/m1/2.m4a"])
+        self.assertEqual(media.keys(note), ["media/u1/2026-10-07/m1/1.jpg", "media/u1/2026-10-07/m1/1.thumb.jpg",
+                                            "media/u1/2026-10-07/m1/2.m4a"])
         self.assertEqual(media.keys({"media": [{"key": "raw/sneaky"}]}), [])
         self.assertEqual(media.others(note), 1)
         self.assertEqual(media.counts([note, {"text": "x"}, {"media": entries[:1]}]), {"image": 2, "audio": 1})

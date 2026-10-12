@@ -473,6 +473,18 @@ class Sending(unittest.TestCase):
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         self.assertEqual(read, ["2026-10-06"])
 
+    def test_yesterdays_own_place_is_read_once_for_the_block_and_the_weather(self):
+        from test_weather import answer
+
+        store = FakeStore([ada(place={"lat": 44.98, "lon": -93.26, "tz": "America/Chicago", "city": "Minneapolis"})])
+        store.notes[("u1", "2026-10-06", "m1")] = {"text": "Yesterday's."}
+        places = []
+        day_place = store.day_place
+        store.day_place = lambda u, d: places.append(d) or day_place(u, d)
+        sky = answer(("2026-10-06", 0, 20.0, 10.0), ("2026-10-07", 3, 19.0, 8.0))
+        send.handler({}, None, store=store, ses=FakeSES(), clock=AT_8PM, fetch=lambda url: sky)
+        self.assertEqual(places, ["2026-10-06"])
+
     def test_yesterday_read_failure_still_sends(self):
         store, ses = FakeStore([ada()]), FakeSES()
         store.notes[("u1", "2026-10-06", "m1")] = {"text": "Yesterday's."}

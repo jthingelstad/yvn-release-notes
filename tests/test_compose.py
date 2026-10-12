@@ -4,7 +4,7 @@ from datetime import date
 from email import policy
 from email.parser import BytesParser
 
-from release_notes.compose import (PAST_MAX, Lifetime, OnThisDay, PastDay, body, build_message, clock_phrase, countdown, html_body, late_message, linked,
+from release_notes.compose import (PAST_MAX, YESTERDAY_MAX, Lifetime, OnThisDay, PastDay, Yesterday, body, build_message, clock_phrase, countdown, html_body, late_message, linked,
                                    message_id, streak_lines, welcome_line)
 from release_notes.streak import Streak, compute_streak
 from release_notes.version import compute_version
@@ -258,6 +258,94 @@ class AYearAgo(unittest.TestCase):
         text = body(v, BIRTHDAY, None, past)
         self.assertIn("Up north for the weekend.\n\n#cabin #fall-2025\n\nSee it:", text)
         self.assertEqual(text.count("#cabin"), 1)
+
+
+class YesterdayBlock(unittest.TestCase):
+    DAY = date(2026, 10, 8)  # 4.5.110; yesterday was 4.5.109
+    THEN = date(2026, 10, 7)
+
+    def both(self, y, **kw):
+        v = compute_version(BIRTHDAY, self.DAY)
+        return body(v, BIRTHDAY, yesterday=y, **kw), html_body(v, BIRTHDAY, self.DAY, yesterday=y, **kw)
+
+    def test_the_block(self):
+        y = Yesterday(self.THEN, "Walked the river.\n\nWrote it up: https://example.com/river/",
+                      [{"url": "https://example.com/river/", "title": "Walking the river", "site": "Example"}])
+        text, html = self.both(y)
+        self.assertIn("Yesterday you were 4.5.109 (Wednesday, October 7):\n\nWalked the river.\n\n"
+                      "Wrote it up: Walking the river <https://example.com/river/>\n\n"
+                      "See it: https://notes.yourversionnumber.com/day/?d=2026-10-07\n", text)
+        self.assertIn(">Yesterday</p>", html)
+        self.assertIn(">Wednesday, October 7</p>", html)
+        self.assertIn('aria-label="4.5.110"', html)
+        self.assertIn('4<span class="sep" style="color:#ff5a1f;">.</span>5<span class="sep" style="color:#ff5a1f;">.</span>109', html)
+        self.assertIn(">Walked the river.</p>", html)
+        self.assertIn('>Walking the river</a><span class="ink-2" style="color:#3b3d63;"> &middot; Example</span>', html)
+        self.assertIn('href="https://notes.yourversionnumber.com/day/?d=2026-10-07" style="color:#1a4fe0;font-weight:700;'
+                      'text-decoration:underline;">See it</a>', html)
+
+    def test_no_block_without_notes(self):
+        text, html = self.both(None)
+        self.assertNotIn("Yesterday", text)
+        self.assertNotIn("Yesterday", html)
+        self.assertNotIn("Nothing", text)
+
+    def test_files_have_a_short_line(self):
+        y = Yesterday(self.THEN, "Up north.", files={"image": 2, "audio": 1})
+        text, html = self.both(y)
+        self.assertIn("Up north.\n\n2 photos, 1 recording\nSee it:", text)
+        self.assertIn(">2 photos, 1 recording</p>", html)
+        self.assertNotIn("<img", html)
+        text, html = self.both(Yesterday(self.THEN, "", files={"image": 1}))
+        self.assertIn("Yesterday you were 4.5.109 (Wednesday, October 7):\n\n1 photo\nSee it:", text)
+        self.assertIn(">1 photo</p>", html)
+
+    def test_a_long_day_is_cut_at_a_sentence(self):
+        sentence = "This is one sentence of a long day that keeps going. "
+        y = Yesterday(self.THEN, sentence * 40)
+        text, html = self.both(y)
+        shown = text.split("):\n\n", 1)[1].split("\n\nRead the rest:", 1)[0]
+        self.assertTrue(shown.endswith("keeps going."), shown[-40:])
+        self.assertLessEqual(len(shown), YESTERDAY_MAX)
+        self.assertGreater(len(shown), YESTERDAY_MAX - len(sentence))
+        self.assertIn("Read the rest: https://notes.yourversionnumber.com/day/?d=2026-10-07", text)
+        self.assertIn(">Read the rest</a>", html)
+        self.assertIn("keeps going.</p>", html)
+        self.assertNotIn("&#8230;", html)
+
+    def test_one_long_sentence_is_cut_between_words(self):
+        text, html = self.both(Yesterday(self.THEN, "word " * 400))
+        self.assertIn("word ...\n\nRead the rest:", text)
+        self.assertIn("word&#8230;</p>", html)
+
+    def test_tags_have_their_line_and_show_once(self):
+        y = Yesterday(self.THEN, "Up north.\n\n#cabin #fall-2026", tags=("cabin", "fall-2026"))
+        text, html = self.both(y)
+        self.assertIn("Up north.\n\n#cabin #fall-2026\n\nSee it:", text)
+        self.assertEqual(text.count("#cabin"), 1)
+        self.assertEqual(html.count("#cabin"), 1)
+        self.assertIn('href="https://notes.yourversionnumber.com/tag/?t=cabin"', html)
+
+    def test_under_the_streak_before_on_this_day(self):
+        v = compute_version(BIRTHDAY, self.DAY)
+        streak = Streak(current=1, longest=1, days=(self.THEN,))
+        life = Lifetime(notes=2, days=2, photos=0, since=2025)
+        past = OnThisDay((PastDay(date(2025, 10, 8), "A year back."),))
+        y = Yesterday(self.THEN, "Walked the river.")
+        html = html_body(v, BIRTHDAY, self.DAY, streak, past, lifetime=life, yesterday=y)
+        order = [html.index(x) for x in ("1 day in a row", "2 notes across", ">Yesterday</p>", ">On this day</p>")]
+        self.assertEqual(order, sorted(order))
+        text = body(v, BIRTHDAY, streak, past, lifetime=life, yesterday=y)
+        order = [text.index(x) for x in ("1 day in a row", "2 notes across", "Yesterday you were", "On this day:")]
+        self.assertEqual(order, sorted(order))
+
+    def test_still_type_on_paper_ascii_and_escaped(self):
+        text, html = self.both(Yesterday(self.THEN, 'Caf\u00e9 <script>x</script> \U0001F389'))
+        for banned in ("border:", "border-radius", "box-shadow", "<img", "<script>"):
+            self.assertNotIn(banned, html)
+        self.assertEqual(html.count("background:"), 3)
+        html.encode("ascii")
+        self.assertIn("Caf&#233; &lt;script&gt;x&lt;/script&gt; &#127881;", html)
 
 
 class LifetimeLine(unittest.TestCase):

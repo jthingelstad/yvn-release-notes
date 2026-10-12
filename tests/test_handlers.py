@@ -393,6 +393,52 @@ class Sending(unittest.TestCase):
         self.assertIn('href="https://example.com/post/" style="color:#1a4fe0;">Fifty candles</a>'
                       '<span class="ink-2"', msg.get_body(("html",)).get_content())
 
+    def test_email_confirms_yesterdays_notes(self):
+        # Ada's day is 2026-10-07 in Chicago at 8 PM; her yesterday is 10-06 (4.9.364).
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2026-10-06", "m1")] = {"text": "Sent a reply.", "written_at": "2026-10-06T12:00:00+00:00"}
+        store.notes[("u1", "2026-10-06", "w-2")] = {"text": "And a web note. #web", "written_at": "2026-10-06T13:00:00+00:00",
+                                                     "media": [{"n": 1, "kind": "image"}, {"n": 2, "kind": "audio"}]}
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
+        self.assertEqual(out["results"][0]["yesterday"], "2026-10-06")
+        self.assertEqual(out["results"][0]["yesterday_files"], {"image": 1, "audio": 1})
+        self.assertNotIn("Sent a reply", str(out))
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        text, html = msg.get_body(("plain",)).get_content(), msg.get_body(("html",)).get_content()
+        self.assertIn("Yesterday you were 4.9.364 (Tuesday, October 6):\n\nSent a reply.\n\nAnd a web note. #web\n\n"
+                      "#web\n\n1 photo, 1 recording\n", text)
+        self.assertIn(">Sent a reply.</p>", html)
+
+    def test_no_yesterday_block_and_no_read_without_notes(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2026-10-05", "m1")] = {"text": "Two days back."}
+        read = []
+        day_notes = store.day_notes
+        store.day_notes = lambda u, d: read.append(d) or day_notes(u, d)
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
+        self.assertIsNone(out["results"][0]["yesterday"])
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertNotIn("Yesterday", ses.sent[0]["Content"]["Raw"]["Data"].decode())
+        self.assertEqual(read, [])
+
+    def test_yesterday_is_one_read(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2026-10-06", "m1")] = {"text": "Yesterday's."}
+        read = []
+        day_notes = store.day_notes
+        store.day_notes = lambda u, d: read.append(d) or day_notes(u, d)
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual(read, ["2026-10-06"])
+
+    def test_yesterday_read_failure_still_sends(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2026-10-06", "m1")] = {"text": "Yesterday's."}
+        store.day_notes_fail = True
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual(len(ses.sent), 1)
+        self.assertNotIn("Yesterday you were", ses.sent[0]["Content"]["Raw"]["Data"].decode())
+
     def test_no_notes_a_year_ago_no_section(self):
         store, ses = FakeStore([ada()]), FakeSES()
         store.notes[("u1", "2025-10-06", "m1")] = {"text": "The day before."}

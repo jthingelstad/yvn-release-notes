@@ -245,6 +245,12 @@ failed on live until 2026-10-08 because of it).
 - **Lifetime counts** (Jamie, 2026-10-09: "a good reminder of creating
   value"): one quiet line under the streak. Every note counts, imported
   ones too.
+- **Yesterday** (Jamie, 2026-10-12: the email confirms everything sent the
+  day before came through): under the streak, the subscriber's own
+  yesterday as the day reads on the web, cut at a sentence, with its files
+  as one short line. A day with no notes has no block (a missed day is never
+  called out). It costs one read, only when the note index says yesterday
+  has notes. `compose.py` has the layout.
 - **On this day** (Jamie, 2026-10-09, option A of the design session):
   the notes from the same patch number in every
   earlier release, by version, not calendar, with their tags (Jamie:

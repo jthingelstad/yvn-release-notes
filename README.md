@@ -41,7 +41,8 @@ describe photos.
   together, in the order they were written, they are that day's release
   notes.
 - **Streaks.** The email shows how many days in a row you have written,
-  then a line of lifetime counts, then "On this day": your notes from the
+  then a line of lifetime counts, then yesterday's notes, so you can see
+  everything you sent came through, then "On this day": your notes from the
   same day of every earlier release. A late note still counts for its day;
   a missed day starts the count over and the email shows your longest
   instead.

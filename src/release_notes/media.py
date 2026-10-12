@@ -52,8 +52,9 @@ the browser reuses its copy (2026-10-09: photos had been one API call each,
 and a page of them started several cold functions at once). Past nine
 minutes on the page, or when a link fails, the page asks
 web.media_file, which checks the session and the key's owner and
-redirects to a fresh link. The email's "On this day" links to the day
-("See 2 photos") and carries no file.
+redirects to a fresh link. Each photo gets a small copy beside it a few
+seconds after it is filed (thumbs.py): the email carries those inside the
+message, and the web's lists show them, the original a tap away.
 Deleting a note or the account deletes its files too.
 """
 
@@ -243,7 +244,12 @@ def store(s3, bucket: str, user_id: str, day: str, note_id: str, files: list[tup
 
 
 def keys(note: dict) -> list[str]:
-    return [str(m["key"]) for m in note.get("media") or [] if str(m.get("key", "")).startswith("media/")]
+    """Every file a note keeps: its media and their thumbnails (thumbs.py).
+    Deleting the note deletes these."""
+    out = []
+    for m in note.get("media") or []:
+        out += [str(k) for k in (m.get("key"), (m.get("thumb") or {}).get("key")) if str(k or "").startswith("media/")]
+    return out
 
 
 def counts(notes: list[dict]) -> dict[str, int]:

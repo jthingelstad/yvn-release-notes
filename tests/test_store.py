@@ -386,6 +386,30 @@ class SetMediaText(unittest.TestCase):
             self.assertEqual(t.calls, [])
 
 
+class Thumbnails(unittest.TestCase):
+    # The exact table calls thumbs.py adds.
+
+    def test_a_thumb_goes_on_the_file_as_a_map_with_numbers(self):
+        t = FakeTable()
+        t.get_item = lambda **kw: {"Item": {"media": [{"n": Decimal(1), "kind": "image"}]}}
+        t.update_item = lambda **kw: t.calls.append(("update_item", kw)) or {}
+        thumb = {"key": "media/u1/2026-10-09/w-1/1.thumb.jpg", "size": 61234, "width": 640, "height": 480}
+        self.assertTrue(Store(t).set_media_field("u1", "2026-10-09", "w-1", 1, "thumb", thumb))
+        kw = t.calls[0][1]
+        self.assertEqual(kw["UpdateExpression"], "SET media[0].#f = :t")
+        self.assertEqual(kw["ExpressionAttributeNames"], {"#f": "thumb"})
+        self.assertEqual(kw["ExpressionAttributeValues"], {":t": thumb, ":n": 1})
+
+    def test_every_subscriber_id_from_the_profiles_keys(self):
+        t = FakeTable()
+        pages = [{"Items": [{"pk": "USER#b"}], "LastEvaluatedKey": {"pk": "USER#b"}}, {"Items": [{"pk": "USER#a"}]}]
+        t.scan = lambda **kw: t.calls.append(("scan", kw)) or pages[len(t.calls) - 1]
+        self.assertEqual(Store(t).user_ids(), ["a", "b"])
+        self.assertEqual(t.calls[0][1], {"FilterExpression": "sk = :p", "ProjectionExpression": "pk",
+                                         "ExpressionAttributeValues": {":p": "PROFILE"}})
+        self.assertEqual(t.calls[1][1]["ExclusiveStartKey"], {"pk": "USER#b"})
+
+
 class CostCeilings(unittest.TestCase):
     # The exact table calls added for the 2026-10-09 cost ceilings.
 

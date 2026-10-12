@@ -12,6 +12,9 @@
 #    of origin/main as last fetched.
 # 1. Package src/ (standard library only, nothing to install) and upload it
 #    to the code bucket, keyed by content hash. The bucket refuses plain HTTP.
+#    Then the Pillow layer for thumbnails (thumbs.py): the one wheel pinned
+#    in layers/pillow.txt, checked against its hash and unpacked, built and
+#    uploaded once per pin.
 # 2. Deploy infra/template.yaml as stack yvn-release-notes.
 # 3. Make the stack's receipt rule set the account's active one. SES allows
 #    one active set per region; refuse rather than replace someone else's.
@@ -94,6 +97,16 @@ WEB="$BUILD/repo/dist/web"
 (cd src && find release_notes -name '*.py' | sort | TZ=UTC zip -q -X -D "$BUILD/code.zip" -@)
 KEY="code/$(shasum -a 256 "$BUILD/code.zip" | cut -c1-16).zip"
 aws s3 cp "$BUILD/code.zip" "s3://$CODE_BUCKET/$KEY" --only-show-errors
+LAYER_KEY="code/layers/pillow-$(shasum -a 256 layers/pillow.txt | cut -c1-16).zip"
+if ! aws s3api head-object --bucket "$CODE_BUCKET" --key "$LAYER_KEY" >/dev/null 2>&1; then
+  python3 -m pip download --quiet --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes \
+    --platform manylinux_2_28_aarch64 --python-version 3.13 --implementation cp -r layers/pillow.txt -d "$BUILD/wheels" \
+    || { echo "Pillow layer download failed; not deploying" >&2; exit 1; }
+  mkdir -p "$BUILD/layer/python"
+  python3 -m zipfile -e "$BUILD"/wheels/*.whl "$BUILD/layer/python"
+  (cd "$BUILD/layer" && find python | sort | TZ=UTC zip -q -X -D "$BUILD/pillow.zip" -@)
+  aws s3 cp "$BUILD/pillow.zip" "s3://$CODE_BUCKET/$LAYER_KEY" --only-show-errors
+fi
 
 WEB_DOMAIN=notes.yourversionnumber.com
 WEB_CERT=$(aws acm list-certificates --certificate-statuses ISSUED \
@@ -108,7 +121,7 @@ aws cloudformation deploy \
   --s3-bucket "$CODE_BUCKET" --s3-prefix code/templates \
   --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset \
-  --parameter-overrides "CodeBucket=$CODE_BUCKET" "CodeKey=$KEY" "WebDomain=$WEB_DOMAIN" "WebCertificateArn=$WEB_CERT" \
+  --parameter-overrides "CodeBucket=$CODE_BUCKET" "CodeKey=$KEY" "PillowLayerKey=$LAYER_KEY" "WebDomain=$WEB_DOMAIN" "WebCertificateArn=$WEB_CERT" \
   --tags Application=YourVersionNumber Project=yvn-release-notes ManagedBy=cloudformation \
          Environment=production Repository=jthingelstad/yvn-release-notes
 

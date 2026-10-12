@@ -13,6 +13,12 @@ search results"); it is not shown anywhere else on the page. In the zip it
 is the Markdown's alt text and on the JSON's file entry. The settings copy
 says the photos go to "an AI", without naming it.
 
+This function also makes every photo's thumbnail (thumbs.py), for every
+subscriber: a smaller copy is not processing by a model, and this is the
+one function the stream already brings photos to. Thumbnails come first,
+then descriptions for those who turned them on. Its `{"thumbs_all": ...}`
+invocation is the one-off pass over photos already kept.
+
 Two ways in, one function:
 
 1. The table's stream (as transcribe.py reads it): a note written with
@@ -63,7 +69,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-from . import media
+from . import media, thumbs
 from .store import Store
 from .transcribe import plain
 
@@ -197,13 +203,20 @@ def wanted(store, user_id: str) -> bool:
     return bool((store.profile(user_id) or {}).get("describe"))
 
 
-def changed(record: dict, *, store, s3, claude, lam, bucket: str, cache: dict) -> int:
+def changed(record: dict, *, store, s3, claude, lam, bucket: str, cache: dict, maker=None) -> int:
     images = record.get("dynamodb", {})
     new = {k: plain(v) for k, v in images.get("NewImage", {}).items()}
     old = {k: plain(v) for k, v in images.get("OldImage", {}).items()}
     if not str(new.get("pk", "")).startswith("USER#"):
         return 0
     user_id = new["pk"][5:]
+    if maker and str(new.get("sk", "")).startswith("NOTE#") and thumbs.waiting(new):
+        # Everyone's, first: the stream carries this function's own writes,
+        # so what is still waiting is read afresh.
+        _, day, note_id = new["sk"].split("#", 2)
+        if (note := store.note(user_id, day, note_id)) and thumbs.waiting(note):
+            made = thumbs.thumbnail(note, user_id, store=store, s3=s3, bucket=bucket, maker=maker)
+            log(event="thumbs", user=user_id, photos=made)
     if new.get("sk") == "PROFILE":
         if new.get("describe") and not old.get("describe"):
             # Just turned on: everything already kept, in passes of its own.
@@ -286,9 +299,22 @@ def check(claude) -> dict:
         return {"ok": False, "status": e.status, "error": e.kind, "about_image": e.about_image}
 
 
-def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secrets=None):
+def pillow():
+    """thumbs.make if Pillow is here (the function's layer), else None:
+    without it, photos wait for their thumbnails rather than being marked
+    as having none."""
+    try:
+        import PIL  # noqa: F401
+    except ImportError:
+        log(event="thumbs", outcome="no-pillow")
+        return None
+    return thumbs.make
+
+
+def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secrets=None, maker=None):
     """`claude` is a Messages API call (claude_with); left out, it is made
-    from the secret's key, read once a run and only when a photo needs it."""
+    from the secret's key, read once a run and only when a photo needs it.
+    `maker` makes a thumbnail (thumbs.make, when Pillow is here)."""
     if store is None or s3 is None or lam is None or (claude is None and secrets is None):
         import boto3
 
@@ -313,6 +339,17 @@ def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secre
             result = {"ok": False, "error": "no-key"}
         log(event="describe-check", ok=result["ok"], **{k: v for k, v in result.items() if k not in ("ok", "words")})
         return result
+    if "thumbs_all" in event:
+        users = store.user_ids() if event["thumbs_all"] == "*" else event["thumbs_all"]
+        users = [users] if isinstance(users, str) else list(users)
+        dry_run = bool(event.get("dry_run"))
+        maker = maker or (None if dry_run else pillow())
+        if not (dry_run or maker):
+            return {"error": "no-pillow"}
+        started = time.monotonic()
+        limit = context.get_remaining_time_in_millis() / 1000 if context else 900
+        return thumbs.thumbs_all(users, store=store, s3=s3, lam=lam, bucket=bucket, dry_run=dry_run, maker=maker,
+                                 time_left=lambda: limit - (time.monotonic() - started))
     try:
         if "describe_all" in event:
             started = time.monotonic()
@@ -321,8 +358,11 @@ def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secre
                          time_left=lambda: limit - (time.monotonic() - started), chain=event.get("chain"))
             return
         cache = {}
-        for record in event.get("Records", []):
-            changed(record, store=store, s3=s3, claude=ask, lam=lam, bucket=bucket, cache=cache)
+        records = event.get("Records", [])
+        maker = maker or (pillow() if any("NOTE#" in json.dumps(r.get("dynamodb", {}).get("Keys", {})) for r in records)
+                          else None)
+        for record in records:
+            changed(record, store=store, s3=s3, claude=ask, lam=lam, bucket=bucket, cache=cache, maker=maker)
     except NoKey:
         # Photos stay waiting; turning the setting off and on again, or a
         # new photo, picks them up once the key is in.

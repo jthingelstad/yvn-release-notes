@@ -1,0 +1,6 @@
+# The Pillow layer for thumbnails (thumbs.py), built by deploy.sh: this one
+# wheel, for the functions' runtime (CPython 3.13, arm64, manylinux), checked
+# against its hash. Pillow has no Python dependencies. Dependabot cannot see
+# this file: bump it by hand (PyPI's latest, its hash from PyPI's page for
+# this exact wheel), after a local run of tests/test_thumbs.py with it.
+pillow==12.3.0 --hash=sha256:f7401aebd7f581d7f83a439d87d474999317ee099218e5ad25d125290990ba65

@@ -253,6 +253,16 @@ class MediaTest(NotesCase):
                          [{"n": 1, "kind": "file", "type": "application/pdf", "name": "Menu.pdf",
                            "url": "/dev-media/media/u1/2026-10-06/d1-A/1.pdf"}])
 
+    def test_a_photo_with_a_thumbnail_answers_its_link_too(self):
+        photo = {"n": 1, "kind": "image", "type": "image/jpeg", "size": 9, "key": "media/u1/2026-10-06/w-1/1.jpg",
+                 "thumb": {"key": "media/u1/2026-10-06/w-1/1.thumb.jpg", "size": 5, "width": 640, "height": 480}}
+        self.store.add_note("u1", "2026-10-06", "w-1", text="Dinner.", media=[photo])
+        _, day = self.get("/api/days/2026-10-06")
+        shown = day["notes"][0]["media"][0]
+        self.assertEqual((shown["url"], shown["thumb"]), ("/dev-media/media/u1/2026-10-06/w-1/1.jpg",
+                                                          "/dev-media/media/u1/2026-10-06/w-1/1.thumb.jpg"))
+        self.assertNotIn("'key'", str(day))
+
     def test_a_file_is_a_short_lived_redirect_for_its_owner(self):
         r, _ = self.file(1)
         self.assertEqual(r["statusCode"], 302)

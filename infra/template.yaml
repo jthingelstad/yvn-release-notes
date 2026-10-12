@@ -6,6 +6,9 @@ Parameters:
     Type: String
   CodeKey:
     Type: String
+  PillowLayerKey:
+    Type: String
+    Description: The Pillow layer's zip in the code bucket (deploy.sh builds it from layers/pillow.txt). Only the describe function, which makes thumbnails (thumbs.py), uses it.
   Domain:
     Type: String
     Default: yourversionnumber.com
@@ -315,6 +318,11 @@ Resources:
                       - !Ref FromAddress
                       - !Sub "*<${FromAddress}>"
               - Effect: Allow
+                # Photos in the email: their thumbnails only (thumbs.py),
+                # never an original.
+                Action: s3:GetObject
+                Resource: !Sub "${MailBucket.Arn}/media/*.thumb.jpg"
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt SenderLogs.Arn
 
@@ -380,6 +388,7 @@ Resources:
           FROM_ADDRESS: !Ref FromAddress
           INBOUND_DOMAIN: !Ref InboundDomain
           CONFIG_SET: !Ref ConfigurationSet
+          BUCKET: !Ref MailBucket
 
   InboundFunction:
     Type: AWS::Lambda::Function
@@ -1128,10 +1137,22 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt TranscribeDone.Arn
 
-  # --- photo descriptions --------------------------------------------------------
-  # describe.py: Claude, through the Anthropic API, describes each photo, for subscribers who
+  # --- photos: thumbnails and descriptions ---------------------------------------
+  # describe.py: every photo's thumbnail (thumbs.py, for everyone), then
+  # Claude, through the Anthropic API, describes each photo, for subscribers who
   # turned it on, from the same stream; turning it on starts a pass over
   # every photo already kept, which hands on to a new pass near its limit.
+  # One function for both: a third reader of the stream would pass the
+  # two readers a shard DynamoDB Streams allows without throttling.
+
+  PillowLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub "${AWS::StackName}-pillow"
+      Description: Pillow, pinned in layers/pillow.txt, for thumbnails (thumbs.py)
+      CompatibleRuntimes: [python3.13]
+      CompatibleArchitectures: [arm64]
+      Content: { S3Bucket: !Ref CodeBucket, S3Key: !Ref PillowLayerKey }
 
   DescribeLogs:
     Type: AWS::Logs::LogGroup
@@ -1154,7 +1175,8 @@ Resources:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem]
+                # Scan: the one-off thumbnail pass over everyone, profiles' keys only.
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem, dynamodb:Scan]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
                 Action: [dynamodb:DescribeStream, dynamodb:GetRecords, dynamodb:GetShardIterator]
@@ -1165,6 +1187,11 @@ Resources:
               - Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub "${MailBucket.Arn}/media/*"
+              - Effect: Allow
+                # Each photo's thumbnail, beside it, and taking one back
+                # when its note went meanwhile (thumbs.py).
+                Action: [s3:PutObject, s3:DeleteObject]
+                Resource: !Sub "${MailBucket.Arn}/media/*.thumb.jpg"
               - Effect: Allow
                 # The Anthropic API key. The secret is made by hand outside
                 # the stack (its value never passes through a template);
@@ -1188,13 +1215,15 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-describe"
-      Description: Describes photos in words for subscribers who turned it on
+      Description: Makes photo thumbnails, and describes photos in words for subscribers who turned it on
       Runtime: python3.13
       Architectures: [arm64]
       Handler: release_notes.describe.handler
       Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Layers: [!Ref PillowLayer]
       Role: !GetAtt DescribeRole.Arn
-      MemorySize: 512
+      # Decoding a phone's photo for its thumbnail; more memory is more CPU too.
+      MemorySize: 1024
       Timeout: 900
       # A ceiling on photos going to the model at once: a pass and a stream
       # batch, say. A throttled stream batch waits and is tried again

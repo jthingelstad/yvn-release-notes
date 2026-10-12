@@ -66,6 +66,9 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
   reused for 5), for their owner only (`media.py`). They come from emailed
   replies, web uploads and imports; any channel may bring them (Jamie,
   2026-10-09).
+- A photo with a thumbnail (`thumbs.py`) also answers `thumb`, a signed
+  link to it. The Timeline, Search and tag lists show the thumbnail and
+  open the original on a tap; a Day and Today show the original.
 - A link in a note shows by name: the words you linked, or the page's
   title, fetched once when the note is saved (`links.py` has the
   guards). The text keeps the address as written, and the exports carry

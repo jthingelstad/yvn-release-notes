@@ -22,6 +22,14 @@ through; the note index says whether there are any, so a day without
 costs no read. A dry run reports those days, whether yesterday shows and
 its files, and the note count, never the text.
 
+Photos go in the email inside the message (compose.py): the thumbnails
+(thumbs.py) of Yesterday's photos first, then each "On this day" day's,
+up to compose's limits, read from the bucket only once chosen. The
+function may read thumbnails and nothing else there (its role names
+`*.thumb.jpg`). A photo whose thumbnail cannot be read is left out; any
+other failure leaves them all out, never the email. A dry run reads them
+too, and reports how many and their bytes.
+
 A paused subscriber gets nothing on the days of the pause (pause_from through
 pause_through, in their own zone), send_now included.
 
@@ -35,12 +43,14 @@ fails, the email goes without, and so does the rest of that run's mail
 import json
 import os
 import time as time_module
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta, timezone
+from email.utils import make_msgid
 from zoneinfo import ZoneInfo
 
 from . import census, media, tags, weather
-from .compose import (MAIL_TAG, SHOWN, Lifetime, OnThisDay, PastDay, Yesterday, build_message, from_header,
-                      new_token, welcome_line)
+from .compose import (MAIL_TAG, PHOTO_BYTES, PHOTOS_A_DAY, PHOTOS_AN_EMAIL, SHOWN, Inline, Lifetime, OnThisDay,
+                      PastDay, Yesterday, build_message, from_header, new_token, welcome_line)
 from .notes import combine, day_links, map_url, place_label, written_at
 from .store import Store, Subscriber
 from .streak import Streak, compute_streak, pause_days
@@ -121,7 +131,7 @@ def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> 
         # PDF, a video): the block is there to say it came through.
         text = combine(notes)
         return Yesterday(then, text, day_links(notes), media.counts(notes), tuple(tags.found(text)),
-                         sum(media.others(n) for n in notes), places_of(notes))
+                         sum(media.others(n) for n in notes), places=places_of(notes), thumbs=thumbs_of(sub, notes))
     except Exception as e:
         log(event="yesterday-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
         return None
@@ -139,6 +149,58 @@ def places_of(notes: list[dict]) -> tuple[tuple[str, str | None], ...]:
     return tuple(out)
 
 
+def thumbs_of(sub: Subscriber, notes: list[dict]) -> tuple[dict, ...]:
+    """The day's photos that have a thumbnail under the subscriber's own
+    prefix, in order, with their alt text: the description only for a
+    subscriber who turned descriptions on."""
+    out = []
+    for note in notes:
+        for m in note.get("media") or []:
+            t = m.get("thumb") or {}
+            if m.get("kind") == "image" and str(t.get("key", "")).startswith(f"media/{sub.user_id}/"):
+                out.append({"key": str(t["key"]), "size": int(t.get("size") or 0), "width": int(t.get("width") or 0),
+                            "height": int(t.get("height") or 0),
+                            "alt": (str(m.get("description") or "") if sub.describe else "") or "Photo"})
+    return tuple(out)
+
+
+def with_photos(sub: Subscriber, day: date, yesterday: Yesterday | None, past: OnThisDay | None, s3):
+    """Choose the email's photos, Yesterday's first, and read them. Returns
+    the blocks with their photos and {cid: bytes}. On any failure, none."""
+    if not any(b.thumbs for b in ([yesterday] if yesterday else []) + (list(past.shown) if past else [])):
+        return yesterday, past, {}
+    images, domain = {}, os.environ["FROM_ADDRESS"].split("@", 1)[1]
+
+    def take(block):
+        chosen = []
+        for t in block.thumbs:
+            if len(chosen) == PHOTOS_A_DAY or len(images) == PHOTOS_AN_EMAIL:
+                break
+            if sum(map(len, images.values())) + t["size"] > PHOTO_BYTES:
+                break
+            try:
+                data = s3().get_object(Bucket=os.environ["BUCKET"], Key=t["key"])["Body"].read()
+            except Exception as e:
+                if ((getattr(e, "response", None) or {}).get("Error") or {}).get("Code") != "NoSuchKey":
+                    raise
+                log(event="photo-missing", user=sub.user_id, date=day.isoformat())
+                continue
+            cid = make_msgid("photo", domain)[1:-1]
+            images[cid] = data
+            chosen.append(Inline(cid, t["alt"], t["width"], t["height"]))
+        return replace(block, photos=tuple(chosen))
+
+    try:
+        yesterday = take(yesterday) if yesterday else None
+        past = replace(past, shown=tuple(take(p) for p in past.shown)) if past else None
+        return yesterday, past, images
+    except Exception as e:
+        log(event="photos-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
+        strip = lambda b: replace(b, photos=())  # noqa: E731
+        return (strip(yesterday) if yesterday else None,
+                replace(past, shown=tuple(strip(p) for p in past.shown)) if past else None, {})
+
+
 def read_on_this_day(store: Store, sub: Subscriber, day: date, have: set[str]) -> OnThisDay | None:
     try:
         found = [d for d in same_day_before(sub.birthday, day) if d.isoformat() in have]
@@ -150,7 +212,7 @@ def read_on_this_day(store: Store, sub: Subscriber, day: date, have: set[str]) -
                 continue
             kept = store.weather_between(sub.user_id, then.isoformat(), then.isoformat()).get(then.isoformat())
             sky = weather.day_line(kept, weather.fahrenheit(sub.place or kept)) if kept else None
-            shown.append(PastDay(then, text, day_links(notes), files, sky, tuple(tags.found(text))))
+            shown.append(PastDay(then, text, day_links(notes), files, sky, tuple(tags.found(text)), thumbs_of(sub, notes)))
         if not shown:
             return None
         return OnThisDay(tuple(shown), tuple(found[SHOWN:]))
@@ -199,7 +261,7 @@ def one_run(fetch, budget=WEATHER_BUDGET, timer=time_module.monotonic):
     return call
 
 
-def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_now, fetch=None):
+def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_now, fetch=None, s3=None):
     event = event or {}
     dry_run = bool(event.get("dry_run"))
     if event.get("now") and not dry_run:
@@ -215,6 +277,17 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
         import boto3
 
         ses = boto3.client("sesv2")
+    made = {}
+
+    def bucket():
+        # Made only when an email has a photo to read.
+        if s3 is not None:
+            return s3
+        if "s3" not in made:
+            import boto3
+
+            made["s3"] = boto3.client("s3")
+        return made["s3"]
 
     if send_now:
         sub = store.get_subscriber(send_now)
@@ -248,6 +321,7 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
         if dry_run:
             streak = read_streak(store, sub.user_id, here.date())
             past, life, yesterday = read_history(store, sub, here.date())
+            yesterday, past, images = with_photos(sub, here.date(), yesterday, past, bucket)
             forecast = read_weather(store, sub, here.date(), fetch, False, clock)
             results.append(
                 {
@@ -264,12 +338,14 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
                     "yesterday_files": {**{k: n for k, n in (yesterday.files or {}).items() if n},
                                         **({"others": yesterday.others} if yesterday.others else {})} if yesterday else {},
                     "notes": life.notes if life else None,
+                    "photos": len(images),
+                    "photo_bytes": sum(map(len, images.values())),
                     "forecast": bool(forecast),
                 }
             )
             continue
         try:
-            results.append(send_one(store, ses, sub, day, v, clock, fetch))
+            results.append(send_one(store, ses, sub, day, v, clock, fetch, bucket))
         except Exception:
             # One bad address must not hold up everyone else. The run still
             # fails at the end so the Errors alarm sees it.
@@ -294,12 +370,14 @@ def report(store: Store, now: datetime, context) -> None:
         log(event="census-error", error=type(e).__name__)
 
 
-def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None) -> dict:
+def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None, bucket=None) -> dict:
     previous = sub.last_sent_date
     # The slow parts come before the claim, so a run that times out in them
     # has claimed nothing and the next run sends this one.
     streak = read_streak(store, sub.user_id, date.fromisoformat(day))
     past, life, yesterday = read_history(store, sub, date.fromisoformat(day))
+    yesterday, past, images = with_photos(sub, date.fromisoformat(day), yesterday, past, bucket) if bucket \
+        else (yesterday, past, {})
     forecast = read_weather(store, sub, date.fromisoformat(day), fetch or weather.fetch_morning, True, clock)
     if not store.claim_day(sub.user_id, day):
         log(event="skip", user=sub.user_id, date=day, reason="already-claimed")
@@ -319,6 +397,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None)
             past=past,
             lifetime=life,
             yesterday=yesterday,
+            images=images,
             forecast=forecast,
             # Nothing sent before means this is the one sign-up sends.
             welcome=welcome_line(sub.send_time, os.environ["FROM_ADDRESS"]) if previous is None else None,

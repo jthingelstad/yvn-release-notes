@@ -11,6 +11,9 @@ export interface Media {
   name?: string;
   // A link signed for this subscriber, good for ten minutes at least.
   url?: string;
+  // A photo's small copy (thumbs.py), signed the same way: what the lists
+  // show; `url` is the original, opened on a tap.
+  thumb?: string;
   transcript?: string;
   description?: string;
   writing?: boolean;

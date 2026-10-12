@@ -41,7 +41,7 @@ function NoteParts({ day, n, tz, mark }: { day: Day; n: Day['notes'][number]; tz
   return (
     <>
       <NoteBody n={n} mark={mark} />
-      <NoteMedia day={day.date} n={n} version={day.version} mark={mark} />
+      <NoteMedia day={day.date} n={n} version={day.version} mark={mark} small />
       <NoteMeta n={n} tz={tz} cls="count" />
     </>
   );

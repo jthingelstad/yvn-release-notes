@@ -70,7 +70,8 @@ Where things are (each module's docstring is its design):
   sessions, limits), `export.py` (JSON and Markdown), `export_job.py` (the
   zip). `web/` is the React app (`docs/WEB-APP.md`, Front end); its Home
   Screen icons are drawn by `scripts/make_icons.mjs`.
-- Opt-in processing: `transcribe.py`, `describe.py`.
+- Opt-in processing: `transcribe.py`, `describe.py`. Thumbnails, for
+  everyone: `thumbs.py`, run by the describe function.
 - Imports: `dayone.py` (plans), `importer.py` (writes).
 - `store.py`: the one table. `census.py`: the dashboard's counts.
 - `version.py`: the version arithmetic, ported from the site's
@@ -88,6 +89,13 @@ comes from the Lambda runtime and is imported lazily so the tests run
 without it. Python stays the language for the web API too (decided
 2026-10-08): one language, one copy of the version arithmetic, nothing to
 install. The front end is React and TypeScript (decided 2026-10-09).
+The one exception (decided 2026-10-12, for photos in the email) is
+Pillow, in `thumbs.py` only, imported when a thumbnail is made, and only
+in the describe function, through a Lambda layer `deploy.sh` builds from
+the wheel pinned with its hash in `layers/pillow.txt`. Nothing else
+imports it, and nothing in the web or inbound path waits on it. To bump
+it, change the version and hash there together (check the hash against
+PyPI); the layer's key is the file's hash, so the next deploy builds it.
 
 `tests/fakes.py` is an in-memory table, SES, S3 and Lambda for the web
 tests, also used by `scripts/dev_server.py`. The fakes do not check
@@ -177,6 +185,10 @@ failed on live until 2026-10-08 because of it).
   the profile). The API key is `api_key` in the secret
   `yvn-release-notes-anthropic`, made by hand outside the stack. Jamie
   keeps its value; agents never read it. `describe.py` has the rest.
+- **Thumbnails** (Jamie, 2026-10-12: photos in the email) are made for
+  every photo, opted in or not, once, when it is filed: about 640px, a
+  JPEG under 80 KB, beside the original, with no EXIF or GPS. The email
+  reads only these, never an original. `thumbs.py` has the rest.
 - **Day One imports are planned before anything is written** (Jamie,
   2026-10-09: "keep it to dry-run"). `scripts/import_dayone.py EMAIL
   ZIP...` prints what an import would do, as counts (`--plan-out` to a
@@ -251,6 +263,12 @@ failed on live until 2026-10-08 because of it).
   as one short line. A day with no notes has no block (a missed day is never
   called out). It costs one read, only when the note index says yesterday
   has notes. `compose.py` has the layout.
+- **Photos in the email** (Jamie, 2026-10-12) travel inside the message
+  as inline parts (`multipart/related`, `cid:`), never a link to the
+  bucket: the thumbnails only, at most 4 a day block, 6 an email and about
+  400 KB, Yesterday first; the rest stay "See N photos". The alt text is
+  the photo's description only for a subscriber who turned descriptions
+  on. Any failure sends the email without photos.
 - **On this day** (Jamie, 2026-10-09, option A of the design session):
   the notes from the same patch number in every
   earlier release, by version, not calendar, with their tags (Jamie:
@@ -388,6 +406,10 @@ failed on live until 2026-10-08 because of it).
 - The fill-in scripts for notes from before a feature
   (`scripts/extract_media.py`, `fill_link_titles.py`, `fill_weather.py`)
   take `EMAIL [--dry-run]`; run the dry run first.
+- Thumbnails for photos kept before they existed: invoke the describe
+  function with `{"thumbs_all": "*", "dry_run": true}` (or one user id)
+  to count them; the real run (no `dry_run`) needs Jamie's go. It hands
+  itself on near its time limit and skips any photo that has one.
 - One row per subscriber (address, state, sign-up day, send time, last
   email, last note, notes, 30-day reply rate): `scripts/subscribers.py`.
   Reads keys and a few fields, never note text. It prints addresses, so

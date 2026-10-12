@@ -47,8 +47,9 @@ describe photos.
   a missed day starts the count over and the email shows your longest
   instead.
 - **Photos and voice memos.** Send them by reply or add them on the web,
-  and they are kept with that day's notes, shown only to you. Other email
-  attachments stay in the original message, which is kept too.
+  and they are kept with that day's notes, shown only to you. Small copies
+  of your photos come back inside your morning email, never as a link.
+  Other email attachments stay in the original message, which is kept too.
 - **Tags and search.** Hashtags in a note are its tags; every tag has its
   page, and search finds words across every note.
 - **Opt-in extras.** Recordings written out (Amazon Transcribe) and photos

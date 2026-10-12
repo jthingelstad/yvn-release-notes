@@ -88,10 +88,9 @@ export function DayWhere({ day, where }: { day: string; where?: string }) {
       const r = await api(method, `/api/days/${day}/place`, place ? { place } : undefined);
       if (!r.ok) return problem.show(r.data, input.current);
       setOpen(false);
-      await Promise.all([
-        client.invalidateQueries({ queryKey: ['day', day] }),
-        client.invalidateQueries({ queryKey: ['today'] })
-      ]);
+      // Everything, as a note's change does: the Timeline, search and
+      // the export show the day's place or its weather too.
+      await client.invalidateQueries();
     });
 
   return (

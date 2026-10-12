@@ -15,7 +15,8 @@ longest side is under MIN_SIDE pixels (read from its header, standard
 library only) is left out, and one whose size cannot be read is kept only
 if it is big enough to be a photo. So is a file whose first bytes are not
 the photo or recording it claims to be (looks_like, as for uploads): its
-attachment entry is marked `refused`.
+attachment entry is marked `refused`. So is a photo or recording past the
+first MAX_FILES of a reply, which stays in the raw message only.
 
 On the web (Jamie, 2026-10-09: "add a file to an entry via the web ...
 image, audio, PDF"), the browser sends each file straight to the bucket,
@@ -199,7 +200,7 @@ def found(msg, refused: list[int] | None = None) -> list[tuple[str, bytes]]:
     sender wrote. One that is not what it says stays in the raw message
     only: its place in parse.attachments' list goes in `refused`, and
     inbound marks that entry so it shows as "in the original email"
-    (others)."""
+    (others). So does each one past the first MAX_FILES."""
     out = []
     n = -1  # the part's place in parse.attachments, which skips the same parts
     for part in msg.walk():
@@ -211,6 +212,10 @@ def found(msg, refused: list[int] | None = None) -> list[tuple[str, bytes]]:
         ctype = media_type(part.get_content_type(), part.get_filename() or "")
         if not ctype:
             continue
+        if len(out) == MAX_FILES:
+            if refused is not None:
+                refused.append(n)
+            continue
         data = part.get_payload(decode=True) or b""
         if not looks_like(ctype, data[:HEAD]):
             if refused is not None:
@@ -218,8 +223,6 @@ def found(msg, refused: list[int] | None = None) -> list[tuple[str, bytes]]:
             continue
         if worth_keeping(ctype, data):
             out.append((ctype, data))
-        if len(out) == MAX_FILES:
-            break
     return out
 
 
@@ -254,7 +257,7 @@ def counts(notes: list[dict]) -> dict[str, int]:
 
 def others(note: dict) -> int:
     """Attachments the app does not show (video, PDFs and the like, and a
-    photo or recording whose bytes were not what it said, marked `refused`):
-    still in the original email."""
+    photo or recording marked `refused`: its bytes were not what it said,
+    or it came past MAX_FILES): still in the original email."""
     return sum(1 for a in note.get("attachments") or []
                if a.get("refused") or not media_type(a.get("content_type", ""), a.get("filename", "")))

@@ -337,7 +337,7 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None, mailer=None) -> tup
         return "ignored", {"reason": "unparseable", "user": sub.user_id, "error": type(e).__name__}
     for n in refused:
         if n < len(files):
-            files[n]["refused"] = True  # not what it said: in the original email only
+            files[n]["refused"] = True  # not what it said, or past MAX_FILES: in the original email only
     if not text and not files:
         return "ignored", {"reason": "empty", "user": sub.user_id}
 

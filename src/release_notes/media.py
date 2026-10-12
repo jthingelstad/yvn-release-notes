@@ -200,7 +200,8 @@ def found(msg, refused: list[int] | None = None) -> list[tuple[str, bytes]]:
     sender wrote. One that is not what it says stays in the raw message
     only: its place in parse.attachments' list goes in `refused`, and
     inbound marks that entry so it shows as "in the original email"
-    (others). So does each one past the first MAX_FILES."""
+    (others). So does each one worth keeping past the first MAX_FILES
+    (a signature logo is still nothing)."""
     out = []
     n = -1  # the part's place in parse.attachments, which skips the same parts
     for part in msg.walk():
@@ -212,17 +213,17 @@ def found(msg, refused: list[int] | None = None) -> list[tuple[str, bytes]]:
         ctype = media_type(part.get_content_type(), part.get_filename() or "")
         if not ctype:
             continue
-        if len(out) == MAX_FILES:
-            if refused is not None:
-                refused.append(n)
-            continue
         data = part.get_payload(decode=True) or b""
         if not looks_like(ctype, data[:HEAD]):
             if refused is not None:
                 refused.append(n)
             continue
-        if worth_keeping(ctype, data):
+        if not worth_keeping(ctype, data):
+            continue
+        if len(out) < MAX_FILES:
             out.append((ctype, data))
+        elif refused is not None:
+            refused.append(n)  # one too many: in the original email only
     return out
 
 

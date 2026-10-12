@@ -221,6 +221,24 @@ class WebTest(NotesCase):
         self.assertEqual(len(self.sky.urls), 3)
         self.assertNotIn("Duluth", self.out.getvalue())
 
+    def test_deleting_the_note_that_placed_the_day_takes_its_weather_home(self):
+        r, note = self.call("POST", "/api/days/2026-09-12/notes", {"text": "Up north.", "place": DULUTH},
+                            cookies=self.cookies)
+        self.call("DELETE", f"/api/days/2026-09-12/notes/{note['id']}", cookies=self.cookies)
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
+        self.assertNotIn("Duluth", self.out.getvalue())
+
+    def test_weather_for_a_place_cleared_goes_when_home_has_none(self):
+        self.add("2026-09-12", "Backfilled.")
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        self.sky = Fetcher(answer(("2026-01-01", 61, 18.3, 9.0)))  # no reading for the day
+        r, body = self.call("DELETE", "/api/days/2026-09-12/place", cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body), (200, {"date": "2026-09-12"}))
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12"), {})
+        self.sky = Fetcher(answer(("2026-09-12", 61, 18.3, 9.0)))
+        self.add("2026-09-12", "Again.")  # the next note fetches it again, for home
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
+
     def test_a_place_for_today_waits_and_a_bad_one_is_refused(self):
         r, body = self.call("PUT", "/api/days/2026-10-08/place", {"place": DULUTH}, cookies=self.cookies)
         self.assertEqual((r["statusCode"], body["where"], self.sky.urls), (200, "Duluth, Minnesota", []))

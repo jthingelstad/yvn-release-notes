@@ -476,6 +476,17 @@ class WebTest(WebCase):
                                            "lon": -92.11}])
         self.assertIn("At Duluth, Minnesota; Cabin.\n\nLake.", export.markdown(data))
 
+    def test_export_shows_a_day_with_only_a_place(self):
+        items = [
+            {"sk": "PROFILE", "birthday": "1981-06-14"},
+            {"pk": "USER#u1", "sk": "PLACE#2026-10-05", "city": "Duluth", "region": "Minnesota"},
+            {"sk": "NOTE#2026-10-06#w-1", "text": "Lake.", "written_at": "2026-10-06T12:00:00Z"},
+        ]
+        md = export.markdown(export.build(items, "2026-10-08T00:00:00Z"))
+        self.assertIn("## 4.5.113 · Monday, October 5, 2026\n\nAt Duluth, Minnesota.\n\n## 4.5.114", md)
+        self.assertNotIn("No notes yet", md)
+        self.assertNotIn("Attachments only", md)
+
     def test_export_with_no_notes(self):
         md = export.markdown(export.build([{"sk": "PROFILE", "birthday": "1981-06-14"}], "2026-10-08T00:00:00Z"))
         self.assertIn("No notes yet.", md)

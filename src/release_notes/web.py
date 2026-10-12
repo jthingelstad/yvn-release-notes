@@ -986,6 +986,9 @@ def delete_note(app: App, req: Request, value: str, note_id: str) -> dict:
     for key in ([raw] if raw.startswith("raw/") else []) + media.keys(note):
         app.s3.delete_object(Bucket=os.environ["MAIL_BUCKET"], Key=key)
     app.store.delete_note(user_id, day, note_id)
+    if note.get("place"):
+        # The day's weather may have been for this note's place.
+        keep_weather(app, user_id, p, date.fromisoformat(day), changed=True)
     # A thumbnail (thumbs.py) made while this ran was listed on the note
     # before the note went (after, its maker deletes it), so with the note
     # gone its key is cleared once more.

@@ -1178,8 +1178,11 @@ Resources:
               - Effect: Allow
                 # Scan: the one-off thumbnail pass over everyone, profiles' keys only.
                 # PutItem: a past day's weather, kept again where a photo
-                # says the day was (weather.keep_day).
-                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem, dynamodb:PutItem, dynamodb:Scan]
+                # says the day was (weather.keep_day). DeleteItem: that
+                # day's weather for another place, when none can be had
+                # for the photo's.
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem, dynamodb:PutItem, dynamodb:DeleteItem,
+                         dynamodb:Scan]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
                 Action: [dynamodb:DescribeStream, dynamodb:GetRecords, dynamodb:GetShardIterator]

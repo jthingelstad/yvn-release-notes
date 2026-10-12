@@ -404,6 +404,21 @@ class Places(unittest.TestCase):
             ("delete_item", {"Key": self.KEY}),
         ])
 
+    def test_read_just_after_a_write_is_consistent(self):
+        # weather.keep_day reads the place and the notes just written.
+        t = FakeTable()
+        store = Store(t)
+        store.day_place("u1", "2026-10-07", consistent=True)
+        store.notes_between("u1", "2026-10-07", "2026-10-07", ConsistentRead=True)
+        self.assertEqual(t.calls[0], ("get_item", {"Key": self.KEY, "ConsistentRead": True}))
+        self.assertEqual(t.calls[1][0], "query")
+        self.assertTrue(t.calls[1][1]["ConsistentRead"])
+
+    def test_weather_for_a_place_gone_is_dropped(self):
+        t = FakeTable()
+        Store(t).drop_weather("u1", "2026-10-07")
+        self.assertEqual(t.calls, [("delete_item", {"Key": {"pk": "USER#u1", "sk": "WEATHER#2026-10-07"}})])
+
     def test_a_photo_names_a_note_with_no_place_only(self):
         t = FakeTable()
         place = {"city": "Duluth", "lat": 46.786672, "lon": -92.100485, "from": "photo"}

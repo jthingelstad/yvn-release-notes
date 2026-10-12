@@ -137,17 +137,21 @@ def markdown(data: dict) -> str:
     skies = {w["date"]: w for w in data.get("weather", [])}
     spots = {p["date"]: p for p in data.get("places", [])}
     fahrenheit = weather.fahrenheit(profile)
+    born = date.fromisoformat(profile["birthday"]) if profile.get("birthday") else None
     by_day: dict[str, list[dict]] = {}
     for n in data["notes"]:
         by_day.setdefault(n["date"], []).append(n)
+    # A day with a place of its own and no note is a day too.
+    by_day = dict(sorted({**{d: [] for d in spots}, **by_day}.items()))
     if any(d in skies for d in by_day):
         lines += ["", f"{weather.CREDIT} ({weather.CREDIT_URL}), CC BY 4.0."]
-    if not data["notes"]:
+    if not by_day:
         lines += ["", "No notes yet."]
     for day, notes in by_day.items():
         # Links by name, as Markdown links; the raw address stays the target.
         text = combine([{"text": links.markdown(n["text"], n.get("links"))} for n in notes])
-        lines += ["", f"## {notes[0]['version']} · {long_date(day)}"]
+        version = notes[0]["version"] if notes else (str(compute_version(born, date.fromisoformat(day))) if born else "")
+        lines += ["", f"## {version} · {long_date(day)}"]
         if day in skies:
             lines += ["", weather.day_line(skies[day], fahrenheit) + "."]
         own = [spots[day]] if day in spots else []
@@ -156,12 +160,12 @@ def markdown(data: dict) -> str:
         if where:
             lines += ["", "At " + "; ".join(where) + "."]
         shown = [f for n in notes for f in n.get("files", [])]
-        if text or not shown:
+        if notes and (text or not shown):
             lines += ["", text or "(Attachments only. They are in the original email.)"]
         for f in shown:
             # Paths inside the zip, so the Markdown reads with its pictures.
             label = {"image": "Photo", "audio": "Recording"}.get(f["kind"], "File")
-            alt = f"{label}, {notes[0]['version']}"
+            alt = f"{label}, {version}"
             if f.get("description"):  # a photo's alt text, as on the page
                 alt = f["description"].replace("[", "(").replace("]", ")")
             lines += ["", f"{'!' if f['kind'] == 'image' else ''}[{alt}]({f['path']})"]

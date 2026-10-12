@@ -603,6 +603,11 @@ class Store:
         """A day's weather again, for the place it now has (weather.keep_day)."""
         self.table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **numbers(fields)})
 
+    def drop_weather(self, user_id: str, day: str) -> None:
+        """A day's weather, for a place the day no longer has, when none
+        could be had for the place it has now (weather.keep_day)."""
+        self.table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}"})
+
     def weather_between(self, user_id: str, first: str, last: str) -> dict[str, dict]:
         """Day -> its weather, for days first through last."""
         items, kwargs = [], {
@@ -619,8 +624,11 @@ class Store:
 
     # a day's own place --------------------------------------------------------
 
-    def day_place(self, user_id: str, day: str) -> dict | None:
-        return self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"PLACE#{day}"}).get("Item")
+    def day_place(self, user_id: str, day: str, consistent: bool = False) -> dict | None:
+        """A day's own place. `consistent`: read just after a write
+        (weather.keep_day), so the place just set is the one read."""
+        return self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"PLACE#{day}"},
+                                   **({"ConsistentRead": True} if consistent else {})).get("Item")
 
     def set_day_place(self, user_id: str, day: str, place: dict) -> None:
         self.table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"PLACE#{day}", **numbers(place)})

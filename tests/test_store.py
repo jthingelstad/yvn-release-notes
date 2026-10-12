@@ -413,6 +413,10 @@ class Places(unittest.TestCase):
         self.assertEqual(t.calls[0], ("get_item", {"Key": self.KEY, "ConsistentRead": True}))
         self.assertEqual(t.calls[1][0], "query")
         self.assertTrue(t.calls[1][1]["ConsistentRead"])
+        # describe reads a note just given its photo's spot.
+        store.note("u1", "2026-10-07", "w-1", consistent=True)
+        self.assertEqual(t.calls[2], ("get_item", {"Key": {"pk": "USER#u1", "sk": "NOTE#2026-10-07#w-1"},
+                                                   "ConsistentRead": True}))
 
     def test_weather_for_a_place_gone_is_dropped(self):
         t = FakeTable()

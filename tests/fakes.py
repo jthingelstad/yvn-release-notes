@@ -102,7 +102,7 @@ class FakeStore:
                 return dict(i)
         return None
 
-    def note(self, user_id, day, note_id):
+    def note(self, user_id, day, note_id, consistent=False):
         return next((i for i in self.items.get(user_id, []) if i["sk"] == f"NOTE#{day}#{note_id}"), None)
 
     def set_media_text(self, user_id, day, note_id, n, field, text):

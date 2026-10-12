@@ -212,6 +212,16 @@ class Where(Case):
         self.assertNotIn("44.97", logged)
         self.assertIn('"event":"place"', logged)
 
+    def test_the_note_is_read_consistently_before_it_is_named(self):
+        self.keep(photo(1), body=exif_jpeg(tiff()))
+        asked = []
+        note = self.store.note
+        self.store.note = lambda u, d, n, consistent=False: asked.append(consistent) or note(u, d, n)
+        with mock.patch("builtins.print"):
+            self.run_stream({"day": "2026-10-09", "id": "w-1"}, lambda: FakeGeo())
+        self.assertEqual(note("u1", "2026-10-09", "w-1")["place"]["city"], "Duluth")
+        self.assertIn(True, asked)
+
     def test_a_note_with_a_place_keeps_it(self):
         self.keep(photo(1), body=exif_jpeg(tiff()))
         self.store.note("u1", "2026-10-09", "w-1")["place"] = {"city": "Cabin", "from": "chosen"}

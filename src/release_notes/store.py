@@ -201,8 +201,8 @@ class Store:
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
         return sorted(ids)
 
-    def get_subscriber(self, user_id: str) -> Subscriber | None:
-        item = self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": "PROFILE"}).get("Item")
+    def get_subscriber(self, user_id: str, consistent: bool = False) -> Subscriber | None:
+        item = self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": "PROFILE"}, ConsistentRead=consistent).get("Item")
         return Subscriber.from_item(item) if item else None
 
     # the daily claim -------------------------------------------------------
@@ -520,6 +520,20 @@ class Store:
 
     def profile(self, user_id: str) -> dict | None:
         return self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": "PROFILE"}).get("Item")
+
+    def delete_profile(self, user_id: str, inbox: str | None) -> bool:
+        """The profile, an account's last item, only while it names `inbox`
+        as its standing address (None: none), so one made meanwhile is not
+        left behind (web.delete_me). False if it names another."""
+        cond = {"ConditionExpression": "inbox = :t", "ExpressionAttributeValues": {":t": inbox}} if inbox \
+            else {"ConditionExpression": "attribute_not_exists(inbox)"}
+        try:
+            self.table.delete_item(Key={"pk": f"USER#{user_id}", "sk": "PROFILE"}, **cond)
+            return True
+        except Exception as e:
+            if _failed_condition(e):
+                return False
+            raise
 
     def create_subscriber(self, user_id: str, email: str, profile: dict) -> bool:
         """The EMAIL and PROFILE items in one transaction, so an address

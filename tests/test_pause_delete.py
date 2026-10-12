@@ -184,14 +184,14 @@ class DeleteTest(PauseCase):
 
     def test_a_reply_saved_during_the_delete_is_deleted_too(self):
         # A reply already past its checks writes after the first read.
-        code, delete_keys = self.code(), self.store.delete_keys
+        code, delete_profile = self.code(), self.store.delete_profile
 
-        def late_reply(keys):
-            delete_keys(keys)
-            if {"pk": "USER#u1", "sk": "PROFILE"} in keys:
-                self.store.add_note("u1", "2026-10-08", "0100late", text="Late.", received_at="2026-10-08T12:00:00Z",
-                                    raw_key="raw/0100late")
-        self.store.delete_keys = late_reply
+        def late_reply(user_id, inbox):
+            gone = delete_profile(user_id, inbox)
+            self.store.add_note("u1", "2026-10-08", "0100late", text="Late.", received_at="2026-10-08T12:00:00Z",
+                                raw_key="raw/0100late")
+            return gone
+        self.store.delete_profile = late_reply
         r, _ = self.delete(code)
         self.assertEqual(r["statusCode"], 200)
         self.assertEqual(self.store.items["u1"], [])
@@ -212,6 +212,21 @@ class DeleteTest(PauseCase):
         r, _ = self.delete(code)
         self.assertEqual(r["statusCode"], 200)
         self.assertEqual(self.store.inboxes, {})
+
+    def test_an_address_replaced_just_before_the_profile_goes_goes_too(self):
+        # Another tab's "New address" lands between the last read and the
+        # profile's delete: the profile stays, is read again, and both go.
+        code, delete_profile = self.code(), self.store.delete_profile
+        moved = []
+
+        def tab_meanwhile(user_id, inbox):
+            if not moved:
+                moved.append(self.store.set_inbox("u1", "newaaaaaaaaaaaaaaaaaaaa3", "2026-10-08T23:00:00Z", old=inbox))
+            return delete_profile(user_id, inbox)
+        self.store.delete_profile = tab_meanwhile
+        r, _ = self.delete(code)
+        self.assertEqual((r["statusCode"], moved), (200, [True]))
+        self.assertEqual((self.store.inboxes, self.store.profiles.get("u1")), ({}, None))
 
     def test_the_code_is_used_up_and_the_sign_ins_go_with_the_account(self):
         code = self.code()

@@ -80,7 +80,7 @@ class FakeStore:
         return [{"pk": f"USER#{s.user_id}", "sk": "PROFILE", "status": s.status, "tz": s.tz, "send_time": s.send_time,
                  "last_sent_date": s.last_sent_date} for s in self.subs.values()]
 
-    def get_subscriber(self, user_id):
+    def get_subscriber(self, user_id, consistent=False):
         return self.subs.get(user_id)
 
     def claim_day(self, user_id, day):
@@ -1079,6 +1079,17 @@ class StandingAddress(unittest.TestCase):
         self.assertEqual(list(store.inboxes), [made])
         self.assertIn(address, message_from_bytes(ses.sent[1]["Content"]["Raw"]["Data"], policy=default)
                       .get_body(("plain",)).get_content())
+
+    def test_the_footer_names_the_address_as_it_is_now(self):
+        # The run's list is from before "New address" in another tab.
+        store, ses = FakeStore([ada(inbox="oldaaaaaaaaaaaaaaaaaaaa1")]), FakeSES()
+        listed = [ada(inbox="oldaaaaaaaaaaaaaaaaaaaa1")]
+        store.subs["u1"].inbox = "newaaaaaaaaaaaaaaaaaaaa2"
+        store.active_subscribers = lambda: listed
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        data = ses.sent[0]["Content"]["Raw"]["Data"].decode()
+        self.assertIn("newaaaaaaaaaaaaaaaaaaaa2@in.yourversionnumber.com", data)
+        self.assertNotIn("oldaaaaaaaaaaaaaaaaaaaa1", data)
 
     def test_one_that_cannot_be_made_leaves_the_line_out(self):
         store, ses = FakeStore([ada()]), FakeSES()

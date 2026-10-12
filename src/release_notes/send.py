@@ -402,16 +402,19 @@ def report(store: Store, now: datetime, context) -> None:
 def standing(store: Store, sub: Subscriber, clock) -> str | None:
     """The token of the subscriber's standing address, for the footer:
     theirs, or made now the first time (sign-up came before it existed).
-    None if it cannot be made: the email goes without the line."""
-    if sub.inbox:
-        return sub.inbox
+    None if it cannot be made: the email goes without the line. Read
+    afresh: the run's list may be from before "New address"."""
     try:
+        fresh = store.get_subscriber(sub.user_id, consistent=True)
+        if fresh and fresh.inbox:
+            sub.inbox = fresh.inbox
+            return fresh.inbox
         token = new_token()
         if store.set_inbox(sub.user_id, token, clock().isoformat()):
             sub.inbox = token
             return token
         # Made meanwhile (the web, say): read it back.
-        fresh = store.get_subscriber(sub.user_id)
+        fresh = store.get_subscriber(sub.user_id, consistent=True)
         return fresh.inbox if fresh else None
     except Exception as e:
         log(event="inbox-error", user=sub.user_id, error=type(e).__name__)

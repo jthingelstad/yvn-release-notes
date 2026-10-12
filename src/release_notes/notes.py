@@ -23,8 +23,9 @@ any kind of data can come from any channel):
                  ("Town Pier"), address (a street address, kept, not
                  shown yet), city, region, country, lat and lon (to six
                  places), accuracy_m, and `from`: how it is known (entry,
-                 photo, day: another note that day, home: the
-                 subscriber's city). Shown by name, which links to the
+                 photo: its first photo's GPS, named by places.reverse,
+                 chosen: the web's Where, day: another note that day,
+                 home: the subscriber's city). Shown by name, which links to the
                  spot on a map (map_url)
     source       email, web or import; an import also has `origin`:
                  {"app", "journal", "id"}, the entry it came from

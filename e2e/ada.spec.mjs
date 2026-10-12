@@ -8,6 +8,8 @@
 // Transcripts: the setting, a recording written out, and found by search.
 // Descriptions: the setting, a photo described, shown only where search
 // found it.
+// Where: a note's place from the city search, and a day's own place, set
+// and cleared, its weather following.
 import { test, expect } from '@playwright/test';
 
 // A real 1 x 1 PNG, so the browser draws it, and a small PDF.
@@ -198,4 +200,42 @@ test('turning on descriptions describes a photo, shown only where search found i
   await page.goto('/settings/');
   await page.getByLabel('Describe my photos').uncheck();
   await expect(page.locator('#describe-saved')).toBeVisible();
+});
+
+test('a note says where it was, by name, linking to the map', async ({ page }) => {
+  await page.goto('/today/');
+  const form = page.locator('#note-form');
+  const words = `Croissants at ${Date.now()}`;
+  await form.locator('textarea').fill(words);
+  await form.getByRole('button', { name: 'Where' }).click();
+  await form.getByLabel('Where (optional)').fill('Par');
+  await form.getByRole('option', { name: /Paris/ }).click();
+  await expect(form.locator('#note-where')).toHaveText(/At Paris, Ile-de-France\./);
+  await form.getByRole('button', { name: 'Add note' }).click();
+
+  const note = page.locator('article.note', { hasText: words });
+  const place = note.getByRole('link', { name: 'Paris, Ile-de-France' });
+  await expect(place).toHaveAttribute('href', /^https:\/\/maps\.apple\.com\/\?ll=48\.85,2\.35/);
+  // The form starts over without a place.
+  await expect(form.locator('#note-where')).toBeHidden();
+  await expect(form.getByRole('button', { name: 'Where' })).toBeVisible();
+});
+
+test('a past day can have a place of its own, and its weather follows', async ({ page }) => {
+  const day = new Date(Date.now() - 20 * 86400_000).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  await page.goto(`/day/?d=${day}`);
+  const where = page.locator('#day-where');
+  await where.getByRole('button', { name: 'Where was this day?' }).click();
+  await where.getByLabel('Where this day was').fill('Par');
+  const answered = page.waitForResponse((r) => r.url().endsWith(`/api/days/${day}/place`) && r.request().method() === 'PUT');
+  await where.getByRole('option', { name: /Paris/ }).click();
+  const body = await (await answered).json();
+  expect(body.where).toBe('Paris, Ile-de-France');
+  await expect(where.locator('#where')).toHaveText('Where: Paris, Ile-de-France');
+  expect(body.weather).toBeTruthy();
+  await expect(page.locator('#weather')).toHaveText(body.weather);
+
+  await where.getByRole('button', { name: 'Clear' }).click();
+  await expect(where.getByRole('button', { name: 'Where was this day?' })).toBeVisible();
+  await expect(where.locator('#where')).toHaveCount(0);
 });

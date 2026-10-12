@@ -11,6 +11,8 @@ from test_web_notes import NotesCase
 
 MPLS = {"city": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago",
         "lat": Decimal("44.98"), "lon": Decimal("-93.26")}
+DULUTH = {"name": "Duluth", "region": "Minnesota", "country": "United States", "tz": "America/Chicago",
+          "lat": 46.78, "lon": -92.11}  # as /api/places answers
 OSLO = {**MPLS, "city": "Oslo", "region": "Oslo", "country": "Norway", "tz": "Europe/Oslo"}
 
 
@@ -111,6 +113,28 @@ class Sending(unittest.TestCase):
         self.assertIn('href="https://open-meteo.com/"', html)
         html.encode("ascii")  # still 7-bit
 
+    def test_yesterdays_weather_is_where_its_notes_were_and_the_forecast_stays_home(self):
+        f = Fetcher(answer(("2026-10-06", 63, 12.2, 7.1), ("2026-10-07", 2, 16.1, 6.6)))
+        store, ses = FakeStore([ada(place=MPLS)]), FakeSES()
+        store.notes[("u1", "2026-10-06", "m1")] = {
+            "text": "Up north.", "place": {"city": "Duluth", "region": "Minnesota", "country": "United States",
+                                           "lat": Decimal("46.786672"), "lon": Decimal("-92.100485"), "from": "photo"}}
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM, fetch=f)
+        self.assertEqual(len(f.urls), 2)
+        self.assertEqual((f.query(1)[1]["latitude"], f.query(1)[1]["longitude"]), ("46.79", "-92.1"))  # two places only
+        kept = store.weather[("u1", "2026-10-06")]
+        self.assertEqual((kept["city"], kept["lat"]), ("Duluth", 46.79))
+        self.assertIn("Minneapolis today:", self.mail(ses)[0])
+
+    def test_a_days_own_place_comes_first_and_home_is_no_place(self):
+        f = Fetcher(answer(("2026-10-06", 63, 12.2, 7.1), ("2026-10-07", 2, 16.1, 6.6)))
+        store, ses = FakeStore([ada(place=MPLS)]), FakeSES()
+        store.notes[("u1", "2026-10-06", "m1")] = {"text": "Home.", "place": {**MPLS, "lat": 1, "lon": 1, "from": "home"}}
+        store.day_places[("u1", "2026-10-06")] = {**OSLO, "lat": Decimal("59.91"), "lon": Decimal("10.75")}
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM, fetch=f)
+        self.assertEqual(store.weather[("u1", "2026-10-06")]["city"], "Oslo")
+        self.assertEqual(f.query(1)[1]["timezone"], "Europe/Oslo")
+
     def test_no_city_no_weather(self):
         store, ses = FakeStore([ada()]), FakeSES()
         f = Fetcher()
@@ -172,6 +196,46 @@ class WebTest(NotesCase):
         _, days = self.get("/api/days")
         self.assertEqual(next(d for d in days["days"] if d["date"] == "2026-09-12")["weather"], day["weather"])
         self.assertNotIn("Minneapolis", self.out.getvalue())
+
+    def test_a_note_with_a_place_brings_that_places_weather(self):
+        r, note = self.call("POST", "/api/days/2026-09-12/notes", {"text": "Up north.", "place": DULUTH},
+                            cookies=self.cookies)
+        self.assertEqual((r["statusCode"], note["place"]), (201, "Duluth, Minnesota"))
+        self.assertEqual(self.sky.query()[1]["latitude"], "46.78")
+        _, day = self.get("/api/days/2026-09-12")
+        self.assertEqual(day["weather"], "Light rain, 65° / 48° in Duluth")
+        self.assertNotIn("Duluth", self.out.getvalue())  # never a place's name in the log
+        self.assertNotIn("46.78", self.out.getvalue())
+
+    def test_a_days_own_place_fetches_again_and_clearing_goes_home(self):
+        self.add("2026-09-12", "Backfilled.")
+        r, body = self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body), (200, {"date": "2026-09-12", "where": "Duluth, Minnesota",
+                                                         "weather": "Light rain, 65° / 48° in Duluth"}))
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        self.assertEqual(len(self.sky.urls), 2)  # the same place again fetches nothing
+        _, day = self.get("/api/days/2026-09-12")
+        self.assertEqual(day["where"], "Duluth, Minnesota")
+        r, body = self.call("DELETE", "/api/days/2026-09-12/place", cookies=self.cookies)
+        self.assertEqual(body, {"date": "2026-09-12", "weather": "Light rain, 65° / 48° in Minneapolis"})
+        self.assertEqual(len(self.sky.urls), 3)
+        self.assertNotIn("Duluth", self.out.getvalue())
+
+    def test_a_place_for_today_waits_and_a_bad_one_is_refused(self):
+        r, body = self.call("PUT", "/api/days/2026-10-08/place", {"place": DULUTH}, cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body["where"], self.sky.urls), (200, "Duluth, Minnesota", []))
+        _, today = self.get("/api/today")
+        self.assertEqual(today["where"], "Duluth, Minnesota")
+        r, body = self.call("PUT", "/api/days/2026-10-08/place", {"place": {"name": "Nowhere"}}, cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body["error"]), (400, "place"))
+        r, _ = self.call("POST", "/api/days/2026-10-08/notes", {"text": "x", "place": "Duluth"}, cookies=self.cookies)
+        self.assertEqual(r["statusCode"], 400)
+
+    def test_another_note_does_not_move_a_kept_days_weather(self):
+        self.add("2026-09-12", "Backfilled.")
+        self.store.profiles["u1"].update(OSLO)  # moved since
+        self.add("2026-09-12", "Again.")
+        self.assertEqual(len(self.sky.urls), 1)
 
     def test_today_waits_for_tomorrows_email(self):
         self.add("2026-10-08", "Today.")

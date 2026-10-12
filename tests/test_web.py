@@ -460,6 +460,21 @@ class WebTest(WebCase):
         self.assertTrue(not ({"tz", "place", "tags", "origin"} & set(second)))
         md = export.markdown(data)
         self.assertIn("At Four Seasons Mall, Plymouth.\n\nPizza.\n\n#tyler #mazie\n\nLater.", md)
+        self.assertEqual(data["places"], [])
+
+    def test_export_keeps_a_days_own_place_first(self):
+        items = [
+            {"sk": "PROFILE", "birthday": "1981-06-14"},
+            {"pk": "USER#u1", "sk": "PLACE#2026-10-06", "city": "Duluth", "region": "Minnesota",
+             "country": "United States", "tz": "America/Chicago", "lat": Decimal("46.78"), "lon": Decimal("-92.11")},
+            {"sk": "NOTE#2026-10-06#w-1", "text": "Lake.", "written_at": "2026-10-06T12:00:00Z",
+             "place": {"label": "Cabin", "lat": Decimal("47.1"), "lon": Decimal("-91.2"), "from": "chosen"}},
+        ]
+        data = export.build(items, "2026-10-08T00:00:00Z")
+        self.assertEqual(data["places"], [{"date": "2026-10-06", "city": "Duluth", "region": "Minnesota",
+                                           "country": "United States", "tz": "America/Chicago", "lat": 46.78,
+                                           "lon": -92.11}])
+        self.assertIn("At Duluth, Minnesota; Cabin.\n\nLake.", export.markdown(data))
 
     def test_export_with_no_notes(self):
         md = export.markdown(export.build([{"sk": "PROFILE", "birthday": "1981-06-14"}], "2026-10-08T00:00:00Z"))

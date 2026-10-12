@@ -191,6 +191,30 @@ class FakeStore:
     def weather_between(self, user_id, first, last):
         return {i["sk"][8:]: dict(i) for i in self._rows(user_id, "WEATHER#") if first <= i["sk"][8:] <= last}
 
+    def replace_weather(self, user_id, day, fields):
+        rows = self.items.setdefault(user_id, [])
+        rows[:] = [i for i in rows if i["sk"] != f"WEATHER#{day}"]
+        rows.append({"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **fields})
+
+    def day_place(self, user_id, day):
+        found = [i for i in self.items.get(user_id, []) if i["sk"] == f"PLACE#{day}"]
+        return dict(found[0]) if found else None
+
+    def set_day_place(self, user_id, day, place):
+        self.clear_day_place(user_id, day)
+        self.items.setdefault(user_id, []).append({"pk": f"USER#{user_id}", "sk": f"PLACE#{day}", **place})
+
+    def clear_day_place(self, user_id, day):
+        rows = self.items.setdefault(user_id, [])
+        rows[:] = [i for i in rows if i["sk"] != f"PLACE#{day}"]
+
+    def set_note_place(self, user_id, day, note_id, place):
+        note = self.note(user_id, day, note_id)
+        if not note or note.get("place"):
+            return False
+        note["place"] = place
+        return True
+
     def export(self, user_id):
         found = self._rows(user_id, "EXPORT")
         return dict(found[0]) if found else None

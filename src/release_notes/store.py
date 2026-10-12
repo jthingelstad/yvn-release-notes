@@ -14,7 +14,11 @@
                                                 its photos and recordings, media.py; a photo's
                                                 thumbnail, thumbs.py)
     USER#<id>        WEATHER#<YYYY-MM-DD>       that day's weather where the subscriber was (weather.py): high_c,
-                                                low_c, code, city, region, country, lat, lon; kept for good
+                                                low_c, code, city, region, country, lat, lon; kept for good,
+                                                fetched again when the day's place changes
+    USER#<id>        PLACE#<YYYY-MM-DD>         the day's own place, set on its page without a note (web.py):
+                                                city, region, country, tz, lat, lon; ahead of any note's
+                                                place for that day's weather (weather.day_place)
     USER#<id>        EXPORT                     the latest zip export (export_job.py): id, status
                                                 building|ready|failed, started_at; when ready, export_key,
                                                 size, files; gone a day after it is built
@@ -595,6 +599,10 @@ class Store:
                 return False
             raise
 
+    def replace_weather(self, user_id: str, day: str, fields: dict) -> None:
+        """A day's weather again, for the place it now has (weather.keep_day)."""
+        self.table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **numbers(fields)})
+
     def weather_between(self, user_id: str, first: str, last: str) -> dict[str, dict]:
         """Day -> its weather, for days first through last."""
         items, kwargs = [], {
@@ -608,6 +616,34 @@ class Store:
                 break
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
         return {i["sk"][8:]: i for i in items}
+
+    # a day's own place --------------------------------------------------------
+
+    def day_place(self, user_id: str, day: str) -> dict | None:
+        return self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"PLACE#{day}"}).get("Item")
+
+    def set_day_place(self, user_id: str, day: str, place: dict) -> None:
+        self.table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"PLACE#{day}", **numbers(place)})
+
+    def clear_day_place(self, user_id: str, day: str) -> None:
+        self.table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"PLACE#{day}"})
+
+    def set_note_place(self, user_id: str, day: str, note_id: str, place: dict) -> bool:
+        """Give a note the place of its photo, only if it has none. False
+        if the note is gone or has one."""
+        try:
+            self.table.update_item(
+                Key={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}"},
+                UpdateExpression="SET #p = :p",
+                ConditionExpression="attribute_exists(pk) AND attribute_not_exists(#p)",
+                ExpressionAttributeNames={"#p": "place"},
+                ExpressionAttributeValues={":p": numbers(place)},
+            )
+            return True
+        except Exception as e:
+            if _failed_condition(e):
+                return False
+            raise
 
     # the zip export ---------------------------------------------------------
 

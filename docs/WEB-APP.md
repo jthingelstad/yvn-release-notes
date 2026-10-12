@@ -37,7 +37,9 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
    together, a box to write one, and the streak.
 3. **Timeline**: days by version, newest first, with their notes.
 4. **Any past day**: pick a date and add notes to it (backfill). Any day from
-   the birthday to yesterday.
+   the birthday to yesterday. A note can say where it was ("Where", the
+   city search, optional), and a day can have a place of its own with no
+   note; a past day's weather follows it (AGENTS.md, Where a note was).
 5. **Pause**: no emails for N days (1-60) or until a date. Resume any time;
    otherwise the emails start again on their own.
 6. **Export your data**: every note, its day and version, plus the profile,
@@ -215,7 +217,9 @@ fonts are served from here.
 - The city search is React Aria's `Autocomplete`
   (`components/placepicker.tsx`): the places stay on the page under the
   field, arrow keys move through them and Enter picks. It is its own
-  chunk, so React Aria loads only with setup and settings. React Aria
+  chunk, so React Aria loads only with setup and settings, and on Today
+  and Day only once someone opens a "Where" (`components/where.tsx`, the
+  note form's place and the day's own). React Aria
   would add a `<style>` tag the CSP refuses; `index.html` carries an
   element with its id so it does not, and `site.css` has the rule.
 - **The CSP** is `'self'`: no inline script or style (nothing inlined by
@@ -262,8 +266,9 @@ fonts are served from here.
 | `GET /api/export/zip/file` | the built zip: a redirect to a five-minute signed link |
 | `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
-| `GET /api/days/{date}` | one day: version, notes (each note's `parts` is its text split into strings and links by name) and `weather`, the day's recorded weather as a line, when kept |
-| `POST /api/days/{date}/notes` | write for today or a past day; `uploads` attaches files, and a note with files may have no text |
+| `GET /api/days/{date}` | one day: version, notes (each note's `parts` is its text split into strings and links by name), `weather`, the day's recorded weather as a line, when kept, and `where`, the day's own place by name, when set |
+| `POST /api/days/{date}/notes` | write for today or a past day; `uploads` attaches files, and a note with files may have no text; `place` (a city from `/api/places`) says where |
+| `PUT/DELETE /api/days/{date}/place` | set the day's own place (a city from `/api/places`) or clear it; answers `{date, where, weather}`, the past day's weather fetched again for it |
 | `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete (an emailed note's email and files go with it) |
 | `POST /api/days/{date}/notes/{id}/media` `{uploads}` | add files to a note already there |
 | `GET /api/days/{date}/notes/{id}/media/{n}` | a file: a redirect to a fresh signed link, for its owner. Every file in an answer already carries `url`; this is the fallback once it has run out |

@@ -13,6 +13,13 @@ From Open-Meteo (no key; data CC BY 4.0, credited wherever weather shows):
 - a day filled in later asks for that day (`history`): the forecast API's
   recent past for the last two months, the archive before that.
 
+Where (Jamie's prompt, 2026-10-12: "the weather following them"): a
+finished day's weather is for where the subscriber was that day
+(day_place): the day's own place, set on its page, else the first note
+written that day with a place (picked on the web, from a photo, from an
+import), else their city. keep_day fetches it once, and again only when
+that day's place changes. The morning forecast is always for their city.
+
 Kept as `WEATHER#<day>` under the subscriber: high_c, low_c, code (WMO), the
 city, region and country, lat and lon, and when it was fetched. Temperatures
 are kept in Celsius and shown in Fahrenheit for places that use it.
@@ -25,7 +32,8 @@ coordinates (rounded to two places, places.py) and its time zone.
 from datetime import date, timedelta
 from urllib.parse import urlencode
 
-from .places import _get as fetch_json
+from .notes import written_at
+from .places import _get as fetch_json, valid_tz
 
 FORECAST = "https://api.open-meteo.com/v1/forecast"
 ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
@@ -103,6 +111,66 @@ def place_of(profile: dict) -> dict | None:
     if profile.get("lat") is None or profile.get("lon") is None or not profile.get("tz"):
         return None
     return {k: profile.get(k, "") for k in ("city", "region", "country", "tz")} | {"lat": profile["lat"], "lon": profile["lon"]}
+
+
+def for_weather(place: dict | None, tz: str) -> dict | None:
+    """A note's or a day's place as weather needs it: its names, a zone, and
+    coordinates rounded to two places (all Open-Meteo is told). None for
+    one without coordinates, or the subscriber's own city ("home")."""
+    if not place or place.get("from") == "home" or place.get("lat") is None or place.get("lon") is None:
+        return None
+    try:
+        lat, lon = round(float(place["lat"]), 2), round(float(place["lon"]), 2)
+    except (TypeError, ValueError):
+        return None
+    return {"city": place.get("city") or place.get("label") or place.get("venue") or "",
+            "region": place.get("region") or "", "country": place.get("country") or "",
+            "tz": place["tz"] if valid_tz(place.get("tz")) else tz, "lat": lat, "lon": lon}
+
+
+def day_place(own: dict | None, notes: list[dict], tz: str) -> dict | None:
+    """Where a day was: its own place (PLACE#<day>), else the first note
+    written with one. None means the subscriber's city."""
+    if found := for_weather(own, tz):
+        return found
+    for n in sorted(notes, key=written_at):
+        if found := for_weather(n.get("place"), n.get("tz") or tz):
+            return found
+    return None
+
+
+def same_place(kept: dict | None, place: dict) -> bool:
+    try:
+        return bool(kept) and (round(float(kept["lat"]), 2), round(float(kept["lon"]), 2)) == (place["lat"], place["lon"])
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: date, fetch, fetched_at: str,
+             changed: bool = False) -> str:
+    """Keep a finished day's weather where the subscriber was. Once for
+    their city; for a day with a place of its own, again whenever that
+    place is not the one the kept weather is for. `changed`: the day's
+    place was just set or cleared, so a reading for another place is
+    replaced either way. Returns what it did, for the log."""
+    if day >= today:
+        return "not-yet"
+    d = day.isoformat()
+    where = day_place(store.day_place(user_id, d), store.notes_between(user_id, d, d), tz)
+    place = where or home
+    if not place:
+        return "no-place"
+    kept = store.weather_between(user_id, d, d).get(d)
+    if kept and (same_place(kept, place) or not (where or changed)):
+        return "kept"
+    found = history(place, day, today, fetch)
+    if not found:
+        return "none"
+    if kept:
+        store.replace_weather(user_id, d, record(found, place, fetched_at))
+    else:
+        store.put_weather(user_id, d, record(found, place, fetched_at))
+    return "fetched"
 
 
 # --- saying it -----------------------------------------------------------------

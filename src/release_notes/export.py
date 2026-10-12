@@ -4,7 +4,8 @@ It comes before deleting, so that deleting never means losing anything.
 Kept out of it: the reply tokens (each is an address that files notes) and
 the SES and S3 bookkeeping. The JSON lists each note's attachments, and
 each day's weather where it was kept (weather.py); the Markdown gives it a
-line under the day, and credits Open-Meteo.
+line under the day, and credits Open-Meteo. A day's own place (`places`,
+the PLACE item) leads that day's "At" line, before its notes' places.
 
 Two ways out. The words alone, Markdown or JSON, come straight back from
 the API. Everything, photos and recordings included, is a zip that
@@ -58,7 +59,7 @@ def file_paths(items: list[dict]) -> dict[str, list[dict]]:
 def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | None = None) -> dict:
     """Everything, as data. With `files` (file_paths), each note lists its
     photos and recordings by their path in the zip."""
-    profile, days, notes, pauses, skies = {}, [], [], [], []
+    profile, days, notes, pauses, skies, spots = {}, [], [], [], [], []
     for item in items:
         sk = item["sk"]
         if sk == "PROFILE":
@@ -97,6 +98,8 @@ def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | No
             pauses.append({"from": sk[6:], "through": item.get("through")})
         elif sk.startswith("WEATHER#"):
             skies.append({"date": sk[8:], **weather.plain(item)})
+        elif sk.startswith("PLACE#"):
+            spots.append({"date": sk[6:], **{k: _plain(v) for k, v in item.items() if k not in ("pk", "sk")}})
     if profile.get("birthday"):
         born = date.fromisoformat(profile["birthday"])
         for n in notes:
@@ -113,6 +116,7 @@ def build(items: list[dict], exported_at: str, files: dict[str, list[dict]] | No
         "days_sent": sorted(days, key=lambda d: d["date"]),
         "pauses": sorted(pauses, key=lambda p: p["from"]),
         "weather": sorted(skies, key=lambda w: w["date"]),
+        "places": sorted(spots, key=lambda p: p["date"]),
     }
 
 
@@ -131,6 +135,7 @@ def markdown(data: dict) -> str:
     if profile.get("birthday"):
         lines += ["", f"Born {long_date(profile['birthday'])}: that day was 0.0.0."]
     skies = {w["date"]: w for w in data.get("weather", [])}
+    spots = {p["date"]: p for p in data.get("places", [])}
     fahrenheit = weather.fahrenheit(profile)
     by_day: dict[str, list[dict]] = {}
     for n in data["notes"]:
@@ -145,7 +150,9 @@ def markdown(data: dict) -> str:
         lines += ["", f"## {notes[0]['version']} · {long_date(day)}"]
         if day in skies:
             lines += ["", weather.day_line(skies[day], fahrenheit) + "."]
-        where = list(dict.fromkeys(label for n in notes if n.get("place") and (label := place_label(n["place"]))))
+        own = [spots[day]] if day in spots else []
+        where = list(dict.fromkeys(label for p in own + [n["place"] for n in notes if n.get("place")]
+                                   if (label := place_label(p))))
         if where:
             lines += ["", "At " + "; ".join(where) + "."]
         shown = [f for n in notes for f in n.get("files", [])]

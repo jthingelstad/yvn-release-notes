@@ -462,6 +462,16 @@ def place_fields(body: dict) -> dict:
     }
 
 
+def chosen_place(raw) -> dict:
+    """A place picked on a note or a day (/api/places, city level), as
+    kept: notes.py's fields, `from` "chosen"."""
+    place = places.clean(raw)
+    if not place:
+        raise Reject(400, "place")
+    return {"city": place["name"], "region": place["region"], "country": place["country"], "tz": place["tz"],
+            "lat": Decimal(str(place["lat"])), "lon": Decimal(str(place["lon"])), "from": "chosen"}
+
+
 def iso(now: int) -> str:
     return datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -797,9 +807,12 @@ def writes_out(p: dict) -> bool:
     return bool(p.get("transcribe"))
 
 
-def day_view(p: dict, day: str, notes: list[dict], sky: dict | None = None, link=None) -> dict:
+def day_view(p: dict, day: str, notes: list[dict], sky: dict | None = None, link=None, own: dict | None = None) -> dict:
     v = compute_version(date.fromisoformat(p["birthday"]), date.fromisoformat(day))
     view = {"date": day, "version": str(v), "notes": [note_view(n, p["tz"], writes_out(p), link) for n in notes]}
+    if own and (label := place_label(own)):
+        # The day's own place (PLACE#<day>), set on its page.
+        view["where"] = label
     if sky:
         # As words, in the subscriber's units: "Partly cloudy, 61° / 44° in Minneapolis".
         view["weather"] = weather.day_line(sky, weather.fahrenheit(weather.place_of(p) or sky))
@@ -816,7 +829,7 @@ def today(app: App, req: Request) -> dict:
     # Today counts once it has a note; until then the run ends yesterday.
     s = compute_streak(have, day + ONE_DAY if day in have else day, paused)
     view = day_view(p, day.isoformat(), app.store.notes_between(user_id, day.isoformat(), day.isoformat()),
-                    link=app.media_links(user_id))
+                    link=app.media_links(user_id), own=app.store.day_place(user_id, day.isoformat()))
     view.update(
         tz=p["tz"],
         dots=round(v.patch / v.cycle_days * DOTS),
@@ -867,7 +880,7 @@ def one_day(app: App, req: Request, value: str) -> dict:
     user_id, p = app.account(req)
     day = day_from(p, value, app.now).isoformat()
     view = day_view(p, day, app.store.notes_between(user_id, day, day), app.store.weather_between(user_id, day, day).get(day),
-                    app.media_links(user_id))
+                    app.media_links(user_id), app.store.day_place(user_id, day))
     view.update(tz=p["tz"], today=day == local_today(p, app.now).isoformat())
     return respond(200, view)
 
@@ -896,6 +909,10 @@ def add_note(app: App, req: Request, value: str) -> dict:
         item["tags"] = tagged
     if files:
         item["media"] = [{"n": n, **f} for n, f in enumerate(files, 1)]
+    if body.get("place") is not None:
+        # "Where", picked with the note (optional). Without one, a photo's
+        # place may give it one later (describe.py).
+        item["place"] = chosen_place(body["place"])
     app.store.put_note(user_id, day.isoformat(), note_id, item)
     log(event="note-added", user=user_id, date=day.isoformat(), files=len(files))
     keep_weather(app, user_id, p, day)
@@ -903,21 +920,41 @@ def add_note(app: App, req: Request, value: str) -> dict:
     return respond(201, view)
 
 
-def keep_weather(app: App, user_id: str, p: dict, day: date) -> None:
-    """A day filled in later gets its weather from history, once, where the
-    subscriber is now. Today's is kept by tomorrow's email. Never fails the
-    note."""
-    place = weather.place_of(p)
-    if not place or day >= local_today(p, app.now):
-        return
+def keep_weather(app: App, user_id: str, p: dict, day: date, changed: bool = False) -> None:
+    """A finished day's weather, where the subscriber was that day
+    (weather.keep_day): fetched when a note is written for it, and again
+    when its place changes. Today's is kept by tomorrow's email. Never
+    fails the note."""
     try:
-        if app.store.weather_between(user_id, day.isoformat(), day.isoformat()):
-            return
-        found = weather.history(place, day, local_today(p, app.now), app.weather_fetch)
-        if found:
-            app.store.put_weather(user_id, day.isoformat(), weather.record(found, place, iso(app.now)))
+        weather.keep_day(app.store, user_id, weather.place_of(p), p["tz"], day, local_today(p, app.now),
+                         app.weather_fetch, iso(app.now), changed=changed)
     except Exception as e:
         log(event="weather-error", user=user_id, date=day.isoformat(), error=type(e).__name__)
+
+
+def set_day_place(app: App, req: Request, value: str) -> dict:
+    """Where a day was, without a note: its weather follows."""
+    user_id, p = app.account(req)
+    day = day_from(p, value, app.now)
+    app.store.set_day_place(user_id, day.isoformat(), {k: v for k, v in chosen_place(req.json().get("place")).items()
+                                                        if k != "from"})
+    log(event="day-place", user=user_id, date=day.isoformat(), outcome="set")
+    return day_place_answer(app, user_id, p, day)
+
+
+def clear_day_place(app: App, req: Request, value: str) -> dict:
+    user_id, p = app.account(req)
+    day = day_from(p, value, app.now)
+    app.store.clear_day_place(user_id, day.isoformat())
+    log(event="day-place", user=user_id, date=day.isoformat(), outcome="cleared")
+    return day_place_answer(app, user_id, p, day)
+
+
+def day_place_answer(app: App, user_id: str, p: dict, day: date) -> dict:
+    keep_weather(app, user_id, p, day, changed=True)
+    d = day.isoformat()
+    view = day_view(p, d, [], app.store.weather_between(user_id, d, d).get(d), own=app.store.day_place(user_id, d))
+    return respond(200, {k: view[k] for k in ("date", "where", "weather") if k in view})
 
 
 def edit_note(app: App, req: Request, value: str, note_id: str) -> dict:
@@ -1366,6 +1403,8 @@ ROUTES = [
     ("POST", "/api/days/{date}/notes", add_note),
     ("PUT", "/api/days/{date}/notes/{id}", edit_note),
     ("DELETE", "/api/days/{date}/notes/{id}", delete_note),
+    ("PUT", "/api/days/{date}/place", set_day_place),
+    ("DELETE", "/api/days/{date}/place", clear_day_place),
     ("GET", "/api/days/{date}/notes/{id}/media/{n}", media_file),
     ("POST", "/api/days/{date}/notes/{id}/media", add_files),
     ("POST", "/api/uploads", start_upload),

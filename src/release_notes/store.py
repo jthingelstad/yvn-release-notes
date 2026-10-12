@@ -438,8 +438,9 @@ class Store:
                 return None
             raise
 
-    def note(self, user_id: str, day: str, note_id: str) -> dict | None:
-        return self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}"}).get("Item")
+    def note(self, user_id: str, day: str, note_id: str, consistent: bool = False) -> dict | None:
+        return self.table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"NOTE#{day}#{note_id}"},
+                                   ConsistentRead=consistent).get("Item")
 
     def set_media_text(self, user_id: str, day: str, note_id: str, n: int, field: str, text: str) -> bool:
         """Put words about one file (a recording's `transcript`, a photo's

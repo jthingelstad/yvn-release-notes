@@ -227,9 +227,11 @@ def changed(record: dict, *, store, s3, claude, lam, bucket: str, cache: dict, m
             made = thumbs.thumbnail(note, user_id, store=store, s3=s3, bucket=bucket, maker=maker)
             log(event="thumbs", user=user_id, photos=made)
     if geo and str(new.get("sk", "")).startswith("NOTE#") and not new.get("place") and places.first_photo(new):
-        # The EXIF this function writes comes back on the stream: named then.
+        # The EXIF this function writes comes back on the stream: named then,
+        # read consistently, or a read from before that write finds no spot
+        # and nothing is left on the stream to try again.
         _, day, note_id = new["sk"].split("#", 2)
-        note = store.note(user_id, day, note_id)
+        note = store.note(user_id, day, note_id, consistent=True)
         try:
             if note and (outcome := place_note(note, user_id, store=store, geo=geo, fetch=fetch)):
                 log(event="place", user=user_id, date=day, outcome=outcome)

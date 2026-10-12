@@ -196,9 +196,11 @@ class FakeStore:
         rows[:] = [i for i in rows if i["sk"] != f"WEATHER#{day}"]
         rows.append({"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **fields})
 
-    def drop_weather(self, user_id, day):
+    def drop_weather(self, user_id, day, kept):
         rows = self.items.setdefault(user_id, [])
-        rows[:] = [i for i in rows if i["sk"] != f"WEATHER#{day}"]
+        gone = [i for i in rows if i["sk"] == f"WEATHER#{day}" and (i.get("lat"), i.get("lon")) == (kept.get("lat"), kept.get("lon"))]
+        rows[:] = [i for i in rows if i not in gone]
+        return bool(gone)
 
     def places_between(self, user_id, first, last):
         return {i["sk"][6:]: dict(i) for i in self._rows(user_id, "PLACE#") if first <= i["sk"][6:] <= last}

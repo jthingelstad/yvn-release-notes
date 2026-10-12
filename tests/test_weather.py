@@ -272,6 +272,20 @@ class WebTest(NotesCase):
         self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
         self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
 
+    def test_a_failed_fetch_leaves_weather_another_call_wrote_since(self):
+        self.add("2026-09-12", "Backfilled.")
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)  # Duluth's, kept
+
+        def meanwhile(url):
+            # Another call, for home too, writes home's weather while this
+            # one's fetch is out; then this one fails.
+            self.store.replace_weather("u1", "2026-09-12", {"high_c": 1, "low_c": 0, "code": 0, "city": "Minneapolis",
+                                                            "lat": MPLS["lat"], "lon": MPLS["lon"]})
+            raise TimeoutError("open-meteo down")
+        self.sky = meanwhile
+        self.call("DELETE", "/api/days/2026-09-12/place", cookies=self.cookies)
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
+
     def test_a_place_for_today_waits_and_a_bad_one_is_refused(self):
         r, body = self.call("PUT", "/api/days/2026-10-08/place", {"place": DULUTH}, cookies=self.cookies)
         self.assertEqual((r["statusCode"], body["where"], self.sky.urls), (200, "Duluth, Minnesota", []))

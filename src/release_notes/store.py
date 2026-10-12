@@ -604,10 +604,20 @@ class Store:
         """A day's weather again, for the place it now has (weather.keep_day)."""
         self.table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **numbers(fields)})
 
-    def drop_weather(self, user_id: str, day: str) -> None:
+    def drop_weather(self, user_id: str, day: str, kept: dict) -> bool:
         """A day's weather, for a place the day no longer has, when none
-        could be had for the place it has now (weather.keep_day)."""
-        self.table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}"})
+        could be had for the place it has now (weather.keep_day): only
+        while it is still for `kept`'s spot, so one written since for the
+        right place stays. False if it was not."""
+        try:
+            self.table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}"},
+                                   ConditionExpression="lat = :lat AND lon = :lon",
+                                   ExpressionAttributeValues={":lat": kept.get("lat"), ":lon": kept.get("lon")})
+            return True
+        except Exception as e:
+            if _failed_condition(e):
+                return False
+            raise
 
     def weather_between(self, user_id: str, first: str, last: str, consistent: bool = False) -> dict[str, dict]:
         """Day -> its weather, for days first through last."""

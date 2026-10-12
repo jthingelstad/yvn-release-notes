@@ -435,8 +435,12 @@ class Places(unittest.TestCase):
 
     def test_weather_for_a_place_gone_is_dropped(self):
         t = FakeTable()
-        Store(t).drop_weather("u1", "2026-10-07")
-        self.assertEqual(t.calls, [("delete_item", {"Key": {"pk": "USER#u1", "sk": "WEATHER#2026-10-07"}})])
+        # Only while it is still the reading for the place the day left.
+        Store(t).drop_weather("u1", "2026-10-07", {"lat": Decimal("46.78"), "lon": Decimal("-92.1")})
+        self.assertEqual(t.calls, [("delete_item", {"Key": {"pk": "USER#u1", "sk": "WEATHER#2026-10-07"},
+                                                    "ConditionExpression": "lat = :lat AND lon = :lon",
+                                                    "ExpressionAttributeValues": {":lat": Decimal("46.78"),
+                                                                                  ":lon": Decimal("-92.1")}})])
 
     def test_a_photo_names_a_note_with_no_place_only(self):
         t = FakeTable()

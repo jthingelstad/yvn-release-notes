@@ -196,13 +196,13 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
         found = history(place, day, today, fetch)
     except Exception:
         if kept and still():
-            store.drop_weather(user_id, d)
+            store.drop_weather(user_id, d, kept)
         raise
     if not still():
         return "moved"
     if not found:
         if kept:
-            store.drop_weather(user_id, d)
+            store.drop_weather(user_id, d, kept)
             return "dropped"
         return "none"
     # One written since the read (another page, the describe function) is

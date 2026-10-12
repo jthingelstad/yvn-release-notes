@@ -423,11 +423,23 @@ class WebTest(WebCase):
         self.assertNotIn("raw/m1", r["body"])
         r, md = self.call("GET", "/api/export", cookies=[cookie], query={"format": "md"})
         self.assertTrue(r["headers"]["content-type"].startswith("text/markdown"))
-        self.assertIn("## 4.5.115 · Wednesday, October 7, 2026\n\nFirst.\n\nSecond.", md)
+        self.assertIn("### 4.5.115 · Wednesday, October 7, 2026\n\nFirst.\n\nSecond.", md)
         self.assertLess(md.index("4.5.90"), md.index("4.5.115"))
         self.assertNotIn("Backfilled", self.out.getvalue())
         r, body = self.call("GET", "/api/export", cookies=[cookie], query={"format": "csv"})
         self.assertEqual(r["statusCode"], 400)
+
+    def test_export_has_a_heading_per_release(self):
+        items = [
+            {"sk": "PROFILE", "birthday": "1981-06-14"},
+            {"sk": "NOTE#2026-06-13#a", "text": "Last of 4.4.", "received_at": "2026-06-13T12:00:00Z"},
+            {"sk": "NOTE#2026-06-14#b", "text": "First of 4.5.", "received_at": "2026-06-14T12:00:00Z"},
+            {"sk": "NOTE#2026-06-15#c", "text": "Second of 4.5.", "received_at": "2026-06-15T12:00:00Z"},
+        ]
+        md = export.markdown(export.build(items, "2026-10-08T00:00:00Z"))
+        self.assertIn("## 4.4\n\n### 4.4.364 · Saturday, June 13, 2026\n\nLast of 4.4.\n\n"
+                      "## 4.5\n\n### 4.5.0 · Sunday, June 14, 2026\n\nFirst of 4.5.\n\n"
+                      "### 4.5.1 · Monday, June 15, 2026", md)
 
     def test_export_keeps_links(self):
         items = [
@@ -484,7 +496,7 @@ class WebTest(WebCase):
             {"sk": "NOTE#2026-10-06#w-1", "text": "Lake.", "written_at": "2026-10-06T12:00:00Z"},
         ]
         md = export.markdown(export.build(items, "2026-10-08T00:00:00Z"))
-        self.assertIn("## 4.5.113 · Monday, October 5, 2026\n\nAt Duluth, Minnesota.\n\n## 4.5.114", md)
+        self.assertIn("### 4.5.113 · Monday, October 5, 2026\n\nAt Duluth, Minnesota.\n\n### 4.5.114", md)
         self.assertNotIn("No notes yet", md)
         self.assertNotIn("Attachments only", md)
 

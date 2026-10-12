@@ -81,7 +81,7 @@ class JobTest(ZipCase):
         md = z.read(top + "release-notes.md").decode()
         self.assertIn("By the lake.\n\nLater.\n\n![Photo, x](files/2026-10-07-1.jpg)\n\n"
                       "[Recording, x](files/2026-10-07-2.m4a)\n", md)
-        self.assertIn("## 4.5.114 · Tuesday, October 6, 2026\n\n![Photo, 4.5.114](files/2026-10-06-1.png)", md)
+        self.assertIn("### 4.5.114 · Tuesday, October 6, 2026\n\n![Photo, 4.5.114](files/2026-10-06-1.png)", md)
         self.assertNotIn("Attachments only", md)
         data = json.loads(z.read(top + "release-notes.json"))
         lake = next(n for n in data["notes"] if n["id"] == "0100abc-1")

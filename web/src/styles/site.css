@@ -227,4 +227,9 @@ h1[tabindex="-1"]:focus, main[tabindex="-1"]:focus { outline: none; }
 .tags li { font-size: 17px; }
 mark { background: none; color: var(--orange-ink); font-weight: 700; }
 #every-tag-list { margin-top: 48px; }
+.releases ul { list-style: none; margin: 24px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.releases a { text-decoration: none; }
+.releases a[aria-current] .vnum { text-decoration: underline; text-decoration-color: var(--orange); text-underline-offset: 5px; }
+.release-head { margin-top: 12px; }
+.release-counts { margin: 8px 0 0; font-size: 17px; }
 a.tag { white-space: nowrap; }

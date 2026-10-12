@@ -11,6 +11,7 @@
 // Where: a note's place from the city search, and a day's own place, set
 // and cleared, its weather following.
 // The standing address: shown in settings, copied, and replaced.
+// Releases: the Timeline's index, and a release's page, oldest first.
 import { test, expect } from '@playwright/test';
 
 // A real 1 x 1 PNG, so the browser draws it, and a small PDF.
@@ -266,4 +267,29 @@ test('settings shows the standing address, copies it, and a new one replaces it'
   const second = await address.textContent();
   await page.reload();
   await expect(page.locator('#inbox [data-field=inbox]')).toHaveText(second);
+});
+
+test('the timeline lists the releases, and a release shows its days oldest first', async ({ page }) => {
+  // Ada (born 1981-06-14) is 4.5: notes this release, one in 4.4, one in 3.5.
+  await page.goto('/timeline/');
+  const releases = page.locator('#releases');
+  await expect(releases.locator('li')).toHaveCount(3);
+  await expect(releases.locator('a[aria-current]')).toHaveAttribute('href', '/release/?v=4.5');
+  await releases.getByRole('link', { name: 'Version 4.4' }).click();
+  await expect(page).toHaveURL(/\/release\/\?v=4\.4$/);
+  await expect(page.locator('#release-title')).toHaveText('Release 4.4');
+  await expect(page.locator('#release-counts')).toHaveText('1 day with notes, 1 note.');
+  await expect(page.locator('#release-days .tday')).toHaveCount(1);
+  await expect(page.locator('#release-days')).toContainText('the day the new bike came');
+
+  await page.goto('/release/?v=4.5');
+  await expect(page.locator('#release-head')).toContainText('and still going');
+  await expect(page.locator('#release-tags')).toContainText('#walks');
+  const heads = page.locator('#release-days a.tday-head');
+  await expect(heads.last()).toHaveAttribute('href', '/today/');
+  await expect(heads.first()).not.toHaveAttribute('href', '/today/');
+
+  // A release not begun goes back to the Timeline.
+  await page.goto('/release/?v=9.9');
+  await expect(page).toHaveURL(/\/timeline\/$/);
 });

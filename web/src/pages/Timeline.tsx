@@ -1,12 +1,13 @@
-// Every release so far, newest first, a page of days at a time.
-import { useInfiniteQuery } from '@tanstack/react-query';
+// Every release so far: an index of the releases (each a year of life,
+// with its own page), then the days, newest first, a page at a time.
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { AppLink, Bar, Digits, Failed, Loading, useTitle } from '../components/common.tsx';
 import { dayHref } from '../components/days.tsx';
 import { NoteBody, NoteMedia } from '../components/notes.tsx';
-import { addDays, dayName } from '../lib/format.ts';
-import { daysQuery } from '../lib/queries.ts';
-import type { Day } from '../lib/types.ts';
+import { addDays, count, dayName } from '../lib/format.ts';
+import { daysQuery, releasesQuery } from '../lib/queries.ts';
+import type { Day, ReleaseSummary } from '../lib/types.ts';
 
 export function Timeline() {
   useTitle('Timeline');
@@ -48,6 +49,7 @@ export function Timeline() {
       <p className="hint spaced">
         <AppLink href="/day/">Add notes for another day</AppLink> · <AppLink href="/tag/">Tags</AppLink>
       </p>
+      <Releases />
 
       {days.isPending && <Loading />}
       {days.isError && !pages.length && <Failed />}
@@ -171,5 +173,38 @@ function PausedRun({ run, thisYear }: { run: Day[]; thisYear: number }) {
       <p className="hint">{when}</p>
       <p className="hint">Paused, {days === 1 ? '1 day' : days + ' days'}. Your streak waited.</p>
     </section>
+  );
+}
+
+// Each release with notes, and the current one, newest first: a link to
+// its page and how much it has.
+function Releases() {
+  const releases = useQuery(releasesQuery);
+  const list = releases.data?.releases || [];
+  if (list.length < 2 && !list.some((r) => r.days)) return null;
+  return (
+    <nav aria-label="Releases" className="releases" id="releases">
+      <ul>
+        {list.map((r) => (
+          <ReleaseLink key={r.v} r={r} />
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+function ReleaseLink({ r }: { r: ReleaseSummary }) {
+  return (
+    <li>
+      <AppLink href={`/release/?v=${r.v}`} aria-current={r.current ? 'true' : undefined}>
+        <span className="vnum small">
+          <Digits v={r.v} named />
+        </span>
+      </AppLink>
+      <span className="hint">
+        {' '}
+        {[r.current && 'now', r.days && count(r.days, 'day', 'days')].filter(Boolean).join(', ')}
+      </span>
+    </li>
   );
 }

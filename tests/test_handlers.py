@@ -419,7 +419,7 @@ class Sending(unittest.TestCase):
         store.notes[("u1", "2026-10-06", "c")] = {"text": "Again.", "written_at": "2026-10-06T21:00:00+00:00", "place": cabin}
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
-        self.assertIn("Where: Duluth, Minnesota; Cabin, Minnesota\n", msg.get_body(("plain",)).get_content())
+        self.assertIn("Where: Duluth, Minnesota; Cabin, Minnesota <https://maps.apple.com/?ll=47.1,-91.2&q=Cabin,%20Minnesota>\n", msg.get_body(("plain",)).get_content())
         self.assertIn("https://maps.apple.com/?ll=47.1,-91.2&amp;q=Cabin,%20Minnesota", msg.get_body(("html",)).get_content())
 
     def test_no_yesterday_block_and_no_read_without_notes(self):

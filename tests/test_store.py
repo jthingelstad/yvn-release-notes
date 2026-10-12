@@ -462,6 +462,45 @@ class Places(unittest.TestCase):
                                                           "code": 3, "city": "Duluth", "lat": Decimal("46.78")}})])
 
 
+class StandingAddress(unittest.TestCase):
+    # The exact table calls the standing address adds (INBOX#).
+    NEW, OLD, AT = "n" * 24, "o" * 24, "2026-10-12T15:00:00Z"
+    PROFILE = {"pk": "USER#u1", "sk": "PROFILE"}
+
+    def test_read(self):
+        t = FakeTable()
+        self.assertIsNone(Store(t).get_inbox(self.NEW))
+        self.assertEqual(t.calls, [("get_item", {"Key": {"pk": f"INBOX#{self.NEW}", "sk": "INBOX"}})])
+
+    def test_a_first_one(self):
+        t = FakeTable()
+        self.assertTrue(Store(t).set_inbox("u1", self.NEW, self.AT))
+        self.assertEqual(t.calls, [
+            ("put_item", {"Item": {"pk": f"INBOX#{self.NEW}", "sk": "INBOX", "user_id": "u1", "created_at": self.AT},
+                          "ConditionExpression": "attribute_not_exists(pk)"}),
+            ("update_item", {"Key": self.PROFILE, "UpdateExpression": "SET inbox = :t",
+                             "ConditionExpression": "attribute_exists(pk) AND attribute_not_exists(inbox)",
+                             "ExpressionAttributeValues": {":t": self.NEW}}),
+        ])
+
+    def test_a_new_one_in_place_of_the_old(self):
+        t = FakeTable()
+        self.assertTrue(Store(t).set_inbox("u1", self.NEW, self.AT, old=self.OLD))
+        self.assertEqual(t.calls[1:], [
+            ("update_item", {"Key": self.PROFILE, "UpdateExpression": "SET inbox = :t",
+                             "ConditionExpression": "attribute_exists(pk) AND inbox = :old",
+                             "ExpressionAttributeValues": {":t": self.NEW, ":old": self.OLD}}),
+            ("delete_item", {"Key": {"pk": f"INBOX#{self.OLD}", "sk": "INBOX"}}),
+        ])
+
+    def test_a_profile_that_moved_on_keeps_neither(self):
+        t = FakeTable(fail=ConditionFailed())
+        self.assertFalse(Store(t).set_inbox("u1", self.NEW, self.AT, old=self.OLD))
+        # The new item taken back; the old one, still the profile's, kept.
+        self.assertEqual(t.calls[-1], ("delete_item", {"Key": {"pk": f"INBOX#{self.NEW}", "sk": "INBOX"}}))
+        self.assertEqual(len(t.calls), 3)
+
+
 class Thumbnails(unittest.TestCase):
     # The exact table calls thumbs.py adds.
 

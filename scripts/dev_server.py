@@ -149,7 +149,7 @@ def main():
     origin = f"http://localhost:{args.port}"
     os.environ.update(WEB_ORIGIN=origin, FROM_ADDRESS="notes@yourversionnumber.com", CONFIG_SET="dev", TABLE="dev",
                       MAIL_BUCKET="dev", EXPORT_FUNCTION="dev-export",
-                      SENDER_FUNCTION="dev-sender")
+                      SENDER_FUNCTION="dev-sender", INBOUND_DOMAIN="in.yourversionnumber.com")
 
     store, ses, s3 = FakeStore(), PrintingSES(), FakeS3()
 

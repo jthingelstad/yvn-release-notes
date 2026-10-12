@@ -21,6 +21,7 @@ os.environ.update(
     MAIL_BUCKET="mail-bucket",
     EXPORT_FUNCTION="yvn-release-notes-export",
     SENDER_FUNCTION="yvn-release-notes-sender",
+    INBOUND_DOMAIN="in.yourversionnumber.com",
     ALARM_TOPIC="arn:aws:sns:us-east-1:111122223333:yvn-release-notes-alarms",
 )
 NOW = 1_791_500_000  # 2026-10-08, mid-afternoon Central

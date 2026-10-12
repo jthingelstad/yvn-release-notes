@@ -298,7 +298,10 @@ Resources:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action: [dynamodb:Scan, dynamodb:Query, dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+                # DeleteItem: a failed send's reply address (store.drop_day),
+                # and a standing address the profile did not take (set_inbox).
+                Action: [dynamodb:Scan, dynamodb:Query, dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem,
+                         dynamodb:DeleteItem]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
                 # The sender passes Content.Raw to SESv2 SendEmail, which SES
@@ -851,6 +854,7 @@ Resources:
           MAIL_BUCKET: !Ref MailBucket
           EXPORT_FUNCTION: !Ref ExportFunction
           SENDER_FUNCTION: !Ref SenderFunction
+          INBOUND_DOMAIN: !Ref InboundDomain
 
   # --- the zip export ---------------------------------------------------------
   # Every note, photo and recording in one zip, built in the background

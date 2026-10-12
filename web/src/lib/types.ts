@@ -88,6 +88,8 @@ export interface Me {
   country?: string;
   pause?: { from: string; through: string };
   pause_starts: string;
+  // the standing address, for a note by email any day (inbound.py)
+  inbox?: string;
 }
 
 export interface Sample {

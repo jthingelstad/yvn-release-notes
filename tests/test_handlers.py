@@ -44,6 +44,20 @@ class FakeStore:
         self.paused = []
         self.weather, self.rates = {}, {}
         self.day_places = {}
+        self.inboxes = {}
+
+    def get_inbox(self, token):
+        return self.inboxes.get(token)
+
+    def set_inbox(self, user_id, token, now, old=None):
+        s = self.subs.get(user_id)
+        if s is None or s.inbox != old:
+            return False
+        self.inboxes[token] = {"user_id": user_id, "created_at": now}
+        s.inbox = token
+        if old:
+            self.inboxes.pop(old, None)
+        return True
 
     def day_place(self, user_id, day):
         return self.day_places.get((user_id, day))
@@ -972,6 +986,115 @@ class Inbound(unittest.TestCase):
 
 # Sent 2026-10-08T01:15:00Z: the reply address closes 2026-10-11T01:15:00Z.
 LATE = "2026-10-12T15:00:00.000Z"
+
+
+STANDING = "standaaaaaaaaaaaaaaaaaa2"
+
+
+class StandingAddress(unittest.TestCase):
+    """Jamie, 2026-10-12: <token>@in.yourversionnumber.com takes a note or a
+    photo any day, without replying."""
+
+    def setUp(self):
+        self.store = FakeStore([ada(inbox=STANDING)])
+        self.store.inboxes[STANDING] = {"user_id": "u1", "created_at": "2026-10-01T00:00:00+00:00"}
+        self.ses = FakeSES()
+
+    def run_one(self, raw=None, **kw):
+        out = StringIO()
+        s3 = FakeS3(raw or reply_raw())
+        kw.setdefault("recipient", f"{STANDING}@in.yourversionnumber.com")
+        with redirect_stdout(out):
+            outcome = inbound.process(ses_event(**kw), self.store, s3, fetch=lambda url: None, mailer=self.ses)
+        return outcome, s3, out.getvalue()
+
+    def test_filed_on_their_own_day_at_receipt_with_no_window(self):
+        # Five days after any email went out: there is no 72 hours here.
+        outcome, s3, logged = self.run_one(timestamp="2026-10-12T15:00:00.000Z")
+        self.assertEqual((outcome, s3.tags["raw/m1"]), ("note", "note"))
+        note = self.store.notes[("u1", "2026-10-12", "m1")]
+        self.assertEqual(note["version"], str(send.compute_version(date(1976, 10, 7), date(2026, 10, 12))))
+        self.assertEqual((note["text"], note["source"]), ("Fifty. Cake with the family.", "email"))
+        self.assertNotIn("subject", note)  # the subject is ignored
+        self.assertEqual(self.ses.sent, [])  # and no late notice
+        self.assertIn('"via":"address"', logged)
+        self.assertNotIn(STANDING, logged)
+
+    def test_their_day_is_their_zones(self):
+        # 22:00 in Chicago on the 12th is the 13th in UTC.
+        self.run_one(timestamp="2026-10-13T03:00:00.000Z")
+        self.assertIn(("u1", "2026-10-12", "m1"), self.store.notes)
+
+    def test_a_photo_with_no_words_is_a_note(self):
+        from test_media import jpeg
+        msg = message_from_bytes(reply_raw(), policy=default)
+        msg.clear_content()
+        msg.set_content("")
+        msg.add_attachment(jpeg(3024, 4032, pad=5000), maintype="image", subtype="jpeg", filename="IMG_1.jpeg")
+        outcome, _, _ = self.run_one(msg.as_bytes())
+        self.assertEqual(outcome, "note")
+        note = next(n for (u, d, m), n in self.store.notes.items() if m == "m1")
+        self.assertEqual((note["text"], len(note["media"])), ("", 1))
+
+    def test_every_other_check_still_holds(self):
+        self.assertEqual(self.run_one(from_addr="eve@example.com")[0], "ignored")
+        self.assertEqual(self.run_one(dmarc="FAIL", message_id="m2")[0], "ignored")
+        self.assertEqual(self.run_one(recipient="bbbbbbbbbbbbbbbbbbbbbbbb@in.yourversionnumber.com",
+                                      message_id="m3")[0], "ignored")
+        self.assertEqual(self.store.notes, {})
+
+    def test_a_stopped_subscribers_address_files_nothing(self):
+        self.store.subs["u1"].status = "stopped"
+        outcome, _, logged = self.run_one()
+        self.assertEqual(outcome, "ignored")
+        self.assertIn('"reason":"stopped"', logged)
+        self.assertEqual(self.store.notes, {})
+
+    def test_a_replaced_address_files_nothing(self):
+        self.store.inboxes["oldaaaaaaaaaaaaaaaaaaaaa"] = {"user_id": "u1"}
+        outcome, _, logged = self.run_one(recipient="oldaaaaaaaaaaaaaaaaaaaaa@in.yourversionnumber.com")
+        self.assertEqual(outcome, "ignored")
+        self.assertIn('"reason":"replaced"', logged)
+
+    def test_a_reply_address_is_not_a_standing_one(self):
+        # The day's token without its n- names no standing address.
+        self.store.tokens[TOKEN] = {"user_id": "u1", "date": "2026-10-07", "version": "5.0.0"}
+        outcome, _, _ = self.run_one(recipient=f"{TOKEN}@in.yourversionnumber.com")
+        self.assertEqual(outcome, "ignored")
+
+    # --- the email names it -------------------------------------------------------
+
+    def test_the_first_email_makes_it_and_the_footer_names_it(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        made = store.subs["u1"].inbox
+        self.assertEqual(list(store.inboxes), [made])
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        address = f"{made}@in.yourversionnumber.com"
+        self.assertIn(f"Write any day, no reply needed: {address}\n", msg.get_body(("plain",)).get_content())
+        self.assertIn(f'href="mailto:{address}"', msg.get_body(("html",)).get_content())
+        # The next day's names the same one.
+        store.subs["u1"].last_sent_date = "2026-10-07"
+        send.handler({}, None, store=store, ses=ses, clock=clock("2026-10-09T01:00:00+00:00"))
+        self.assertEqual(list(store.inboxes), [made])
+        self.assertIn(address, message_from_bytes(ses.sent[1]["Content"]["Raw"]["Data"], policy=default)
+                      .get_body(("plain",)).get_content())
+
+    def test_one_that_cannot_be_made_leaves_the_line_out(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+
+        def broken(*a, **kw):
+            raise ConnectionError("boom")
+        store.set_inbox = broken
+        with redirect_stdout(StringIO()):
+            send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        self.assertEqual(len(ses.sent), 1)
+        self.assertNotIn(b"no reply needed", ses.sent[0]["Content"]["Raw"]["Data"])
+
+    def test_a_dry_run_says_so_and_makes_nothing(self):
+        store = FakeStore([ada()])
+        out = send.handler({"dry_run": True}, None, store=store, clock=AT_8PM)
+        self.assertEqual((out["results"][0]["inbox"], store.inboxes), (False, {}))
 
 
 class LateReply(unittest.TestCase):

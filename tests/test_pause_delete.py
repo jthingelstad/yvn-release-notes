@@ -101,6 +101,41 @@ class PauseTest(PauseCase):
         )
 
 
+class StandingAddressTest(PauseCase):
+    """Settings shows the standing address; "New address" replaces it."""
+
+    def new(self, **kw):
+        return self.call("POST", "/api/me/inbox", cookies=self.cookies, **kw)
+
+    def test_a_first_then_a_new_one_in_its_place(self):
+        _, me = self.call("GET", "/api/me", cookies=self.cookies)
+        self.assertNotIn("inbox", me)
+        r, first = self.new()
+        self.assertEqual(r["statusCode"], 200)
+        token = self.store.profiles["u1"]["inbox"]
+        self.assertEqual(first["inbox"], f"{token}@in.yourversionnumber.com")
+        self.assertRegex(token, r"^[a-z2-7]{24}$")
+        _, me = self.call("GET", "/api/me", cookies=self.cookies)
+        self.assertEqual(me["inbox"], first["inbox"])
+        _, second = self.new()
+        self.assertNotEqual(second["inbox"], first["inbox"])
+        # Only the new one is left; the old one files nothing from now.
+        self.assertEqual(list(self.store.inboxes), [self.store.profiles["u1"]["inbox"]])
+        self.assertNotIn(token, self.out.getvalue())
+
+    def test_another_tab_got_there_first(self):
+        self.new()
+        set_inbox = self.store.set_inbox
+        self.store.set_inbox = lambda user_id, token, now, old=None: set_inbox(user_id, token, now, "stale")
+        r, body = self.new()
+        self.assertEqual((r["statusCode"], body["error"]), (409, "try-again"))
+
+    def test_signed_out_is_refused(self):
+        r, _ = self.call("POST", "/api/me/inbox")
+        self.assertEqual(r["statusCode"], 401)
+        self.assertEqual(self.store.inboxes, {})
+
+
 class DeleteTest(PauseCase):
     def setUp(self):
         super().setUp()
@@ -110,6 +145,7 @@ class DeleteTest(PauseCase):
                                                            "key": "media/u1/2026-10-07/0100abc/1.jpg"}])
         self.store.add_note("u1", "2026-10-06", "w-1", text="Web.", source="web", received_at="2026-10-06T12:00:00Z")
         self.store.put_pause("u1", "2026-10-01", "2026-10-02", "x")
+        self.store.set_inbox("u1", "standaaaaaaaaaaaaaaaaaa2", "2026-10-01T00:00:00Z")
 
     def code(self):
         r, _ = self.call("POST", "/api/me/delete-code", cookies=self.cookies)
@@ -131,6 +167,7 @@ class DeleteTest(PauseCase):
         self.assertEqual(r["statusCode"], 200)
         self.assertIn("Max-Age=0", r["cookies"][0])
         self.assertEqual((self.store.profiles, self.store.emails, self.store.tokens), ({}, {}, {}))
+        self.assertEqual(self.store.inboxes, {})  # the standing address too
         self.assertEqual(self.store.items["u1"], [])
         self.assertEqual(self.s3.deleted, [{"Bucket": "mail-bucket", "Key": "raw/0100abc"},
                                            {"Bucket": "mail-bucket", "Key": "media/u1/2026-10-07/0100abc/1.jpg"},
@@ -160,6 +197,21 @@ class DeleteTest(PauseCase):
         self.assertEqual(self.store.items["u1"], [])
         self.assertIn({"Bucket": "mail-bucket", "Key": "raw/0100late"}, self.s3.deleted)
         self.assertEqual(self.store.tallied, {("2026-10", "deletes"): 1})
+
+    def test_a_standing_address_made_during_the_delete_goes_too(self):
+        # The sender makes one between the first read and the profile's end.
+        code, delete_keys = self.code(), self.store.delete_keys
+        self.store.profiles["u1"].pop("inbox")
+        self.store.inboxes.clear()
+
+        def sender_meanwhile(keys):
+            delete_keys(keys)
+            if not self.store.inboxes and "u1" in self.store.profiles:
+                self.store.set_inbox("u1", "madeaaaaaaaaaaaaaaaaaaa2", "2026-10-08T23:00:00Z")
+        self.store.delete_keys = sender_meanwhile
+        r, _ = self.delete(code)
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual(self.store.inboxes, {})
 
     def test_the_code_is_used_up_and_the_sign_ins_go_with_the_account(self):
         code = self.code()

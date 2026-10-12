@@ -188,7 +188,7 @@ class FakeStore:
         self.items.setdefault(user_id, []).append({"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}", **fields})
         return True
 
-    def weather_between(self, user_id, first, last):
+    def weather_between(self, user_id, first, last, consistent=False):
         return {i["sk"][8:]: dict(i) for i in self._rows(user_id, "WEATHER#") if first <= i["sk"][8:] <= last}
 
     def replace_weather(self, user_id, day, fields):

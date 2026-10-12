@@ -609,19 +609,21 @@ class Store:
         could be had for the place it has now (weather.keep_day)."""
         self.table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"WEATHER#{day}"})
 
-    def weather_between(self, user_id: str, first: str, last: str) -> dict[str, dict]:
+    def weather_between(self, user_id: str, first: str, last: str, consistent: bool = False) -> dict[str, dict]:
         """Day -> its weather, for days first through last."""
-        return self._by_day(user_id, "WEATHER#", first, last)
+        return self._by_day(user_id, "WEATHER#", first, last, consistent)
 
     def places_between(self, user_id: str, first: str, last: str) -> dict[str, dict]:
         """Day -> its own place (PLACE#), for days first through last."""
         return self._by_day(user_id, "PLACE#", first, last)
 
-    def _by_day(self, user_id: str, prefix: str, first: str, last: str) -> dict[str, dict]:
+    def _by_day(self, user_id: str, prefix: str, first: str, last: str, consistent: bool = False) -> dict[str, dict]:
         items, kwargs = [], {
             "KeyConditionExpression": "pk = :u AND sk BETWEEN :a AND :b",
             "ExpressionAttributeValues": {":u": f"USER#{user_id}", ":a": f"{prefix}{first}", ":b": f"{prefix}{last}"},
         }
+        if consistent:
+            kwargs["ConsistentRead"] = True
         while True:
             page = self.table.query(**kwargs)
             items.extend(page.get("Items", []))

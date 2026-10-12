@@ -5,7 +5,7 @@ from email import policy
 from email.parser import BytesParser
 
 from release_notes.compose import (PAST_MAX, YESTERDAY_MAX, Lifetime, OnThisDay, PastDay, Yesterday, body, build_message, clock_phrase, countdown, html_body, late_message, linked,
-                                   message_id, streak_lines, welcome_line)
+                                   message_id, notes_html, streak_lines, welcome_line)
 from release_notes.streak import Streak, compute_streak
 from release_notes.version import compute_version
 
@@ -324,6 +324,11 @@ class YesterdayBlock(unittest.TestCase):
         text, html = self.both(Yesterday(self.THEN, "word " * 400))
         self.assertIn("word ...\n\nRead the rest:", text)
         self.assertIn("word&#8230;</p>", html)
+
+    def test_a_cut_right_after_an_address_keeps_the_link_whole(self):
+        html = notes_html("Read https://example.com/path", [], "\u2026")
+        self.assertIn('href="https://example.com/path"', html)
+        self.assertIn("</a>&#8230;</p>", html)
 
     def test_tags_have_their_line_and_show_once(self):
         y = Yesterday(self.THEN, "Up north.\n\n#cabin #fall-2026", tags=("cabin", "fall-2026"))

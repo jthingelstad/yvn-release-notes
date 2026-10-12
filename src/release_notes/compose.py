@@ -489,15 +489,15 @@ def streak_html(v: Version, birthday: date, s: Streak | None, life: Lifetime | N
 
 
 def notes_html(shown: str, found: list | None, mark: str = "") -> str:
-    """Note words as paragraphs, links by name; `mark` ends a cut."""
+    """Note words as paragraphs, links by name; `mark` ends a cut, after
+    the links are found, so it never becomes part of an address."""
     paras = [x.strip() for x in re.split(r"\n\s*\n", shown) if x.strip()]
-    if mark and paras:
-        paras[-1] += mark
     return "".join(
         f'<p class="ink" style="margin:0 0 12px;font-family:{FONT};font-size:17px;line-height:1.5;color:{INK};">'
         + "<br>".join(linked(line, found) for line in x.split("\n"))
+        + (ascii_html(mark) if mark and i == len(paras) - 1 else "")
         + "</p>\n"
-        for x in paras
+        for i, x in enumerate(paras)
     )
 
 

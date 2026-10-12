@@ -440,7 +440,8 @@ class Sending(unittest.TestCase):
         store.notes[("u1", "2026-10-06", "f")] = {"text": "x"}
         store.paused = [("2025-10-09", "2025-10-09")]  # the pause joins the run
         out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
-        self.assertEqual(out["results"][0]["closed"], {"release": "4.9", "days": 4, "notes": 5, "longest": 3})
+        self.assertEqual(out["results"][0]["closed"], {"release": "4.9", "days": 4, "notes": 5, "photos": 1,
+                                                          "longest": 3})
         send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
         msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
         text, html = msg.get_body(("plain",)).get_content(), msg.get_body(("html",)).get_content()

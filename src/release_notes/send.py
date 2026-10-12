@@ -392,7 +392,8 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
                     "notes": life.notes if life else None,
                     # On a birthday, the release just closed.
                     "closed": {"release": release_name(closed.age), "days": closed.days,
-                               "notes": closed.notes, "longest": closed.longest} if closed else None,
+                               "notes": closed.notes, "photos": closed.photos, "longest": closed.longest}
+                    if closed else None,
                     "photos": len(images),
                     "photo_bytes": sum(map(len, images.values())),
                     "forecast": bool(forecast),

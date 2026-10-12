@@ -181,7 +181,7 @@ function PausedRun({ run, thisYear }: { run: Day[]; thisYear: number }) {
 function Releases() {
   const releases = useQuery(releasesQuery);
   const list = releases.data?.releases || [];
-  if (list.length < 2 && !list.some((r) => r.days)) return null;
+  if (!list.length) return null;
   return (
     <nav aria-label="Releases" className="releases" id="releases">
       <ul>

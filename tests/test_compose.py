@@ -350,7 +350,7 @@ class YesterdayBlock(unittest.TestCase):
         y = Yesterday(self.THEN, "Up north.", places=(("Cabin, Minnesota", "https://maps.apple.com/?ll=47.1,-91.2&q=Cabin"),
                                                       ("Z\u00fcrich, Switzerland", None)))
         text, html = self.both(y)
-        self.assertIn("(Wednesday, October 7):\n\nWhere: Cabin, Minnesota; Z\u00fcrich, Switzerland\n\nUp north.", text)
+        self.assertIn("(Wednesday, October 7):\n\nWhere: Cabin, Minnesota <https://maps.apple.com/?ll=47.1,-91.2&q=Cabin>; Z\u00fcrich, Switzerland\n\nUp north.", text)
         self.assertIn('Where: <a class="link" href="https://maps.apple.com/?ll=47.1,-91.2&amp;q=Cabin"', html)
         self.assertIn(">Cabin, Minnesota</a>; Z&#252;rich, Switzerland</p>", html)
         html.encode("ascii")

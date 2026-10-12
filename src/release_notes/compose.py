@@ -214,7 +214,8 @@ class Yesterday:
 
 
 def where_line(places) -> str:
-    return "Where: " + "; ".join(name for name, _ in places) if places else ""
+    """Plain text: a linked place as mail apps write a link, `name <url>`."""
+    return "Where: " + "; ".join(f"{name} <{url}>" if url else name for name, url in places) if places else ""
 
 
 def count_phrase(n: int, one: str, many: str) -> str:

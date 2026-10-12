@@ -3,7 +3,8 @@
     pk               sk                         what
     USER#<id>        PROFILE                    email, birthday, tz, send_time, status, last_sent_date,
                                                 city, region, country, lat, lon; stopped_reason when stopped;
-                                                pause_from, pause_through for the latest pause
+                                                pause_from, pause_through for the latest pause; inbox, the
+                                                token of the standing address (INBOX#)
     USER#<id>        PAUSE#<YYYY-MM-DD>         one pause: through (inclusive), kept for the streak and export
     USER#<id>        DAY#<YYYY-MM-DD>           the email sent that day: version, token, message id
     USER#<id>        NOTE#<YYYY-MM-DD>#<msgid>  one reply: text, attachment list, raw S3 key
@@ -31,6 +32,11 @@
                                                 after sent_at (inbound.py), but the item has no TTL: the
                                                 email's unsubscribe link uses it as long as the account lasts.
                                                 late_notice_at once a late reply has been told so (once only)
+    INBOX#<token>    INBOX                      the standing address, <token>@ the inbound domain -> user,
+                                                created_at: a note any day, no reply needed (inbound.py).
+                                                120 random bits (compose.new_token), no TTL: it lasts until
+                                                "New address" replaces it or the account is deleted. Good only
+                                                while the profile's `inbox` still names it
     EMAIL#<address>  EMAIL                      address -> user (one subscriber per address)
     LOGIN#<hash>     LOGIN                      a sign-in's link and code (auth.py), 15 minutes; purpose
                                                 signin or delete (none: a sign-in from before purposes)
@@ -118,6 +124,7 @@ class Subscriber:
     pause_through: str | None = None
     place: dict | None = None  # the city, for weather (weather.place_of)
     describe: bool = False  # photo descriptions on: they are the email's alt text
+    inbox: str | None = None  # the standing address's token (INBOX#)
 
     def paused_on(self, day: str) -> bool:
         return bool(self.pause_from and self.pause_through and self.pause_from <= day <= self.pause_through)
@@ -136,6 +143,7 @@ class Subscriber:
             pause_through=item.get("pause_through"),
             place=place_of(item),
             describe=bool(item.get("describe")),
+            inbox=item.get("inbox"),
         )
 
 
@@ -281,6 +289,35 @@ class Store:
             if _failed_condition(e):
                 return False
             raise
+
+    # the standing address -------------------------------------------------
+
+    def get_inbox(self, token: str) -> dict | None:
+        return self.table.get_item(Key={"pk": f"INBOX#{token}", "sk": "INBOX"}).get("Item")
+
+    def set_inbox(self, user_id: str, token: str, now: str, old: str | None = None) -> bool:
+        """Make `token` the subscriber's standing address, in place of `old`
+        (None: they have none yet). The new item first, then the profile,
+        on the condition that it still names `old`, then the old item goes.
+        False, with nothing left behind, if the profile moved on meanwhile
+        (another tab, the sender) or is gone (a deleted account)."""
+        self.table.put_item(Item={"pk": f"INBOX#{token}", "sk": "INBOX", "user_id": user_id, "created_at": now},
+                            ConditionExpression="attribute_not_exists(pk)")
+        try:
+            self.table.update_item(
+                Key={"pk": f"USER#{user_id}", "sk": "PROFILE"},
+                UpdateExpression="SET inbox = :t",
+                ConditionExpression="attribute_exists(pk) AND " + ("inbox = :old" if old else "attribute_not_exists(inbox)"),
+                ExpressionAttributeValues={":t": token, **({":old": old} if old else {})},
+            )
+        except Exception as e:
+            self.table.delete_item(Key={"pk": f"INBOX#{token}", "sk": "INBOX"})
+            if _failed_condition(e):
+                return False
+            raise
+        if old:
+            self.table.delete_item(Key={"pk": f"INBOX#{old}", "sk": "INBOX"})
+        return True
 
     def _dates(self, user_id: str, prefix: str) -> set[str]:
         return {sk.split("#")[1] for sk in self._keys(user_id, prefix)}

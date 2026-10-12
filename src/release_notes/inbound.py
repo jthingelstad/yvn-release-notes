@@ -5,8 +5,9 @@ A reply is filed only when all of these hold:
   - SES did not flag it as spam or a virus, and did not fail to scan it for
     one (a virus verdict of PROCESSING_FAILED counts as a virus; a spam
     verdict of GRAY or PROCESSING_FAILED is let through);
-  - it was sent to a reply address we issued (the token names the person and day);
-  - it arrived within REPLY_WINDOW, 72 hours, of the email it answers going
+  - it was sent to a reply address we issued (the token names the person and day),
+    or to the subscriber's standing address (below);
+  - for a reply address, it arrived within REPLY_WINDOW, 72 hours, of the email it answers going
     out (Jamie, 2026-10-09: "72 hours after it was sent. After that, the
     user can add a note via the web interface"). The token says when that
     was (`sent_at`); one written before tokens did has only its day (see
@@ -47,6 +48,17 @@ with the user id and `sent`, `skipped` (`stopped`, `limited`,
 `already-sent`) or `failed`. Whatever goes wrong sending it is logged and
 the reply is still tagged ignored, so SES never retries the delivery over it.
 
+The standing address (Jamie, 2026-10-12: a note or photo "without
+replying"): `<token>@` the inbound domain, the token 120 random bits
+(compose.new_token) naming the person, not a day (store.py, INBOX#). It is
+shown only in their settings and the footer of their emails. Every check
+above holds but the 72 hours: there is no window, so no late notice
+either. The mail is filed for the subscriber's own day when SES received
+it, by their time zone, as that day's version, and its subject is ignored.
+It files nothing for a stopped subscriber, nor once "New address" has
+replaced it (the profile's `inbox` must still name it). The address is
+never logged; the log line says `via: "address"`.
+
 Everything else is tagged outcome=ignored and expires from S3 in 30 days.
 Filed messages are tagged outcome=note and kept. Their photos and recordings
 are copied out to media/ and listed on the note (media.py); anything else
@@ -58,12 +70,14 @@ import os
 import re
 from datetime import date, datetime, timedelta, timezone
 from email.utils import getaddresses
+from zoneinfo import ZoneInfo
 
 from . import links, media, tags
 from .compose import MAIL_TAG, from_header, late_message, message_id
 from .notes import MAX_NOTE
 from .parse import anchors, attachments, note_text, parse_headers, parse_message
 from .store import Store
+from .version import compute_version
 
 PARSER_VERSION = 3  # 2: HTML-only replies keep link addresses; links named. 3: photos and audio copied out
 REPLY_WINDOW = timedelta(hours=72)
@@ -86,9 +100,11 @@ def automatic(msg) -> bool:
     return (msg.get("Precedence") or "").strip().lower() in ("auto_reply", "bulk", "junk")
 
 
-def token_from(recipient: str, inbound_domain: str) -> str | None:
-    m = re.fullmatch(rf"n-([a-z2-7]{{24}})@{re.escape(inbound_domain)}", recipient.strip().lower())
-    return m.group(1) if m else None
+def token_from(recipient: str, inbound_domain: str) -> tuple[str, bool] | None:
+    """(token, standing): n-<token>@ is a day's reply address, <token>@
+    alone the standing one."""
+    m = re.fullmatch(rf"(n-)?([a-z2-7]{{24}})@{re.escape(inbound_domain)}", recipient.strip().lower())
+    return (m.group(2), not m.group(1)) if m else None
 
 
 def deadline(tok: dict) -> datetime:
@@ -293,12 +309,17 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None, mailer=None) -> tup
     tokens = [t for t in (token_from(r, inbound_domain) for r in receipt.get("recipients", [])) if t]
     if not tokens:
         return "ignored", {"reason": "no-token"}
-    tok = store.get_token(tokens[0])
+    token, standing = tokens[0]
+    tok = store.get_inbox(token) if standing else store.get_token(token)
     if not tok:
         return "ignored", {"reason": "unknown-token"}
     sub = store.get_subscriber(tok["user_id"])
     if not sub:
         return "ignored", {"reason": "unknown-user"}
+    if standing and sub.inbox != token:
+        return "ignored", {"reason": "replaced", "user": sub.user_id}
+    if standing and sub.status != "active":
+        return "ignored", {"reason": "stopped", "user": sub.user_id}
 
     froms = getaddresses(mail.get("commonHeaders", {}).get("from", []))
     from_addr = froms[0][1].lower() if len(froms) == 1 else ""
@@ -318,10 +339,10 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None, mailer=None) -> tup
     if automatic(head):
         return "ignored", {"reason": "auto-reply", "user": sub.user_id}
 
-    if received(mail) > deadline(tok):
+    if not standing and received(mail) > deadline(tok):
         # Too late for the reply address; the web app takes the note now.
         # Only here, with the sender proven, does anything go back to them.
-        late_notice(store, mailer, sub, tokens[0], tok, head, received(mail))
+        late_notice(store, mailer, sub, token, tok, head, received(mail))
         return "ignored", {"reason": "expired", "user": sub.user_id}
 
     # Only now the body. Reading it touches nothing outside the message, so
@@ -341,7 +362,13 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None, mailer=None) -> tup
     if not text and not files:
         return "ignored", {"reason": "empty", "user": sub.user_id}
 
-    day = tok["date"]
+    if standing:
+        # Their own day as SES received it; the subject is not a note's.
+        here = received(mail).astimezone(ZoneInfo(sub.tz)).date()
+        day, version, subject = here.isoformat(), str(compute_version(sub.birthday, here)), None
+    else:
+        day, version = tok["date"], tok["version"]
+        subject = (mail.get("commonHeaders", {}).get("subject") or "")[:300]
     found = links.collect(text, named, fetch=fetch) if text else []
     # Files first: if a copy fails, SES retries the whole reply, and the
     # keys are fixed, so nothing is doubled.
@@ -351,13 +378,13 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None, mailer=None) -> tup
         day,
         mail["messageId"],
         {
-            "version": tok["version"],
+            "version": version,
             "text": text,
             "source": "email",
             "attachments": files,
             "written_at": mail["timestamp"],
             "tz": sub.tz,
-            "subject": (mail.get("commonHeaders", {}).get("subject") or "")[:300],
+            **({"subject": subject} if subject is not None else {}),
             "raw_key": key,
             "parser_version": PARSER_VERSION,
             **({"links": found} if found else {}),
@@ -373,4 +400,5 @@ def _file(mail, receipt, store, s3, bucket, key, fetch=None, mailer=None) -> tup
         "links": len(found),
         "media": len(kept),
         "duplicate": not stored,
+        **({"via": "address"} if standing else {}),
     }

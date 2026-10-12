@@ -46,7 +46,9 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
    as Markdown and JSON; since phase 3, a zip with those and every photo
    and recording, built in the background (`export_job.py`). It arrives with sign-in, before anything else, so
    deleting an account never means losing what was in it.
-7. **Settings**: send time and location, sign out, delete account (after an
+7. **Settings**: send time and location, the standing address (a note any
+   day by email, no reply needed; Copy, and "New address" to replace it),
+   sign out, delete account (after an
    export is offered, and with a fresh code).
 8. **The daily email** gains a "Pause or manage" link and one-click
    `List-Unsubscribe`. A hard bounce or complaint stops the subscriber.
@@ -259,7 +261,7 @@ fonts are served from here.
 | `POST /api/auth/verify` `{email, code}` or `{token}` | sets the cookie; says whether the account is new |
 | `POST /api/auth/signout` | |
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |
-| `GET /api/me` | the profile, or `{new: true}` for an address signing up |
+| `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address |
 | `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `status: "active"` to start again); the birthday cannot change |
 | `GET /api/export?format=md\|json` | the words alone, as a download (JSON by default) |
 | `POST /api/export/zip` | start a zip of everything, photos and recordings too (202); answers with the build already going, if one is |
@@ -279,6 +281,7 @@ fonts are served from here.
 | `POST /api/search` `{q}` | notes with every word or "quoted phrase"; the words never go in a URL |
 | `PUT /api/pause` `{days}` or `{through}` | pause, or change the pause |
 | `DELETE /api/pause` | resume now |
+| `POST /api/me/inbox` | a new standing address in place of the old one, which files nothing from then on; answers `{inbox}`; 409 `try-again` if another tab changed it first |
 | `POST /api/me/delete-code` | mails the account's address a code to confirm deleting |
 | `DELETE /api/me` `{code}` | deletes everything; needs that fresh code |
 | `POST /api/unsubscribe?t=` | the email's one-click unsubscribe (RFC 8058); the token is the day's reply token, and this is the one write without an Origin |

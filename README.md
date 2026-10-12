@@ -16,7 +16,7 @@ EventBridge, every quarter hour
   -> sender Lambda     anyone whose local send time has come gets one email,
                        with a reply address unique to them and that day
 
-reply email
+reply email, or one to the subscriber's standing address
   -> SES inbound       stores the raw message in S3, untouched
   -> inbound Lambda    checks the reply address, the sender and their domain's
                        DMARC (or DKIM), then files the text as that day's note
@@ -32,8 +32,10 @@ the zip export, and, for those who turn them on, write out recordings and
 describe photos.
 
 - **Email and the web.** Every day starts with the email. Reply to it, or
-  sign in to the web app to write, add photos, recordings and PDFs, look
-  back, search, pause or change settings.
+  write any day to your own address (in settings and at the foot of every
+  email: no reply needed, filed for the day it arrives), or sign in to the
+  web app to write, add photos, recordings and PDFs, look back, search,
+  pause or change settings.
 - **A note belongs to the day of the email it answers.** Reply to Tuesday's
   email on Thursday and it is still Tuesday's note. A reply address takes
   notes for 72 hours; after that, the web takes them, for any day.

@@ -60,6 +60,10 @@ Rules for it:
   date, and each past day's weather in "On this day", both as text; the footer
   credits Open-Meteo whenever either shows. Without it, the email is the
   same as ever.
+- The footer names the subscriber's standing address (inbound.py) in one
+  quiet line, in both parts, for a note any day without replying. The
+  sender makes the address the first time it needs one; without one (it
+  could not be made), the line is left out.
 """
 
 import re
@@ -108,6 +112,11 @@ def from_header(from_addr: str) -> str:
 
 def reply_address(token: str, inbound_domain: str) -> str:
     return f"n-{token}@{inbound_domain}"
+
+
+def standing_address(token: str, inbound_domain: str) -> str:
+    """The subscriber's own address for a note any day (inbound.py)."""
+    return f"{token}@{inbound_domain}"
 
 
 def subject(v: Version) -> str:
@@ -431,7 +440,7 @@ def unsubscribe_link(token: str) -> str:
 
 def body(v: Version, birthday: date, streak: Streak | None = None, past: OnThisDay | None = None,
          forecast: str | None = None, welcome: str | None = None, token: str | None = None,
-         lifetime: Lifetime | None = None, yesterday: Yesterday | None = None) -> str:
+         lifetime: Lifetime | None = None, yesterday: Yesterday | None = None, inbox: str | None = None) -> str:
     opening = f"You're {v} today."
     if line := birthday_line(v):
         opening = f"{opening} {line}"
@@ -462,7 +471,8 @@ def body(v: Version, birthday: date, streak: Streak | None = None, past: OnThisD
         "\n"
         "-- \n"
         "Release Notes, from Your Version Number\n"
-        f"Pause or manage: {APP}/settings/\n"
+        + (f"Write any day, no reply needed: {inbox}\n" if inbox else "")
+        + f"Pause or manage: {APP}/settings/\n"
         + (f"Unsubscribe: {unsubscribe_link(token)}\n" if token else "")
         + (f"{weather.CREDIT}: {weather.CREDIT_URL}\n" if credited(forecast, past) else "")
     )
@@ -674,7 +684,7 @@ DARK_CSS = f"""
 def html_body(
     v: Version, birthday: date, day: date, streak: Streak | None = None, past: OnThisDay | None = None,
     forecast: str | None = None, welcome: str | None = None, token: str | None = None,
-    lifetime: Lifetime | None = None, yesterday: Yesterday | None = None,
+    lifetime: Lifetime | None = None, yesterday: Yesterday | None = None, inbox: str | None = None,
 ) -> str:
     vs = escape(str(v))
     party = birthday_line(v)
@@ -700,6 +710,10 @@ def html_body(
     )
     unsubscribe_html = (
         f' &middot; <a class="link" href="{escape(unsubscribe_link(token))}" style="color:{BLUE};">Unsubscribe</a>' if token else ""
+    )
+    inbox_html = (
+        f'<br>Write any day, no reply needed: <a class="link" href="mailto:{escape(inbox)}" style="color:{BLUE};">'
+        f"{escape(inbox)}</a>" if inbox else ""
     )
     return f"""<!doctype html>
 <html lang="en">
@@ -747,7 +761,7 @@ What happened, what you made, who you saw. Whatever you send back becomes the re
 {yesterday_html(birthday, yesterday) if yesterday else ""}
 {past_html(v, birthday, past) if past else ""}
 <tr><td class="ink-2" style="padding:48px 0 0;font-family:{FONT};font-size:13px;line-height:1.5;color:{INK_2};">
-Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>. <a class="link" href="{APP}/settings/" style="color:{BLUE};">Pause or manage</a>{unsubscribe_html}{credit_html}
+Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>. <a class="link" href="{APP}/settings/" style="color:{BLUE};">Pause or manage</a>{unsubscribe_html}{credit_html}{inbox_html}
 </td></tr>
 
 </table>
@@ -774,6 +788,7 @@ def build_message(
     lifetime: Lifetime | None = None,
     yesterday: Yesterday | None = None,
     images: dict[str, bytes] | None = None,
+    inbox: str | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = from_header(from_addr)
@@ -787,9 +802,11 @@ def build_message(
     msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     # Exchange: no out-of-office or other automatic replies to this.
     msg["X-Auto-Response-Suppress"] = "OOF, AutoReply"
-    msg.set_content(body(v, birthday, streak, past, forecast, welcome, token, lifetime, yesterday))
-    msg.add_alternative(html_body(v, birthday, day, streak, past, forecast, welcome, token, lifetime, yesterday),
-                        subtype="html")
+    # `inbox` is the token of their standing address, named in the footer.
+    standing = standing_address(inbox, inbound_domain) if inbox else None
+    msg.set_content(body(v, birthday, streak, past, forecast, welcome, token, lifetime, yesterday, standing))
+    msg.add_alternative(html_body(v, birthday, day, streak, past, forecast, welcome, token, lifetime, yesterday,
+                                  standing), subtype="html")
     if images:
         # The photos the HTML names by cid:, inside the message
         # (multipart/related), each a thumbnail (thumbs.py).

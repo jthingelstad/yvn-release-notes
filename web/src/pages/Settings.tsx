@@ -8,6 +8,7 @@ import {
   ErrorLine,
   Failed,
   Loading,
+  useBusy,
   useFocusLater,
   useProblem,
   useTitle
@@ -100,6 +101,63 @@ function useSetting<T>(stored: T) {
   return { value: pending ? pending.v : stored, saved, problem, change };
 }
 
+// The standing address (AGENTS.md, Who can write): a note or a photo by
+// email any day, no reply needed. "New address" replaces it, and the old
+// one files nothing from then on.
+function Inbox({ p }: { p: Me }) {
+  const client = useQueryClient();
+  const problem = useProblem();
+  const [busy, run] = useBusy();
+  const [copied, setCopied] = useState(false);
+  const newButton = useRef<HTMLButtonElement>(null);
+  const copyButton = useRef<HTMLButtonElement>(null);
+
+  const copy = async () => {
+    problem.clear();
+    try {
+      await navigator.clipboard.writeText(p.inbox || '');
+      setCopied(true);
+    } catch {
+      problem.show('Couldn’t copy it. Select the address and copy it from there.', copyButton.current);
+    }
+  };
+
+  const replace = () =>
+    run(async () => {
+      problem.clear();
+      setCopied(false);
+      if (p.inbox && !window.confirm('Your current address will stop taking notes. Make a new one?')) return;
+      const r = await api<{ inbox: string }>('POST', '/api/me/inbox');
+      if (!r.ok) return problem.show(r.data, newButton.current);
+      client.setQueryData(['me'], { ...p, inbox: r.data.inbox });
+    });
+
+  return (
+    <section className="section" id="inbox">
+      <h2>Write by email, any day</h2>
+      <p className="value mono" data-field="inbox" hidden={!p.inbox}>
+        {p.inbox}
+      </p>
+      <p className="hint">
+        Send a note or a photo here whenever you like, no reply needed. It goes in for the day it arrives, from{' '}
+        {p.email} only. Keep it to yourself: anyone could use it to send you mail.
+      </p>
+      <div className="row">
+        <button ref={copyButton} className="quiet" type="button" id="inbox-copy" hidden={!p.inbox} onClick={copy}>
+          Copy
+        </button>
+        <button ref={newButton} className="quiet" type="button" id="inbox-new" disabled={busy} onClick={replace}>
+          {p.inbox ? 'New address' : 'Make my address'}
+        </button>
+      </div>
+      <p className="aside saved" id="inbox-copied" role="status" hidden={!copied}>
+        Copied.
+      </p>
+      <ErrorLine line={problem.line} />
+    </section>
+  );
+}
+
 function Account({ p }: { p: Me }) {
   const client = useQueryClient();
   const save = useSave();
@@ -138,6 +196,8 @@ function Account({ p }: { p: Me }) {
           {p.email}
         </p>
       </section>
+
+      <Inbox p={p} />
 
       <section className="section">
         <label>

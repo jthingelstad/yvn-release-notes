@@ -29,16 +29,25 @@ Every write proves the writer owns the subscriber's address:
   (`inbound.py`).
 - **On the web**: inside a session that began with a link or code sent to
   that address (`auth.py`).
+- **By the standing address** (Jamie, 2026-10-12): `<token>@` the inbound
+  domain, 120 random bits naming the person, not a day (`INBOX#`), shown
+  only in their settings and the footer of their emails, with every check
+  a reply has but the 72 hours: from the subscriber's own address, DMARC
+  or an aligned DKIM, not automatic (`inbound.py`). It is filed for their
+  own day when SES received it, and it never expires; "New address" in
+  settings replaces it, and the old one files nothing from then on. A
+  stopped subscriber's address files nothing. It is never logged.
 
 Each subscriber's data is their own. Do not add an endpoint that writes
-without one of those two proofs.
+without one of those three proofs.
 
 ## Shape
 
 ```
 SES inbound (in.yourversionnumber.com MX)
   -> S3 raw/<messageId>                 the message, untouched
-  -> Lambda yvn-release-notes-inbound  token -> person + day, auth checks, text -> DynamoDB
+  -> Lambda yvn-release-notes-inbound  token -> person + day (a reply) or person (the standing
+                                         address: today, theirs), auth checks, text -> DynamoDB
 
 EventBridge, every quarter hour
   -> Lambda yvn-release-notes-sender   anyone whose local send time has come -> one email
@@ -237,7 +246,7 @@ failed on live until 2026-10-08 because of it).
 - **Pauses** are dated (`PAUSE#<from>`, at most 60 days) and end on their
   own; stopping does not. Paused days neither break a streak nor add to it.
 - **Deleting an account deletes it**, after a code mailed to the address:
-  raw emails, files, any zip export, tokens, every `USER#` item, the session
+  raw emails, files, any zip export, tokens and the standing address, every `USER#` item, the session
   in every browser, the address's newest codes, the address and the
   profile. Nothing is kept; the export is offered first. Old versions of
   deleted files expire 30 days later, as backups. A deletion code only

@@ -39,6 +39,10 @@ class SignUpTest(WebCase):
                                              "Payload": {"send_now": user_id}}])
         _, again = self.call("GET", "/api/me", cookies=cookies)
         self.assertFalse(again["new"])
+        # Their standing address, made with the account (inbound.py).
+        self.assertEqual(list(self.store.inboxes), [p["inbox"]])
+        self.assertEqual((body["inbox"], again["inbox"]), (f"{p['inbox']}@in.yourversionnumber.com",) * 2)
+        self.assertNotIn(p["inbox"], self.out.getvalue())
         self.assertNotIn("new@example.com", self.out.getvalue())
         self.assertNotIn("Minneapolis", self.out.getvalue())
 

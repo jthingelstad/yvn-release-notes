@@ -368,6 +368,8 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
                     "photos": len(images),
                     "photo_bytes": sum(map(len, images.values())),
                     "forecast": bool(forecast),
+                    # The footer's address; a real send makes one if missing.
+                    "inbox": bool(sub.inbox),
                 }
             )
             continue
@@ -397,6 +399,25 @@ def report(store: Store, now: datetime, context) -> None:
         log(event="census-error", error=type(e).__name__)
 
 
+def standing(store: Store, sub: Subscriber, clock) -> str | None:
+    """The token of the subscriber's standing address, for the footer:
+    theirs, or made now the first time (sign-up came before it existed).
+    None if it cannot be made: the email goes without the line."""
+    if sub.inbox:
+        return sub.inbox
+    try:
+        token = new_token()
+        if store.set_inbox(sub.user_id, token, clock().isoformat()):
+            sub.inbox = token
+            return token
+        # Made meanwhile (the web, say): read it back.
+        fresh = store.get_subscriber(sub.user_id)
+        return fresh.inbox if fresh else None
+    except Exception as e:
+        log(event="inbox-error", user=sub.user_id, error=type(e).__name__)
+        return None
+
+
 def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None, bucket=None) -> dict:
     previous = sub.last_sent_date
     # The slow parts come before the claim, so a run that times out in them
@@ -411,6 +432,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None,
         log(event="skip", user=sub.user_id, date=day, reason="already-claimed")
         return {"user": sub.user_id, "date": day, "outcome": "already-claimed"}
     token = new_token()
+    inbox = standing(store, sub, clock)
     try:
         store.put_day(sub.user_id, day, str(v), token, clock().isoformat())
         msg = build_message(
@@ -426,6 +448,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None,
             lifetime=life,
             yesterday=yesterday,
             images=images,
+            inbox=inbox,
             forecast=forecast,
             # Nothing sent before means this is the one sign-up sends.
             welcome=welcome_line(sub.send_time, os.environ["FROM_ADDRESS"]) if previous is None else None,

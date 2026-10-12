@@ -10,6 +10,7 @@
 // found it.
 // Where: a note's place from the city search, and a day's own place, set
 // and cleared, its weather following.
+// The standing address: shown in settings, copied, and replaced.
 import { test, expect } from '@playwright/test';
 
 // A real 1 x 1 PNG, so the browser draws it, and a small PDF.
@@ -238,4 +239,31 @@ test('a past day can have a place of its own, and its weather follows', async ({
   await where.getByRole('button', { name: 'Clear' }).click();
   await expect(where.getByRole('button', { name: 'Where was this day?' })).toBeVisible();
   await expect(where.locator('#where')).toHaveCount(0);
+});
+
+test('settings shows the standing address, copies it, and a new one replaces it', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/settings/');
+  const box = page.locator('#inbox');
+  const address = box.locator('[data-field=inbox]');
+  const pattern = /^[a-z2-7]{24}@in\.yourversionnumber\.com$/;
+  // Ada, made by the dev server, may have none yet.
+  if (await box.getByRole('button', { name: 'Make my address' }).isVisible()) {
+    await box.getByRole('button', { name: 'Make my address' }).click();
+  }
+  await expect(address).toHaveText(pattern);
+  const first = await address.textContent();
+
+  await box.getByRole('button', { name: 'Copy' }).click();
+  await expect(box.locator('#inbox-copied')).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(first);
+
+  page.once('dialog', (d) => d.accept());
+  await box.getByRole('button', { name: 'New address' }).click();
+  await expect(address).not.toHaveText(first);
+  await expect(address).toHaveText(pattern);
+  // It is the profile's now, after a reload too.
+  const second = await address.textContent();
+  await page.reload();
+  await expect(page.locator('#inbox [data-field=inbox]')).toHaveText(second);
 });

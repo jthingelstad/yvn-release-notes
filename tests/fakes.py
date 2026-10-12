@@ -15,6 +15,7 @@ class FakeStore:
         self.emails, self.profiles, self.items = {}, {}, {}
         self.logins, self.newest, self.sessions, self.counts = {}, {}, {}, {}
         self.tokens = {}
+        self.inboxes = {}  # token -> {"user_id", "created_at"}
         self.tallied = {}  # (month, name) -> n
 
     def user_for_email(self, email):
@@ -41,6 +42,19 @@ class FakeStore:
 
     def get_token(self, token):
         return self.tokens.get(token)
+
+    def get_inbox(self, token):
+        return self.inboxes.get(token)
+
+    def set_inbox(self, user_id, token, now, old=None):
+        p = self.profiles.get(user_id)
+        if p is None or p.get("inbox") != old:
+            return False
+        self.inboxes[token] = {"user_id": user_id, "created_at": now}
+        p["inbox"] = token
+        if old:
+            self.inboxes.pop(old, None)
+        return True
 
     # notes and days live in items[user_id], as the table's rows
 
@@ -153,6 +167,8 @@ class FakeStore:
             pk, sk = key["pk"], key["sk"]
             if pk.startswith("TOKEN#"):
                 self.tokens.pop(pk[6:], None)
+            elif pk.startswith("INBOX#"):
+                self.inboxes.pop(pk[6:], None)
             elif pk.startswith("EMAIL#"):
                 self.emails.pop(pk[6:], None)
             elif sk == "PROFILE":

@@ -32,7 +32,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from . import auth, export, export_job, links, media, places, tags, transcribe, weather
-from .compose import DOTS, MAIL_TAG, from_header, next_release
+from .compose import DOTS, MAIL_TAG, from_header, new_token, next_release, standing_address
 from .notes import MAX_NOTE, map_url, place_label, written_at
 from .streak import ONE_DAY, compute_streak, pause_days
 from .version import anniversary, compute_version
@@ -416,6 +416,9 @@ def profile_view(p: dict, now: int) -> dict:
     for k in ("city", "region", "country", "stopped_reason"):
         if p.get(k):
             view[k] = p[k]
+    if p.get("inbox"):
+        # Their standing address (inbound.py): settings shows it to copy.
+        view["inbox"] = standing_address(p["inbox"], os.environ["INBOUND_DOMAIN"])
     if p.get("pause_through", "") >= today.isoformat() and p.get("pause_from"):
         view["pause"] = {"from": p["pause_from"], "through": p["pause_through"]}
     view["pause_starts"] = pause_start(p, today).isoformat()
@@ -571,6 +574,11 @@ def sign_up(app: App, s: dict, body: dict) -> dict:
             raise Reject(409, "try-again")
         profile = app.store.profile(user_id) or {}
     else:
+        try:  # their standing address; the first email makes one if this fails
+            if app.store.set_inbox(user_id, new_token(), iso(app.now)):
+                profile = app.store.profile(user_id) or profile
+        except Exception as e:
+            log(event="inbox-error", user=user_id, error=type(e).__name__)
         send_first(app, user_id)
         tally(app, "signups")
     app.store.claim_session(s["hash"], user_id, int(s["expires_at"]))
@@ -589,6 +597,17 @@ def send_first(app: App, user_id: str) -> None:
                        Payload=json.dumps({"send_now": user_id}).encode())
     except Exception:
         log(event="first-email-failed", user=user_id)
+
+
+def new_inbox(app: App, req: Request) -> dict:
+    """"New address": a standing address in place of the one they have
+    (or a first one), which stops filing at once. Never logged."""
+    user_id, p = app.account(req)
+    token = new_token()
+    if not app.store.set_inbox(user_id, token, iso(app.now), p.get("inbox")):
+        raise Reject(409, "try-again")  # changed in another tab meanwhile
+    log(event="inbox", user=user_id, outcome="new" if p.get("inbox") else "first")
+    return respond(200, {"inbox": standing_address(token, os.environ["INBOUND_DOMAIN"])})
 
 
 def find_places(app: App, req: Request) -> dict:
@@ -1339,7 +1358,8 @@ def sessions_of(items: list[dict]) -> list[dict]:
 
 
 def delete_me(app: App, req: Request) -> dict:
-    """Delete everything: the original emails, the reply addresses, every
+    """Delete everything: the original emails, the reply addresses and the
+    standing one, every
     item under the subscriber, the sessions those list (every browser
     signed in, not only this one), the address's newest sign-in and
     deletion code, the address, and the profile last, so a failure part way
@@ -1366,12 +1386,15 @@ def delete_me(app: App, req: Request) -> dict:
             log(event="delete-failed", user=user_id, step="mail", errors=len(out["Errors"]))
             raise Reject(502, "delete-failed")
     keys = [{"pk": f"TOKEN#{i['token']}", "sk": "TOKEN"} for i in items if i["sk"].startswith("DAY#") and i.get("token")]
+    keys += inbox_keys(p)
     keys += sessions_of(items)
     keys += [{"pk": i["pk"], "sk": i["sk"]} for i in items if i["sk"] != "PROFILE"]
     keys += app.store.login_keys(auth.digest(p["email"]))
     keys.append({"pk": f"EMAIL#{p['email']}", "sk": "EMAIL"})
     app.store.delete_keys(keys)
-    app.store.delete_keys([{"pk": f"USER#{user_id}", "sk": "PROFILE"}])
+    # A standing address the sender made since the first read goes too.
+    again = app.store.profile(user_id) or {}
+    app.store.delete_keys([k for k in inbox_keys(again) if k not in keys] + [{"pk": f"USER#{user_id}", "sk": "PROFILE"}])
     # A send or a reply already past its checks may have written something
     # since the first read. With the profile gone, no new one gets that far.
     late = app.store.user_items(user_id)
@@ -1394,6 +1417,10 @@ def delete_me(app: App, req: Request) -> dict:
     return respond(200, {"ok": True}, cookies=[auth.clear_cookie()])
 
 
+def inbox_keys(p: dict) -> list[dict]:
+    return [{"pk": f"INBOX#{p['inbox']}", "sk": "INBOX"}] if p.get("inbox") else []
+
+
 ROUTES = [
     ("GET", "/api/health", health),
     ("GET", "/api/sample", sample),
@@ -1404,6 +1431,7 @@ ROUTES = [
     ("PUT", "/api/me", update_me),
     ("DELETE", "/api/me", delete_me),
     ("POST", "/api/me/delete-code", delete_code),
+    ("POST", "/api/me/inbox", new_inbox),
     ("GET", "/api/places", find_places),
     ("GET", "/api/export", export_data),
     ("GET", "/api/export/zip", export_zip),

@@ -5,7 +5,9 @@ The email loads nothing remote, so its photos travel inside the message
 (compose.py), and a phone's 4 MB original is far too big for that. Each
 photo gets one thumbnail, made once, when it is filed, whatever brought
 it (a reply, the web, an import): at most LONGEST pixels on its longest
-side, a JPEG of roughly 50 to 80 KB, kept beside the photo under the same
+side, a JPEG of roughly 50 to 80 KB (a busy photo that is still over
+TARGET at the lowest quality is made smaller until it fits, down to
+SMALLEST; past that it gets none and stays a link), kept beside the photo under the same
 owner prefix, `media/<user>/.../<n>.thumb.jpg` (thumb_key), and listed on
 the photo's media entry as `thumb`: {"key", "size", "width", "height"}.
 A photo no thumbnail can be made from (a file Pillow cannot read, one
@@ -49,6 +51,8 @@ import os
 LONGEST = 640  # pixels, the longest side
 TARGET = 80 * 1024  # bytes: lower the quality until a thumbnail is this or less
 QUALITIES = (80, 72, 64, 56)
+SMALLER = 0.8  # past the last quality, the sides shrink by this until it fits
+SMALLEST = 240  # pixels, the longest side: no smaller than this
 MAX_PIXELS = 100_000_000  # a larger photo is refused, not decoded
 FORMATS = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 PAPER = (255, 251, 242)  # transparent parts go on the email's paper
@@ -112,13 +116,19 @@ def make(data: bytes) -> tuple[bytes, int, int] | None:
                 img = paper
             elif img.mode != "RGB":
                 img = img.convert("RGB")
-            for quality in QUALITIES:
-                out = io.BytesIO()
-                img.save(out, "JPEG", quality=quality, optimize=True, progressive=True,
-                         **({"icc_profile": icc} if icc else {}))
-                if out.tell() <= TARGET:
-                    break
-            return out.getvalue(), img.width, img.height
+            while True:
+                for quality in QUALITIES:
+                    out = io.BytesIO()
+                    img.save(out, "JPEG", quality=quality, optimize=True, progressive=True,
+                             **({"icc_profile": icc} if icc else {}))
+                    if out.tell() <= TARGET:
+                        return out.getvalue(), img.width, img.height
+                # A busy photo still too big at the lowest quality: smaller
+                # sides, so it never takes more than its share of the email.
+                if max(img.size) * SMALLER < SMALLEST:
+                    return None
+                img = img.resize((max(1, round(img.width * SMALLER)), max(1, round(img.height * SMALLER))),
+                                 Image.Resampling.LANCZOS)
     except (OSError, ValueError, SyntaxError, EOFError, Image.DecompressionBombError, Image.DecompressionBombWarning):
         return None
 

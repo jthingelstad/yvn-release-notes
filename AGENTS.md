@@ -85,7 +85,9 @@ Where things are (each module's docstring is its design):
 - Imports: `dayone.py` (plans), `importer.py` (writes).
 - `store.py`: the one table. `census.py`: the dashboard's counts.
 - `version.py`: the version arithmetic, ported from the site's
-  `computeVersion`. `tests/fixtures/versions.json` is generated from the
+  `computeVersion`, and a release ("5.4", a year of life, birthday to
+  birthday: `release_span`), which the release pages, the birthday
+  email and the export's headings share. `tests/fixtures/versions.json` is generated from the
   site's own function by `scripts/gen-version-fixtures.mjs` (needs the
   sibling checkout). If the site's arithmetic changes, regenerate and
   re-test.

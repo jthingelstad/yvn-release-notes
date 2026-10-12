@@ -4,7 +4,7 @@
 import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { get } from './api.ts';
 import { addDays } from './format.ts';
-import type { DayPage, DaysPage, Me, Note, TaggedDays, Today } from './types.ts';
+import type { DayPage, DaysPage, Me, Note, ReleasePage, Releases, TaggedDays, Today } from './types.ts';
 
 // A recording being written out: look again every 30 seconds, 20 times.
 export const POLL = 30000;
@@ -32,6 +32,20 @@ export const daysQuery = infiniteQueryOptions({
   initialPageParam: '',
   getNextPageParam: (last) => last.before || undefined
 });
+
+export const releasesQuery = queryOptions({
+  queryKey: ['releases'],
+  queryFn: () => get<Releases>('/api/releases')
+});
+
+export const releaseQuery = (v: string | null) =>
+  infiniteQueryOptions({
+    queryKey: ['release', v],
+    queryFn: ({ pageParam }) => get<ReleasePage>(`/api/releases/${v}` + (pageParam ? `?after=${pageParam}` : '')),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.after || undefined,
+    enabled: !!v
+  });
 
 export const dayQuery = (day: string | null) =>
   queryOptions({

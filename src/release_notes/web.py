@@ -35,7 +35,7 @@ from . import auth, export, export_job, links, media, places, tags, transcribe, 
 from .compose import DOTS, MAIL_TAG, from_header, new_token, next_release, standing_address
 from .notes import MAX_NOTE, map_url, place_label, written_at
 from .streak import ONE_DAY, compute_streak, pause_days
-from .version import anniversary, compute_version
+from .version import anniversary, compute_version, release_age, release_name, release_span
 
 MAX_BODY = 64 * 1024
 
@@ -898,6 +898,86 @@ def days(app: App, req: Request) -> dict:
     )
 
 
+def release_of(note: dict, born: date) -> int:
+    return compute_version(born, date.fromisoformat(note["sk"].split("#")[1])).age
+
+
+def releases(app: App, req: Request) -> dict:
+    """The releases index for the Timeline, newest first: each with notes,
+    and the current one whether or not it has any. From every note's key
+    alone."""
+    user_id, p = app.account(req)
+    born, today = date.fromisoformat(p["birthday"]), local_today(p, app.now)
+    current = compute_version(born, today).age
+    seen: dict[int, dict] = {current: {"days": set(), "notes": 0}}
+    for n in app.store.note_tags(user_id):
+        e = seen.setdefault(release_of(n, born), {"days": set(), "notes": 0})
+        e["days"].add(n["sk"].split("#")[1])
+        e["notes"] += 1
+    out = []
+    for age in sorted((a for a in seen if 0 <= a <= current), reverse=True):
+        first, last = release_span(born, age)
+        out.append({"v": release_name(age), "from": first.isoformat(), "through": last.isoformat(),
+                    "days": len(seen[age]["days"]), "notes": seen[age]["notes"],
+                    **({"current": True} if age == current else {})})
+    return respond(200, {"today": today.isoformat(), "releases": out})
+
+
+def release(app: App, req: Request, value: str) -> dict:
+    """One release (/release/?v=5.4): its days with notes, oldest first, a
+    page at a time (?after= the last day shown), under a head that sums up
+    the whole of it: the dates, the counts, the longest streak in it, and
+    its tags by how many notes have them."""
+    user_id, p = app.account(req)
+    born, today = date.fromisoformat(p["birthday"]), local_today(p, app.now)
+    age = release_age(value)
+    if age is None or age > compute_version(born, today).age:
+        raise Reject(404, "release")
+    first, last = release_span(born, age)
+    shown_last = min(last, today)
+    try:
+        limit = min(max(int(req.query.get("limit") or DAYS_PAGE), 1), DAYS_MAX)
+    except ValueError:
+        raise Reject(400, "limit") from None
+    after = req.query.get("after")
+    if after is not None:
+        after = day_from(p, after, app.now).isoformat()
+    index = [n for n in app.store.note_tags(user_id) if first.isoformat() <= n["sk"].split("#")[1] <= shown_last.isoformat()]
+    have = sorted({n["sk"].split("#")[1] for n in index})
+    counted: dict[str, int] = {}
+    for n in index:
+        for t in n.get("tags") or []:
+            counted[t] = counted.get(t, 0) + 1
+    paused = {d for d in pause_days(app.store.pauses(user_id), today) if first <= d <= shown_last}
+    # Every day it has had so far counts, today included: a sum, not the ask.
+    longest = compute_streak({date.fromisoformat(d) for d in have}, shown_last + ONE_DAY, paused).longest
+    picked = [d for d in have if after is None or d > after]
+    page = picked[:limit]
+    by_day: dict[str, list[dict]] = {d: [] for d in page}
+    skies: dict[str, dict] = {}
+    own: dict[str, dict] = {}
+    if page:
+        for n in app.store.notes_between(user_id, page[0], page[-1]):
+            by_day.setdefault(n["sk"].split("#")[1], []).append(n)
+        skies = app.store.weather_between(user_id, page[0], page[-1])
+        own = app.store.places_between(user_id, page[0], page[-1])
+    return respond(200, {
+        "v": release_name(age),
+        "current": last >= today,
+        "from": first.isoformat(),
+        "through": last.isoformat(),
+        "today": today.isoformat(),
+        "tz": p["tz"],
+        "days_with_notes": len(have),
+        "notes": len(index),
+        "longest": longest,
+        "tags": [{"tag": t, "notes": c} for t, c in sorted(counted.items(), key=lambda x: (-x[1], x[0]))],
+        "days": [day_view(p, d, by_day[d], skies.get(d), app.media_links(user_id), own.get(d))
+                 for d in page if by_day[d]],
+        "after": page[-1] if len(picked) > limit else None,
+    })
+
+
 def one_day(app: App, req: Request, value: str) -> dict:
     user_id, p = app.account(req)
     day = day_from(p, value, app.now).isoformat()
@@ -1447,6 +1527,8 @@ ROUTES = [
     ("GET", "/api/today", today),
     ("GET", "/api/days", days),
     ("GET", "/api/days/{date}", one_day),
+    ("GET", "/api/releases", releases),
+    ("GET", "/api/releases/{v}", release),
     ("POST", "/api/days/{date}/notes", add_note),
     ("PUT", "/api/days/{date}/notes/{id}", edit_note),
     ("DELETE", "/api/days/{date}/notes/{id}", delete_note),
@@ -1466,7 +1548,7 @@ ROUTES = [
 # Writes that carry their own proof (a token) and come from mail apps,
 # which send no Origin.
 NO_ORIGIN = {"/api/unsubscribe"}
-_COMPILED = [(m, re.compile(p.replace("{date}", r"(\d{4}-\d{2}-\d{2})").replace("{id}", r"([A-Za-z0-9_-]{1,80})").replace("{n}", r"([1-9][0-9]?)").replace("{tag}", r"([a-z0-9]{1,50}(?:-[a-z0-9]{1,49})*)")), p, f) for m, p, f in ROUTES]
+_COMPILED = [(m, re.compile(p.replace("{date}", r"(\d{4}-\d{2}-\d{2})").replace("{id}", r"([A-Za-z0-9_-]{1,80})").replace("{n}", r"([1-9][0-9]?)").replace("{v}", r"([0-9]{1,3}\.[0-9])").replace("{tag}", r"([a-z0-9]{1,50}(?:-[a-z0-9]{1,49})*)")), p, f) for m, p, f in ROUTES]
 
 
 def match(method: str, path: str):

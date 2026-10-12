@@ -6,6 +6,8 @@ the SES and S3 bookkeeping. The JSON lists each note's attachments, and
 each day's weather where it was kept (weather.py); the Markdown gives it a
 line under the day, and credits Open-Meteo. A day's own place (`places`,
 the PLACE item) leads that day's "At" line, before its notes' places.
+The Markdown has a heading for each release ("## 5.3", a year of life,
+Jamie 2026-10-12) and one under it for each of its days.
 
 Two ways out. The words alone, Markdown or JSON, come straight back from
 the API. Everything, photos and recordings included, is a zip that
@@ -19,7 +21,7 @@ from decimal import Decimal
 
 from . import links, weather
 from .notes import combine, place_label, written_at
-from .version import compute_version
+from .version import compute_version, release_name
 
 PROFILE_FIELDS = (
     "email", "birthday", "tz", "send_time", "status", "created_at",
@@ -147,11 +149,17 @@ def markdown(data: dict) -> str:
         lines += ["", f"{weather.CREDIT} ({weather.CREDIT_URL}), CC BY 4.0."]
     if not by_day:
         lines += ["", "No notes yet."]
+    release = None
     for day, notes in by_day.items():
         # Links by name, as Markdown links; the raw address stays the target.
         text = combine([{"text": links.markdown(n["text"], n.get("links"))} for n in notes])
         version = notes[0]["version"] if notes else (str(compute_version(born, date.fromisoformat(day))) if born else "")
-        lines += ["", f"## {version} · {long_date(day)}"]
+        named = (release_name(compute_version(born, date.fromisoformat(day)).age) if born
+                 else ".".join(str(version).split(".")[:2]))
+        if named != release:
+            release = named
+            lines += ["", f"## {release}"]
+        lines += ["", f"### {version} · {long_date(day)}"]
         if day in skies:
             lines += ["", weather.day_line(skies[day], fahrenheit) + "."]
         own = [spots[day]] if day in spots else []

@@ -7,6 +7,7 @@ and `tests/test_version.py` holds this port to it. Change the site's
 arithmetic and this file in the same week, and regenerate the fixtures.
 """
 
+import re
 from calendar import isleap
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -65,3 +66,24 @@ def same_day_before(birthday: date, today: date) -> list[date]:
         if day < end:
             out.append(day)
     return out
+
+
+# --- releases ---------------------------------------------------------------------
+# A release is a year of life, "5.4" for age 54: from that birthday to the
+# day before the next, every day of it 5.4.<patch>. Not the site's
+# arithmetic, only named by it.
+
+def release_name(age: int) -> str:
+    return f"{age // 10}.{age % 10}"
+
+
+def release_age(name: str) -> int | None:
+    """54 for "5.4"; None for anything that names no release."""
+    m = re.fullmatch(r"(\d{1,3})\.(\d)", name or "")
+    return int(m.group(1)) * 10 + int(m.group(2)) if m else None
+
+
+def release_span(birthday: date, age: int) -> tuple[date, date]:
+    """The first and last day of the release at `age`."""
+    first = anniversary(birthday.year + age, birthday.month, birthday.day)
+    return first, anniversary(birthday.year + age + 1, birthday.month, birthday.day) - timedelta(days=1)

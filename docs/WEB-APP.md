@@ -35,7 +35,12 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
    subscribes goes straight to its notes.
 2. **Today**: the version number, today's notes from email and the web
    together, a box to write one, and the streak.
-3. **Timeline**: days by version, newest first, with their notes.
+3. **Timeline**: days by version, newest first, with their notes. Above
+   them, the releases (a release is a year of life, "5.4", birthday to
+   birthday), newest first, the current one marked, each a link to its
+   page: `/release/?v=5.4`, its days with notes, oldest first, under a
+   head with its dates, its counts, its longest streak and its tags by how
+   many notes have them (Jamie, 2026-10-12).
 4. **Any past day**: pick a date and add notes to it (backfill). Any day from
    the birthday to yesterday. A note can say where it was ("Where", the
    city search, optional), and a day can have a place of its own with no
@@ -150,7 +155,7 @@ notes.yourversionnumber.com
   then the email; `/#sign-in` the email alone), `/signin/` (the link lands
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
-  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/search/`,
+  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/search/`,
   `/tag/?t=<tag>`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`.
 - **A pause** starts on the next day an email would go (today, unless
   today's has gone) and runs 1 to 60 days. It is `PAUSE#<from>` with
@@ -269,6 +274,8 @@ fonts are served from here.
 | `GET /api/export/zip/file` | the built zip: a redirect to a five-minute signed link |
 | `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
+| `GET /api/releases` | the releases index: each release with notes, and the current one (`current`), newest first, with `from`, `through`, `days` (with notes) and `notes`; from the notes' keys alone |
+| `GET /api/releases/{v}?after=&limit=` | one release (`4.5`): its head (`from`, `through`, `current`, `days_with_notes`, `notes`, `longest`, `tags` by count) and its days with notes, oldest first, 30 a page; `after` in the answer is the next page's cursor. 404 `release` for one not begun |
 | `GET /api/days/{date}` | one day: version, notes (each note's `parts` is its text split into strings and links by name), `weather`, the day's recorded weather as a line, when kept, and `where`, the day's own place by name, when set |
 | `POST /api/days/{date}/notes` | write for today or a past day; `uploads` attaches files, and a note with files may have no text; `place` (a city from `/api/places`) says where |
 | `PUT/DELETE /api/days/{date}/place` | set the day's own place (a city from `/api/places`) or clear it; answers `{date, where, weather}`, the past day's weather fetched again for it |

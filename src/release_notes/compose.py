@@ -56,6 +56,11 @@ Rules for it:
   streak already says what it needs to, and a missed day is never called
   out. The note index that "On this day" reads says whether yesterday has
   anything, so the block costs one more read only when it shows.
+- On a birthday (patch 0, Jamie, 2026-10-12), one short block for the
+  release just closed, under the streak: its days with notes, notes,
+  photos and longest streak, and a link to its page on the web
+  (/release/?v=5.3). From the same note index, so it costs one read of
+  the pauses. A release with no notes has no block.
 - Weather (weather.py) is one quiet line of today's forecast under the
   date, and each past day's weather in "On this day", both as text; the footer
   credits Open-Meteo whenever either shows. Without it, the email is the
@@ -77,7 +82,7 @@ from html import escape
 
 from . import links, tags, weather
 from .streak import Streak
-from .version import Version, compute_version
+from .version import Version, compute_version, release_name
 
 SITE = "https://yourversionnumber.com"
 APP = "https://notes.yourversionnumber.com"
@@ -234,6 +239,16 @@ class Lifetime:
     since: int  # the year of the first note
 
 
+@dataclass(frozen=True)
+class Closed:
+    """The release that ended yesterday, summed up on the birthday."""
+    age: int
+    days: int
+    notes: int
+    photos: int
+    longest: int
+
+
 YESTERDAY_MAX = 1000  # characters of yesterday's notes
 
 
@@ -265,6 +280,21 @@ def lifetime_line(life: Lifetime) -> str:
     """'1,064 notes across 908 days since 2011, and 847 photos.'"""
     line = f"{count_phrase(life.notes, 'note', 'notes')} across {count_phrase(life.days, 'day', 'days')} since {life.since}"
     return line + (f", and {count_phrase(life.photos, 'photo', 'photos')}." if life.photos else ".")
+
+
+def release_link(age: int) -> str:
+    return f"{APP}/release/?v={release_name(age)}"
+
+
+def closed_line(c: Closed) -> str:
+    """'212 days with notes, 340 notes and 120 photos. Longest streak: 41 days.'"""
+    line = f"{count_phrase(c.days, 'day', 'days')} with notes, {count_phrase(c.notes, 'note', 'notes')}"
+    line += f" and {count_phrase(c.photos, 'photo', 'photos')}." if c.photos else "."
+    return line + (f" Longest streak: {count_phrase(c.longest, 'day', 'days')}." if c.longest > 1 else "")
+
+
+def closed_body(c: Closed) -> str:
+    return f"{release_name(c.age)} is closed: {closed_line(c)}\nSee all of it: {release_link(c.age)}\n\n"
 
 
 def past_text(text: str, limit: int = PAST_MAX) -> tuple[str, bool]:
@@ -440,7 +470,8 @@ def unsubscribe_link(token: str) -> str:
 
 def body(v: Version, birthday: date, streak: Streak | None = None, past: OnThisDay | None = None,
          forecast: str | None = None, welcome: str | None = None, token: str | None = None,
-         lifetime: Lifetime | None = None, yesterday: Yesterday | None = None, inbox: str | None = None) -> str:
+         lifetime: Lifetime | None = None, yesterday: Yesterday | None = None, inbox: str | None = None,
+         closed: Closed | None = None) -> str:
     opening = f"You're {v} today."
     if line := birthday_line(v):
         opening = f"{opening} {line}"
@@ -453,6 +484,8 @@ def body(v: Version, birthday: date, streak: Streak | None = None, past: OnThisD
         streak_text += lifetime_line(lifetime) + "\n"
     if streak_text:
         streak_text += "\n"
+    if closed:
+        streak_text += closed_body(closed)
     if yesterday:
         streak_text += yesterday_body(birthday, yesterday)
     if past:
@@ -595,6 +628,18 @@ def tags_html(day_tags: tuple[str, ...]) -> str:
     )
 
 
+def closed_html(c: Closed) -> str:
+    name = escape(release_name(c.age)).replace(".", f'<span class="sep" style="color:{ORANGE_INK};">.</span>')
+    return f"""<tr><td style="padding:48px 0 0;">
+<p class="ink" style="margin:0 0 8px;font-family:{FONT};font-size:22px;line-height:1.2;font-weight:800;color:{INK};"><span class="vnum" style="font-family:{MONO};letter-spacing:-0.03em;color:{BLUE};white-space:nowrap;">{name}</span> is closed</p>
+<p class="ink-2" style="margin:0 0 8px;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">{ascii_html(closed_line(c))}</p>
+<p class="ink-2" style="margin:0;font-family:{FONT};font-size:15px;line-height:1.45;color:{INK_2};">
+<a class="link" href="{escape(release_link(c.age))}" style="color:{BLUE};font-weight:700;text-decoration:underline;">See all of it</a>
+</p>
+</td></tr>
+"""
+
+
 def yesterday_html(birthday: date, y: Yesterday) -> str:
     then = compute_version(birthday, y.day)
     shown, cut = yesterday_shown(y)
@@ -685,6 +730,7 @@ def html_body(
     v: Version, birthday: date, day: date, streak: Streak | None = None, past: OnThisDay | None = None,
     forecast: str | None = None, welcome: str | None = None, token: str | None = None,
     lifetime: Lifetime | None = None, yesterday: Yesterday | None = None, inbox: str | None = None,
+    closed: Closed | None = None,
 ) -> str:
     vs = escape(str(v))
     party = birthday_line(v)
@@ -758,7 +804,7 @@ What happened, what you made, who you saw. Whatever you send back becomes the re
 </td></tr>
 
 {streak_html(v, birthday, streak, lifetime)}
-{yesterday_html(birthday, yesterday) if yesterday else ""}
+{closed_html(closed) if closed else ""}{yesterday_html(birthday, yesterday) if yesterday else ""}
 {past_html(v, birthday, past) if past else ""}
 <tr><td class="ink-2" style="padding:48px 0 0;font-family:{FONT};font-size:13px;line-height:1.5;color:{INK_2};">
 Release Notes, from <a class="link" href="{SITE}/" style="color:{BLUE};">Your Version Number</a>. <a class="link" href="{APP}/settings/" style="color:{BLUE};">Pause or manage</a>{unsubscribe_html}{credit_html}{inbox_html}
@@ -789,6 +835,7 @@ def build_message(
     yesterday: Yesterday | None = None,
     images: dict[str, bytes] | None = None,
     inbox: str | None = None,
+    closed: Closed | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = from_header(from_addr)
@@ -804,9 +851,9 @@ def build_message(
     msg["X-Auto-Response-Suppress"] = "OOF, AutoReply"
     # `inbox` is the token of their standing address, named in the footer.
     standing = standing_address(inbox, inbound_domain) if inbox else None
-    msg.set_content(body(v, birthday, streak, past, forecast, welcome, token, lifetime, yesterday, standing))
+    msg.set_content(body(v, birthday, streak, past, forecast, welcome, token, lifetime, yesterday, standing, closed))
     msg.add_alternative(html_body(v, birthday, day, streak, past, forecast, welcome, token, lifetime, yesterday,
-                                  standing), subtype="html")
+                                  standing, closed), subtype="html")
     if images:
         # The photos the HTML names by cid:, inside the message
         # (multipart/related), each a thumbnail (thumbs.py).

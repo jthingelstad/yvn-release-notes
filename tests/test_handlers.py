@@ -429,6 +429,35 @@ class Sending(unittest.TestCase):
                       "#web\n\n1 photo, 1 recording\n", text)
         self.assertIn(">Sent a reply.</p>", html)
 
+    def test_a_birthday_sums_up_the_release_just_closed(self):
+        # Ada turns 5.0 on 2026-10-07: 4.9 ran 2025-10-07 through 2026-10-06.
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2025-10-06", "a")] = {"text": "4.8, not counted."}
+        store.notes[("u1", "2025-10-07", "b")] = {"text": "x", "media": [{"n": 1, "kind": "image"}]}
+        store.notes[("u1", "2025-10-08", "c")] = {"text": "x"}
+        store.notes[("u1", "2025-10-10", "d")] = {"text": "x"}
+        store.notes[("u1", "2026-10-06", "e")] = {"text": "x"}
+        store.notes[("u1", "2026-10-06", "f")] = {"text": "x"}
+        store.paused = [("2025-10-09", "2025-10-09")]  # the pause joins the run
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
+        self.assertEqual(out["results"][0]["closed"], {"release": "4.9", "days": 4, "notes": 5, "longest": 3})
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        text, html = msg.get_body(("plain",)).get_content(), msg.get_body(("html",)).get_content()
+        self.assertIn("4.9 is closed: 4 days with notes, 5 notes and 1 photo. Longest streak: 3 days.\n"
+                      "See all of it: https://notes.yourversionnumber.com/release/?v=4.9\n", text)
+        self.assertLess(text.index("4.9 is closed"), text.index("Yesterday you were"))
+        self.assertIn('href="https://notes.yourversionnumber.com/release/?v=4.9"', html)
+        self.assertIn("4 days with notes, 5 notes and 1 photo. Longest streak: 3 days.", html)
+
+    def test_no_closed_block_on_other_days_or_without_notes(self):
+        store = FakeStore([ada()])
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
+        self.assertIsNone(out["results"][0]["closed"])
+        store.notes[("u1", "2026-10-07", "a")] = {"text": "x"}
+        out = send.handler({"now": "2026-10-09T01:00:00+00:00", "dry_run": True}, None, store=store)
+        self.assertIsNone(out["results"][0]["closed"])
+
     def test_yesterdays_places_once_each_in_the_order_written(self):
         store, ses = FakeStore([ada()]), FakeSES()
         cabin = {"label": "Cabin", "region": "Minnesota", "lat": 47.1, "lon": -91.2, "from": "entry"}

@@ -105,6 +105,38 @@ export interface Place {
   tz: string;
 }
 
+// A release is a year of life ("4.5"), birthday to birthday.
+export interface ReleaseSummary {
+  v: string;
+  from: string;
+  through: string;
+  days: number;
+  notes: number;
+  current?: boolean;
+}
+
+export interface Releases {
+  today: string;
+  releases: ReleaseSummary[];
+}
+
+// One release's days with notes, oldest first, a page at a time (`after`),
+// under a head that sums up all of it.
+export interface ReleasePage {
+  v: string;
+  current: boolean;
+  from: string;
+  through: string;
+  today: string;
+  tz: string;
+  days_with_notes: number;
+  notes: number;
+  longest: number;
+  tags: { tag: string; notes: number }[];
+  days: Day[];
+  after?: string | null;
+}
+
 export interface TaggedDays {
   today: string;
   tz: string;

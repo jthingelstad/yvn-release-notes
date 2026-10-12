@@ -21,7 +21,17 @@ import { Loading } from './components/common.tsx';
 import { ViewerProvider } from './components/viewer.tsx';
 import { ApiError } from './lib/api.ts';
 import { countPage } from './lib/pagecount.ts';
-import { daysQuery, dayQuery, meQuery, pickDay, tagQuery, tagsQuery, todayQuery } from './lib/queries.ts';
+import {
+  daysQuery,
+  dayQuery,
+  meQuery,
+  pickDay,
+  releaseQuery,
+  releasesQuery,
+  tagQuery,
+  tagsQuery,
+  todayQuery
+} from './lib/queries.ts';
 import { home, store } from './lib/storage.ts';
 import { AppError } from './pages/AppError.tsx';
 import { Home } from './pages/Home.tsx';
@@ -123,7 +133,18 @@ const behind = [
   createRoute({
     getParentRoute: () => signedInRoute,
     ...page('/timeline', () => import('./pages/Timeline.tsx'), 'Timeline'),
-    loader: ({ context }: Ctx) => context.queryClient.prefetchInfiniteQuery(daysQuery)
+    loader: ({ context }: Ctx) =>
+      Promise.all([
+        context.queryClient.prefetchInfiniteQuery(daysQuery),
+        context.queryClient.prefetchQuery(releasesQuery)
+      ])
+  }),
+  createRoute({
+    getParentRoute: () => signedInRoute,
+    ...page('/release', () => import('./pages/Release.tsx'), 'Release'),
+    loaderDeps: ({ search: s }) => ({ v: search(s, 'v') }),
+    loader: ({ context, deps }) =>
+      deps.v ? context.queryClient.prefetchInfiniteQuery(releaseQuery(deps.v)) : undefined
   }),
   createRoute({
     getParentRoute: () => signedInRoute,

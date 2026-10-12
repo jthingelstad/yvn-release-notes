@@ -186,6 +186,59 @@ class DaysTest(NotesCase):
         self.assertEqual((r["statusCode"], body["error"]), (400, "date"))
 
 
+class ReleasesTest(NotesCase):
+    # Ada is 4.5 (2026-06-14 to 2027-06-13); 4.4 ran 2025-06-14 to 2026-06-13.
+
+    def test_the_index_newest_first_with_the_current_one_marked(self):
+        self.emailed("2026-06-13", "a", text="Last day of 4.4.")
+        self.emailed("2026-06-13", "b", text="Again.")
+        self.emailed("2020-01-01", "c", text="Long ago.")
+        r, body = self.get("/api/releases")
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual(body["releases"], [
+            {"v": "4.5", "from": "2026-06-14", "through": "2027-06-13", "days": 0, "notes": 0, "current": True},
+            {"v": "4.4", "from": "2025-06-14", "through": "2026-06-13", "days": 1, "notes": 2},
+            {"v": "3.8", "from": "2019-06-14", "through": "2020-06-13", "days": 1, "notes": 1},
+        ])
+        self.assertNotIn("Long ago", self.out.getvalue())
+
+    def test_a_release_oldest_first_with_its_head_and_pages(self):
+        self.emailed("2025-07-04", "d", text="Fourth. #walk", tags=["walk"])
+        self.emailed("2025-07-01", "a", text="First. #walk #home", tags=["walk", "home"])
+        self.emailed("2025-07-02", "b", text="Second.", tags=["walk"])
+        self.emailed("2025-07-02", "c", text="Also second.")
+        self.emailed("2026-06-14", "e", text="4.5 already.")
+        self.store.put_pause("u1", "2025-07-03", "2025-07-03", "2025-07-02T12:00:00Z")
+        self.store.set_day_place("u1", "2025-07-02", {"city": "Duluth", "region": "Minnesota", "lat": 46.78, "lon": -92.1})
+        r, body = self.get("/api/releases/4.4", query={"limit": "2"})
+        self.assertEqual(r["statusCode"], 200)
+        self.assertEqual((body["v"], body["current"], body["from"], body["through"]), ("4.4", False, "2025-06-14", "2026-06-13"))
+        self.assertEqual((body["days_with_notes"], body["notes"], body["longest"]), (3, 4, 3))
+        self.assertEqual(body["tags"][0], {"tag": "walk", "notes": 3})
+        self.assertEqual([d["date"] for d in body["days"]], ["2025-07-01", "2025-07-02"])
+        self.assertEqual([len(d["notes"]) for d in body["days"]], [1, 2])
+        self.assertEqual([d.get("where") for d in body["days"]], [None, "Duluth, Minnesota"])
+        self.assertEqual(body["after"], "2025-07-02")
+        _, body = self.get("/api/releases/4.4", query={"limit": "2", "after": body["after"]})
+        self.assertEqual(([d["date"] for d in body["days"]], body["after"]), (["2025-07-04"], None))
+        self.assertNotIn("First", self.out.getvalue())
+
+    def test_the_current_release_runs_to_today(self):
+        self.emailed("2026-10-07", "a")
+        self.add(TODAY, "Today.")
+        _, body = self.get("/api/releases/4.5")
+        self.assertEqual((body["current"], body["days_with_notes"], body["longest"]), (True, 2, 2))
+
+    def test_no_release_ahead_of_today_or_badly_named(self):
+        for v in ("4.6", "9.9"):
+            r, body = self.get(f"/api/releases/{v}")
+            self.assertEqual((r["statusCode"], body["error"]), (404, "release"))
+        r, _ = self.get("/api/releases/four")
+        self.assertEqual(r["statusCode"], 404)
+        r, body = self.get("/api/releases/4.4", query={"after": "nope"})
+        self.assertEqual((r["statusCode"], body["error"]), (400, "date"))
+
+
 class LinksTest(NotesCase):
     def setUp(self):
         super().setUp()

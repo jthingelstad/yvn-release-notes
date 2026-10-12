@@ -22,6 +22,10 @@ through; the note index says whether there are any, so a day without
 costs no read. A dry run reports those days, whether yesterday shows and
 its files, and the note count, never the text.
 
+On a birthday the email sums up the release just closed (read_closed):
+its days with notes, notes, photos and longest streak, from the same
+index and one read of the pauses. A dry run reports those counts.
+
 Photos go in the email inside the message (compose.py): the thumbnails
 (thumbs.py) of Yesterday's photos first, then each "On this day" day's,
 up to compose's limits, read from the bucket only once chosen. The
@@ -49,12 +53,12 @@ from email.utils import make_msgid
 from zoneinfo import ZoneInfo
 
 from . import census, media, tags, weather
-from .compose import (MAIL_TAG, PHOTO_BYTES, PHOTOS_A_DAY, PHOTOS_AN_EMAIL, SHOWN, Inline, Lifetime, OnThisDay,
+from .compose import (MAIL_TAG, PHOTO_BYTES, PHOTOS_A_DAY, PHOTOS_AN_EMAIL, SHOWN, Closed, Inline, Lifetime, OnThisDay,
                       PastDay, Yesterday, build_message, from_header, new_token, welcome_line)
 from .notes import combine, day_links, map_url, place_label, written_at
 from .store import Store, Subscriber
-from .streak import Streak, compute_streak, pause_days
-from .version import compute_version, same_day_before
+from .streak import ONE_DAY, Streak, compute_streak, pause_days
+from .version import compute_version, release_name, release_span, same_day_before
 
 WINDOW = timedelta(hours=3)
 # Stop starting sends with this much of the function's time left; the next
@@ -105,23 +109,44 @@ def read_streak(store: Store, user_id: str, day: date) -> Streak | None:
 
 
 def read_history(store: Store, sub: Subscriber, day: date) -> tuple[OnThisDay | None, Lifetime | None, Yesterday | None,
-                                                                   list[dict] | None, object]:
-    """"On this day", the lifetime counts and yesterday's notes and own
-    place (shown, and as read, for where yesterday's weather was: the notes
-    are None when they could not be read, the place UNREAD when Yesterday
-    did not need it), from one read of every
-    note's key and media. All are niceties: on any failure the email goes
-    without."""
+                                                                   list[dict] | None, object, Closed | None]:
+    """"On this day", the lifetime counts, yesterday's notes and own place
+    (shown, and as read, for where yesterday's weather was: the notes are
+    None when they could not be read, the place UNREAD when Yesterday did
+    not need it) and, on a birthday, the release just closed, from one read
+    of every note's key and media. All are niceties: on any failure the
+    email goes without."""
     try:
         index = store.note_index(sub.user_id)
     except Exception as e:
         log(event="history-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
-        return None, None, None, None, UNREAD
+        return None, None, None, None, UNREAD, None
     days = {d for d, _ in index}
     life = Lifetime(notes=len(index), days=len(days), photos=sum(n for _, n in index),
                     since=int(min(days)[:4])) if index else None
     yesterday, notes, own = read_yesterday(store, sub, day, days)
-    return read_on_this_day(store, sub, day, days), life, yesterday, notes, own
+    return read_on_this_day(store, sub, day, days), life, yesterday, notes, own, read_closed(store, sub, day, index)
+
+
+def read_closed(store: Store, sub: Subscriber, day: date, index: list[tuple[str, int]]) -> Closed | None:
+    """On a birthday, the release that ended yesterday, summed up from the
+    note index: none on other days, at the first release, or when it had
+    no notes. Its longest streak counts its pauses, as the streak does."""
+    v = compute_version(sub.birthday, day)
+    if v.patch or not v.age:
+        return None
+    first, last = release_span(sub.birthday, v.age - 1)
+    within = [(d, n) for d, n in index if first.isoformat() <= d <= last.isoformat()]
+    if not within:
+        return None
+    have = {date.fromisoformat(d) for d, _ in within}
+    try:
+        paused = {d for d in pause_days(store.pauses(sub.user_id), last) if d >= first}
+    except Exception as e:
+        log(event="closed-error", user=sub.user_id, date=day.isoformat(), error=type(e).__name__)
+        return None
+    return Closed(age=v.age - 1, days=len(have), notes=len(within), photos=sum(n for _, n in within),
+                  longest=compute_streak(have, last + ONE_DAY, paused).longest)
 
 
 def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> tuple[Yesterday | None,
@@ -347,7 +372,7 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
             continue
         if dry_run:
             streak = read_streak(store, sub.user_id, here.date())
-            past, life, yesterday, notes, own = read_history(store, sub, here.date())
+            past, life, yesterday, notes, own, closed = read_history(store, sub, here.date())
             yesterday, past, images = with_photos(sub, here.date(), yesterday, past, bucket)
             forecast = read_weather(store, sub, here.date(), fetch, False, clock, notes, own)
             results.append(
@@ -365,6 +390,9 @@ def handler(event, context, *, store: Store | None = None, ses=None, clock=utc_n
                     "yesterday_files": {**{k: n for k, n in (yesterday.files or {}).items() if n},
                                         **({"others": yesterday.others} if yesterday.others else {})} if yesterday else {},
                     "notes": life.notes if life else None,
+                    # On a birthday, the release just closed.
+                    "closed": {"release": release_name(closed.age), "days": closed.days,
+                               "notes": closed.notes, "longest": closed.longest} if closed else None,
                     "photos": len(images),
                     "photo_bytes": sum(map(len, images.values())),
                     "forecast": bool(forecast),
@@ -426,7 +454,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None,
     # The slow parts come before the claim, so a run that times out in them
     # has claimed nothing and the next run sends this one.
     streak = read_streak(store, sub.user_id, date.fromisoformat(day))
-    past, life, yesterday, notes, own = read_history(store, sub, date.fromisoformat(day))
+    past, life, yesterday, notes, own, closed = read_history(store, sub, date.fromisoformat(day))
     yesterday, past, images = with_photos(sub, date.fromisoformat(day), yesterday, past, bucket) if bucket \
         else (yesterday, past, {})
     forecast = read_weather(store, sub, date.fromisoformat(day), fetch or weather.fetch_morning, True, clock, notes,
@@ -450,6 +478,7 @@ def send_one(store: Store, ses, sub: Subscriber, day: str, v, clock, fetch=None,
             past=past,
             lifetime=life,
             yesterday=yesterday,
+            closed=closed,
             images=images,
             inbox=inbox,
             forecast=forecast,

@@ -272,6 +272,52 @@ class WebTest(NotesCase):
         self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
         self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
 
+    def test_a_place_changed_just_before_the_write_is_kept_again_where_the_day_is(self):
+        self.add("2026-09-12", "Backfilled.")  # home's weather, kept
+        replace = self.store.replace_weather
+
+        def late(user_id, day, fields):
+            # The place is cleared after this call's last look and that
+            # call writes home's weather first; then this one's Duluth lands.
+            self.store.replace_weather = replace
+            self.store.clear_day_place("u1", "2026-09-12")
+            replace(user_id, day, {**fields, "city": "Minneapolis", "lat": MPLS["lat"], "lon": MPLS["lon"]})
+            replace(user_id, day, fields)
+        self.store.replace_weather = late
+        r, body = self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body), (200, {"date": "2026-09-12",
+                                                         "weather": "Light rain, 65° / 48° in Minneapolis"}))
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
+        self.assertEqual(len(self.sky.urls), 3)  # home, Duluth, home again
+
+    def test_another_name_for_the_same_spot_renames_the_weather(self):
+        self.add("2026-09-12", "Backfilled.")
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        fetched = len(self.sky.urls)
+        r, body = self.call("PUT", "/api/days/2026-09-12/place", {"place": {**DULUTH, "name": "Hermantown"}},
+                            cookies=self.cookies)
+        self.assertEqual((r["statusCode"], body["where"], body["weather"]),
+                         (200, "Hermantown, Minnesota", "Light rain, 65° / 48° in Hermantown"))
+        self.assertEqual(len(self.sky.urls), fetched)  # the same reading, under the new name
+        self.assertIn('"outcome":"set"', self.out.getvalue())
+        self.assertNotIn("Hermantown", self.out.getvalue())
+
+    def test_the_answer_to_a_place_change_is_read_consistently(self):
+        self.add("2026-09-12", "Backfilled.")
+        seen = []
+        between, own = self.store.weather_between, self.store.day_place
+
+        def weather_between(user_id, first, last, consistent=False):
+            seen.append(("weather", consistent))
+            return between(user_id, first, last, consistent)
+
+        def day_place(user_id, day, consistent=False):
+            seen.append(("place", consistent))
+            return own(user_id, day, consistent)
+        self.store.weather_between, self.store.day_place = weather_between, day_place
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        self.assertEqual(set(seen), {("weather", True), ("place", True)})
+
     def test_a_failed_fetch_leaves_weather_another_call_wrote_since(self):
         self.add("2026-09-12", "Backfilled.")
         self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)  # Duluth's, kept

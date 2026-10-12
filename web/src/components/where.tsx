@@ -4,7 +4,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useRef, useState } from 'react';
 import { api } from '../lib/api.ts';
-import type { Place } from '../lib/types.ts';
+import type { Day, DayPage, Place, Today } from '../lib/types.ts';
 import { ErrorLine, useBusy, useFocusLater, useProblem } from './common.tsx';
 
 const PlacePicker = lazy(() => import('./placepicker.tsx').then((m) => ({ default: m.PlacePicker })));
@@ -85,12 +85,21 @@ export function DayWhere({ day, where }: { day: string; where?: string }) {
   const send = (method: 'PUT' | 'DELETE', place?: Place) =>
     run(async () => {
       problem.clear();
-      const r = await api(method, `/api/days/${day}/place`, place ? { place } : undefined);
+      const r = await api<Pick<Day, 'where' | 'weather'>>(
+        method,
+        `/api/days/${day}/place`,
+        place ? { place } : undefined
+      );
       if (!r.ok) return problem.show(r.data, input.current);
       setOpen(false);
       // Everything, as a note's change does: the Timeline, search and
       // the export show the day's place or its weather too.
       await client.invalidateQueries();
+      // Then this answer, read just after the write, over the refetch,
+      // which may not have seen it yet.
+      const fresh = r.data;
+      client.setQueryData<DayPage>(['day', day], (d) => d && { ...d, where: fresh.where, weather: fresh.weather });
+      client.setQueryData<Today>(['today'], (t) => (t?.date === day ? { ...t, where: fresh.where } : t));
     });
 
   return (

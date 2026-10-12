@@ -100,6 +100,10 @@ def history(place: dict, day: date, today: date, fetch=fetch_json) -> dict | Non
                            end_date=day.isoformat())), day.isoformat())
 
 
+# The place fields a reading is named by.
+NAMED = ("city", "region", "country")
+
+
 def record(reading: dict, place: dict, fetched_at: str) -> dict:
     """A WEATHER item's fields: the reading and where it is for."""
     return {**reading, "city": place.get("city", ""), "region": place.get("region", ""),
@@ -155,7 +159,7 @@ def spot(place: dict) -> tuple | None:
 
 
 def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: date, fetch, fetched_at: str,
-             changed: bool = False) -> str:
+             changed: bool = False, again: bool = True) -> str:
     """Keep a finished day's weather where the subscriber was. Once for
     their city; for a day with a place of its own, again whenever that
     place is not the one the kept weather is for. `changed`: the day's
@@ -164,8 +168,9 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
     one for another place is dropped, so the next call tries again, and so
     it is when the fetch fails. Reads consistently: it follows the write of
     a place or a note. The place is read again after the fetch, and a
-    reading for a place the day no longer has is not kept ("moved").
-    Returns what it did, for the log."""
+    reading for a place the day no longer has is not kept ("moved"), and
+    again after the write. A new name for the same spot renames the
+    reading ("renamed"). Returns what it did, for the log."""
     if day >= today:
         return "not-yet"
     d = day.isoformat()
@@ -181,6 +186,11 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
         return "no-place"
     kept = store.weather_between(user_id, d, d, consistent=True).get(d)
     if kept and (same_place(kept, place) or not (where or changed)):
+        if changed and same_place(kept, place) and any(kept.get(k, "") != place.get(k, "") for k in NAMED):
+            # Another name for the same spot: the reading stands, under it.
+            store.replace_weather(user_id, d, {**{k: v for k, v in kept.items() if k not in ("pk", "sk")},
+                                               **{k: place.get(k, "") for k in NAMED}})
+            return "renamed"
         return "kept"
 
     def still():
@@ -207,8 +217,16 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
         return "none"
     # One written since the read (another page, the describe function) is
     # replaced: this call read the place last.
-    if kept or not store.put_weather(user_id, d, record(found, place, fetched_at)):
-        store.replace_weather(user_id, d, record(found, place, fetched_at))
+    reading = record(found, place, fetched_at)
+    if kept or not store.put_weather(user_id, d, reading):
+        store.replace_weather(user_id, d, reading)
+    if not still():
+        # The place moved between the check and the write, and the call for
+        # the new place may have written first: this reading goes, while it
+        # is still this one, and the day is kept again, once, where it is.
+        if store.drop_weather(user_id, d, reading) and again:
+            return keep_day(store, user_id, home, tz, day, today, fetch, fetched_at, changed=True, again=False)
+        return "moved"
     return "fetched"
 
 

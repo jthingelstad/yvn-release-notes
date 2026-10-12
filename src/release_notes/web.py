@@ -1056,7 +1056,9 @@ def clear_day_place(app: App, req: Request, value: str) -> dict:
 def day_place_answer(app: App, user_id: str, p: dict, day: date) -> dict:
     keep_weather(app, user_id, p, day, changed=True)
     d = day.isoformat()
-    view = day_view(p, d, [], app.store.weather_between(user_id, d, d).get(d), own=app.store.day_place(user_id, d))
+    # Consistent: these were just written, and the page shows this answer.
+    view = day_view(p, d, [], app.store.weather_between(user_id, d, d, consistent=True).get(d),
+                    own=app.store.day_place(user_id, d, consistent=True))
     return respond(200, {k: view[k] for k in ("date", "where", "weather") if k in view})
 
 

@@ -450,6 +450,10 @@ class Places(unittest.TestCase):
                                                     "ConditionExpression": "lat = :lat AND lon = :lon",
                                                     "ExpressionAttributeValues": {":lat": Decimal("46.78"),
                                                                                   ":lon": Decimal("-92.1")}})])
+        # A reading just written carries floats: DynamoDB takes them as Decimal.
+        t = FakeTable()
+        Store(t).drop_weather("u1", "2026-10-07", {"lat": 46.78, "lon": -92.1})
+        self.assertEqual(t.calls[0][1]["ExpressionAttributeValues"], {":lat": Decimal("46.78"), ":lon": Decimal("-92.1")})
 
     def test_a_photo_names_a_note_with_no_place_only(self):
         t = FakeTable()

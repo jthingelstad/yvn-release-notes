@@ -332,6 +332,9 @@ def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secre
             made["ask"] = claude_with(key_from(secrets, os.environ["SECRET"]))
         return made["ask"]
 
+    def no_claude():  # once the key is known missing, not looked up again
+        raise NoKey()
+
     if event.get("check"):
         try:
             result = check(ask())
@@ -361,8 +364,17 @@ def handler(event, context, *, store=None, s3=None, claude=None, lam=None, secre
         records = event.get("Records", [])
         maker = maker or (pillow() if any("NOTE#" in json.dumps(r.get("dynamodb", {}).get("Keys", {})) for r in records)
                           else None)
+        no_key = False
         for record in records:
-            changed(record, store=store, s3=s3, claude=ask, lam=lam, bucket=bucket, cache=cache, maker=maker)
+            # One record without the key must not cost the rest of the
+            # batch its thumbnails: the stream does not send them again.
+            try:
+                changed(record, store=store, s3=s3, claude=no_claude if no_key else ask, lam=lam, bucket=bucket,
+                        cache=cache, maker=maker)
+            except NoKey:
+                no_key = True
+        if no_key:
+            raise NoKey()
     except NoKey:
         # Photos stay waiting; turning the setting off and on again, or a
         # new photo, picks them up once the key is in.

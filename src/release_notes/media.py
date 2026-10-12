@@ -259,6 +259,13 @@ def keys(note: dict) -> list[str]:
     return out
 
 
+def thumb_keys(note: dict) -> list[str]:
+    """The thumbnail keys of a note's photos, listed or not: what a delete
+    clears once more after the note has gone (web.delete_note)."""
+    return [thumbs.thumb_key(str(m["key"])) for m in note.get("media") or []
+            if m.get("kind") == "image" and str(m.get("key") or "").startswith("media/")]
+
+
 def counts(notes: list[dict]) -> dict[str, int]:
     """{"image": n, "audio": n} across notes, plus any other kind
     ("file": an imported PDF)."""

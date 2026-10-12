@@ -306,8 +306,24 @@ class MediaTest(NotesCase):
     def test_deleting_the_note_deletes_its_files(self):
         r, _ = self.call("DELETE", "/api/days/2026-10-07/notes/0100abc-1", cookies=self.cookies)
         self.assertEqual(r["statusCode"], 200)
-        self.assertEqual([d["Key"] for d in self.s3.deleted], ["raw/0100abc-1", PHOTO["key"],
-                                                         "media/u1/2026-10-07/0100abc-1/1.thumb.jpg", MEMO["key"]])
+        thumb = "media/u1/2026-10-07/0100abc-1/1.thumb.jpg"
+        # The thumbnail's key again once the note has gone (web.delete_note).
+        self.assertEqual([d["Key"] for d in self.s3.deleted], ["raw/0100abc-1", PHOTO["key"], thumb, MEMO["key"], thumb])
+
+    def test_a_thumbnail_made_while_the_note_is_deleted_goes_too(self):
+        # The describe function read the photo before it went, and lists
+        # its thumbnail after the files are deleted but before the note is.
+        thumb = "media/u1/2026-10-07/0100abc-1/1.thumb.jpg"
+        delete_note = self.store.delete_note
+
+        def made_meanwhile(user_id, day, note_id):
+            self.s3.put_object(Bucket="mail-bucket", Key=thumb, Body=b"small", ContentType="image/jpeg")
+            delete_note(user_id, day, note_id)
+
+        self.store.delete_note = made_meanwhile
+        r, _ = self.call("DELETE", "/api/days/2026-10-07/notes/0100abc-1", cookies=self.cookies)
+        self.assertEqual(r["statusCode"], 200)
+        self.assertNotIn(thumb, self.s3.objects)
 
 
 class TagsTest(NotesCase):

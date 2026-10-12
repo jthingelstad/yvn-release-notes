@@ -13,7 +13,7 @@ from unittest import mock
 
 from fakes import FakeLambda, FakeS3, FakeStore
 from release_notes import describe, media, thumbs
-from test_describe import png
+from test_describe import FakeSecrets, png
 from test_transcribe import record
 
 BUCKET = "mail"
@@ -113,6 +113,21 @@ class Making(Case):
         self.assertIn("thumb", entry)
         self.assertNotIn("description", entry)
         model.assert_not_called()
+
+    def test_a_missing_key_costs_no_photo_in_the_batch_its_thumbnail(self):
+        # Ada asked for descriptions, but the key is still the placeholder.
+        self.store.profiles["u1"]["describe"] = True
+        first = self.keep(photo(1))
+        second = self.keep(photo(1, note_id="w-2"), note_id="w-2")
+        secrets = FakeSecrets("PASTE-ANTHROPIC-API-KEY-HERE")
+        with mock.patch("builtins.print") as printed:
+            describe.handler({"Records": [record({"pk": "USER#u1", "sk": n["sk"], "media": n["media"]})
+                                          for n in (first, second)]}, None,
+                             store=self.store, s3=self.s3, lam=self.lam, secrets=secrets, maker=fake_maker)
+        for note_id in ("w-1", "w-2"):
+            self.assertIn("thumb", self.store.note("u1", "2026-10-09", note_id)["media"][0])
+        self.assertEqual(secrets.asked, ["yvn-release-notes-anthropic"])  # looked up once, not per photo
+        self.assertIn('"outcome":"no-key"', " ".join(str(c.args[0]) for c in printed.call_args_list))
 
     def test_without_pillow_photos_wait(self):
         note = self.keep(photo(1))

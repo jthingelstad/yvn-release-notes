@@ -146,6 +146,14 @@ def same_place(kept: dict | None, place: dict) -> bool:
         return False
 
 
+def spot(place: dict) -> tuple | None:
+    """Where a place is, to two places, for telling two apart."""
+    try:
+        return round(float(place["lat"]), 2), round(float(place["lon"]), 2)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: date, fetch, fetched_at: str,
              changed: bool = False) -> str:
     """Keep a finished day's weather where the subscriber was. Once for
@@ -154,30 +162,44 @@ def keep_day(store, user_id: str, home: dict | None, tz: str, day: date, today: 
     place was just set or cleared, so a reading for another place is
     replaced either way; when none can be had for the place it has now,
     one for another place is dropped, so the next call tries again, and so
-    it is when the fetch fails. Reads
-    consistently: it follows the write of a place or a note. Returns what
-    it did, for the log."""
+    it is when the fetch fails. Reads consistently: it follows the write of
+    a place or a note. The place is read again after the fetch, and a
+    reading for a place the day no longer has is not kept ("moved").
+    Returns what it did, for the log."""
     if day >= today:
         return "not-yet"
     d = day.isoformat()
-    # Consistent reads: this follows the write of a place or a note.
-    where = day_place(store.day_place(user_id, d, consistent=True),
-                      store.notes_between(user_id, d, d, ConsistentRead=True), tz)
+
+    def where_now():
+        # Consistent reads: this follows the write of a place or a note.
+        return day_place(store.day_place(user_id, d, consistent=True),
+                         store.notes_between(user_id, d, d, ConsistentRead=True), tz)
+
+    where = where_now()
     place = where or home
     if not place:
         return "no-place"
     kept = store.weather_between(user_id, d, d, consistent=True).get(d)
     if kept and (same_place(kept, place) or not (where or changed)):
         return "kept"
+
+    def still():
+        # The place again, after the slow fetch: if it moved meanwhile, the
+        # call for the new place writes (or drops) the day's weather.
+        now = where_now() or home
+        return bool(now) and spot(now) == spot(place)
+
     # Here, anything kept is for a place the day no longer has. If none
     # can be had for the place it has now, it is dropped, so the next call
     # for the day fetches again; a failed fetch drops it too, then raises.
     try:
         found = history(place, day, today, fetch)
     except Exception:
-        if kept:
+        if kept and still():
             store.drop_weather(user_id, d)
         raise
+    if not still():
+        return "moved"
     if not found:
         if kept:
             store.drop_weather(user_id, d)

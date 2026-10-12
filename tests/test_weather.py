@@ -259,6 +259,19 @@ class WebTest(NotesCase):
         self.store.weather_between = between
         self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Duluth")
 
+    def test_a_place_changed_during_the_fetch_keeps_the_newer_ones_weather(self):
+        self.add("2026-09-12", "Backfilled.")  # home's weather, kept
+        sky = self.sky
+
+        def meanwhile(url):
+            # Another page clears the place while this fetch is out; its own
+            # call keeps the weather for home.
+            self.store.clear_day_place("u1", "2026-09-12")
+            return sky(url)
+        self.sky = meanwhile
+        self.call("PUT", "/api/days/2026-09-12/place", {"place": DULUTH}, cookies=self.cookies)
+        self.assertEqual(self.store.weather_between("u1", "2026-09-12", "2026-09-12")["2026-09-12"]["city"], "Minneapolis")
+
     def test_a_place_for_today_waits_and_a_bad_one_is_refused(self):
         r, body = self.call("PUT", "/api/days/2026-10-08/place", {"place": DULUTH}, cookies=self.cookies)
         self.assertEqual((r["statusCode"], body["where"], self.sky.urls), (200, "Duluth, Minnesota", []))

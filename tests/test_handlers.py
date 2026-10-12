@@ -422,6 +422,16 @@ class Sending(unittest.TestCase):
         self.assertNotIn("Yesterday", ses.sent[0]["Content"]["Raw"]["Data"].decode())
         self.assertEqual(read, [])
 
+    def test_a_reply_with_only_a_pdf_still_confirms(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2026-10-06", "m1")] = {"text": "", "attachments": [
+            {"filename": "menu.pdf", "content_type": "application/pdf", "size": 9000}]}
+        out = send.handler({"now": "2026-10-08T01:00:00+00:00", "dry_run": True}, None, store=store)
+        self.assertEqual(out["results"][0]["yesterday_files"], {"others": 1})
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        text = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default).get_body(("plain",)).get_content()
+        self.assertIn("Yesterday you were 4.9.364 (Tuesday, October 6):\n\n1 attachment in the original email\n", text)
+
     def test_yesterday_is_one_read(self):
         store, ses = FakeStore([ada()]), FakeSES()
         store.notes[("u1", "2026-10-06", "m1")] = {"text": "Yesterday's."}

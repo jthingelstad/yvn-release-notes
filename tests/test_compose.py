@@ -300,6 +300,13 @@ class YesterdayBlock(unittest.TestCase):
         self.assertIn("Yesterday you were 4.5.109 (Wednesday, October 7):\n\n1 photo\nSee it:", text)
         self.assertIn(">1 photo</p>", html)
 
+    def test_attachments_left_in_the_email_still_show(self):
+        text, html = self.both(Yesterday(self.THEN, "", others=1))
+        self.assertIn("Yesterday you were 4.5.109 (Wednesday, October 7):\n\n1 attachment in the original email\nSee it:", text)
+        self.assertIn(">1 attachment in the original email</p>", html)
+        text, _ = self.both(Yesterday(self.THEN, "Notes.", files={"image": 1}, others=2))
+        self.assertIn("1 photo, 2 attachments in the original email\n", text)
+
     def test_a_long_day_is_cut_at_a_sentence(self):
         sentence = "This is one sentence of a long day that keeps going. "
         y = Yesterday(self.THEN, sentence * 40)

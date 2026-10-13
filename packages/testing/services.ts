@@ -81,6 +81,10 @@ export class FakeObjects implements Objects {
     this.calls.push({ operation: 'tag', key });
     this.find(key).tags = { ...tags };
   }
+  async tags(key: string, version?: string) {
+    this.calls.push({ operation: 'tags', key, version });
+    return { ...this.find(key, version).tags };
+  }
   async download(key: string, type: string, seconds: number, options: { disposition?: string; cache?: string } = {}) {
     this.calls.push({ operation: 'download', key });
     return `https://files.example.test/${encodeURIComponent(key)}?${new URLSearchParams({ type, seconds: String(seconds), disposition: options.disposition ?? 'inline', cache: options.cache ?? '' })}`;

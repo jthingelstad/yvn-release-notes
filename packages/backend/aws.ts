@@ -10,7 +10,8 @@ import {
   CopyObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
-  PutObjectTaggingCommand
+  PutObjectTaggingCommand,
+  GetObjectTaggingCommand
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
@@ -128,6 +129,12 @@ export function createObjects(bucket: string, region = 'us-east-1'): Objects {
           ResponseCacheControl: options.cache ?? `private, max-age=${seconds}`
         }),
         { expiresIn: seconds }
+      );
+    },
+    async tags(key, version) {
+      const answer = await client.send(new GetObjectTaggingCommand({ Bucket: bucket, Key: key, VersionId: version }));
+      return Object.fromEntries(
+        (answer.TagSet ?? []).filter((t) => t.Key !== undefined && t.Value !== undefined).map((t) => [t.Key!, t.Value!])
       );
     },
     async upload(key, type, size, seconds) {

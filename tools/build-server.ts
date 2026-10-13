@@ -4,18 +4,24 @@ import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 const major = Number(process.versions.node.split('.')[0]);
 if (major !== 24) throw new Error('Build requires Node 24');
-await mkdir('dist/server/app', { recursive: true });
-await build({
-  entryPoints: ['server/app/index.ts'],
-  outfile: 'dist/server/app/index.js',
-  bundle: true,
-  platform: 'node',
-  target: 'node24',
-  format: 'esm',
-  sourcemap: false,
-  legalComments: 'none',
-  absWorkingDir: resolve('.'),
-  banner: {
-    js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);"
-  }
-});
+for (const [source, folder] of [
+  ['server/app/index.ts', 'dist/server/app'],
+  ['server/mcp/index.ts', 'dist/server/mcp'],
+  ['workers/capture.ts', 'dist/workers/capture']
+]) {
+  await mkdir(folder!, { recursive: true });
+  await build({
+    entryPoints: [source!],
+    outfile: `${folder}/index.js`,
+    bundle: true,
+    platform: 'node',
+    target: 'node24',
+    format: 'esm',
+    sourcemap: false,
+    legalComments: 'none',
+    absWorkingDir: resolve('.'),
+    banner: {
+      js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);"
+    }
+  });
+}

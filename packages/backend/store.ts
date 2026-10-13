@@ -2,7 +2,7 @@
  * All SDK commands use native document values, including Set for import ledgers.
  * Reads never rely on TTL removal. Callers enforce credential expirations.
  * USER#/PROFILE, NOTE#, DAY#, PAUSE#, WEATHER#, PLACE#, EXPORT, SESSION#,
- * IMPORT#, CAPTURE#, MAILEVENT#; TOKEN#, INBOX#, EMAIL#, LOGIN#, LOGINFOR#, RATE#, LOCK#,
+ * IMPORT#, CAPTURE#, MAILEVENT#, PROCESS#, PROCESSLOCK#; TOKEN#, INBOX#, EMAIL#, LOGIN#, LOGINFOR#, RATE#, LOCK#,
  * TALLY#, OAUTHCLIENT#, OAUTHPENDING#, OAUTHCODE#, OAUTHACCESS#, OAUTHREFRESH#,
  * OAUTHFAMILY#, OAUTHUSER#, MCPMETA# retain their original layouts.
  */
@@ -416,6 +416,247 @@ export class Store {
   }
   async note(user: string, day: string, id: string, consistent = false) {
     return this.get(key(user, `NOTE#${day}#${id}`), { ConsistentRead: consistent });
+  }
+  /** USER-owned leases suppress concurrent stream/backfill work. Consent, the
+   * immutable source and optional UTC-day quota are proved together. */
+  async claimProcessing(
+    kind: 'transcribe' | 'describe',
+    user: string,
+    day: string,
+    id: string,
+    n: number,
+    source: string,
+    type: string,
+    owner: string,
+    now: number
+  ): Promise<boolean> {
+    const note = await this.note(user, day, id, true);
+    const at = media(note).findIndex((m) => Number(m.n) === n);
+    if (at < 0) return false;
+    const field = kind === 'transcribe' ? 'transcript' : 'description';
+    const period = Math.floor(now / 86400);
+    return this.provedTransaction([
+      this.consentProof(user, kind),
+      {
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: key(user, `NOTE#${day}#${id}`),
+          ConditionExpression: `attribute_exists(pk) AND media[${at}].n = :n AND media[${at}].#k = :k AND media[${at}].#type = :type AND attribute_not_exists(media[${at}].#f)`,
+          ExpressionAttributeNames: { '#k': 'key', '#type': 'type', '#f': field },
+          ExpressionAttributeValues: { ':n': n, ':k': source, ':type': type }
+        }
+      },
+      {
+        Put: {
+          TableName: this.tableName,
+          Item: {
+            ...key(user, `PROCESS#${kind}#${day}#${id}#${n}`),
+            owner,
+            source,
+            type,
+            expires_at: now + (kind === 'describe' ? 960 : 30 * 86400)
+          },
+          ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now',
+          ExpressionAttributeValues: { ':now': now }
+        }
+      },
+      ...(kind === 'transcribe'
+        ? [
+            {
+              Update: {
+                TableName: this.tableName,
+                Key: { pk: `RATE#transcribe:${user}#${period}`, sk: 'RATE' },
+                UpdateExpression: 'ADD n :one SET expires_at = :exp',
+                ConditionExpression: 'attribute_not_exists(n) OR n < :max',
+                ExpressionAttributeValues: { ':one': 1, ':exp': (period + 2) * 86400, ':max': 30 }
+              }
+            }
+          ]
+        : [])
+    ]);
+  }
+  private consentProof(
+    user: string,
+    kind: 'transcribe' | 'describe'
+  ): NonNullable<TransactWriteCommandInput['TransactItems']>[number] {
+    return {
+      ConditionCheck: {
+        TableName: this.tableName,
+        Key: key(user, 'PROFILE'),
+        ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND #opt = :yes',
+        ExpressionAttributeNames: { '#opt': kind },
+        ExpressionAttributeValues: { ':yes': true }
+      }
+    };
+  }
+  async takeProcessingLock(user: string, holder: string, now: number, seconds: number): Promise<boolean> {
+    return this.provedTransaction([
+      this.consentProof(user, 'describe'),
+      {
+        Put: {
+          TableName: this.tableName,
+          Item: { ...key(user, 'PROCESSLOCK#describe'), owner: holder, expires_at: now + seconds },
+          ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now OR owner = :o',
+          ExpressionAttributeValues: { ':now': now, ':o': holder }
+        }
+      }
+    ]);
+  }
+  async releaseProcessingLock(user: string, holder: string): Promise<boolean> {
+    return this.conditional(() =>
+      this.del(key(user, 'PROCESSLOCK#describe'), {
+        ConditionExpression: 'owner = :o',
+        ExpressionAttributeValues: { ':o': holder }
+      })
+    );
+  }
+  async processing(user: string, kind: 'transcribe' | 'describe', day: string, id: string, n: number) {
+    return this.get(key(user, `PROCESS#${kind}#${day}#${id}#${n}`), { ConsistentRead: true });
+  }
+  async releaseProcessing(
+    user: string,
+    kind: 'transcribe' | 'describe',
+    day: string,
+    id: string,
+    n: number,
+    owner: string
+  ) {
+    return this.conditional(() =>
+      this.del(key(user, `PROCESS#${kind}#${day}#${id}#${n}`), {
+        ConditionExpression: 'owner = :o',
+        ExpressionAttributeValues: { ':o': owner }
+      })
+    );
+  }
+  async finishProcessing(
+    kind: 'transcribe' | 'describe',
+    user: string,
+    day: string,
+    id: string,
+    n: number,
+    source: string,
+    type: string,
+    text: string,
+    owner: string | null
+  ): Promise<boolean> {
+    const note = await this.note(user, day, id, true);
+    const at = media(note).findIndex((m) => Number(m.n) === n);
+    if (at < 0) return false;
+    const field = kind === 'transcribe' ? 'transcript' : 'description';
+    return this.provedTransaction([
+      this.consentProof(user, kind),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, `NOTE#${day}#${id}`),
+          UpdateExpression: `SET media[${at}].#f = :text`,
+          ConditionExpression: `attribute_exists(pk) AND media[${at}].n = :n AND media[${at}].#k = :k AND media[${at}].#type = :type AND attribute_not_exists(media[${at}].#f)`,
+          ExpressionAttributeNames: { '#k': 'key', '#type': 'type', '#f': field },
+          ExpressionAttributeValues: { ':n': n, ':k': source, ':type': type, ':text': text }
+        }
+      },
+      ...(owner
+        ? [
+            {
+              Delete: {
+                TableName: this.tableName,
+                Key: key(user, `PROCESS#${kind}#${day}#${id}#${n}`),
+                ConditionExpression: 'owner = :o AND #src = :k',
+                ExpressionAttributeNames: { '#src': 'source' },
+                ExpressionAttributeValues: { ':o': owner, ':k': source }
+              }
+            }
+          ]
+        : [])
+    ]);
+  }
+  async setMediaFieldGuarded(
+    user: string,
+    day: string,
+    id: string,
+    n: number,
+    field: string,
+    value: unknown,
+    source: string
+  ): Promise<boolean> {
+    const note = await this.note(user, day, id, true);
+    const at = media(note).findIndex((m) => Number(m.n) === n && m.key === source);
+    if (at < 0) return false;
+    return this.provedTransaction([
+      this.profileProof(user),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, `NOTE#${day}#${id}`),
+          UpdateExpression: `SET media[${at}].#f = :v`,
+          ConditionExpression: `attribute_exists(pk) AND media[${at}].n = :n AND media[${at}].#k = :k AND attribute_not_exists(media[${at}].#f)`,
+          ExpressionAttributeNames: { '#k': 'key', '#f': field },
+          ExpressionAttributeValues: { ':n': n, ':k': source, ':v': value }
+        }
+      }
+    ]);
+  }
+  async setNotePlaceGuarded(
+    user: string,
+    day: string,
+    id: string,
+    place: Item,
+    source?: { n: number; key: string; lat: number; lon: number }
+  ) {
+    let sourceCondition = '';
+    if (source) {
+      const at = media(await this.note(user, day, id, true)).findIndex(
+        (m) => Number(m.n) === source.n && m.key === source.key
+      );
+      if (at < 0) return false;
+      sourceCondition = ` AND media[${at}].n = :n AND media[${at}].#k = :k AND media[${at}].#p.lat = :lat AND media[${at}].#p.lon = :lon`;
+    }
+    return this.provedTransaction([
+      this.profileProof(user),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, `NOTE#${day}#${id}`),
+          UpdateExpression: 'SET #p = :p',
+          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#p)' + sourceCondition,
+          ExpressionAttributeNames: { '#p': 'place', ...(source ? { '#k': 'key' } : {}) },
+          ExpressionAttributeValues: {
+            ':p': place,
+            ...(source ? { ':n': source.n, ':k': source.key, ':lat': source.lat, ':lon': source.lon } : {})
+          }
+        }
+      }
+    ]);
+  }
+  /** Scope ordinary worker metadata/weather writes to an existing account.
+   * Reads are unchanged. Conditional refusals cannot recreate deleted USER rows. */
+  forLiveAccount(user: string): Store {
+    const sender: DocumentSender = {
+      send: async (command) => {
+        const input = Object.fromEntries(
+          Object.entries(command.input).filter(
+            ([name]) => !['ReturnValues', 'ReturnConsumedCapacity', 'ReturnItemCollectionMetrics'].includes(name)
+          )
+        );
+        const operation =
+          command instanceof PutCommand
+            ? { Put: input }
+            : command instanceof UpdateCommand
+              ? { Update: input }
+              : command instanceof DeleteCommand
+                ? { Delete: input }
+                : null;
+        if (!operation) return this.client.send(command);
+        const accepted = await this.provedTransaction([
+          this.profileProof(user),
+          operation as NonNullable<TransactWriteCommandInput['TransactItems']>[number]
+        ]);
+        if (!accepted)
+          throw Object.assign(new Error('Account metadata write refused'), { name: 'ProcessingAccountGone' });
+        return {};
+      }
+    };
+    return new Store(sender, this.tableName);
   }
   async setMediaText(user: string, day: string, id: string, n: number, field: string, text: string) {
     return this.setMediaField(user, day, id, n, field, text);

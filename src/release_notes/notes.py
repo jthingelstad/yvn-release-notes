@@ -27,12 +27,15 @@ any kind of data can come from any channel):
                  chosen: the web's Where, day: another note that day,
                  home: the subscriber's city). Shown by name, which links to the
                  spot on a map (map_url)
-    source       email, web or import; an import also has `origin`:
+    source       email, web, import or agent; an import also has `origin`:
                  {"app", "journal", "id"}, the entry it came from
     version, links, media, updated_at as before; an emailed note also has
     raw_key, subject, attachments and parser_version; an import has
     raw_key too (the entry as the app wrote it). A media entry may carry
     width, height, duration, taken_at, name and its own place
+    author       user (default for older notes) or assistant
+    client       self-reported OAuth client name for agent captures; not verified identity
+    client_id, connection, on_behalf_of: server-recorded provenance for captures
 """
 
 from urllib.parse import quote, urlencode
@@ -42,7 +45,7 @@ from urllib.parse import quote, urlencode
 MAX_NOTE = 20_000
 
 
-SOURCES = ("email", "web", "import")
+SOURCES = ("email", "web", "import", "agent")
 
 
 def written_at(note: dict) -> str:

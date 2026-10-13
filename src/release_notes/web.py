@@ -80,9 +80,9 @@ class Request:
         self._body = event.get("body") or ""
         self._b64 = event.get("isBase64Encoded", False)
 
-    def json(self) -> dict:
+    def json(self, max_body=MAX_BODY) -> dict:
         raw = b64decode(self._body) if self._b64 else self._body.encode()
-        if len(raw) > MAX_BODY:
+        if len(raw) > max_body:
             raise Reject(413, "too-large")
         try:
             body = json.loads(raw or b"{}")
@@ -778,7 +778,11 @@ def note_view(item: dict, tz: str, writing_out: bool = False, link=None) -> dict
     _, day, note_id = item["sk"].split("#", 2)
     at = written_at(item)
     zone = item["tz"] if places.valid_tz(item.get("tz")) else tz
-    view = {"id": note_id, "source": item.get("source", "email"), "text": item.get("text", ""), "at": at, "tz": zone}
+    view = {"id": note_id, "source": item.get("source", "email"), "text": item.get("text", ""), "at": at, "tz": zone,
+            "author": item.get("author", "user"), "client": item.get("client")}
+    if item.get("connection"):
+        view["connection"] = item["connection"]
+        view["on_behalf_of"] = item["on_behalf_of"]
     # The text as shown: strings, links by name (links.segments) and tags.
     view["parts"] = tags.split(links.segments(view["text"], item.get("links")))
     if item.get("tags"):

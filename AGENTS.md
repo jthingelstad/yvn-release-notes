@@ -29,6 +29,10 @@ Every write proves the writer owns the subscriber's address:
   (`inbound.py`).
 - **On the web**: inside a session that began with a link or code sent to
   that address (`auth.py`).
+- **By an agent**: the owner explicitly delegates `notes:write` in that
+  email-verified web session. `capture.py` proves the live grant and account
+  in the same transaction as each create or append. Only a connection's
+  own assistant-authored notes may be appended to; no MCP edit or delete.
 - **By the standing address** (Jamie, 2026-10-12): `<token>@` the inbound
   domain, 120 random bits naming the person, not a day (`INBOX#`), shown
   only in their settings and the footer of their emails, with every check
@@ -76,8 +80,9 @@ Where things are (each module's docstring is its design):
   recordings and PDFs, by email and on the web), `streak.py`, `weather.py`,
   `places.py` (city search, and naming a photo's place), `exif.py` (a
   JPEG's time and place, standard library).
-- Agent reading: `oauth.py` (owner consent, OAuth, connections), `mcp.py` (read-only tools),
-  `docs/MCP.md`; `scripts/export_mcp_contract.py` keeps `contracts/mcp-surface.json` current.
+- Agent connections: `oauth.py` (owner consent, OAuth, connections), `mcp.py` (reading and capture tools),
+  `capture.py` (private delegated text writer), `docs/MCP.md`;
+  `scripts/export_mcp_contract.py` keeps `contracts/mcp-surface.json` current.
 - The web: `web.py` (the API, a small router), `auth.py` (sign-in,
   sessions, limits), `export.py` (JSON and Markdown), `export_job.py` (the
   zip). `web/` is the React app (`docs/WEB-APP.md`, Front end); its Home
@@ -346,6 +351,8 @@ failed on live until 2026-10-08 because of it).
   text. A new number goes in `census.py`; `tests/test_census.py` checks the
   dashboard's JSON. The per-person view is `scripts/subscribers.py`, on
   this Mac only.
+  Agent captures are counted separately as `AgentNotes`; structured MCP
+  infrastructure failures emit a count-only `McpFailures` metric.
 
 ### Testing
 
@@ -505,18 +512,32 @@ failed on live until 2026-10-08 because of it).
 
 ## Agent connections (2026-10-12)
 
-MCP is read-only, approved explicitly by each subscriber in their existing
+MCP reading is approved explicitly by each subscriber in their existing
 email-verified web session. `notes:read` shares the archive and existing
 transcripts/descriptions; optional `media:read` shares private file bytes
 and ten-minute links. This consent permits an external agent to process
 what it reads; it never turns on the product's transcription or description
-settings. No MCP token can authenticate a web write. The MCP function's
+settings. Optional `notes:write` is separately approved, off by default,
+and existing grants stay read-only. It permits text-only `notes_create`
+and `notes_append`, at the user's explicit request. Hashtags stay in the
+text. All captures show author/client provenance, and the owner can edit
+or delete them through the web as usual. An append belongs to the exact
+connection that created the note, never to a name supplied by a client.
+No MCP token can authenticate a web write. The MCP function's
 separate role cannot write USER or OAuth rows, send mail, invoke models,
-upload/delete files, or invoke another function. Its writes are MCPMETA only.
+upload/delete files. Its table writes are MCPMETA only; its one invocation
+permission is the private capture function. That writer rechecks the bearer
+and conditionally commits the note, live family/profile proof, 24-hour
+idempotency receipt, daily quota (20 creates, 50 appends per account) and
+content-free audit together. It cannot delete data, write OAuth rows, use
+SES, S3 or models, or invoke functions. Receipts live under USER and are
+deleted with the account; their original result may include note text,
+never logged. Reusing a key with changed arguments is refused. In Settings,
+turning off adding removes the write scope while keeping read access.
 Activity records contain no arguments or returned content. Disconnect
 revokes the family immediately; already shared content and unexpired
 private links remain with the receiving service. Deleting an account
 blocks new MCP metadata/OAuth writes first and removes all indexed grants.
-Never test a connection by reading live subscriber notes or signing in
+Never test a connection by reading or writing live subscriber notes or signing in
 against production. Use the dev server and fakes. Regenerate the contract
 with `PYTHONPATH=src python3 scripts/export_mcp_contract.py` when tools change.

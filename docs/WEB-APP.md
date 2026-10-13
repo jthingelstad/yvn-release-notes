@@ -263,9 +263,9 @@ fonts are served from here.
 | | |
 |---|---|
 | `POST /api/mcp/authorize` | Inspect or approve/deny a pending OAuth request; session and Origin required. |
-| `GET /api/mcp/connections` | Active read-only agent connections, scopes and last use. |
-| `DELETE /api/mcp/connections/{id}` | Revoke the owner's connection immediately. |
-| `GET /api/mcp/activity` | Up to 50 content-free tool records from the last fourteen days. |
+| `GET /api/mcp/connections` | Active agent connections, approved scopes and last use. |
+| `DELETE /api/mcp/connections/{id}` | Revoke the owner's connection immediately; `?write_only=true` removes only adding permission. |
+| `GET /api/mcp/activity` | Up to 50 content-free tool records from fourteen days; successful writes include client and note references. |
 
 | `GET /api/health` | |
 | `GET /api/sample?birthday=&tz=` | a version number today: the front page's example (1981-06-14), or the birthday being typed at sign-up |
@@ -333,4 +333,9 @@ and owner consent. These public routes are dispatched separately from the
 cookie API, after the same CloudFront origin proof. Cookie writes retain
 same-origin checks. The `/connect/` request survives a sign-in in the same
 tab, via the existing return path including its fragment. Settings lists
-connections, disconnect controls, and content-free recent activity.
+connections, disconnect and turn-off-adding controls, and content-free
+recent activity. Adding consent is separate and initially unchecked.
+Note metadata shows assistant provenance as "added by <client>"; client
+names are self-reported. Existing notes read as user-authored. The JSON
+export preserves provenance. `capture.py` is private, invoked only by MCP,
+with no public web route or ability to authenticate cookie writes.

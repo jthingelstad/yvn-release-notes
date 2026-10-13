@@ -14,6 +14,9 @@
                                                 tz, place; links, named once when written, links.py; media,
                                                 its photos and recordings, media.py; a photo's
                                                 thumbnail, thumbs.py)
+    USER#<id>        NOTE#<YYYY-MM-DD>#a-<id>   agent capture: author=assistant, connection and client provenance
+    USER#<id>        CAPTURE#<family>#<hash>    exact request hash and original capture result, 24 hours;
+                                                private idempotency receipt, deleted with the account
     USER#<id>        WEATHER#<YYYY-MM-DD>       that day's weather where the subscriber was (weather.py): high_c,
                                                 low_c, code, city, region, country, lat, lon; kept for good,
                                                 fetched again when the day's place changes
@@ -64,7 +67,9 @@
     OAUTHUSER#<id>         ROW#<credential pk> every account-bound OAuth row, for deletion
     MCPMETA#<id>          RATE#<period>#<n>   read quotas (300/hour, 500/day), one extra period
     MCPMETA#<id>          USE#<family>        last use, fourteen days
-    MCPMETA#<id>          LOG#<time>#<id>     tool, outcome and connection only, fourteen days
+    MCPMETA#<id>          LOG#<time>#<id>     tool, outcome and connection, fourteen days;
+                                                writes add client/note references and request hash, no content
+    MCPMETA#<id>          WRITERATE#<tool>#<day> 20 creates or 50 appends per account/UTC day
 
 expires_at (epoch seconds) is the table's TTL. DynamoDB deletes late, up to
 a couple of days, so every read checks it as well. Hashes are SHA-256 of
@@ -1056,7 +1061,51 @@ class Store:
         except Exception as e:
             if (getattr(e, "response", {}) or {}).get("Error", {}).get("Code") == "TransactionCanceledException":
                 reasons = getattr(e, "response", {}).get("CancellationReasons", [])
-                if reasons and all(r.get("Code") in ("None", "ConditionalCheckFailed") for r in reasons):
+                if reasons and all(r.get("Code") in ("None", "ConditionalCheckFailed", "TransactionConflict") for r in reasons):
+                    return False
+            raise
+
+    def capture_commit(self, note, old, receipt, audit, rate, previous, family, now):
+        """Owner delegation, note, receipt, quota and audit commit together.
+        Appends update only text fields, guarded against both agent races
+        and an owner editing or attaching files since the strong read.
+        """
+        uid = family["user_id"]
+        operations = [{"ConditionCheck": {"TableName": self.table.name,
+            "Key": {"pk": "USER#" + uid, "sk": "PROFILE"},
+            "ConditionExpression": "attribute_exists(pk) AND attribute_not_exists(mcp_deleting)"}},
+            {"ConditionCheck": {"TableName": self.table.name,
+            "Key": {"pk": "OAUTHFAMILY#" + family["id"], "sk": "STATE"},
+            "ConditionExpression": "#r = :revision AND expires_at > :now AND attribute_not_exists(revoked) AND contains(#s, :write)",
+            "ExpressionAttributeNames": {"#r": "revision", "#s": "scope"},
+            "ExpressionAttributeValues": {":revision": family["revision"], ":now": now, ":write": "notes:write"}}}]
+        if old:
+            values = {":author": "assistant", ":connection": family["id"], ":old": old.get("text", ""),
+                      ":revision": old["revision"], **{":" + k: note[k] for k in ("text", "tags", "links", "updated_at")},
+                      ":next": note["revision"]}
+            edited = "updated_at = :edited" if old.get("updated_at") else "attribute_not_exists(updated_at)"
+            if old.get("updated_at"):
+                values[":edited"] = old["updated_at"]
+            operations.append({"Update": {"TableName": self.table.name, "Key": {"pk": note["pk"], "sk": note["sk"]},
+                "UpdateExpression": "SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next",
+                "ConditionExpression": "author = :author AND #c = :connection AND #t = :old AND #r = :revision AND " + edited,
+                "ExpressionAttributeNames": {"#t": "text", "#r": "revision", "#c": "connection"}, "ExpressionAttributeValues": values}})
+        else:
+            operations.append({"Put": {"TableName": self.table.name, "Item": note, "ConditionExpression": "attribute_not_exists(pk)"}})
+        operations.append({"Put": {"TableName": self.table.name, "Item": receipt,
+            "ConditionExpression": "attribute_not_exists(pk) OR expires_at <= :now", "ExpressionAttributeValues": {":now": now}}})
+        operations.append({"Put": {"TableName": self.table.name, "Item": audit, "ConditionExpression": "attribute_not_exists(pk)"}})
+        put = {"TableName": self.table.name, "Item": rate, "ConditionExpression": "#r = :r" if previous else "attribute_not_exists(pk)"}
+        if previous:
+            put.update(ExpressionAttributeNames={"#r": "revision"}, ExpressionAttributeValues={":r": previous["revision"]})
+        operations.append({"Put": put})
+        try:
+            self.table.meta.client.transact_write_items(TransactItems=numbers(operations))
+            return True
+        except Exception as e:
+            if (getattr(e, "response", {}) or {}).get("Error", {}).get("Code") == "TransactionCanceledException":
+                reasons = getattr(e, "response", {}).get("CancellationReasons", [])
+                if reasons and all(r.get("Code") in ("None", "ConditionalCheckFailed", "TransactionConflict") for r in reasons):
                     return False
             raise
 

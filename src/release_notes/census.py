@@ -57,7 +57,7 @@ def counts(items: list[dict], now: datetime) -> dict:
     for item in items:
         by_user.setdefault(item["pk"], []).append(item)
     c = dict.fromkeys(
-        ["Subscribers", "Paused", "Stopped", "Overdue", "Notes", "EmailNotes", "WebNotes", "ImportedNotes", "NotesWithMedia",
+        ["Subscribers", "Paused", "Stopped", "Overdue", "Notes", "EmailNotes", "WebNotes", "ImportedNotes", "AgentNotes", "NotesWithMedia",
          "Writers7", "Writers30"], 0
     )
     sent = replied = 0
@@ -65,10 +65,12 @@ def counts(items: list[dict], now: datetime) -> dict:
         notes = [r for r in rows if r["sk"].startswith("NOTE#")]
         web = sum(1 for n in notes if n.get("source") == "web")
         imported = sum(1 for n in notes if n.get("source") == "import")
+        agent = sum(1 for n in notes if n.get("source") == "agent")
         c["Notes"] += len(notes)
         c["WebNotes"] += web
         c["ImportedNotes"] += imported
-        c["EmailNotes"] += len(notes) - web - imported
+        c["AgentNotes"] += agent
+        c["EmailNotes"] += len(notes) - web - imported - agent
         c["NotesWithMedia"] += sum(1 for n in notes if n.get("media"))
 
         profile = next((r for r in rows if r["sk"] == "PROFILE"), None)

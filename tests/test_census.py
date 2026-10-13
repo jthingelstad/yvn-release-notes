@@ -59,8 +59,9 @@ class Counts(unittest.TestCase):
             note("a", "2026-10-09", "w-1", source="web"),
             note("a", "2015-06-01", "d1-1", source="import"),
             note("gone", "2026-01-01", "m2"),  # no profile: still a note
+            note("a", "2026-10-09", "a-1", source="agent"),
         ], NOW)
-        self.assertEqual((c["Notes"], c["EmailNotes"], c["WebNotes"], c["ImportedNotes"], c["NotesWithMedia"]), (4, 2, 1, 1, 1))
+        self.assertEqual((c["Notes"], c["EmailNotes"], c["WebNotes"], c["ImportedNotes"], c["AgentNotes"], c["NotesWithMedia"]), (5, 2, 1, 1, 1, 1))
 
     def test_writers_by_their_notes_days(self):
         c = census.counts([
@@ -122,7 +123,7 @@ class Dashboard(unittest.TestCase):
         shown = {m[1] for w in self.body["widgets"] if w["type"] == "metric"
                  for m in w["properties"]["metrics"] if isinstance(m[0], str) and m[0] == census.NAMESPACE}
         self.assertTrue(shown)
-        self.assertLessEqual(shown, known)
+        self.assertLessEqual(shown, known | {'McpFailures'})
 
     def test_log_queries_never_ask_for_text_or_addresses(self):
         for w in self.body["widgets"]:

@@ -21,7 +21,11 @@ export interface Media {
 
 export interface Note {
   id: string;
-  source: 'email' | 'web' | 'import';
+  source: 'email' | 'web' | 'import' | 'agent';
+  author?: 'user' | 'assistant';
+  client?: string | null;
+  connection?: string;
+  on_behalf_of?: string;
   text: string;
   parts?: Part[];
   at?: string;

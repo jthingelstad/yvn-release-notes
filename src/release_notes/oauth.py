@@ -1,4 +1,4 @@
-"""Read-only external connections, approved by the owner's web session.
+"""External reading/capture grants, approved by the owner's web session.
 
 Public OAuth routes are separate from the cookie API: exact registered
 redirects, PKCE S256, resource-bound tokens, rotating refresh tokens and
@@ -17,7 +17,7 @@ from urllib.parse import urlencode, urlsplit, parse_qsl
 
 from . import auth
 
-SCOPES = {"notes:read", "media:read"}
+SCOPES = {"notes:read", "media:read", "notes:write"}
 ACCESS_SECONDS, REFRESH_SECONDS = 3600, 30 * 86400
 
 
@@ -154,7 +154,7 @@ def public(app, req):
         client = app.store.mcp_get("OAUTHCLIENT#" + cid)
         if not live(client, app.now) or redirect not in client["redirect_uris"]:
             fail("invalid_client")  # Never redirect an invalid request.
-        scopes = set(b.get("scope", "notes:read media:read").split())
+        scopes = set(b.get("scope", "notes:read media:read notes:write").split())
         challenge, state = b.get("code_challenge", ""), b.get("state", "")
         if (b.get("response_type") != "code" or b.get("resource") != resource(app) or
                 b.get("code_challenge_method") != "S256" or not re.fullmatch(r"[A-Za-z0-9_-]{43}", challenge) or
@@ -239,9 +239,13 @@ def authorize(app, req):
     if req.method == "POST":
         if "approve" not in b:
             return respond(200, {"client_name": item["client_name"], "scope": item["scope"]})
-        if type(b["approve"]) is not bool or type(b.get("media", False)) is not bool:
+        if type(b["approve"]) is not bool or type(b.get("media", False)) is not bool or type(b.get("write", False)) is not bool:
             fail()
+        if b.get("write") and "notes:write" not in item["scope"].split():
+            fail("invalid_scope")
         scope = "notes:read" + (" media:read" if b.get("media") and "media:read" in item["scope"].split() else "")
+        if b.get("write"):
+            scope += " notes:write"
         code, fid = opaque(), opaque()
         family = row("OAUTHFAMILY#" + fid, id=fid, user_id=uid, client_id=item["client_id"],
             client_name=item["client_name"], scope=scope, resource=item["resource"], version=0,
@@ -265,20 +269,35 @@ def connections(app, req, fid=None):
     from .web import respond
     uid, _ = app.account(req)
     if req.method == "DELETE":
+        if req.query.get("write_only") == "true":
+            for _ in range(5):
+                item = app.store.mcp_get("OAUTHFAMILY#" + fid)
+                if not item or item.get("user_id") != uid or not live(item, app.now):
+                    return respond(200, {"ok": True})
+                if "notes:write" not in item["scope"].split():
+                    return respond(200, {"ok": True})
+                updated = {**item, "scope": " ".join(s for s in item["scope"].split() if s != "notes:write")}
+                if app.store.mcp_commit([(updated, item["revision"])], uid):
+                    return respond(200, {"ok": True})
+            fail("temporarily_unavailable", 503)
         revoke(app, fid, uid)
         return respond(200, {"ok": True})
     refs = app.store.mcp_rows(f"OAUTHUSER#{uid}")
     families = [app.store.mcp_get(i["target"]) for i in refs if i["target"].startswith("OAUTHFAMILY#")]
-    usage = {i["sk"].removeprefix("USE#"): i for i in app.store.mcp_rows(f"MCPMETA#{uid}") if i["sk"].startswith("USE#")}
+    usage = {}
+    for item in app.store.mcp_rows(f"MCPMETA#{uid}"):
+        connection = item["sk"].removeprefix("USE#") if item["sk"].startswith("USE#") else item.get("connection")
+        if connection and live(item, app.now):
+            usage[connection] = max(usage.get(connection, 0), int(item["at"]))
     return respond(200, {"connections": [{"id": f["id"], "client_name": f["client_name"], "scope": f["scope"],
-        "created_at": int(f["created_at"]), "last_used": int(usage[f["id"]]["at"]) if f["id"] in usage else None} for f in families if live(f, app.now)]})
+        "created_at": int(f["created_at"]), "last_used": usage.get(f["id"])} for f in families if live(f, app.now)]})
 
 
 def activity(app, req):
     from .web import respond
     uid, _ = app.account(req)
     rows = app.store.mcp_rows(f"MCPMETA#{uid}")
-    return respond(200, {"activity": [{"at": int(i["at"]), **{k: i[k] for k in ("tool", "outcome", "connection")}}
+    return respond(200, {"activity": [{"at": int(i["at"]), **{k: i[k] for k in ("tool", "outcome", "connection", "client", "date", "note_id") if k in i}}
         for i in sorted(rows, key=lambda i: i["sk"], reverse=True) if i["sk"].startswith("LOG#") and live(i, app.now)][:50]})
 
 

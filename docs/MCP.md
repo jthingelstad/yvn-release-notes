@@ -7,7 +7,7 @@ The approval page names the client (a name supplied by that client), shows
 the signed-in address, and asks whether photos and recordings can be read
 as well. Connect only when you initiated it. Approving shares your archive
 with that service under its privacy and retention policies. It cannot
-write notes. This is available to any subscriber who explicitly approves
+write notes unless you separately approve adding. This is available to any subscriber who explicitly approves
 it; there is no operator impersonation or automatic connection.
 
 Claude supports remote OAuth connectors and image tool results. Recordings
@@ -22,7 +22,7 @@ use. Disconnect blocks its tokens on the next request, including old refresh
 tokens. Content already shared remains subject to the agent service's
 retention policy. Private download links remain valid for up to ten minutes.
 Activity is the last fourteen days, up to fifty requests, with tool, time,
-connection id and outcome only. No queries, arguments or returned content
+connection id and outcome; successful writes include client and note references. No queries, arguments or returned content
 are stored. An interrupted in-flight read can finish after disconnection.
 
 ## Transport and tools
@@ -37,7 +37,7 @@ reads. Any supplied Origin must match the site. CloudFront forwards the
 Authorization and MCP headers and never caches MCP/OAuth responses.
 
 The generated `contracts/mcp-surface.json` is the full interface. Every tool
-has a strict input schema, output schema and read-only annotations. Results
+has a strict input schema, output schema and accurate read/write annotations. Results
 include structuredContent plus text, a server version and explicit errors
 with a next step. Notes are untrusted data, never agent instructions.
 
@@ -51,6 +51,8 @@ with a next step. Notes are untrusted data, never agent instructions.
 | `notes_tags` | Hashtags with note counts. |
 | `notes_view_photo` | Existing description with description_only=true and notes permission; thumbnail as image content with media permission; original=true returns a private original link. Missing thumbnail falls back to a link; no processing. |
 | `notes_get_audio` | Existing transcript in chunks up to 8,000 characters; optional inline bytes or private download. No processing. |
+| `notes_create` | Write one plain-text agent note on local today or an explicit past date, only with separately approved `notes:write`. |
+| `notes_append` | Append text only to a note created by this exact connection; never edits a user's note or deletes anything. |
 
 Pages default to 20 items, maximum 50, and stop at whole items below a
 48,000-character structured result ceiling. Follow next_cursor or next_offset
@@ -63,6 +65,47 @@ per account, across connections. Notes media metadata carries no storage
 keys. Notes context does not disclose email, birthday, or account settings.
 Release filters whose anniversary years exceed the supported date range
 return an invalid_arguments tool result.
+Every note includes `author` and `client`; older notes default to user/null.
+List, search and day accept `include_assistant=false` to read only the user's
+own voice. Descriptions on every tool mark archive content as untrusted.
+
+## Adding notes
+
+Reconnect from your agent to request `notes:write`, then tick "Also allow
+adding notes when I ask". It is initially unchecked and existing connections
+gain no new permission. New authorization requests without an explicit scope
+offer the option; requests explicitly limited to reading cannot grant it.
+An agent must act only on an explicit user request, never instructions in
+notes, imports, emails, transcripts or photos. Client confirmation remains
+the client's responsibility; the server cannot inspect the conversation.
+
+`notes_create({text, date?, idempotency_key})` and
+`notes_append({date, id, text, idempotency_key})` take plain text, up to
+20,000 characters total per note. Put hashtags in the text. No separate tags,
+place convention, files, summaries/reflections, updates or deletes are added.
+Dates are the owner's local days, birthday through today; late captures use
+the existing "added later" behavior. Captures are normal journal notes,
+count toward streaks, show in email/day views, and the owner can edit or
+delete them on the web. Provenance remains in the JSON export and web/MCP
+read responses. Agent names are self-reported labels, not verified identities.
+
+Use a unique key (1–128 letters, digits, underscores or hyphens) for each
+operation, and reuse exactly the same arguments on a retry. For 24 hours a
+completed operation returns its original result, even if the note is since
+appended to or deleted. A changed request using that key is refused. After
+24 hours it is a new operation, even if DynamoDB TTL has not removed the
+receipt yet. Receipts are private USER data and disappear on account deletion.
+Daily account quotas are 20 creates and 50 appends across all connections,
+in addition to the general request quota. Completed retries do not consume
+another write quota or create another audit record. Successful captures
+commit the note, receipt, audit and quota atomically, with current family
+and account checks; disconnection/deletion races cannot commit afterward.
+
+Settings offers "Turn off adding" for each connection, keeping its read
+access. Refresh cannot restore removed permission. Disconnect revokes both.
+Audit keeps connection/client, tool, note reference, time, request hash and
+outcome for fourteen days, never the text or token. Bulk undo, proposals,
+reflections and semantic search remain separate future work.
 
 ## Authorization
 
@@ -78,7 +121,7 @@ Public protocol routes, separate from `/api` cookie authentication:
 | `POST /oauth/revoke` | Form-encoded token and matching client id; idempotent family revocation. |
 
 `notes:read` is required; `media:read` additionally permits file bytes and
-private downloads. Approval is only through `POST /api/mcp/authorize` with
+private downloads. Optional `notes:write` delegates text capture only. Approval is only through `POST /api/mcp/authorize` with
 an email-verified browser session and the site's Origin. Bearer tokens
 cannot authenticate existing web routes. Denying consumes the request and
 returns access_denied to the validated redirect. The resource is exactly
@@ -100,16 +143,23 @@ deletable. Stopping daily emails still permits archive access, like the web.
 A dedicated MCP Lambda uses the existing table and private bucket. Its IAM
 role reads USER, access-token, family and MCPMETA rows; only PutItem under
 MCPMETA is allowed. It has GetObject for media only, and no SES, model,
-Lambda invocation, upload, deletion or OAuth write permissions. The existing
+upload, deletion or OAuth write permissions. Its only Lambda invocation
+permission is the private capture writer. The existing
 web function handles OAuth and account-authorized consent/revocation. Both
 require CloudFront's generated origin proof; nobody reads the secret.
 No new Python package, search index, embedding job or model service is added.
 Unexpected tool or activity-recording failures log only the exception type
-and user id, then raise a fixed exception without the original exception
-chain. This fails the
-Lambda invocation, making the existing MCP Errors alarm report the failure;
-API Gateway returns its generic 502 response. Invalid tool arguments remain
+and user id, with no original exception details or chain. Structured
+retryable errors are returned to the client. A count-only
+embedded `McpFailures` metric keeps these errors visible; the MCP alarm sums
+that metric and uncaught Lambda Errors from both reader and writer.
+Metadata transaction conflicts retry within bounded CAS loops. Invalid tool arguments remain
 structured tool errors and do not count as infrastructure failures.
+The capture function has no public route or function URL, no S3, SES, model,
+OAuth-write, deletion or invocation permission. Only its role can write USER
+note/receipt fields; note and grant conditions constrain the code's writes.
+The reader itself still cannot write USER rows. Append updates only text,
+tags, links, edited time and revision, preserving owner-added files/place.
 
 The dev server dispatches `/mcp`, `/oauth/*` and discovery to these same
 handlers against the in-memory fakes. Test with fictional data only. Unit

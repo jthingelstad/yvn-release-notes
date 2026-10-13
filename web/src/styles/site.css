@@ -59,6 +59,7 @@ h2.big { font-size: 22px; font-weight: 800; color: var(--ink); }
 .hint { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink-2); }
 .foot { margin: auto 0 0; padding-top: 48px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
 .value { margin: 0; font-size: 18px; }
+#inbox .value { overflow-wrap: anywhere; }
 .hint.loading { margin-top: 48px; }
 .aside { color: var(--ink-2); font-size: 15px; }
 

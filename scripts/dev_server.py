@@ -252,7 +252,9 @@ def main():
                 "body": self.rfile.read(length).decode() if length else None,
             }
             if url.path == "/mcp":
-                r = mcp.handler(event, None, store=store, s3=s3)
+                from release_notes import capture
+                r = mcp.handler(event, None, store=store, s3=s3,
+                    writer=lambda e: capture.handler(e, None, store=store, fetch=fetch))
             else:
                 r = web.handler(event, None, store=store, ses=ses, s3=s3, lam=lam, geocode=geocode, fetch=fetch,
                                 weather_fetch=weather_fetch)

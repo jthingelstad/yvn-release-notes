@@ -6,6 +6,8 @@ in the order they were written (written_at; note ids are random, so never
 key order), separated by a blank line. A reply with no text
 (a photo alone) adds nothing to the text, and a reply sent twice (same text)
 is shown once.
+Assistant-authored entries keep an "Added by <client>" line in combined
+human-readable text; identical words from different authors stay distinct.
 
 A note is the same record whichever channel brought it (Jamie, 2026-10-09:
 any kind of data can come from any channel):
@@ -74,11 +76,17 @@ def map_url(place: dict) -> str | None:
     return "https://maps.apple.com/?" + urlencode(query, safe=",", quote_via=quote)
 
 
-def combine(notes: list[dict]) -> str:
-    """Join notes already sorted oldest first (Store.day_notes)."""
+def combine(notes: list[dict], *, label=None) -> str:
+    """Join notes oldest first, retaining agent attribution. `label` lets
+    a markup renderer escape the self-reported client name separately.
+    """
     parts: list[str] = []
     for note in notes:
         text = (note.get("text") or "").strip()
+        if note.get("author") == "assistant":
+            client = note.get("client") or "an agent"
+            name = label(client) if label else client
+            text = f"Added by {name}:\n{text}" if text else f"Added by {name}."
         if text and text not in parts:
             parts.append(text)
     return "\n\n".join(parts)

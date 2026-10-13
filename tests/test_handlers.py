@@ -188,6 +188,23 @@ AT_8_15PM = clock("2026-10-08T01:15:00+00:00")
 
 
 class Sending(unittest.TestCase):
+    def test_agent_names_survive_yesterday_and_on_this_day_in_both_email_parts(self):
+        store, ses = FakeStore([ada()]), FakeSES()
+        store.notes[("u1", "2026-10-06", "a-1")] = {"text": "Tea. #evening", "author": "assistant", "client": "ChatGPT #fake"}
+        store.notes[("u1", "2025-10-07", "a-2")] = {"text": "Dinner.", "author": "assistant", "client": "Claude <Helper>"}
+        yesterday, _, _ = send.read_yesterday(store, ada(), date(2026, 10, 7), {'2026-10-06'})
+        past = send.read_on_this_day(store, ada(), date(2026, 10, 7), {'2025-10-07'})
+        self.assertEqual(yesterday.tags, ('evening',))
+        self.assertEqual(past.shown[0].tags, ())
+        send.handler({}, None, store=store, ses=ses, clock=AT_8PM)
+        msg = message_from_bytes(ses.sent[0]["Content"]["Raw"]["Data"], policy=default)
+        text, html = msg.get_body(("plain",)).get_content(), msg.get_body(("html",)).get_content()
+        self.assertIn('Added by ChatGPT #fake:\nTea.', text)
+        self.assertIn('Added by Claude <Helper>:\nDinner.', text)
+        self.assertIn('Added by ChatGPT #fake:<br>Tea.', html)
+        self.assertIn('Added by Claude &lt;Helper&gt;:<br>Dinner.', html)
+        self.assertNotIn('<Helper>', html)
+
     def test_due_window(self):
         s = ada()
         tz = send.ZoneInfo("America/Chicago")

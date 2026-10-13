@@ -86,8 +86,9 @@ place convention, files, summaries/reflections, updates or deletes are added.
 Dates are the owner's local days, birthday through today; late captures use
 the existing "added later" behavior. Captures are normal journal notes,
 count toward streaks, show in email/day views, and the owner can edit or
-delete them on the web. Provenance remains in the JSON export and web/MCP
-read responses. Agent names are self-reported labels, not verified identities.
+delete them on the web. Provenance remains in JSON and Markdown exports,
+email recaps and web/MCP read responses. Agent names are self-reported
+labels, not verified identities.
 
 Use a unique key (1–128 letters, digits, underscores or hyphens) for each
 operation, and reuse exactly the same arguments on a retry. For 24 hours a

@@ -520,7 +520,8 @@ what it reads; it never turns on the product's transcription or description
 settings. Optional `notes:write` is separately approved, off by default,
 and existing grants stay read-only. It permits text-only `notes_create`
 and `notes_append`, at the user's explicit request. Hashtags stay in the
-text. All captures show author/client provenance, and the owner can edit
+text. All captures show author/client provenance on the web, in emails
+and in both exports, and the owner can edit
 or delete them through the web as usual. An append belongs to the exact
 connection that created the note, never to a name supplied by a client.
 No MCP token can authenticate a web write. The MCP function's

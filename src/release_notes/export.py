@@ -8,6 +8,8 @@ line under the day, and credits Open-Meteo. A day's own place (`places`,
 the PLACE item) leads that day's "At" line, before its notes' places.
 The Markdown has a heading for each release ("## 5.3", a year of life,
 Jamie 2026-10-12) and one under it for each of its days.
+Agent entries retain their client attribution in both formats; client names
+are escaped as text in Markdown, not interpreted as markup.
 
 Two ways out. The words alone, Markdown or JSON, come straight back from
 the API. Everything, photos and recordings included, is a zip that
@@ -18,6 +20,8 @@ zip, so it reads with its pictures in any Markdown viewer.
 
 from datetime import date
 from decimal import Decimal
+from html import escape
+import re
 
 from . import links, weather
 from .notes import combine, place_label, written_at
@@ -156,7 +160,8 @@ def markdown(data: dict) -> str:
     release = None
     for day, notes in by_day.items():
         # Links by name, as Markdown links; the raw address stays the target.
-        text = combine([{"text": links.markdown(n["text"], n.get("links"))} for n in notes])
+        text = combine([{**n, "text": links.markdown(n["text"], n.get("links"))} for n in notes],
+                       label=lambda name: re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", escape(name)))
         version = notes[0]["version"] if notes else (str(compute_version(born, date.fromisoformat(day))) if born else "")
         named = (release_name(compute_version(born, date.fromisoformat(day)).age) if born
                  else ".".join(str(version).split(".")[:2]))

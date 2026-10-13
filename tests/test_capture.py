@@ -38,6 +38,19 @@ class CaptureTests(ConnectionCase):
             self.assertEqual(r['statusCode'], 200)
             self.assertEqual(next(n for n in day['notes'] if n['id'] == created['id'])['client'], name)
 
+    def test_markdown_export_retains_agent_names_and_escapes_client_markup(self):
+        from release_notes import export
+        self.token = self.connected(write=True, client_name='ChatGPT ![image](https://client.example/) <img>')[0]['access_token']
+        created = self.write(text='Tea.')['note']
+        self.add_note(text='Tea.', day=created['date'], id='human')
+        data = export.build(self.store.items['u1'], '2026-10-07T12:00:00Z')
+        md = export.markdown(data)
+        self.assertIn('Added by ChatGPT', md)
+        self.assertIn(r'\!\[image\]\(https://client\.example/\)', md)
+        self.assertIn('&lt;img&gt;', md)
+        self.assertNotIn('<img>', md)
+        self.assertEqual(md.count('Tea.'), 2)
+
     def test_create_append_replay_original_results_and_audit(self):
         first = self.write(date='2026-10-07')
         note = first['note']

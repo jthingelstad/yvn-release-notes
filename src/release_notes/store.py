@@ -17,6 +17,8 @@
     USER#<id>        NOTE#<YYYY-MM-DD>#a-<id>   agent capture: author=assistant, connection and client provenance
     USER#<id>        CAPTURE#<family>#<hash>    exact request hash and original capture result, 24 hours;
                                                 private idempotency receipt, deleted with the account
+    USER#<id>        MAILEVENT#<SNS-id-hash>    bounded stop/tally receipt (events.py), no mail content;
+                                                expires after 30 days, deleted with the account
     USER#<id>        WEATHER#<YYYY-MM-DD>       that day's weather where the subscriber was (weather.py): high_c,
                                                 low_c, code, city, region, country, lat, lon; kept for good,
                                                 fetched again when the day's place changes
@@ -91,6 +93,7 @@ notes.written_at.
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from time import sleep
 
 from .notes import written_at
 from .weather import place_of
@@ -592,6 +595,60 @@ class Store:
             ExpressionAttributeNames=names,
             ExpressionAttributeValues=values,
         )
+
+    def apply_mail_event(self, user_id: str, message_hash: str, reason: str, at: str, now: int) -> str:
+        """One stop, monthly count and content-free SNS receipt, together.
+
+        This temporary Python bridge shares the Node worker's exact USER#
+        MAILEVENT# layout. A retry or old/new subscription overlap applies
+        once; no account is recreated after deletion begins. Thirty-day
+        receipts outlive delivery retries and disappear with the account.
+        Resource-client transactions take plain values, never typed maps.
+        """
+        if reason not in {"bounce", "complaint"}:
+            raise ValueError("Unsupported mail event reason")
+        operations = [
+            {"Update": {
+                "TableName": self.table.name,
+                "Key": {"pk": f"USER#{user_id}", "sk": "PROFILE"},
+                "UpdateExpression": "SET #s = :s, stopped_reason = :r, stopped_at = :at",
+                "ConditionExpression": "attribute_exists(pk) AND attribute_not_exists(mcp_deleting)",
+                "ExpressionAttributeNames": {"#s": "status"},
+                "ExpressionAttributeValues": {":s": "stopped", ":r": reason, ":at": at},
+            }},
+            {"Update": {
+                "TableName": self.table.name,
+                "Key": {"pk": f"TALLY#{at[:7]}", "sk": "TALLY"},
+                "UpdateExpression": "ADD #n :one",
+                "ExpressionAttributeNames": {"#n": reason + "s"},
+                "ExpressionAttributeValues": {":one": 1},
+            }},
+            {"Put": {
+                "TableName": self.table.name,
+                "Item": {"pk": f"USER#{user_id}", "sk": f"MAILEVENT#{message_hash}",
+                         "expires_at": now + 30 * 86400},
+                "ConditionExpression": "attribute_not_exists(pk) OR expires_at <= :now",
+                "ExpressionAttributeValues": {":now": now},
+            }},
+        ]
+        for attempt in range(5):
+            try:
+                self.table.meta.client.transact_write_items(TransactItems=operations)
+                return "applied"
+            except Exception as error:
+                response = getattr(error, "response", None) or {}
+                if response.get("Error", {}).get("Code") != "TransactionCanceledException":
+                    raise
+                reasons = response.get("CancellationReasons") or []
+                if len(reasons) > 2 and reasons[2].get("Code") == "ConditionalCheckFailed":
+                    return "duplicate"
+                if reasons and reasons[0].get("Code") == "ConditionalCheckFailed":
+                    return "gone"
+                if any(r.get("Code") == "TransactionConflict" for r in reasons) and attempt < 4:
+                    sleep(.01 * (attempt + 1))
+                    continue
+                raise
+        raise RuntimeError("Mail event transaction retries exhausted")
 
     def stop(self, user_id: str, reason: str, at: str) -> None:
         """No more emails until the subscriber starts them again."""

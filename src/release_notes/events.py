@@ -12,9 +12,15 @@ A soft bounce (mailbox full, a server down) changes nothing; SES has
 already retried it. A delay is routine and only logged. The person can
 start the emails again in settings, which also takes the address off SES's
 suppression list (web.unsuppress).
+
+Python and Node share a thirty-day, account-owned SNS idempotency receipt.
+The stop, profile-deletion proof, receipt and monthly tally commit together;
+old/new subscription overlap cannot count twice. Ops publishing remains
+at-least-once: a retry can send the same scrubbed notice, never raw mail.
 """
 
 import json
+import hashlib
 import os
 import time
 from datetime import datetime, timezone
@@ -73,7 +79,8 @@ def handler(event, context, *, store=None, sns=None, clock=time.time):
         from .store import Store
 
         store = Store(boto3.resource("dynamodb").Table(os.environ["TABLE"]))
-    at = datetime.fromtimestamp(clock(), timezone.utc)
+    now = int(clock())
+    at = datetime.fromtimestamp(now, timezone.utc)
     for record in event.get("Records", []):
         try:
             msg = json.loads(record["Sns"]["Message"])
@@ -90,12 +97,14 @@ def handler(event, context, *, store=None, sns=None, clock=time.time):
                 # A sign-in email to an address with no account, most likely.
                 log(event="mail-event", reason=reason, outcome="no-account")
                 continue
-            store.stop(user_id, reason, at.strftime("%Y-%m-%dT%H:%M:%SZ"))
-            try:
-                store.tally(at.strftime("%Y-%m"), reason + "s")
-            except Exception:
-                log(event="tally-failed", name=reason + "s")
-            log(event="mail-event", reason=reason, outcome="stopped", user=user_id)
+            message_id = record["Sns"].get("MessageId")
+            if not isinstance(message_id, str) or not message_id:
+                # SNS always supplies one. An absent ID must never fall back
+                # to the old, non-transactional stop/tally pair.
+                raise ValueError("SNS MessageId required for account event")
+            message_hash = hashlib.sha256(message_id.encode()).hexdigest()
+            outcome = store.apply_mail_event(user_id, message_hash, reason, at.strftime("%Y-%m-%dT%H:%M:%SZ"), now)
+            log(event="mail-event", reason=reason, outcome="stopped" if outcome == "applied" else outcome, user=user_id)
         line = notice(msg, users)
         if line is None:
             log(event="mail-event", kind=msg.get("eventType"), outcome="logged")

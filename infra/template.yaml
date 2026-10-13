@@ -55,6 +55,16 @@ Parameters:
     AllowedValues: ["false", "true"]
     Description: First deploy false to publish worker aliases and permissions; then true to publish the final describe self-invoke configuration and move existing targets.
 
+  EventsPythonCodeSha256:
+    Type: String
+    AllowedPattern: '^[A-Za-z0-9+/]{43}=$'
+    Description: SHA-256 base64 of the first complete idempotent Python bridge zip; keep this exact value on every later release so the retained baseline is never republished.
+  EventsAliasesReady:
+    Type: String
+    Default: "false"
+    AllowedValues: ["false", "true"]
+    Description: First deploy false; verify both published Python bridge and unqualified handler/hash before retargeting SNS in a second deploy with true.
+
   NativeWebFunctionsEnabled:
     Type: String
     Default: "false"
@@ -148,6 +158,7 @@ Rules:
         AssertDescription: Install and read back both endpoint resource policies before moving CloudFront origins.
 
 Conditions:
+  UseEventsAlias: !Equals [!Ref EventsAliasesReady, "true"]
   CreateNativeHttp: !Equals [!Ref NativeWebFunctionsEnabled, "true"]
   RouteNativeHttp: !Equals [!Ref NativeHttpRouting, native]
   HasNativeAppLiveRevision: !Not [!Equals [!Ref NativeAppLiveRevisionId, ""]]
@@ -1743,6 +1754,13 @@ Resources:
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
+                # Content-free SNS idempotency receipt, owned/deleted with the account.
+                Action: dynamodb:PutItem
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*"]
+              - Effect: Allow
                 # The scrubbed line for the ops queue.
                 Action: sns:Publish
                 Resource: !Ref AlarmTopic
@@ -1778,10 +1796,11 @@ Resources:
 
   EventsSubscription:
     Type: AWS::SNS::Subscription
+    DependsOn: [EventsInvokePermission, EventsAliasInvokePermission, EventsAliasInvokeConfig]
     Properties:
       TopicArn: !Ref MailEventsTopic
       Protocol: lambda
-      Endpoint: !GetAtt EventsFunction.Arn
+      Endpoint: !If [UseEventsAlias, !Ref EventsAlias, !GetAtt EventsFunction.Arn]
 
   EventsInvokePermission:
     Type: AWS::Lambda::Permission
@@ -1790,6 +1809,41 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: sns.amazonaws.com
       SourceArn: !Ref MailEventsTopic
+
+  # The bridge must already be in BOTH handlers before subscription
+  # replacement: CloudFormation creates the new SNS subscription before
+  # deleting the old one. Their shared receipt makes overlap safe.
+  EventsPythonVersion:
+    Type: AWS::Lambda::Version
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Ref EventsFunction
+      CodeSha256: !Ref EventsPythonCodeSha256
+      Description: Complete idempotent Python rollback bridge before the Node 24 rebuild
+
+  EventsAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      Name: live
+      FunctionName: !Ref EventsFunction
+      FunctionVersion: !GetAtt EventsPythonVersion.Version
+
+  EventsAliasInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref EventsAlias
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref MailEventsTopic
+
+  EventsAliasInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref EventsFunction
+      Qualifier: live
+      MaximumRetryAttempts: 2
+      MaximumEventAgeInSeconds: 21600
 
   # --- transcripts -------------------------------------------------------------
   # Recordings written out as text for subscribers who turn it on
@@ -2589,6 +2643,10 @@ Resources:
         }
 
 Outputs:
+  EventsWorkerAlias:
+    Value: !Ref EventsAlias
+  EventsPythonRollbackVersion:
+    Value: !GetAtt EventsPythonVersion.Version
   NativeSourceBucketName:
     Value: !Ref NativeSourceBucket
   NativeAppFunctionArn:

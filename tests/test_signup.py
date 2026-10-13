@@ -251,7 +251,7 @@ class BounceTest(unittest.TestCase):
         out = StringIO()
         with redirect_stdout(out):
             events.handler(
-                {"Records": [{"Sns": {"Message": json.dumps(m)}} for m in messages]}, None, store=store, sns=self.sns,
+                {"Records": [{"Sns": {"Message": json.dumps(m), "MessageId": f"fictional-{i}"}} for i, m in enumerate(messages)]}, None, store=store, sns=self.sns,
                 clock=lambda: NOW,
             )
         self.assertNotIn("ada@example.com", out.getvalue())

@@ -131,3 +131,26 @@ Official references:
 [resource permissions](https://docs.aws.amazon.com/lambda/latest/dg/web-functions-permissions.html),
 [CloudFront OAC](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda-web.html),
 [metrics](https://docs.aws.amazon.com/lambda/latest/dg/web-functions-monitoring-metrics.html).
+
+## Event notification bridge before worker conversion
+
+The six established worker aliases already point at complete Python versions.
+Events initially remains unqualified. Before creating its alias/SNS replacement,
+`events.py` and the Node event worker share the exact transaction: guarded
+PROFILE update, monthly TALLY ADD, and `USER#/MAILEVENT#<SHA256 SNS MessageId>`
+receipt with a 30-day TTL. This temporary bridge closes the old stop/tally split.
+The receipt has no mail content and is deleted with the account. A duplicate
+notification cannot stop an account again after its owner restarts; ops notices
+remain at least once and scrubbed.
+
+The first bridge deploy passes `EventsAliasesReady=false` and the new zip's
+base64 SHA-256 as `EventsPythonCodeSha256`. It updates the unqualified handler and
+creates the retained, hash-pinned complete Python version, alias permission and
+async config. Verify both code hashes, Python runtime/handler, complete config
+and published version before the second pass sets `EventsAliasesReady=true`.
+CloudFormation replaces the SNS subscription; overlapping qualified/unqualified
+notifications share receipts and apply once. Keep the original unqualified grant
+until accepted requests drain. Subsequent releases preserve the original
+`EventsPythonCodeSha256` parameter forever; changing it would replace the retained
+Python baseline publication resource. Tests use fictional events and SDK fakes;
+never send a test bounce/complaint to a live subscriber to prove the bridge.

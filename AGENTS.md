@@ -113,7 +113,8 @@ ownership, privacy and existing access. See `docs/TYPESCRIPT-REBUILD.md`.
 
 New code lives in `packages/domain/` (calendar/version/notes/tags/streak/search
 and Unicode compatibility), `packages/backend/` (`auth.ts`, `links.ts`,
-`store.ts`, `store-types.ts`), `packages/testing/` (fictional AWS/store fakes),
+`store.ts`, `store-types.ts`, `services.ts`, `aws.ts`, `media.ts`, `exif.ts`,
+`thumbs.ts`, `places.ts`, `weather.ts`), `packages/testing/` (fictional AWS/store fakes),
 `server/app/` (native API), `server/mcp/` (separate MCP server), `workers/`
 (event entrypoints), and `tools/` (`build-server.ts` and operator tools).
 `tsconfig.server.json` and `tests-node/` check the server separately from

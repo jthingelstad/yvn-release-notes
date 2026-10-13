@@ -33,10 +33,7 @@ async function fixture() {
     )
   );
   await writeFile(join(repo, '.node-version'), '24\n');
-  for (const dir of ['src/release_notes', 'layers', 'infra', 'tools', 'node_modules/tsx'])
-    await mkdir(join(archive, dir), { recursive: true });
-  await writeFile(join(archive, 'src/release_notes/example.py'), '# fictional\n');
-  await writeFile(join(archive, 'layers/pillow.txt'), '# fictional lock\n');
+  for (const dir of ['infra', 'tools', 'node_modules/tsx']) await mkdir(join(archive, dir), { recursive: true });
   await writeFile(join(archive, 'infra/template.yaml'), 'Resources: {}\n');
   await writeFile(join(archive, 'package.json'), '{"type":"module"}\n');
   await writeFile(join(archive, 'package-lock.json'), '{}\n');
@@ -78,7 +75,6 @@ console.log(JSON.stringify({parameters:kind==='http'?{NativeWebFunctionsEnabled:
   );
   const programs: Record<string, string> = {
     git: `if(args[0]==='archive') process.stdout.write(fs.readFileSync(process.env.FIXTURE_ARCHIVE)); else if(args[0]==='rev-parse') console.log('${commit}'); else if(args[0]==='merge-base') {record('ancestry');if(process.env.FIXTURE_NON_ANCESTOR) process.exit(1);}`,
-    python3: `record('python');`,
     npm: `record('npm'); if(process.env.FIXTURE_FAILURE==='verify' && args.includes('verify')) process.exit(18);
 if(args.includes('--os=linux')) for(const name of ['sharp','@img/colour','@img/sharp-linux-arm64','@img/sharp-libvips-linux-arm64','detect-libc','semver']) {fs.mkdirSync(path.join('node_modules',name),{recursive:true});fs.writeFileSync(path.join('node_modules',name,'package.json'),'{}');}
 if(args.includes('verify')) {fs.mkdirSync('dist/web/assets',{recursive:true});fs.writeFileSync('dist/web/index.html','fictional');}`,
@@ -149,7 +145,9 @@ test('ordinary deployment verifies archived code and preserves all native parame
     const { result, events } = await f.run();
     assert.equal(result.status, 0, result.stderr);
     assert.ok(events.some((e) => e.program === 'npm' && e.args.includes('verify')));
-    assert.ok(events.some((e) => e.program === 'python'));
+    const verification = events.findIndex((e) => e.program === 'npm' && e.args.includes('verify'));
+    const deployment = events.findIndex((e) => e.program === 'aws' && e.args[1] === 'deploy');
+    assert.ok(verification >= 0 && deployment > verification);
     assert.ok(!events.some((e) => ['tool', 'artifacts', 'policy'].includes(e.program)));
     const deploy = events.find((e) => e.program === 'aws' && e.args[1] === 'deploy')!;
     assert.ok(deploy);

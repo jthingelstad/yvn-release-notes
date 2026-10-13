@@ -1,127 +1,212 @@
-# Native HTTP release operations
+# Native release operations
 
-`infra/template.yaml` adds Node 24 Lambda Web Functions alongside the existing
-Python HTTP API. The first deploy creates the retained, versioned source bucket,
-log groups, OAC, metric filters and alarms with native compute disabled. Existing
-mail/storage resources, event triggers and legacy HTTP resources remain intact.
-`tools/web-platform.ts` owns the two complete function resource policies; neither
-CloudFormation nor another deployment writer may also own those policies.
+Release Notes runs its application API and MCP on separate private Node 24
+Lambda Web Functions, and its seven Event workers on Node 24 Arm64. CloudFront
+serves the React app from private S3 and signs requests to the native HTTP
+origins with regional SigV4 OAC. The Python application, API Gateway, old HTTP
+functions, origin-secret machinery and unqualified invocation grants/settings
+were retired on 2026-10-13. Historical published snapshots may remain retained;
+they are not supported rollback targets.
 
-The current CloudFormation `AWS::Lambda::ResourcePolicy` registry schema rejects
-`web-function/` ARNs. The explicit deployment owner uses the Web Functions
-Get/Put/DeleteResourcePolicy API instead. Its grant permits only this stack's
-CloudFront distribution to invoke the exact `live` endpoint. `rollback` has
-IamAuth, no grant, and rate zero. There is never a public endpoint.
+This is the current operating runbook. The staged migration and SES notification
+bridge are historical records in [the rebuild plan](../docs/TYPESCRIPT-REBUILD.md)
+and the [compatibility ledger](../docs/NATIVE-COMPATIBILITY.md). Do not repeat
+their first-activation or Python alias procedures against the native-only stack.
 
-## First activation
+## Release prerequisites
 
-1. Run the normal green-main deployment with `NativeWebFunctionsEnabled=false`,
-   `NativeHttpRouting=legacy`, and established `WorkerAliasesReady=true`.
-2. Build standalone `index.js` Node 24 bundles and a `package.json` with
-   `type=module`. Upload each zip to `NativeSourceBucketName` at its immutable
-   SHA-256 key (`native/app/<hash>.zip`, `native/mcp/<hash>.zip`). Record the exact
-   S3 VersionId, source commit/build ID, artifact hash and build configuration in
-   a private release receipt outside this public repository.
-3. Deploy with `NativeWebFunctionsEnabled=true`, both key/version/build-ID
-   parameter triples, and legacy routing. Review the change set: the retained
-   table/mail bucket, existing schedule, receipt rule and both stream UUIDs must
-   remain unchanged. The app/MCP execution roles keep their separate existing
-   service grants, adding only their own native main/local logs. Runtime-provided
-   `AWS_REGION` is not overridden.
-4. Use Node 24 and the cloud-engineer child-process credential chain:
+Use `./deploy.sh` from a clean checkout of `origin/main` with a successful GitHub
+Actions `validate` run. Land changes through a pull request first. The script
+uses the cloud-engineer profile in us-east-1, requires ProjectsCloudEngineer,
+selects Homebrew's Node 24, and verifies/builds a `git archive` of the committed
+tree. Ignored or uncommitted files cannot enter the release.
 
-   ```sh
-   AWS_PROFILE=cloud-engineer node --import tsx tools/web-platform.ts policy-install --receipt-dir /private/release-receipts
-   AWS_PROFILE=cloud-engineer node --import tsx tools/web-platform.ts policy-verify --receipt-dir /private/release-receipts
-   ```
+Every phase holds the same private full-shell deployment lock. An uncertain
+CloudFormation update must finish before another phase runs. Investigate stale
+locks and release drift; do not remove a lock merely to get a deployment through.
+`--break-glass` is only for GitHub being unavailable: it skips fetch/check lookup,
+but still requires clean HEAD to match the last-fetched `origin/main`, Node 24
+and successful archived-tree verification. It never permits a red check.
 
-   The tool verifies caller role/account/region, stack/function/endpoint identity,
-   disabled auto deployment, IamAuth, active state, and full policies. Journals are
-   mode 600 in a mode 700 directory. It saves intent before mutation, uses CAS
-   tokens on subsequent mutations, and recovers unknown responses only from its
-   own matching journal/readback. An unowned, changed or stale policy is refused.
-   The service provides no absence CAS token for an initial policy creation;
-   that first write is bounded by the fresh private function, sole owner and local
-   release lock. There is no blind SDK mutation retry.
-5. Complete API/MCP parity and staging load checks with fictional data, including
-   Authorization on GET/POST/HEAD, Origin, secure cookies, viewer address,
-   no-store on every response/error, shutdown and parallel request isolation.
-   The isolated rehearsal proves the platform plumbing; it does not replace
-   application acceptance. No production sign-ins or subscriber writes for QA.
-6. Only after both policy readbacks and acceptance, deploy
-   `NativeOriginPoliciesReady=true`, `NativeHttpRouting=native`. CloudFront then
-   uses the provider-returned endpoint domain names and regional SigV4 OAC.
-   Inspect distribution completion and count-only native error/throttle metrics.
-   The static React origin and the legacy API stay available for rollback.
+The native-only template requires `NativeWebFunctionsEnabled=true`,
+`NativeHttpRouting=native`, `NativeOriginPoliciesReady=true`,
+`NativeWorkersEnabled=true` and `NativeWorkerAliasesReady=true`. Keep all four
+HTTP revision pins and all seven worker live-version pins explicit. Retired
+`WorkerAliasesReady`, `EventsAliasesReady` and `EventsPythonCodeSha256`
+parameters are no longer part of the template.
 
-## Later revisions
+Private release receipts and policy journals live outside this public repository
+in the directory selected by `deploy.sh` (`NATIVE_RECEIPT_DIR`). The directory is
+mode 700 and files are mode 600. Keep them available across publish, activate,
+rollback and retries; they establish ownership, exact source/build identity and
+the prior native targets. Never commit their cloud identifiers or live data.
 
-Before changing any artifact, run `prepare` and apply **all four returned pin
-parameters** to the next CloudFormation deployment:
+An ordinary `./deploy.sh` verifies the application and updates infrastructure
+and static web assets while preserving native artifact versions and serving
+pins. Publishing and activating backend code require the explicit phases below.
+Every phase also deploys infrastructure and syncs the web app from current HEAD;
+it is not a backend-only operation. Select one native release kind per invocation.
+
+## HTTP publication and activation
 
 ```sh
-AWS_PROFILE=cloud-engineer node --import tsx tools/web-platform.ts prepare --receipt-dir /private/release-receipts
+./deploy.sh --native-http-phase=publish
+# Review the candidate and complete acceptance before activation.
+./deploy.sh --native-http-phase=activate
 ```
 
-`prepare` reads control-plane metadata only and saves a receipt. It requires one
-100% live revision and one 100% rollback revision, with auto deployment disabled.
-Empty revision-ID parameters are for first creation only. Leaving them empty
-while replacing a revision makes the endpoint's GetAtt follow that new revision,
-even though auto deployment is disabled. Pinning prevents candidate publication
-from promoting traffic. After acceptance, explicitly move live to the candidate
-and rollback to the previous live ID. Read back both endpoints and policies.
-CloudFormation owns endpoint routing; do not silently make an out-of-band
-UpdateWebFunctionEndpoint call and leave stack parameters stale.
+Publication runs `tools/native-release.ts prepare-http`, which calls
+`tools/web-platform.ts prepare` to read and save both live and rollback pins.
+All four pins are preserved while new app/MCP revisions are published. The
+artifacts are standalone `index.js` Node 24 bundles with an ESM `package.json`,
+uploaded to the retained versioned source bucket at immutable SHA-256 keys
+(`native/app/<hash>.zip`, `native/mcp/<hash>.zip`). Exact S3 VersionIds and the
+source commit/build ID bind each publication. Publication installs and verifies
+both endpoint policies before it finishes; it does not promote candidate traffic.
 
-Immutable revisions have Retain policies, and the separate zero-rate endpoint
-keeps the last-good revision referenced. Retain alone does not protect an unused
-revision from Lambda's cleanup near its revision quota. Never delete a source
-object version, remove its source-bucket read grant, or garbage-collect a live or
-rollback reference. The source bucket intentionally has **no expiration rules**.
-Deleting source bytes/readability permanently fails the revision; restoring the
-bytes does not reactivate it. Recovery then requires a fresh revision built from
-the saved immutable artifact/configuration, with deliberate promotion.
+Before activation, review the candidates and use fictional local/staging data
+for API/MCP behavior, Authorization on GET/POST/HEAD, Origin, secure cookies,
+viewer address, no-store on responses/errors, graceful shutdown and parallel
+request isolation. The isolated [platform rehearsal](rehearsal/README.md) proves
+platform plumbing; it does not replace application acceptance. No production
+test sign-ins, subscriber-content reads or subscriber writes for release QA.
 
-## Rollback and retirement
+Activation uses the published app/MCP build identity from stack metadata, even
+when current validated main has advanced. It requires that build to be a
+validated ancestor of HEAD and the API/MCP candidates to share its identity.
+`promote-http` verifies exact source/configuration and endpoint policies, saves
+immutable promotion intent, and supplies CloudFormation overrides that move
+each live endpoint to its candidate and each rollback endpoint to the prior live
+revision. Endpoints remain IamAuth, auto deployment Disabled, with one 100%
+revision each. CloudFormation owns endpoint routing; do not make out-of-band
+UpdateWebFunctionEndpoint calls and leave stack parameters stale.
 
-For an application regression, explicitly set each live revision ID to the
-protected last-good ID; do not change native artifact keys or rollback pins.
-For platform/routing failure, set `NativeHttpRouting=legacy` and wait for the
-existing CloudFront distribution to finish deploying. Existing Python API/MCP
-functions, API Gateway, secret-origin proof and worker aliases remain usable.
-Do not reset `WorkerAliasesReady=false` after worker conversion; select each
-retained complete Python version on its stable alias instead.
+`tools/web-platform.ts` is the sole owner of the two complete function resource
+policies. The reviewed CloudFormation ResourcePolicy schema rejects Web Function
+ARNs, so the deployment owner uses the Web Functions resource-policy API. Each
+grant permits only this stack's CloudFront distribution to invoke the exact
+`live` endpoint. `rollback` has IamAuth, no grant and rate zero. Policy writes use
+private ownership journals, fresh readback and CAS revisions; an unowned or
+changed policy is refused. Neither CloudFormation nor another writer may also
+own these policies.
 
-Policy retirement is a separate ordered operation after legacy routing has
-completed:
+## Event worker publication and activation
 
 ```sh
-AWS_PROFILE=cloud-engineer node --import tsx tools/web-platform.ts policy-remove --receipt-dir /private/release-receipts
+./deploy.sh --native-worker-phase=publish
+# Review the complete published worker versions before activation.
+./deploy.sh --native-worker-phase=activate
 ```
 
-It conditionally deletes only the exact policy it owns and confirms absence.
-It refuses native routing, another owner's policy, or a changed CAS revision.
-Keep journals until retirement is confirmed, including interrupted removals.
-Remove compute/endpoint resources only after that step. Retained source versions
-and revision receipts remain available; this tool never deletes source objects.
+`prepare-workers` records the current Sender, Inbound, Events, Transcribe,
+Describe, Export and Capture `live` aliases, including their native build/code
+identities. All seven explicit `<Name>NativeLiveVersion` parameters preserve
+those serving versions while publication updates `$LATEST` and creates complete
+retained Node versions. Producers continue invoking qualified `live` aliases;
+none should invoke `$LATEST` during publication.
 
-## Telemetry and capacity
+Artifacts use `native/workers/<name>/<sha256>.zip` in the retained versioned
+source bucket. `<Name>NodeCodeKey`, `<Name>NodeCodeVersion` and the base64
+`<Name>NodeCodeSha256` identify the exact zip. `NativeWorkerBuildId`, `APP_VERSION`
+and version descriptions bind the complete configuration to its committed build.
+Describe alone includes the pinned Linux Arm64 Sharp runtime closure; no worker
+uses the retired Pillow layer.
 
-Native HTTP loggers must call `console.info(fieldsObject)`, with safe content-free
-fields. Web Functions wraps it under `message`, so native filters use
-`$.message.event` and `$.message.limit`. Event workers retain raw stdout JSON and
-existing `$.event` filters. Both signin filters contribute to the unchanged
-`ReleaseNotes/SignInTotalLimited` alarm; native `mcp-error` filters emit
-`ReleaseNotes/McpFailures` because an EMF object nested under message is not EMF.
-No URL/query, tokens, cookies, addresses, note text or place data may be logged.
+Activation selects the published worker build from stack metadata and validates
+all seven immutable candidates before emitting their explicit live-version pins.
+It checks native runtime, handler, Arm64 architecture, active state, code/build
+identity and ownership/environment contracts, and invokes only
+`{"self_test":true}` on exact published versions. These probes are content-free,
+including Describe's native codec probe. Never invoke a real sender, process a
+subscriber's note or send a test bounce/complaint as release QA.
 
-Initial live ceilings are rate 100 and eight environments per endpoint, with 64
-as the per-environment concurrency **upper bound**. The service can choose a lower
-admission concurrency. Rehearsal burst results and platform throttle reasons are
-in [rehearsal/README.md](rehearsal/README.md); these are not product throughput
-claims. Alarms distinguish HTTP 5xx (`AWS/Lambda/Web`) from environment/rate
-throttling (`AWS/Lambda/Web/Usage`, including ExecutionRegion). Sparse metrics use
-missing-data=notBreaching. Budget and capacity changes follow measured fictional
+The sender schedule, SES receipt action, SNS subscription, transcription
+completion rule, both DynamoDB stream mappings and internal invocations keep
+their stable qualified entry points. Read back all seven aliases and both stream
+mapping identities/enabled states after activation. Preserve their qualified
+invocation grants, async retry/destination settings, data resources and roles.
+CloudFormation has no alias RevisionId compare-and-swap; the coordinator uses
+serialized deployment and fresh alias readback to refuse concurrent drift.
+
+## Native rollback and interrupted releases
+
+Run the phase for the affected backend from clean, validated current main:
+
+```sh
+./deploy.sh --native-http-phase=rollback
+```
+
+or, for the worker group:
+
+```sh
+./deploy.sh --native-worker-phase=rollback
+```
+
+The script resolves the published backend build identity from stack metadata,
+then `tools/native-release.ts` loads that build's immutable promotion receipt and
+recorded prior native release. HTTP rollback restores the prior four revision
+pins while retaining native routing and verified policies. Worker rollback
+restores the prior seven alias versions with `NativeWorkerAliasesReady=true`,
+verifying their recorded native identities and running the same content-free
+published-version probes. Neither rollback rewrites subscriber data or changes
+the published source artifact/build parameters. Static assets still come from
+current HEAD; these flags do not restore an earlier UI build.
+
+The tooling refuses missing/mismatched receipts, changed build identities,
+unowned policies and routing/alias drift. Initial migration receipts targeting
+Python or legacy HTTP are refused after retirement. There is no supported
+`NativeHttpRouting=legacy` or `NativeWorkerAliasesReady=false` recovery path.
+`policy-remove` is a historical migration operation and refuses native routing;
+do not remove the serving policies or disable native compute for rollback.
+
+For an interrupted phase, first establish whether CloudFormation is still
+updating and read back the actual pins/aliases. Retry the matching phase with
+its existing receipts only after the stack is idle and the coordinator accepts
+the recorded state. Do not discard promotion intent or fabricate replacement
+receipts. After a rollback, a subsequent publication needs a new validated
+commit/build identity; the same build's promotion intent remains immutable.
+
+## Source retention and recovery
+
+Immutable HTTP revisions and worker versions have Retain policies. The
+zero-rate rollback endpoints keep last-good HTTP revisions referenced; Retain
+alone does not protect unused revisions from Lambda's cleanup near its quota.
+Never delete a source object version, remove its Lambda service read grant, or
+garbage-collect a live/rollback reference. The native source bucket intentionally
+has no expiration rules; it is separate from the expiring template code prefix.
+
+Deleting source bytes or their readability permanently fails the HTTP revision;
+restoring them does not reactivate it. Recovery requires a fresh revision from
+the saved immutable artifact/configuration, verified policies and deliberate
+publication/activation. Native rollback requires a healthy protected prior
+revision and its dependencies. A platform/routing outage without a usable native
+baseline requires investigation and a reviewed native repair; retired API
+Gateway and Python resources cannot provide a fallback.
+
+## Verification, telemetry and capacity
+
+After a release or rollback, confirm CloudFormation has completed, CloudFront
+has finished any distribution update, HTTP endpoints/policies and worker aliases
+match the receipts, and protected rollback revisions remain active. Check public
+`/api/health` and the unauthenticated `/mcp` challenge without signing in. Inspect
+count-only alarms, failure-queue depth, native requests and the next eligible
+natural sender cycle. Report unobserved real flows as pending; never manufacture
+subscriber traffic, imports, backfills or acceptance events.
+
+Native HTTP loggers call `console.info(fieldsObject)` with safe content-free
+fields. Web Functions wraps it under `message`, so filters use `$.message.event`
+and `$.message.limit`. Event workers retain raw stdout JSON/EMF with
+`LogFormat=Text` and `$.event` filters. The native sign-in filter contributes to
+`ReleaseNotes/SignInTotalLimited`; native `mcp-error` filters emit
+`ReleaseNotes/McpFailures` because nested EMF is not EMF. No URL/query, tokens,
+cookies, addresses, note text or place data may be logged.
+
+Live endpoint ceilings are rate 100 and eight environments, with 64 as the
+per-environment concurrency upper bound; the service may choose lower admission
+concurrency. Rehearsal burst results are not product throughput claims. Alarms
+distinguish HTTP 5xx (`AWS/Lambda/Web`) from environment/rate throttling
+(`AWS/Lambda/Web/Usage`, including ExecutionRegion). Sparse metrics use
+missing-data=notBreaching. Budget/capacity changes follow measured fictional
 application staging workloads.
 
 Official references:
@@ -131,99 +216,3 @@ Official references:
 [resource permissions](https://docs.aws.amazon.com/lambda/latest/dg/web-functions-permissions.html),
 [CloudFront OAC](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda-web.html),
 [metrics](https://docs.aws.amazon.com/lambda/latest/dg/web-functions-monitoring-metrics.html).
-
-## Event notification bridge before worker conversion
-
-The six established worker aliases already point at complete Python versions.
-Events initially remains unqualified. Before creating its alias/SNS replacement,
-`events.py` and the Node event worker share the exact transaction: guarded
-PROFILE update, monthly TALLY ADD, and `USER#/MAILEVENT#<SHA256 SNS MessageId>`
-receipt with a 30-day TTL. This temporary bridge closes the old stop/tally split.
-The receipt has no mail content and is deleted with the account. A duplicate
-notification cannot stop an account again after its owner restarts; ops notices
-remain at least once and scrubbed.
-
-The first bridge deploy passes `EventsAliasesReady=false` and the new zip's
-base64 SHA-256 as `EventsPythonCodeSha256`. It updates the unqualified handler and
-creates the retained, hash-pinned complete Python version, alias permission and
-async config. Verify both code hashes, Python runtime/handler, complete config
-and published version before the second pass sets `EventsAliasesReady=true`.
-CloudFormation replaces the SNS subscription; overlapping qualified/unqualified
-notifications share receipts and apply once. Keep the original unqualified grant
-until accepted requests drain. Subsequent releases preserve the original
-`EventsPythonCodeSha256` parameter forever; changing it would replace the retained
-Python baseline publication resource. Tests use fictional events and SDK fakes;
-never send a test bounce/complaint to a live subscriber to prove the bridge.
-
-## Complete native Event worker publications
-
-Worker preparation is separate from alias activation. Keep
-`WorkerAliasesReady=true` and `EventsAliasesReady=true` permanently once the
-Python alias passes and notification bridge have finished. CloudFormation rules
-refuse native preparation or activation without both prerequisites; no producer
-should invoke `$LATEST` while its runtime and code are being changed.
-
-For each of Sender, Inbound, Events, Transcribe, Describe, Export and Capture,
-record the current `live` version and complete Python configuration in a private
-release receipt. Upload a standalone Node 24 Arm64 zip to the retained versioned
-`NativeSourceBucket`, using the key `native/workers/<name>/<sha256>.zip`. Supply
-`<Name>NodeCodeKey`, `<Name>NodeCodeVersion` and `<Name>NodeCodeSha256` (base64
-SHA-256 of the exact zip). An exact S3 version is required, not just a key.
-Describe's zip includes the pinned Linux Arm64 Sharp dependencies; its Node
-configuration has no Pillow layer. Existing published Python versions keep their
-original runtime, handler, environment and layer.
-
-Set `NativeWorkersEnabled=true`, `NativeWorkerAliasesReady=false` and the
-immutable source/configuration release token `NativeWorkerBuildId`. This updates
-all seven `$LATEST` functions to `nodejs24.x` and `index.handler`, preserving their
-roles, timeouts, reserved concurrency, destinations and environment contracts.
-It then publishes retained `<Name>NodeVersion` resources after each complete
-function update. `CodeSha256` prevents publication against a different zip;
-`APP_VERSION` and the publication description bind each configuration release
-to the build token. No existing Python publication property changes, and every
-live alias remains on its Python version during this pass.
-
-Before activation, read each `<Name>NativeCandidateVersion` output and verify
-its published code hash, Node runtime, handler, Arm64 architecture, environment
-names, role, log format, layer absence/presence and resource settings against the
-release manifest. Use fictional local/staging requests and count-only production
-control-plane checks. Do not invoke a real sender, process a subscriber's note or
-send a test bounce as release QA. Review the change set: existing Python Version
-resources and both stream mapping physical IDs must remain untouched.
-
-For the activation pass, set every `<Name>NativeLiveVersion` explicitly to its
-verified candidate ID, then set `NativeWorkerAliasesReady=true`. Only alias
-version selection changes. The one schedule, SES receipt action, one SNS
-subscription, transcribe completion rule, both existing stream mappings and
-internal invocations continue using the same qualified `live` entry points.
-Read back aliases and the exact two mapping UUIDs/enabled states. Their async
-retry/destination settings and invocation grants are already attached to `live`.
-
-Before a later artifact or configuration publication, preserve the currently
-serving version in all seven explicit native live-version parameters. Keeping an
-empty parameter would let a new publication move its alias during preparation.
-Change the build token for every complete configuration publication, even when
-source bytes are unchanged; publish, verify and activate in separate passes.
-Use local ownership receipts and fresh alias read-back before each change set to
-refuse concurrent release drift. CloudFormation updates do not provide an alias
-`RevisionId` compare-and-swap; the release coordinator must serialize deployments
-and verify the previous target immediately before and after each pass.
-
-For a full worker rollback, leave `NativeWorkersEnabled=true` and both Python
-alias prerequisites true, and set `NativeWorkerAliasesReady=false`. The aliases
-return to the original retained complete Python versions while `$LATEST` remains
-Node. An individual rollback can instead pin that worker's recorded Python
-version in its explicit live-version parameter. Preserve the unchanged
-`EventsPythonCodeSha256`, Python publication resources, Native source object
-versions and candidate/live version receipts. Delete none of them during the
-migration or while an alias or rollback receipt refers to them.
-
-Native Event logs use raw stdout JSON/EMF with `LogFormat=Text`, preserving the
-existing census and alarm conventions. Additive IAM authorizes the actual
-transaction components: USER-scoped `ConditionCheckItem` for inbound/export/
-processing and USER-scoped receipt Put/Delete for transcribe. Existing updates
-cover its RATE quota. Inbound gains raw GetObjectTagging (so a delayed duplicate
-cannot change a filed message's retention) and media PutObjectTagging/DeleteObject
-for promotion/cleanup. Describe gains PutObjectTagging on thumbnail keys only.
-No `dynamodb:TransactWriteItems` IAM action exists; transaction operations use
-these component permissions. The private capture role remains unchanged.

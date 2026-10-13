@@ -578,3 +578,9 @@ receipts; `packages/backend/export.ts` formats private JSON/Markdown and
 uploads, then proves the live account and current build when publishing.
 `tests-node/{mail,export}/` compare independent fictional Python fixtures.
 These are additive until native worker releases are explicitly activated.
+
+The SES event migration uses `./deploy.sh --events-alias-phase=prepare`, then
+`--events-alias-phase=activate` only after complete Python bridge hashes are
+verified. Shared USER-owned MAILEVENT receipts make overlapping SNS targets
+idempotent. `EventsPythonCodeSha256` is the first bridge's ZIP hash and stays
+fixed forever; later source/runtime releases must not republish that baseline.

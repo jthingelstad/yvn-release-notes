@@ -601,3 +601,10 @@ probe before any SDK configuration. `tools/{build-server,package-native,
 native-artifacts,native-release,web-platform}.ts` build, retain and release
 immutable source artifacts with private metadata receipts. HTTP/MCP rollback
 pins and all seven worker alias versions are recorded before publication.
+
+Native operator tools (2026-10-13): `tools/{subscribers,tally,read-notes,
+import-dayone,extract-media,fill-link-titles,fill-weather}.ts` share the narrow
+identity gate in `tools/operator.ts`. `packages/backend/{dayone,importer}.ts`
+provide bounded ZIP planning and atomic import-ledger commits. Plans containing
+note text remain private outside Git; imports/backfills still require Jamie's
+explicit approval, and no live verification runs these writers.

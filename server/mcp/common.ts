@@ -1,0 +1,76 @@
+/** Legacy wire budgets and strict schemas shared by the reader and private writer. */
+import { createHash } from 'node:crypto';
+import { codePointLength } from '../../packages/domain/unicode.ts';
+import type { JsonSchema } from './contract.ts';
+export const MAX_CHARS = 48_000,
+  MAX_MEDIA = 1_500_000;
+export type Arguments = Record<string, unknown>;
+export class ToolError extends Error {
+  constructor(
+    readonly code: string,
+    readonly nextStep: string
+  ) {
+    super(code);
+  }
+}
+export const object = (value: unknown): value is Arguments =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+/** Python's ensure_ascii encoding is part of existing cursor/fingerprint contracts.
+ * Sort object keys only for capture fingerprints; reader cursors keep insertion order. */
+export function asciiJson(value: unknown, sorted = false): string {
+  const order = (item: unknown): unknown =>
+    Array.isArray(item)
+      ? item.map(order)
+      : object(item)
+        ? Object.fromEntries((sorted ? Object.keys(item).sort() : Object.keys(item)).map((k) => [k, order(item[k])]))
+        : item;
+  return JSON.stringify(order(value)).replace(
+    /[\u007f-\uffff]/g,
+    (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')
+  );
+}
+export const fingerprint = (value: unknown): string =>
+  createHash('sha256').update(asciiJson(value, true)).digest('hex');
+export function validate(arguments_: unknown, schema: JsonSchema): asserts arguments_ is Arguments {
+  if (
+    !object(arguments_) ||
+    Object.keys(arguments_).some((k) => !Object.hasOwn(schema.properties ?? {}, k)) ||
+    (schema.required ?? []).some((k) => !Object.hasOwn(arguments_, k))
+  )
+    throw new ToolError('invalid_arguments', "Use only the parameters in this tool's schema.");
+  for (const [key, value] of Object.entries(arguments_)) {
+    const spec = schema.properties![key]!;
+    if (
+      (spec.type === 'string' && typeof value !== 'string') ||
+      (spec.type === 'integer' && !Number.isSafeInteger(value)) ||
+      (spec.type === 'boolean' && typeof value !== 'boolean')
+    )
+      throw new ToolError('invalid_arguments', "Use the types in this tool's schema.");
+    if (
+      typeof value === 'string' &&
+      (codePointLength(value) > (spec.maxLength ?? 10_000) ||
+        codePointLength(value) < (spec.minLength ?? 0) ||
+        (spec.pattern && !new RegExp('^(?:' + spec.pattern.replace(/^\^|\$$/g, '') + ')$', 'u').test(value)))
+    )
+      throw new ToolError('invalid_arguments', 'Check the format and length of your parameters.');
+    if (typeof value === 'number' && (value < (spec.minimum ?? 0) || value > (spec.maximum ?? 1e9)))
+      throw new ToolError('invalid_arguments', "Use a number within the tool's limits.");
+  }
+}
+export type SafeLog = (fields: Record<string, unknown>) => void;
+export function failure(
+  now: number,
+  uid: string,
+  log: SafeLog = (fields) => console.log(JSON.stringify(fields))
+): void {
+  log({ event: 'mcp-error', user: uid, error: 'infrastructure' });
+  log({
+    _aws: {
+      Timestamp: now * 1000,
+      CloudWatchMetrics: [
+        { Namespace: 'ReleaseNotes', Dimensions: [[]], Metrics: [{ Name: 'McpFailures', Unit: 'Count' }] }
+      ]
+    },
+    McpFailures: 1
+  });
+}

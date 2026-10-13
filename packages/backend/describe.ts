@@ -230,7 +230,9 @@ function crc32(data: Buffer) {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
-export function testImage(): Buffer {
+export function testImage(width = 64, height = 64): Buffer {
+  if (![width, height].every((side) => Number.isInteger(side) && side >= 1 && side <= 64))
+    throw new RangeError('Invalid synthetic image dimensions');
   const chunk = (type: string, body: Buffer) => {
     const named = Buffer.concat([Buffer.from(type), body]),
       length = Buffer.alloc(4),
@@ -240,14 +242,14 @@ export function testImage(): Buffer {
     return Buffer.concat([length, named, crc]);
   };
   const header = Buffer.alloc(13);
-  header.writeUInt32BE(64);
-  header.writeUInt32BE(64, 4);
+  header.writeUInt32BE(width);
+  header.writeUInt32BE(height, 4);
   header[8] = 8;
   header[9] = 2;
-  const rows = Buffer.alloc(64 * (1 + 64 * 3));
-  for (let y = 0; y < 64; y++)
-    for (let x = 0; x < 64; x++) {
-      const at = y * 193 + 1 + x * 3;
+  const rows = Buffer.alloc(height * (1 + width * 3));
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const at = y * (1 + width * 3) + 1 + x * 3;
       rows[at] = 31;
       rows[at + 1] = 79;
       rows[at + 2] = 200;

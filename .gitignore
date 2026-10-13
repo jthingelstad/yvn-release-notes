@@ -6,7 +6,7 @@ __pycache__/
 .env.*
 !.env.example
 # the browser tests (e2e/)
-node_modules/
+node_modules
 test-results/
 playwright-report/
 # the web app's build (npm run build; deploy.sh builds its own)

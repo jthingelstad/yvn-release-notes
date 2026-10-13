@@ -6,6 +6,12 @@ code. AGENTS.md has the rules for everything since (files, tags, search,
 transcripts, descriptions, imports), and `src/release_notes/store.py` the
 table's full key layout.
 
+The approved 2026-10-13 TypeScript/Web Functions rebuild is underway;
+`docs/TYPESCRIPT-REBUILD.md` records its staged execution and rollback gates.
+The production shape described below remains the compatibility baseline
+until its corresponding cutover lands. The initial native Hono health server
+and shared domain/storage ports are additive and do not change routing.
+
 Release Notes has a standalone web app at `notes.yourversionnumber.com`. The
 birthday and work sites at `yourversionnumber.com` stay as they are, and
 nothing there links here yet: that is Jamie's call (Order, step 6).

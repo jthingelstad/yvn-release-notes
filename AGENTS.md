@@ -103,7 +103,25 @@ Where things are (each module's docstring is its design):
   packages and deploys the stack, makes its receipt rule set the active one
   (only if no other set is active), then syncs the web app.
 
-**Standard library only** for the Python. No `requirements.txt`; `boto3`
+**TypeScript rebuild (Jamie, 2026-10-13):** the application, workers and
+operator tools are moving to TypeScript on Node 24, with ordinary Hono HTTP
+servers on Lambda Web Functions and a redesigned React web UI. This replaces
+the earlier Python language decision below. Shared persisted accounts and
+archives remain in place; deploy staged compatible releases through the
+same PR/validate gate. Sign-in and origin signing may improve while keeping
+ownership, privacy and existing access. See `docs/TYPESCRIPT-REBUILD.md`.
+
+New code lives in `packages/domain/` (calendar/version/notes/tags/streak/search
+and Unicode compatibility), `packages/backend/` (`auth.ts`, `links.ts`,
+`store.ts`, `store-types.ts`), `packages/testing/` (fictional AWS/store fakes),
+`server/app/` (native API), `server/mcp/` (separate MCP server), `workers/`
+(event entrypoints), and `tools/` (`build-server.ts` and operator tools).
+`tsconfig.server.json` and `tests-node/` check the server separately from
+the browser. `npm run verify` checks both; Python tests remain required
+while their runtime or rollback artifacts remain deployed. Native health
+scaffolding is not a production API cutover. Do not enable unfinished routes.
+
+**Legacy Python baseline: standard library only.** No `requirements.txt`; `boto3`
 comes from the Lambda runtime and is imported lazily so the tests run
 without it. Python stays the language for the web API too (decided
 2026-10-08): one language, one copy of the version arithmetic, nothing to

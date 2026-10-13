@@ -416,3 +416,90 @@ test('automatic CloudFormation rollback to the exact recorded baseline is a safe
   assert.equal(rollback.NativeWorkerAliasesReady, 'false');
   assert.deepEqual(await f.phase('rollback-workers'), rollback);
 });
+for (const draining of ['true', 'false']) {
+  test(`native-only retirement refuses first Python worker rollback while drain=${draining}`, async (t) => {
+    const f = await fixture(t);
+    await f.phase('prepare-workers');
+    f.publish();
+    await f.phase('promote-workers');
+    f.serveWorkers('2');
+    f.parameters.NativeLegacyDrainPending = draining;
+    await assert.rejects(f.phase('rollback-workers'), /Legacy rollback is unavailable after native-only retirement/);
+    assert.equal(
+      (await readdir(f.dir)).some((name) => name.endsWith('rollback.json')),
+      false
+    );
+    assert.equal(f.probes(), 7);
+    assert.equal(f.parameters.NativeWorkerAliasesReady, 'true');
+    assert.equal((await readdir(f.dir)).includes('native-release.lock'), false);
+  });
+  test(`native-only retirement refuses first legacy HTTP rollback while drain=${draining}`, async (t) => {
+    const f = await fixture(t);
+    f.parameters.NativeHttpRouting = 'legacy';
+    await f.phase('prepare-http');
+    f.publish();
+    const target = await f.phase('promote-http');
+    Object.assign(f.pins, Object.fromEntries(Object.entries(target).filter(([key]) => key.endsWith('RevisionId'))));
+    f.parameters.NativeHttpRouting = 'native';
+    f.parameters.NativeLegacyDrainPending = draining;
+    await assert.rejects(f.phase('rollback-http'), /Legacy rollback is unavailable after native-only retirement/);
+    assert.equal(
+      (await readdir(f.dir)).some((name) => name.endsWith('rollback.json')),
+      false
+    );
+    assert.equal(f.parameters.NativeHttpRouting, 'native');
+    assert.equal((await readdir(f.dir)).includes('native-release.lock'), false);
+  });
+  test(`native-only worker preparation promotion and native rollback preserve complete pins while drain=${draining}`, async (t) => {
+    const f = await fixture(t);
+    delete f.parameters.WorkerAliasesReady;
+    delete f.parameters.EventsAliasesReady;
+    f.parameters.NativeWorkersEnabled = 'true';
+    f.parameters.NativeWorkerAliasesReady = 'true';
+    f.parameters.NativeLegacyDrainPending = draining;
+    for (const name of names) {
+      const old = f.configs[`${name}:1`]!;
+      Object.assign(old, {
+        Runtime: 'nodejs24.x',
+        Handler: 'index.handler',
+        Architectures: ['arm64'],
+        State: 'Active',
+        LastUpdateStatus: 'Successful',
+        CodeSha256: `old-${name}`
+      });
+      (old.Environment as { Variables: Record<string, string> }).Variables.APP_VERSION = previousBuild;
+    }
+    const prepared = await f.phase('prepare-workers');
+    assert.equal(prepared.NativeWorkerAliasesReady, undefined);
+    f.publish();
+    await f.phase('promote-workers');
+    f.serveWorkers('2');
+    const rollback = await f.phase('rollback-workers');
+    assert.equal(rollback.NativeWorkerAliasesReady, 'true');
+    for (const name of names) assert.equal(rollback[`${name}NativeLiveVersion`], '1');
+    assert.equal(rollback.NativeLegacyDrainPending, undefined);
+    assert.equal(f.parameters.NativeLegacyDrainPending, draining);
+    assert.equal(f.probes(), 14);
+    f.serveWorkers('1');
+    f.parameters.NativeWorkerAliasesReady = 'true';
+    assert.deepEqual(await f.phase('rollback-workers'), rollback);
+  });
+  test(`native-only HTTP preparation promotion and native rollback retain private native routing while drain=${draining}`, async (t) => {
+    const f = await fixture(t);
+    f.parameters.NativeLegacyDrainPending = draining;
+    f.parameters.NativeOriginPoliciesReady = 'true';
+    await f.phase('prepare-http');
+    f.publish();
+    const target = await f.phase('promote-http');
+    Object.assign(f.pins, Object.fromEntries(Object.entries(target).filter(([key]) => key.endsWith('RevisionId'))));
+    const rollback = await f.phase('rollback-http');
+    assert.equal(rollback.NativeHttpRouting, 'native');
+    assert.equal(rollback.NativeOriginPoliciesReady, 'true');
+    assert.equal(rollback.NativeAppLiveRevisionId, 'old-app');
+    assert.equal(rollback.NativeMcpLiveRevisionId, 'old-mcp');
+    assert.equal(rollback.NativeLegacyDrainPending, undefined);
+    Object.assign(f.pins, Object.fromEntries(Object.entries(rollback).filter(([key]) => key.endsWith('RevisionId'))));
+    Object.assign(f.parameters, rollback);
+    assert.deepEqual(await f.phase('rollback-http'), rollback);
+  });
+}

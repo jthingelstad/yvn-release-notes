@@ -422,6 +422,17 @@ export async function main(
         rollback = await optional(rollbackName);
       if (!previous || previous.build !== build || !promotion.target)
         throw new Error('No recorded prior release for this build');
+      // This parameter exists only after legacy source retirement. Its true
+      // value keeps old grants/settings for draining, never the retired code.
+      // Initial adoption receipts can still point at Python/HTTP API baselines;
+      // refuse those before writing rollback intent or emitting CFN overrides.
+      if (
+        Object.hasOwn(parameters, 'NativeLegacyDrainPending') &&
+        (kind === 'http'
+          ? previous.parameters.NativeHttpRouting !== 'native'
+          : previous.parameters.NativeWorkerAliasesReady !== 'true')
+      )
+        throw new Error('Legacy rollback is unavailable after native-only retirement; use a recorded native baseline');
       if (kind === 'http') {
         if (['App', 'Mcp'].some((name) => parameters[`Native${name}BuildId`] !== build))
           throw new Error('Current HTTP build differs from rollback intent');

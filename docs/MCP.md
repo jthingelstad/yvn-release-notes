@@ -104,8 +104,9 @@ Lambda invocation, upload, deletion or OAuth write permissions. The existing
 web function handles OAuth and account-authorized consent/revocation. Both
 require CloudFront's generated origin proof; nobody reads the secret.
 No new Python package, search index, embedding job or model service is added.
-Unexpected tool failures log only the exception type and user id, then raise
-a fixed exception without the original exception chain. This fails the
+Unexpected tool or activity-recording failures log only the exception type
+and user id, then raise a fixed exception without the original exception
+chain. This fails the
 Lambda invocation, making the existing MCP Errors alarm report the failure;
 API Gateway returns its generic 502 response. Invalid tool arguments remain
 structured tool errors and do not count as infrastructure failures.

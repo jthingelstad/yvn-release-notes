@@ -65,6 +65,148 @@ Parameters:
     AllowedValues: ["false", "true"]
     Description: First deploy false; verify both published Python bridge and unqualified handler/hash before retargeting SNS in a second deploy with true.
 
+  NativeWorkersEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["false", "true"]
+    Description: Prepare complete Node 24 $LATEST configurations and retained versions; existing live aliases stay on Python until separately activated.
+  NativeWorkerAliasesReady:
+    Type: String
+    Default: "false"
+    AllowedValues: ["false", "true"]
+    Description: Select explicit pinned native live versions (or the first prepared Node versions); every producer keeps the same stable alias.
+  NativeWorkerBuildId:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[a-f0-9]{40,64}$'
+    Description: Immutable source/configuration release token; changed deliberately when publishing a complete worker configuration.
+  SenderNodeCodeKey:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^native/workers/sender/[a-f0-9]{64}\.zip$'
+  SenderNodeCodeVersion:
+    Type: String
+    Default: ""
+    Description: Exact retained S3 object version of the immutable worker zip.
+  SenderNodeCodeSha256:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[A-Za-z0-9+/]{43}=$'
+    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
+  SenderNativeLiveVersion:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[1-9][0-9]*$'
+    Description: Pin the currently serving alias before later artifact/configuration publications; empty is for first activation only.
+  InboundNodeCodeKey:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^native/workers/inbound/[a-f0-9]{64}\.zip$'
+  InboundNodeCodeVersion:
+    Type: String
+    Default: ""
+    Description: Exact retained S3 object version of the immutable worker zip.
+  InboundNodeCodeSha256:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[A-Za-z0-9+/]{43}=$'
+    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
+  InboundNativeLiveVersion:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[1-9][0-9]*$'
+    Description: Pin the currently serving alias before later artifact/configuration publications; empty is for first activation only.
+  EventsNodeCodeKey:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^native/workers/events/[a-f0-9]{64}\.zip$'
+  EventsNodeCodeVersion:
+    Type: String
+    Default: ""
+    Description: Exact retained S3 object version of the immutable worker zip.
+  EventsNodeCodeSha256:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[A-Za-z0-9+/]{43}=$'
+    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
+  EventsNativeLiveVersion:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[1-9][0-9]*$'
+    Description: Pin the currently serving alias before later artifact/configuration publications; empty is for first activation only.
+  TranscribeNodeCodeKey:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^native/workers/transcribe/[a-f0-9]{64}\.zip$'
+  TranscribeNodeCodeVersion:
+    Type: String
+    Default: ""
+    Description: Exact retained S3 object version of the immutable worker zip.
+  TranscribeNodeCodeSha256:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[A-Za-z0-9+/]{43}=$'
+    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
+  TranscribeNativeLiveVersion:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[1-9][0-9]*$'
+    Description: Pin the currently serving alias before later artifact/configuration publications; empty is for first activation only.
+  DescribeNodeCodeKey:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^native/workers/describe/[a-f0-9]{64}\.zip$'
+  DescribeNodeCodeVersion:
+    Type: String
+    Default: ""
+    Description: Exact retained S3 object version of the immutable worker zip.
+  DescribeNodeCodeSha256:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[A-Za-z0-9+/]{43}=$'
+    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
+  DescribeNativeLiveVersion:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[1-9][0-9]*$'
+    Description: Pin the currently serving alias before later artifact/configuration publications; empty is for first activation only.
+  ExportNodeCodeKey:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^native/workers/export/[a-f0-9]{64}\.zip$'
+  ExportNodeCodeVersion:
+    Type: String
+    Default: ""
+    Description: Exact retained S3 object version of the immutable worker zip.
+  ExportNodeCodeSha256:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[A-Za-z0-9+/]{43}=$'
+    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
+  ExportNativeLiveVersion:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[1-9][0-9]*$'
+    Description: Pin the currently serving alias before later artifact/configuration publications; empty is for first activation only.
+  CaptureNodeCodeKey:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^native/workers/capture/[a-f0-9]{64}\.zip$'
+  CaptureNodeCodeVersion:
+    Type: String
+    Default: ""
+    Description: Exact retained S3 object version of the immutable worker zip.
+  CaptureNodeCodeSha256:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[A-Za-z0-9+/]{43}=$'
+    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
+  CaptureNativeLiveVersion:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[1-9][0-9]*$'
+    Description: Pin the currently serving alias before later artifact/configuration publications; empty is for first activation only.
+
   NativeWebFunctionsEnabled:
     Type: String
     Default: "false"
@@ -132,6 +274,66 @@ Parameters:
     Description: Upper bound per environment, not a guaranteed admission capacity.
 
 Rules:
+  NativeWorkersRequireCompleteArtifactsAndAliases:
+    RuleCondition: !Equals [!Ref NativeWorkersEnabled, "true"]
+    Assertions:
+      - Assert: !Equals [!Ref WorkerAliasesReady, "true"]
+        AssertDescription: Existing worker producers must already use stable aliases before $LATEST changes.
+      - Assert: !Equals [!Ref EventsAliasesReady, "true"]
+        AssertDescription: The shared Python events bridge and SNS alias handoff must be complete before $LATEST changes.
+      - Assert: !Not [!Equals [!Ref NativeWorkerBuildId, ""]]
+        AssertDescription: Every published Node configuration needs an immutable release token.
+      - Assert: !Not [!Equals [!Ref SenderNodeCodeKey, ""]]
+        AssertDescription: SenderNodeCodeKey must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref SenderNodeCodeVersion, ""]]
+        AssertDescription: SenderNodeCodeVersion must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref SenderNodeCodeSha256, ""]]
+        AssertDescription: SenderNodeCodeSha256 must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref InboundNodeCodeKey, ""]]
+        AssertDescription: InboundNodeCodeKey must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref InboundNodeCodeVersion, ""]]
+        AssertDescription: InboundNodeCodeVersion must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref InboundNodeCodeSha256, ""]]
+        AssertDescription: InboundNodeCodeSha256 must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref EventsNodeCodeKey, ""]]
+        AssertDescription: EventsNodeCodeKey must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref EventsNodeCodeVersion, ""]]
+        AssertDescription: EventsNodeCodeVersion must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref EventsNodeCodeSha256, ""]]
+        AssertDescription: EventsNodeCodeSha256 must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref TranscribeNodeCodeKey, ""]]
+        AssertDescription: TranscribeNodeCodeKey must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref TranscribeNodeCodeVersion, ""]]
+        AssertDescription: TranscribeNodeCodeVersion must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref TranscribeNodeCodeSha256, ""]]
+        AssertDescription: TranscribeNodeCodeSha256 must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref DescribeNodeCodeKey, ""]]
+        AssertDescription: DescribeNodeCodeKey must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref DescribeNodeCodeVersion, ""]]
+        AssertDescription: DescribeNodeCodeVersion must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref DescribeNodeCodeSha256, ""]]
+        AssertDescription: DescribeNodeCodeSha256 must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref ExportNodeCodeKey, ""]]
+        AssertDescription: ExportNodeCodeKey must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref ExportNodeCodeVersion, ""]]
+        AssertDescription: ExportNodeCodeVersion must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref ExportNodeCodeSha256, ""]]
+        AssertDescription: ExportNodeCodeSha256 must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref CaptureNodeCodeKey, ""]]
+        AssertDescription: CaptureNodeCodeKey must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref CaptureNodeCodeVersion, ""]]
+        AssertDescription: CaptureNodeCodeVersion must identify the immutable prepared worker artifact.
+      - Assert: !Not [!Equals [!Ref CaptureNodeCodeSha256, ""]]
+        AssertDescription: CaptureNodeCodeSha256 must identify the immutable prepared worker artifact.
+  NativeWorkerActivationRequiresPreparation:
+    RuleCondition: !Equals [!Ref NativeWorkerAliasesReady, "true"]
+    Assertions:
+      - Assert: !Equals [!Ref NativeWorkersEnabled, "true"]
+        AssertDescription: Native alias activation requires prepared complete Node versions.
+      - Assert: !Equals [!Ref WorkerAliasesReady, "true"]
+        AssertDescription: Existing worker producers must continue to use stable aliases.
+      - Assert: !Equals [!Ref EventsAliasesReady, "true"]
+        AssertDescription: SES notifications must continue to use their stable alias.
   NativeArtifactsRequired:
     RuleCondition: !Equals [!Ref NativeWebFunctionsEnabled, "true"]
     Assertions:
@@ -158,6 +360,15 @@ Rules:
         AssertDescription: Install and read back both endpoint resource policies before moving CloudFront origins.
 
 Conditions:
+  PrepareNativeWorkers: !Equals [!Ref NativeWorkersEnabled, "true"]
+  RouteNativeWorkers: !Equals [!Ref NativeWorkerAliasesReady, "true"]
+  HasSenderNativeLiveVersion: !Not [!Equals [!Ref SenderNativeLiveVersion, ""]]
+  HasInboundNativeLiveVersion: !Not [!Equals [!Ref InboundNativeLiveVersion, ""]]
+  HasEventsNativeLiveVersion: !Not [!Equals [!Ref EventsNativeLiveVersion, ""]]
+  HasTranscribeNativeLiveVersion: !Not [!Equals [!Ref TranscribeNativeLiveVersion, ""]]
+  HasDescribeNativeLiveVersion: !Not [!Equals [!Ref DescribeNativeLiveVersion, ""]]
+  HasExportNativeLiveVersion: !Not [!Equals [!Ref ExportNativeLiveVersion, ""]]
+  HasCaptureNativeLiveVersion: !Not [!Equals [!Ref CaptureNativeLiveVersion, ""]]
   UseEventsAlias: !Equals [!Ref EventsAliasesReady, "true"]
   CreateNativeHttp: !Equals [!Ref NativeWebFunctionsEnabled, "true"]
   RouteNativeHttp: !Equals [!Ref NativeHttpRouting, native]
@@ -891,6 +1102,14 @@ Resources:
                 Action: [s3:GetObject, s3:PutObjectTagging]
                 Resource: !Sub "${MailBucket.Arn}/raw/*"
               - Effect: Allow
+                # A retry must preserve a previously filed raw message's retention.
+                Action: s3:GetObjectTagging
+                Resource: !Sub "${MailBucket.Arn}/raw/*"
+              - Effect: Allow
+                # Pending copies are promoted or cleaned after the guarded note write.
+                Action: [s3:PutObjectTagging, s3:DeleteObject]
+                Resource: !Sub "${MailBucket.Arn}/media/*"
+              - Effect: Allow
                 # A reply's photos and recordings, copied out of it.
                 Action: s3:PutObject
                 Resource: !Sub "${MailBucket.Arn}/media/*"
@@ -899,6 +1118,13 @@ Resources:
                 # address and counted against the subscriber's day.
                 Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
                 Resource: !GetAtt Table.Arn
+              - Effect: Allow
+                # Atomic live-profile proof and account-owned processing/commit state.
+                Action: dynamodb:ConditionCheckItem
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*"]
               - Effect: Allow
                 # The late-reply notice, as raw MIME through SESv2 (see SenderRole).
                 Action: [ses:SendEmail, ses:SendRawEmail]
@@ -917,20 +1143,33 @@ Resources:
 
   SenderFunction:
     Type: AWS::Lambda::Function
+    DependsOn: NativeSourcePolicy
+    # Rules require nonempty artifact values when native preparation is selected.
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
     Properties:
       FunctionName: !Sub "${AWS::StackName}-sender"
       Description: Sends the daily version-number email
-      Runtime: python3.13
+      Runtime: !If [PrepareNativeWorkers, nodejs24.x, python3.13]
       Architectures: [arm64]
-      Handler: release_notes.send.handler
-      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Handler: !If [PrepareNativeWorkers, index.handler, release_notes.send.handler]
+      Code: !If
+        - PrepareNativeWorkers
+        - S3Bucket: !Ref NativeSourceBucket
+          S3Key: !Ref SenderNodeCodeKey
+          S3ObjectVersion: !Ref SenderNodeCodeVersion
+        - { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
       Role: !GetAtt SenderRole.Arn
       MemorySize: 256
       Timeout: 120
       LoggingConfig:
+        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        LogFormat: !If [PrepareNativeWorkers, Text, !Ref AWS::NoValue]
         LogGroup: !Ref SenderLogs
       Environment:
         Variables:
+          APP_VERSION: !If [PrepareNativeWorkers, !Ref NativeWorkerBuildId, !Ref AWS::NoValue]
           TABLE: !Ref Table
           FROM_ADDRESS: !Ref FromAddress
           INBOUND_DOMAIN: !Ref InboundDomain
@@ -939,20 +1178,33 @@ Resources:
 
   InboundFunction:
     Type: AWS::Lambda::Function
+    DependsOn: NativeSourcePolicy
+    # Rules require nonempty artifact values when native preparation is selected.
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
     Properties:
       FunctionName: !Sub "${AWS::StackName}-inbound"
       Description: Files email replies as release notes
-      Runtime: python3.13
+      Runtime: !If [PrepareNativeWorkers, nodejs24.x, python3.13]
       Architectures: [arm64]
-      Handler: release_notes.inbound.handler
-      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Handler: !If [PrepareNativeWorkers, index.handler, release_notes.inbound.handler]
+      Code: !If
+        - PrepareNativeWorkers
+        - S3Bucket: !Ref NativeSourceBucket
+          S3Key: !Ref InboundNodeCodeKey
+          S3ObjectVersion: !Ref InboundNodeCodeVersion
+        - { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
       Role: !GetAtt InboundRole.Arn
       MemorySize: 512
       Timeout: 60
       LoggingConfig:
+        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        LogFormat: !If [PrepareNativeWorkers, Text, !Ref AWS::NoValue]
         LogGroup: !Ref InboundLogs
       Environment:
         Variables:
+          APP_VERSION: !If [PrepareNativeWorkers, !Ref NativeWorkerBuildId, !Ref AWS::NoValue]
           TABLE: !Ref Table
           BUCKET: !Ref MailBucket
           INBOUND_DOMAIN: !Ref InboundDomain
@@ -1622,20 +1874,33 @@ Resources:
 
   CaptureFunction:
     Type: AWS::Lambda::Function
+    DependsOn: NativeSourcePolicy
+    # Rules require nonempty artifact values when native preparation is selected.
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
     Properties:
       FunctionName: !Sub "${AWS::StackName}-capture"
       Description: Private owner-approved MCP text capture; create and append only
-      Runtime: python3.13
+      Runtime: !If [PrepareNativeWorkers, nodejs24.x, python3.13]
       Architectures: [arm64]
-      Handler: release_notes.capture.handler
-      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Handler: !If [PrepareNativeWorkers, index.handler, release_notes.capture.handler]
+      Code: !If
+        - PrepareNativeWorkers
+        - S3Bucket: !Ref NativeSourceBucket
+          S3Key: !Ref CaptureNodeCodeKey
+          S3ObjectVersion: !Ref CaptureNodeCodeVersion
+        - { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
       Role: !GetAtt CaptureRole.Arn
       MemorySize: 1024
       Timeout: 20
       LoggingConfig:
+        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        LogFormat: !If [PrepareNativeWorkers, Text, !Ref AWS::NoValue]
         LogGroup: !Ref CaptureLogs
       Environment:
         Variables:
+          APP_VERSION: !If [PrepareNativeWorkers, !Ref NativeWorkerBuildId, !Ref AWS::NoValue]
           TABLE: !Ref Table
           WEB_ORIGIN: !Sub "https://${WebDomain}"
 
@@ -1676,6 +1941,13 @@ Resources:
                 Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
+                # Atomic live-profile proof and account-owned processing/commit state.
+                Action: dynamodb:ConditionCheckItem
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*"]
+              - Effect: Allow
                 # The photos and recordings that go in. Nothing under raw/.
                 Action: s3:GetObject
                 Resource: !Sub "${MailBucket.Arn}/media/*"
@@ -1690,13 +1962,23 @@ Resources:
 
   ExportFunction:
     Type: AWS::Lambda::Function
+    DependsOn: NativeSourcePolicy
+    # Rules require nonempty artifact values when native preparation is selected.
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
     Properties:
       FunctionName: !Sub "${AWS::StackName}-export"
       Description: Builds a subscriber's zip export with every photo and recording
-      Runtime: python3.13
+      Runtime: !If [PrepareNativeWorkers, nodejs24.x, python3.13]
       Architectures: [arm64]
-      Handler: release_notes.export_job.handler
-      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Handler: !If [PrepareNativeWorkers, index.handler, release_notes.export_job.handler]
+      Code: !If
+        - PrepareNativeWorkers
+        - S3Bucket: !Ref NativeSourceBucket
+          S3Key: !Ref ExportNodeCodeKey
+          S3ObjectVersion: !Ref ExportNodeCodeVersion
+        - { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
       Role: !GetAtt ExportRole.Arn
       MemorySize: 1024
       Timeout: 900
@@ -1709,9 +1991,12 @@ Resources:
       EphemeralStorage:
         Size: 10240
       LoggingConfig:
+        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        LogFormat: !If [PrepareNativeWorkers, Text, !Ref AWS::NoValue]
         LogGroup: !Ref ExportLogs
       Environment:
         Variables:
+          APP_VERSION: !If [PrepareNativeWorkers, !Ref NativeWorkerBuildId, !Ref AWS::NoValue]
           TABLE: !Ref Table
           MAIL_BUCKET: !Ref MailBucket
 
@@ -1773,13 +2058,23 @@ Resources:
 
   EventsFunction:
     Type: AWS::Lambda::Function
+    DependsOn: NativeSourcePolicy
+    # Rules require nonempty artifact values when native preparation is selected.
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
     Properties:
       FunctionName: !Sub "${AWS::StackName}-events"
       Description: Stops a subscriber's emails after a hard bounce or a complaint; tells ops without addresses
-      Runtime: python3.13
+      Runtime: !If [PrepareNativeWorkers, nodejs24.x, python3.13]
       Architectures: [arm64]
-      Handler: release_notes.events.handler
-      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Handler: !If [PrepareNativeWorkers, index.handler, release_notes.events.handler]
+      Code: !If
+        - PrepareNativeWorkers
+        - S3Bucket: !Ref NativeSourceBucket
+          S3Key: !Ref EventsNodeCodeKey
+          S3ObjectVersion: !Ref EventsNodeCodeVersion
+        - { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
       Role: !GetAtt EventsRole.Arn
       MemorySize: 128
       Timeout: 30
@@ -1788,9 +2083,12 @@ Resources:
       DeadLetterConfig:
         TargetArn: !GetAtt FailedQueue.Arn
       LoggingConfig:
+        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        LogFormat: !If [PrepareNativeWorkers, Text, !Ref AWS::NoValue]
         LogGroup: !Ref EventsLogs
       Environment:
         Variables:
+          APP_VERSION: !If [PrepareNativeWorkers, !Ref NativeWorkerBuildId, !Ref AWS::NoValue]
           TABLE: !Ref Table
           ALARM_TOPIC: !Ref AlarmTopic
 
@@ -1827,7 +2125,10 @@ Resources:
     Properties:
       Name: live
       FunctionName: !Ref EventsFunction
-      FunctionVersion: !GetAtt EventsPythonVersion.Version
+      FunctionVersion: !If
+        - RouteNativeWorkers
+        - !If [HasEventsNativeLiveVersion, !Ref EventsNativeLiveVersion, !GetAtt EventsNodeVersion.Version]
+        - !GetAtt EventsPythonVersion.Version
 
   EventsAliasInvokePermission:
     Type: AWS::Lambda::Permission
@@ -1875,6 +2176,13 @@ Resources:
                 Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:UpdateItem]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
+                # Atomic live-profile proof and account-owned processing/commit state.
+                Action: [dynamodb:ConditionCheckItem, dynamodb:PutItem, dynamodb:DeleteItem]
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*"]
+              - Effect: Allow
                 Action: [dynamodb:DescribeStream, dynamodb:GetRecords, dynamodb:GetShardIterator]
                 Resource: !GetAtt Table.StreamArn
               - Effect: Allow
@@ -1915,13 +2223,23 @@ Resources:
 
   TranscribeFunction:
     Type: AWS::Lambda::Function
+    DependsOn: NativeSourcePolicy
+    # Rules require nonempty artifact values when native preparation is selected.
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
     Properties:
       FunctionName: !Sub "${AWS::StackName}-transcribe"
       Description: Writes out recordings as text for subscribers who turned it on
-      Runtime: python3.13
+      Runtime: !If [PrepareNativeWorkers, nodejs24.x, python3.13]
       Architectures: [arm64]
-      Handler: release_notes.transcribe.handler
-      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Handler: !If [PrepareNativeWorkers, index.handler, release_notes.transcribe.handler]
+      Code: !If
+        - PrepareNativeWorkers
+        - S3Bucket: !Ref NativeSourceBucket
+          S3Key: !Ref TranscribeNodeCodeKey
+          S3ObjectVersion: !Ref TranscribeNodeCodeVersion
+        - { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
       Role: !GetAtt TranscribeRole.Arn
       MemorySize: 256
       Timeout: 120
@@ -1930,9 +2248,12 @@ Resources:
       # throttled job event is an async event, tried for up to six hours.
       ReservedConcurrentExecutions: 2
       LoggingConfig:
+        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        LogFormat: !If [PrepareNativeWorkers, Text, !Ref AWS::NoValue]
         LogGroup: !Ref TranscribeLogs
       Environment:
         Variables:
+          APP_VERSION: !If [PrepareNativeWorkers, !Ref NativeWorkerBuildId, !Ref AWS::NoValue]
           TABLE: !Ref Table
           BUCKET: !Ref MailBucket
 
@@ -2025,6 +2346,13 @@ Resources:
                          dynamodb:Scan]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
+                # Atomic live-profile proof and account-owned processing/commit state.
+                Action: dynamodb:ConditionCheckItem
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*"]
+              - Effect: Allow
                 Action: [dynamodb:DescribeStream, dynamodb:GetRecords, dynamodb:GetShardIterator]
                 Resource: !GetAtt Table.StreamArn
               - Effect: Allow
@@ -2037,6 +2365,10 @@ Resources:
                 # Each photo's thumbnail, beside it, and taking one back
                 # when its note went meanwhile (thumbs.py).
                 Action: [s3:PutObject, s3:DeleteObject]
+                Resource: !Sub "${MailBucket.Arn}/media/*.thumb.jpg"
+              - Effect: Allow
+                # Thumbnail pending/kept tags, never originals.
+                Action: s3:PutObjectTagging
                 Resource: !Sub "${MailBucket.Arn}/media/*.thumb.jpg"
               - Effect: Allow
                 # The Anthropic API key. The secret is made by hand outside
@@ -2066,14 +2398,24 @@ Resources:
 
   DescribeFunction:
     Type: AWS::Lambda::Function
+    DependsOn: NativeSourcePolicy
+    # Rules require nonempty artifact values when native preparation is selected.
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
     Properties:
       FunctionName: !Sub "${AWS::StackName}-describe"
       Description: Makes photo thumbnails, names notes' places from photos, and describes photos for subscribers who turned it on
-      Runtime: python3.13
+      Runtime: !If [PrepareNativeWorkers, nodejs24.x, python3.13]
       Architectures: [arm64]
-      Handler: release_notes.describe.handler
-      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
-      Layers: [!Ref PillowLayer]
+      Handler: !If [PrepareNativeWorkers, index.handler, release_notes.describe.handler]
+      Code: !If
+        - PrepareNativeWorkers
+        - S3Bucket: !Ref NativeSourceBucket
+          S3Key: !Ref DescribeNodeCodeKey
+          S3ObjectVersion: !Ref DescribeNodeCodeVersion
+        - { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Layers: !If [PrepareNativeWorkers, !Ref AWS::NoValue, [!Ref PillowLayer]]
       Role: !GetAtt DescribeRole.Arn
       # Decoding a phone's photo for its thumbnail; more memory is more CPU too.
       MemorySize: 1024
@@ -2084,9 +2426,12 @@ Resources:
       # async event, tried for up to six hours, carrying its chain (describe.py).
       ReservedConcurrentExecutions: 2
       LoggingConfig:
+        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        LogFormat: !If [PrepareNativeWorkers, Text, !Ref AWS::NoValue]
         LogGroup: !Ref DescribeLogs
       Environment:
         Variables:
+          APP_VERSION: !If [PrepareNativeWorkers, !Ref NativeWorkerBuildId, !Ref AWS::NoValue]
           TABLE: !Ref Table
           BUCKET: !Ref MailBucket
           SELF: !If [UseWorkerAliases, !Sub "${AWS::StackName}-describe:live", !Sub "${AWS::StackName}-describe"]
@@ -2140,7 +2485,10 @@ Resources:
     Properties:
       Name: live
       FunctionName: !Ref SenderFunction
-      FunctionVersion: !GetAtt SenderPythonVersion.Version
+      FunctionVersion: !If
+        - RouteNativeWorkers
+        - !If [HasSenderNativeLiveVersion, !Ref SenderNativeLiveVersion, !GetAtt SenderNodeVersion.Version]
+        - !GetAtt SenderPythonVersion.Version
 
   InboundPythonVersion:
     Type: AWS::Lambda::Version
@@ -2155,7 +2503,10 @@ Resources:
     Properties:
       Name: live
       FunctionName: !Ref InboundFunction
-      FunctionVersion: !GetAtt InboundPythonVersion.Version
+      FunctionVersion: !If
+        - RouteNativeWorkers
+        - !If [HasInboundNativeLiveVersion, !Ref InboundNativeLiveVersion, !GetAtt InboundNodeVersion.Version]
+        - !GetAtt InboundPythonVersion.Version
 
   TranscribePythonVersion:
     Type: AWS::Lambda::Version
@@ -2170,7 +2521,10 @@ Resources:
     Properties:
       Name: live
       FunctionName: !Ref TranscribeFunction
-      FunctionVersion: !GetAtt TranscribePythonVersion.Version
+      FunctionVersion: !If
+        - RouteNativeWorkers
+        - !If [HasTranscribeNativeLiveVersion, !Ref TranscribeNativeLiveVersion, !GetAtt TranscribeNodeVersion.Version]
+        - !GetAtt TranscribePythonVersion.Version
 
   DescribeBootstrapVersion:
     Type: AWS::Lambda::Version
@@ -2194,7 +2548,10 @@ Resources:
     Properties:
       Name: live
       FunctionName: !Ref DescribeFunction
-      FunctionVersion: !If [UseWorkerAliases, !GetAtt DescribePythonVersion.Version, !GetAtt DescribeBootstrapVersion.Version]
+      FunctionVersion: !If
+        - RouteNativeWorkers
+        - !If [HasDescribeNativeLiveVersion, !Ref DescribeNativeLiveVersion, !GetAtt DescribeNodeVersion.Version]
+        - !If [UseWorkerAliases, !GetAtt DescribePythonVersion.Version, !GetAtt DescribeBootstrapVersion.Version]
 
   ExportPythonVersion:
     Type: AWS::Lambda::Version
@@ -2209,7 +2566,10 @@ Resources:
     Properties:
       Name: live
       FunctionName: !Ref ExportFunction
-      FunctionVersion: !GetAtt ExportPythonVersion.Version
+      FunctionVersion: !If
+        - RouteNativeWorkers
+        - !If [HasExportNativeLiveVersion, !Ref ExportNativeLiveVersion, !GetAtt ExportNodeVersion.Version]
+        - !GetAtt ExportPythonVersion.Version
 
   CapturePythonVersion:
     Type: AWS::Lambda::Version
@@ -2224,7 +2584,10 @@ Resources:
     Properties:
       Name: live
       FunctionName: !Ref CaptureFunction
-      FunctionVersion: !GetAtt CapturePythonVersion.Version
+      FunctionVersion: !If
+        - RouteNativeWorkers
+        - !If [HasCaptureNativeLiveVersion, !Ref CaptureNativeLiveVersion, !GetAtt CaptureNodeVersion.Version]
+        - !GetAtt CapturePythonVersion.Version
 
   InboundAliasInvokePermission:
     Type: AWS::Lambda::Permission
@@ -2266,6 +2629,104 @@ Resources:
       FunctionName: !Ref DescribeFunction
       Qualifier: live
       MaximumRetryAttempts: 2
+
+  SenderNodeVersion:
+    Type: AWS::Lambda::Version
+    Condition: PrepareNativeWorkers
+    # FunctionName Ref orders publication after the complete function update.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
+    Properties:
+      FunctionName: !Ref SenderFunction
+      CodeSha256: !Ref SenderNodeCodeSha256
+      Description: !Sub "${NativeWorkerBuildId}: complete native sender configuration"
+
+  InboundNodeVersion:
+    Type: AWS::Lambda::Version
+    Condition: PrepareNativeWorkers
+    # FunctionName Ref orders publication after the complete function update.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
+    Properties:
+      FunctionName: !Ref InboundFunction
+      CodeSha256: !Ref InboundNodeCodeSha256
+      Description: !Sub "${NativeWorkerBuildId}: complete native inbound configuration"
+
+  EventsNodeVersion:
+    Type: AWS::Lambda::Version
+    Condition: PrepareNativeWorkers
+    # FunctionName Ref orders publication after the complete function update.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
+    Properties:
+      FunctionName: !Ref EventsFunction
+      CodeSha256: !Ref EventsNodeCodeSha256
+      Description: !Sub "${NativeWorkerBuildId}: complete native events configuration"
+
+  TranscribeNodeVersion:
+    Type: AWS::Lambda::Version
+    Condition: PrepareNativeWorkers
+    # FunctionName Ref orders publication after the complete function update.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
+    Properties:
+      FunctionName: !Ref TranscribeFunction
+      CodeSha256: !Ref TranscribeNodeCodeSha256
+      Description: !Sub "${NativeWorkerBuildId}: complete native transcribe configuration"
+
+  DescribeNodeVersion:
+    Type: AWS::Lambda::Version
+    Condition: PrepareNativeWorkers
+    # FunctionName Ref orders publication after the complete function update.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
+    Properties:
+      FunctionName: !Ref DescribeFunction
+      CodeSha256: !Ref DescribeNodeCodeSha256
+      Description: !Sub "${NativeWorkerBuildId}: complete native describe configuration"
+
+  ExportNodeVersion:
+    Type: AWS::Lambda::Version
+    Condition: PrepareNativeWorkers
+    # FunctionName Ref orders publication after the complete function update.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
+    Properties:
+      FunctionName: !Ref ExportFunction
+      CodeSha256: !Ref ExportNodeCodeSha256
+      Description: !Sub "${NativeWorkerBuildId}: complete native export configuration"
+
+  CaptureNodeVersion:
+    Type: AWS::Lambda::Version
+    Condition: PrepareNativeWorkers
+    # FunctionName Ref orders publication after the complete function update.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      cfn-lint:
+        config: { ignore_checks: [W1030] }
+    Properties:
+      FunctionName: !Ref CaptureFunction
+      CodeSha256: !Ref CaptureNodeCodeSha256
+      Description: !Sub "${NativeWorkerBuildId}: complete native capture configuration"
 
   # --- alarms -----------------------------------------------------------------
 
@@ -2644,6 +3105,27 @@ Resources:
         }
 
 Outputs:
+  SenderNativeCandidateVersion:
+    Condition: PrepareNativeWorkers
+    Value: !GetAtt SenderNodeVersion.Version
+  InboundNativeCandidateVersion:
+    Condition: PrepareNativeWorkers
+    Value: !GetAtt InboundNodeVersion.Version
+  EventsNativeCandidateVersion:
+    Condition: PrepareNativeWorkers
+    Value: !GetAtt EventsNodeVersion.Version
+  TranscribeNativeCandidateVersion:
+    Condition: PrepareNativeWorkers
+    Value: !GetAtt TranscribeNodeVersion.Version
+  DescribeNativeCandidateVersion:
+    Condition: PrepareNativeWorkers
+    Value: !GetAtt DescribeNodeVersion.Version
+  ExportNativeCandidateVersion:
+    Condition: PrepareNativeWorkers
+    Value: !GetAtt ExportNodeVersion.Version
+  CaptureNativeCandidateVersion:
+    Condition: PrepareNativeWorkers
+    Value: !GetAtt CaptureNodeVersion.Version
   EventsWorkerAlias:
     Value: !Ref EventsAlias
   EventsPythonRollbackVersion:

@@ -2,7 +2,7 @@
  * All SDK commands use native document values, including Set for import ledgers.
  * Reads never rely on TTL removal. Callers enforce credential expirations.
  * USER#/PROFILE, NOTE#, DAY#, PAUSE#, WEATHER#, PLACE#, EXPORT, SESSION#,
- * IMPORT#, CAPTURE#; TOKEN#, INBOX#, EMAIL#, LOGIN#, LOGINFOR#, RATE#, LOCK#,
+ * IMPORT#, CAPTURE#, MAILEVENT#; TOKEN#, INBOX#, EMAIL#, LOGIN#, LOGINFOR#, RATE#, LOCK#,
  * TALLY#, OAUTHCLIENT#, OAUTHPENDING#, OAUTHCODE#, OAUTHACCESS#, OAUTHREFRESH#,
  * OAUTHFAMILY#, OAUTHUSER#, MCPMETA# retain their original layouts.
  */
@@ -145,8 +145,10 @@ export class Store {
     return this.conditional(() =>
       this.update(key(user, 'PROFILE'), {
         UpdateExpression: 'SET last_sent_date = :d',
-        ConditionExpression: 'attribute_exists(pk) AND (attribute_not_exists(last_sent_date) OR last_sent_date < :d)',
-        ExpressionAttributeValues: { ':d': day }
+        ConditionExpression:
+          'attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND (attribute_not_exists(#status) OR #status = :active) AND (attribute_not_exists(last_sent_date) OR last_sent_date < :d)',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: { ':d': day, ':active': 'active' }
       })
     );
   }
@@ -302,6 +304,60 @@ export class Store {
       this.put({ ...key(user, `NOTE#${day}#${id}`), ...note }, { ConditionExpression: 'attribute_not_exists(pk)' })
     );
   }
+  /** Recheck the account and standing address at the write, after slow
+   * MIME/link/media work. Existing email tokens still accept stopped accounts
+   * within their reply window; standing addresses require active/current. */
+  async putInboundNote(
+    user: string,
+    day: string,
+    id: string,
+    note: Item,
+    standingToken: string | null = null
+  ): Promise<'stored' | 'duplicate' | 'refused'> {
+    for (let attempt = 0; attempt < 5; attempt++)
+      try {
+        await this.client.send(
+          new TransactWriteCommand({
+            TransactItems: [
+              {
+                ConditionCheck: {
+                  TableName: this.tableName,
+                  Key: key(user, 'PROFILE'),
+                  ConditionExpression:
+                    'attribute_exists(pk) AND attribute_not_exists(mcp_deleting)' +
+                    (standingToken ? ' AND inbox = :token AND #status = :active' : ''),
+                  ...(standingToken
+                    ? {
+                        ExpressionAttributeNames: { '#status': 'status' },
+                        ExpressionAttributeValues: { ':token': standingToken, ':active': 'active' }
+                      }
+                    : {})
+                }
+              },
+              {
+                Put: {
+                  TableName: this.tableName,
+                  Item: { ...key(user, `NOTE#${day}#${id}`), ...note },
+                  ConditionExpression: 'attribute_not_exists(pk)'
+                }
+              }
+            ]
+          })
+        );
+        return 'stored';
+      } catch (e) {
+        if ((e as { name?: string })?.name !== 'TransactionCanceledException') throw e;
+        const failure = reasons(e);
+        if (failure[0]?.Code === 'ConditionalCheckFailed') return 'refused';
+        if (failure[1]?.Code === 'ConditionalCheckFailed') return 'duplicate';
+        if (failure.some((r) => r.Code === 'TransactionConflict') && attempt < 4) {
+          await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+          continue;
+        }
+        throw e;
+      }
+    throw new Error('Inbound proof transaction retries exhausted');
+  }
   async updateNote(
     user: string,
     day: string,
@@ -383,8 +439,8 @@ export class Store {
     const item = await this.get({ pk: `EMAIL#${email}`, sk: 'EMAIL' });
     return item ? String(item.user_id) : null;
   }
-  async profile(user: string) {
-    return this.get(key(user, 'PROFILE'));
+  async profile(user: string, consistent = false) {
+    return this.get(key(user, 'PROFILE'), consistent ? { ConsistentRead: true } : {});
   }
   async deleteProfile(user: string, inbox: string | null) {
     return this.conditional(() =>
@@ -438,6 +494,128 @@ export class Store {
   }
   async stop(user: string, reason: string, at: string) {
     await this.updateProfile(user, { status: 'stopped', stopped_reason: reason, stopped_at: at });
+  }
+  /** SNS retry/alias overlap applies one stop and one monthly count. The
+   * receipt contains no mail content and is deleted with the account. */
+  async applyMailEvent(
+    user: string,
+    messageHash: string,
+    reason: 'bounce' | 'complaint',
+    at: string,
+    now: number
+  ): Promise<'applied' | 'duplicate' | 'gone'> {
+    const receiptKey = key(user, `MAILEVENT#${messageHash}`);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await this.client.send(
+          new TransactWriteCommand({
+            TransactItems: [
+              {
+                Update: {
+                  TableName: this.tableName,
+                  Key: key(user, 'PROFILE'),
+                  UpdateExpression: 'SET #s = :s, stopped_reason = :r, stopped_at = :at',
+                  ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting)',
+                  ExpressionAttributeNames: { '#s': 'status' },
+                  ExpressionAttributeValues: { ':s': 'stopped', ':r': reason, ':at': at }
+                }
+              },
+              {
+                Update: {
+                  TableName: this.tableName,
+                  Key: { pk: `TALLY#${at.slice(0, 7)}`, sk: 'TALLY' },
+                  UpdateExpression: 'ADD #n :one',
+                  ExpressionAttributeNames: { '#n': reason + 's' },
+                  ExpressionAttributeValues: { ':one': 1 }
+                }
+              },
+              {
+                Put: {
+                  TableName: this.tableName,
+                  Item: { ...receiptKey, expires_at: now + 30 * 86400 },
+                  ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now',
+                  ExpressionAttributeValues: { ':now': now }
+                }
+              }
+            ]
+          })
+        );
+        return 'applied';
+      } catch (e) {
+        if ((e as { name?: string })?.name !== 'TransactionCanceledException') throw e;
+        const failure = reasons(e);
+        if (failure[2]?.Code === 'ConditionalCheckFailed') return 'duplicate';
+        if (failure[0]?.Code === 'ConditionalCheckFailed') return 'gone';
+        if (failure.some((r) => r.Code === 'TransactionConflict') && attempt < 4) {
+          await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error('Mail event transaction retries exhausted');
+  }
+  /** The three-notice UTC-day cap and per-token reservation commit together.
+   * A stopped/deleting/missing account consumes no counter or reply token. */
+  async reserveLateNotice(
+    user: string,
+    token: string,
+    at: string,
+    now: number,
+    limit = 3
+  ): Promise<'reserved' | 'limited' | 'already-sent' | 'stopped'> {
+    const period = Math.floor(now / 86400);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await this.client.send(
+          new TransactWriteCommand({
+            TransactItems: [
+              {
+                ConditionCheck: {
+                  TableName: this.tableName,
+                  Key: key(user, 'PROFILE'),
+                  ConditionExpression: 'attribute_exists(pk) AND #s = :s AND attribute_not_exists(mcp_deleting)',
+                  ExpressionAttributeNames: { '#s': 'status' },
+                  ExpressionAttributeValues: { ':s': 'active' }
+                }
+              },
+              {
+                Update: {
+                  TableName: this.tableName,
+                  Key: { pk: `TOKEN#${token}`, sk: 'TOKEN' },
+                  UpdateExpression: 'SET late_notice_at = :at',
+                  ConditionExpression: 'attribute_exists(pk) AND user_id = :u AND attribute_not_exists(late_notice_at)',
+                  ExpressionAttributeValues: { ':at': at, ':u': user }
+                }
+              },
+              {
+                Update: {
+                  TableName: this.tableName,
+                  Key: { pk: `RATE#latenotice:${user}#${period}`, sk: 'RATE' },
+                  UpdateExpression: 'SET expires_at = :expiry ADD #n :one',
+                  ConditionExpression: 'attribute_not_exists(#n) OR #n < :limit',
+                  ExpressionAttributeNames: { '#n': 'n' },
+                  ExpressionAttributeValues: { ':one': 1, ':limit': limit, ':expiry': (period + 2) * 86400 }
+                }
+              }
+            ]
+          })
+        );
+        return 'reserved';
+      } catch (e) {
+        if ((e as { name?: string })?.name !== 'TransactionCanceledException') throw e;
+        const failure = reasons(e);
+        if (failure[0]?.Code === 'ConditionalCheckFailed') return 'stopped';
+        if (failure[2]?.Code === 'ConditionalCheckFailed') return 'limited';
+        if (failure[1]?.Code === 'ConditionalCheckFailed') return 'already-sent';
+        if (failure.some((r) => r.Code === 'TransactionConflict') && attempt < 4) {
+          await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error('Late notice transaction retries exhausted');
   }
   async pauses(user: string): Promise<[string, string][]> {
     return (
@@ -560,6 +738,30 @@ export class Store {
   }
   async startExport(user: string, id: string, now: number, expires: number) {
     await this.put({ ...key(user, 'EXPORT'), id, status: 'building', started_at: now, expires_at: expires });
+  }
+  async finishExportGuarded(user: string, id: string, fields: Item): Promise<boolean> {
+    const entries = Object.entries(fields);
+    return this.provedTransaction([
+      this.profileProof(user),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, 'EXPORT'),
+          UpdateExpression: 'SET ' + entries.map((_, i) => `#f${i} = :v${i}`).join(', '),
+          ConditionExpression: '#id = :id AND #s = :b',
+          ExpressionAttributeNames: {
+            '#id': 'id',
+            '#s': 'status',
+            ...Object.fromEntries(entries.map(([k], i) => [`#f${i}`, k]))
+          },
+          ExpressionAttributeValues: {
+            ':id': id,
+            ':b': 'building',
+            ...Object.fromEntries(entries.map(([, v], i) => [`:v${i}`, v]))
+          }
+        }
+      }
+    ]);
   }
   async finishExport(user: string, id: string, fields: Item) {
     const entries = Object.entries(fields);
@@ -788,6 +990,97 @@ export class Store {
   }
   private async listSession(hash: string, user: string, expires: number) {
     await this.put({ ...key(user, `SESSION#${hash}`), expires_at: expires });
+  }
+  private profileProof(user: string): NonNullable<TransactWriteCommandInput['TransactItems']>[number] {
+    return {
+      ConditionCheck: {
+        TableName: this.tableName,
+        Key: key(user, 'PROFILE'),
+        ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting)'
+      }
+    };
+  }
+  private async provedTransaction(
+    TransactItems: NonNullable<TransactWriteCommandInput['TransactItems']>
+  ): Promise<boolean> {
+    for (let attempt = 0; attempt < 5; attempt++)
+      try {
+        await this.client.send(new TransactWriteCommand({ TransactItems }));
+        return true;
+      } catch (e) {
+        if ((e as { name?: string })?.name !== 'TransactionCanceledException') throw e;
+        if (reasons(e).some((r) => r.Code === 'ConditionalCheckFailed')) return false;
+        if (reasons(e).some((r) => r.Code === 'TransactionConflict') && attempt < 4) {
+          await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+          continue;
+        }
+        throw e;
+      }
+    throw new Error('Proof transaction retries exhausted');
+  }
+  async createSession(hash: string, options: SessionInput): Promise<boolean> {
+    const { user_id, email, now, expires } = options;
+    return this.provedTransaction([
+      ...(user_id ? [this.profileProof(user_id)] : []),
+      {
+        Put: {
+          TableName: this.tableName,
+          Item: {
+            pk: `SESSION#${hash}`,
+            sk: 'SESSION',
+            created_at: now,
+            seen_at: now,
+            expires_at: expires,
+            ...(user_id ? { user_id } : { email })
+          },
+          ConditionExpression: 'attribute_not_exists(pk)'
+        }
+      },
+      ...(user_id
+        ? [{ Put: { TableName: this.tableName, Item: { ...key(user_id, `SESSION#${hash}`), expires_at: expires } } }]
+        : [])
+    ]);
+  }
+  async renewSession(hash: string, user: string | null, now: number, expires: number): Promise<boolean> {
+    return this.provedTransaction([
+      ...(user ? [this.profileProof(user)] : []),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: { pk: `SESSION#${hash}`, sk: 'SESSION' },
+          UpdateExpression: 'SET seen_at = :now, expires_at = :exp',
+          ConditionExpression:
+            'attribute_exists(pk) AND expires_at > :now AND ' +
+            (user ? 'user_id = :u' : 'attribute_not_exists(user_id)'),
+          ExpressionAttributeValues: { ':now': now, ':exp': expires, ...(user ? { ':u': user } : {}) }
+        }
+      },
+      ...(user
+        ? [{ Put: { TableName: this.tableName, Item: { ...key(user, `SESSION#${hash}`), expires_at: expires } } }]
+        : [])
+    ]);
+  }
+  async claimVerifiedSession(
+    hash: string,
+    user: string,
+    email: string,
+    now: number,
+    expires: number
+  ): Promise<boolean> {
+    return this.provedTransaction([
+      this.profileProof(user),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: { pk: `SESSION#${hash}`, sk: 'SESSION' },
+          UpdateExpression: 'SET user_id = :u, seen_at = :now, expires_at = :exp REMOVE email',
+          ConditionExpression:
+            'attribute_exists(pk) AND expires_at > :now AND (user_id = :u OR (attribute_not_exists(user_id) AND email = :e))',
+          ExpressionAttributeValues: { ':u': user, ':e': email, ':now': now, ':exp': expires }
+        }
+      },
+      { Put: { TableName: this.tableName, Item: { ...key(user, `SESSION#${hash}`), expires_at: expires } } }
+    ]);
   }
   async putSession(hash: string, options: SessionInput) {
     const { user_id, email, now, expires } = options;

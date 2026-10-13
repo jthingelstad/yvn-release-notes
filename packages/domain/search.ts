@@ -6,6 +6,8 @@ export { fold } from './unicode.ts';
 export const MAX_QUERY = 200,
   SEARCH_DAYS = 100;
 const terms =
+  // Python treats these control codepoints as whitespace in quoted search.
+  // eslint-disable-next-line no-control-regex
   /"([^"]*)"|([^\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+)/g;
 export function searchTerms(query: string): string[] {
   const found: string[] = [];

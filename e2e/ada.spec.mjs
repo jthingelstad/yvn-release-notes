@@ -164,7 +164,7 @@ test('turning on transcripts writes out a recording, and search finds what was s
   await box.check();
   await expect(page.locator('#transcribe-saved')).toBeVisible();
 
-  // The dev server writes it out five seconds after (transcribe.py's stand-in).
+  // The dev harness writes it out five seconds after, standing in for the transcription worker.
   await page.goto('/timeline/');
   await expect(page.getByText('Writing this out.').first()).toBeVisible();
   await expect(async () => {
@@ -187,7 +187,7 @@ test('turning on descriptions describes a photo, shown only where search found i
   await box.check();
   await expect(page.locator('#describe-saved')).toBeVisible();
 
-  // The dev server describes it five seconds after (describe.py's stand-in);
+  // The dev harness describes it five seconds after, standing in for the description worker;
   // on the day it is the photo's alt text, never words on the page.
   await page.goto('/today/');
   const photo = page.locator('article.note', { hasText: 'Bagels at' }).locator('.media img').first();

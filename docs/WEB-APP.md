@@ -356,3 +356,14 @@ label uses the existing `/timeline/` address. Search words remain in a POST
 body and URL fragment. Dark appearance and reduced-motion preferences are
 supported. All icons (`web/src/components/icon.tsx`) and fonts are local;
 no images or new CSP exceptions are required.
+
+### Native HTTP runtime (2026-10-13)
+
+`server/app/` is an ordinary Hono server on Node 24; the API paths and stored
+records keep their existing contracts. Each request creates its own session
+service, while SDK clients are reused. Mutations transactionally prove the
+live session and account; subscriber deletion blocks captures and processing
+before cleanup. Every HTTP response, including redirects and errors, carries
+`Cache-Control: no-store`. The platform's IAM endpoint and CloudFront OAC
+replace the generated origin-secret header after activation. The native local
+harness uses the same routes with fictional stores and never AWS services.

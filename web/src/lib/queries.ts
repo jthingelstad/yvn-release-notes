@@ -5,6 +5,12 @@ import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { get } from './api.ts';
 import { addDays } from './format.ts';
 import type { DayPage, DaysPage, Me, Note, ReleasePage, Releases, TaggedDays, Today } from './types.ts';
+import type { UpcomingView } from '../../../packages/domain/upcoming.ts';
+
+export const upcomingQuery = queryOptions({
+  queryKey: ['upcoming'],
+  queryFn: () => get<{ entries: UpcomingView[]; today: string; tz: string; limit: number }>('/api/upcoming')
+});
 
 // A recording being written out: look again every 30 seconds, 20 times.
 export const POLL = 30000;

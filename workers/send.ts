@@ -21,6 +21,7 @@ import {
 import { found as tags } from '../packages/domain/tags.ts';
 import { addDays } from '../packages/domain/dates.ts';
 import type { ProductUpdate } from '../packages/domain/product-updates.ts';
+import { remindersFor, type UpcomingSection } from '../packages/domain/upcoming.ts';
 import { computeStreak, pauseDays, type Streak } from '../packages/domain/streak.ts';
 import { computeVersion, releaseName, releaseSpan, sameDayBefore, type Version } from '../packages/domain/version.ts';
 import {
@@ -411,6 +412,7 @@ export async function sendOne(
     streak = await readStreak(s, sub, day);
   let [past, lifetime, yesterday, notes, own, closed] = await readHistory(s, sub, day);
   const productUpdate = await readProductUpdate(s, day);
+  const upcoming = await readUpcoming(s, sub.user_id, day);
   const photos = await withPhotos(s, sub, day, yesterday, past);
   [yesterday, past] = photos;
   const forecast = await readWeather(s, sub, day, fetcher, true, notes, own);
@@ -475,6 +477,7 @@ export async function sendOne(
       yesterday,
       closed,
       productUpdate,
+      upcoming,
       images: photos[2],
       inbox,
       forecast,
@@ -492,6 +495,14 @@ export async function sendOne(
   }
   s.log?.({ event: 'sent', user: sub.user_id, date: day, version: String(v) });
   return { user: sub.user_id, date: day, version: String(v), outcome: 'sent' };
+}
+export async function readUpcoming(s: SenderServices, user: string, day: string): Promise<UpcomingSection | null> {
+  try {
+    return remindersFor(await s.store.upcomingEntries(user), day);
+  } catch (error) {
+    s.log?.({ event: 'upcoming-error', user, date: day, error: errorName(error) });
+    return null;
+  }
 }
 export async function readProductUpdate(s: SenderServices, day: string): Promise<ProductUpdate | null> {
   try {
@@ -549,6 +560,7 @@ export async function handler(
       [yesterday, past] = photo;
       const forecast = await readWeather(s, sub, day, fetcher, false, notes, own);
       const productUpdate = await readProductUpdate(s, day);
+      const upcoming = await readUpcoming(s, sub.user_id, day);
       results.push({
         user: sub.user_id,
         date: day,
@@ -579,7 +591,9 @@ export async function handler(
         photo_bytes: Object.values(photo[2]).reduce((n, p) => n + p.length, 0),
         forecast: Boolean(forecast),
         inbox: Boolean(sub.inbox),
-        product_update: productUpdate?.id ?? null
+        product_update: productUpdate?.id ?? null,
+        upcoming: upcoming?.shown.length ?? null,
+        upcoming_more: upcoming?.more ?? null
       });
       continue;
     }

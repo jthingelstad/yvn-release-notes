@@ -30,7 +30,8 @@ import {
   releasesQuery,
   tagQuery,
   tagsQuery,
-  todayQuery
+  todayQuery,
+  upcomingQuery
 } from './lib/queries.ts';
 import { home, store } from './lib/storage.ts';
 import { AppError } from './pages/AppError.tsx';
@@ -125,6 +126,11 @@ type Ctx = { context: { queryClient: QueryClient } };
 const search = (s: unknown, k: string) => (s as Record<string, string | undefined>)[k] ?? null;
 
 const behind = [
+  createRoute({
+    getParentRoute: () => signedInRoute,
+    ...page('/upcoming', () => import('./pages/Upcoming.tsx'), 'Upcoming'),
+    loader: ({ context }: Ctx) => context.queryClient.prefetchQuery(upcomingQuery)
+  }),
   createRoute({
     getParentRoute: () => signedInRoute,
     ...page('/today', () => import('./pages/Today.tsx'), 'Today'),

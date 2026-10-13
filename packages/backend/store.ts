@@ -10,6 +10,9 @@
  * PRODUCT#UPDATES / UPDATE#<id> holds operator drafts/history; DATE#<YYYY-MM-DD>
  * holds the sole scheduled text snapshot for that subscriber-local email day.
  * Both are outside USER# archives; revision CAS and date-slot ownership are atomic.
+ * USER#<owner> / UPCOMING#<id> holds private personal dates, separate from notes.
+ * PROFILE.upcoming_count and entry revision change atomically (200 retained
+ * entries per owner); web transactions also prove the live account/session.
  */
 import {
   BatchWriteCommand,
@@ -29,6 +32,7 @@ import type {
 } from '@aws-sdk/lib-dynamodb';
 import { Subscriber } from './store-types.ts';
 import type { ProductUpdate } from '../domain/product-updates.ts';
+import { upcomingEntry, UPCOMING_MAX, type UpcomingEntry } from '../domain/upcoming.ts';
 import type { DocumentSender, Item, Key, MailCounter, Purpose, SessionInput } from './store-types.ts';
 export { Subscriber } from './store-types.ts';
 export type { Item, Key, DocumentSender, MailCounter } from './store-types.ts';
@@ -126,6 +130,50 @@ export class Store {
         true
       )
     ).map(Subscriber.fromItem);
+  }
+  async upcomingEntries(user: string): Promise<UpcomingEntry[]> {
+    return (
+      await this.rows({
+        KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
+        ExpressionAttributeValues: { ':p': `USER#${user}`, ':s': 'UPCOMING#' },
+        ConsistentRead: true
+      })
+    ).map(upcomingEntry);
+  }
+  async upcoming(user: string, id: string): Promise<UpcomingEntry | null> {
+    const row = await this.get(key(user, 'UPCOMING#' + id), { ConsistentRead: true });
+    return row ? upcomingEntry(row) : null;
+  }
+  async saveUpcoming(user: string, next: UpcomingEntry | null, previous: UpcomingEntry | null): Promise<boolean> {
+    const id = next?.id ?? previous!.id,
+      entryKey = key(user, 'UPCOMING#' + id);
+    const guard = previous
+      ? {
+          ConditionExpression: '#revision = :revision',
+          ExpressionAttributeNames: { '#revision': 'revision' },
+          ExpressionAttributeValues: { ':revision': previous.revision }
+        }
+      : { ConditionExpression: 'attribute_not_exists(pk)' };
+    const ops: NonNullable<TransactWriteCommandInput['TransactItems']> = [
+      next
+        ? this.putOperation({ ...entryKey, ...next }, guard)
+        : { Delete: { TableName: this.tableName, Key: entryKey, ...guard } }
+    ];
+    if (!previous || !next)
+      ops.push({
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, 'PROFILE'),
+          UpdateExpression: 'SET #count = if_not_exists(#count, :zero) + :change',
+          ConditionExpression:
+            'attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND ' +
+            (next ? '(attribute_not_exists(#count) OR #count < :max)' : '#count > :zero'),
+          ExpressionAttributeNames: { '#count': 'upcoming_count' },
+          ExpressionAttributeValues: { ':zero': 0, ':change': next ? 1 : -1, ...(next ? { ':max': UPCOMING_MAX } : {}) }
+        }
+      });
+    else ops.push(this.profileProof(user));
+    return this.provedTransaction(ops);
   }
   async productUpdates(): Promise<ProductUpdate[]> {
     const rows = await this.rows({

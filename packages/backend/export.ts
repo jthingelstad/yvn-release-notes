@@ -9,6 +9,7 @@ import * as weather from './weather.ts';
 import { extension } from './media.ts';
 import { object } from './places.ts';
 import type { Item } from './store.ts';
+import { upcomingEntry, type UpcomingEntry } from '../domain/upcoming.ts';
 export const PROFILE_FIELDS = [
   'email',
   'birthday',
@@ -46,6 +47,7 @@ export interface ExportData {
   pauses: Item[];
   weather: Item[];
   places: Item[];
+  upcoming?: UpcomingEntry[];
 }
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const sortBy = (rows: Item[], key: string) => rows.sort((a, b) => cmp(String(a[key]), String(b[key])));
@@ -85,7 +87,8 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
     notes: ExportNote[] = [],
     pauses: Item[] = [],
     skies: Item[] = [],
-    spots: Item[] = [];
+    spots: Item[] = [],
+    upcoming: UpcomingEntry[] = [];
   for (const item of items) {
     const sk = String(item.sk);
     if (sk === 'PROFILE')
@@ -125,6 +128,7 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
       };
       notes.push(note);
     } else if (sk.startsWith('PAUSE#')) pauses.push({ from: sk.slice(6), through: item.through ?? null });
+    else if (sk.startsWith('UPCOMING#')) upcoming.push(upcomingEntry(item));
     else if (sk.startsWith('WEATHER#')) skies.push({ date: sk.slice(8), ...weather.plain(item as weather.Reading) });
     else if (sk.startsWith('PLACE#'))
       spots.push({
@@ -159,7 +163,8 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
     days_sent: sortBy(days, 'date'),
     pauses: sortBy(pauses, 'from'),
     weather: sortBy(skies, 'date'),
-    places: sortBy(spots, 'date')
+    places: sortBy(spots, 'date'),
+    ...(upcoming.length ? { upcoming: upcoming.sort((a, b) => cmp(a.id, b.id)) } : {})
   };
 }
 export function longDate(day: string): string {
@@ -186,6 +191,23 @@ export function markdown(data: ExportData): string {
   lines.push(`Exported ${data.exported_at.slice(0, 10)}${profile.email ? ` for ${profile.email}` : ''}.`);
   const born = typeof profile.birthday === 'string' ? profile.birthday : null;
   if (born) lines.push('', `Born ${longDate(born)}: that day was 0.0.0.`);
+  if (data.upcoming?.length) {
+    lines.push('', '## Upcoming', '', 'Saved plans and personal dates.');
+    for (const entry of data.upcoming) {
+      lines.push(
+        '',
+        `### ${escapeText(entry.title)}`,
+        '',
+        `${entry.kind}: ${entry.date}${entry.year === null ? '' : ` (original year ${entry.year})`}${entry.end_date ? ` through ${entry.end_date}` : ''}.`,
+        ...(entry.place
+          ? [`At ${escapeText(entry.place.name)}${entry.place.region ? ', ' + escapeText(entry.place.region) : ''}.`]
+          : []),
+        entry.email
+          ? `Daily email reminders: ${entry.reminders.join(', ')} days before (0 means on the day).`
+          : 'Kept on the web only.'
+      );
+    }
+  }
   const skies = new Map(data.weather.map((w) => [String(w.date), w])),
     spots = new Map(data.places.map((p) => [String(p.date), p])),
     byDay = new Map<string, ExportNote[]>();

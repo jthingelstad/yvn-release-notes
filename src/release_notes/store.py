@@ -55,6 +55,17 @@
     TALLY#<YYYY-MM>  TALLY                      that month's counts: signups, unsubscribes, restarts,
                                                 bounces, complaints, deletes. Numbers only, no one named
 
+    OAUTHCLIENT#<id>       STATE              public client name and exact registered redirects; one year
+    OAUTHPENDING#<id>      STATE              approval request, ten minutes, no account until consent
+    OAUTHCODE#<hash>       STATE              PKCE-bound single-use authorization code, five minutes
+    OAUTHACCESS#<hash>     STATE              resource-bound access token, one hour
+    OAUTHREFRESH#<hash>    STATE              rotating single-use refresh token, thirty days
+    OAUTHFAMILY#<id>       STATE              consent, scopes, version and revocation, thirty days renewed
+    OAUTHUSER#<id>         ROW#<credential pk> every account-bound OAuth row, for deletion
+    MCPMETA#<id>          RATE#<period>#<n>   read quotas (300/hour, 500/day), one extra period
+    MCPMETA#<id>          USE#<family>        last use, fourteen days
+    MCPMETA#<id>          LOG#<time>#<id>     tool, outcome and connection only, fourteen days
+
 expires_at (epoch seconds) is the table's TTL. DynamoDB deletes late, up to
 a couple of days, so every read checks it as well. Hashes are SHA-256 of
 the secret (or, for LOGINFOR and the sign-in counters, of the address or
@@ -1005,3 +1016,51 @@ class Store:
 
     def delete_session(self, session_hash: str) -> None:
         self.table.delete_item(Key={"pk": f"SESSION#{session_hash}", "sk": "SESSION"})
+
+    # OAuth and MCP metadata (oauth.py); every read is strongly consistent.
+    def mcp_get(self, pk, sk="STATE"):
+        return self.table.get_item(Key={"pk": pk, "sk": sk}, ConsistentRead=True).get("Item")
+
+    def mcp_rows(self, pk):
+        rows, args = [], {"KeyConditionExpression": "pk = :p", "ExpressionAttributeValues": {":p": pk},
+                          "ConsistentRead": True}
+        while True:
+            result = self.table.query(**args)
+            rows.extend(result.get("Items", []))
+            if not result.get("LastEvaluatedKey"):
+                return rows
+            args["ExclusiveStartKey"] = result["LastEvaluatedKey"]
+
+    def mcp_profile(self, uid):
+        return self.mcp_get(f"USER#{uid}", "PROFILE")
+
+    def mcp_commit(self, changes, uid=None):
+        """Atomic compare-and-swap: (new row, previous revision or None).
+        An account-bound write also proves deletion has not begun. Native
+        values: this is the resource's client, not a low-level boto client.
+        """
+        operations = []
+        if uid:
+            operations.append({"ConditionCheck": {"TableName": self.table.name,
+                "Key": {"pk": f"USER#{uid}", "sk": "PROFILE"},
+                "ConditionExpression": "attribute_exists(pk) AND attribute_not_exists(mcp_deleting)"}})
+        for row, revision in changes:
+            put = {"TableName": self.table.name, "Item": numbers({**row, "revision": (revision or 0) + 1}),
+                   "ConditionExpression": "attribute_not_exists(pk)" if revision is None else "#r = :r"}
+            if revision is not None:
+                put.update(ExpressionAttributeNames={"#r": "revision"}, ExpressionAttributeValues={":r": revision})
+            operations.append({"Put": put})
+        try:
+            self.table.meta.client.transact_write_items(TransactItems=operations)
+            return True
+        except Exception as e:
+            if (getattr(e, "response", {}) or {}).get("Error", {}).get("Code") == "TransactionCanceledException":
+                reasons = getattr(e, "response", {}).get("CancellationReasons", [])
+                if reasons and all(r.get("Code") in ("None", "ConditionalCheckFailed") for r in reasons):
+                    return False
+            raise
+
+    def mcp_block(self, uid):
+        self.table.update_item(Key={"pk": f"USER#{uid}", "sk": "PROFILE"},
+            UpdateExpression="SET mcp_deleting = :yes", ExpressionAttributeValues={":yes": True},
+            ConditionExpression="attribute_exists(pk)")

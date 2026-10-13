@@ -14,9 +14,37 @@ class FakeStore:
     def __init__(self):
         self.emails, self.profiles, self.items = {}, {}, {}
         self.logins, self.newest, self.sessions, self.counts = {}, {}, {}, {}
+        self.mcp_items = {}
         self.tokens = {}
         self.inboxes = {}  # token -> {"user_id", "created_at"}
         self.tallied = {}  # (month, name) -> n
+
+    def mcp_get(self, pk, sk="STATE"):
+        if pk.startswith("USER#") and sk == "PROFILE":
+            p = self.profile(pk[5:])
+            return dict(p) if p else None
+        i = self.mcp_items.get((pk, sk))
+        return dict(i) if i else None
+
+    def mcp_rows(self, pk):
+        return [dict(i) for (p, _), i in self.mcp_items.items() if p == pk]
+
+    def mcp_profile(self, uid):
+        return self.mcp_get("USER#" + uid, "PROFILE")
+
+    def mcp_commit(self, changes, uid=None):
+        if uid and (not self.profile(uid) or self.profile(uid).get("mcp_deleting")):
+            return False
+        for row, revision in changes:
+            old = self.mcp_items.get((row["pk"], row["sk"]))
+            if (revision is None and old is not None) or (revision is not None and (not old or old["revision"] != revision)):
+                return False
+        for row, revision in changes:
+            self.mcp_items[(row["pk"], row["sk"])] = {**row, "revision": (revision or 0) + 1}
+        return True
+
+    def mcp_block(self, uid):
+        self.profiles[uid]["mcp_deleting"] = True
 
     def user_for_email(self, email):
         return self.emails.get(email)
@@ -170,6 +198,8 @@ class FakeStore:
         self.update_profile(user_id, {}, ("pause_from", "pause_through"))
 
     def delete_keys(self, keys):
+        for key in keys:
+            self.mcp_items.pop((key["pk"], key["sk"]), None)
         for key in keys:
             pk, sk = key["pk"], key["sk"]
             if pk.startswith("TOKEN#"):

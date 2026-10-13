@@ -157,6 +157,8 @@ notes.yourversionnumber.com
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/search/`,
   `/tag/?t=<tag>`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`.
+  `/connect/` approves an external agent request whose opaque id stays in the fragment.
+
 - **A pause** starts on the next day an email would go (today, unless
   today's has gone) and runs 1 to 60 days. It is `PAUSE#<from>` with
   `through`, and the profile carries the latest one (`pause_from`,
@@ -260,6 +262,11 @@ fonts are served from here.
 
 | | |
 |---|---|
+| `POST /api/mcp/authorize` | Inspect or approve/deny a pending OAuth request; session and Origin required. |
+| `GET /api/mcp/connections` | Active read-only agent connections, scopes and last use. |
+| `DELETE /api/mcp/connections/{id}` | Revoke the owner's connection immediately. |
+| `GET /api/mcp/activity` | Up to 50 content-free tool records from the last fourteen days. |
+
 | `GET /api/health` | |
 | `GET /api/sample?birthday=&tz=` | a version number today: the front page's example (1981-06-14), or the birthday being typed at sign-up |
 | `POST /api/auth/start` `{email}` | always 202; mails a link and code when the limits allow |
@@ -318,3 +325,12 @@ once Jamie says so. Everything else is unit tests and dry runs.
    2026-10-08; read it from ACM, not from here).
 2. `notes` CNAME to the distribution's `cloudfront.net` name (stack output
    `WebDistributionDomain`).
+
+## Read-only agents
+
+`docs/MCP.md` documents `/mcp`, the public OAuth discovery and protocol routes,
+and owner consent. These public routes are dispatched separately from the
+cookie API, after the same CloudFront origin proof. Cookie writes retain
+same-origin checks. The `/connect/` request survives a sign-in in the same
+tab, via the existing return path including its fragment. Settings lists
+connections, disconnect controls, and content-free recent activity.

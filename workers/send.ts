@@ -428,15 +428,37 @@ export async function sendOne(
   }
   const token = newToken(),
     inbox = await standing(s, sub);
+  const cleanup = async () => {
+    try {
+      await s.store.releaseDay(sub.user_id, day, previous, token);
+    } catch (error) {
+      // Deletion or a newer claim may have removed/replaced this reservation.
+      if (errorName(error) !== 'ConditionalCheckFailedException') throw error;
+    }
+    try {
+      await s.store.dropDay(sub.user_id, day, token);
+    } catch {
+      s.log?.({ event: 'drop-day-failed', user: sub.user_id, date: day });
+    }
+  };
+  const refused = () => {
+    s.log?.({ event: 'skip', user: sub.user_id, date: day, reason: 'account-changed' });
+    return { user: sub.user_id, date: day, outcome: 'account-changed' };
+  };
   let message: string;
   try {
-    await s.store.putDay(
-      sub.user_id,
-      day,
-      String(v),
-      token,
-      new Date((s.clock ?? (() => Date.now() / 1000))() * 1000).toISOString()
-    );
+    if (
+      !(await s.store.putDay(
+        sub.user_id,
+        day,
+        String(v),
+        token,
+        new Date((s.clock ?? (() => Date.now() / 1000))() * 1000).toISOString()
+      ))
+    ) {
+      await cleanup();
+      return refused();
+    }
     const raw = await buildMessage({
       to: sub.email,
       fromAddr: s.fromAddress,
@@ -457,16 +479,14 @@ export async function sendOne(
     });
     message = await s.mail.send(raw, sub.email, 'daily');
   } catch (e) {
-    await s.store.releaseDay(sub.user_id, day, previous);
-    try {
-      await s.store.dropDay(sub.user_id, day, token);
-    } catch {
-      s.log?.({ event: 'drop-day-failed', user: sub.user_id, date: day });
-    }
+    await cleanup();
     s.log?.({ event: 'error', user: sub.user_id, date: day, error: errorName(e) });
     throw e;
   }
-  await s.store.setDayMessageId(sub.user_id, day, message);
+  if (!(await s.store.setDayMessageId(sub.user_id, day, message, token))) {
+    await cleanup();
+    return refused();
+  }
   s.log?.({ event: 'sent', user: sub.user_id, date: day, version: String(v) });
   return { user: sub.user_id, date: day, version: String(v), outcome: 'sent' };
 }

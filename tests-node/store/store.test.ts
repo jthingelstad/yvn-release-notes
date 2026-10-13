@@ -179,13 +179,17 @@ test('send claim request retains exact condition', async () => {
 });
 test('day token retains epoch sent_at, conditional cleanup preserves newer day', async () => {
   const s = setup();
-  await s.putDay('u', day, '4.5.121', 'first', '2026-10-13T12:00:00Z');
+  assert.equal(await s.putDay('u', day, '4.5.121', 'first', '2026-10-13T12:00:00Z'), true);
   assert.equal((await s.getToken('first'))?.sent_at, 1791892800);
-  await s.putDay('u', day, '4.5.121', 'second', '2026-10-13T12:05:00Z');
+  assert.equal(await s.putDay('u', day, '4.5.121', 'second', '2026-10-13T12:05:00Z'), false);
+  assert.equal(await s.getToken('second'), null);
+  s.seed({ pk: 'USER#u', sk: `DAY#${day}`, token: 'second' });
+  s.seed({ pk: 'TOKEN#second', sk: 'TOKEN', user_id: 'u' });
   await s.dropDay('u', day, 'first');
   assert.equal(await s.getToken('first'), null);
   assert.equal((await s.userItems('u')).find((i) => i.sk === `DAY#${day}`)?.token, 'second');
-  await s.setDayMessageId('u', day, 'ses-id');
+  assert.equal(await s.setDayMessageId('u', day, 'ses-id', 'first'), false);
+  assert.equal(await s.setDayMessageId('u', day, 'ses-id', 'second'), true);
   assert.deepEqual(await s.sentDays('u'), new Set([day]));
   assert.equal(await s.claimLateNotice('second', 'now'), true);
   assert.equal(await s.claimLateNotice('second', 'again'), false);

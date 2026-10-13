@@ -152,18 +152,55 @@ export class Store {
       })
     );
   }
-  async releaseDay(user: string, day: string, previous: string | null) {
-    await this.update(key(user, 'PROFILE'), {
+  async releaseDay(user: string, day: string, previous: string | null, token?: string) {
+    const input = {
       UpdateExpression: previous ? 'SET last_sent_date = :p' : 'REMOVE last_sent_date',
       ConditionExpression: 'last_sent_date = :d',
       ExpressionAttributeValues: previous ? { ':p': previous, ':d': day } : { ':d': day }
-    });
+    };
+    if (!token) {
+      await this.update(key(user, 'PROFILE'), input);
+      return;
+    }
+    if (
+      !(await this.provedTransaction([
+        { Update: { TableName: this.tableName, Key: key(user, 'PROFILE'), ...input } },
+        {
+          ConditionCheck: {
+            TableName: this.tableName,
+            Key: key(user, `DAY#${day}`),
+            ConditionExpression: 'attribute_not_exists(pk) OR #token = :token',
+            ExpressionAttributeNames: { '#token': 'token' },
+            ExpressionAttributeValues: { ':token': token }
+          }
+        }
+      ]))
+    )
+      throw Object.assign(new Error('Send reservation no longer owned'), { name: 'ConditionalCheckFailedException' });
   }
   async putDay(user: string, day: string, version: string, token: string, sentAt: string) {
     const sent = Math.floor(Date.parse(sentAt) / 1000);
     if (!Number.isFinite(sent)) throw new Error('Invalid send time');
-    await this.put({ pk: `TOKEN#${token}`, sk: 'TOKEN', user_id: user, date: day, version, sent_at: sent });
-    await this.put({ ...key(user, `DAY#${day}`), version, token, sent_at: sentAt });
+    return this.provedTransaction([
+      {
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: key(user, 'PROFILE'),
+          ConditionExpression:
+            'attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND (attribute_not_exists(#status) OR #status = :active)',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':active': 'active' }
+        }
+      },
+      this.putOperation(
+        { pk: `TOKEN#${token}`, sk: 'TOKEN', user_id: user, date: day, version, sent_at: sent },
+        { ConditionExpression: 'attribute_not_exists(pk)' }
+      ),
+      this.putOperation(
+        { ...key(user, `DAY#${day}`), version, token, sent_at: sentAt },
+        { ConditionExpression: 'attribute_not_exists(pk)' }
+      )
+    ]);
   }
   async dropDay(user: string, day: string, token: string) {
     await this.del({ pk: `TOKEN#${token}`, sk: 'TOKEN' });
@@ -175,11 +212,20 @@ export class Store {
       })
     );
   }
-  async setDayMessageId(user: string, day: string, message: string) {
-    await this.update(key(user, `DAY#${day}`), {
-      UpdateExpression: 'SET ses_message_id = :m',
-      ExpressionAttributeValues: { ':m': message }
-    });
+  async setDayMessageId(user: string, day: string, message: string, token: string) {
+    return this.provedTransaction([
+      this.profileProof(user),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, `DAY#${day}`),
+          UpdateExpression: 'SET ses_message_id = :m',
+          ConditionExpression: 'attribute_exists(pk) AND #token = :token',
+          ExpressionAttributeNames: { '#token': 'token' },
+          ExpressionAttributeValues: { ':m': message, ':token': token }
+        }
+      }
+    ]);
   }
   async getToken(token: string) {
     return this.get({ pk: `TOKEN#${token}`, sk: 'TOKEN' });

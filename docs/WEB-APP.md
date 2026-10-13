@@ -168,6 +168,10 @@ notes.yourversionnumber.com
   Direct origin calls are denied by the platform; the rollback endpoint has
   no distribution grant and zero request allowance. No origin-secret header
   is needed. `CloudFront-Viewer-Address` is trusted only behind this boundary.
+  On `/oauth/*`, a viewer-request function changes form-encoded query spaces
+  (`+`) to `%20` before OAC signs the origin request. This avoids the native
+  endpoint's signature rejection of that encoding; decoded values and repeated
+  parameters stay the same. It never logs the query or alters consent/scopes.
 - **Session**: an `__Host-` cookie, Secure, HttpOnly, SameSite=Lax. Every
   write must carry `Origin: https://notes.yourversionnumber.com`. The API
   receives only the headers it reads (Origin, Content-Type, Accept, the

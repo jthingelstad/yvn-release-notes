@@ -383,6 +383,37 @@ Resources:
           Cookies: [__Host-rn]
         QueryStringsConfig: { QueryStringBehavior: all }
 
+  # Form-encoded scopes arrive with + for spaces. Native OAC signature
+  # validation rejects that wire form; canonicalize spaces before signing.
+  # Only OAuth uses this function; values and repeated parameters are preserved.
+  NativeOAuthQueryFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-oauth-query"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Normalize form-encoded OAuth query spaces before private origin signing
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var query = [];
+          var changed = false;
+          Object.keys(request.querystring).forEach(function (key) {
+            var field = request.querystring[key];
+            var values = field.multiValue || [field];
+            var name = key.replace(/\+/g, '%20');
+            if (name !== key) changed = true;
+            values.forEach(function (entry) {
+              var value = entry.value.replace(/\+/g, '%20');
+              if (value !== entry.value) changed = true;
+              query.push(name + '=' + value);
+            });
+          });
+          if (changed) request.querystring = query.join('&');
+          return request;
+        }
+
   # Cleanup is applied only after native HTTP/worker parity, verified explicit
   # last-good native pins, both stream UUID read-backs and accepted-request drain.
   # NativeLegacyDrainPending keeps only old grants/configs, never old code. Retire
@@ -1308,6 +1339,9 @@ Resources:
             Compress: true
             CachePolicyId: !Ref NativeHttpCachePolicy
             OriginRequestPolicyId: !Ref NativeHttpRequestPolicy
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt NativeOAuthQueryFunction.FunctionMetadata.FunctionARN
           - PathPattern: /.well-known/oauth-*
             TargetOriginId: native-app
             ViewerProtocolPolicy: redirect-to-https

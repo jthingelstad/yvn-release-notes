@@ -32,8 +32,8 @@ class ConnectionCase(WebCase):
             r = web.handler(event, None, store=self.store, ses=self.ses, s3=self.s3, clock=lambda: self.now)
         return r, json.loads(r['body']) if r['body'] else {}
 
-    def pending(self, scope='notes:read media:read'):
-        r, client = self.protocol('POST', '/oauth/register', {'client_name': 'Claude', 'redirect_uris': [self.redirect]})
+    def pending(self, scope='notes:read media:read', client_name='Claude'):
+        r, client = self.protocol('POST', '/oauth/register', {'client_name': client_name, 'redirect_uris': [self.redirect]})
         self.assertEqual(r['statusCode'], 201)
         cid = client['client_id']
         r, _ = self.protocol('GET', '/oauth/authorize', query={'client_id': cid, 'redirect_uri': self.redirect,
@@ -43,8 +43,8 @@ class ConnectionCase(WebCase):
         pending = parse_qs(urlsplit(r['headers']['location']).fragment)['request'][0]
         return cid, pending
 
-    def consent(self, media=True, write=False):
-        cid, pending = self.pending('notes:read media:read notes:write' if write else 'notes:read media:read')
+    def consent(self, media=True, write=False, client_name='Claude'):
+        cid, pending = self.pending('notes:read media:read notes:write' if write else 'notes:read media:read', client_name)
         r, b = self.call('POST', '/api/mcp/authorize', {'request': pending, 'approve': True, 'media': media, 'write': write}, cookies=[self.cookie])
         self.assertEqual(r['statusCode'], 200)
         query = parse_qs(urlsplit(b['redirect']).query)
@@ -52,8 +52,8 @@ class ConnectionCase(WebCase):
         return {'grant_type': 'authorization_code', 'code': query['code'][0], 'client_id': cid,
                 'resource': self.target, 'redirect_uri': self.redirect, 'code_verifier': self.verifier}
 
-    def connected(self, media=True, write=False):
-        code = self.consent(media, write)
+    def connected(self, media=True, write=False, client_name='Claude'):
+        code = self.consent(media, write, client_name)
         r, tokens = self.protocol('POST', '/oauth/token', code)
         self.assertEqual(r['statusCode'], 200, tokens)
         return tokens, code['client_id']

@@ -233,7 +233,7 @@ export async function handler(event: Item, context: Context = {}, injected?: Ser
       throw new Error('Thumbnail runtime self test failed');
     return {
       ok: true,
-      runtime: `${process.version}/${process.platform}/${process.arch}`,
+      runtime: `Node ${process.versions.node}/${process.platform}/${process.arch}`,
       build: process.env.APP_VERSION ?? process.env.BUILD_SHA ?? process.env.BUILD ?? 'unknown'
     };
   }

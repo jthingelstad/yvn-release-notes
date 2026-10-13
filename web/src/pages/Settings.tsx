@@ -16,6 +16,7 @@ import {
 import { Connections } from '../components/connections.tsx';
 import { SendTimeSelect, ZipExport } from '../components/fields.tsx';
 import { PlacePicker } from '../components/placepicker.tsx';
+import { SettingsGroup } from '../components/settings-group.tsx';
 import { api } from '../lib/api.ts';
 import { clock, longDate, pauseLine } from '../lib/format.ts';
 import { useMe, useSignedInAs } from '../lib/nav.ts';
@@ -31,45 +32,52 @@ const STOPPED: Record<string, string> = {
 export function Settings() {
   useTitle('Settings');
   const me = useMe();
-  const signOut = useSignedInAs();
   const p = me.data;
 
   return (
     <>
       <Bar />
-      <h1>Settings</h1>
-      {me.isPending && <Loading />}
-      {me.isError && <Failed />}
-      {p && !p.new && <Account p={p} />}
+      <div className="settings-page">
+        <div className="settings-heading">
+          <h1>Settings</h1>
+          {p && (
+            <p className="hint" data-field="email">
+              {p.email}
+            </p>
+          )}
+          <p className="hint">Changes save as you go.</p>
+        </div>
+        {me.isPending && <Loading />}
+        {me.isError && <Failed />}
+        {p && !p.new && <Account p={p} />}
 
-      <section className="section wide">
-        <button
-          className="quiet"
-          type="button"
-          id="signout"
-          // Signing out does not depend on loading the profile.
-          onClick={async () => {
-            await api('POST', '/api/auth/signout');
-            signedIn.drop();
-            signOut('/#sign-in');
-          }}
-        >
-          Sign out
-        </button>{' '}
-        <AppLink className="quiet danger" href="/delete/" id="delete-link" hidden={!p}>
-          Delete my account
-        </AppLink>
-        <p className="hint" id="delete-hint" hidden={!p}>
-          We’ll offer the export first, then email a code to confirm. Deleting removes every note, its photos and
-          recordings, and the original emails behind them.
+        {(!p || p.new) && <SignOut />}
+
+        <p className="foot">
+          Release Notes is a hobby project by <a href="https://www.thingelstad.com/">Jamie Thingelstad</a>, who runs it
+          and can read what’s stored. No ads, nothing sold. Page counts by Tinylytics, without cookies.
         </p>
-      </section>
-
-      <p className="foot">
-        Release Notes is a hobby project by <a href="https://www.thingelstad.com/">Jamie Thingelstad</a>, who runs it
-        and can read what’s stored. No ads, nothing sold. Page counts by Tinylytics, without cookies.
-      </p>
+      </div>
     </>
+  );
+}
+
+function SignOut() {
+  const signOut = useSignedInAs();
+  return (
+    <button
+      className="quiet"
+      type="button"
+      id="signout"
+      // Signing out does not depend on loading the profile.
+      onClick={async () => {
+        await api('POST', '/api/auth/signout');
+        signedIn.drop();
+        signOut('/#sign-in');
+      }}
+    >
+      Sign out
+    </button>
   );
 }
 
@@ -135,7 +143,7 @@ function Inbox({ p }: { p: Me }) {
 
   return (
     <section className="section" id="inbox">
-      <h2>Write by email, any day</h2>
+      <h3>Write by email, any day</h3>
       <p className="value mono" data-field="inbox" hidden={!p.inbox}>
         {p.inbox}
       </p>
@@ -191,186 +199,190 @@ function Account({ p }: { p: Me }) {
 
   return (
     <div id="account">
-      <section className="section">
-        <h2>Your email</h2>
-        <p className="value" data-field="email">
-          {p.email}
-        </p>
-      </section>
-
-      <Inbox p={p} />
-      <Connections />
-
-      <section className="section">
-        <label>
-          Send my email at
-          <SendTimeSelect
-            id="send-time"
-            value={time.value}
-            onChange={(v) => time.change(v, { send_time: v }, document.getElementById('send-time'))}
-          />
-        </label>
-        <p className="aside saved" id="send-time-saved" role="status" hidden={!time.saved}>
-          Saved.
-        </p>
-        <ErrorLine line={time.problem.line} />
-      </section>
-
-      <section className="section">
-        <h2>Where you are</h2>
-        <p className="value">
-          <span data-field="city">{p.city}</span>{' '}
-          <span className="aside">
-            · <span data-field="tz">{p.tz}</span>
-          </span>
-        </p>
-        <p className="hint">
-          Each day’s weather here is kept with your notes, and your daily email carries the forecast. Weather from{' '}
-          <a href="https://open-meteo.com/">Open-Meteo</a>, which is told the city, never your notes.
-        </p>
-        <button
-          ref={changeCity}
-          className="quiet"
-          type="button"
-          id="change-city"
-          hidden={picking}
-          onClick={() => {
-            setPicking(true);
-            focusLater(() => cityInput.current);
-          }}
-        >
-          Change city
-        </button>
-        <div className="stack tight place-picker" id="city-picker" hidden={!picking}>
-          <PlacePicker
-            key={pickerKey}
-            label="New city"
-            placeholder="Start typing a city"
-            inputRef={cityInput}
-            onPick={async (place) => {
-              if (await save({ place }, cityProblem, cityInput.current)) closePicker();
-            }}
-          />
-          <ErrorLine line={cityProblem.line} />
-          <button className="quiet" type="button" id="cancel-city" onClick={closePicker}>
-            Cancel
-          </button>
-          <p className="hint">
-            Places from <a href="https://open-meteo.com/">Open-Meteo</a>.
-          </p>
+      <SettingsGroup id="daily-email" title="Daily email" description={status} defaultOpen>
+        <div className="settings-daily-fields">
+          <section className="section">
+            <label>
+              Send my email at
+              <SendTimeSelect
+                id="send-time"
+                value={time.value}
+                onChange={(v) => time.change(v, { send_time: v }, document.getElementById('send-time'))}
+              />
+            </label>
+            <p className="aside saved" id="send-time-saved" role="status" hidden={!time.saved}>
+              Saved.
+            </p>
+            <ErrorLine line={time.problem.line} />
+          </section>
+          <section className="section">
+            <h3>Your city</h3>
+            <p className="value">
+              <span data-field="city">{p.city}</span>{' '}
+              <span className="settings-timezone hint" data-field="tz">
+                {p.tz}
+              </span>
+            </p>
+            <button
+              ref={changeCity}
+              className="quiet"
+              type="button"
+              id="change-city"
+              hidden={picking}
+              onClick={() => {
+                setPicking(true);
+                focusLater(() => cityInput.current);
+              }}
+            >
+              Change city
+            </button>
+            <div className="stack tight place-picker" id="city-picker" hidden={!picking}>
+              <PlacePicker
+                key={pickerKey}
+                label="New city"
+                placeholder="Start typing a city"
+                inputRef={cityInput}
+                onPick={async (place) => {
+                  if (await save({ place }, cityProblem, cityInput.current)) closePicker();
+                }}
+              />
+              <ErrorLine line={cityProblem.line} />
+              <button className="quiet" type="button" id="cancel-city" onClick={closePicker}>
+                Cancel
+              </button>
+              <p className="hint">
+                Places from <a href="https://open-meteo.com/">Open-Meteo</a>.
+              </p>
+            </div>
+          </section>
         </div>
-      </section>
-
-      <section className="section">
-        <h2>Recordings</h2>
-        <label className="check">
-          <input
-            type="checkbox"
-            id="transcribe"
-            checked={transcribe.value}
-            onChange={(e) => transcribe.change(e.target.checked, { transcribe: e.target.checked }, e.target)}
-          />{' '}
-          Write out what I say
-        </label>
-        <p className="hint">
-          Your recordings get turned into text that shows up underneath them, so you can skim them and search them.
-          They’re sent off to be transcribed to do it. Turning this on writes out the ones you already have, too.
+        <p className="hint settings-weather">
+          Your city sets the time zone and daily weather. Weather from <a href="https://open-meteo.com/">Open-Meteo</a>,
+          which receives the city, never your notes.
         </p>
-        <p className="aside saved" id="transcribe-saved" role="status" hidden={!transcribe.saved}>
-          Saved.
-        </p>
-        <ErrorLine line={transcribe.problem.line} />
-      </section>
-
-      <section className="section">
-        <h2>Photos</h2>
-        <label className="check">
-          <input
-            type="checkbox"
-            id="describe"
-            checked={describe.value}
-            onChange={(e) => describe.change(e.target.checked, { describe: e.target.checked }, e.target)}
-          />{' '}
-          Describe my photos
-        </label>
-        <p className="hint">
-          Each photo gets a sentence or two about what’s in it, so searching for “canoe” finds the canoe. You only see
-          it in search results. They’re sent off to an AI to be described. Turning this on does the ones you already
-          have, too.
-        </p>
-        <p className="aside saved" id="describe-saved" role="status" hidden={!describe.saved}>
-          Saved.
-        </p>
-        <ErrorLine line={describe.problem.line} />
-      </section>
-
-      <section className="section">
-        <h2>Birthday</h2>
-        <p className="value" data-field="birthday">
-          {longDate(p.birthday)}
-        </p>
-        <p className="hint">Set for good, because changing it would renumber every day you’ve kept.</p>
-      </section>
-
-      <section className="section">
-        <h2>Emails</h2>
-        <p className="value" id="email-status">
-          {status}
-        </p>
-        <button
-          ref={restart}
-          className="quiet"
-          type="button"
-          id="restart"
-          hidden={!stopped}
-          onClick={() => save({ status: 'active' }, emailsProblem, restart.current)}
-        >
-          Start them again
-        </button>
-        <AppLink className="quiet" href="/pause/" id="pause-link" hidden={stopped}>
-          {p.pause ? 'Change the pause' : 'Pause the emails'}
-        </AppLink>{' '}
-        <button
-          ref={resume}
-          className="quiet"
-          type="button"
-          id="resume"
-          hidden={stopped || !p.pause}
-          onClick={async () => {
-            emailsProblem.clear();
-            const r = await api<Me>('DELETE', '/api/pause');
-            if (r.ok) client.setQueryData(['me'], r.data);
-            else emailsProblem.show(r.data, resume.current);
-          }}
-        >
-          Start them again now
-        </button>
-        <ErrorLine line={emailsProblem.line} />
-      </section>
-
-      <section className="section wide" id="your-data">
-        <h2 className="big">Your data</h2>
-        <p className="hint">
-          Every note you’ve kept, with its day and version, every photo and recording, and your settings, in one zip.
-          Yours to keep.
-        </p>
-        <ZipExport />
-        <p className="hint">
-          Or the words alone:{' '}
-          <a href="/api/export?format=md" download>
-            Markdown
-          </a>{' '}
-          or{' '}
-          <a href="/api/export?format=json" download>
-            JSON
-          </a>
-          .
-        </p>
-        <p className="hint">
+        <section className="section">
+          <button
+            ref={restart}
+            className="quiet"
+            type="button"
+            id="restart"
+            hidden={!stopped}
+            onClick={() => save({ status: 'active' }, emailsProblem, restart.current)}
+          >
+            Start them again
+          </button>
+          <AppLink className="quiet" href="/pause/" id="pause-link" hidden={stopped}>
+            {p.pause ? 'Change the pause' : 'Pause the emails'}
+          </AppLink>{' '}
+          <button
+            ref={resume}
+            className="quiet"
+            type="button"
+            id="resume"
+            hidden={stopped || !p.pause}
+            onClick={async () => {
+              emailsProblem.clear();
+              const r = await api<Me>('DELETE', '/api/pause');
+              if (r.ok) client.setQueryData(['me'], r.data);
+              else emailsProblem.show(r.data, resume.current);
+            }}
+          >
+            Start them again now
+          </button>
+          <ErrorLine line={emailsProblem.line} />
+        </section>
+      </SettingsGroup>
+      <SettingsGroup
+        id="writing-settings"
+        title="Writing & search"
+        description="Your email address, recordings and photos"
+      >
+        <Inbox p={p} />
+        <section className="section">
+          <h3>Recordings</h3>
+          <label className="check">
+            <input
+              type="checkbox"
+              id="transcribe"
+              checked={transcribe.value}
+              onChange={(e) => transcribe.change(e.target.checked, { transcribe: e.target.checked }, e.target)}
+            />{' '}
+            Write out what I say
+          </label>
+          <p className="hint">
+            Your recordings get turned into text that shows up underneath them, so you can skim them and search them.
+            They’re sent off to be transcribed to do it. Turning this on writes out the ones you already have, too.
+          </p>
+          <p className="aside saved" id="transcribe-saved" role="status" hidden={!transcribe.saved}>
+            Saved.
+          </p>
+          <ErrorLine line={transcribe.problem.line} />
+        </section>
+        <section className="section">
+          <h3>Photos</h3>
+          <label className="check">
+            <input
+              type="checkbox"
+              id="describe"
+              checked={describe.value}
+              onChange={(e) => describe.change(e.target.checked, { describe: e.target.checked }, e.target)}
+            />{' '}
+            Describe my photos
+          </label>
+          <p className="hint">
+            Each photo gets a sentence or two about what’s in it, so searching for “canoe” finds the canoe. You only see
+            it in search results. They’re sent off to an AI to be described. Turning this on does the ones you already
+            have, too.
+          </p>
+          <p className="aside saved" id="describe-saved" role="status" hidden={!describe.saved}>
+            Saved.
+          </p>
+          <ErrorLine line={describe.problem.line} />
+        </section>
+        <p className="hint settings-link-privacy">
           When a note has a link, we visit the page once, as the note is saved, to keep its title. Nothing else is
           fetched.
         </p>
-      </section>
+      </SettingsGroup>
+      <Connections />
+      <SettingsGroup id="account-settings" title="Your account" description="Birthday, export, sign out or delete">
+        <section className="section">
+          <h3>Birthday</h3>
+          <p className="value" data-field="birthday">
+            {longDate(p.birthday)}
+          </p>
+          <p className="hint">Set for good, because changing it would renumber every day you’ve kept.</p>
+        </section>
+        <section className="section wide" id="your-data">
+          <h3>Keep a copy</h3>
+          <p className="hint">
+            Every note you’ve kept, with its day and version, every photo and recording, and your settings, in one zip.
+            Yours to keep.
+          </p>
+          <ZipExport />
+          <p className="hint">
+            Or the words alone:{' '}
+            <a href="/api/export?format=md" download>
+              Markdown
+            </a>{' '}
+            or{' '}
+            <a href="/api/export?format=json" download>
+              JSON
+            </a>
+            .
+          </p>
+        </section>
+        <section className="section settings-account-actions">
+          <SignOut />
+          <AppLink className="quiet danger" href="/delete/" id="delete-link">
+            Delete my account
+          </AppLink>
+          <p className="hint" id="delete-hint">
+            We’ll offer the export first, then email a code to confirm. Deleting removes every note, its photos and
+            recordings, and the original emails behind them.
+          </p>
+        </section>
+      </SettingsGroup>
     </div>
   );
 }

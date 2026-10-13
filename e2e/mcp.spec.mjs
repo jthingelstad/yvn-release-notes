@@ -81,6 +81,8 @@ for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['ph
       expect(answer.status()).toBe(200);
       expect((await answer.json()).result.structuredContent.scope).toContain('media:read');
       await page.goto('/settings/');
+      await page.locator('#agent-connections > summary').click();
+      await page.locator('#agent-activity > summary').click();
       await expect(page.getByRole('heading', { name: 'Connected agents' })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Disconnect Claude test', exact: true })).toBeVisible();
       await expect(page.getByText(/notes_context · ok/).first()).toBeVisible();
@@ -139,6 +141,8 @@ for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['ph
       await expect(page.getByText(/Then tea\./).first()).toBeVisible();
       await page.screenshot({ path: `/tmp/yvn-capture-qa/note-${name}.png`, fullPage: true });
       await page.goto('/settings/');
+      await page.locator('#agent-connections > summary').click();
+      await page.locator('#agent-activity > summary').click();
       const off = page.getByRole('button', { name: 'Turn off adding for Claude test', exact: true });
       await expect(off).toBeVisible();
       await expect(page.getByText(/notes_create · ok/).first()).toBeVisible();

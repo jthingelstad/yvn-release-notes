@@ -170,8 +170,10 @@ test('send claim request retains exact condition', async () => {
       TableName: 'T',
       Key: { pk: 'USER#u', sk: 'PROFILE' },
       UpdateExpression: 'SET last_sent_date = :d',
-      ConditionExpression: 'attribute_exists(pk) AND (attribute_not_exists(last_sent_date) OR last_sent_date < :d)',
-      ExpressionAttributeValues: { ':d': day }
+      ConditionExpression:
+        'attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND (attribute_not_exists(#status) OR #status = :active) AND (attribute_not_exists(last_sent_date) OR last_sent_date < :d)',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: { ':d': day, ':active': 'active' }
     }
   });
 });

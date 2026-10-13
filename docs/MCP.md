@@ -61,6 +61,8 @@ limited to 1.5 MB raw per result (one photo or recording). Larger recordings
 use signed downloads. Tool requests are limited to 300/hour and 500/UTC day
 per account, across connections. Notes media metadata carries no storage
 keys. Notes context does not disclose email, birthday, or account settings.
+Release filters whose anniversary years exceed the supported date range
+return an invalid_arguments tool result.
 
 ## Authorization
 
@@ -102,6 +104,11 @@ Lambda invocation, upload, deletion or OAuth write permissions. The existing
 web function handles OAuth and account-authorized consent/revocation. Both
 require CloudFront's generated origin proof; nobody reads the secret.
 No new Python package, search index, embedding job or model service is added.
+Unexpected tool failures log only the exception type and user id, then raise
+a fixed exception without the original exception chain. This fails the
+Lambda invocation, making the existing MCP Errors alarm report the failure;
+API Gateway returns its generic 502 response. Invalid tool arguments remain
+structured tool errors and do not count as infrastructure failures.
 
 The dev server dispatches `/mcp`, `/oauth/*` and discovery to these same
 handlers against the in-memory fakes. Test with fictional data only. Unit

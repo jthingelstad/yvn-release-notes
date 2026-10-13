@@ -218,8 +218,35 @@ for (const [key, value] of [...parameters].sort(([a], [b]) => a.localeCompare(b)
 JS
 }
 native_release() {
+  local release_build="$HEAD_SHA" parameter_name second_build
+  case "$1" in
+    promote-http|rollback-http) parameter_name=NativeAppBuildId ;;
+    promote-workers|rollback-workers) parameter_name=NativeWorkerBuildId ;;
+    *) parameter_name="" ;;
+  esac
+  if [[ -n "$parameter_name" ]]; then
+    release_build=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+      --query "Stacks[0].Parameters[?ParameterKey=='$parameter_name'].ParameterValue | [0]" --output text)
+    [[ "$release_build" =~ ^[a-f0-9]{40}$ ]] \
+      || { echo "refusing: published native candidate has no committed build identity" >&2; exit 1; }
+    git merge-base --is-ancestor "$release_build" "$HEAD_SHA" \
+      || { echo "refusing: published candidate is not in main's history" >&2; exit 1; }
+    if [[ "$parameter_name" == NativeAppBuildId ]]; then
+      second_build=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+        --query "Stacks[0].Parameters[?ParameterKey=='NativeMcpBuildId'].ParameterValue | [0]" --output text)
+      [[ "$release_build" == "$second_build" ]] \
+        || { echo "refusing: API and MCP candidates belong to different builds" >&2; exit 1; }
+    fi
+    if [[ -z "$BREAK_GLASS" ]]; then
+      local candidate_green
+      candidate_green=$(gh api "repos/jthingelstad/yvn-release-notes/commits/$release_build/check-runs?check_name=validate" \
+        --jq '[.check_runs[] | select(.conclusion == "success" and .app.slug == "github-actions")] | length')
+      [[ "$candidate_green" -gt 0 ]] \
+        || { echo "refusing: published native candidate was not validated on main" >&2; exit 1; }
+    fi
+  fi
   (cd "$BUILD/repo" && node --import tsx tools/native-release.ts "$1" \
-    --receipt-dir "$NATIVE_RECEIPT_DIR" --commit "$HEAD_SHA") > "$BUILD/native-release.json"
+    --receipt-dir "$NATIVE_RECEIPT_DIR" --commit "$release_build") > "$BUILD/native-release.json"
   NATIVE_PARAMETER_FILES+=("$BUILD/native-release.json")
   validate_native_parameters
 }

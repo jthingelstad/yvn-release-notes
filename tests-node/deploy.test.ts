@@ -77,7 +77,7 @@ console.log(JSON.stringify({parameters:kind==='http'?{NativeWebFunctionsEnabled:
     header + `record('policy'); if(process.env.FIXTURE_FAILURE===args[0]) process.exit(20);`
   );
   const programs: Record<string, string> = {
-    git: `if(args[0]==='archive') process.stdout.write(fs.readFileSync(process.env.FIXTURE_ARCHIVE)); else if(args[0]==='rev-parse') console.log('${commit}');`,
+    git: `if(args[0]==='archive') process.stdout.write(fs.readFileSync(process.env.FIXTURE_ARCHIVE)); else if(args[0]==='rev-parse') console.log('${commit}'); else if(args[0]==='merge-base') {record('ancestry');if(process.env.FIXTURE_NON_ANCESTOR) process.exit(1);}`,
     python3: `record('python');`,
     npm: `record('npm'); if(process.env.FIXTURE_FAILURE==='verify' && args.includes('verify')) process.exit(18);
 if(args.includes('--os=linux')) for(const name of ['sharp','@img/colour','@img/sharp-linux-arm64','@img/sharp-libvips-linux-arm64','detect-libc','semver']) {fs.mkdirSync(path.join('node_modules',name),{recursive:true});fs.writeFileSync(path.join('node_modules',name,'package.json'),'{}');}
@@ -87,7 +87,8 @@ if(args[0]==='sts') console.log(joined.includes('Account') ? process.env.FIXTURE
 else if(args[0]==='cloudformation'&&args[1]==='describe-stack-resource') console.log(args[args.indexOf('--logical-resource-id')+1]);
 else if(args[0]==='events') console.log('arn:aws:events:us-east-1:'+process.env.FIXTURE_ACCOUNT+':rule/'+args[args.indexOf('--name')+1]);
 else if(args[0]==='cloudformation'&&args[1]==='describe-stacks') {
- if(joined.includes('EventsPythonCodeSha256')) console.log('A'.repeat(43)+'=');
+ if(joined.includes('NativeAppBuildId') || joined.includes('NativeMcpBuildId') || joined.includes('NativeWorkerBuildId')) console.log(process.env.FIXTURE_CANDIDATE_BUILD || '${commit}');
+ else if(joined.includes('EventsPythonCodeSha256')) console.log('A'.repeat(43)+'=');
  else if(joined.includes('AliasesReady')) console.log('true');
  else if(joined.includes('WebBucketName')) console.log('fictional-web-bucket');
  else if(joined.includes('WebDistributionId')) console.log('FICTIONAL');
@@ -104,7 +105,7 @@ else if(args[0]==='cloudfront') console.log('fixture-invalidation');`
   return {
     folder,
     receipts,
-    run: async (flags: string[] = [], failure = '') => {
+    run: async (flags: string[] = [], failure = '', candidate = commit, nonAncestor = false) => {
       await writeFile(log, '');
       const result = spawnSync('bash', [join(repo, 'deploy.sh'), '--break-glass', ...flags], {
         env: {
@@ -113,7 +114,9 @@ else if(args[0]==='cloudfront') console.log('fixture-invalidation');`
           FIXTURE_LOG: log,
           FIXTURE_ARCHIVE: tar,
           FIXTURE_ACCOUNT: account,
-          FIXTURE_FAILURE: failure
+          FIXTURE_FAILURE: failure,
+          FIXTURE_CANDIDATE_BUILD: candidate,
+          FIXTURE_NON_ANCESTOR: nonAncestor ? 'true' : ''
         },
         encoding: 'utf8',
         timeout: 30000
@@ -242,6 +245,44 @@ test('a policy installation failure stops before frontend publication or activat
     assert.ok(!events.some((e) => e.program === 'aws' && ['sync', 'create-invalidation'].includes(e.args[1]!)));
     assert.ok(!events.some((e) => e.program === 'tool' && e.args[0] === 'promote-http'));
     await assert.rejects(access(join(f.receipts, 'deploy.lock')));
+  } finally {
+    await rm(f.folder, { recursive: true, force: true });
+  }
+});
+
+test('promotion selects the validated candidate build even when main has advanced', async () => {
+  const f = await fixture();
+  try {
+    const candidate = 'b'.repeat(40);
+    const { result, events } = await f.run(['--native-http-phase=activate'], '', candidate);
+    assert.equal(result.status, 0, result.stderr);
+    const tool = events.find((e) => e.program === 'tool');
+    assert.equal(tool?.args[tool.args.indexOf('--commit') + 1], candidate);
+    const ancestry = events.find((e) => e.program === 'ancestry');
+    assert.deepEqual(ancestry?.args, ['merge-base', '--is-ancestor', candidate, commit]);
+    assert.equal(
+      events.some((e) => e.program === 'artifacts'),
+      false
+    );
+  } finally {
+    await rm(f.folder, { recursive: true, force: true });
+  }
+});
+test('uncommitted and unrelated candidates are refused before release actions', async () => {
+  const f = await fixture();
+  try {
+    for (const [candidate, nonAncestor] of [
+      ['not-a-commit', false],
+      ['b'.repeat(40), true]
+    ] as const) {
+      const { result, events } = await f.run(['--native-worker-phase=activate'], '', candidate, nonAncestor);
+      assert.notEqual(result.status, 0);
+      assert.equal(
+        events.some((e) => e.program === 'tool'),
+        false
+      );
+      assert.deepEqual(cloudWrites(events), []);
+    }
   } finally {
     await rm(f.folder, { recursive: true, force: true });
   }

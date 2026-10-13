@@ -54,8 +54,6 @@ export function Bar({ nav = true, current, children }: { nav?: boolean; current?
         : /^\/(connect|pause|delete|settings)\//.test(path)
           ? '/settings/'
           : path);
-  const signOut = useSignedInAs();
-  const [leaving, setLeaving] = useState(false);
   return (
     <header className={nav ? 'bar bar--app' : 'bar'}>
       <Link className="brand" to={nav ? '/today/' : '/'}>
@@ -71,28 +69,36 @@ export function Bar({ nav = true, current, children }: { nav?: boolean; current?
           ))}
         </nav>
       )}
-      {nav && (
-        <button
-          className="quiet rail-signout"
-          type="button"
-          disabled={leaving}
-          onClick={async () => {
-            setLeaving(true);
-            try {
-              await api('POST', '/api/auth/signout');
-              signedIn.drop();
-              signOut('/#sign-in');
-            } finally {
-              setLeaving(false);
-            }
-          }}
-        >
-          <Icon name="out" />
-          Sign out
-        </button>
-      )}
+      {nav && <RailSignOut />}
       {children}
     </header>
+  );
+}
+
+// Only the signed-in rail needs Query; the public/error bar can render even
+// when a failed page has no query provider available.
+function RailSignOut() {
+  const signOut = useSignedInAs();
+  const [leaving, setLeaving] = useState(false);
+  return (
+    <button
+      className="quiet rail-signout"
+      type="button"
+      disabled={leaving}
+      onClick={async () => {
+        setLeaving(true);
+        try {
+          await api('POST', '/api/auth/signout');
+          signedIn.drop();
+          signOut('/#sign-in');
+        } finally {
+          setLeaving(false);
+        }
+      }}
+    >
+      <Icon name="out" />
+      Sign out
+    </button>
   );
 }
 

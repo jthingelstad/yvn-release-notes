@@ -1,0 +1,654 @@
+{
+  "now": 1791892800,
+  "profile": {
+    "pk": "USER#u",
+    "sk": "PROFILE",
+    "email": "ada@example.com",
+    "birthday": "1981-06-14",
+    "tz": "America/Chicago",
+    "status": "active",
+    "send_time": "06:00",
+    "city": "Minneapolis",
+    "country": "United States",
+    "lat": 44.98,
+    "lon": -93.26,
+    "transcribe": true
+  },
+  "items": [
+    {
+      "pk": "USER#u",
+      "sk": "NOTE#2026-10-07#email-b",
+      "text": "Late written café #cabin",
+      "written_at": "2026-10-09T17:00:00Z",
+      "tags": ["cabin"],
+      "place": {
+        "city": "Paris",
+        "region": "Ile-de-France",
+        "country": "France",
+        "lat": 48.85,
+        "lon": 2.35
+      }
+    },
+    {
+      "pk": "USER#u",
+      "sk": "NOTE#2026-10-07#w-a",
+      "text": "Earlier written walk #walks",
+      "written_at": "2026-10-07T17:00:00Z",
+      "source": "web",
+      "tags": ["walks"]
+    },
+    {
+      "pk": "USER#u",
+      "sk": "NOTE#2026-10-12#a-assistant",
+      "text": "A second day #walks",
+      "written_at": "2026-10-12T17:00:00Z",
+      "source": "agent",
+      "author": "assistant",
+      "client": "Fictional Assistant",
+      "connection": "family1",
+      "on_behalf_of": "user",
+      "tags": ["walks"]
+    },
+    {
+      "pk": "USER#u",
+      "sk": "PLACE#2026-10-07",
+      "city": "Berlin",
+      "region": "Berlin",
+      "country": "Germany",
+      "lat": 52.5,
+      "lon": 13.4
+    },
+    {
+      "pk": "USER#u",
+      "sk": "WEATHER#2026-10-07",
+      "city": "Paris",
+      "country": "France",
+      "high_c": 18,
+      "low_c": 9,
+      "code": 2
+    },
+    {
+      "pk": "USER#u",
+      "sk": "DAY#2026-10-08",
+      "token": "aaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "pk": "USER#u",
+      "sk": "PAUSE#2026-10-09",
+      "through": "2026-10-11"
+    }
+  ],
+  "cases": [
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "body": null,
+      "status": 200,
+      "response": {
+        "ok": true
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/sample",
+      "body": null,
+      "status": 200,
+      "response": {
+        "birthday": "1981-06-14",
+        "version": "4.5.121",
+        "age": 45,
+        "next": {
+          "version": "4.6.0",
+          "date": "2027-06-14",
+          "days": 244
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/sample?birthday=2000-02-29&tz=Asia/Tokyo",
+      "body": null,
+      "status": 200,
+      "response": {
+        "birthday": "2000-02-29",
+        "version": "2.6.226",
+        "age": 26,
+        "next": {
+          "version": "2.7.0",
+          "date": "2027-03-01",
+          "days": 139
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/me",
+      "body": null,
+      "status": 200,
+      "response": {
+        "new": false,
+        "email": "ada@example.com",
+        "birthday": "1981-06-14",
+        "tz": "America/Chicago",
+        "send_time": "06:00",
+        "status": "active",
+        "transcribe": true,
+        "describe": false,
+        "today": "2026-10-13",
+        "version": "4.5.121",
+        "city": "Minneapolis",
+        "country": "United States",
+        "pause_starts": "2026-10-13"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/today",
+      "body": null,
+      "status": 200,
+      "response": {
+        "date": "2026-10-13",
+        "version": "4.5.121",
+        "notes": [],
+        "tz": "America/Chicago",
+        "dots": 8,
+        "next": {
+          "version": "4.6.0",
+          "date": "2027-06-14"
+        },
+        "streak": {
+          "current": 1,
+          "longest": 1,
+          "today": false
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/days?limit=2",
+      "body": null,
+      "status": 200,
+      "response": {
+        "today": "2026-10-13",
+        "tz": "America/Chicago",
+        "days": [
+          {
+            "date": "2026-10-13",
+            "version": "4.5.121",
+            "notes": []
+          },
+          {
+            "date": "2026-10-12",
+            "version": "4.5.120",
+            "notes": [
+              {
+                "id": "a-assistant",
+                "source": "agent",
+                "text": "A second day #walks",
+                "at": "2026-10-12T17:00:00Z",
+                "tz": "America/Chicago",
+                "author": "assistant",
+                "client": "Fictional Assistant",
+                "connection": "family1",
+                "on_behalf_of": "user",
+                "parts": [
+                  "A second day ",
+                  {
+                    "tag": "walks",
+                    "text": "#walks"
+                  }
+                ],
+                "tags": ["walks"],
+                "late": false
+              }
+            ]
+          }
+        ],
+        "before": "2026-10-12"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/days?before=2026-10-12&limit=2",
+      "body": null,
+      "status": 200,
+      "response": {
+        "today": "2026-10-13",
+        "tz": "America/Chicago",
+        "days": [
+          {
+            "date": "2026-10-11",
+            "version": "4.5.119",
+            "notes": [],
+            "paused": true
+          },
+          {
+            "date": "2026-10-10",
+            "version": "4.5.118",
+            "notes": [],
+            "paused": true
+          }
+        ],
+        "before": "2026-10-10"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/days/2026-10-07",
+      "body": null,
+      "status": 200,
+      "response": {
+        "date": "2026-10-07",
+        "version": "4.5.115",
+        "notes": [
+          {
+            "id": "w-a",
+            "source": "web",
+            "text": "Earlier written walk #walks",
+            "at": "2026-10-07T17:00:00Z",
+            "tz": "America/Chicago",
+            "author": "user",
+            "client": null,
+            "parts": [
+              "Earlier written walk ",
+              {
+                "tag": "walks",
+                "text": "#walks"
+              }
+            ],
+            "tags": ["walks"],
+            "late": false
+          },
+          {
+            "id": "email-b",
+            "source": "email",
+            "text": "Late written café #cabin",
+            "at": "2026-10-09T17:00:00Z",
+            "tz": "America/Chicago",
+            "author": "user",
+            "client": null,
+            "parts": [
+              "Late written café ",
+              {
+                "tag": "cabin",
+                "text": "#cabin"
+              }
+            ],
+            "tags": ["cabin"],
+            "place": "Paris, Ile-de-France",
+            "map": "https://maps.apple.com/?ll=48.85,2.35&q=Paris,%20Ile-de-France",
+            "late": true
+          }
+        ],
+        "where": "Berlin, Berlin",
+        "weather": "Partly cloudy, 64° / 48° in Paris",
+        "tz": "America/Chicago",
+        "today": false
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/releases",
+      "body": null,
+      "status": 200,
+      "response": {
+        "today": "2026-10-13",
+        "releases": [
+          {
+            "v": "4.5",
+            "from": "2026-06-14",
+            "through": "2027-06-13",
+            "days": 2,
+            "notes": 3,
+            "current": true
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/releases/4.5?limit=1",
+      "body": null,
+      "status": 200,
+      "response": {
+        "v": "4.5",
+        "current": true,
+        "from": "2026-06-14",
+        "through": "2027-06-13",
+        "today": "2026-10-13",
+        "tz": "America/Chicago",
+        "days_with_notes": 2,
+        "notes": 3,
+        "longest": 1,
+        "tags": [
+          {
+            "tag": "walks",
+            "notes": 2
+          },
+          {
+            "tag": "cabin",
+            "notes": 1
+          }
+        ],
+        "days": [
+          {
+            "date": "2026-10-07",
+            "version": "4.5.115",
+            "notes": [
+              {
+                "id": "w-a",
+                "source": "web",
+                "text": "Earlier written walk #walks",
+                "at": "2026-10-07T17:00:00Z",
+                "tz": "America/Chicago",
+                "author": "user",
+                "client": null,
+                "parts": [
+                  "Earlier written walk ",
+                  {
+                    "tag": "walks",
+                    "text": "#walks"
+                  }
+                ],
+                "tags": ["walks"],
+                "late": false
+              },
+              {
+                "id": "email-b",
+                "source": "email",
+                "text": "Late written café #cabin",
+                "at": "2026-10-09T17:00:00Z",
+                "tz": "America/Chicago",
+                "author": "user",
+                "client": null,
+                "parts": [
+                  "Late written café ",
+                  {
+                    "tag": "cabin",
+                    "text": "#cabin"
+                  }
+                ],
+                "tags": ["cabin"],
+                "place": "Paris, Ile-de-France",
+                "map": "https://maps.apple.com/?ll=48.85,2.35&q=Paris,%20Ile-de-France",
+                "late": true
+              }
+            ],
+            "where": "Berlin, Berlin",
+            "weather": "Partly cloudy, 64° / 48° in Paris"
+          }
+        ],
+        "after": "2026-10-07"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/releases/4.5?after=2026-10-07",
+      "body": null,
+      "status": 200,
+      "response": {
+        "v": "4.5",
+        "current": true,
+        "from": "2026-06-14",
+        "through": "2027-06-13",
+        "today": "2026-10-13",
+        "tz": "America/Chicago",
+        "days_with_notes": 2,
+        "notes": 3,
+        "longest": 1,
+        "tags": [
+          {
+            "tag": "walks",
+            "notes": 2
+          },
+          {
+            "tag": "cabin",
+            "notes": 1
+          }
+        ],
+        "days": [
+          {
+            "date": "2026-10-12",
+            "version": "4.5.120",
+            "notes": [
+              {
+                "id": "a-assistant",
+                "source": "agent",
+                "text": "A second day #walks",
+                "at": "2026-10-12T17:00:00Z",
+                "tz": "America/Chicago",
+                "author": "assistant",
+                "client": "Fictional Assistant",
+                "connection": "family1",
+                "on_behalf_of": "user",
+                "parts": [
+                  "A second day ",
+                  {
+                    "tag": "walks",
+                    "text": "#walks"
+                  }
+                ],
+                "tags": ["walks"],
+                "late": false
+              }
+            ]
+          }
+        ],
+        "after": null
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/tags",
+      "body": null,
+      "status": 200,
+      "response": {
+        "tags": [
+          {
+            "tag": "walks",
+            "notes": 2,
+            "days": 2,
+            "first": "2026-10-07",
+            "last": "2026-10-12"
+          },
+          {
+            "tag": "cabin",
+            "notes": 1,
+            "days": 1,
+            "first": "2026-10-07",
+            "last": "2026-10-07"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/tags/walks",
+      "body": null,
+      "status": 200,
+      "response": {
+        "tag": "walks",
+        "today": "2026-10-13",
+        "tz": "America/Chicago",
+        "days": [
+          {
+            "date": "2026-10-12",
+            "version": "4.5.120",
+            "notes": [
+              {
+                "id": "a-assistant",
+                "source": "agent",
+                "text": "A second day #walks",
+                "at": "2026-10-12T17:00:00Z",
+                "tz": "America/Chicago",
+                "author": "assistant",
+                "client": "Fictional Assistant",
+                "connection": "family1",
+                "on_behalf_of": "user",
+                "parts": [
+                  "A second day ",
+                  {
+                    "tag": "walks",
+                    "text": "#walks"
+                  }
+                ],
+                "tags": ["walks"],
+                "late": false
+              }
+            ]
+          },
+          {
+            "date": "2026-10-07",
+            "version": "4.5.115",
+            "notes": [
+              {
+                "id": "w-a",
+                "source": "web",
+                "text": "Earlier written walk #walks",
+                "at": "2026-10-07T17:00:00Z",
+                "tz": "America/Chicago",
+                "author": "user",
+                "client": null,
+                "parts": [
+                  "Earlier written walk ",
+                  {
+                    "tag": "walks",
+                    "text": "#walks"
+                  }
+                ],
+                "tags": ["walks"],
+                "late": false
+              }
+            ],
+            "where": "Berlin, Berlin"
+          }
+        ]
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/search",
+      "body": {
+        "q": "CAFE"
+      },
+      "status": 200,
+      "response": {
+        "terms": ["cafe"],
+        "today": "2026-10-13",
+        "tz": "America/Chicago",
+        "notes": 1,
+        "day_count": 1,
+        "days": [
+          {
+            "date": "2026-10-07",
+            "version": "4.5.115",
+            "notes": [
+              {
+                "id": "email-b",
+                "source": "email",
+                "text": "Late written café #cabin",
+                "at": "2026-10-09T17:00:00Z",
+                "tz": "America/Chicago",
+                "author": "user",
+                "client": null,
+                "parts": [
+                  "Late written café ",
+                  {
+                    "tag": "cabin",
+                    "text": "#cabin"
+                  }
+                ],
+                "tags": ["cabin"],
+                "place": "Paris, Ile-de-France",
+                "map": "https://maps.apple.com/?ll=48.85,2.35&q=Paris,%20Ile-de-France",
+                "late": true
+              }
+            ],
+            "where": "Berlin, Berlin"
+          }
+        ]
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/search",
+      "body": {
+        "q": "\"day\" walks"
+      },
+      "status": 200,
+      "response": {
+        "terms": ["day", "walks"],
+        "today": "2026-10-13",
+        "tz": "America/Chicago",
+        "notes": 1,
+        "day_count": 1,
+        "days": [
+          {
+            "date": "2026-10-12",
+            "version": "4.5.120",
+            "notes": [
+              {
+                "id": "a-assistant",
+                "source": "agent",
+                "text": "A second day #walks",
+                "at": "2026-10-12T17:00:00Z",
+                "tz": "America/Chicago",
+                "author": "assistant",
+                "client": "Fictional Assistant",
+                "connection": "family1",
+                "on_behalf_of": "user",
+                "parts": [
+                  "A second day ",
+                  {
+                    "tag": "walks",
+                    "text": "#walks"
+                  }
+                ],
+                "tags": ["walks"],
+                "late": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/days/2026-10-14",
+      "body": null,
+      "status": 400,
+      "response": {
+        "error": "date"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/releases/9.9",
+      "body": null,
+      "status": 404,
+      "response": {
+        "error": "release"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/days?limit=no",
+      "body": null,
+      "status": 400,
+      "response": {
+        "error": "limit"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/pause",
+      "body": {
+        "days": 61
+      },
+      "status": 400,
+      "response": {
+        "error": "days"
+      }
+    }
+  ]
+}

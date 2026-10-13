@@ -152,12 +152,24 @@ const context = (): ApiContext => ({
   origin,
   now: stamp(),
   from: 'notes@example.com',
-  inboundDomain: 'in.example.com',
+  inboundDomain: 'in.yourversionnumber.com',
   senderFunction: 'dev-sender',
   exportFunction: 'dev-export',
   geocode: async (q) => cities.filter((c) => c.name.toLowerCase().startsWith(q.toLowerCase())),
   fetchTitle: (url) => ({ title: 'A page at ' + new URL(url).hostname, site: new URL(url).hostname }),
-  weatherFetch: async () => ({}),
+  weatherFetch: async (url) => {
+    const q = new URL(url).searchParams,
+      day = localDay(stamp(), q.get('timezone') ?? 'America/Chicago'),
+      days = q.has('start_date') ? [q.get('start_date')!] : [addDays(day, -1), day];
+    return {
+      daily: {
+        time: days,
+        weather_code: days.map(() => 2),
+        temperature_2m_max: days.map(() => 17.5),
+        temperature_2m_min: days.map(() => 8)
+      }
+    };
+  },
   log: (f) => console.log(JSON.stringify(f))
 });
 invocations.invoke = async (name, payload) => {
@@ -174,6 +186,7 @@ invocations.invoke = async (name, payload) => {
   }
   return null;
 };
+app.get('/dev-runtime/', (c) => c.json({ runtime: 'node24-hono', fictional: true }));
 app.get('/dev-mail/', async (c) => {
   const to = (c.req.query('to') ?? '').toLowerCase(),
     message = mail.messages.filter((m) => m.to === to).at(-1);
@@ -293,5 +306,5 @@ app.get('*', async (c) => {
     return c.text('Build the web app first', 404);
   }
 });
-console.log(`Release Notes locally: ${origin}/ (ada@example.com is fictional)`);
+console.log(`Release Notes locally: ${origin}/ (fictional in-memory data)`);
 listen(app, `127.0.0.1:${port}`);

@@ -393,5 +393,12 @@ test('a deleting account blocks ordinary writes but an existing live owner sessi
     'delete'
   );
   assert.equal((await s.call('DELETE', '/api/me', { code: '222222' })).r.status, 200);
+  for (const call of s.store.memory.calls)
+    if (call.name === 'TransactWriteCommand')
+      for (const operation of call.input.TransactItems ?? []) {
+        const entry = operation.Put ?? operation.Update ?? operation.Delete ?? operation.ConditionCheck!;
+        if (entry.ExpressionAttributeNames) assert.ok(Object.keys(entry.ExpressionAttributeNames).length > 0);
+        if (entry.ExpressionAttributeValues) assert.ok(Object.keys(entry.ExpressionAttributeValues).length > 0);
+      }
   assert.equal(await s.store.profile('u'), null);
 });

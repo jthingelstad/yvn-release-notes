@@ -35,6 +35,8 @@ async function signIn(page, request) {
   await expect(page).toHaveURL(/\/#sign-in$/);
   await page.locator('#start-form [name=email]').fill('ada@example.com');
   await page.getByRole('button', { name: 'Send me a link' }).click();
+  // Read the mailbox after the new mail completed, rather than an older code.
+  await expect(page.locator('#code-form')).toBeVisible();
   const mail = await (await request.get('/dev-mail/?to=ada@example.com')).text();
   await page.locator('#code-form [name=code]').fill(mail.match(/type this code where you asked: (\d{6})/)[1]);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();

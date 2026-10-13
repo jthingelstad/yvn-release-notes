@@ -192,8 +192,8 @@ export class OAuthService {
     if (!Object.hasOwn(body, 'approve')) return { client_name: item.client_name, scope: item.scope };
     if (
       typeof body.approve !== 'boolean' ||
-      typeof (body.media ?? false) !== 'boolean' ||
-      typeof (body.write ?? false) !== 'boolean'
+      typeof (Object.hasOwn(body, 'media') ? body.media : false) !== 'boolean' ||
+      typeof (Object.hasOwn(body, 'write') ? body.write : false) !== 'boolean'
     )
       fail();
     if (body.write && !scopes(item.scope).includes('notes:write')) fail('invalid_scope');

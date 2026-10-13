@@ -169,3 +169,13 @@ test('account deletion blocks concurrent token writes first, then purges all ind
   assert.equal(await ctx.store.mcpCommit([[{ pk: 'MCPMETA#u', sk: 'late' }, null]], 'u'), false);
   assert.ok(blocked);
 });
+
+test('consent booleans distinguish explicit null from omitted fields, preserving legacy validation', async () => {
+  const ctx = fixture(),
+    service = new OAuthService(ctx);
+  for (const field of ['media', 'write']) {
+    const { id } = await pending(ctx);
+    await assert.rejects(service.authorize('u', { request: id, approve: true, [field]: null }), OAuthError);
+    assert.equal((await ctx.store.mcpGet('OAUTHPENDING#' + id))!.used, undefined);
+  }
+});

@@ -1,4 +1,4 @@
-// Regenerate tests/fixtures/versions.json from the site's own computeVersion.
+// Regenerate tests-node/fixtures/versions.json from the site's own computeVersion.
 //
 //   node scripts/gen-version-fixtures.mjs [path-to-yourversionnumber.com]
 //
@@ -39,7 +39,7 @@ for (const birthday of birthdays) {
   }
 }
 
-const out = resolve(here, "../tests/fixtures/versions.json");
+const out = resolve(here, "../tests-node/fixtures/versions.json");
 const fields = ["birthday", "today", "major", "minor", "patch", "age", "cycleDays", "daysUntil"];
 const body = cases.map((c) => "  " + JSON.stringify(c)).join(",\n");
 writeFileSync(

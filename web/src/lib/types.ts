@@ -1,4 +1,4 @@
-// What the API answers (src/release_notes/web.py), as the pages read it.
+// What the API answers (server/app/), as the pages read it.
 
 // A note's text as shown: plain strings, links by name (links.segments) and
 // hashtags (tags.split).

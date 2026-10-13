@@ -226,7 +226,7 @@ function production(): Services {
   }
   return runtime;
 }
-export async function handler(event: Item, context: Context = {}, injected?: Services): Promise<Item | undefined> {
+export async function runEvent(event: Item, context: Context = {}, injected?: Services): Promise<Item | undefined> {
   if (event.self_test === true) {
     const made = await thumbs.make(describe.testImage(1, 1));
     if (!made || made.width !== 1 || made.height !== 1 || made.body.length === 0)
@@ -289,4 +289,9 @@ export async function handler(event: Item, context: Context = {}, injected?: Ser
     }
     throw new Error('Description worker failed');
   }
+}
+
+/** Node 24 promise-only entrypoint; dependency injection belongs to runEvent. */
+export async function handler(event: Item, context: Context = {}): Promise<Item | undefined> {
+  return runEvent(event, context);
 }

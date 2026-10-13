@@ -77,7 +77,7 @@ test('Transcribe conflict retains fixed-name job lease; real start failure relea
   failed.services.transcriptions.start = async () => {
     throw new Error('private service detail');
   };
-  await assert.rejects(() => worker.handler({ Records: [stream(failed.note)] }, {}, failed.services), {
+  await assert.rejects(() => worker.runEvent({ Records: [stream(failed.note)] }, failed.services), {
     message: 'Transcription worker failed'
   });
   assert.equal(await failed.store.processing('u', 'transcribe', day, id, 0), null);

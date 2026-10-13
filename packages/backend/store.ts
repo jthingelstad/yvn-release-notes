@@ -474,6 +474,36 @@ export class Store {
       throw e;
     }
   }
+  async createSubscriberVerified(
+    user: string,
+    email: string,
+    profile: Item,
+    hash: string,
+    now: number,
+    expires: number
+  ): Promise<boolean> {
+    return this.provedTransaction([
+      this.putOperation(
+        { pk: `EMAIL#${email}`, sk: 'EMAIL', user_id: user },
+        { ConditionExpression: 'attribute_not_exists(pk)' }
+      ),
+      this.putOperation(
+        { ...key(user, 'PROFILE'), email, ...profile },
+        { ConditionExpression: 'attribute_not_exists(pk)' }
+      ),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: { pk: `SESSION#${hash}`, sk: 'SESSION' },
+          UpdateExpression: 'SET user_id = :u, seen_at = :now, expires_at = :exp REMOVE email',
+          ConditionExpression:
+            'attribute_exists(pk) AND expires_at > :now AND attribute_not_exists(user_id) AND email = :e',
+          ExpressionAttributeValues: { ':u': user, ':e': email, ':now': now, ':exp': expires }
+        }
+      },
+      { Put: { TableName: this.tableName, Item: { ...key(user, `SESSION#${hash}`), expires_at: expires } } }
+    ]);
+  }
   async updateProfile(user: string, fields: Item, remove: string[] = []) {
     const entries = Object.entries(fields);
     const names = Object.fromEntries([
@@ -1094,8 +1124,8 @@ export class Store {
     });
     if (user_id) await this.listSession(hash, user_id, expires);
   }
-  async getSession(hash: string) {
-    return this.get({ pk: `SESSION#${hash}`, sk: 'SESSION' });
+  async getSession(hash: string, consistent = false) {
+    return this.get({ pk: `SESSION#${hash}`, sk: 'SESSION' }, { ConsistentRead: consistent });
   }
   async touchSession(hash: string, now: number, expires: number, user: string | null = null) {
     await this.update(

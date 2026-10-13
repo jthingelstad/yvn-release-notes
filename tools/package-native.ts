@@ -8,7 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import { resolve, join, relative, sep } from 'node:path';
-const stamp = new Date('1980-01-01T00:00:00Z');
+const stamp = new Date(1980, 0, 1, 0, 0, 0);
 export async function packageBundle(
   directory: string,
   destination: string,
@@ -20,8 +20,16 @@ export async function packageBundle(
   void done.catch(() => undefined);
   zip.on('error', (error) => output.destroy(error));
   try {
-    zip.addBuffer(await readFile(join(directory, 'index.js')), 'index.js', { mtime: stamp, mode: 0o100644 });
-    zip.addBuffer(Buffer.from('{"type":"module"}\n'), 'package.json', { mtime: stamp, mode: 0o100644 });
+    zip.addBuffer(await readFile(join(directory, 'index.js')), 'index.js', {
+      mtime: stamp,
+      forceDosTimestamp: true,
+      mode: 0o100644
+    });
+    zip.addBuffer(Buffer.from('{"type":"module"}\n'), 'package.json', {
+      mtime: stamp,
+      forceDosTimestamp: true,
+      mode: 0o100644
+    });
     if (nativeModules) {
       if ((await lstat(nativeModules)).isSymbolicLink()) throw new Error('Native package contains a symlink');
       const walk = async (folder: string) => {
@@ -33,6 +41,7 @@ export async function packageBundle(
           else if (info.isFile())
             zip.addFile(path, 'node_modules/' + relative(nativeModules, path).split(sep).join('/'), {
               mtime: stamp,
+              forceDosTimestamp: true,
               mode: 0o100644
             });
         }

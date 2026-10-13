@@ -1839,6 +1839,7 @@ Resources:
 
   EventsAliasInvokeConfig:
     Type: AWS::Lambda::EventInvokeConfig
+    DependsOn: EventsAlias
     Properties:
       FunctionName: !Ref EventsFunction
       Qualifier: live

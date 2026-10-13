@@ -307,7 +307,10 @@ export async function main(
       }
     } else if (command === 'prepare-workers') {
       if (existingPromotion) throw new Error('Promotion intent already exists; resume promotion or rollback');
-      if (parameters.WorkerAliasesReady !== 'true' || parameters.EventsAliasesReady !== 'true')
+      if (
+        parameters.NativeWorkerAliasesReady !== 'true' &&
+        (parameters.WorkerAliasesReady !== 'true' || parameters.EventsAliasesReady !== 'true')
+      )
         throw new Error('Complete Python aliases must be active first');
       const current = await aliases();
       if (

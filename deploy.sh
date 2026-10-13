@@ -1,39 +1,9 @@
 #!/usr/bin/env bash
-# Deploy the Release Notes stack. Runs as the host's cloud-engineer identity;
-# never needs a console or SSO login.
-#
-#   ./deploy.sh                 deploy origin/main, once `validate` is green on it
-#   ./deploy.sh --break-glass   skip GitHub (GitHub down, never a red check)
-#   ./deploy.sh --worker-alias-phase=prepare   publish stable worker baselines
-#   ./deploy.sh --worker-alias-phase=activate  move the existing worker targets
-#   ./deploy.sh --events-alias-phase=prepare|activate  bridge SNS before Node
-#   ./deploy.sh --native-http-phase=publish|activate|rollback
-#   ./deploy.sh --native-worker-phase=publish|activate|rollback
-#
-# 0. Refuse anything but a clean checkout of origin/main with a green
-#    `validate` check run by GitHub Actions: production runs only
-#    what main's gate passed. --break-glass skips only what needs GitHub
-#    (the fetch and the check lookup); HEAD must still be a clean checkout
-#    of origin/main as last fetched.
-# 1. Verify the archived Python, web and native server code before cloud writes.
-#    Explicit native phases snapshot/pin the current targets, then publish or
-#    promote separately; ordinary deployments preserve previous native params.
-#    Package src/ (standard library only, nothing to install) and upload it
-#    to the code bucket, keyed by content hash. The bucket refuses plain HTTP.
-#    Then the Pillow layer for thumbnails (thumbs.py): the one wheel pinned
-#    in layers/pillow.txt, checked against its hash and unpacked, built and
-#    uploaded once per pin.
-# 2. Deploy infra/template.yaml as stack yvn-release-notes.
-# 3. Make the stack's receipt rule set the account's active one. SES allows
-#    one active set per region; refuse rather than replace someone else's.
-# 4. Sync the web app, built from HEAD (exported, so nothing git ignores
-#    goes in) before the stack deploys, to the web bucket and invalidate
-#    the distribution.
-#
-# The notes.yourversionnumber.com certificate is issued outside the stack, as
-# Drop's is: an in-stack certificate would hold the whole deploy until the
-# DNS validation record exists. Until ACM says ISSUED the distribution has no
-# alias and answers on its cloudfront.net name only.
+# Release the native Node 24 application from clean, validated origin/main.
+# Explicit staged backends: --native-http-phase=publish|activate|rollback and
+# --native-worker-phase=publish|activate|rollback. Ordinary deploys verify the
+# committed tree and update infrastructure/static assets while preserving native
+# artifact/version pins. Protected native source versions never expire.
 set -euo pipefail
 export AWS_PROFILE="${AWS_PROFILE:-cloud-engineer}"
 export AWS_REGION=us-east-1 AWS_PAGER=""
@@ -46,34 +16,22 @@ ARN=$(aws sts get-caller-identity --query Arn --output text)
   || { echo "refusing: caller is $ARN" >&2; exit 1; }
 
 BREAK_GLASS=""
-WORKER_ALIAS_PHASE=""
-EVENTS_ALIAS_PHASE=""
 NATIVE_HTTP_PHASE=""
 NATIVE_WORKER_PHASE=""
 for arg in "$@"; do
   case "$arg" in
     --break-glass) BREAK_GLASS=1 ;;
-    --worker-alias-phase=prepare|--worker-alias-phase=activate)
-      [[ -z "$WORKER_ALIAS_PHASE" ]] || { echo "refusing: duplicate worker alias phase" >&2; exit 2; }
-      WORKER_ALIAS_PHASE="${arg#*=}" ;;
-    --events-alias-phase=prepare|--events-alias-phase=activate)
-      [[ -z "$EVENTS_ALIAS_PHASE" ]] || { echo "refusing: duplicate events alias phase" >&2; exit 2; }
-      EVENTS_ALIAS_PHASE="${arg#*=}" ;;
     --native-http-phase=publish|--native-http-phase=activate|--native-http-phase=rollback)
       [[ -z "$NATIVE_HTTP_PHASE" ]] || { echo "refusing: duplicate native HTTP phase" >&2; exit 2; }
       NATIVE_HTTP_PHASE="${arg#*=}" ;;
     --native-worker-phase=publish|--native-worker-phase=activate|--native-worker-phase=rollback)
       [[ -z "$NATIVE_WORKER_PHASE" ]] || { echo "refusing: duplicate native worker phase" >&2; exit 2; }
       NATIVE_WORKER_PHASE="${arg#*=}" ;;
-    *) echo "usage: $0 [--break-glass] [--worker-alias-phase=prepare|activate] [--events-alias-phase=prepare|activate] [--native-http-phase=publish|activate|rollback] [--native-worker-phase=publish|activate|rollback]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--break-glass] [--native-http-phase=publish|activate|rollback] [--native-worker-phase=publish|activate|rollback]" >&2; exit 2 ;;
   esac
 done
 [[ -z "$NATIVE_HTTP_PHASE" || -z "$NATIVE_WORKER_PHASE" ]] \
   || { echo "refusing: select one native release kind per deployment" >&2; exit 2; }
-if [[ -n "$NATIVE_HTTP_PHASE$NATIVE_WORKER_PHASE" && -n "$WORKER_ALIAS_PHASE$EVENTS_ALIAS_PHASE" ]]; then
-  echo "refusing: bootstrap alias phases and native phases need separate deployments" >&2; exit 2
-fi
-
 [[ -n "$BREAK_GLASS" ]] || git fetch -q origin main
 HEAD_SHA=$(git rev-parse HEAD)
 [[ -z "$(git status --porcelain)" ]] || { echo "refusing: uncommitted changes" >&2; exit 1; }
@@ -123,52 +81,6 @@ if ! mkdir -m 700 "$NATIVE_RECEIPT_DIR/deploy.lock" 2>/dev/null; then
 fi
 DEPLOY_LOCK="$NATIVE_RECEIPT_DIR/deploy.lock"
 printf '%s\n' "$$" > "$DEPLOY_LOCK/pid"
-# This migration uses the already deployed rules' metadata, never changes
-# their physical names and never creates a second schedule or stream reader.
-# Once active, aliases stay active on every later ordinary deployment.
-WORKER_ALIASES_READY=$(aws cloudformation describe-stacks --stack-name "$STACK" \
-  --query "Stacks[0].Parameters[?ParameterKey=='WorkerAliasesReady'].ParameterValue | [0]" --output text)
-[[ "$WORKER_ALIASES_READY" == true ]] || WORKER_ALIASES_READY=false
-if [[ "$WORKER_ALIAS_PHASE" == prepare && "$WORKER_ALIASES_READY" == true ]]; then
-  echo "refusing: worker aliases are already active; rollback selects a published version, not old targets" >&2
-  exit 1
-fi
-if [[ "$WORKER_ALIAS_PHASE" == activate ]]; then
-  for worker in Sender Inbound Transcribe Describe Export Capture; do
-    ALIAS_ARN=$(aws cloudformation describe-stacks --stack-name "$STACK" \
-      --query "Stacks[0].Outputs[?OutputKey=='${worker}WorkerAlias'].OutputValue | [0]" --output text)
-    [[ "$ALIAS_ARN" == arn:*:live ]] || { echo "refusing: publish worker aliases with --worker-alias-phase=prepare first" >&2; exit 1; }
-    aws lambda get-alias --function-name "${ALIAS_ARN%:live}" --name live --query FunctionVersion --output text >/dev/null
-  done
-  WORKER_ALIASES_READY=true
-fi
-# SNS replacement may overlap. First publish the idempotent Python bridge;
-# verify both targets contain it before moving the subscription to its alias.
-EVENTS_ALIASES_READY=$(aws cloudformation describe-stacks --stack-name "$STACK" \
-  --query "Stacks[0].Parameters[?ParameterKey=='EventsAliasesReady'].ParameterValue | [0]" --output text)
-[[ "$EVENTS_ALIASES_READY" == true ]] || EVENTS_ALIASES_READY=false
-EVENTS_PYTHON_CODE_SHA=$(aws cloudformation describe-stacks --stack-name "$STACK" \
-  --query "Stacks[0].Parameters[?ParameterKey=='EventsPythonCodeSha256'].ParameterValue | [0]" --output text)
-if [[ "$EVENTS_ALIAS_PHASE" == prepare && "$EVENTS_ALIASES_READY" == true ]]; then
-  echo "refusing: Events alias already active" >&2; exit 1
-fi
-if [[ "$EVENTS_ALIAS_PHASE" == activate ]]; then
-  [[ "$EVENTS_PYTHON_CODE_SHA" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo "refusing: prepare the Events bridge first" >&2; exit 1; }
-  EVENTS_VERSION=$(aws cloudformation describe-stacks --stack-name "$STACK" \
-    --query "Stacks[0].Outputs[?OutputKey=='EventsPythonRollbackVersion'].OutputValue | [0]" --output text)
-  [[ "$EVENTS_VERSION" =~ ^[1-9][0-9]*$ ]] || { echo "refusing: Events baseline is missing" >&2; exit 1; }
-  EVENTS_LIVE=$(aws lambda get-alias --function-name "$STACK-events" --name live --query FunctionVersion --output text)
-  [[ "$EVENTS_LIVE" == "$EVENTS_VERSION" ]] || { echo "refusing: Events live alias differs from bridge baseline" >&2; exit 1; }
-  # shellcheck disable=SC2016 # Lambda's literal qualifier, not a shell variable.
-  for qualifier in '$LATEST' "$EVENTS_VERSION"; do
-    EVENTS_PROOF=$(aws lambda get-function-configuration --function-name "$STACK-events" --qualifier "$qualifier" \
-      --query '[Runtime,Handler,CodeSha256]' --output text)
-    [[ "$EVENTS_PROOF" == $'python3.13\trelease_notes.events.handler\t'"$EVENTS_PYTHON_CODE_SHA" ]] \
-      || { echo "refusing: both Events targets must contain the complete bridge" >&2; exit 1; }
-  done
-  EVENTS_ALIASES_READY=true
-fi
-
 rule_arn() {
   local rule_name
   rule_name=$(aws cloudformation describe-stack-resource --stack-name "$STACK" --logical-resource-id "$1" \
@@ -186,10 +98,6 @@ TRANSCRIBE_DONE_ARN=$(rule_arn TranscribeDone)
 # The lockfile pins every package; none of their install scripts run.
 mkdir "$BUILD/repo"
 git archive HEAD | tar -x -f - -C "$BUILD/repo"
-# The handlers' JSON log lines go to stdout; the test report goes to stderr.
-(cd "$BUILD/repo" && PYTHONPATH=src python3 -m unittest discover -s tests -q >/dev/null) \
-  || { echo "tests failed; not deploying" >&2; exit 1; }
-
 (cd "$BUILD/repo" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && npm run verify >/dev/null) \
   || { echo "archived web/server verification failed; not deploying" >&2; exit 1; }
 # Only explicit publication phases upload native code. Ordinary deployments
@@ -311,33 +219,13 @@ aws s3api put-bucket-policy --bucket "$CODE_BUCKET" --policy "$(printf '%s' \
   '"Condition":{"Bool":{"aws:SecureTransport":"false"}}}]}')"
 
 WEB="$BUILD/repo/dist/web"
-(cd "$BUILD/repo/src" && find release_notes -name '*.py' | sort | TZ=UTC zip -q -X -D "$BUILD/code.zip" -@)
-KEY="code/$(shasum -a 256 "$BUILD/code.zip" | cut -c1-16).zip"
-# Set only once: changing this parameter would republish the retained Python
-# rollback resource, possibly from a later Node runtime. Preserve it forever.
-if [[ -z "$EVENTS_PYTHON_CODE_SHA" || "$EVENTS_PYTHON_CODE_SHA" == None ]]; then
-  EVENTS_PYTHON_CODE_SHA=$(openssl dgst -sha256 -binary "$BUILD/code.zip" | openssl base64 -A)
-fi
-aws s3 cp "$BUILD/code.zip" "s3://$CODE_BUCKET/$KEY" --only-show-errors
-LAYER_KEY="code/layers/pillow-$(shasum -a 256 "$BUILD/repo/layers/pillow.txt" | cut -c1-16).zip"
-if ! aws s3api head-object --bucket "$CODE_BUCKET" --key "$LAYER_KEY" >/dev/null 2>&1; then
-  python3 -m pip download --quiet --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes \
-    --platform manylinux_2_28_aarch64 --python-version 3.13 --implementation cp -r "$BUILD/repo/layers/pillow.txt" -d "$BUILD/wheels" \
-    || { echo "Pillow layer download failed; not deploying" >&2; exit 1; }
-  mkdir -p "$BUILD/layer/python"
-  python3 -m zipfile -e "$BUILD"/wheels/*.whl "$BUILD/layer/python"
-  (cd "$BUILD/layer" && find python | sort | TZ=UTC zip -q -X -D "$BUILD/pillow.zip" -@)
-  aws s3 cp "$BUILD/pillow.zip" "s3://$CODE_BUCKET/$LAYER_KEY" --only-show-errors
-fi
-
 WEB_DOMAIN=notes.yourversionnumber.com
 WEB_CERT=$(aws acm list-certificates --certificate-statuses ISSUED \
   --query "CertificateSummaryList[?DomainName=='$WEB_DOMAIN'].CertificateArn | [0]" --output text)
 [[ "$WEB_CERT" == None ]] && WEB_CERT="" && echo "note: no ISSUED certificate for $WEB_DOMAIN yet; deploying without the alias" >&2
 
-PARAMETER_OVERRIDES=("CodeBucket=$CODE_BUCKET" "CodeKey=$KEY" "PillowLayerKey=$LAYER_KEY" "WebDomain=$WEB_DOMAIN" "WebCertificateArn=$WEB_CERT"
-  "SenderScheduleArn=$SENDER_SCHEDULE_ARN" "TranscribeDoneArn=$TRANSCRIBE_DONE_ARN" "WorkerAliasesReady=$WORKER_ALIASES_READY"
-  "EventsPythonCodeSha256=$EVENTS_PYTHON_CODE_SHA" "EventsAliasesReady=$EVENTS_ALIASES_READY")
+PARAMETER_OVERRIDES=("WebDomain=$WEB_DOMAIN" "WebCertificateArn=$WEB_CERT"
+  "SenderScheduleArn=$SENDER_SCHEDULE_ARN" "TranscribeDoneArn=$TRANSCRIBE_DONE_ARN")
 if [[ ${#NATIVE_PARAMETERS[@]} -gt 0 ]]; then
   PARAMETER_OVERRIDES+=("${NATIVE_PARAMETERS[@]}")
 fi

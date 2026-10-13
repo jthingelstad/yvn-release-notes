@@ -11,7 +11,7 @@ import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { searchedText, searchTerms } from '../../packages/domain/search.ts';
 
 test('version arithmetic matches all existing sibling-site fixtures', () => {
-  const fixture = JSON.parse(readFileSync(new URL('../../tests/fixtures/versions.json', import.meta.url), 'utf8'));
+  const fixture = JSON.parse(readFileSync(new URL('../../tests-node/fixtures/versions.json', import.meta.url), 'utf8'));
   assert.ok(fixture.cases.length > 5000);
   for (const [birthday, today, major, minor, patch, age, cycleDays, daysUntil] of fixture.cases) {
     const value = computeVersion(birthday, today);

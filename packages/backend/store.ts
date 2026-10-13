@@ -2,6 +2,8 @@
  * All SDK commands use native document values, including Set for import ledgers.
  * Reads never rely on TTL removal. Callers enforce credential expirations.
  * USER#/PROFILE, NOTE#, DAY#, PAUSE#, WEATHER#, PLACE#, EXPORT, SESSION#,
+ * Nested OAuth ownership rows use OAUTHUSER ROW#; content-free MCP metadata
+ * uses MCPMETA USE#/LOG#/WRITERATE#.
  * IMPORT#, CAPTURE#, MAILEVENT#, PROCESS#, PROCESSLOCK#; TOKEN#, INBOX#, EMAIL#, LOGIN#, LOGINFOR#, RATE#, LOCK#,
  * TALLY#, OAUTHCLIENT#, OAUTHPENDING#, OAUTHCODE#, OAUTHACCESS#, OAUTHREFRESH#,
  * OAUTHFAMILY#, OAUTHUSER#, MCPMETA# retain their original layouts.

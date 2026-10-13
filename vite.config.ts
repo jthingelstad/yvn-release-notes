@@ -2,7 +2,7 @@
 // build goes to dist/web, which deploy.sh syncs to the web bucket, where
 // CloudFront answers every address but a file with its index.html.
 // `npm run dev` serves web/ with hot reload and hands the API, and the dev
-// server's stand-ins for S3 and mail, to scripts/dev_server.py (start that
+// server's stand-ins for S3 and mail, to tools/dev-server.ts (start that
 // first; RN_DEV_API moves it).
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';

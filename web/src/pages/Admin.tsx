@@ -2,7 +2,8 @@
 // Saving never schedules; scheduling uses the saved revision shown in preview.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { AppLink, Bar, ErrorLine, Loading, useBusy, useTitle } from '../components/common.tsx';
+import { Bar, ErrorLine, Loading, useBusy, useTitle } from '../components/common.tsx';
+import { AdminNav } from '../components/admin-nav.tsx';
 import { api, get, ApiError } from '../lib/api.ts';
 import { addDays } from '../lib/format.ts';
 import type { Part } from '../lib/types.ts';
@@ -106,7 +107,7 @@ export function Admin() {
       <Bar current="/settings/" />
       <h1>Product updates</h1>
       <p className="lede">Release notes for Release Notes, in everyone’s daily email.</p>
-      <AppLink href="/settings/">Back to settings</AppLink>
+      <AdminNav current="updates" />
       {updates.isPending ? (
         <Loading />
       ) : updates.isError ? (

@@ -66,6 +66,7 @@ test('admin disabled by default; signed-out, ordinary and forged-origin writes c
   f.ctx.adminUserId = 'u';
   assert.equal((await f.call('GET', undefined, undefined, '')).status, 401);
   for (const [method, path, value] of [
+    ['GET', '/api/admin/users', undefined],
     ['GET', '/api/admin/updates', undefined],
     ['POST', '/api/admin/updates', { title: 'Private', text: 'Words' }],
     ['PUT', '/api/admin/updates/id', { revision: 1 }],
@@ -165,4 +166,39 @@ test('simultaneous scheduling of a date commits exactly one complete snapshot', 
   );
   assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
   assert.equal((await f.store.productUpdates()).filter((u) => u.status === 'scheduled').length, 1);
+});
+
+test('subscriber overview reads metadata only after admin authorization, with no content or address logging', async () => {
+  const f = await fixture('');
+  let scans = 0;
+  const send = f.store.client.send.bind(f.store.client);
+  f.store.client.send = async (command) => {
+    if (command.constructor.name === 'ScanCommand') scans++;
+    assert.notEqual(command.constructor.name, 'QueryCommand', 'No journal reader may run');
+    if (command.constructor.name === 'GetCommand') assert.doesNotMatch(JSON.stringify(command.input), /NOTE#|IMPORT#/);
+    return send(command);
+  };
+  assert.equal((await f.call('GET', '/api/admin/users')).status, 403);
+  f.ctx.adminUserId = 'u';
+  assert.equal((await f.call('GET', '/api/admin/users', undefined, 'b')).status, 403);
+  assert.equal((await f.call('GET', '/api/admin/users', undefined, '')).status, 401);
+  assert.equal(scans, 0);
+  f.store.seed({
+    pk: 'USER#b',
+    sk: 'NOTE#2026-10-12#n',
+    written_at: '2026-10-13T11:00:00Z',
+    text: 'private fixture words',
+    tags: ['private-tag'],
+    media: [{ key: 'private-file' }],
+    links: [{ title: 'private-title' }]
+  });
+  const response = await f.call('GET', '/api/admin/users');
+  assert.equal(response.status, 200);
+  assert.ok(scans > 0);
+  assert.equal(response.data.users.length, 2);
+  assert.equal(response.data.users[1].entries, 1);
+  assert.equal(response.data.users[1].last_added_at, '2026-10-13T11:00:00.000Z');
+  assert.doesNotMatch(JSON.stringify(response.data), /private|pk|sk|birthday|media|text|links|tags/);
+  assert.doesNotMatch(JSON.stringify(f.logs), /ada@example|bea@example|private/);
+  assert.equal((await f.call('POST', '/api/admin/users', {})).status, 404);
 });

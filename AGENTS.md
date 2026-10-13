@@ -366,8 +366,11 @@ Where things are (each module's design comment explains its contract):
   2026-10-09: "instead of part of the application ... an AWS dashboard"):
   dashboard `yvn-release-notes`, counts only, no address, user id or note
   text. A new number goes in `packages/backend/census.ts`; `tests-node/census.test.ts` checks the
-  dashboard's JSON. The per-person view is `tools/subscribers.ts`, on
-  this Mac only.
+  dashboard's JSON. Jamie's 2026-10-13 addition permits a metadata-only
+  subscriber overview at `/admin-users/`, for the configured administrator:
+  addresses, delivery state/schedule and entry counts/activity dates, never
+  journal contents. `packages/backend/subscriber-overview.ts` defines its
+  projection and DTO. `tools/subscribers.ts` remains the local CLI report.
   Agent captures are counted separately as `AgentNotes`; structured MCP
   infrastructure failures emit a count-only `McpFailures` metric.
 

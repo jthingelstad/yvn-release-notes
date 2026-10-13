@@ -1397,6 +1397,19 @@ Resources:
                   - dynamodb:BatchWriteItem
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
+                # The admin overview scans only metadata; it cannot request
+                # journal contents, files, locations or credential attributes.
+                Action: dynamodb:Scan
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  StringEquals:
+                    dynamodb:Select: SPECIFIC_ATTRIBUTES
+                  ForAllValues:StringEquals:
+                    dynamodb:Attributes: [pk, sk, email, status, stopped_reason,
+                      created_at, tz, send_time, last_sent_date, pause_from,
+                      pause_through, written_at, received_at, source, updated_at,
+                      mcp_deleting]
+              - Effect: Allow
                 # The sign-in email, as raw MIME through SESv2 (see SenderRole).
                 Action: [ses:SendEmail, ses:SendRawEmail]
                 Resource:

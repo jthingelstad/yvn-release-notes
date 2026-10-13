@@ -295,15 +295,29 @@ class ReaderTests(ConnectionCase):
         self.assertEqual(b['result']['structuredContent']['error'], 'invalid_date')
         self.assertNotIn('mcp-error', self.out.getvalue())
 
-    def test_store_and_file_failures_escape_without_private_exception_details(self):
+    def test_store_file_and_activity_failures_escape_without_private_exception_details(self):
         token = self.connected()[0]['access_token']
         self.add_note(media=[{'n': 1, 'kind': 'image', 'type': 'image/jpeg',
                              'thumb': {'key': 'media/u1/thumb.jpg'}}])
         private = 'private-note ada@example.com media/u1/private-file ' + token
-        cases = ((self.store, 'note_days', 'notes_context', {}),
-                 (self.s3, 'get_object', 'notes_view_photo', {'date': '2026-10-07', 'id': 'w-first', 'n': 1}))
-        for target, method, tool, arguments in cases:
-            with self.subTest(tool=tool), patch.object(target, method, side_effect=OSError(private)):
+        original_get, original_commit = self.store.mcp_get, self.store.mcp_commit
+
+        def fail_activity_read(pk, sk='STATE'):
+            if sk.startswith('USE#'):
+                raise OSError(private)
+            return original_get(pk, sk)
+
+        def fail_activity_write(changes, uid=None):
+            if any(row['sk'].startswith('LOG#') for row, _ in changes):
+                raise OSError(private)
+            return original_commit(changes, uid)
+
+        cases = ((self.store, 'note_days', 'notes_context', {}, OSError(private)),
+                 (self.s3, 'get_object', 'notes_view_photo', {'date': '2026-10-07', 'id': 'w-first', 'n': 1}, OSError(private)),
+                 (self.store, 'mcp_get', 'notes_context', {}, fail_activity_read),
+                 (self.store, 'mcp_commit', 'notes_context', {}, fail_activity_write))
+        for target, method, tool, arguments, failure in cases:
+            with self.subTest(method=method), patch.object(target, method, side_effect=failure):
                 try:
                     self.rpc(token, name=tool, arguments=arguments)
                 except RuntimeError as e:
@@ -315,7 +329,7 @@ class ReaderTests(ConnectionCase):
                 else:
                     self.fail('Unexpected failures must fail the Lambda invocation for its error alarm.')
         errors = [json.loads(line) for line in self.out.getvalue().splitlines() if 'mcp-error' in line]
-        self.assertEqual(errors, [{'event': 'mcp-error', 'user': 'u1', 'error': 'OSError'}] * 2)
+        self.assertEqual(errors, [{'event': 'mcp-error', 'user': 'u1', 'error': 'OSError'}] * 4)
 
     def test_long_unicode_note_and_transcript_continuations(self):
         words = '🎵' * 20000

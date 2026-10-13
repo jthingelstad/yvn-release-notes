@@ -368,27 +368,28 @@ def handler(event, context, *, store=None, s3=None, clock=time.time):
         name, args = params.get("name"), params.get("arguments", {})
         tool = next((t for t in TOOLS if t["name"] == name), None)
         try:
-            if not tool:
-                raise ToolError("unknown_tool", "Use tools/list to choose a supported tool.")
-            validate(args, tool["inputSchema"])
-            quota(app, family["user_id"])
-            value, extra = Reader(app, family).run(name, args)
-            value["server_version"] = VERSION
-            if len(dumps(value)) > MAX_CHARS:
-                raise ToolError("result_too_large", "Read one note or a shorter page.")
-            result = {"content": [{"type": "text", "text": dumps(value)}, *extra], "structuredContent": value}
-            outcome = "ok"
-        except ToolError as e:
-            value = {"server_version": VERSION, "error": e.code, "next_step": e.next_step}
-            result = {"isError": True, "content": [{"type": "text", "text": dumps(value)}], "structuredContent": value}
-            outcome = e.code
+            try:
+                if not tool:
+                    raise ToolError("unknown_tool", "Use tools/list to choose a supported tool.")
+                validate(args, tool["inputSchema"])
+                quota(app, family["user_id"])
+                value, extra = Reader(app, family).run(name, args)
+                value["server_version"] = VERSION
+                if len(dumps(value)) > MAX_CHARS:
+                    raise ToolError("result_too_large", "Read one note or a shorter page.")
+                result = {"content": [{"type": "text", "text": dumps(value)}, *extra], "structuredContent": value}
+                outcome = "ok"
+            except ToolError as e:
+                value = {"server_version": VERSION, "error": e.code, "next_step": e.next_step}
+                result = {"isError": True, "content": [{"type": "text", "text": dumps(value)}], "structuredContent": value}
+                outcome = e.code
+            record(app, family, name if tool else "unknown", outcome)
         except Exception as e:
             # Object/store errors may carry private paths. Log only their type,
             # then fail the invocation so the Lambda Errors alarm sees it.
             from .web import log
             log(event="mcp-error", user=family["user_id"], error=type(e).__name__)
             raise RuntimeError("MCP temporarily unavailable") from None
-        record(app, family, name if tool else "unknown", outcome)
     else:
         error = {"code": -32601, "message": "Method not found"}
     return respond(200, {"jsonrpc": "2.0", "id": identifier, **({"error": error} if error else {"result": result})})

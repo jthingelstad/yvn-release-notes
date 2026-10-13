@@ -360,6 +360,9 @@ Where things are (each module's design comment explains its contract):
 
 ### Testing
 
+`docs/NATIVE-COMPATIBILITY.md` maps the retired Python test inventory to
+named native regressions and explicit obsolete implementation assumptions.
+
 - **Never verify with a write against live data.** The sender takes
   `{"dry_run": true, "now": "<ISO UTC>"}` and writes nothing; `now` is
   refused on a real send. Never sign in on live to check something.

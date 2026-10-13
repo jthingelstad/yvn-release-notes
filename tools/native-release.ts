@@ -422,12 +422,19 @@ export async function main(
         rollback = await optional(rollbackName);
       if (!previous || previous.build !== build || !promotion.target)
         throw new Error('No recorded prior release for this build');
-      // This parameter exists only after legacy source retirement. Its true
-      // value keeps old grants/settings for draining, never the retired code.
+      // The drain parameter marks retired legacy code, even while old grants
+      // still drain. Once removed, absent legacy alias flags plus enabled/ready
+      // native workers identify the permanent native-only stack.
       // Initial adoption receipts can still point at Python/HTTP API baselines;
       // refuse those before writing rollback intent or emitting CFN overrides.
+      const legacyRetired =
+        Object.hasOwn(parameters, 'NativeLegacyDrainPending') ||
+        (!Object.hasOwn(parameters, 'WorkerAliasesReady') &&
+          !Object.hasOwn(parameters, 'EventsAliasesReady') &&
+          parameters.NativeWorkersEnabled === 'true' &&
+          parameters.NativeWorkerAliasesReady === 'true');
       if (
-        Object.hasOwn(parameters, 'NativeLegacyDrainPending') &&
+        legacyRetired &&
         (kind === 'http'
           ? previous.parameters.NativeHttpRouting !== 'native'
           : previous.parameters.NativeWorkerAliasesReady !== 'true')

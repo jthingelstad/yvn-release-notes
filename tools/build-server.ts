@@ -11,7 +11,9 @@ for (const [source, folder] of [
   ['workers/export.ts', 'dist/workers/export'],
   ['workers/entries/send.ts', 'dist/workers/sender'],
   ['workers/entries/inbound.ts', 'dist/workers/inbound'],
-  ['workers/entries/events.ts', 'dist/workers/events']
+  ['workers/entries/events.ts', 'dist/workers/events'],
+  ['workers/transcribe.ts', 'dist/workers/transcribe'],
+  ['workers/describe.ts', 'dist/workers/describe']
 ]) {
   await mkdir(folder!, { recursive: true });
   await build({

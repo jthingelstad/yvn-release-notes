@@ -1,3 +1,4 @@
+import { runtimeSelfTest } from '../runtime.ts';
 /** Production SES-notification entry. Only the pure handler's scrubbed kinds
  * and internal user IDs are published; never the source SNS event or headers. */
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
@@ -12,6 +13,7 @@ function env(name: string): string {
   return value;
 }
 export async function handler(event: Parameters<typeof events>[0], context: unknown) {
+  if (runtimeSelfTest(event)) return runtimeSelfTest(event);
   if (!services) {
     const region = process.env.AWS_REGION ?? 'us-east-1',
       topic = env('ALARM_TOPIC'),

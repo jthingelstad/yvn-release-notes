@@ -8,12 +8,16 @@ import { mkdir, writeFile, stat, realpath } from 'node:fs/promises';
 import { resolve, isAbsolute, relative, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { packageHttp } from './package-native.ts';
+import { packageHttp, packageWorkers } from './package-native.ts';
 export async function main(args = process.argv.slice(2)) {
   if (process.versions.node.split('.')[0] !== '24') throw new Error('Artifacts require Node 24');
   const options: Record<string, string> = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!['--build-dir', '--receipt-dir', '--commit'].includes(args[i] ?? '') || !args[i + 1] || options[args[i]!])
+    if (
+      !['--build-dir', '--receipt-dir', '--commit', '--kind', '--native-modules'].includes(args[i] ?? '') ||
+      !args[i + 1] ||
+      options[args[i]!]
+    )
       throw new Error('Invalid artifact option');
     options[args[i]!] = args[i + 1]!;
   }
@@ -32,6 +36,9 @@ export async function main(args = process.argv.slice(2)) {
     ((await stat(dir)).mode & 0o077) !== 0
   )
     throw new Error('Receipts require a private directory outside the repository');
+  const kind = options['--kind'] ?? 'http';
+  if (!['http', 'workers'].includes(kind) || (kind === 'workers' && !isAbsolute(options['--native-modules'] ?? '')))
+    throw new Error('Invalid artifact kind or native module path');
   const region = 'us-east-1',
     sts = new STSClient({ region });
   const identity = await sts.send(new GetCallerIdentityCommand({}));
@@ -47,11 +54,17 @@ export async function main(args = process.argv.slice(2)) {
   )
     throw new Error('Missing native source bucket');
   const s3 = new S3Client({ region }),
-    artifacts = await packageHttp(build, resolve(build, 'dist/artifacts')),
-    parameters: Record<string, string> = { NativeWebFunctionsEnabled: 'true' };
+    artifacts =
+      kind === 'http'
+        ? await packageHttp(build, resolve(build, 'dist/artifacts'))
+        : await packageWorkers(build, resolve(build, 'dist/artifacts'), options['--native-modules']!),
+    parameters: Record<string, string> =
+      kind === 'http'
+        ? { NativeWebFunctionsEnabled: 'true' }
+        : { NativeWorkersEnabled: 'true', NativeWorkerBuildId: commit };
   const recorded = [];
   for (const artifact of artifacts) {
-    const key = `native/${artifact.kind}/${artifact.sha256}.zip`,
+    const key = `native/${kind === 'workers' ? 'workers/' : ''}${artifact.kind}/${artifact.sha256}.zip`,
       size = (await stat(artifact.path)).size;
     let version: string | undefined;
     try {
@@ -79,12 +92,19 @@ export async function main(args = process.argv.slice(2)) {
       if (!version || checked.Metadata?.sha256 !== artifact.sha256 || checked.ContentLength !== size)
         throw new Error('Artifact upload was not confirmed');
     }
-    const name = artifact.kind === 'app' ? 'App' : 'Mcp';
-    Object.assign(parameters, {
-      [`Native${name}CodeKey`]: key,
-      [`Native${name}CodeVersion`]: version,
-      [`Native${name}BuildId`]: commit
-    });
+    const name = artifact.kind[0]!.toUpperCase() + artifact.kind.slice(1);
+    if (kind === 'http')
+      Object.assign(parameters, {
+        [`Native${name}CodeKey`]: key,
+        [`Native${name}CodeVersion`]: version,
+        [`Native${name}BuildId`]: commit
+      });
+    else
+      Object.assign(parameters, {
+        [`${name}NodeCodeKey`]: key,
+        [`${name}NodeCodeVersion`]: version,
+        [`${name}NodeCodeSha256`]: artifact.codeSha256
+      });
     recorded.push({ kind: artifact.kind, bucket, key, version, sha256: artifact.sha256, size });
   }
   await writeFile(

@@ -24,6 +24,7 @@ export function withWebProof(
         return store.client.send(command);
       if (name === 'BatchWriteCommand') throw new Error('Batch writes require explicit deletion authority');
       let operations: Ops;
+      let mergedProof = false;
       if (command instanceof TransactWriteCommand) operations = structuredClone(command.input.TransactItems ?? []);
       else {
         const fields = { ...input };
@@ -52,6 +53,7 @@ export function withWebProof(
           return target?.pk === key.pk && target.sk === key.sk;
         });
         if (found) {
+          mergedProof = true;
           const entry = found.Put ?? found.Update ?? found.Delete ?? found.ConditionCheck!;
           entry.ConditionExpression = entry.ConditionExpression
             ? `(${entry.ConditionExpression}) AND (${proof})`
@@ -71,7 +73,29 @@ export function withWebProof(
             }
           });
       }
-      await store.client.send(new TransactWriteCommand({ TransactItems: operations }));
+      try {
+        await store.client.send(new TransactWriteCommand({ TransactItems: operations }));
+      } catch (error) {
+        // Store's conditional single-item methods expect their original error
+        // kind (e.g. a full upload counter returns false). Translate only an
+        // independently refused primary operation with both web proofs intact.
+        // Merged proofs, unknown outcomes and real transactions remain errors.
+        const reasons =
+          error instanceof Error && error.name === 'TransactionCanceledException'
+            ? (error as Error & { CancellationReasons?: { Code?: string }[] }).CancellationReasons
+            : undefined;
+        if (
+          name !== 'TransactWriteCommand' &&
+          !mergedProof &&
+          reasons?.length === operations.length &&
+          reasons[0]?.Code === 'ConditionalCheckFailed' &&
+          reasons.slice(1).every((reason) => reason.Code === 'None')
+        )
+          throw Object.assign(new Error('Conditional check failed', { cause: error }), {
+            name: 'ConditionalCheckFailedException'
+          });
+        throw error;
+      }
       if (
         name === 'UpdateCommand' &&
         'ReturnValues' in input &&

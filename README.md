@@ -24,7 +24,8 @@ reply email, or one to the subscriber's standing address
 
 notes.yourversionnumber.com
   -> CloudFront        the web app (React, built by Vite) from S3, and /api
-  -> web Lambda        sign-in, notes, files, search, settings, export
+  -> Lambda Web Function (Hono/Node 24) sign-in, notes, files, search, settings, export
+  -> separate Web Function for /mcp, with owner-approved agent access
 ```
 
 Smaller functions stop the emails after a hard bounce or complaint, build
@@ -74,26 +75,29 @@ describe photos.
   nothing remote: no images, fonts or stylesheets.
 - **Private, not secret.** Your notes are yours: no one else sees them and
   no model reads them unless you turn something on. The operator can read
-  every note.
-- **The arithmetic is the site's.** `version.py` is a port of the site's
+  every note. An agent connection shares only the scopes you explicitly
+  approve, under that service's own privacy and retention policy.
+- **The arithmetic is the site's.** `packages/domain/version.ts` is a port of the site's
   `computeVersion`, checked against thousands of cases generated from the
   site's own code.
 
 ## Develop
 
-The backend is Python, standard library only, with nothing to install:
-
-```sh
-PYTHONPATH=src python3 -m unittest discover -s tests
-```
-
-The web app (`web/`) needs Node 24:
+The application, Event Function workers and operator tools use TypeScript on
+Node 24. The React frontend and Hono HTTP servers share the domain and storage
+contracts. Install without package scripts, then verify both sides:
 
 ```sh
 npm ci --ignore-scripts
-npm run verify        # prettier, oxlint, tsc, vitest, the build
-python3 scripts/dev_server.py   # the built app and the real API, against in-memory fakes
+npm run verify        # format, lint, types, unit tests, web and native builds
+node --import tsx tools/dev-server.ts --fake-places --fake-links
 ```
+
+The local harness serves the built app and real HTTP/MCP routes against
+fictional in-memory stores, objects and mail. It never uses AWS. Browser
+regressions run with `npm run e2e`; the native tests with `npm run test:server`.
+CloudFront signs requests to the private Web Function origins using OAC;
+email link/code sign-in still proves ownership before any subscriber write.
 
 `infra/template.yaml` is the whole stack (CloudFormation) and `deploy.sh`
 deploys it. `AGENTS.md` has the design rules and the operating notes, and

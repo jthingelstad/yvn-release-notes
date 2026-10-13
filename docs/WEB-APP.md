@@ -3,18 +3,18 @@
 Agreed with Jamie on 2026-10-08 and built that day; the front end moved to
 React on 2026-10-09. This is the design of what runs: change it with the
 code. AGENTS.md has the rules for everything since (files, tags, search,
-transcripts, descriptions, imports), and `src/release_notes/store.py` the
+transcripts, descriptions, imports), and `packages/backend/store.ts` the
 table's full key layout.
 
-The approved 2026-10-13 TypeScript/Web Functions rebuild is underway;
-`docs/TYPESCRIPT-REBUILD.md` records its staged execution and rollback gates.
-The production shape described below remains the compatibility baseline
-until its corresponding cutover lands. The initial native Hono health server
-and shared domain/storage ports are additive and do not change routing.
+The application and workers use TypeScript on Node 24 (2026-10-13), with
+native Hono HTTP servers on Lambda Web Functions and a redesigned React UI.
+The API, persisted account/note contracts, email ownership proof and existing
+sessions/grants remain compatible. `docs/TYPESCRIPT-REBUILD.md` records the
+staged execution and rollback gates.
 
 Release Notes has a standalone web app at `notes.yourversionnumber.com`. The
 birthday and work sites at `yourversionnumber.com` stay as they are, and
-nothing there links here yet: that is Jamie's call (Order, step 6).
+nothing there links here yet: that is Jamie's call.
 
 ## What it does
 
@@ -32,7 +32,7 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
    - **Birthday**, carried over from the front page.
    - **Location, to the city.** It is chosen from a search, and gives the
      time zone and coordinates rounded to the city (for the day's weather
-     and the morning forecast, `weather.py`). No street address, no device location.
+     and the morning forecast, `packages/backend/weather.ts`). No street address, no device location.
    - **Send time**, on a quarter hour. The default is 06:00.
 
    Today's email goes as soon as they finish, with a welcome line, and the
@@ -55,7 +55,7 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
    otherwise the emails start again on their own.
 6. **Export your data**: every note, its day and version, plus the profile,
    as Markdown and JSON; since phase 3, a zip with those and every photo
-   and recording, built in the background (`export_job.py`). It arrives with sign-in, before anything else, so
+   and recording, built in the background (`workers/export.ts`). It arrives with sign-in, before anything else, so
    deleting an account never means losing what was in it.
 7. **Settings**: send time and location, the standing address (a note any
    day by email, no reply needed; Copy, and "New address" to replace it),
@@ -64,7 +64,7 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
 8. **The daily email** gains a "Pause or manage" link and one-click
    `List-Unsubscribe`. A hard bounce or complaint stops the subscriber.
 9. **Since**: tags (`/tag/?t=`) and search (`/search/`), photos,
-   recordings and PDFs added on the web (`media.py`), recording on the
+   recordings and PDFs added on the web (`packages/backend/media.ts`), recording on the
    page (Front end, below). AGENTS.md has their rules.
 
 ## Defaults (Jamie can change any)
@@ -78,14 +78,14 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
   day you have kept.
 - Photos, recordings and PDFs show with their note, by a signed link that
   lasts at least ten minutes once handed out (each is signed for 15 and
-  reused for 5), for their owner only (`media.py`). They come from emailed
+  reused for 5), for their owner only (`packages/backend/media.ts`). They come from emailed
   replies, web uploads and imports; any channel may bring them (Jamie,
   2026-10-09).
-- A photo with a thumbnail (`thumbs.py`) also answers `thumb`, a signed
+- A photo with a thumbnail (`packages/backend/thumbs.ts`) also answers `thumb`, a signed
   link to it. The Timeline, Search and tag lists show the thumbnail and
   open the original on a tap; a Day and Today show the original.
 - A link in a note shows by name: the words you linked, or the page's
-  title, fetched once when the note is saved (`links.py` has the
+  title, fetched once when the note is saved (`packages/backend/links.ts` has the
   guards). The text keeps the address as written, and the exports carry
   both. No Markdown.
 - Page counts go to Tinylytics site 3816, its own site beside the main
@@ -94,24 +94,32 @@ nothing there links here yet: that is Jamie's call (Order, step 6).
 
 ## Shape
 
-The same as Drop and Thingy, inside this stack:
-
 ```
 notes.yourversionnumber.com
   CloudFront (PriceClass_100, ACM certificate issued outside the stack)
-    default  -> S3 web bucket (private, OAC)     web/: React app built by Vite (2026-10-09)
-    /api/*   -> HTTP API -> Lambda yvn-release-notes-web    Python, standard library
-                              -> the same DynamoDB table
-                              -> Lambda yvn-release-notes-export (async, the zip)
+    default  -> private S3 web bucket (OAC) -> React/Vite app
+    /api/*, /oauth/*, discovery -> private Lambda Web Function (server/app)
+    /mcp     -> private Lambda Web Function (server/mcp, separate reader role)
+    API      -> existing DynamoDB table
+             -> export Event Function :live (async ZIP)
+    MCP      -> private capture Event Function :live (guarded delegated text)
 ```
 
-- **Language: Python, standard library.** The sender and inbound handlers are
-  Python, `version.py` is checked against fixtures generated from the site's
-  own code, and the tests need nothing installed. TypeScript would bring a
-  `package.json`, a bundler and a second language to keep in step with
-  `version.py`, and buy nothing a JSON API over one table needs. (The
-  front end did move to TypeScript and React on 2026-10-09, on the thingy
-  stack; the API stays Python.)
+- **Language: TypeScript on Node 24.** Hono servers listen on the endpoint
+  supplied by `AWS_LAMBDA_HTTP_ENDPOINT`, without an event-handler adapter.
+  Shared `packages/domain/` holds the site's version arithmetic, calendar,
+  notes, tags, streaks and Unicode search behavior. `packages/backend/`
+  supplies asynchronous stores/services. Mail and processing use native
+  Event Function workers. Only the describe worker carries Sharp's native
+  Linux Arm64 image libraries.
+- **Request isolation:** each HTTP request creates its own session/context;
+  reusable SDK clients hold no subscriber state. Mutations transactionally
+  prove the live session and account. Atomic renewal/claim/sign-up prevents
+  revoked-session and deleting-account races. Existing email links, codes,
+  sessions and accounts keep their wire/storage formats.
+- **Every HTTP response is private:** `Cache-Control: no-store` also applies
+  to redirects and errors. Native listener shutdown stops accepting requests
+  and drains active requests within a bounded deadline.
 - **Security headers** on every response: a CSP of `'self'` (no inline
   script or style), HSTS, `DENY` framing, and a Permissions-Policy that
   allows only the microphone. The CSP names its few exceptions: Tinylytics
@@ -119,8 +127,8 @@ notes.yourversionnumber.com
   uploads. Everything else goes through `/api`: the city search asks
   Open-Meteo's geocoder (no key, CC BY 4.0) from there.
 - **New items in the table.** `expires_at` (epoch seconds) is the table's
-  TTL. The web app's first items were these; the docstring at the top of
-  `store.py` is the full, current layout.
+  TTL. The web app's first items were these; the design comment at the top of
+  `packages/backend/store.ts` is the full, current layout.
 
   | Item | Key | Lifetime |
   |---|---|---|
@@ -150,13 +158,16 @@ notes.yourversionnumber.com
   `yvn-release-notes-signin-total` fires when the total is reached. The
   network comes from CloudFront's `CloudFront-Viewer-Address`, which the
   API's own origin request policy passes on. The API answers only
-  CloudFront: CloudFront adds `X-Origin-Verify` with a secret the stack
-  generates, and the web function refuses anything without it (403), so
-  calling the execute-api URL directly cannot forge that header.
+  CloudFront through IAM-authenticated Web Function endpoints. CloudFront
+  OAC always signs origin requests with SigV4 (`amz-auth`), and the endpoint
+  resource policy allows only this distribution to invoke its live endpoint.
+  Direct origin calls are denied by the platform; the rollback endpoint has
+  no distribution grant and zero request allowance. No origin-secret header
+  is needed. `CloudFront-Viewer-Address` is trusted only behind this boundary.
 - **Session**: an `__Host-` cookie, Secure, HttpOnly, SameSite=Lax. Every
   write must carry `Origin: https://notes.yourversionnumber.com`. The API
   receives only the headers it reads (Origin, Content-Type, Accept, the
-  viewer address, and CloudFront's own `X-Origin-Verify`) and only that cookie.
+  viewer address) and only that cookie.
 - **Pages**: `/` (the birthday, the number it makes from `/api/sample`,
   then the email; `/#sign-in` the email alone), `/signin/` (the link lands
   here, token in the fragment), `/setup/` (a new address's three
@@ -173,15 +184,15 @@ notes.yourversionnumber.com
   drops it if it has not begun. The timeline folds paused days without
   notes or a place of their own into one row.
 - **Deleting an account** takes a code mailed to the account's own address
-  (`POST /api/me/delete-code`; it is a sign-in row with `purpose=delete`,
-  so the same attempt count and the address and total limits apply, but it never signs in and a
-  sign-in's code never deletes). Then, in order so a failure can be
-  retried: the raw emails, the reply tokens, every item under the user and
-  the session of every browser they list, the address's newest sign-in and
-  deletion code, the address, the profile. A session begun before
-  2026-10-09 and not renewed since is not listed; it points at nobody until it
-  expires, and can read and write nothing. Old versions in the mail
-  bucket expire 30 days later, which the page says.
+  (`POST /api/me/delete-code`; its single-use row has `purpose=delete`,
+  so the same attempt count and address/total limits apply, but it never
+  signs in and a sign-in code never deletes). Deletion sets `mcp_deleting`
+  first, blocking new OAuth/MCP/processing and web writes. Cleanup removes
+  raw messages, private files and exports (including in-flight staged files
+  by owner-prefix sweep), reply tokens, standing address, USER rows, indexed
+  OAuth grants/MCP metadata, all sessions, newest purpose-specific codes,
+  address and profile. Purpose-code recovery can retry a partial deletion.
+  Old versions in the mail bucket expire after 30 days; the page says so.
 - **The timeline** lists every day with an email, a note or a place of
   its own, newest first, and today, with the day's own place under its
   weather. Days with none of them (before sign-up, or while stopped) are
@@ -194,7 +205,7 @@ notes.yourversionnumber.com
   `yvn-release-notes-events` stops the subscriber on a hard bounce or
   complaint and puts one scrubbed line on the alarms topic.
 - **Sign-up's first email** is today's, at once: the web function invokes
-  the sender with `send_now` (`web.send_first`), which marks the day sent,
+  the sender with `send_now` (`packages/backend/accounts.ts`), which marks the day sent,
   so the schedule's first is tomorrow's. Only a subscriber's first email
   (no `last_sent_date` before it) carries the welcome line. If the invoke
   fails, sign-up still succeeds and the schedule sends today's when it can.
@@ -212,6 +223,14 @@ TanStack Router and Query). `web/src/main.tsx` holds the routes, `pages/`
 one component a page, `components/` the shared pieces, `lib/` the API
 client and helpers, `styles/site.css` the one stylesheet, and the two
 fonts are served from here.
+
+The redesigned UI uses warm paper, Bricolage typography and the version as
+its focal point. Today places the editor before saved notes, with labelled
+file, recording and place controls. Desktop navigation is a rail; phone
+navigation stays at the bottom with safe-area spacing. Archive uses the
+existing `/timeline/` address. Dark appearance and reduced-motion preferences
+are supported. Icons (`web/src/components/icon.tsx`) and fonts are local;
+no image dependency or new CSP exception is required.
 
 - CloudFront's function answers every address that is not a file with
   `index.html` (the dev server does the same), and the router shows the
@@ -261,7 +280,7 @@ fonts are served from here.
   without the embed script: the page's address without its query string,
   and on a visit's first page the referring site's origin only. No
   cookies, nothing that names a person.
-- `npm run verify` (prettier, oxlint, `tsc`, vitest, the build) is part of
+- `npm run verify` (format, lint, browser/native types and unit tests, both builds) is part of
   `validate`. `deploy.sh` builds from HEAD and syncs `dist/web`.
 
 ## API
@@ -272,7 +291,6 @@ fonts are served from here.
 | `GET /api/mcp/connections` | Active agent connections, approved scopes and last use. |
 | `DELETE /api/mcp/connections/{id}` | Revoke the owner's connection immediately; `?write_only=true` removes only adding permission. |
 | `GET /api/mcp/activity` | Up to 50 content-free tool records from fourteen days; successful writes include client and note references. |
-
 | `GET /api/health` | |
 | `GET /api/sample?birthday=&tz=` | a version number today: the front page's example (1981-06-14), or the birthday being typed at sign-up |
 | `POST /api/auth/start` `{email}` | always 202; mails a link and code when the limits allow |
@@ -307,23 +325,14 @@ fonts are served from here.
 | `POST /api/unsubscribe?t=` | the email's one-click unsubscribe (RFC 8058); the token is the day's reply token, and this is the one write without an Origin |
 | `GET /api/unsubscribe?t=` | redirects to `/unsubscribe/`, a page with a button, for mail apps that open the link |
 
-## Order
+## Release and verification
 
-The order the web app was built in, kept as history: PRs 0 to 5 shipped
-on 2026-10-08. Step 6 is open.
-
-| PR | What ships | How it is checked |
-|---|---|---|
-| 0 | A design canvas for the screens | Jamie reviews it alongside PR 1 |
-| 1 | CloudFront, web bucket, HTTP API, stub function, table TTL, a placeholder page | `/api/health` and the page answer on the cloudfront.net name, then on `notes.` once DNS is in |
-| 2 | Sign-in, sessions, the sign-in email, **export** | Jamie signs in and exports |
-| 3 | Sign-up with city search, settings, "Pause or manage" and `List-Unsubscribe` in the email, bounces stop the emails | a new account works |
-| 4 | Today, timeline, day view, write, backfill, edit, delete | daily use |
-| 5 | Pause, delete account | feature-complete |
-| 6 | Jamie uses it, invites a few people, then decides on a link from yourversionnumber.com | |
-
-Testing on live: the first end-to-end sign-up uses a plus-address Jamie owns,
-once Jamie says so. Everything else is unit tests and dry runs.
+Use the green PR/validate gate and the explicit native publication,
+activation and recorded rollback phases in `AGENTS.md`. Unit, browser and
+load tests use the native local harness and fictional subscribers. Never
+sign in against production or write live data to verify a release. Read-only
+live checks may inspect public health/discovery and unauthenticated origin
+protection; worker candidate probes use only `{"self_test":true}`.
 
 ## DNS (Namecheap, by Jamie)
 
@@ -332,38 +341,16 @@ once Jamie says so. Everything else is unit tests and dry runs.
 2. `notes` CNAME to the distribution's `cloudfront.net` name (stack output
    `WebDistributionDomain`).
 
-## Read-only agents
+## Agent connections
 
 `docs/MCP.md` documents `/mcp`, the public OAuth discovery and protocol routes,
 and owner consent. These public routes are dispatched separately from the
-cookie API, after the same CloudFront origin proof. Cookie writes retain
+cookie API, behind the same CloudFront OAC/IAM boundary. Cookie writes retain
 same-origin checks. The `/connect/` request survives a sign-in in the same
 tab, via the existing return path including its fragment. Settings lists
 connections, disconnect and turn-off-adding controls, and content-free
 recent activity. Adding consent is separate and initially unchecked.
 Note metadata shows assistant provenance as "added by <client>"; client
 names are self-reported. Existing notes read as user-authored. The JSON
-export preserves provenance. `capture.py` is private, invoked only by MCP,
+export preserves provenance. `workers/capture.ts` is private, invoked only by MCP,
 with no public web route or ability to authenticate cookie writes.
-
-### Native rebuild visual direction (2026-10-13)
-
-The React web app uses warm paper, Bricolage typography and the version as
-its focal point. Today places the spacious editor before saved notes; file,
-recording and place controls keep text labels. Desktop navigation is a rail;
-phone navigation stays at the bottom with safe-area spacing. The Archive
-label uses the existing `/timeline/` address. Search words remain in a POST
-body and URL fragment. Dark appearance and reduced-motion preferences are
-supported. All icons (`web/src/components/icon.tsx`) and fonts are local;
-no images or new CSP exceptions are required.
-
-### Native HTTP runtime (2026-10-13)
-
-`server/app/` is an ordinary Hono server on Node 24; the API paths and stored
-records keep their existing contracts. Each request creates its own session
-service, while SDK clients are reused. Mutations transactionally prove the
-live session and account; subscriber deletion blocks captures and processing
-before cleanup. Every HTTP response, including redirects and errors, carries
-`Cache-Control: no-store`. The platform's IAM endpoint and CloudFront OAC
-replace the generated origin-secret header after activation. The native local
-harness uses the same routes with fictional stores and never AWS services.

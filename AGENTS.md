@@ -274,6 +274,19 @@ Where things are (each module's design comment explains its contract):
 
 ### The email
 
+- **Product updates** (2026-10-13): the configured administrator writes and
+  schedules text at `/admin/`, reached from settings. `AdminUserId` defaults
+  empty and is configured privately, never committed. Assign it through
+  `./deploy.sh --native-http-phase=publish --admin-user-id=ID`
+  (an explicit empty id disables access), followed by ordinary HTTP activation.
+  It identifies an existing email-verified subscriber; no admin privilege can
+  be self-assigned by the web.
+  `packages/backend/product-updates.ts` and `docs/WEB-APP.md` define the contract.
+  One saved update per local email date appears near the top as "Release Notes
+  about Release Notes". Scheduling is explicit, separate from saving a draft;
+  cancellation cannot retract sent emails. No extra sends or catch-up, and these
+  updates are never personal notes. A read failure never holds the daily email.
+
 - **Plain text plus HTML** (`packages/mail/compose.ts`). The HTML is type on paper in the
   site's colours: no borders, boxes, shadows or filled panels (Jamie,
   2026-10-07: "obsessed with borders and boxes"), and it loads **nothing

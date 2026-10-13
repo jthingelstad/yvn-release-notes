@@ -31,6 +31,7 @@ export interface ApiContext {
   inboundDomain: string;
   senderFunction: string;
   exportFunction: string;
+  adminUserId?: string;
   geocode?: (q: string) => Promise<City[]>;
   weatherFetch?: JsonFetch;
   fetchTitle?: TitleFetcher;

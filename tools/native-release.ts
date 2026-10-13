@@ -272,6 +272,7 @@ export async function main(
         service.timeoutSeconds !== 28 ||
         service.maxConcurrencyPerEnvironment !== Number(required(parameters, 'NativeMaxConcurrency')) ||
         'ORIGIN_SECRET' in (service.environmentVariables ?? {}) ||
+        (name === 'App' && (service.environmentVariables?.ADMIN_USER_ID ?? '') !== (parameters.AdminUserId ?? '')) ||
         Object.entries(expected).some(([key, value]) => service?.environmentVariables?.[key] !== value)
       )
         throw new Error(`HTTP candidate configuration/source mismatch ${name}`);

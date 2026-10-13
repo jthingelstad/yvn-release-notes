@@ -181,8 +181,9 @@ notes.yourversionnumber.com
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/search/`,
-  `/tag/?t=<tag>`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`.
+  `/tag/?t=<tag>`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`.
   `/connect/` approves an external agent request whose opaque id stays in the fragment.
+  `/admin/` manages product updates, visible in settings only to the configured administrator.
 
 - **A pause** starts on the next day an email would go (today, unless
   today's has gone) and runs 1 to 60 days. It is `PAUSE#<from>` with
@@ -305,7 +306,7 @@ no image dependency or new CSP exception is required.
 | `POST /api/auth/verify` `{email, code}` or `{token}` | sets the cookie; says whether the account is new |
 | `POST /api/auth/signout` | |
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |
-| `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address |
+| `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address; `admin: true` only for the configured administrator |
 | `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `status: "active"` to start again); the birthday cannot change |
 | `GET /api/export?format=md\|json` | the words alone, as a download (JSON by default) |
 | `POST /api/export/zip` | start a zip of everything, photos and recordings too (202); answers with the build already going, if one is |
@@ -332,6 +333,46 @@ no image dependency or new CSP exception is required.
 | `DELETE /api/me` `{code}` | deletes everything; needs that fresh code |
 | `POST /api/unsubscribe?t=` | the email's one-click unsubscribe (RFC 8058); the token is the day's reply token, and this is the one write without an Origin |
 | `GET /api/unsubscribe?t=` | redirects to `/unsubscribe/`, a page with a button, for mail apps that open the link |
+| `GET /api/admin/updates` | administrator only: saved drafts and schedules (`updates`), and the administrator's local `today`; each update has `id`, `title`, `text`, named `links` and rendered `parts`, `revision`, `status`, `date`, `created_at`, `updated_at` |
+| `POST /api/admin/updates` `{title,text}` | administrator only: create a draft (201), without scheduling |
+| `PUT /api/admin/updates/{id}` `{title,text,revision}` | administrator only: edit a draft; scheduled text cannot be edited until cancelled |
+| `DELETE /api/admin/updates/{id}` `{revision}` | administrator only: delete a draft |
+| `POST /api/admin/updates/{id}/schedule` `{date,revision}` | administrator only: reserve one date with a saved text snapshot; dates cannot precede the administrator's today; 409 for an occupied date or stale revision |
+| `DELETE /api/admin/updates/{id}/schedule` `{revision}` | administrator only: cancel its schedule and return to a draft; does not retract emails already sent |
+
+## Product updates
+
+The administrator signs in through the same email link/code as everyone else.
+`AdminUserId` is a CloudFormation parameter, default empty (access disabled),
+passed only to the native app as `ADMIN_USER_ID`. Set it to the existing
+subscriber id for the operator's verified address, outside this public repo.
+The staged publication accepts `./deploy.sh --native-http-phase=publish
+--admin-user-id=ID`; activate that candidate through the normal HTTP phase.
+Omitting the option preserves the assignment; an explicit empty value disables
+it in the newly published candidate. Never write the operator's id into source.
+Account recreation gives a new id and requires a new assignment. The API
+checks the configured id on every request; the same write transaction proves
+the live session, current account/address, draft revision and date-slot ownership.
+Native HTTP activation also verifies the configured administrator id.
+
+Settings links to **Manage product updates** for that account. `/admin/` supports
+creating/editing/deleting drafts, a text preview, scheduling a saved draft, and
+cancelling a schedule before editing it again. Titles are at most 120 code
+points, text at most 2,000. Plain text only, with guarded title fetching when
+saved; the preview shows resolved link names after saving. No media or Markdown.
+
+One update per date appears as **Release Notes about Release Notes**, below the
+version/year progress and before the daily ask in HTML; after the opening in
+plain text. It uses the email's type-on-paper layout and named links. The date
+is each recipient's local daily-email date (including the sign-up email or an
+operator's send-now), so time zones may receive it at different UTC times.
+Already-sent, paused and stopped days get no additional email or catch-up.
+Scheduling during a day reaches only remaining sends, and cancellation stops
+remaining reads without retracting emails or a snapshot already being sent.
+A completed date stays labelled scheduled in the list: this is schedule history,
+not delivery tracking. Optional read failures omit the update and preserve the
+daily send; the sender dry run reports its id, never its words, and writes nothing.
+These records stay outside personal notes, counts, streaks, search and exports.
 
 ## Release and verification
 

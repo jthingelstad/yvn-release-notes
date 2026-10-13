@@ -480,3 +480,30 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
     transition: none;
   }
 }
+
+/* Product news remains type on paper, in both the editor and email. */
+.update-list {
+  list-style: none;
+  padding: 0;
+}
+.update-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  margin-block: 1rem;
+}
+.update-list button {
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.update-preview h2,
+.update-words {
+  overflow-wrap: anywhere;
+}
+.update-words {
+  white-space: pre-wrap;
+}
+.update-preview .eyebrow { font-size: 13px; color: var(--ink-2); margin: 0 0 8px; }
+.update-preview h2 { font-size: 22px; line-height: 1.2; font-weight: 800; color: var(--ink); margin: 0 0 12px; }
+.update-preview .update-words { font-size: 17px; line-height: 1.5; margin: 0; }

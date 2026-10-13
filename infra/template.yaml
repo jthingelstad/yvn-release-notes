@@ -19,6 +19,12 @@ Parameters:
     Type: String
     Default: projects-ops-alerts
     Description: The account's alerts queue. Its policy must list this stack's alarm topic.
+  AdminUserId:
+    Type: String
+    Default: ""
+    MaxLength: 80
+    AllowedPattern: '^$|^[A-Za-z0-9_-]{1,80}$'
+    Description: Subscriber id of the email-verified operator. Empty disables admin access; never commit a live value.
   WebDomain:
     Type: String
     Default: notes.yourversionnumber.com
@@ -265,6 +271,7 @@ Rules:
         AssertDescription: Install and read back both endpoint resource policies before moving CloudFront origins.
 
 Conditions:
+  HasAdmin: !Not [!Equals [!Ref AdminUserId, ""]]
   HasWebCertificate: !Not [!Equals [!Ref WebCertificateArn, ""]]
 
 Resources:
@@ -461,6 +468,7 @@ Resources:
           INBOUND_DOMAIN: !Ref InboundDomain
           SENDER_FUNCTION: !Ref SenderAlias
           EXPORT_FUNCTION: !Ref ExportAlias
+          ADMIN_USER_ID: !If [HasAdmin, !Ref AdminUserId, !Ref AWS::NoValue]
         TelemetryConfig:
           LoggingConfig:
             LogGroup: !Ref NativeAppLogs

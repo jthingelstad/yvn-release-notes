@@ -1,4 +1,4 @@
-/** Quarter-hour daily sender. Slow optional history/weather/photo reads happen
+/** Quarter-hour daily sender. Optional history/weather/photo/product-news reads happen
  * before claiming a local day. The DynamoDB claim prevents competing runs;
  * failed sends restore it conditionally. SES acceptance followed by transport
  * failure remains an unavoidable ambiguous send, as in the original worker.
@@ -20,6 +20,7 @@ import {
 } from '../packages/domain/notes.ts';
 import { found as tags } from '../packages/domain/tags.ts';
 import { addDays } from '../packages/domain/dates.ts';
+import type { ProductUpdate } from '../packages/domain/product-updates.ts';
 import { computeStreak, pauseDays, type Streak } from '../packages/domain/streak.ts';
 import { computeVersion, releaseName, releaseSpan, sameDayBefore, type Version } from '../packages/domain/version.ts';
 import {
@@ -409,6 +410,7 @@ export async function sendOne(
   const previous = sub.last_sent_date,
     streak = await readStreak(s, sub, day);
   let [past, lifetime, yesterday, notes, own, closed] = await readHistory(s, sub, day);
+  const productUpdate = await readProductUpdate(s, day);
   const photos = await withPhotos(s, sub, day, yesterday, past);
   [yesterday, past] = photos;
   const forecast = await readWeather(s, sub, day, fetcher, true, notes, own);
@@ -472,6 +474,7 @@ export async function sendOne(
       lifetime,
       yesterday,
       closed,
+      productUpdate,
       images: photos[2],
       inbox,
       forecast,
@@ -489,6 +492,14 @@ export async function sendOne(
   }
   s.log?.({ event: 'sent', user: sub.user_id, date: day, version: String(v) });
   return { user: sub.user_id, date: day, version: String(v), outcome: 'sent' };
+}
+export async function readProductUpdate(s: SenderServices, day: string): Promise<ProductUpdate | null> {
+  try {
+    return await s.store.scheduledProductUpdate(day);
+  } catch (error) {
+    s.log?.({ event: 'product-update-error', date: day, error: errorName(error) });
+    return null;
+  }
 }
 export async function handler(
   event: SenderEvent | null,
@@ -537,6 +548,7 @@ export async function handler(
       const photo = await withPhotos(s, sub, day, yesterday, past);
       [yesterday, past] = photo;
       const forecast = await readWeather(s, sub, day, fetcher, false, notes, own);
+      const productUpdate = await readProductUpdate(s, day);
       results.push({
         user: sub.user_id,
         date: day,
@@ -566,7 +578,8 @@ export async function handler(
         photos: Object.keys(photo[2]).length,
         photo_bytes: Object.values(photo[2]).reduce((n, p) => n + p.length, 0),
         forecast: Boolean(forecast),
-        inbox: Boolean(sub.inbox)
+        inbox: Boolean(sub.inbox),
+        product_update: productUpdate?.id ?? null
       });
       continue;
     }

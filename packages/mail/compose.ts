@@ -8,6 +8,7 @@ import { withoutClosing } from '../domain/tags.ts';
 import { computeVersion, releaseName, type Version } from '../domain/version.ts';
 import type { Streak } from '../domain/streak.ts';
 import { codePointLength, codePointSlice, pythonRstrip, pythonTrim } from '../domain/unicode.ts';
+import { UPDATE_LABEL, type ProductUpdate } from '../domain/product-updates.ts';
 export const SITE = 'https://yourversionnumber.com',
   APP = 'https://notes.yourversionnumber.com';
 export const PAPER = '#fffbf2',
@@ -76,6 +77,7 @@ export interface Yesterday extends Omit<PastDay, 'sky'> {
   places: [string, string | null][];
 }
 export interface BodyOptions {
+  productUpdate?: ProductUpdate | null;
   streak?: Streak | null;
   past?: OnThisDay | null;
   forecast?: string | null;
@@ -269,6 +271,8 @@ export function body(v: Version, birthday: string, o: BodyOptions = {}): string 
   if (birthdayLine(v)) opening += ' ' + birthdayLine(v);
   if (o.forecast) opening += '\n' + o.forecast;
   if (o.welcome) opening = o.welcome + '\n\n' + opening;
+  if (o.productUpdate)
+    opening += `\n\n${UPDATE_LABEL}\n${o.productUpdate.title}\n\n${links.plain(o.productUpdate.text, o.productUpdate.links)}`;
   let text = o.streak ? streakLines(v, o.streak).join(' ') + '\n' : '';
   if (o.lifetime) text += lifetimeLine(o.lifetime) + '\n';
   if (text) text += '\n';
@@ -472,6 +476,12 @@ ${days}${more}</td></tr>
 `;
 }
 
+export function productUpdateHtml(update: ProductUpdate): string {
+  return `<tr><td style="padding:36px 0 0;">
+<p class="ink-2" style="margin:0 0 8px;font-family:${FONT};font-size:13px;line-height:1.5;color:${INK_2};">${UPDATE_LABEL}</p>
+<p class="ink" style="margin:0 0 12px;font-family:${FONT};font-size:22px;line-height:1.2;font-weight:800;color:${INK};">${asciiHtml(update.title)}</p>
+${notesHtml(update.text, update.links)}</td></tr>\n`;
+}
 export function htmlBody(v: Version, birthday: string, day: string, o: BodyOptions = {}): string {
   const { streak, past, forecast, welcome, token, lifetime, yesterday, inbox, closed } = o,
     vs = escape(String(v)),
@@ -527,7 +537,7 @@ ${yearDots(v)}
 </p>
 </td></tr>
 
-<tr><td style="padding:48px 0 0;">
+${o.productUpdate ? productUpdateHtml(o.productUpdate) : ''}<tr><td style="padding:48px 0 0;">
 <p class="ink" style="margin:0 0 12px;font-family:${FONT};font-size:28px;line-height:1.15;font-weight:800;letter-spacing:-0.01em;color:${INK};">Reply any time today.</p>
 <p class="ink" style="margin:0 0 12px;font-family:${FONT};font-size:19px;line-height:1.5;color:${INK};">
 What happened, what you made, who you saw. Whatever you send back becomes the release notes for

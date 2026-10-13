@@ -20,7 +20,8 @@ listen(
       from: process.env.FROM_ADDRESS ?? '',
       inboundDomain: process.env.INBOUND_DOMAIN ?? '',
       senderFunction: process.env.SENDER_FUNCTION ?? '',
-      exportFunction: process.env.EXPORT_FUNCTION ?? ''
+      exportFunction: process.env.EXPORT_FUNCTION ?? '',
+      adminUserId: process.env.ADMIN_USER_ID ?? ''
     })
   })
 );

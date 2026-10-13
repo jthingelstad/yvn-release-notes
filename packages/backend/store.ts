@@ -7,6 +7,9 @@
  * IMPORT#, CAPTURE#, MAILEVENT#, PROCESS#, PROCESSLOCK#; TOKEN#, INBOX#, EMAIL#, LOGIN#, LOGINFOR#, RATE#, LOCK#,
  * TALLY#, OAUTHCLIENT#, OAUTHPENDING#, OAUTHCODE#, OAUTHACCESS#, OAUTHREFRESH#,
  * OAUTHFAMILY#, OAUTHUSER#, MCPMETA# retain their original layouts.
+ * PRODUCT#UPDATES / UPDATE#<id> holds operator drafts/history; DATE#<YYYY-MM-DD>
+ * holds the sole scheduled text snapshot for that subscriber-local email day.
+ * Both are outside USER# archives; revision CAS and date-slot ownership are atomic.
  */
 import {
   BatchWriteCommand,
@@ -25,6 +28,7 @@ import type {
   TransactWriteCommandInput
 } from '@aws-sdk/lib-dynamodb';
 import { Subscriber } from './store-types.ts';
+import type { ProductUpdate } from '../domain/product-updates.ts';
 import type { DocumentSender, Item, Key, MailCounter, Purpose, SessionInput } from './store-types.ts';
 export { Subscriber } from './store-types.ts';
 export type { Item, Key, DocumentSender, MailCounter } from './store-types.ts';
@@ -49,6 +53,12 @@ function conflict(e: unknown) {
 }
 function media(item: Item | null): Item[] {
   return (item?.media as Item[] | undefined) ?? [];
+}
+function productNews(row: Item): ProductUpdate {
+  const update = { ...row };
+  delete update.pk;
+  delete update.sk;
+  return update as unknown as ProductUpdate;
 }
 
 export class Store {
@@ -116,6 +126,65 @@ export class Store {
         true
       )
     ).map(Subscriber.fromItem);
+  }
+  async productUpdates(): Promise<ProductUpdate[]> {
+    const rows = await this.rows({
+      KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
+      ExpressionAttributeValues: { ':p': 'PRODUCT#UPDATES', ':s': 'UPDATE#' },
+      ConsistentRead: true
+    });
+    return rows.map(productNews);
+  }
+  async productUpdate(id: string): Promise<ProductUpdate | null> {
+    const row = await this.get({ pk: 'PRODUCT#UPDATES', sk: 'UPDATE#' + id }, { ConsistentRead: true });
+    if (!row) return null;
+    return productNews(row);
+  }
+  async scheduledProductUpdate(day: string): Promise<ProductUpdate | null> {
+    const row = await this.get({ pk: 'PRODUCT#UPDATES', sk: 'DATE#' + day }, { ConsistentRead: true });
+    if (!row) return null;
+    return productNews(row);
+  }
+  async saveProductUpdate(user: string, email: string, next: ProductUpdate | null, previous: ProductUpdate | null) {
+    const id = next?.id ?? previous!.id,
+      updateKey = { pk: 'PRODUCT#UPDATES', sk: 'UPDATE#' + id };
+    const guard = previous
+      ? {
+          ConditionExpression: '#revision = :revision',
+          ExpressionAttributeNames: { '#revision': 'revision' },
+          ExpressionAttributeValues: { ':revision': previous.revision }
+        }
+      : { ConditionExpression: 'attribute_not_exists(pk)' };
+    const ops: NonNullable<TransactWriteCommandInput['TransactItems']> = [
+      {
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: key(user, 'PROFILE'),
+          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND email = :admin',
+          ExpressionAttributeValues: { ':admin': email }
+        }
+      },
+      next
+        ? this.putOperation({ ...updateKey, ...next }, guard)
+        : { Delete: { TableName: this.tableName, Key: updateKey, ...guard } }
+    ];
+    if (previous?.status === 'scheduled' && previous.date)
+      ops.push({
+        Delete: {
+          TableName: this.tableName,
+          Key: { pk: 'PRODUCT#UPDATES', sk: 'DATE#' + previous.date },
+          ConditionExpression: 'id = :id',
+          ExpressionAttributeValues: { ':id': id }
+        }
+      });
+    if (next?.status === 'scheduled' && next.date)
+      ops.push(
+        this.putOperation(
+          { pk: 'PRODUCT#UPDATES', sk: 'DATE#' + next.date, ...next },
+          { ConditionExpression: 'attribute_not_exists(pk)' }
+        )
+      );
+    return this.provedTransaction(ops);
   }
   async censusItems() {
     return this.rows(

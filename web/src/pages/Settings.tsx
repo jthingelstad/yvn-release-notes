@@ -50,6 +50,11 @@ export function Settings() {
         {me.isPending && <Loading />}
         {me.isError && <Failed />}
         {p && !p.new && <Account p={p} />}
+        {p?.admin && (
+          <p className="section">
+            <AppLink href="/admin/">Manage product updates</AppLink>
+          </p>
+        )}
 
         {(!p || p.new) && <SignOut />}
 

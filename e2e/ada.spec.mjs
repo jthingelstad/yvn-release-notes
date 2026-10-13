@@ -159,6 +159,7 @@ test('a recording made on the page plays back, then goes with the note', async (
 
 test('turning on transcripts writes out a recording, and search finds what was said', async ({ page }) => {
   await page.goto('/settings/');
+  await page.locator('#writing-settings > summary').click();
   const box = page.getByLabel('Write out what I say');
   await expect(box).not.toBeChecked();
   await box.check();
@@ -176,12 +177,14 @@ test('turning on transcripts writes out a recording, and search finds what was s
   await expect(page.locator('.media .said mark').first()).toHaveText('loons');
 
   await page.goto('/settings/');
+  await page.locator('#writing-settings > summary').click();
   await page.getByLabel('Write out what I say').uncheck();
   await expect(page.locator('#transcribe-saved')).toBeVisible();
 });
 
 test('turning on descriptions describes a photo, shown only where search found it', async ({ page }) => {
   await page.goto('/settings/');
+  await page.locator('#writing-settings > summary').click();
   const box = page.getByLabel('Describe my photos');
   await expect(box).not.toBeChecked();
   await box.check();
@@ -204,6 +207,7 @@ test('turning on descriptions describes a photo, shown only where search found i
   await expect(page.locator('.media .said', { hasText: 'canoe' })).toHaveCount(0);
 
   await page.goto('/settings/');
+  await page.locator('#writing-settings > summary').click();
   await page.getByLabel('Describe my photos').uncheck();
   await expect(page.locator('#describe-saved')).toBeVisible();
 });
@@ -249,6 +253,7 @@ test('a past day can have a place of its own, and its weather follows', async ({
 test('settings shows the standing address, copies it, and a new one replaces it', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/settings/');
+  await page.locator('#writing-settings > summary').click();
   const box = page.locator('#inbox');
   const address = box.locator('[data-field=inbox]');
   const pattern = /^[a-z2-7]{24}@in\.yourversionnumber\.com$/;
@@ -270,6 +275,7 @@ test('settings shows the standing address, copies it, and a new one replaces it'
   // It is the profile's now, after a reload too.
   const second = await address.textContent();
   await page.reload();
+  await page.locator('#writing-settings > summary').click();
   await expect(page.locator('#inbox [data-field=inbox]')).toHaveText(second);
 });
 

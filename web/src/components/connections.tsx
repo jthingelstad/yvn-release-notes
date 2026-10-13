@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { SettingsGroup } from './settings-group.tsx';
 import { api, get } from '../lib/api.ts';
 import { AppLink, ErrorLine, Failed, Loading, useBusy, useProblem } from './common.tsx';
 
@@ -22,12 +24,14 @@ const when = (at: number) => new Date(at * 1000).toLocaleString();
 
 export function Connections() {
   const client = useQueryClient();
+  const [showActivity, setShowActivity] = useState(false);
   const list = useQuery({
     queryKey: ['mcp-connections'],
     queryFn: () => get<{ connections: Connection[] }>('/api/mcp/connections')
   });
   const activity = useQuery({
     queryKey: ['mcp-activity'],
+    enabled: showActivity,
     queryFn: () => get<{ activity: Activity[] }>('/api/mcp/activity')
   });
   const [busy, run] = useBusy();
@@ -43,16 +47,17 @@ export function Connections() {
       await client.invalidateQueries({ queryKey: ['mcp-connections'] });
     });
   return (
-    <section className="section wide agent-content" id="agent-connections">
-      <h2>Connected agents</h2>
-      <p>To discuss your notes with Claude, add a custom connector with this address:</p>
-      <p className="value">
-        <a href="https://notes.yourversionnumber.com/mcp">https://notes.yourversionnumber.com/mcp</a>
-      </p>
-      <p className="hint">
-        Approve reading when it opens this site. An agent service receives your notes under its own privacy and
-        retention policies. Adding notes requires separate approval. Connections never turn processing on.
-      </p>
+    <SettingsGroup
+      id="agent-connections"
+      title="Connected agents"
+      description={
+        list.data
+          ? list.data.connections.length
+            ? `${list.data.connections.length} ${list.data.connections.length === 1 ? 'connection' : 'connections'}`
+            : 'No agents connected'
+          : 'Manage access to your notes'
+      }
+    >
       {list.isPending && <Loading />}
       {list.isError && <Failed />}
       {list.data?.connections.length === 0 && <p>No agents connected.</p>}
@@ -76,29 +81,53 @@ export function Connections() {
         </div>
       ))}
       <ErrorLine line={problem.line} />
-      <p className="hint">
-        Disconnecting stops new requests immediately. Already shared content stays subject to the agent service’s
-        retention policies; private file links expire within ten minutes.
-      </p>
-      <h3>Recent agent activity</h3>
-      <p className="hint">
-        The last 14 days, up to 50 requests. We keep the time, tool and outcome here, never the search words or the
-        content returned. Successful writes also name the connection and note.
-      </p>
-      {activity.isError && <Failed />}
-      {activity.data?.activity.length === 0 && <p>No recent agent activity.</p>}
-      {activity.data?.activity.map((a, i) => (
-        <p className="hint" key={`${a.at}-${i}`}>
-          {when(a.at)} · {a.tool} · {a.outcome}
-          {a.client && ` · ${a.client}`}
-          {a.date && (
-            <>
-              {' · '}
-              <AppLink href={`/day/?d=${encodeURIComponent(a.date)}`}>{a.date}</AppLink>
-            </>
-          )}
+      {!!list.data?.connections.length && (
+        <p className="hint">
+          Disconnecting stops new requests immediately. Already shared content stays subject to the agent service’s
+          retention policies; private file links expire within ten minutes.
         </p>
-      ))}
-    </section>
+      )}
+      <details className="settings-secondary" id="agent-setup">
+        <summary>Connect an agent</summary>
+        <div className="stack tight agent-content">
+          <p>To discuss your notes with Claude, add a custom connector with this address:</p>
+          <p className="value">
+            <a href="https://notes.yourversionnumber.com/mcp">https://notes.yourversionnumber.com/mcp</a>
+          </p>
+          <p className="hint">
+            Approve reading when it opens this site. An agent service receives your notes under its own privacy and
+            retention policies. Adding notes requires separate approval. Connections never turn processing on.
+          </p>
+        </div>
+      </details>
+      <details
+        className="settings-secondary"
+        id="agent-activity"
+        onToggle={(e) => setShowActivity(e.currentTarget.open)}
+      >
+        <summary>Recent agent activity</summary>
+        <div className="stack tight">
+          {showActivity && activity.isPending && <Loading />}
+          <p className="hint">
+            The last 14 days, up to 50 requests. We keep the time, tool and outcome here, never the search words or the
+            content returned. Successful writes also name the connection and note.
+          </p>
+          {activity.isError && <Failed />}
+          {activity.data?.activity.length === 0 && <p>No recent agent activity.</p>}
+          {activity.data?.activity.map((a, i) => (
+            <p className="hint" key={`${a.at}-${i}`}>
+              {when(a.at)} · {a.tool} · {a.outcome}
+              {a.client && ` · ${a.client}`}
+              {a.date && (
+                <>
+                  {' · '}
+                  <AppLink href={`/day/?d=${encodeURIComponent(a.date)}`}>{a.date}</AppLink>
+                </>
+              )}
+            </p>
+          ))}
+        </div>
+      </details>
+    </SettingsGroup>
   );
 }

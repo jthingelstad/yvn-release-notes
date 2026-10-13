@@ -57,7 +57,11 @@ nothing there links here yet: that is Jamie's call.
    as Markdown and JSON; since phase 3, a zip with those and every photo
    and recording, built in the background (`workers/export.ts`). It arrives with sign-in, before anything else, so
    deleting an account never means losing what was in it.
-7. **Settings**: send time and location, the standing address (a note any
+7. **Settings**: four keyboard-accessible disclosure groups—Daily email
+   (open initially), Writing & search, Connected agents and Your account.
+   Changes save as they are made; opening a group changes no preference.
+   Connector setup and recent activity are secondary disclosures. Contains
+   send time and location, the standing address (a note any
    day by email, no reply needed; Copy, and "New address" to replace it),
    sign out, delete account (after an
    export is offered, and with a fresh code).

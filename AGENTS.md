@@ -584,3 +584,12 @@ The SES event migration uses `./deploy.sh --events-alias-phase=prepare`, then
 verified. Shared USER-owned MAILEVENT receipts make overlapping SNS targets
 idempotent. `EventsPythonCodeSha256` is the first bridge's ZIP hash and stays
 fixed forever; later source/runtime releases must not republish that baseline.
+
+Native HTTP implementation (2026-10-13): `server/app/` is the Hono router;
+`packages/backend/{sessions,accounts,views,uploads,exports,guarded-store}.ts`
+carry email-verified sessions, owner DTOs and atomic session/account proofs.
+`tools/dev-server.ts` serves the real native HTTP/MCP API against fictional
+fakes, with `/dev-mail/`, `/dev-upload/` and `/dev-media/`; it never uses AWS.
+`packages/backend/census.ts` and `workers/entries/{send,inbound,events}.ts`
+wire Event workers and their count-only raw JSON/embedded metrics. Native
+HTTP logging uses structured console objects, no request URLs or arguments.

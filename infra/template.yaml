@@ -40,7 +40,23 @@ Parameters:
     Default: yvn-release-notes-anthropic
     Description: The Secrets Manager secret holding api_key, the Anthropic API key photo descriptions use. Made by hand; the describer sends nothing while it holds the placeholder.
 
+  SenderScheduleArn:
+    Type: String
+    AllowedPattern: ^arn:[^:]+:events:[^:]+:[0-9]{12}:rule/.+$
+    Description: Existing sender rule ARN, read from control-plane metadata; avoids a permission/target dependency cycle without replacing the rule.
+  TranscribeDoneArn:
+    Type: String
+    AllowedPattern: ^arn:[^:]+:events:[^:]+:[0-9]{12}:rule/.+$
+    Description: Existing transcription-completion rule ARN, read from control-plane metadata; the rule itself keeps its physical name.
+
+  WorkerAliasesReady:
+    Type: String
+    Default: "false"
+    AllowedValues: ["false", "true"]
+    Description: First deploy false to publish worker aliases and permissions; then true to publish the final describe self-invoke configuration and move existing targets.
+
 Conditions:
+  UseWorkerAliases: !Equals [!Ref WorkerAliasesReady, "true"]
   HasWebCertificate: !Not [!Equals [!Ref WebCertificateArn, ""]]
 
 Resources:
@@ -252,7 +268,7 @@ Resources:
 
   ReceiptRule:
     Type: AWS::SES::ReceiptRule
-    DependsOn: [MailBucketPolicy, InboundInvokePermission]
+    DependsOn: [MailBucketPolicy, InboundInvokePermission, InboundAliasInvokePermission]
     Properties:
       RuleSetName: !Ref ReceiptRuleSet
       Rule:
@@ -266,7 +282,7 @@ Resources:
               BucketName: !Ref MailBucket
               ObjectKeyPrefix: raw/
           - LambdaAction:
-              FunctionArn: !GetAtt InboundFunction.Arn
+              FunctionArn: !If [UseWorkerAliases, !Ref InboundAlias, !GetAtt InboundFunction.Arn]
               InvocationType: Event
 
   # --- functions ------------------------------------------------------------
@@ -427,13 +443,14 @@ Resources:
   # Quarter hours, so a 20:00 send time lands at 20:00.
   SenderSchedule:
     Type: AWS::Events::Rule
+    DependsOn: SenderAliasSchedulePermission
     Properties:
       Description: Run the Release Notes sender every 15 minutes
       ScheduleExpression: cron(0/15 * * * ? *)
       State: ENABLED
       Targets:
         - Id: sender
-          Arn: !GetAtt SenderFunction.Arn
+          Arn: !If [UseWorkerAliases, !Ref SenderAlias, !GetAtt SenderFunction.Arn]
 
   SenderSchedulePermission:
     Type: AWS::Lambda::Permission
@@ -879,10 +896,20 @@ Resources:
                 Action: lambda:InvokeFunction
                 Resource: !GetAtt ExportFunction.Arn
               - Effect: Allow
+                # Stable worker entry point; the unqualified grant above drains
+                # requests accepted before this release.
+                Action: lambda:InvokeFunction
+                Resource: !Ref ExportAlias
+              - Effect: Allow
                 # Sends a new subscriber today's email at sign-up, without
                 # waiting for it (web.send_first).
                 Action: lambda:InvokeFunction
                 Resource: !GetAtt SenderFunction.Arn
+              - Effect: Allow
+                # Stable worker entry point; the unqualified grant above drains
+                # requests accepted before this release.
+                Action: lambda:InvokeFunction
+                Resource: !Ref SenderAlias
               - Effect: Allow
                 # Starting the emails again after a hard bounce or complaint
                 # takes the address off SES's account-level suppression list
@@ -899,7 +926,7 @@ Resources:
   # the other way round, the API would refuse CloudFront for those minutes.
   WebFunction:
     Type: AWS::Lambda::Function
-    DependsOn: WebDistribution
+    DependsOn: [WebDistribution, ExportAliasInvokeConfig]
     Properties:
       FunctionName: !Sub "${AWS::StackName}-web"
       Description: The Release Notes web app's API
@@ -923,8 +950,8 @@ Resources:
           FROM_ADDRESS: !Ref FromAddress
           CONFIG_SET: !Ref ConfigurationSet
           MAIL_BUCKET: !Ref MailBucket
-          EXPORT_FUNCTION: !Ref ExportFunction
-          SENDER_FUNCTION: !Ref SenderFunction
+          EXPORT_FUNCTION: !If [UseWorkerAliases, !Ref ExportAlias, !Ref ExportFunction]
+          SENDER_FUNCTION: !If [UseWorkerAliases, !Ref SenderAlias, !Ref SenderFunction]
           INBOUND_DOMAIN: !Ref InboundDomain
 
   McpLogs:
@@ -966,6 +993,11 @@ Resources:
                 Action: lambda:InvokeFunction
                 Resource: !GetAtt CaptureFunction.Arn
               - Effect: Allow
+                # Stable worker entry point; the unqualified grant above drains
+                # requests accepted before this release.
+                Action: lambda:InvokeFunction
+                Resource: !Ref CaptureAlias
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt McpLogs.Arn
 
@@ -990,7 +1022,7 @@ Resources:
           WEB_ORIGIN: !Sub "https://${WebDomain}"
           ORIGIN_SECRET: !Sub "{{resolve:secretsmanager:${OriginSecret}:SecretString}}"
           MAIL_BUCKET: !Ref MailBucket
-          CAPTURE_FUNCTION: !Ref CaptureFunction
+          CAPTURE_FUNCTION: !If [UseWorkerAliases, !Ref CaptureAlias, !Ref CaptureFunction]
 
   CaptureLogs:
     Type: AWS::Logs::LogGroup
@@ -1309,7 +1341,7 @@ Resources:
   TranscribeStream:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
-      FunctionName: !Ref TranscribeFunction
+      FunctionName: !If [UseWorkerAliases, !Ref TranscribeAlias, !Ref TranscribeFunction]
       EventSourceArn: !GetAtt Table.StreamArn
       StartingPosition: LATEST
       DestinationConfig:
@@ -1325,6 +1357,7 @@ Resources:
 
   TranscribeDone:
     Type: AWS::Events::Rule
+    DependsOn: TranscribeAliasDonePermission
     Properties:
       Description: A Release Notes transcription job finished
       EventPattern:
@@ -1336,7 +1369,7 @@ Resources:
       State: ENABLED
       Targets:
         - Id: transcribe
-          Arn: !GetAtt TranscribeFunction.Arn
+          Arn: !If [UseWorkerAliases, !Ref TranscribeAlias, !GetAtt TranscribeFunction.Arn]
 
   TranscribeDonePermission:
     Type: AWS::Lambda::Permission
@@ -1423,6 +1456,9 @@ Resources:
                 Action: lambda:InvokeFunction
                 Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-describe"
               - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-describe:live"
+              - Effect: Allow
                 # Where a stream batch goes after its last retry.
                 Action: sqs:SendMessage
                 Resource: !GetAtt FailedQueue.Arn
@@ -1455,7 +1491,7 @@ Resources:
         Variables:
           TABLE: !Ref Table
           BUCKET: !Ref MailBucket
-          SELF: !Sub "${AWS::StackName}-describe"
+          SELF: !If [UseWorkerAliases, !Sub "${AWS::StackName}-describe:live", !Sub "${AWS::StackName}-describe"]
           SECRET: !Ref AnthropicSecretName
 
   DescribeInvokeConfig:
@@ -1469,8 +1505,9 @@ Resources:
 
   DescribeStream:
     Type: AWS::Lambda::EventSourceMapping
+    DependsOn: DescribeAliasInvokeConfig
     Properties:
-      FunctionName: !Ref DescribeFunction
+      FunctionName: !If [UseWorkerAliases, !Ref DescribeAlias, !Ref DescribeFunction]
       EventSourceArn: !GetAtt Table.StreamArn
       StartingPosition: LATEST
       DestinationConfig:
@@ -1483,6 +1520,154 @@ Resources:
         Filters:
           - Pattern: '{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"NewImage": {"sk": {"S": [{"prefix": "NOTE#"}]}}}}'
           - Pattern: '{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"NewImage": {"sk": {"S": ["PROFILE"]}, "describe": {"BOOL": [true]}}}}'
+
+  # --- immutable worker baselines and stable entry points -------------------
+  # Deploy WorkerAliasesReady=false first, then true. The first pass creates
+  # aliases before SELF or trigger destinations can name them. The second
+  # publishes their final Python configuration before moving :live.
+  # Keep $LATEST async settings and unqualified invoke permissions until old
+  # requests drain. Runtime/code replacements later publish a complete Node
+  # version before moving :live; these Python versions remain rollback targets.
+
+  SenderPythonVersion:
+    Type: AWS::Lambda::Version
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Ref SenderFunction
+      Description: Compatible Python baseline before the Node 24 rebuild
+
+  SenderAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      Name: live
+      FunctionName: !Ref SenderFunction
+      FunctionVersion: !GetAtt SenderPythonVersion.Version
+
+  InboundPythonVersion:
+    Type: AWS::Lambda::Version
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Ref InboundFunction
+      Description: Compatible Python baseline before the Node 24 rebuild
+
+  InboundAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      Name: live
+      FunctionName: !Ref InboundFunction
+      FunctionVersion: !GetAtt InboundPythonVersion.Version
+
+  TranscribePythonVersion:
+    Type: AWS::Lambda::Version
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Ref TranscribeFunction
+      Description: Compatible Python baseline before the Node 24 rebuild
+
+  TranscribeAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      Name: live
+      FunctionName: !Ref TranscribeFunction
+      FunctionVersion: !GetAtt TranscribePythonVersion.Version
+
+  DescribeBootstrapVersion:
+    Type: AWS::Lambda::Version
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Ref DescribeFunction
+      Description: Compatible Python baseline before the Node 24 rebuild
+
+  DescribePythonVersion:
+    Type: AWS::Lambda::Version
+    Condition: UseWorkerAliases
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Ref DescribeFunction
+      Description: Complete Python rollback configuration with stable worker targets
+
+  DescribeAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      Name: live
+      FunctionName: !Ref DescribeFunction
+      FunctionVersion: !If [UseWorkerAliases, !GetAtt DescribePythonVersion.Version, !GetAtt DescribeBootstrapVersion.Version]
+
+  ExportPythonVersion:
+    Type: AWS::Lambda::Version
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Ref ExportFunction
+      Description: Compatible Python baseline before the Node 24 rebuild
+
+  ExportAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      Name: live
+      FunctionName: !Ref ExportFunction
+      FunctionVersion: !GetAtt ExportPythonVersion.Version
+
+  CapturePythonVersion:
+    Type: AWS::Lambda::Version
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Ref CaptureFunction
+      Description: Compatible Python baseline before the Node 24 rebuild
+
+  CaptureAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      Name: live
+      FunctionName: !Ref CaptureFunction
+      FunctionVersion: !GetAtt CapturePythonVersion.Version
+
+  InboundAliasInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InboundAlias
+      Action: lambda:InvokeFunction
+      Principal: ses.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/${AWS::StackName}:receipt-rule/replies"
+
+  SenderAliasSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SenderAlias
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !Ref SenderScheduleArn
+
+  TranscribeAliasDonePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TranscribeAlias
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !Ref TranscribeDoneArn
+
+  ExportAliasInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    DependsOn: ExportAlias
+    Properties:
+      FunctionName: !Ref ExportFunction
+      Qualifier: live
+      MaximumRetryAttempts: 0
+
+  DescribeAliasInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    DependsOn: DescribeAlias
+    Properties:
+      FunctionName: !Ref DescribeFunction
+      Qualifier: live
+      MaximumRetryAttempts: 2
 
   # --- alarms -----------------------------------------------------------------
 
@@ -1867,3 +2052,27 @@ Outputs:
   DashboardUrl:
     Description: The operations dashboard
     Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/${Dashboard}"
+  SenderWorkerAlias:
+    Value: !Ref SenderAlias
+  SenderPythonRollbackVersion:
+    Value: !GetAtt SenderPythonVersion.Version
+  InboundWorkerAlias:
+    Value: !Ref InboundAlias
+  InboundPythonRollbackVersion:
+    Value: !GetAtt InboundPythonVersion.Version
+  TranscribeWorkerAlias:
+    Value: !Ref TranscribeAlias
+  TranscribePythonRollbackVersion:
+    Value: !GetAtt TranscribePythonVersion.Version
+  DescribeWorkerAlias:
+    Value: !Ref DescribeAlias
+  DescribePythonRollbackVersion:
+    Value: !If [UseWorkerAliases, !GetAtt DescribePythonVersion.Version, !GetAtt DescribeBootstrapVersion.Version]
+  ExportWorkerAlias:
+    Value: !Ref ExportAlias
+  ExportPythonRollbackVersion:
+    Value: !GetAtt ExportPythonVersion.Version
+  CaptureWorkerAlias:
+    Value: !Ref CaptureAlias
+  CapturePythonRollbackVersion:
+    Value: !GetAtt CapturePythonVersion.Version

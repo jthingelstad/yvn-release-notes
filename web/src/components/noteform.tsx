@@ -16,6 +16,7 @@ import type { Place } from '../lib/types.ts';
 import { ErrorLine, useBusy, useProblem } from './common.tsx';
 import { useRefresh } from './notelist.tsx';
 import { canRecord, recordClock, useRecorder } from './recorder.ts';
+import { Icon } from './icon.tsx';
 import { NoteWhere } from './where.tsx';
 
 interface Props {
@@ -94,8 +95,8 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
 
   return (
     <form id="note-form" className="note-form" noValidate onSubmit={onSubmit}>
-      <label>
-        {label}
+      <label className="write-label">
+        <span>{label}</span>
         <textarea
           ref={area}
           name="text"
@@ -123,12 +124,9 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
           </div>
         ))}
       </div>
-      <div className="row">
-        <button className="go" type="submit" disabled={busy}>
-          {submit}
-        </button>
+      <div className="row note-tools">
         <label className="quiet picker">
-          Add files
+          <Icon name="files" /> Add files
           <input
             ref={pick}
             type="file"
@@ -152,9 +150,12 @@ export function NoteForm({ day, label, placeholder, submit }: Props) {
             rec.toggle();
           }}
         >
-          {rec.seconds === null ? 'Record' : `Stop · ${recordClock(rec.seconds)}`}
+          <Icon name="record" /> {rec.seconds === null ? 'Record' : `Stop · ${recordClock(rec.seconds)}`}
         </button>
         <NoteWhere place={place} onPick={setPlace} />
+        <button className="go" type="submit" disabled={busy}>
+          {submit}
+        </button>
       </div>
       <ErrorLine line={problem.line} />
     </form>

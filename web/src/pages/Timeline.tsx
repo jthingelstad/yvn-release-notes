@@ -10,7 +10,7 @@ import { daysQuery, releasesQuery } from '../lib/queries.ts';
 import type { Day, ReleaseSummary } from '../lib/types.ts';
 
 export function Timeline() {
-  useTitle('Timeline');
+  useTitle('Archive');
   const days = useInfiniteQuery(daysQuery);
   const list = useRef<HTMLDivElement>(null);
   const more = useRef<HTMLButtonElement>(null);
@@ -45,7 +45,8 @@ export function Timeline() {
   return (
     <>
       <Bar />
-      <h1>Every release so far.</h1>
+      <h1>Your archive.</h1>
+      <p className="lede">Every day, a little more of your story.</p>
       <p className="hint spaced">
         <AppLink href="/day/">Add notes for another day</AppLink> · <AppLink href="/tag/">Tags</AppLink>
       </p>

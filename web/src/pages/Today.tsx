@@ -50,12 +50,27 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
         {t.paused_through && `Emails paused through ${dayName(t.paused_through)}. Notes still count.`}
       </p>
 
-      <h2 className="big notes-head">Today’s release notes</h2>
-      {/* The day's own place comes before its notes', as on the Day page. */}
-      <DayWhere key={t.date} day={t.date} where={t.where} />
-      <NoteList day={t.date} notes={t.notes} tz={t.tz} version={t.version} />
-      <EmptyLine t={t} me={me} />
-      <NoteForm key={t.date} day={t.date} label="Add to today" placeholder="Anything about the day" submit="Add note" />
+      <section className="writing" aria-labelledby="write-head">
+        <h2 className="big notes-head" id="write-head">
+          What changed today?
+        </h2>
+        <NoteForm
+          key={t.date}
+          day={t.date}
+          label="Add to today"
+          placeholder="A few words, a photo, a voice memo…"
+          submit="Save note"
+        />
+      </section>
+      <section className="saved-notes" aria-labelledby="notes-head">
+        <h2 className="big notes-head" id="notes-head">
+          Today’s notes
+        </h2>
+        {/* The day's own place comes before its notes', as on the Day page. */}
+        <DayWhere key={t.date} day={t.date} where={t.where} />
+        <NoteList day={t.date} notes={t.notes} tz={t.tz} version={t.version} />
+        <EmptyLine t={t} me={me} />
+      </section>
 
       <StreakLine s={t.streak} />
       <p className="hint">

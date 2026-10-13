@@ -345,3 +345,14 @@ Note metadata shows assistant provenance as "added by <client>"; client
 names are self-reported. Existing notes read as user-authored. The JSON
 export preserves provenance. `capture.py` is private, invoked only by MCP,
 with no public web route or ability to authenticate cookie writes.
+
+### Native rebuild visual direction (2026-10-13)
+
+The React web app uses warm paper, Bricolage typography and the version as
+its focal point. Today places the spacious editor before saved notes; file,
+recording and place controls keep text labels. Desktop navigation is a rail;
+phone navigation stays at the bottom with safe-area spacing. The Archive
+label uses the existing `/timeline/` address. Search words remain in a POST
+body and URL fragment. Dark appearance and reduced-motion preferences are
+supported. All icons (`web/src/components/icon.tsx`) and fonts are local;
+no images or new CSP exceptions are required.

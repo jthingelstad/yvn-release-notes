@@ -3,6 +3,9 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { sayFor, type Line, type Problem } from '../lib/say.ts';
+import { api } from '../lib/api.ts';
+import { useSignedInAs } from '../lib/nav.ts';
+import { Icon, type IconName } from './icon.tsx';
 import { signedIn, store } from '../lib/storage.ts';
 
 // A same-site address as a router link: path, ?query and #hash.
@@ -32,28 +35,62 @@ export function AppLink({
 }
 
 const NAV = [
-  ['/today/', 'Today'],
-  ['/timeline/', 'Timeline'],
-  ['/search/', 'Search'],
-  ['/settings/', 'Settings']
+  ['/today/', 'Today', 'today'],
+  ['/timeline/', 'Archive', 'archive'],
+  ['/search/', 'Search', 'search'],
+  ['/settings/', 'Settings', 'settings']
 ] as const;
 
 // The bar along the top: the name, and the four places for anyone signed in.
 // `current` marks one of them (Tag marks Search).
 export function Bar({ nav = true, current, children }: { nav?: boolean; current?: string; children?: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const here = current || path;
+  const here =
+    current ||
+    (/^\/(day|release|timeline)\//.test(path)
+      ? '/timeline/'
+      : /^\/(tag|search)\//.test(path)
+        ? '/search/'
+        : /^\/(connect|pause|delete|settings)\//.test(path)
+          ? '/settings/'
+          : path);
+  const signOut = useSignedInAs();
+  const [leaving, setLeaving] = useState(false);
   return (
-    <header className="bar">
-      <Link className="brand" to="/">
+    <header className={nav ? 'bar bar--app' : 'bar'}>
+      <Link className="brand" to={nav ? '/today/' : '/'}>
         Release Notes
       </Link>
-      {nav &&
-        NAV.map(([to, name]) => (
-          <Link key={to} to={to} aria-current={here === to ? 'page' : undefined} activeProps={{}}>
-            {name}
-          </Link>
-        ))}
+      {nav && (
+        <nav className="primary-nav" aria-label="Main navigation">
+          {NAV.map(([to, name, icon]) => (
+            <Link key={to} to={to} aria-current={here === to ? 'page' : undefined} activeProps={{}}>
+              <Icon name={icon as IconName} />
+              <span>{name}</span>
+            </Link>
+          ))}
+        </nav>
+      )}
+      {nav && (
+        <button
+          className="quiet rail-signout"
+          type="button"
+          disabled={leaving}
+          onClick={async () => {
+            setLeaving(true);
+            try {
+              await api('POST', '/api/auth/signout');
+              signedIn.drop();
+              signOut('/#sign-in');
+            } finally {
+              setLeaving(false);
+            }
+          }}
+        >
+          <Icon name="out" />
+          Sign out
+        </button>
+      )}
       {children}
     </header>
   );

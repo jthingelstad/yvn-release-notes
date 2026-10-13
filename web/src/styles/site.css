@@ -36,7 +36,7 @@
 /* heard by screen readers, not seen */
 .vh { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 body { margin: 0; background: var(--paper); color: var(--ink); font: 18px/1.5 var(--font); }
-main { max-width: 36rem; min-height: 100vh; margin: 0 auto; padding: 28px 24px 40px; display: flex; flex-direction: column; }
+main { max-width: 42rem; min-height: 100vh; margin: 0 auto; padding: 28px 24px 40px; display: flex; flex-direction: column; }
 a { color: var(--blue); font-weight: 600; }
 a:hover { color: var(--blue-hover); }
 strong { color: var(--ink); }
@@ -84,7 +84,7 @@ input.code { font-family: var(--mono); font-size: 32px; font-weight: 700; letter
 
 .go {
   align-self: flex-start; background: var(--orange); color: var(--on-orange); border: 0; cursor: pointer;
-  font: inherit; font-weight: 800; font-size: 17px; padding: 14px 22px; border-radius: 999px; text-decoration: none;
+  font: inherit; font-weight: 800; font-size: 17px; padding: 14px 22px; border-radius: 8px; text-decoration: none;
 }
 .go:hover { color: var(--on-orange); filter: brightness(1.05); }
 .go:disabled { opacity: .6; cursor: progress; }
@@ -239,3 +239,80 @@ a.tag { white-space: nowrap; }
 
 /* Agent names and connector addresses are unbroken external strings. */
 .agent-content { overflow-wrap: anywhere; }
+
+/* A quiet writing desk: navigation at the side on large screens, at the
+   thumb on small ones. All pages retain the same readable text measure. */
+.icon { width: 23px; height: 23px; flex: none; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 5px; }
+.primary-nav { display: flex; gap: 20px; }
+.primary-nav a { display: flex; gap: 13px; align-items: center; }
+.bar--app .brand { font-size: 26px; letter-spacing: -.04em; }
+.rail-signout { display: flex; align-items: center; gap: 13px; text-decoration: none; }
+main:has(.bar--app) { max-width: 1180px; margin-left: 248px; padding: 64px 72px 72px; }
+.bar--app { position: fixed; inset: 0 auto 0 0; width: 248px; padding: 40px 28px; align-items: flex-start; flex-direction: column; flex-wrap: nowrap; }
+.bar--app .brand { margin: 0 0 24px; }
+.bar--app .primary-nav { flex-direction: column; gap: 17px; }
+.bar--app .primary-nav a { min-height: 44px; color: var(--ink-2); font-size: 17px; font-weight: 500; }
+.bar--app .primary-nav a[aria-current="page"] { color: var(--blue); font-weight: 700; text-decoration: none; }
+.bar--app .rail-signout { margin-top: auto; color: var(--ink-2); font-weight: 500; }
+main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
+#day .dateline { margin-top: 0; text-transform: uppercase; letter-spacing: .1em; font-family: var(--mono); font-size: 13px; }
+#day .vnum.huge { font-family: var(--font); color: var(--ink); font-size: clamp(64px, 8vw, 116px); font-weight: 800; letter-spacing: -.025em; font-variant-numeric: tabular-nums; margin-top: 14px; }
+#day .vnum.huge .dot { color: inherit; padding: 0 .025em; letter-spacing: 0; }
+#day .dots { gap: 8px; margin: 20px 0 16px; flex-wrap: nowrap; }
+#day .dots span { width: 9px; height: 9px; }
+#day .dots span.on { background: var(--blue); }
+.writing { margin-top: 48px; }
+.writing .notes-head { margin: 0; font-size: 28px; letter-spacing: -.02em; }
+.writing .note-form { margin-top: 20px; }
+.writing .write-label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.writing textarea { font-family: var(--font); font-size: 20px; line-height: 1.65; min-height: 130px; padding: 8px 0 20px; border-bottom: 1px solid var(--ink-3); }
+.writing textarea:focus { border-color: var(--blue); }
+.note-tools { gap: 12px 24px; align-items: center; }
+.note-tools .quiet { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; text-decoration: none; font-weight: 500; font-size: 16px; }
+.note-tools .go { margin-left: auto; }
+.note-tools .place-picker { flex-basis: 100%; order: 2; }
+.saved-notes { margin-top: 44px; }
+.saved-notes .notes-head { margin: 0; font-size: 25px; }
+.saved-notes .notes { gap: 28px; margin-top: 22px; }
+.saved-notes .text { order: -1; font-size: 18px; line-height: 1.65; }
+.saved-notes .meta { color: var(--ink-2); font-weight: 400; }
+.saved-notes .note .actions { gap: 20px; }
+.saved-notes .empty-day { max-width: 60ch; }
+#day .streak { margin-top: 36px; font-size: 15px; font-weight: 400; }
+.days { gap: 36px; }
+.tday-head .vnum { font-family: var(--font); font-size: 26px; letter-spacing: -.015em; }
+.tday .text { max-width: 65ch; font-size: 17px; }
+.section.wide { margin-top: 40px; }
+@media (min-width: 761px) and (max-width: 1100px) {
+  main:has(.bar--app) { margin-left: 210px; padding: 48px 36px 60px; }
+  .bar--app { width: 210px; padding: 36px 22px; }
+  .bar--app .brand { font-size: 23px; }
+  .note-tools { gap: 10px 16px; }
+}
+@media (max-width: 760px) {
+  main, main:has(.bar--app) { max-width: 42rem; margin: 0 auto; padding: 28px 24px 48px; }
+  main:has(.bar--app) { padding-bottom: calc(116px + env(safe-area-inset-bottom)); }
+  .bar--app { position: static; width: auto; padding: 0; margin-bottom: 42px; }
+  .bar--app .brand { margin: 0; font-size: 24px; }
+  .bar--app .primary-nav { position: fixed; z-index: 10; inset: auto 0 0; flex-direction: row; justify-content: space-around; gap: 0; background: var(--paper); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  .bar--app .primary-nav a { flex-direction: column; gap: 4px; min-width: 64px; padding: 5px 0; font-size: 12px; }
+  .bar--app .rail-signout { display: none; }
+  main:has(.bar--app) > h1 { font-size: 34px; }
+  #day .dateline { font-size: 11px; letter-spacing: .06em; }
+  #day .vnum.huge { font-size: clamp(56px, 18vw, 92px); }
+  #day .dots { justify-content: space-between; gap: 0; }
+  #day .dots span { width: 6px; height: 6px; }
+  .writing { margin-top: 36px; }
+  .writing .notes-head { font-size: 26px; }
+  .writing textarea { font-size: 18px; min-height: 148px; }
+  .note-tools { justify-content: space-between; gap: 8px 12px; }
+  .note-tools .quiet { font-size: 14px; gap: 5px; }
+  .note-tools .icon { width: 20px; height: 20px; }
+  .note-tools .go { flex-basis: 100%; width: 100%; margin: 12px 0 0; order: 3; text-align: center; }
+  .saved-notes { margin-top: 36px; }
+  .saved-notes .notes-head { font-size: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+}

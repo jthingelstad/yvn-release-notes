@@ -46,7 +46,7 @@ test('a photo goes with a new note, and a PDF joins it later', async ({ page }) 
   await form.locator('textarea').fill(words);
   await form.locator('input[type=file]').setInputFiles({ name: 'bagels.png', mimeType: 'image/png', buffer: PNG });
   await expect(form.locator('.chosen')).toHaveText('With bagels.png');
-  await form.getByRole('button', { name: 'Add note' }).click();
+  await form.getByRole('button', { name: /Add note|Save note/ }).click();
 
   const note = page.locator('article.note', { hasText: words });
   await expect(note.locator('.media img')).toHaveJSProperty('naturalWidth', 1);
@@ -97,7 +97,7 @@ test('a file that is not a photo, recording or PDF is refused by name, and nothi
   const words = `Not a page ${Date.now()}`;
   await form.locator('textarea').fill(words);
   await form.locator('input[type=file]').setInputFiles({ name: 'page.html', mimeType: 'text/html', buffer: Buffer.from('<p>hi</p>') });
-  await form.getByRole('button', { name: 'Add note' }).click();
+  await form.getByRole('button', { name: /Add note|Save note/ }).click();
   await expect(form.locator('.error')).toHaveText('page.html isn’t a photo, recording or PDF, so it can’t be added.');
   await expect(page.locator('article.note', { hasText: words })).toHaveCount(0);
   await expect(form.locator('textarea')).toHaveValue(words);
@@ -150,7 +150,7 @@ test('a recording made on the page plays back, then goes with the note', async (
 
   const words = `Said aloud ${Date.now()}`;
   await form.locator('textarea').fill(words);
-  await form.getByRole('button', { name: 'Add note' }).click();
+  await form.getByRole('button', { name: /Add note|Save note/ }).click();
   const note = page.locator('article.note', { hasText: words });
   await expect(note.locator('.media audio')).toHaveCount(1);
   await expect(note.locator('.media audio')).toHaveAttribute('src', /^\/dev-media\/media\//);
@@ -217,7 +217,7 @@ test('a note says where it was, by name, linking to the map', async ({ page }) =
   await form.getByLabel('Where (optional)').fill('Par');
   await form.getByRole('option', { name: /Paris/ }).click();
   await expect(form.locator('#note-where')).toHaveText(/At Paris, Ile-de-France\./);
-  await form.getByRole('button', { name: 'Add note' }).click();
+  await form.getByRole('button', { name: /Add note|Save note/ }).click();
 
   const note = page.locator('article.note', { hasText: words });
   const place = note.getByRole('link', { name: 'Paris, Ile-de-France' });

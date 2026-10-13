@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useRef, useState } from 'react';
 import { api } from '../lib/api.ts';
 import type { Day, DayPage, Place, Today } from '../lib/types.ts';
+import { Icon } from './icon.tsx';
 import { ErrorLine, useBusy, useFocusLater, useProblem } from './common.tsx';
 
 const PlacePicker = lazy(() => import('./placepicker.tsx').then((m) => ({ default: m.PlacePicker })));
@@ -48,7 +49,7 @@ export function NoteWhere({ place, onPick }: { place: Place | null; onPick: (p: 
           focusLater(() => input.current);
         }}
       >
-        Where
+        <Icon name="where" /> Where
       </button>
       {open && (
         <div className="stack tight place-picker" id="note-where-picker">

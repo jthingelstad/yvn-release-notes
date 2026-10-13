@@ -72,6 +72,14 @@ class Combine(unittest.TestCase):
     def test_no_notes(self):
         self.assertEqual(combine([]), "")
 
+    def test_duplicate_words_from_different_authors_keep_attribution(self):
+        human = {"text": "Tea."}
+        claude = {"text": "Tea.", "author": "assistant", "client": "Claude"}
+        chatgpt = {"text": "Tea.", "author": "assistant", "client": "ChatGPT"}
+        self.assertEqual(combine([human, claude, chatgpt, claude]),
+                         "Tea.\n\nAdded by Claude:\nTea.\n\nAdded by ChatGPT:\nTea.")
+        self.assertEqual(combine([{"text": "", "author": "assistant"}]), "Added by an agent.")
+
 
 class MapUrl(unittest.TestCase):
     def test_a_spot_links_to_its_own_coordinates_under_its_name(self):

@@ -21,6 +21,8 @@ subscriber's own yesterday's notes, so the email confirms they came
 through; the note index says whether there are any, so a day without
 costs no read. A dry run reports those days, whether yesterday shows and
 its files, and the note count, never the text.
+Both history blocks retain assistant/client attribution through notes.combine;
+hashtags come from note text alone, never from a client's display name.
 
 On a birthday the email sums up the release just closed (read_closed):
 its days with notes, notes, photos and longest streak, from the same
@@ -165,7 +167,7 @@ def read_yesterday(store: Store, sub: Subscriber, day: date, have: set[str]) -> 
         # Any note shows, even one whose only file stayed in the email (a
         # PDF, a video): the block is there to say it came through.
         text = combine(notes)
-        return Yesterday(then, text, day_links(notes), media.counts(notes), tuple(tags.found(text)),
+        return Yesterday(then, text, day_links(notes), media.counts(notes), tuple(tags.found("\n\n".join(n.get("text") or "" for n in notes))),
                          sum(media.others(n) for n in notes),
                          places=places_of(notes, own), thumbs=thumbs_of(sub, notes)), notes, own
     except Exception as e:
@@ -251,7 +253,7 @@ def read_on_this_day(store: Store, sub: Subscriber, day: date, have: set[str]) -
                 continue
             kept = store.weather_between(sub.user_id, then.isoformat(), then.isoformat()).get(then.isoformat())
             sky = weather.day_line(kept, weather.fahrenheit(sub.place or kept)) if kept else None
-            shown.append(PastDay(then, text, day_links(notes), files, sky, tuple(tags.found(text)), thumbs_of(sub, notes)))
+            shown.append(PastDay(then, text, day_links(notes), files, sky, tuple(tags.found("\n\n".join(n.get("text") or "" for n in notes))), thumbs_of(sub, notes)))
         if not shown:
             return None
         return OnThisDay(tuple(shown), tuple(found[SHOWN:]))

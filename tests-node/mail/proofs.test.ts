@@ -20,6 +20,103 @@ const lastTransaction = (s: FakeStore) =>
   s.memory.calls.filter((c) => c.name === 'TransactWriteCommand').at(-1)!.input as InstanceType<
     typeof TransactWriteCommand
   >['input'];
+test('sender day/token creation and message completion use exact live-account transactions', async () => {
+  const s = setup(),
+    day = '2026-10-13';
+  assert.equal(await s.putDay('u', day, '5.4.222', 't', at), true);
+  assert.deepEqual(lastTransaction(s), {
+    TransactItems: [
+      {
+        ConditionCheck: {
+          TableName: 'T',
+          Key: { pk: 'USER#u', sk: 'PROFILE' },
+          ConditionExpression:
+            'attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND (attribute_not_exists(#status) OR #status = :active)',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':active': 'active' }
+        }
+      },
+      {
+        Put: {
+          TableName: 'T',
+          Item: { pk: 'TOKEN#t', sk: 'TOKEN', user_id: 'u', date: day, version: '5.4.222', sent_at: now },
+          ConditionExpression: 'attribute_not_exists(pk)'
+        }
+      },
+      {
+        Put: {
+          TableName: 'T',
+          Item: { pk: 'USER#u', sk: `DAY#${day}`, version: '5.4.222', token: 't', sent_at: at },
+          ConditionExpression: 'attribute_not_exists(pk)'
+        }
+      }
+    ]
+  });
+  assert.equal(await s.setDayMessageId('u', day, 'ses', 't'), true);
+  assert.deepEqual(lastTransaction(s), {
+    TransactItems: [
+      {
+        ConditionCheck: {
+          TableName: 'T',
+          Key: { pk: 'USER#u', sk: 'PROFILE' },
+          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting)'
+        }
+      },
+      {
+        Update: {
+          TableName: 'T',
+          Key: { pk: 'USER#u', sk: `DAY#${day}` },
+          UpdateExpression: 'SET ses_message_id = :m',
+          ConditionExpression: 'attribute_exists(pk) AND #token = :token',
+          ExpressionAttributeNames: { '#token': 'token' },
+          ExpressionAttributeValues: { ':m': 'ses', ':token': 't' }
+        }
+      }
+    ]
+  });
+  s.seed({ ...profile, last_sent_date: day });
+  await s.releaseDay('u', day, null, 't');
+  assert.deepEqual(lastTransaction(s), {
+    TransactItems: [
+      {
+        Update: {
+          TableName: 'T',
+          Key: { pk: 'USER#u', sk: 'PROFILE' },
+          UpdateExpression: 'REMOVE last_sent_date',
+          ConditionExpression: 'last_sent_date = :d',
+          ExpressionAttributeValues: { ':d': day }
+        }
+      },
+      {
+        ConditionCheck: {
+          TableName: 'T',
+          Key: { pk: 'USER#u', sk: `DAY#${day}` },
+          ConditionExpression: 'attribute_not_exists(pk) OR #token = :token',
+          ExpressionAttributeNames: { '#token': 'token' },
+          ExpressionAttributeValues: { ':token': 't' }
+        }
+      }
+    ]
+  });
+});
+test('sender transactions refuse stopped/deleting/missing accounts and cannot recreate absent days', async () => {
+  for (const state of ['stopped', 'deleting', 'missing']) {
+    const s = setup();
+    if (state === 'stopped') s.seed({ ...profile, status: 'stopped' });
+    if (state === 'deleting') await s.mcpBlock('u');
+    if (state === 'missing') await s.deleteKeys([{ pk: 'USER#u', sk: 'PROFILE' }]);
+    assert.equal(await s.putDay('u', '2026-10-13', '5.4.222', 't', at), false);
+    assert.equal(await s.getToken('t'), null);
+    assert.equal(s.memory.read({ pk: 'USER#u', sk: 'DAY#2026-10-13' }), null);
+  }
+  const s = setup();
+  assert.equal(await s.setDayMessageId('u', '2026-10-13', 'ses', 't'), false);
+  assert.equal(s.memory.read({ pk: 'USER#u', sk: 'DAY#2026-10-13' }), null);
+  await s.putDay('u', '2026-10-13', '5.4.222', 't', at);
+  await s.mcpBlock('u');
+  assert.equal(await s.setDayMessageId('u', '2026-10-13', 'ses', 't'), false);
+  assert.equal(s.memory.read({ pk: 'USER#u', sk: 'DAY#2026-10-13' })?.ses_message_id, undefined);
+});
 test('SNS exact native SDK transaction combines receipt, profile barrier and monthly ADD', async () => {
   const s = setup();
   assert.equal(await s.applyMailEvent('u', 'digest', 'bounce', at, now), 'applied');

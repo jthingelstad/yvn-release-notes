@@ -170,6 +170,59 @@ test('pre-send failure conditionally releases day and removes orphaned reply tok
   await sender.handler({}, null, f.services);
   assert.equal(f.mail.messages.length, 1);
 });
+for (const phase of ['before-day', 'ses-delivery'] as const)
+  test(`deletion during ${phase} cannot resurrect sender tokens or USER rows`, async () => {
+    const f = setup(),
+      entered = Promise.withResolvers<void>(),
+      resume = Promise.withResolvers<void>();
+    if (phase === 'before-day') {
+      const create = f.store.putDay.bind(f.store);
+      f.store.putDay = async (...args) => {
+        entered.resolve();
+        await resume.promise;
+        return create(...args);
+      };
+    } else {
+      const send = f.mail.send.bind(f.mail);
+      f.mail.send = async (...args) => {
+        entered.resolve();
+        await resume.promise;
+        return send(...args);
+      };
+    }
+    const running = sender.handler({}, null, f.services);
+    await entered.promise;
+    await f.store.mcpBlock('u');
+    await f.store.deleteKeys(f.store.memory.all().map((row) => ({ pk: String(row.pk), sk: String(row.sk) })));
+    resume.resolve();
+    const report = await running;
+    assert.equal((report.results as Item[])[0]?.outcome, 'account-changed');
+    assert.deepEqual(f.store.memory.all(), []);
+    assert.equal(f.mail.messages.length, Number(phase === 'ses-delivery'));
+    assert.ok(!JSON.stringify(f.logs).includes('@'));
+  });
+test('stale sender cleanup preserves a newer day token and its reservation', async () => {
+  const f = setup(),
+    entered = Promise.withResolvers<void>(),
+    resume = Promise.withResolvers<void>();
+  const send = f.mail.send.bind(f.mail);
+  f.mail.send = async (...args) => {
+    entered.resolve();
+    await resume.promise;
+    return send(...args);
+  };
+  const running = sender.handler({}, null, f.services);
+  await entered.promise;
+  const pending = f.store.memory.read({ pk: 'USER#u', sk: `DAY#${day}` })!;
+  f.store.seed({ ...pending, token: 'newer', ses_message_id: 'winner' });
+  f.store.seed({ pk: 'TOKEN#newer', sk: 'TOKEN', user_id: 'u' });
+  resume.resolve();
+  assert.equal(((await running).results as Item[])[0]?.outcome, 'account-changed');
+  assert.equal((await f.store.profile('u'))?.last_sent_date, day);
+  assert.equal(f.store.memory.read({ pk: 'USER#u', sk: `DAY#${day}` })?.ses_message_id, 'winner');
+  assert.ok(await f.store.getToken('newer'));
+  assert.equal(await f.store.getToken(String(pending.token)), null);
+});
 test('one failed subscriber does not prevent other mail; time reserve stops claiming', async () => {
   const f = setup();
   f.store.seed({ ...profile, pk: 'USER#v', email: 'second@example.com' });

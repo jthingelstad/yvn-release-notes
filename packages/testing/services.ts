@@ -1,5 +1,6 @@
 /** Versioned, private local object/mail/invocation fakes; no network or AWS. */
 import type { Objects, StoredObject, ObjectWrite, Mail, Invocations } from '../backend/services.ts';
+import { readFile } from 'node:fs/promises';
 export class FakeObjects implements Objects {
   readonly versions = new Map<string, Array<StoredObject & { deleted?: boolean; tags: Record<string, string> }>>();
   readonly calls: Array<{ operation: string; key: string; version?: string }> = [];
@@ -50,6 +51,10 @@ export class FakeObjects implements Objects {
     this.calls.push({ operation: 'copy', key: target, version });
     await this.put(target, this.find(source, version).body, options);
   }
+  async uploadFile(key: string, path: string, options: ObjectWrite) {
+    this.calls.push({ operation: 'uploadFile', key });
+    await this.put(key, await readFile(path), options);
+  }
   async remove(key: string, version?: string) {
     this.calls.push({ operation: 'remove', key, version });
     if (version) {
@@ -74,7 +79,10 @@ export class FakeObjects implements Objects {
   }
   async list(prefix: string) {
     return [...this.versions.keys()]
-      .filter((key) => key.startsWith(prefix) && !this.versions.get(key)!.at(-1)?.deleted)
+      .filter(
+        (key) =>
+          key.startsWith(prefix) && this.versions.get(key)!.length > 0 && !this.versions.get(key)!.at(-1)?.deleted
+      )
       .sort();
   }
   async tag(key: string, tags: Record<string, string>) {

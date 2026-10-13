@@ -18,6 +18,7 @@ export interface Objects {
   get(key: string, options?: { version?: string; range?: string; maxBytes?: number }): Promise<StoredObject>;
   head(key: string, version?: string): Promise<ObjectHead>;
   put(key: string, body: Buffer, options: ObjectWrite): Promise<string | undefined>;
+  uploadFile(key: string, path: string, options: ObjectWrite): Promise<void>;
   copy(source: string, version: string, target: string, options: ObjectWrite): Promise<void>;
   remove(key: string, version?: string): Promise<void>;
   list(prefix: string): Promise<string[]>;

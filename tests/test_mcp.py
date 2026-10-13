@@ -3,6 +3,7 @@ import base64
 import hashlib
 import json
 import os
+import traceback
 from contextlib import redirect_stdout
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit, parse_qs
@@ -278,6 +279,43 @@ class ReaderTests(ConnectionCase):
         for bad in ({'cursor': cursor, 'from': '2026-10-07'}, {'cursor': 'malformed'}):
             _, b = self.rpc(token, name='notes_list', arguments=bad)
             self.assertEqual(b['result']['structuredContent']['error'], 'invalid_cursor')
+
+    def test_release_filter_rejects_unrepresentable_anniversaries(self):
+        token = self.connected()[0]['access_token']
+        # Birthday is 1981: age 8018 starts in 9999 but its next birthday
+        # is unrepresentable. Age 8017 is representable, though in the future.
+        for name in ('notes_list', 'notes_search'):
+            for release in ('801.8', '999.9'):
+                with self.subTest(name=name, release=release):
+                    r, b = self.rpc(token, name=name, arguments={'release': release, 'q': 'lake'} if name == 'notes_search' else {'release': release})
+                    self.assertEqual(r['statusCode'], 200)
+                    self.assertTrue(b['result']['isError'])
+                    self.assertEqual(b['result']['structuredContent']['error'], 'invalid_arguments')
+        _, b = self.rpc(token, name='notes_list', arguments={'release': '801.7'})
+        self.assertEqual(b['result']['structuredContent']['error'], 'invalid_date')
+        self.assertNotIn('mcp-error', self.out.getvalue())
+
+    def test_store_and_file_failures_escape_without_private_exception_details(self):
+        token = self.connected()[0]['access_token']
+        self.add_note(media=[{'n': 1, 'kind': 'image', 'type': 'image/jpeg',
+                             'thumb': {'key': 'media/u1/thumb.jpg'}}])
+        private = 'private-note ada@example.com media/u1/private-file ' + token
+        cases = ((self.store, 'note_days', 'notes_context', {}),
+                 (self.s3, 'get_object', 'notes_view_photo', {'date': '2026-10-07', 'id': 'w-first', 'n': 1}))
+        for target, method, tool, arguments in cases:
+            with self.subTest(tool=tool), patch.object(target, method, side_effect=OSError(private)):
+                try:
+                    self.rpc(token, name=tool, arguments=arguments)
+                except RuntimeError as e:
+                    self.assertEqual(str(e), 'MCP temporarily unavailable')
+                    self.assertTrue(e.__suppress_context__)
+                    emitted = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+                    for secret in ('private-note', 'ada@example.com', 'media/u1/private-file', token):
+                        self.assertNotIn(secret, emitted + self.out.getvalue())
+                else:
+                    self.fail('Unexpected failures must fail the Lambda invocation for its error alarm.')
+        errors = [json.loads(line) for line in self.out.getvalue().splitlines() if 'mcp-error' in line]
+        self.assertEqual(errors, [{'event': 'mcp-error', 'user': 'u1', 'error': 'OSError'}] * 2)
 
     def test_long_unicode_note_and_transcript_continuations(self):
         words = '🎵' * 20000

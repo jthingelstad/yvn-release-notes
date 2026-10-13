@@ -21,7 +21,7 @@ from .notes import written_at, place_label
 from .version import compute_version, release_span
 from .web import App, Request, Reject, respond, note_view, search_terms, searched_text
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 PROTOCOLS = ("2025-06-18", "2025-03-26")
 MAX_CHARS, MAX_MEDIA = 48000, 1_500_000
 
@@ -250,7 +250,12 @@ class Reader:
                 if "from" in a or "through" in a:
                     raise ToolError("invalid_arguments", "Choose a release or a date range.")
                 major, minor = map(int, a["release"].split("."))
-                start, end = release_span(date.fromisoformat(self.birthday), major * 10 + minor)
+                birthday, age = date.fromisoformat(self.birthday), major * 10 + minor
+                # Both anniversaries must fit; release_span also constructs
+                # the next birthday to find this release's last day.
+                if birthday.year + age + 1 > date.max.year:
+                    raise ToolError("invalid_arguments", "Choose a release within the supported date range.")
+                start, end = release_span(birthday, age)
                 first, last = start.isoformat(), min(self.today, end.isoformat())
             if first > last:
                 raise ToolError("invalid_date", "Choose an ordered range through today.")
@@ -378,10 +383,11 @@ def handler(event, context, *, store=None, s3=None, clock=time.time):
             result = {"isError": True, "content": [{"type": "text", "text": dumps(value)}], "structuredContent": value}
             outcome = e.code
         except Exception as e:
-            # Object/store errors may carry private paths. Log only their type.
+            # Object/store errors may carry private paths. Log only their type,
+            # then fail the invocation so the Lambda Errors alarm sees it.
             from .web import log
             log(event="mcp-error", user=family["user_id"], error=type(e).__name__)
-            return respond(502, {"error": "temporarily_unavailable"})
+            raise RuntimeError("MCP temporarily unavailable") from None
         record(app, family, name if tool else "unknown", outcome)
     else:
         error = {"code": -32601, "message": "Method not found"}

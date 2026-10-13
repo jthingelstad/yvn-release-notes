@@ -230,7 +230,7 @@ test('default stream path makes thumbnails without consent, original unchanged, 
   const s = setup([photo()], { describe: false });
   await seedPhoto(s);
   const original = (await s.objects.get(String(photo().key))).body;
-  await worker.handler({ Records: [stream(s.note)] }, {}, s.services);
+  await worker.runEvent({ Records: [stream(s.note)] }, {}, s.services);
   const note = await s.store.note('u', day, id),
     entry = (note!.media as Item[])[0]!;
   assert.equal(s.calls.length, 0);
@@ -256,7 +256,7 @@ test('no-key batch still thumbnails every following record; failures scrub and d
     };
     s.store.seed(second);
     await s.objects.put(String(second.media[0]!.key), d.testImage(), { type: 'image/png' });
-    const promise = worker.handler({ Records: [stream(s.note), stream(second)] }, {}, s.services);
+    const promise = worker.runEvent({ Records: [stream(s.note), stream(second)] }, {}, s.services);
     if (failure instanceof d.NoKey) await promise;
     else await assert.rejects(() => promise, { message: 'Description worker failed' });
     for (const noteId of [id, 'w-second'])
@@ -324,7 +324,7 @@ test('backfill chain hands on near limit, other chain refuses, same chain resume
 test('thumb backfill dry-run is entirely read-only/no model; real near-limit pass hands remaining users on', async () => {
   const s = setup([photo(), { ...photo(1), type: 'image/heic' }], { describe: false });
   const before = s.store.memory.all();
-  const result = await worker.handler({ thumbs_all: '*', dry_run: true }, {}, s.services);
+  const result = await worker.runEvent({ thumbs_all: '*', dry_run: true }, {}, s.services);
   assert.equal(result?.photos, 1);
   assert.deepEqual(result?.left, { 'image/heic': 1 });
   assert.deepEqual(s.store.memory.all(), before);
@@ -366,7 +366,7 @@ test('photo place naming sends coordinates only, guards deletion and weather fai
 test('synthetic model check writes nothing and logs no returned words', async () => {
   const s = setup();
   const before = s.store.memory.all();
-  const result = await worker.handler({ check: true }, {}, s.services);
+  const result = await worker.runEvent({ check: true }, {}, s.services);
   assert.deepEqual(result, { ok: true, words: 'A blue square.' });
   assert.deepEqual(s.store.memory.all(), before);
   assert.equal(s.objects.calls.length, 0);
@@ -382,10 +382,10 @@ test('warm worker resolves key/model once per run only when unfinished consentin
     resolutions++;
     return base();
   };
-  await worker.handler({ Records: [stream(s.note)] }, {}, s.services);
+  await worker.runEvent({ Records: [stream(s.note)] }, {}, s.services);
   assert.equal(resolutions, 1);
   assert.equal(s.calls.length, 2);
-  await worker.handler({ Records: [stream(s.note)] }, {}, s.services);
+  await worker.runEvent({ Records: [stream(s.note)] }, {}, s.services);
   assert.equal(resolutions, 1);
 });
 test('failed describe backfill releases chain lock and retry succeeds; opt-out stops each next photo', async () => {
@@ -423,7 +423,7 @@ test('transient geocode failure leaves photos unmodeled, makes later batch thumb
   };
   s.store.seed(second);
   await s.objects.put(String(second.media[0]!.key), d.testImage(), { type: 'image/png' });
-  await assert.rejects(() => worker.handler({ Records: [stream(s.note), stream(second)] }, {}, s.services), {
+  await assert.rejects(() => worker.runEvent({ Records: [stream(s.note), stream(second)] }, {}, s.services), {
     message: 'Description worker failed'
   });
   assert.equal(((await s.store.note('u', day, id))!.media as Item[])[0]?.description, undefined);

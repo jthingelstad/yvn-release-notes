@@ -72,11 +72,7 @@ function production() {
     log: safeLog
   });
 }
-export async function handler(
-  event: Item,
-  _context?: unknown,
-  injected?: transcribe.Services
-): Promise<Item | undefined> {
+export async function runEvent(event: Item, injected?: transcribe.Services): Promise<Item | undefined> {
   if (event.self_test === true)
     return {
       ok: true,
@@ -93,4 +89,9 @@ export async function handler(
   } catch {
     throw new Error('Transcription worker failed');
   }
+}
+
+/** Node 24 promise-only entrypoint; dependency injection belongs to runEvent. */
+export async function handler(event: Item, _context?: unknown): Promise<Item | undefined> {
+  return runEvent(event);
 }

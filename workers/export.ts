@@ -147,9 +147,8 @@ export async function run(context: ExportContext, user: string, id: string): Pro
   return 'ready';
 }
 let runtime: Pick<ExportContext, 'store' | 'objects'> | undefined;
-export async function handler(
+export async function runEvent(
   event: { user_id?: unknown; id?: unknown; self_test?: unknown },
-  _lambdaContext: unknown,
   services?: ExportContext
 ) {
   if (runtimeSelfTest(event)) return runtimeSelfTest(event);
@@ -165,4 +164,9 @@ export async function handler(
     services = { ...runtime, now: Math.floor(Date.now() / 1000) };
   }
   return run(services, event.user_id, event.id);
+}
+
+/** Node 24 promise-only entrypoint; dependency injection belongs to runEvent. */
+export async function handler(event: Parameters<typeof runEvent>[0], _context?: unknown) {
+  return runEvent(event);
 }

@@ -234,7 +234,7 @@ export async function handler(event: Item, context: Context = {}, injected?: Ser
     return {
       ok: true,
       runtime: `${process.version}/${process.platform}/${process.arch}`,
-      build: process.env.BUILD_SHA ?? process.env.BUILD ?? 'unknown'
+      build: process.env.APP_VERSION ?? process.env.BUILD_SHA ?? process.env.BUILD ?? 'unknown'
     };
   }
   const base = injected ?? production();

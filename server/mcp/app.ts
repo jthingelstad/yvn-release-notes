@@ -95,7 +95,7 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
     )
       return oauthResponse(400, { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid request' } });
     if (!Object.hasOwn(b, 'id')) return new Response(null, { status: 202, headers: { 'cache-control': 'no-store' } });
-    const params = b.params ?? {};
+    const params = Object.hasOwn(b, 'params') ? b.params : {};
     let answer: unknown, rpcError: OAuthRow | undefined;
     if (!object(params)) rpcError = { code: -32602, message: 'Invalid params' };
     else if (b.method === 'initialize')
@@ -113,7 +113,7 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
     else if (b.method === 'tools/list') answer = { tools: TOOLS };
     else if (b.method === 'tools/call') {
       const name = typeof params.name === 'string' ? params.name : '',
-        args = params.arguments ?? {},
+        args = Object.hasOwn(params, 'arguments') ? params.arguments : {},
         tool = TOOLS.find((t) => t.name === name);
       try {
         let outcome: string;

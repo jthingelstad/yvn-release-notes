@@ -357,3 +357,27 @@ test('lost private invocation response retries one committed note and emits no d
   assert.equal((await ctx.store.allNotes('u')).length, 1);
   assert.equal(ctx.store.memory.all().filter((i) => String(i.sk).startsWith('LOG#') && i.outcome === 'ok').length, 1);
 });
+
+test('explicit null JSON-RPC params and tool arguments are invalid rather than missing', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx),
+    app = createMcpApp(options(ctx)),
+    headers = { authorization: 'Bearer ' + a.token, 'content-type': 'application/json' };
+  const params = await app.request('/mcp', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: null })
+  });
+  assert.equal(((await params.json()) as RpcBody).error!.code, -32602);
+  const args = await app.request('/mcp', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'notes_context', arguments: null }
+    })
+  });
+  assert.equal(((await args.json()) as RpcBody).result.isError, true);
+});

@@ -154,3 +154,76 @@ until accepted requests drain. Subsequent releases preserve the original
 `EventsPythonCodeSha256` parameter forever; changing it would replace the retained
 Python baseline publication resource. Tests use fictional events and SDK fakes;
 never send a test bounce/complaint to a live subscriber to prove the bridge.
+
+## Complete native Event worker publications
+
+Worker preparation is separate from alias activation. Keep
+`WorkerAliasesReady=true` and `EventsAliasesReady=true` permanently once the
+Python alias passes and notification bridge have finished. CloudFormation rules
+refuse native preparation or activation without both prerequisites; no producer
+should invoke `$LATEST` while its runtime and code are being changed.
+
+For each of Sender, Inbound, Events, Transcribe, Describe, Export and Capture,
+record the current `live` version and complete Python configuration in a private
+release receipt. Upload a standalone Node 24 Arm64 zip to the retained versioned
+`NativeSourceBucket`, using the key `native/workers/<name>/<sha256>.zip`. Supply
+`<Name>NodeCodeKey`, `<Name>NodeCodeVersion` and `<Name>NodeCodeSha256` (base64
+SHA-256 of the exact zip). An exact S3 version is required, not just a key.
+Describe's zip includes the pinned Linux Arm64 Sharp dependencies; its Node
+configuration has no Pillow layer. Existing published Python versions keep their
+original runtime, handler, environment and layer.
+
+Set `NativeWorkersEnabled=true`, `NativeWorkerAliasesReady=false` and the
+immutable source/configuration release token `NativeWorkerBuildId`. This updates
+all seven `$LATEST` functions to `nodejs24.x` and `index.handler`, preserving their
+roles, timeouts, reserved concurrency, destinations and environment contracts.
+It then publishes retained `<Name>NodeVersion` resources after each complete
+function update. `CodeSha256` prevents publication against a different zip;
+`APP_VERSION` and the publication description bind each configuration release
+to the build token. No existing Python publication property changes, and every
+live alias remains on its Python version during this pass.
+
+Before activation, read each `<Name>NativeCandidateVersion` output and verify
+its published code hash, Node runtime, handler, Arm64 architecture, environment
+names, role, log format, layer absence/presence and resource settings against the
+release manifest. Use fictional local/staging requests and count-only production
+control-plane checks. Do not invoke a real sender, process a subscriber's note or
+send a test bounce as release QA. Review the change set: existing Python Version
+resources and both stream mapping physical IDs must remain untouched.
+
+For the activation pass, set every `<Name>NativeLiveVersion` explicitly to its
+verified candidate ID, then set `NativeWorkerAliasesReady=true`. Only alias
+version selection changes. The one schedule, SES receipt action, one SNS
+subscription, transcribe completion rule, both existing stream mappings and
+internal invocations continue using the same qualified `live` entry points.
+Read back aliases and the exact two mapping UUIDs/enabled states. Their async
+retry/destination settings and invocation grants are already attached to `live`.
+
+Before a later artifact or configuration publication, preserve the currently
+serving version in all seven explicit native live-version parameters. Keeping an
+empty parameter would let a new publication move its alias during preparation.
+Change the build token for every complete configuration publication, even when
+source bytes are unchanged; publish, verify and activate in separate passes.
+Use local ownership receipts and fresh alias read-back before each change set to
+refuse concurrent release drift. CloudFormation updates do not provide an alias
+`RevisionId` compare-and-swap; the release coordinator must serialize deployments
+and verify the previous target immediately before and after each pass.
+
+For a full worker rollback, leave `NativeWorkersEnabled=true` and both Python
+alias prerequisites true, and set `NativeWorkerAliasesReady=false`. The aliases
+return to the original retained complete Python versions while `$LATEST` remains
+Node. An individual rollback can instead pin that worker's recorded Python
+version in its explicit live-version parameter. Preserve the unchanged
+`EventsPythonCodeSha256`, Python publication resources, Native source object
+versions and candidate/live version receipts. Delete none of them during the
+migration or while an alias or rollback receipt refers to them.
+
+Native Event logs use raw stdout JSON/EMF with `LogFormat=Text`, preserving the
+existing census and alarm conventions. Additive IAM authorizes the actual
+transaction components: USER-scoped `ConditionCheckItem` for inbound/export/
+processing and USER-scoped receipt Put/Delete for transcribe. Existing updates
+cover its RATE quota. Inbound gains raw GetObjectTagging (so a delayed duplicate
+cannot change a filed message's retention) and media PutObjectTagging/DeleteObject
+for promotion/cleanup. Describe gains PutObjectTagging on thumbnail keys only.
+No `dynamodb:TransactWriteItems` IAM action exists; transaction operations use
+these component permissions. The private capture role remains unchanged.

@@ -2,6 +2,7 @@
 tests and scripts/dev_server.py."""
 
 import re
+from threading import Lock
 
 from release_notes.notes import written_at
 from release_notes.store import NEWEST, SIGNIN
@@ -18,6 +19,7 @@ class FakeStore:
         self.tokens = {}
         self.inboxes = {}  # token -> {"user_id", "created_at"}
         self.tallied = {}  # (month, name) -> n
+        self._mail_event_lock = Lock()
 
     def mcp_get(self, pk, sk="STATE"):
         if pk.startswith("USER#") and sk == "PROFILE":
@@ -107,6 +109,22 @@ class FakeStore:
         p.update(fields)
         for k in remove:
             p.pop(k, None)
+
+    def apply_mail_event(self, user_id, message_hash, reason, at, now):
+        with self._mail_event_lock:
+            key = "MAILEVENT#" + message_hash
+            receipt = next((row for row in self.items.get(user_id, []) if row["sk"] == key), None)
+            if receipt and receipt["expires_at"] > now:
+                return "duplicate"
+            profile = self.profiles.get(user_id)
+            if not profile or "mcp_deleting" in profile:
+                return "gone"
+            profile.update(status="stopped", stopped_reason=reason, stopped_at=at)
+            name = (at[:7], reason + "s")
+            self.tallied[name] = self.tallied.get(name, 0) + 1
+            self.items[user_id] = [row for row in self.items.get(user_id, []) if row["sk"] != key] + [
+                {"pk": "USER#" + user_id, "sk": key, "expires_at": now + 30 * 86400}]
+            return "applied"
 
     def stop(self, user_id, reason, at):
         self.update_profile(user_id, {"status": "stopped", "stopped_reason": reason, "stopped_at": at})

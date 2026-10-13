@@ -601,8 +601,6 @@ class CostCeilings(unittest.TestCase):
         Store(FakeTable(fail=ConditionFailed())).release_lock("describe:u1", "c1", 1500)  # someone else's now: nothing
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ScanTable(FakeTable):
@@ -629,3 +627,64 @@ class CensusItems(unittest.TestCase):
         named = {names.get(f.split("[")[0], f.split("[")[0]) for f in fields}
         self.assertEqual(named, {"pk", "sk", "status", "tz", "send_time", "last_sent_date", "pause_from", "pause_through", "source", "media"})
         self.assertEqual(first["ExpressionAttributeValues"], {":u": "USER#", ":p": "PROFILE", ":d": "DAY#", ":n": "NOTE#"})
+
+
+class MailEventBridge(unittest.TestCase):
+    def test_stop_tally_receipt_are_one_plain_value_transaction(self):
+        client = FakeClient()
+        store = Store(FakeTable(client))
+        self.assertEqual(store.apply_mail_event("u1", "fictional-hash", "bounce", "2026-10-13T00:00:00Z", 100), "applied")
+        profile, tally, receipt = client.calls[0]["TransactItems"]
+        self.assertEqual(profile, {"Update": {
+            "TableName": "release-notes", "Key": {"pk": "USER#u1", "sk": "PROFILE"},
+            "UpdateExpression": "SET #s = :s, stopped_reason = :r, stopped_at = :at",
+            "ConditionExpression": "attribute_exists(pk) AND attribute_not_exists(mcp_deleting)",
+            "ExpressionAttributeNames": {"#s": "status"},
+            "ExpressionAttributeValues": {":s": "stopped", ":r": "bounce", ":at": "2026-10-13T00:00:00Z"}}})
+        self.assertEqual(tally, {"Update": {
+            "TableName": "release-notes", "Key": {"pk": "TALLY#2026-10", "sk": "TALLY"},
+            "UpdateExpression": "ADD #n :one", "ExpressionAttributeNames": {"#n": "bounces"},
+            "ExpressionAttributeValues": {":one": 1}}})
+        self.assertEqual(receipt, {"Put": {
+            "TableName": "release-notes", "Item": {"pk": "USER#u1", "sk": "MAILEVENT#fictional-hash", "expires_at": 2592100},
+            "ConditionExpression": "attribute_not_exists(pk) OR expires_at <= :now",
+            "ExpressionAttributeValues": {":now": 100}}})
+        self.assertEqual(len(client.calls), 1)
+
+    def test_duplicate_and_deleted_profile_are_bounded_outcomes(self):
+        cases = [(Cancelled("None", "None", "ConditionalCheckFailed"), "duplicate"),
+                 (Cancelled("ConditionalCheckFailed", "None", "None"), "gone"),
+                 (Cancelled("ConditionalCheckFailed", "None", "ConditionalCheckFailed"), "duplicate")]
+        for failure, expected in cases:
+            client = FakeClient(failure)
+            self.assertEqual(Store(FakeTable(client)).apply_mail_event("u1", "hash", "complaint", "2026-10-13", 100), expected)
+            self.assertEqual(len(client.calls), 1)
+
+    def test_unknown_failures_are_never_swallowed(self):
+        for failure in [Cancelled("ValidationError", "None", "None"), OSError("fictional")]:
+            with self.assertRaises(type(failure)):
+                Store(FakeTable(FakeClient(failure))).apply_mail_event("u1", "hash", "bounce", "2026-10-13", 100)
+
+    def test_conflict_retries_are_bounded_and_exhaustion_propagates(self):
+        from unittest.mock import patch
+        client = FakeClient(Cancelled("TransactionConflict", "None", "None"))
+        with patch("release_notes.store.sleep") as wait, self.assertRaises(Cancelled):
+            Store(FakeTable(client)).apply_mail_event("u1", "hash", "bounce", "2026-10-13", 100)
+        self.assertEqual(len(client.calls), 5)
+        self.assertEqual([c.args[0] for c in wait.call_args_list], [.01, .02, .03, .04])
+
+    def test_conflict_can_recover_without_splitting_the_transaction(self):
+        class ConflictOnce(FakeClient):
+            def transact_write_items(self, **kw):
+                self.calls.append(kw)
+                if len(self.calls) == 1:
+                    raise Cancelled("TransactionConflict", "None", "None")
+        from unittest.mock import patch
+        client = ConflictOnce()
+        with patch("release_notes.store.sleep"):
+            self.assertEqual(Store(FakeTable(client)).apply_mail_event("u1", "hash", "bounce", "2026-10-13", 100), "applied")
+        self.assertEqual(client.calls[0], client.calls[1])
+
+
+if __name__ == "__main__":
+    unittest.main()

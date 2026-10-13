@@ -4,6 +4,7 @@ import { SessionService, reject } from '../../packages/backend/sessions.ts';
 import { admin, updateContent, updateView } from '../../packages/backend/product-updates.ts';
 import { iso, localDay, validDay } from '../../packages/domain/dates.ts';
 import type { ProductUpdate } from '../../packages/domain/product-updates.ts';
+import { subscriberOverview } from '../../packages/backend/subscriber-overview.ts';
 import { body, json } from './requests.ts';
 export async function adminRoutes(service: SessionService, pattern: string, args: string[]): Promise<Response | null> {
   if (!pattern.startsWith('/api/admin/')) return null;
@@ -17,6 +18,8 @@ export async function adminRoutes(service: SessionService, pattern: string, args
       updates: (await store.productUpdates()).map(updateView),
       today: localDay(ctx.now, String(profile.tz))
     });
+  if (pattern === '/api/admin/users' && method === 'GET')
+    return json({ users: subscriberOverview(await store.subscriberOverviewItems(), ctx.now), as_of: at });
   const value = await body(service.request);
   let previous: ProductUpdate | null = null,
     next: ProductUpdate | null;

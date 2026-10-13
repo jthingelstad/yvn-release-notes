@@ -181,9 +181,9 @@ notes.yourversionnumber.com
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/search/`,
-  `/tag/?t=<tag>`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`.
+  `/tag/?t=<tag>`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
   `/connect/` approves an external agent request whose opaque id stays in the fragment.
-  `/admin/` manages product updates, visible in settings only to the configured administrator.
+  `/admin/` manages product updates; `/admin-users/` shows subscriber metadata. Administration is visible in settings only to the configured administrator.
 
 - **A pause** starts on the next day an email would go (today, unless
   today's has gone) and runs 1 to 60 days. It is `PAUSE#<from>` with
@@ -333,6 +333,7 @@ no image dependency or new CSP exception is required.
 | `DELETE /api/me` `{code}` | deletes everything; needs that fresh code |
 | `POST /api/unsubscribe?t=` | the email's one-click unsubscribe (RFC 8058); the token is the day's reply token, and this is the one write without an Origin |
 | `GET /api/unsubscribe?t=` | redirects to `/unsubscribe/`, a page with a button, for mail apps that open the link |
+| `GET /api/admin/users` | administrator only: `users` with email, status (`active`, `paused`, `stopped`), stopped_reason, pause_through, joined_at, tz, send_time, last_sent_date, last_added_at, entries and days; `as_of` is the snapshot time; nullable metadata is null |
 | `GET /api/admin/updates` | administrator only: saved drafts and schedules (`updates`), and the administrator's local `today`; each update has `id`, `title`, `text`, named `links` and rendered `parts`, `revision`, `status`, `date`, `created_at`, `updated_at` |
 | `POST /api/admin/updates` `{title,text}` | administrator only: create a draft (201), without scheduling |
 | `PUT /api/admin/updates/{id}` `{title,text,revision}` | administrator only: edit a draft; scheduled text cannot be edited until cancelled |
@@ -355,7 +356,7 @@ checks the configured id on every request; the same write transaction proves
 the live session, current account/address, draft revision and date-slot ownership.
 Native HTTP activation also verifies the configured administrator id.
 
-Settings links to **Manage product updates** for that account. `/admin/` supports
+Settings links to **Administration** for that account. `/admin/` supports
 creating/editing/deleting drafts, a text preview, scheduling a saved draft, and
 cancelling a schedule before editing it again. Titles are at most 120 code
 points, text at most 2,000. Plain text only, with guarded title fetching when
@@ -403,3 +404,22 @@ Note metadata shows assistant provenance as "added by <client>"; client
 names are self-reported. Existing notes read as user-authored. The JSON
 export preserves provenance. `workers/capture.ts` is private, invoked only by MCP,
 with no public web route or ability to authenticate cookie writes.
+
+The **Users** link in administration opens a read-only subscriber overview with
+address search, status filtering, totals and reload. It shows email status,
+schedule/time zone, last sent local date, last addition time, join time, entry
+count and distinct journal-day count. Active means daily sending is enabled,
+not proof of delivery or reading. Pauses use each subscriber's current local
+date; stopped reasons are limited to unsubscribe, bounce and complaint.
+
+`packages/backend/subscriber-overview.ts` consumes only the dedicated Store
+projection: profile metadata, NOTE keys/source/writing/receipt times and IMPORT
+ledger update times. It never loads journal text, tags, links, media, locations,
+credentials or import ids. Mail uses receipt time when present; imports use the
+ledger update time rather than their original writing date. Missing legacy
+timestamps stay unknown. Counts reflect retained entries; import-ledger times
+remain after an imported entry is deleted. This is not an activity audit log.
+Deleting accounts are omitted, and no subscriber details enter request logs.
+The WebRole's new Scan permission requires SPECIFIC_ATTRIBUTES and allows only
+the projection's metadata attributes; existing owner journal readers are not
+used by this endpoint. CloudWatch remains the count-only operations dashboard.

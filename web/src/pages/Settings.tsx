@@ -52,7 +52,7 @@ export function Settings() {
         {p && !p.new && <Account p={p} />}
         {p?.admin && (
           <p className="section">
-            <AppLink href="/admin/">Manage product updates</AppLink>
+            <AppLink href="/admin/">Administration</AppLink>
           </p>
         )}
 

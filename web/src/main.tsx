@@ -170,6 +170,7 @@ const behind = [
     page('/connect', () => import('./pages/Connect.tsx'), 'Connect'),
     page('/settings', () => import('./pages/Settings.tsx'), 'Settings'),
     page('/admin', () => import('./pages/Admin.tsx'), 'Admin'),
+    page('/admin-users', () => import('./pages/AdminUsers.tsx'), 'AdminUsers'),
     page('/pause', () => import('./pages/Pause.tsx'), 'Pause'),
     page('/delete', () => import('./pages/Delete.tsx'), 'Delete')
   ].map((p) => createRoute({ getParentRoute: () => signedInRoute, ...p }))

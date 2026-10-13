@@ -186,6 +186,21 @@ export class Store {
       );
     return this.provedTransaction(ops);
   }
+  /** Administrator-only metadata scan. IAM separately limits Scan to these
+   * attributes and SPECIFIC_ATTRIBUTES; no archive reader is used here. */
+  async subscriberOverviewItems() {
+    return this.rows(
+      {
+        Select: 'SPECIFIC_ATTRIBUTES',
+        FilterExpression: 'begins_with(pk, :u) AND (sk = :p OR begins_with(sk, :n) OR begins_with(sk, :i))',
+        ProjectionExpression:
+          'pk, sk, email, #st, stopped_reason, created_at, tz, send_time, last_sent_date, pause_from, pause_through, written_at, received_at, #src, updated_at, mcp_deleting',
+        ExpressionAttributeNames: { '#st': 'status', '#src': 'source' },
+        ExpressionAttributeValues: { ':u': 'USER#', ':p': 'PROFILE', ':n': 'NOTE#', ':i': 'IMPORT#' }
+      },
+      true
+    );
+  }
   async censusItems() {
     return this.rows(
       {

@@ -52,6 +52,7 @@ export const ROUTES: [string, string][] = [
   ['GET', '/api/mcp/connections'],
   ['DELETE', '/api/mcp/connections/{id}'],
   ['GET', '/api/mcp/activity'],
+  ['GET', '/api/admin/users'],
   ['GET', '/api/admin/updates'],
   ['POST', '/api/admin/updates'],
   ['PUT', '/api/admin/updates/{id}'],

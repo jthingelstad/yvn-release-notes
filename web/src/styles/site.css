@@ -296,7 +296,7 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
   .bar--app { position: static; width: auto; padding: 0; margin-bottom: 42px; }
   .bar--app .brand { margin: 0; font-size: 24px; }
   .bar--app .primary-nav { position: fixed; z-index: 10; inset: auto 0 0; flex-direction: row; justify-content: space-around; gap: 0; background: var(--paper); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
-  .bar--app .primary-nav a { flex-direction: column; gap: 4px; min-width: 64px; padding: 5px 0; font-size: 12px; }
+  .bar--app .primary-nav a { flex-direction: column; gap: 4px; min-width: 0; flex: 1; padding: 5px 0; font-size: 12px; }
   .bar--app .rail-signout { display: none; }
   main:has(.bar--app) > h1 { font-size: 34px; }
   #day .dateline { font-size: 11px; letter-spacing: .06em; }
@@ -510,3 +510,29 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
 
 .admin-nav{gap:1rem;flex-wrap:wrap;margin:1.5rem 0}.admin-nav [aria-current=page]{font-weight:700}.subscriber-list{list-style:none;padding:0}.subscriber-list>li{margin:2.5rem 0}.subscriber-list h2{font-size:1.15rem;overflow-wrap:anywhere}.subscriber-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.subscriber-facts dt{font-size:.85rem;color:var(--ink-2)}.subscriber-facts dd{margin:.2rem 0 0;overflow-wrap:anywhere}
 .admin-filters{margin:1.5rem 0}
+
+/* Personal dates: type on paper, with a simple editor and an ordered list. */
+.upcoming-toolbar { margin: 28px 0; }
+.upcoming-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 32px; }
+.upcoming-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.upcoming-copy { min-width: 0; overflow-wrap: anywhere; }
+.upcoming-copy h3 { font-size: 25px; margin: 6px 0 8px; }
+.upcoming-copy p { margin: 4px 0; }
+.upcoming-copy .eyebrow { font-size: 12px; color: var(--ink-2); }
+.upcoming-actions { flex: none; gap: 16px; }
+.upcoming-empty { max-width: 32rem; font-size: 22px; line-height: 1.5; }
+.upcoming-past { margin-top: 44px; }
+.upcoming-past summary { cursor: pointer; min-height: 44px; font-weight: 700; }
+.upcoming-past .upcoming-list { margin-top: 24px; }
+.upcoming-footnote { margin-top: 44px; }
+.upcoming-form { margin-bottom: 44px; }
+.upcoming-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.upcoming-date-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 20px; }
+.upcoming-date-fields label { min-width: 0; }
+.upcoming-date-fields input { min-width: 0; }
+@media (max-width: 760px) {
+  .upcoming-list li { flex-direction: column; gap: 0; }
+  .upcoming-actions { gap: 24px; }
+  .upcoming-copy h3 { font-size: 22px; }
+  .upcoming-date-fields { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+}

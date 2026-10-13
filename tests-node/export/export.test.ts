@@ -118,6 +118,32 @@ test('disk zip contains complete data and original files; missing files remain c
       .includes('media/u1')
   );
 });
+test('ZIP carries Upcoming separately in both exports without adding journal notes', async () => {
+  const context = await setup();
+  const entry = {
+    id: 'concert',
+    kind: 'event' as const,
+    title: 'A concert',
+    date: '2026-10-20',
+    year: null,
+    end_date: null,
+    place: null,
+    email: true,
+    reminders: [7, 1, 0],
+    revision: 1,
+    created_at: '2026-10-13T07:00:00Z',
+    updated_at: '2026-10-13T07:00:00Z'
+  };
+  assert.equal(await context.store.saveUpcoming('u1', entry, null), true);
+  assert.equal(await run(context, 'u1', 'build-a'), 'ready');
+  const row = await context.store.export('u1'),
+    zip = await unzip((await context.objects.get(String(row?.export_key))).body),
+    prefix = 'release-notes-2026-10-13/';
+  const data = JSON.parse(zip.get(prefix + 'release-notes.json')!.toString());
+  assert.deepEqual(data.upcoming, [entry]);
+  assert.equal(data.notes.length, 1);
+  assert.match(zip.get(prefix + 'release-notes.md')!.toString(), /## Upcoming/);
+});
 test('replaced or deleting builds cannot publish an export', async () => {
   const context = await setup();
   await context.store.updateProfile('u1', { mcp_deleting: true });

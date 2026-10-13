@@ -82,7 +82,7 @@ code-point note limits and Unicode case folding compatible with existing data.
 
 Where things are (each module's design comment explains its contract):
 
-- `packages/domain/`: `dates.ts`, `version.ts`, `notes.ts`, `tags.ts`,
+- `packages/domain/`: `dates.ts`, `version.ts`, `notes.ts`, `tags.ts`, `upcoming.ts`,
   `streak.ts`, `search.ts`, `unicode.ts` and `unicode-data.ts`. The version
   arithmetic follows the site's `computeVersion`; `releaseSpan` defines a
   year of life, birthday to birthday. `tests-node/fixtures/versions.json`
@@ -271,6 +271,26 @@ Where things are (each module's design comment explains its contract):
 - **Times:** each subscriber has an IANA `tz` and a `send_time` on a quarter
   hour (default 06:00, Jamie 2026-10-07: the email opens the day and replies
   come in through it). The day and the version are computed in their zone.
+
+### Upcoming
+
+- **Personal dates** (2026-10-13): `/upcoming/` stores private birthdays,
+  anniversaries, trips and one-time events, managed by the owner in their
+  email-verified session. `packages/domain/upcoming.ts`,
+  `packages/backend/upcoming.ts` and `docs/WEB-APP.md` define recurrence,
+  reminder timing and API fields. They are saved plans, never journal entries,
+  and do not affect streaks, counts or note search. Known birth years use the
+  existing version arithmetic; February 29 rolls to March 1 in non-leap years.
+- **Reminders** travel only in the existing daily email, at selected offsets,
+  at most three due entries with a link to all. A failed read never holds the
+  daily send. No catch-up, extra messages, tracking or model-generated prompts.
+- **Trips** retain inclusive start/end dates and a city destination. Automatic
+  time-zone/location switching is deferred; saved home, forecasts and note
+  places keep their existing behavior. Past events remain in Upcoming history.
+- Entries live under `USER#` as `UPCOMING#<id>`, with atomic revision/capacity
+  checks and the current session/account proof on writes. Include them in all
+  owner exports and account deletion; never log titles, dates or destinations.
+  Existing MCP scopes and tools do not read or write Upcoming.
 
 ### The email
 

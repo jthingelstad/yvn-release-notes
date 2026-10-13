@@ -9,6 +9,7 @@ import { computeVersion, releaseName, type Version } from '../domain/version.ts'
 import type { Streak } from '../domain/streak.ts';
 import { codePointLength, codePointSlice, pythonRstrip, pythonTrim } from '../domain/unicode.ts';
 import { UPDATE_LABEL, type ProductUpdate } from '../domain/product-updates.ts';
+import type { UpcomingSection } from '../domain/upcoming.ts';
 export const SITE = 'https://yourversionnumber.com',
   APP = 'https://notes.yourversionnumber.com';
 export const PAPER = '#fffbf2',
@@ -77,6 +78,7 @@ export interface Yesterday extends Omit<PastDay, 'sky'> {
   places: [string, string | null][];
 }
 export interface BodyOptions {
+  upcoming?: UpcomingSection | null;
   productUpdate?: ProductUpdate | null;
   streak?: Streak | null;
   past?: OnThisDay | null;
@@ -276,6 +278,7 @@ export function body(v: Version, birthday: string, o: BodyOptions = {}): string 
   let text = o.streak ? streakLines(v, o.streak).join(' ') + '\n' : '';
   if (o.lifetime) text += lifetimeLine(o.lifetime) + '\n';
   if (text) text += '\n';
+  if (o.upcoming?.shown.length) text += upcomingBody(o.upcoming);
   if (o.closed) text += closedBody(o.closed);
   if (o.yesterday) text += yesterdayBody(birthday, o.yesterday);
   if (o.past) text += pastBody(v, birthday, o.past);
@@ -286,6 +289,17 @@ export function body(v: Version, birthday: string, o: BodyOptions = {}): string 
     (o.token ? `Unsubscribe: ${unsubscribeLink(o.token)}\n` : '') +
     (credited(o.forecast, o.past) ? `${CREDIT}: ${CREDIT_URL}\n` : '')
   );
+}
+export function upcomingBody(section: UpcomingSection): string {
+  return `Upcoming\n\n${section.shown.map((r) => `${r.when} — ${r.line}`).join('\n')}\n\nSee all upcoming${section.more ? ` (${section.more} more today)` : ''}: ${APP}/upcoming/\n\n`;
+}
+export function upcomingHtml(section?: UpcomingSection | null): string {
+  if (!section?.shown.length) return '';
+  return `<tr><td style="padding:40px 0 0;font-family:${FONT};color:${INK};">
+<p class="ink" style="margin:0 0 12px;font-size:22px;font-weight:800;">Upcoming</p>
+${section.shown.map((r) => `<p class="ink" style="margin:0 0 10px;font-size:17px;line-height:1.5;"><strong>${asciiHtml(r.when)}</strong> &mdash; ${asciiHtml(r.line)}</p>`).join('\n')}
+<p style="margin:12px 0 0;font-size:15px;"><a class="link" href="${APP}/upcoming/" style="color:${BLUE};">See all upcoming${section.more ? ` (${section.more} more today)` : ''}</a></p>
+</td></tr>`;
 }
 export function vnumHtml(v: Version, size: number, sepColor = ORANGE): string {
   return `<span class="vnum" style="font-family:${MONO};font-weight:700;font-size:${size}px;line-height:1;letter-spacing:-0.045em;color:${BLUE};white-space:nowrap;">${String(v).replace(/\./g, `<span class="sep" style="color:${sepColor};">.</span>`)}</span>`;
@@ -547,7 +561,7 @@ What happened, what you made, who you saw. Whatever you send back becomes the re
 </td></tr>
 
 ${streakHtml(v, birthday, streak, lifetime)}
-${closed ? closedHtml(closed) : ''}${yesterday ? yesterdayHtml(birthday, yesterday) : ''}
+${upcomingHtml(o.upcoming)}${closed ? closedHtml(closed) : ''}${yesterday ? yesterdayHtml(birthday, yesterday) : ''}
 ${past ? pastHtml(v, birthday, past) : ''}
 <tr><td class="ink-2" style="padding:48px 0 0;font-family:${FONT};font-size:13px;line-height:1.5;color:${INK_2};">
 Release Notes, from <a class="link" href="${SITE}/" style="color:${BLUE};">Your Version Number</a>. <a class="link" href="${APP}/settings/" style="color:${BLUE};">Pause or manage</a>${unsubscribeHtml}${creditHtml}${inboxHtml}

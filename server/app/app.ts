@@ -6,6 +6,7 @@ import { accountRoutes } from './account-routes.ts';
 import { archiveRoutes } from './archive-routes.ts';
 import { noteRoutes } from './note-routes.ts';
 import { adminRoutes } from './admin-routes.ts';
+import { upcomingRoutes } from './upcoming-routes.ts';
 import { exportRoutes } from '../../packages/backend/exports.ts';
 import { json, trustedViewer } from './requests.ts';
 export interface AppOptions {
@@ -29,6 +30,10 @@ export const ROUTES: [string, string][] = [
   ['POST', '/api/export/zip'],
   ['GET', '/api/export/zip/file'],
   ['GET', '/api/today'],
+  ['GET', '/api/upcoming'],
+  ['POST', '/api/upcoming'],
+  ['PUT', '/api/upcoming/{id}'],
+  ['DELETE', '/api/upcoming/{id}'],
   ['GET', '/api/days'],
   ['GET', '/api/days/{date}'],
   ['GET', '/api/releases'],
@@ -104,6 +109,7 @@ export function createApp(options: AppOptions = {}): Hono {
             (await archiveRoutes(service, matched.path, args, url.searchParams)) ??
             (await noteRoutes(service, matched.path, args)) ??
             (await adminRoutes(service, matched.path, args)) ??
+            (await upcomingRoutes(service, matched.path, args)) ??
             (await exportRoutes(service, matched.path, url.searchParams)) ??
             json({ error: 'not-found' }, 404);
         }

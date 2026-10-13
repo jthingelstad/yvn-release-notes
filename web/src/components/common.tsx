@@ -37,11 +37,12 @@ export function AppLink({
 const NAV = [
   ['/today/', 'Today', 'today'],
   ['/timeline/', 'Archive', 'archive'],
+  ['/upcoming/', 'Upcoming', 'upcoming'],
   ['/search/', 'Search', 'search'],
   ['/settings/', 'Settings', 'settings']
 ] as const;
 
-// The bar along the top: the name, and the four places for anyone signed in.
+// The bar along the top: the name, and the places for anyone signed in.
 // `current` marks one of them (Tag marks Search).
 export function Bar({ nav = true, current, children }: { nav?: boolean; current?: string; children?: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });

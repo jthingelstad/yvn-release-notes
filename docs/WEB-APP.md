@@ -181,7 +181,7 @@ notes.yourversionnumber.com
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/search/`,
-  `/tag/?t=<tag>`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
+  `/tag/?t=<tag>`, `/upcoming/`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
   `/connect/` approves an external agent request whose opaque id stays in the fragment.
   `/admin/` manages product updates; `/admin-users/` shows subscriber metadata. Administration is visible in settings only to the configured administrator.
 
@@ -312,6 +312,10 @@ no image dependency or new CSP exception is required.
 | `POST /api/export/zip` | start a zip of everything, photos and recordings too (202); answers with the build already going, if one is |
 | `GET /api/export/zip` | how it is going: `none`, `building`, `failed`, or `ready` with size, files and until |
 | `GET /api/export/zip/file` | the built zip: a redirect to a five-minute signed link |
+| `GET /api/upcoming` | owner-only saved `entries`, each with its next/current/past `occurrence` (`date`, `end_date`, `days_until`, `status`, `line`); local `today`, `tz`, and retained-entry `limit` (200). No table keys |
+| `POST /api/upcoming` | create a private date (201): `kind`, `title`, `date`, optional `year`, `end_date`, `place`, `email`, `reminders`; see Upcoming below |
+| `PUT /api/upcoming/{id}` | replace an owned date with the same fields and its saved `revision`; 409 for stale revision, 404 for a missing/foreign entry |
+| `DELETE /api/upcoming/{id}` `{revision}` | delete an owned date using its current revision; frees retained-entry capacity |
 | `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
 | `GET /api/releases` | the releases index: each release with notes, and the current one (`current`), newest first, with `from`, `through`, `days` (with notes) and `notes`; from the notes' keys alone |
@@ -340,6 +344,62 @@ no image dependency or new CSP exception is required.
 | `DELETE /api/admin/updates/{id}` `{revision}` | administrator only: delete a draft |
 | `POST /api/admin/updates/{id}/schedule` `{date,revision}` | administrator only: reserve one date with a saved text snapshot; dates cannot precede the administrator's today; 409 for an occupied date or stale revision |
 | `DELETE /api/admin/updates/{id}/schedule` `{revision}` | administrator only: cancel its schedule and return to a draft; does not retract emails already sent |
+
+## Upcoming
+
+`/upcoming/`, in the main navigation, keeps personal dates independently of
+journal notes: birthdays, anniversaries, trips and one-time events. Each entry
+has a name/title (1–120 code points on one line), dates, email preference,
+reminder offsets, revision and creation/update times. Entries never generate
+notes, increment journal counts, contribute to streaks or appear in note search.
+No model processes these entries. The owner adds, edits and deletes them in
+an email-verified session; Origin is required for writes, and each transaction
+proves the current account/session, entry revision and retained-entry capacity.
+At most 200 entries, including past events, are retained per owner. Concurrent
+edits are refused instead of overwriting another tab. No titles, personal dates,
+destinations or addresses appear in logs; sender diagnostics report counts only.
+
+Kinds and dates:
+
+- `birthday` and `anniversary`: `date` is `MM-DD`, recurring annually; `year`
+  is optional/null, otherwise an integer original year whose full date is valid
+  and no later than the owner's today. A known birth year gives the birthday's
+  version through the existing version arithmetic; decade birthdays are major
+  releases. A known anniversary year gives the number of years. February 29
+  occurs on March 1 in non-leap years, matching birthday version arithmetic.
+- `trip`: `date` and required `end_date` are ISO dates, with an inclusive end
+  on/after the start; `place` is required, chosen using the existing city search.
+- `event`: `date` is an ISO date; a city `place` is optional. No annual repeat.
+
+A city has `name`, `region`, `country`, IANA `tz`, and rounded `lat`/`lon` (the
+same validation as other city selections). Annual entries have no place; trips
+and events have no original year. `email` defaults true. `reminders` is a list
+of 1–6 distinct integer offsets, 0–365 days before; defaults `[7,1,0]`, or
+`[14,1,0]` for a trip. Zero means the event day and, for trips, its last day
+(one-day trips appear once). Web-only entries keep no email appearances.
+Unknown fields, including requests for automatic time-zone switching, are refused.
+
+All occurrences/reminder selection use the subscriber's local daily-email date.
+A compact **Upcoming** section follows streak/lifetime counts, before history,
+in both plain text and HTML. At most three due entries show, today's before
+future dates, with a link to the complete list and the number of additional due
+entries. Empty sections disappear. Reminders travel only in the existing daily
+email: no extra sends, catch-up messages, tracking or changed reply ownership.
+Optional read failures omit Upcoming without holding the daily email. Pauses,
+stopped accounts and the daily-send claim retain their existing behavior.
+
+The page shows annual dates' next occurrence, active trips and future events;
+completed trips/events remain under **Past events**, editable or deletable.
+Trips store a destination only in this first stage. They do not change the
+account's saved home, time zone, forecast or default note location. Automatic
+travel switching and associations between an occasion and written notes are
+future work. Notes remain the owner's account of what actually happened.
+
+Upcoming entries are included in JSON, Markdown and ZIP exports, in a separate
+`upcoming` collection/section (omitted when there are none for legacy export
+compatibility), and removed by purpose-verified account deletion with every
+other USER row. Existing MCP scopes grant access to journal notes only;
+Upcoming is not added to the agent tool surface.
 
 ## Product updates
 

@@ -6,6 +6,7 @@
 #   ./deploy.sh --break-glass   skip GitHub (GitHub down, never a red check)
 #   ./deploy.sh --worker-alias-phase=prepare   publish stable worker baselines
 #   ./deploy.sh --worker-alias-phase=activate  move the existing worker targets
+#   ./deploy.sh --events-alias-phase=prepare|activate  bridge SNS before Node
 #
 # 0. Refuse anything but a clean checkout of origin/main with a green
 #    `validate` check run by GitHub Actions: production runs only
@@ -41,13 +42,17 @@ ARN=$(aws sts get-caller-identity --query Arn --output text)
 
 BREAK_GLASS=""
 WORKER_ALIAS_PHASE=""
+EVENTS_ALIAS_PHASE=""
 for arg in "$@"; do
   case "$arg" in
     --break-glass) BREAK_GLASS=1 ;;
     --worker-alias-phase=prepare|--worker-alias-phase=activate)
       [[ -z "$WORKER_ALIAS_PHASE" ]] || { echo "refusing: duplicate worker alias phase" >&2; exit 2; }
       WORKER_ALIAS_PHASE="${arg#*=}" ;;
-    *) echo "usage: $0 [--break-glass] [--worker-alias-phase=prepare|activate]" >&2; exit 2 ;;
+    --events-alias-phase=prepare|--events-alias-phase=activate)
+      [[ -z "$EVENTS_ALIAS_PHASE" ]] || { echo "refusing: duplicate events alias phase" >&2; exit 2; }
+      EVENTS_ALIAS_PHASE="${arg#*=}" ;;
+    *) echo "usage: $0 [--break-glass] [--worker-alias-phase=prepare|activate] [--events-alias-phase=prepare|activate]" >&2; exit 2 ;;
   esac
 done
 
@@ -82,6 +87,32 @@ if [[ "$WORKER_ALIAS_PHASE" == activate ]]; then
   done
   WORKER_ALIASES_READY=true
 fi
+# SNS replacement may overlap. First publish the idempotent Python bridge;
+# verify both targets contain it before moving the subscription to its alias.
+EVENTS_ALIASES_READY=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+  --query "Stacks[0].Parameters[?ParameterKey=='EventsAliasesReady'].ParameterValue | [0]" --output text)
+[[ "$EVENTS_ALIASES_READY" == true ]] || EVENTS_ALIASES_READY=false
+EVENTS_PYTHON_CODE_SHA=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+  --query "Stacks[0].Parameters[?ParameterKey=='EventsPythonCodeSha256'].ParameterValue | [0]" --output text)
+if [[ "$EVENTS_ALIAS_PHASE" == prepare && "$EVENTS_ALIASES_READY" == true ]]; then
+  echo "refusing: Events alias already active" >&2; exit 1
+fi
+if [[ "$EVENTS_ALIAS_PHASE" == activate ]]; then
+  [[ "$EVENTS_PYTHON_CODE_SHA" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo "refusing: prepare the Events bridge first" >&2; exit 1; }
+  EVENTS_VERSION=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+    --query "Stacks[0].Outputs[?OutputKey=='EventsPythonRollbackVersion'].OutputValue | [0]" --output text)
+  [[ "$EVENTS_VERSION" =~ ^[1-9][0-9]*$ ]] || { echo "refusing: Events baseline is missing" >&2; exit 1; }
+  EVENTS_LIVE=$(aws lambda get-alias --function-name "$STACK-events" --name live --query FunctionVersion --output text)
+  [[ "$EVENTS_LIVE" == "$EVENTS_VERSION" ]] || { echo "refusing: Events live alias differs from bridge baseline" >&2; exit 1; }
+  for qualifier in '$LATEST' "$EVENTS_VERSION"; do
+    EVENTS_PROOF=$(aws lambda get-function-configuration --function-name "$STACK-events" --qualifier "$qualifier" \
+      --query '[Runtime,Handler,CodeSha256]' --output text)
+    [[ "$EVENTS_PROOF" == $'python3.13\trelease_notes.events.handler\t'"$EVENTS_PYTHON_CODE_SHA" ]] \
+      || { echo "refusing: both Events targets must contain the complete bridge" >&2; exit 1; }
+  done
+  EVENTS_ALIASES_READY=true
+fi
+
 rule_arn() {
   local rule_name
   rule_name=$(aws cloudformation describe-stack-resource --stack-name "$STACK" --logical-resource-id "$1" \
@@ -135,6 +166,11 @@ git archive HEAD | tar -x -f - -C "$BUILD/repo"
 WEB="$BUILD/repo/dist/web"
 (cd src && find release_notes -name '*.py' | sort | TZ=UTC zip -q -X -D "$BUILD/code.zip" -@)
 KEY="code/$(shasum -a 256 "$BUILD/code.zip" | cut -c1-16).zip"
+# Set only once: changing this parameter would republish the retained Python
+# rollback resource, possibly from a later Node runtime. Preserve it forever.
+if [[ -z "$EVENTS_PYTHON_CODE_SHA" || "$EVENTS_PYTHON_CODE_SHA" == None ]]; then
+  EVENTS_PYTHON_CODE_SHA=$(openssl dgst -sha256 -binary "$BUILD/code.zip" | openssl base64 -A)
+fi
 aws s3 cp "$BUILD/code.zip" "s3://$CODE_BUCKET/$KEY" --only-show-errors
 LAYER_KEY="code/layers/pillow-$(shasum -a 256 layers/pillow.txt | cut -c1-16).zip"
 if ! aws s3api head-object --bucket "$CODE_BUCKET" --key "$LAYER_KEY" >/dev/null 2>&1; then
@@ -162,6 +198,7 @@ aws cloudformation deploy \
   --no-fail-on-empty-changeset \
   --parameter-overrides "CodeBucket=$CODE_BUCKET" "CodeKey=$KEY" "PillowLayerKey=$LAYER_KEY" "WebDomain=$WEB_DOMAIN" "WebCertificateArn=$WEB_CERT" \
     "SenderScheduleArn=$SENDER_SCHEDULE_ARN" "TranscribeDoneArn=$TRANSCRIBE_DONE_ARN" "WorkerAliasesReady=$WORKER_ALIASES_READY" \
+    "EventsPythonCodeSha256=$EVENTS_PYTHON_CODE_SHA" "EventsAliasesReady=$EVENTS_ALIASES_READY" \
   --tags Application=YourVersionNumber Project=yvn-release-notes ManagedBy=cloudformation \
          Environment=production Repository=jthingelstad/yvn-release-notes
 

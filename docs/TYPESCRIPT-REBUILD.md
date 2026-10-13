@@ -81,11 +81,11 @@ requests must continue working across the transition. Authentication and
 signing implementations may change with a demonstrated compatible bridge.
 No archive rewrite, token reset, subscriber re-registration or copied data.
 
-Port the baseline's tests into a behavior manifest before removing them.
-The initial snapshot has 28 Python modules and 652 test methods across 26
-test modules; refresh the inventory after capture lands. Track every old
-test as ported, covered by a named replacement, or explicitly obsolete.
-Use only fictional data in fixtures and public repository artifacts.
+The completed [compatibility ledger](NATIVE-COMPATIBILITY.md) maps all 685
+legacy test methods across 28 test modules to named native witnesses, grouped
+semantic replacements or nine obsolete adapter/dependency assumptions.
+Keep that ledger with the native regressions. Use only fictional data in
+fixtures and public repository artifacts.
 
 Particular cross-language compatibility cases:
 
@@ -372,9 +372,13 @@ separately when observed.
 The final cleanup is a dedicated release: retire Python code/layers/dev
 tools, API Gateway, old HTTP functions, origin-secret machinery, temporary
 bridges/flags, obsolete permissions/alarms/docs and unused dependencies
-after normal production-cycle evidence and the Python rollback window.
-Retain normal rollback between validated TypeScript revisions. Do not keep
-two architectures indefinitely or rewrite subscriber archives for tidiness.
+after a validated native baseline, a healthy natural production cycle, and
+count-only evidence that old invocation sources and accepted events have
+drained. Protected native source objects, explicit worker version pins and
+zero-rate last-good HTTP endpoints retain normal rollback between validated
+TypeScript releases. Historical published snapshots may remain retained;
+release tooling refuses migration receipts that target retired Python or
+legacy HTTP paths. Do not rewrite subscriber archives for tidiness.
 
 ## Primary platform references
 

@@ -59,3 +59,22 @@ export async function packageHttp(buildDirectory: string, outputDirectory: strin
   }
   return outputs;
 }
+
+export const workerNames = ['sender', 'inbound', 'events', 'transcribe', 'describe', 'export', 'capture'] as const;
+export async function packageWorkers(buildDirectory: string, outputDirectory: string, nativeModules: string) {
+  await mkdir(outputDirectory, { recursive: true });
+  const outputs = [];
+  for (const kind of workerNames) {
+    const path = resolve(outputDirectory, `${kind}.zip`);
+    outputs.push({
+      kind,
+      path,
+      ...(await packageBundle(
+        resolve(buildDirectory, 'dist/workers', kind),
+        path,
+        kind === 'describe' ? nativeModules : undefined
+      ))
+    });
+  }
+  return outputs;
+}

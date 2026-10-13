@@ -1,3 +1,4 @@
+import { runtimeSelfTest } from './runtime.ts';
 /** Zip export worker. Uses temporary disk and bounded object reads, preserves
  * file bytes, checks the live owner/build before and after uploading, and
  * removes its own archive if deletion or a newer build wins the race. */
@@ -147,10 +148,11 @@ export async function run(context: ExportContext, user: string, id: string): Pro
 }
 let runtime: Pick<ExportContext, 'store' | 'objects'> | undefined;
 export async function handler(
-  event: { user_id?: unknown; id?: unknown },
+  event: { user_id?: unknown; id?: unknown; self_test?: unknown },
   _lambdaContext: unknown,
   services?: ExportContext
 ) {
+  if (runtimeSelfTest(event)) return runtimeSelfTest(event);
   if (
     typeof event.user_id !== 'string' ||
     !/^[a-zA-Z0-9_-]{1,100}$/.test(event.user_id) ||

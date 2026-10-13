@@ -1,3 +1,4 @@
+import { runtimeSelfTest } from '../runtime.ts';
 /** Production SES entry: parsing, ownership checks and writes live in the pure
  * inbound handler. The SES adapter receives the named From; MIME gets raw email. */
 import { createStore, createObjects, createMail } from '../../packages/backend/aws.ts';
@@ -12,6 +13,7 @@ function env(name: string): string {
   return value;
 }
 export async function handler(event: Parameters<typeof inbound>[0], context: unknown) {
+  if (runtimeSelfTest(event)) return runtimeSelfTest(event);
   if (!services) {
     const region = process.env.AWS_REGION ?? 'us-east-1',
       fromAddress = env('FROM_ADDRESS');

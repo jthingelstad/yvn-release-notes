@@ -1,3 +1,4 @@
+import { runtimeSelfTest } from './runtime.ts';
 /** Private delegated text writer: no HTTP, no mail/media/models. Every commit
  * atomically proves the live family/profile, receipt, quota and note revision. */
 import { randomUUID } from 'node:crypto';
@@ -224,6 +225,7 @@ export async function captureNote(
 }
 let runtimeStore: Store | undefined;
 export async function handler(event: unknown): Promise<OAuthRow> {
+  if (runtimeSelfTest(event)) return runtimeSelfTest(event)!;
   runtimeStore ??= new Store(
     DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' }), {
       marshallOptions: { removeUndefinedValues: true }

@@ -4,6 +4,7 @@
  * No arbitrary fetch or request logging belongs in this path.
  */
 import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import http from 'node:http';
 import https from 'node:https';
 import ipaddr from 'ipaddr.js';
@@ -185,10 +186,15 @@ export function connectPinned(t: Target, ip: string, signal: AbortSignal): Promi
         path: t.path,
         method: 'GET',
         // Node verifies the certificate for servername, while connecting only to ip.
-        servername: t.host,
+        ...(isIP(t.host) ? {} : { servername: t.host }),
         signal,
         agent: false,
-        headers: { Host: t.host, 'User-Agent': AGENT, Accept: 'text/html', 'Accept-Encoding': 'identity' }
+        headers: {
+          Host: isIP(t.host) === 6 ? `[${t.host}]` : t.host,
+          'User-Agent': AGENT,
+          Accept: 'text/html',
+          'Accept-Encoding': 'identity'
+        }
       },
       (response) => {
         const chunks: Buffer[] = [];

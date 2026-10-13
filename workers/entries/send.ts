@@ -1,3 +1,4 @@
+import { runtimeSelfTest } from '../runtime.ts';
 /** Production sender entry: reusable service clients, subscriber-local state in
  * the pure handler. Existing BUCKET/env contract and raw Event logs are kept. */
 import { createStore, createObjects, createMail } from '../../packages/backend/aws.ts';
@@ -13,6 +14,7 @@ function env(name: string): string {
   return value;
 }
 export async function handler(event: SenderEvent | null, context: LambdaContext | null) {
+  if (runtimeSelfTest(event)) return runtimeSelfTest(event);
   if (!services) {
     const region = process.env.AWS_REGION ?? 'us-east-1',
       fromAddress = env('FROM_ADDRESS');

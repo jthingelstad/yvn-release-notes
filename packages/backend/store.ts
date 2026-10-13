@@ -1,0 +1,952 @@
+/** One DynamoDB table, preserving the Python archive's keys, fields and conditions.
+ * All SDK commands use native document values, including Set for import ledgers.
+ * Reads never rely on TTL removal. Callers enforce credential expirations.
+ * USER#/PROFILE, NOTE#, DAY#, PAUSE#, WEATHER#, PLACE#, EXPORT, SESSION#,
+ * IMPORT#, CAPTURE#; TOKEN#, INBOX#, EMAIL#, LOGIN#, LOGINFOR#, RATE#, LOCK#,
+ * TALLY#, OAUTHCLIENT#, OAUTHPENDING#, OAUTHCODE#, OAUTHACCESS#, OAUTHREFRESH#,
+ * OAUTHFAMILY#, OAUTHUSER#, MCPMETA# retain their original layouts.
+ */
+import {
+  BatchWriteCommand,
+  DeleteCommand,
+  GetCommand,
+  PutCommand,
+  QueryCommand,
+  ScanCommand,
+  TransactWriteCommand,
+  UpdateCommand
+} from '@aws-sdk/lib-dynamodb';
+import type {
+  QueryCommandInput,
+  ScanCommandInput,
+  UpdateCommandInput,
+  TransactWriteCommandInput
+} from '@aws-sdk/lib-dynamodb';
+import { Subscriber } from './store-types.ts';
+import type { DocumentSender, Item, Key, MailCounter, Purpose, SessionInput } from './store-types.ts';
+export { Subscriber } from './store-types.ts';
+export type { Item, Key, DocumentSender, MailCounter } from './store-types.ts';
+const newest = { signin: 'LOGIN', delete: 'DELETE' };
+const purposeCondition = {
+  signin: '(attribute_not_exists(#purpose) OR #purpose = :purpose)',
+  delete: '#purpose = :purpose'
+};
+const key = (user: string, sk: string): Key => ({ pk: `USER#${user}`, sk });
+import { writtenAt as written } from '../domain/notes.ts';
+const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const conditionFailed = (e: unknown) => e instanceof Error && e.name === 'ConditionalCheckFailedException';
+function reasons(e: unknown): { Code?: string }[] {
+  return (e as { CancellationReasons?: { Code?: string }[] })?.CancellationReasons ?? [];
+}
+function conflict(e: unknown) {
+  return (
+    (e as { name?: string })?.name === 'TransactionCanceledException' &&
+    reasons(e).length > 0 &&
+    reasons(e).every((r) => ['None', 'ConditionalCheckFailed', 'TransactionConflict'].includes(r.Code ?? ''))
+  );
+}
+function media(item: Item | null): Item[] {
+  return (item?.media as Item[] | undefined) ?? [];
+}
+
+export class Store {
+  readonly client: DocumentSender;
+  readonly tableName: string;
+  constructor(client: DocumentSender, tableName: string) {
+    this.client = client;
+    this.tableName = tableName;
+  }
+  private async get(Key: Key, options: Item = {}): Promise<Item | null> {
+    return (await this.client.send(new GetCommand({ TableName: this.tableName, Key, ...options }))).Item ?? null;
+  }
+  private async put(Item: Item, options: Item = {}) {
+    await this.client.send(new PutCommand({ TableName: this.tableName, Item, ...options }));
+  }
+  private async del(Key: Key, options: Item = {}) {
+    return this.client.send(new DeleteCommand({ TableName: this.tableName, Key, ...options }));
+  }
+  private async update(Key: Key, input: Omit<UpdateCommandInput, 'TableName' | 'Key'>) {
+    return this.client.send(new UpdateCommand({ TableName: this.tableName, Key, ...input }));
+  }
+  private async conditional(action: () => Promise<unknown>): Promise<boolean> {
+    try {
+      await action();
+      return true;
+    } catch (e) {
+      if (conditionFailed(e)) return false;
+      throw e;
+    }
+  }
+  private async rows(
+    input: Omit<QueryCommandInput, 'TableName'> | Omit<ScanCommandInput, 'TableName'>,
+    scan = false
+  ): Promise<Item[]> {
+    const items: Item[] = [];
+    let cursor: Key | undefined;
+    do {
+      const args = { TableName: this.tableName, ...input, ...(cursor ? { ExclusiveStartKey: cursor } : {}) };
+      const result = await this.client.send(scan ? new ScanCommand(args) : new QueryCommand(args));
+      items.push(...(result.Items ?? []));
+      cursor = result.LastEvaluatedKey;
+    } while (cursor);
+    return items;
+  }
+  private async transact(TransactItems: TransactWriteCommandInput['TransactItems']): Promise<boolean> {
+    try {
+      await this.client.send(new TransactWriteCommand({ TransactItems }));
+      return true;
+    } catch (e) {
+      if (conflict(e)) return false;
+      throw e;
+    }
+  }
+  private putOperation(Item: Item, options: Item = {}) {
+    return { Put: { TableName: this.tableName, Item, ...options } };
+  }
+  async activeSubscribers() {
+    return (
+      await this.rows(
+        {
+          FilterExpression: 'sk = :p AND #s = :a',
+          ExpressionAttributeNames: { '#s': 'status' },
+          ExpressionAttributeValues: { ':p': 'PROFILE', ':a': 'active' }
+        },
+        true
+      )
+    ).map(Subscriber.fromItem);
+  }
+  async censusItems() {
+    return this.rows(
+      {
+        FilterExpression: 'begins_with(pk, :u) AND (sk = :p OR begins_with(sk, :d) OR begins_with(sk, :n))',
+        ProjectionExpression: 'pk, sk, #st, tz, send_time, last_sent_date, pause_from, pause_through, #src, #m[0].#k',
+        ExpressionAttributeNames: { '#st': 'status', '#src': 'source', '#m': 'media', '#k': 'kind' },
+        ExpressionAttributeValues: { ':u': 'USER#', ':p': 'PROFILE', ':d': 'DAY#', ':n': 'NOTE#' }
+      },
+      true
+    );
+  }
+  async userIds() {
+    return (
+      await this.rows(
+        { FilterExpression: 'sk = :p', ProjectionExpression: 'pk', ExpressionAttributeValues: { ':p': 'PROFILE' } },
+        true
+      )
+    )
+      .filter((i) => String(i.pk).startsWith('USER#'))
+      .map((i) => String(i.pk).slice(5))
+      .sort();
+  }
+  async getSubscriber(user: string, consistent = false) {
+    const item = await this.get(key(user, 'PROFILE'), { ConsistentRead: consistent });
+    return item ? Subscriber.fromItem(item) : null;
+  }
+  async claimDay(user: string, day: string) {
+    return this.conditional(() =>
+      this.update(key(user, 'PROFILE'), {
+        UpdateExpression: 'SET last_sent_date = :d',
+        ConditionExpression: 'attribute_exists(pk) AND (attribute_not_exists(last_sent_date) OR last_sent_date < :d)',
+        ExpressionAttributeValues: { ':d': day }
+      })
+    );
+  }
+  async releaseDay(user: string, day: string, previous: string | null) {
+    await this.update(key(user, 'PROFILE'), {
+      UpdateExpression: previous ? 'SET last_sent_date = :p' : 'REMOVE last_sent_date',
+      ConditionExpression: 'last_sent_date = :d',
+      ExpressionAttributeValues: previous ? { ':p': previous, ':d': day } : { ':d': day }
+    });
+  }
+  async putDay(user: string, day: string, version: string, token: string, sentAt: string) {
+    const sent = Math.floor(Date.parse(sentAt) / 1000);
+    if (!Number.isFinite(sent)) throw new Error('Invalid send time');
+    await this.put({ pk: `TOKEN#${token}`, sk: 'TOKEN', user_id: user, date: day, version, sent_at: sent });
+    await this.put({ ...key(user, `DAY#${day}`), version, token, sent_at: sentAt });
+  }
+  async dropDay(user: string, day: string, token: string) {
+    await this.del({ pk: `TOKEN#${token}`, sk: 'TOKEN' });
+    await this.conditional(() =>
+      this.del(key(user, `DAY#${day}`), {
+        ConditionExpression: '#t = :t',
+        ExpressionAttributeNames: { '#t': 'token' },
+        ExpressionAttributeValues: { ':t': token }
+      })
+    );
+  }
+  async setDayMessageId(user: string, day: string, message: string) {
+    await this.update(key(user, `DAY#${day}`), {
+      UpdateExpression: 'SET ses_message_id = :m',
+      ExpressionAttributeValues: { ':m': message }
+    });
+  }
+  async getToken(token: string) {
+    return this.get({ pk: `TOKEN#${token}`, sk: 'TOKEN' });
+  }
+  async claimLateNotice(token: string, at: string) {
+    return this.conditional(() =>
+      this.update(
+        { pk: `TOKEN#${token}`, sk: 'TOKEN' },
+        {
+          UpdateExpression: 'SET late_notice_at = :t',
+          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(late_notice_at)',
+          ExpressionAttributeValues: { ':t': at }
+        }
+      )
+    );
+  }
+  async getInbox(token: string, consistent = false) {
+    return this.get({ pk: `INBOX#${token}`, sk: 'INBOX' }, { ConsistentRead: consistent });
+  }
+  async setInbox(user: string, token: string, now: string, old: string | null = null) {
+    const operations: NonNullable<TransactWriteCommandInput['TransactItems']> = [
+      this.putOperation(
+        { pk: `INBOX#${token}`, sk: 'INBOX', user_id: user, created_at: now },
+        { ConditionExpression: 'attribute_not_exists(pk)' }
+      ),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, 'PROFILE'),
+          UpdateExpression: 'SET inbox = :t',
+          ConditionExpression: 'attribute_exists(pk) AND ' + (old ? 'inbox = :old' : 'attribute_not_exists(inbox)'),
+          ExpressionAttributeValues: { ':t': token, ...(old ? { ':old': old } : {}) }
+        }
+      }
+    ];
+    if (old) operations.push({ Delete: { TableName: this.tableName, Key: { pk: `INBOX#${old}`, sk: 'INBOX' } } });
+    try {
+      await this.client.send(new TransactWriteCommand({ TransactItems: operations }));
+      return true;
+    } catch (e) {
+      if (reasons(e).some((r) => r.Code === 'ConditionalCheckFailed')) return false;
+      throw e;
+    }
+  }
+  private async keys(user: string, prefix: string) {
+    return new Set(
+      (
+        await this.rows({
+          KeyConditionExpression: 'pk = :u AND begins_with(sk, :n)',
+          ExpressionAttributeValues: { ':u': `USER#${user}`, ':n': prefix },
+          ProjectionExpression: 'sk'
+        })
+      ).map((i) => String(i.sk))
+    );
+  }
+  private async dates(user: string, prefix: string) {
+    return new Set([...(await this.keys(user, prefix))].map((sk) => sk.split('#')[1]!));
+  }
+  async noteIds(user: string) {
+    return new Set([...(await this.keys(user, 'NOTE#'))].map((sk) => sk.split('#').slice(2).join('#')));
+  }
+  async noteDays(user: string) {
+    return this.dates(user, 'NOTE#');
+  }
+  async sentDays(user: string) {
+    return this.dates(user, 'DAY#');
+  }
+  async noteIndex(user: string): Promise<[string, number][]> {
+    return (
+      await this.rows({
+        KeyConditionExpression: 'pk = :u AND begins_with(sk, :n)',
+        ExpressionAttributeValues: { ':u': `USER#${user}`, ':n': 'NOTE#' },
+        ProjectionExpression: 'sk, #m',
+        ExpressionAttributeNames: { '#m': 'media' }
+      })
+    ).map((i) => [String(i.sk).split('#')[1]!, media(i).filter((m) => m.kind === 'image').length]);
+  }
+  async notesBetween(user: string, first: string, last: string, query: Omit<QueryCommandInput, 'TableName'> = {}) {
+    const items = await this.rows({
+      ...query,
+      KeyConditionExpression: 'pk = :u AND sk BETWEEN :a AND :b',
+      ExpressionAttributeValues: {
+        ':u': `USER#${user}`,
+        ':a': `NOTE#${first}#`,
+        ':b': `NOTE#${last}$`,
+        ...query.ExpressionAttributeValues
+      }
+    });
+    return items.sort(
+      (a, b) =>
+        compare(String(a.sk).split('#')[1]!, String(b.sk).split('#')[1]!) ||
+        compare(written(a), written(b)) ||
+        compare(String(a.sk), String(b.sk))
+    );
+  }
+  async dayNotes(user: string, day: string) {
+    return (
+      await this.rows({
+        KeyConditionExpression: 'pk = :u AND begins_with(sk, :n)',
+        ExpressionAttributeValues: { ':u': `USER#${user}`, ':n': `NOTE#${day}#` }
+      })
+    ).sort((a, b) => compare(written(a), written(b)) || compare(String(a.sk), String(b.sk)));
+  }
+  async allNotes(user: string) {
+    return this.notesBetween(user, '0000-00-00', '9999-99-99');
+  }
+  async noteTags(user: string) {
+    return this.notesBetween(user, '0000-00-00', '9999-99-99', {
+      ProjectionExpression: 'sk, #g',
+      ExpressionAttributeNames: { '#g': 'tags' }
+    });
+  }
+  async taggedNotes(user: string, tag: string) {
+    return this.notesBetween(user, '0000-00-00', '9999-99-99', {
+      FilterExpression: 'contains(#g, :g)',
+      ExpressionAttributeNames: { '#g': 'tags' },
+      ExpressionAttributeValues: { ':g': tag }
+    });
+  }
+  async putNote(user: string, day: string, id: string, note: Item) {
+    return this.conditional(() =>
+      this.put({ ...key(user, `NOTE#${day}#${id}`), ...note }, { ConditionExpression: 'attribute_not_exists(pk)' })
+    );
+  }
+  async updateNote(
+    user: string,
+    day: string,
+    id: string,
+    text: string,
+    at: string,
+    links: Item[] | null = null,
+    tags: string[] | null = null
+  ) {
+    const sets = ['#t = :t', 'updated_at = :at'];
+    const removes: string[] = [];
+    const values: Item = { ':t': text, ':at': at };
+    for (const [name, ref, value] of [
+      ['links', ':l', links],
+      ['tags', ':g', tags]
+    ] as const) {
+      if (value?.length) {
+        sets.push(`${name} = ${ref}`);
+        values[ref] = value;
+      } else removes.push(name);
+    }
+    try {
+      return (
+        (
+          await this.update(key(user, `NOTE#${day}#${id}`), {
+            UpdateExpression: `SET ${sets.join(', ')}${removes.length ? ' REMOVE ' + removes.join(', ') : ''}`,
+            ConditionExpression: 'attribute_exists(pk)',
+            ExpressionAttributeNames: { '#t': 'text' },
+            ExpressionAttributeValues: values,
+            ReturnValues: 'ALL_NEW'
+          })
+        ).Attributes ?? null
+      );
+    } catch (e) {
+      if (conditionFailed(e)) return null;
+      throw e;
+    }
+  }
+  async addMedia(user: string, day: string, id: string, entries: Item[], had: number, at: string) {
+    try {
+      return (
+        (
+          await this.update(key(user, `NOTE#${day}#${id}`), {
+            UpdateExpression: 'SET media = list_append(if_not_exists(media, :none), :m), updated_at = :at',
+            ConditionExpression:
+              'attribute_exists(pk) AND ' + (had ? 'size(media) = :had' : 'attribute_not_exists(media)'),
+            ExpressionAttributeValues: { ':m': entries, ':none': [], ':at': at, ...(had ? { ':had': had } : {}) },
+            ReturnValues: 'ALL_NEW'
+          })
+        ).Attributes ?? null
+      );
+    } catch (e) {
+      if (conditionFailed(e)) return null;
+      throw e;
+    }
+  }
+  async note(user: string, day: string, id: string, consistent = false) {
+    return this.get(key(user, `NOTE#${day}#${id}`), { ConsistentRead: consistent });
+  }
+  async setMediaText(user: string, day: string, id: string, n: number, field: string, text: string) {
+    return this.setMediaField(user, day, id, n, field, text);
+  }
+  async setMediaField(user: string, day: string, id: string, n: number, field: string, value: unknown) {
+    const at = media(await this.note(user, day, id)).findIndex((m) => Number(m.n) === n);
+    if (at < 0) return false;
+    return this.conditional(() =>
+      this.update(key(user, `NOTE#${day}#${id}`), {
+        UpdateExpression: `SET media[${at}].#f = :t`,
+        ConditionExpression: `attribute_exists(pk) AND media[${at}].n = :n`,
+        ExpressionAttributeNames: { '#f': field },
+        ExpressionAttributeValues: { ':t': value, ':n': n }
+      })
+    );
+  }
+  async deleteNote(user: string, day: string, id: string) {
+    return (await this.del(key(user, `NOTE#${day}#${id}`), { ReturnValues: 'ALL_OLD' })).Attributes ?? null;
+  }
+  async userForEmail(email: string) {
+    const item = await this.get({ pk: `EMAIL#${email}`, sk: 'EMAIL' });
+    return item ? String(item.user_id) : null;
+  }
+  async profile(user: string) {
+    return this.get(key(user, 'PROFILE'));
+  }
+  async deleteProfile(user: string, inbox: string | null) {
+    return this.conditional(() =>
+      this.del(
+        key(user, 'PROFILE'),
+        inbox
+          ? { ConditionExpression: 'inbox = :t', ExpressionAttributeValues: { ':t': inbox } }
+          : { ConditionExpression: 'attribute_not_exists(inbox)' }
+      )
+    );
+  }
+  async createSubscriber(user: string, email: string, profile: Item) {
+    try {
+      await this.client.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            this.putOperation(
+              { pk: `EMAIL#${email}`, sk: 'EMAIL', user_id: user },
+              { ConditionExpression: 'attribute_not_exists(pk)' }
+            ),
+            this.putOperation(
+              { ...key(user, 'PROFILE'), email, ...profile },
+              { ConditionExpression: 'attribute_not_exists(pk)' }
+            )
+          ]
+        })
+      );
+      return true;
+    } catch (e) {
+      if (reasons(e).some((r) => r.Code === 'ConditionalCheckFailed')) return false;
+      throw e;
+    }
+  }
+  async updateProfile(user: string, fields: Item, remove: string[] = []) {
+    const entries = Object.entries(fields);
+    const names = Object.fromEntries([
+      ...entries.map(([k], i) => [`#f${i}`, k]),
+      ...remove.map((k, i) => [`#r${i}`, k])
+    ]);
+    const values = Object.fromEntries(entries.map(([, v], i) => [`:v${i}`, v]));
+    const expr =
+      (entries.length ? 'SET ' + entries.map((_, i) => `#f${i} = :v${i}`).join(', ') : '') +
+      (remove.length ? ' REMOVE ' + remove.map((_, i) => `#r${i}`).join(', ') : '');
+    if (!expr.trim()) return;
+    await this.update(key(user, 'PROFILE'), {
+      UpdateExpression: expr.trim(),
+      ConditionExpression: 'attribute_exists(pk)',
+      ExpressionAttributeNames: names,
+      ...(entries.length ? { ExpressionAttributeValues: values } : {})
+    });
+  }
+  async stop(user: string, reason: string, at: string) {
+    await this.updateProfile(user, { status: 'stopped', stopped_reason: reason, stopped_at: at });
+  }
+  async pauses(user: string): Promise<[string, string][]> {
+    return (
+      await this.rows({
+        KeyConditionExpression: 'pk = :u AND begins_with(sk, :n)',
+        ExpressionAttributeValues: { ':u': `USER#${user}`, ':n': 'PAUSE#' }
+      })
+    ).map((i) => [String(i.sk).slice(6), String(i.through)]);
+  }
+  async putPause(user: string, start: string, through: string, at: string) {
+    await this.put({ ...key(user, `PAUSE#${start}`), through, created_at: at });
+    await this.updateProfile(user, { pause_from: start, pause_through: through });
+  }
+  async endPause(user: string, start: string, through: string | null) {
+    if (through)
+      await this.update(key(user, `PAUSE#${start}`), {
+        UpdateExpression: 'SET through = :t',
+        ExpressionAttributeValues: { ':t': through }
+      });
+    else await this.del(key(user, `PAUSE#${start}`));
+    await this.update(key(user, 'PROFILE'), {
+      UpdateExpression: 'REMOVE pause_from, pause_through',
+      ConditionExpression: 'attribute_exists(pk)'
+    });
+  }
+  async deleteKeys(keys: Key[]) {
+    for (let i = 0; i < keys.length; i += 25) {
+      let requests = keys.slice(i, i + 25).map((Key) => ({ DeleteRequest: { Key } }));
+      let retries = 0;
+      while (requests.length) {
+        const result = await this.client.send(new BatchWriteCommand({ RequestItems: { [this.tableName]: requests } }));
+        requests = (result.UnprocessedItems?.[this.tableName] ?? []) as typeof requests;
+        if (requests.length) {
+          await new Promise((resolve) => setTimeout(resolve, Math.min(1000, 25 * 2 ** Math.min(retries++, 6))));
+        }
+      }
+    }
+  }
+  async imported(user: string, ledger: string) {
+    const item = await this.get(key(user, ledger), { ProjectionExpression: 'ids' });
+    return new Set(item?.ids as Iterable<string> | undefined);
+  }
+  async addImported(user: string, ledger: string, ids: string[], at: string) {
+    if (!ids.length) return;
+    await this.update(key(user, ledger), {
+      UpdateExpression: 'ADD ids :i SET updated_at = :t',
+      ExpressionAttributeValues: { ':i': new Set(ids), ':t': at }
+    });
+  }
+  async putWeather(user: string, day: string, fields: Item) {
+    return this.conditional(() =>
+      this.put({ ...key(user, `WEATHER#${day}`), ...fields }, { ConditionExpression: 'attribute_not_exists(sk)' })
+    );
+  }
+  async replaceWeather(user: string, day: string, fields: Item) {
+    await this.put({ ...key(user, `WEATHER#${day}`), ...fields });
+  }
+  async renameWeather(user: string, day: string, kept: Item, names: Item) {
+    const ks = Object.keys(names);
+    return this.conditional(() =>
+      this.update(key(user, `WEATHER#${day}`), {
+        UpdateExpression: 'SET ' + ks.map((k) => `#${k} = :${k}`).join(', '),
+        ConditionExpression: ['lat = :lat', 'lon = :lon', ...ks.map((k) => `#${k} = :was_${k}`)].join(' AND '),
+        ExpressionAttributeNames: Object.fromEntries(ks.map((k) => [`#${k}`, k])),
+        ExpressionAttributeValues: {
+          ...Object.fromEntries(Object.entries(names).map(([k, v]) => [`:${k}`, v])),
+          ...Object.fromEntries(ks.map((k) => [`:was_${k}`, kept[k] ?? ''])),
+          ':lat': kept.lat ?? null,
+          ':lon': kept.lon ?? null
+        }
+      })
+    );
+  }
+  async dropWeather(user: string, day: string, kept: Item) {
+    return this.conditional(() =>
+      this.del(key(user, `WEATHER#${day}`), {
+        ConditionExpression: 'lat = :lat AND lon = :lon',
+        ExpressionAttributeValues: { ':lat': kept.lat ?? null, ':lon': kept.lon ?? null }
+      })
+    );
+  }
+  private async byDay(user: string, prefix: string, first: string, last: string, consistent = false) {
+    return Object.fromEntries(
+      (
+        await this.rows({
+          KeyConditionExpression: 'pk = :u AND sk BETWEEN :a AND :b',
+          ExpressionAttributeValues: { ':u': `USER#${user}`, ':a': `${prefix}${first}`, ':b': `${prefix}${last}` },
+          ...(consistent ? { ConsistentRead: true } : {})
+        })
+      ).map((i) => [String(i.sk).slice(prefix.length), i])
+    );
+  }
+  async weatherBetween(user: string, first: string, last: string, consistent = false) {
+    return this.byDay(user, 'WEATHER#', first, last, consistent);
+  }
+  async placesBetween(user: string, first: string, last: string) {
+    return this.byDay(user, 'PLACE#', first, last);
+  }
+  async dayPlace(user: string, day: string, consistent = false) {
+    return this.get(key(user, `PLACE#${day}`), consistent ? { ConsistentRead: true } : {});
+  }
+  async setDayPlace(user: string, day: string, place: Item) {
+    await this.put({ ...key(user, `PLACE#${day}`), ...place });
+  }
+  async clearDayPlace(user: string, day: string) {
+    await this.del(key(user, `PLACE#${day}`));
+  }
+  async setNotePlace(user: string, day: string, id: string, place: Item) {
+    return this.conditional(() =>
+      this.update(key(user, `NOTE#${day}#${id}`), {
+        UpdateExpression: 'SET #p = :p',
+        ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#p)',
+        ExpressionAttributeNames: { '#p': 'place' },
+        ExpressionAttributeValues: { ':p': place }
+      })
+    );
+  }
+  async export(user: string) {
+    return this.get(key(user, 'EXPORT'));
+  }
+  async startExport(user: string, id: string, now: number, expires: number) {
+    await this.put({ ...key(user, 'EXPORT'), id, status: 'building', started_at: now, expires_at: expires });
+  }
+  async finishExport(user: string, id: string, fields: Item) {
+    const entries = Object.entries(fields);
+    return this.conditional(() =>
+      this.update(key(user, 'EXPORT'), {
+        UpdateExpression: 'SET ' + entries.map((_, i) => `#f${i} = :v${i}`).join(', '),
+        ConditionExpression: '#id = :id AND #s = :b',
+        ExpressionAttributeNames: {
+          '#id': 'id',
+          '#s': 'status',
+          ...Object.fromEntries(entries.map(([k], i) => [`#f${i}`, k]))
+        },
+        ExpressionAttributeValues: {
+          ':id': id,
+          ':b': 'building',
+          ...Object.fromEntries(entries.map(([, v], i) => [`:v${i}`, v]))
+        }
+      })
+    );
+  }
+  async userItems(user: string) {
+    return this.rows({ KeyConditionExpression: 'pk = :u', ExpressionAttributeValues: { ':u': `USER#${user}` } });
+  }
+  async putLogin(
+    hash: string,
+    email: string,
+    emailHash: string,
+    codeHash: string,
+    now: number,
+    ttl: number,
+    purpose: Purpose = 'signin'
+  ) {
+    const expires = now + ttl;
+    await this.put({
+      pk: `LOGIN#${hash}`,
+      sk: 'LOGIN',
+      email,
+      email_hash: emailHash,
+      code_hash: codeHash,
+      purpose,
+      attempts: 0,
+      created_at: now,
+      expires_at: expires
+    });
+    await this.put({ pk: `LOGINFOR#${emailHash}`, sk: newest[purpose], token_hash: hash, expires_at: expires });
+  }
+  async newestLogin(hash: string, purpose: Purpose = 'signin') {
+    const item = await this.get({ pk: `LOGINFOR#${hash}`, sk: newest[purpose] });
+    return item ? String(item.token_hash) : null;
+  }
+  async loginKeys(hash: string): Promise<Key[]> {
+    const keys: Key[] = [];
+    for (const sk of Object.values(newest)) {
+      const k = { pk: `LOGINFOR#${hash}`, sk };
+      const item = await this.get(k);
+      if (item) keys.push(k, { pk: `LOGIN#${item.token_hash}`, sk: 'LOGIN' });
+    }
+    return keys;
+  }
+  async spendAttempt(
+    hash: string,
+    now: number,
+    max: number,
+    purpose: Purpose = 'signin'
+  ): Promise<Item | 'gone' | 'used' | 'attempts'> {
+    try {
+      return (
+        await this.update(
+          { pk: `LOGIN#${hash}`, sk: 'LOGIN' },
+          {
+            UpdateExpression: 'SET attempts = attempts + :one',
+            ConditionExpression: `attribute_exists(pk) AND attribute_not_exists(used_at) AND expires_at > :now AND attempts < :max AND ${purposeCondition[purpose]}`,
+            ExpressionAttributeNames: { '#purpose': 'purpose' },
+            ExpressionAttributeValues: { ':one': 1, ':now': now, ':max': max, ':purpose': purpose },
+            ReturnValues: 'ALL_NEW'
+          }
+        )
+      ).Attributes!;
+    } catch (e) {
+      if (!conditionFailed(e)) throw e;
+    }
+    const item = await this.get({ pk: `LOGIN#${hash}`, sk: 'LOGIN' });
+    if (!item || Number(item.expires_at ?? 0) <= now || (item.purpose ?? 'signin') !== purpose) return 'gone';
+    return Object.hasOwn(item, 'used_at') ? 'used' : 'attempts';
+  }
+  async burnLogin(hash: string, now: number, purpose: Purpose = 'signin') {
+    try {
+      return (
+        (
+          await this.update(
+            { pk: `LOGIN#${hash}`, sk: 'LOGIN' },
+            {
+              UpdateExpression: 'SET used_at = :now',
+              ConditionExpression: `attribute_exists(pk) AND attribute_not_exists(used_at) AND expires_at > :now AND ${purposeCondition[purpose]}`,
+              ExpressionAttributeNames: { '#purpose': 'purpose' },
+              ExpressionAttributeValues: { ':now': now, ':purpose': purpose },
+              ReturnValues: 'ALL_NEW'
+            }
+          )
+        ).Attributes ?? null
+      );
+    } catch (e) {
+      if (conditionFailed(e)) return null;
+      throw e;
+    }
+  }
+  async count(k: string, period: number, span = 3600) {
+    const item = (
+      await this.update(
+        { pk: `RATE#${k}#${period}`, sk: 'RATE' },
+        {
+          UpdateExpression: 'ADD n :one SET expires_at = :exp',
+          ExpressionAttributeValues: { ':one': 1, ':exp': (period + 2) * span },
+          ReturnValues: 'UPDATED_NEW'
+        }
+      )
+    ).Attributes;
+    return Number(item?.n ?? 0);
+  }
+  /** Atomic eligibility+reservation, narrow counters first; no counter is consumed on denial. */
+  async reserveMail(counters: MailCounter[]): Promise<{ ok: boolean; limited?: string }> {
+    if (!counters.length) return { ok: true };
+    if (new Set(counters.map((c) => `${c.key}#${c.period}`)).size !== counters.length)
+      throw new Error('Duplicate mail counter');
+    const operations = counters.map((c) => ({
+      Update: {
+        TableName: this.tableName,
+        Key: { pk: `RATE#${c.key}#${c.period}`, sk: 'RATE' },
+        UpdateExpression: 'ADD n :one SET expires_at = :exp',
+        ConditionExpression: 'attribute_not_exists(pk) OR n < :limit',
+        ExpressionAttributeValues: { ':one': 1, ':exp': (c.period + 2) * (c.span ?? 3600), ':limit': c.limit }
+      }
+    }));
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await this.client.send(new TransactWriteCommand({ TransactItems: operations }));
+        return { ok: true };
+      } catch (e) {
+        const rs = reasons(e);
+        if (
+          (e as Error).name !== 'TransactionCanceledException' ||
+          !rs.length ||
+          rs.some((r) => !['None', 'ConditionalCheckFailed', 'TransactionConflict'].includes(r.Code ?? ''))
+        )
+          throw e;
+        const at = rs.findIndex((r) => r.Code === 'ConditionalCheckFailed');
+        if (at >= 0) return { ok: false, limited: counters[at]!.key };
+      }
+    }
+    throw Object.assign(new Error('Mail reservation conflicted'), { name: 'TransactionConflictException' });
+  }
+  async countUpload(user: string, day: number, size: number, maxFiles: number, maxBytes: number) {
+    return this.conditional(() =>
+      this.update(
+        { pk: `RATE#upload:${user}#${day}`, sk: 'RATE' },
+        {
+          UpdateExpression: 'ADD n :one, #b :size SET expires_at = :exp',
+          ConditionExpression: 'attribute_not_exists(pk) OR (n < :files AND #b <= :room)',
+          ExpressionAttributeNames: { '#b': 'bytes' },
+          ExpressionAttributeValues: {
+            ':one': 1,
+            ':size': size,
+            ':exp': (day + 2) * 86400,
+            ':files': maxFiles,
+            ':room': maxBytes - size
+          }
+        }
+      )
+    );
+  }
+  async takeLock(name: string, holder: string, now: number, forSeconds: number) {
+    return this.conditional(() =>
+      this.update(
+        { pk: `LOCK#${name}`, sk: 'LOCK' },
+        {
+          UpdateExpression: 'SET #h = :h, expires_at = :exp',
+          ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now OR #h = :h',
+          ExpressionAttributeNames: { '#h': 'holder' },
+          ExpressionAttributeValues: { ':h': holder, ':exp': now + forSeconds, ':now': now }
+        }
+      )
+    );
+  }
+  async releaseLock(name: string, holder: string, now: number) {
+    await this.conditional(() =>
+      this.update(
+        { pk: `LOCK#${name}`, sk: 'LOCK' },
+        {
+          UpdateExpression: 'SET expires_at = :now',
+          ConditionExpression: '#h = :h',
+          ExpressionAttributeNames: { '#h': 'holder' },
+          ExpressionAttributeValues: { ':h': holder, ':now': now }
+        }
+      )
+    );
+  }
+  async peek(k: string, period: number) {
+    return Number((await this.get({ pk: `RATE#${k}#${period}`, sk: 'RATE' }))?.n ?? 0);
+  }
+  async tally(month: string, name: string) {
+    await this.update(
+      { pk: `TALLY#${month}`, sk: 'TALLY' },
+      {
+        UpdateExpression: 'ADD #n :one',
+        ExpressionAttributeNames: { '#n': name },
+        ExpressionAttributeValues: { ':one': 1 }
+      }
+    );
+  }
+  async tallies() {
+    return Object.fromEntries(
+      (
+        await this.rows(
+          { FilterExpression: 'begins_with(pk, :t)', ExpressionAttributeValues: { ':t': 'TALLY#' } },
+          true
+        )
+      ).map((i) => [
+        String(i.pk).split('#')[1],
+        Object.fromEntries(
+          Object.entries(i)
+            .filter(([k]) => !['pk', 'sk'].includes(k))
+            .map(([k, v]) => [k, Number(v)])
+        )
+      ])
+    );
+  }
+  private async listSession(hash: string, user: string, expires: number) {
+    await this.put({ ...key(user, `SESSION#${hash}`), expires_at: expires });
+  }
+  async putSession(hash: string, options: SessionInput) {
+    const { user_id, email, now, expires } = options;
+    await this.put({
+      pk: `SESSION#${hash}`,
+      sk: 'SESSION',
+      created_at: now,
+      seen_at: now,
+      expires_at: expires,
+      ...(user_id ? { user_id } : { email })
+    });
+    if (user_id) await this.listSession(hash, user_id, expires);
+  }
+  async getSession(hash: string) {
+    return this.get({ pk: `SESSION#${hash}`, sk: 'SESSION' });
+  }
+  async touchSession(hash: string, now: number, expires: number, user: string | null = null) {
+    await this.update(
+      { pk: `SESSION#${hash}`, sk: 'SESSION' },
+      {
+        UpdateExpression: 'SET seen_at = :now, expires_at = :exp',
+        ConditionExpression: 'attribute_exists(pk)',
+        ExpressionAttributeValues: { ':now': now, ':exp': expires }
+      }
+    );
+    if (user) await this.listSession(hash, user, expires);
+  }
+  async claimSession(hash: string, user: string, expires: number) {
+    await this.update(
+      { pk: `SESSION#${hash}`, sk: 'SESSION' },
+      {
+        UpdateExpression: 'SET user_id = :u REMOVE email',
+        ConditionExpression: 'attribute_exists(pk)',
+        ExpressionAttributeValues: { ':u': user }
+      }
+    );
+    await this.listSession(hash, user, expires);
+  }
+  async deleteSession(hash: string) {
+    await this.del({ pk: `SESSION#${hash}`, sk: 'SESSION' });
+  }
+  async mcpGet(pk: string, sk = 'STATE') {
+    return this.get({ pk, sk }, { ConsistentRead: true });
+  }
+  async mcpRows(pk: string) {
+    return this.rows({
+      KeyConditionExpression: 'pk = :p',
+      ExpressionAttributeValues: { ':p': pk },
+      ConsistentRead: true
+    });
+  }
+  async mcpProfile(user: string) {
+    return this.mcpGet(`USER#${user}`, 'PROFILE');
+  }
+  async mcpCommit(changes: [Item, number | null][], user: string | null = null) {
+    const ops: NonNullable<TransactWriteCommandInput['TransactItems']> = [];
+    if (user)
+      ops.push({
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: key(user, 'PROFILE'),
+          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting)'
+        }
+      });
+    for (const [row, revision] of changes)
+      ops.push(
+        this.putOperation(
+          { ...row, revision: (revision ?? 0) + 1 },
+          revision == null
+            ? { ConditionExpression: 'attribute_not_exists(pk)' }
+            : {
+                ConditionExpression: '#r = :r',
+                ExpressionAttributeNames: { '#r': 'revision' },
+                ExpressionAttributeValues: { ':r': revision }
+              }
+        )
+      );
+    return this.transact(ops);
+  }
+  async captureCommit(
+    note: Item,
+    old: Item | null,
+    receipt: Item,
+    audit: Item,
+    rate: Item,
+    previous: Item | null,
+    family: Item,
+    now: number
+  ) {
+    const uid = String(family.user_id);
+    const ops: NonNullable<TransactWriteCommandInput['TransactItems']> = [
+      {
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: key(uid, 'PROFILE'),
+          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting)'
+        }
+      },
+      {
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: { pk: `OAUTHFAMILY#${family.id}`, sk: 'STATE' },
+          ConditionExpression:
+            '#r = :revision AND expires_at > :now AND attribute_not_exists(revoked) AND contains(#s, :write)',
+          ExpressionAttributeNames: { '#r': 'revision', '#s': 'scope' },
+          ExpressionAttributeValues: { ':revision': family.revision, ':now': now, ':write': 'notes:write' }
+        }
+      }
+    ];
+    if (old) {
+      const values: Item = {
+        ':author': 'assistant',
+        ':connection': family.id,
+        ':old': old.text ?? '',
+        ':revision': old.revision,
+        ':text': note.text,
+        ':tags': note.tags,
+        ':links': note.links,
+        ':updated_at': note.updated_at,
+        ':next': note.revision
+      };
+      if (old.updated_at) values[':edited'] = old.updated_at;
+      ops.push({
+        Update: {
+          TableName: this.tableName,
+          Key: { pk: String(note.pk), sk: String(note.sk) },
+          UpdateExpression: 'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next',
+          ConditionExpression:
+            'author = :author AND #c = :connection AND #t = :old AND #r = :revision AND ' +
+            (old.updated_at ? 'updated_at = :edited' : 'attribute_not_exists(updated_at)'),
+          ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection' },
+          ExpressionAttributeValues: values
+        }
+      });
+    } else ops.push(this.putOperation(note, { ConditionExpression: 'attribute_not_exists(pk)' }));
+    ops.push(
+      this.putOperation(receipt, {
+        ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now',
+        ExpressionAttributeValues: { ':now': now }
+      }),
+      this.putOperation(audit, { ConditionExpression: 'attribute_not_exists(pk)' }),
+      this.putOperation(
+        rate,
+        previous
+          ? {
+              ConditionExpression: '#r = :r',
+              ExpressionAttributeNames: { '#r': 'revision' },
+              ExpressionAttributeValues: { ':r': previous.revision }
+            }
+          : { ConditionExpression: 'attribute_not_exists(pk)' }
+      )
+    );
+    return this.transact(ops);
+  }
+  async mcpBlock(user: string) {
+    await this.update(key(user, 'PROFILE'), {
+      UpdateExpression: 'SET mcp_deleting = :yes',
+      ExpressionAttributeValues: { ':yes': true },
+      ConditionExpression: 'attribute_exists(pk)'
+    });
+  }
+}

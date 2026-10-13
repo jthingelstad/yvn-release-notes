@@ -593,3 +593,11 @@ fakes, with `/dev-mail/`, `/dev-upload/` and `/dev-media/`; it never uses AWS.
 `packages/backend/census.ts` and `workers/entries/{send,inbound,events}.ts`
 wire Event workers and their count-only raw JSON/embedded metrics. Native
 HTTP logging uses structured console objects, no request URLs or arguments.
+
+Native processing lives in `packages/backend/{transcribe,describe}.ts` and
+`workers/{transcribe,describe}.ts`; existing opt-in and deletion proofs are
+transactional. `workers/runtime.ts` supports an exact content-free candidate
+probe before any SDK configuration. `tools/{build-server,package-native,
+native-artifacts,native-release,web-platform}.ts` build, retain and release
+immutable source artifacts with private metadata receipts. HTTP/MCP rollback
+pins and all seven worker alias versions are recorded before publication.

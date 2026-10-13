@@ -1059,6 +1059,13 @@ Resources:
                          dynamodb:DeleteItem]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
+                # Day/token commits prove the account remains active in the transaction.
+                Action: dynamodb:ConditionCheckItem
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*"]
+              - Effect: Allow
                 # The sender passes Content.Raw to SESv2 SendEmail, which SES
                 # authorizes as ses:SendRawEmail. Recipients whose address is a
                 # verified identity in this account are checked too, hence

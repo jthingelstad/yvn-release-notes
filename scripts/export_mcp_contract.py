@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate the read-only MCP tool contract; no network or AWS calls."""
+"""Regenerate the MCP tool contract; no network or AWS calls."""
 import json
 from pathlib import Path
 from release_notes.mcp import PROTOCOLS, TOOLS, VERSION

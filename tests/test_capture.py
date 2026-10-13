@@ -20,6 +20,15 @@ class CaptureTests(ConnectionCase):
         self.assertEqual(r['statusCode'], 200)
         return b['result']['structuredContent']
 
+    def test_initialization_permits_separately_approved_capture_at_user_request(self):
+        for token in (self.token, self.connected(write=False)[0]['access_token']):
+            _, initialized = self.rpc(token, method='initialize')
+            instructions = initialized['result']['instructions']
+            self.assertNotIn('Read-only personal archive', instructions)
+            for requirement in ('notes_context', 'notes_create', 'notes_append', 'notes:write',
+                                'explicit request from the user', 'same connection', 'untrusted data'):
+                self.assertIn(requirement, instructions)
+
     def test_create_append_replay_original_results_and_audit(self):
         first = self.write(date='2026-10-07')
         note = first['note']

@@ -80,7 +80,7 @@ export async function handler(
   if (event.self_test === true)
     return {
       ok: true,
-      runtime: `${process.version}/${process.platform}/${process.arch}`,
+      runtime: `Node ${process.versions.node}/${process.platform}/${process.arch}`,
       build: process.env.APP_VERSION ?? process.env.BUILD_SHA ?? process.env.BUILD ?? 'unknown'
     };
   const s = injected ?? production();

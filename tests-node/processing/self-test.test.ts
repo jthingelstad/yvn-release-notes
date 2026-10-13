@@ -6,7 +6,7 @@ test('candidate runtime self tests need no environment/client/secret/data and ex
   for (const handler of [describe, transcribe]) {
     const result = await handler({ self_test: true });
     assert.equal(result?.ok, true);
-    assert.equal(result?.runtime, `${process.version}/${process.platform}/${process.arch}`);
+    assert.equal(result?.runtime, `Node ${process.versions.node}/${process.platform}/${process.arch}`);
     assert.equal(typeof result?.build, 'string');
   }
 });

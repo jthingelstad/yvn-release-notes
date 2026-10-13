@@ -1,5 +1,12 @@
 # TypeScript and Lambda Web Functions rebuild execution plan
 
+This document records the approved migration design and its staged recovery
+gates. The application and operator source now use TypeScript; the preparation
+baseline and Python bridge references below describe the migration history.
+Use `AGENTS.md`, `docs/WEB-APP.md`, `docs/MCP.md` and `deploy.sh` for the current
+runtime, commands and operating rules. Release metadata and private receipts
+establish the deployed state; this plan does not establish production status.
+
 Rebuild Release Notes as a React and TypeScript product on Node 24. Use
 ordinary Hono HTTP servers on Lambda Web Functions for the application API
 and MCP, and Node Event Functions for mail, media, export and delegated
@@ -13,7 +20,7 @@ capture. Retain the existing archive and product behavior.
   focused independent reviews and green validate. The production baseline
   was deployed successfully and health/unauthenticated MCP behavior checked.
 - The isolated preparation checkout began at `origin/main` commit
-  `61a9464` and refreshed to dff4801. The current baseline has 673 Python
+  `61a9464` and refreshed to dff4801. That preparation baseline had 673 Python
   tests (five existing optional-Pillow skips) and 32 web tests.
 - Jamie confirmed a web UI redesign, staged compatible releases in
   us-east-1, shared existing data and separate API/MCP permissions.
@@ -25,7 +32,7 @@ capture. Retain the existing archive and product behavior.
   are open to redesign. Native iOS/Android applications are outside scope.
 - The approved visual direction is warm paper, strong typography, a focal
   version number, spacious writing and clearer archive/search navigation.
-- Implementation is underway in isolated managed worktrees. No live test
+- Implementation was prepared in isolated managed worktrees. No live test
   writes, imports, backfills, secret reads, production sign-ins or reads
   of subscriber note content are permitted for migration verification.
 
@@ -51,7 +58,7 @@ Use explicit shared packages:
 | `server/mcp/` | MCP HTTP transport and reader |
 | `workers/` | Mail, stream processing, export, delegated capture |
 | `packages/domain/` | Dates, versions, releases, notes, tags, search and streaks |
-| `packages/contracts/` | Public DTOs, runtime schemas and generated MCP contract |
+| `server/mcp/contract.ts`, `contracts/` | Runtime MCP schemas and generated public contract |
 | `packages/backend/` | DynamoDB, auth, AWS clients, media and guarded fetches |
 | `packages/testing/` | Fictional fixtures, fakes and behavior cases |
 | `tools/` | Local server, imports and operator commands |

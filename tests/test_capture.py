@@ -71,6 +71,9 @@ class CaptureTests(ConnectionCase):
         self.assertEqual({a['note_id'] for a in writes}, {note['id']})
         self.assertTrue(all(a['client'] == 'Claude' for a in writes))
         self.assertNotIn('Dinner', json.dumps(activity))
+        audits = [i for i in self.store.mcp_items.values() if i['sk'].startswith('LOG#')]
+        self.assertTrue(all(not {'request_hash', 'text', 'idempotency_key', 'token'} & i.keys() for i in audits))
+        self.assertTrue(all('request_hash' in i for i in self.store.items['u1'] if i['sk'].startswith('CAPTURE#')))
 
     def test_no_implicit_write_consent_or_web_write_authentication(self):
         read_token = self.connected(write=False)[0]['access_token']

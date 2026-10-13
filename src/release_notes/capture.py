@@ -83,7 +83,7 @@ def write(app, family, name, args, fetch=None):
         audit = {"pk": "MCPMETA#" + uid, "sk": "LOG#" + f"{app.now:012d}#" + uuid.uuid4().hex,
                  "at": app.now, "tool": name, "outcome": "ok", "connection": fid,
                  "client": family["client_name"], "date": day, "note_id": note["sk"].split("#", 2)[2],
-                 "request_hash": fingerprint, "expires_at": app.now + 14 * 86400}
+                 "expires_at": app.now + 14 * 86400}
         if app.store.capture_commit(note, old, receipt, audit, rate, previous, family, app.now):
             return {"note": shown, "replayed": False}
         # A conflict can also mean disconnection, scope removal or deletion.

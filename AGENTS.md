@@ -569,3 +569,12 @@ blocks new MCP metadata/OAuth writes first and removes all indexed grants.
 Never test a connection by reading or writing live subscriber notes or signing in
 against production. Use the dev server and fakes. Regenerate the contract
 with `PYTHONPATH=src python3 scripts/export_mcp_contract.py` when tools change.
+
+Native mail and exports (2026-10-13): `packages/mail/{parse,compose,auth}.ts`
+retain MIME, email rendering, and email-verified ownership behavior.
+`workers/{send,inbound,events}.ts` use atomic live-account proofs and delivery
+receipts; `packages/backend/export.ts` formats private JSON/Markdown and
+`workers/export.ts` builds archives on temporary disk with bounded multipart
+uploads, then proves the live account and current build when publishing.
+`tests-node/{mail,export}/` compare independent fictional Python fixtures.
+These are additive until native worker releases are explicitly activated.

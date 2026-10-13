@@ -11,13 +11,19 @@ import {
   DeleteObjectCommand,
   ListObjectsV2Command,
   PutObjectTaggingCommand,
-  GetObjectTaggingCommand
+  GetObjectTaggingCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { SESv2Client, SendEmailCommand, DeleteSuppressedDestinationCommand } from '@aws-sdk/client-sesv2';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { Readable } from 'node:stream';
+import { createReadStream } from 'node:fs';
+import { stat, open } from 'node:fs/promises';
 import { Store } from './store.ts';
 import type { Invocations, Mail, Objects, ObjectWrite } from './services.ts';
 
@@ -36,8 +42,8 @@ const writeFields = (options: ObjectWrite) => ({
   Metadata: options.metadata
 });
 
-export function createObjects(bucket: string, region = 'us-east-1'): Objects {
-  const client = new S3Client({ region, forcePathStyle: false });
+export function createObjects(bucket: string, region = 'us-east-1', injected?: S3Client): Objects {
+  const client = injected ?? new S3Client({ region, forcePathStyle: false });
   return {
     async get(key, options = {}) {
       const result = await client.send(
@@ -85,6 +91,72 @@ export function createObjects(bucket: string, region = 'us-east-1'): Objects {
         new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ...writeFields(options) })
       );
       return result.VersionId;
+    },
+    async uploadFile(key, path, options) {
+      const size = (await stat(path)).size,
+        partSize = 8 * 1024 * 1024;
+      if (size <= partSize) {
+        await client.send(
+          new PutObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            Body: createReadStream(path),
+            ContentLength: size,
+            ...writeFields(options)
+          })
+        );
+        return;
+      }
+      const created = await client.send(
+        new CreateMultipartUploadCommand({ Bucket: bucket, Key: key, ...writeFields(options) })
+      );
+      if (!created.UploadId) throw new Error('Missing multipart upload');
+      const uploadId = created.UploadId,
+        parts: Array<{ PartNumber: number; ETag: string }> = [];
+      let file: Awaited<ReturnType<typeof open>> | undefined;
+      try {
+        file = await open(path, 'r');
+        if (Math.ceil(size / partSize) > 10000) throw new RangeError('Export exceeds multipart limit');
+        let offset = 0;
+        while (offset < size) {
+          const body = Buffer.allocUnsafe(Math.min(partSize, size - offset));
+          let filled = 0;
+          while (filled < body.length) {
+            const { bytesRead } = await file.read(body, filled, body.length - filled, offset + filled);
+            if (!bytesRead) throw new Error('Export changed during upload');
+            filled += bytesRead;
+          }
+          const partNumber = parts.length + 1;
+          const answer = await client.send(
+            new UploadPartCommand({
+              Bucket: bucket,
+              Key: key,
+              UploadId: uploadId,
+              PartNumber: partNumber,
+              Body: body,
+              ContentLength: body.length
+            })
+          );
+          if (!answer.ETag) throw new Error('Missing multipart receipt');
+          parts.push({ PartNumber: partNumber, ETag: answer.ETag });
+          offset += body.length;
+        }
+        await client.send(
+          new CompleteMultipartUploadCommand({
+            Bucket: bucket,
+            Key: key,
+            UploadId: uploadId,
+            MultipartUpload: { Parts: parts }
+          })
+        );
+      } catch (error) {
+        await client
+          .send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: uploadId }))
+          .catch(() => undefined);
+        throw error;
+      } finally {
+        await file?.close();
+      }
     },
     async copy(source, version, target, options) {
       const encoded = `${encodeURIComponent(bucket)}/${source.split('/').map(encodeURIComponent).join('/')}`;

@@ -54,6 +54,7 @@ const media: MediaReader = {
 };
 listen(
   createMcpApp({
+    log: (fields) => console.info(fields),
     context: () => ({ store, media, origin: process.env.WEB_ORIGIN ?? '', now: Math.floor(Date.now() / 1000) }),
     async capture(event) {
       const response = await lambda.send(

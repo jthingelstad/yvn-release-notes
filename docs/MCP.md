@@ -177,3 +177,11 @@ References: [MCP authorization](https://modelcontextprotocol.io/specification/20
 [MCP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports),
 [Claude remote connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp),
 [Claude integration support](https://support.anthropic.com/en/articles/11503834-building-custom-integrations-via-remote-mcp-servers).
+# Native runtime transition
+
+The Node 24 implementation lives in `packages/backend/oauth.ts`,
+`server/mcp/` and `workers/capture.ts`. It preserves the current public
+contract, grant families, refresh rotation and private capture receipts.
+`tools/export-mcp-contract.ts` exports that same contract. The servers are
+ordinary Hono HTTP applications; production routing stays on the deployed
+baseline until the full API and platform release gates pass.

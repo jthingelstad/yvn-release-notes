@@ -4,6 +4,8 @@
 #
 #   ./deploy.sh                 deploy origin/main, once `validate` is green on it
 #   ./deploy.sh --break-glass   skip GitHub (GitHub down, never a red check)
+#   ./deploy.sh --worker-alias-phase=prepare   publish stable worker baselines
+#   ./deploy.sh --worker-alias-phase=activate  move the existing worker targets
 #
 # 0. Refuse anything but a clean checkout of origin/main with a green
 #    `validate` check run by GitHub Actions: production runs only
@@ -37,11 +39,17 @@ ARN=$(aws sts get-caller-identity --query Arn --output text)
 [[ "$ACCOUNT" == 999153317627 && "$ARN" == *assumed-role/ProjectsCloudEngineer/* ]] \
   || { echo "refusing: caller is $ARN" >&2; exit 1; }
 
-case "${1:-}" in
-  "") BREAK_GLASS="" ;;
-  --break-glass) BREAK_GLASS=1 ;;
-  *) echo "usage: $0 [--break-glass]" >&2; exit 2 ;;
-esac
+BREAK_GLASS=""
+WORKER_ALIAS_PHASE=""
+for arg in "$@"; do
+  case "$arg" in
+    --break-glass) BREAK_GLASS=1 ;;
+    --worker-alias-phase=prepare|--worker-alias-phase=activate)
+      [[ -z "$WORKER_ALIAS_PHASE" ]] || { echo "refusing: duplicate worker alias phase" >&2; exit 2; }
+      WORKER_ALIAS_PHASE="${arg#*=}" ;;
+    *) echo "usage: $0 [--break-glass] [--worker-alias-phase=prepare|activate]" >&2; exit 2 ;;
+  esac
+done
 
 [[ -n "$BREAK_GLASS" ]] || git fetch -q origin main
 HEAD_SHA=$(git rev-parse HEAD)
@@ -54,6 +62,37 @@ if [[ -z "$BREAK_GLASS" ]]; then
     --jq '[.check_runs[] | select(.conclusion == "success" and .app.slug == "github-actions")] | length')
   [[ "$GREEN" -gt 0 ]] || { echo "refusing: validate is not green on $HEAD_SHA" >&2; exit 1; }
 fi
+
+# This migration uses the already deployed rules' metadata, never changes
+# their physical names and never creates a second schedule or stream reader.
+# Once active, aliases stay active on every later ordinary deployment.
+WORKER_ALIASES_READY=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+  --query "Stacks[0].Parameters[?ParameterKey=='WorkerAliasesReady'].ParameterValue | [0]" --output text)
+[[ "$WORKER_ALIASES_READY" == true ]] || WORKER_ALIASES_READY=false
+if [[ "$WORKER_ALIAS_PHASE" == prepare && "$WORKER_ALIASES_READY" == true ]]; then
+  echo "refusing: worker aliases are already active; rollback selects a published version, not old targets" >&2
+  exit 1
+fi
+if [[ "$WORKER_ALIAS_PHASE" == activate ]]; then
+  for worker in Sender Inbound Transcribe Describe Export Capture; do
+    ALIAS_ARN=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+      --query "Stacks[0].Outputs[?OutputKey=='${worker}WorkerAlias'].OutputValue | [0]" --output text)
+    [[ "$ALIAS_ARN" == arn:*:live ]] || { echo "refusing: publish worker aliases with --worker-alias-phase=prepare first" >&2; exit 1; }
+    aws lambda get-alias --function-name "${ALIAS_ARN%:live}" --name live --query FunctionVersion --output text >/dev/null
+  done
+  WORKER_ALIASES_READY=true
+fi
+rule_arn() {
+  local rule_name
+  rule_name=$(aws cloudformation describe-stack-resource --stack-name "$STACK" --logical-resource-id "$1" \
+    --query StackResourceDetail.PhysicalResourceId --output text)
+  aws events describe-rule --name "$rule_name" --query Arn --output text
+}
+SENDER_SCHEDULE_ARN=$(rule_arn SenderSchedule)
+TRANSCRIBE_DONE_ARN=$(rule_arn TranscribeDone)
+[[ "$SENDER_SCHEDULE_ARN" == arn:aws:events:us-east-1:"$ACCOUNT":rule/* && \
+   "$TRANSCRIBE_DONE_ARN" == arn:aws:events:us-east-1:"$ACCOUNT":rule/* ]] \
+  || { echo "refusing: worker rules do not belong to this stack's account and region" >&2; exit 1; }
 
 # The handlers' JSON log lines go to stdout; the test report goes to stderr.
 PYTHONPATH=src python3 -m unittest discover -s tests -q >/dev/null \
@@ -122,6 +161,7 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset \
   --parameter-overrides "CodeBucket=$CODE_BUCKET" "CodeKey=$KEY" "PillowLayerKey=$LAYER_KEY" "WebDomain=$WEB_DOMAIN" "WebCertificateArn=$WEB_CERT" \
+    "SenderScheduleArn=$SENDER_SCHEDULE_ARN" "TranscribeDoneArn=$TRANSCRIBE_DONE_ARN" "WorkerAliasesReady=$WORKER_ALIASES_READY" \
   --tags Application=YourVersionNumber Project=yvn-release-notes ManagedBy=cloudformation \
          Environment=production Repository=jthingelstad/yvn-release-notes
 

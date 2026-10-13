@@ -421,6 +421,13 @@ failed on live until 2026-10-08 because of it).
   so nothing git ignores goes in; a failed build stops the deploy. Its
   comments have the rest (the code bucket, cache lifetimes, the
   invalidation).
+- Rebuild worker preparation uses two deployments of the same validated
+  main revision: `./deploy.sh --worker-alias-phase=prepare`, then
+  `./deploy.sh --worker-alias-phase=activate`. The first publishes the six
+  complete Python rollback versions and `live` aliases; the second moves
+  the existing receipt, schedule, internal calls and two stream mappings.
+  Ordinary deploys preserve active aliases. The mail-events SNS target is
+  unchanged until its new worker has transactional delivery deduplication.
 - **Node 24** everywhere (`.node-version`, both workflows; `engines` says
   24 or later). This Mac's default `node` is newer, so put Homebrew's
   `/opt/homebrew/opt/node@24/bin` first on PATH for npm here; `deploy.sh`

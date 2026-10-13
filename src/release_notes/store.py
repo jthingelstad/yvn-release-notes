@@ -68,7 +68,7 @@
     MCPMETA#<id>          RATE#<period>#<n>   read quotas (300/hour, 500/day), one extra period
     MCPMETA#<id>          USE#<family>        last use, fourteen days
     MCPMETA#<id>          LOG#<time>#<id>     tool, outcome and connection, fourteen days;
-                                                writes add client/note references and request hash, no content
+                                                writes add client/note references, no content or argument hash
     MCPMETA#<id>          WRITERATE#<tool>#<day> 20 creates or 50 appends per account/UTC day
 
 expires_at (epoch seconds) is the table's TTL. DynamoDB deletes late, up to

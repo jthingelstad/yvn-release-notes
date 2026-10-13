@@ -104,8 +104,9 @@ and account checks; disconnection/deletion races cannot commit afterward.
 
 Settings offers "Turn off adding" for each connection, keeping its read
 access. Refresh cannot restore removed permission. Disconnect revokes both.
-Audit keeps connection/client, tool, note reference, time, request hash and
-outcome for fourteen days, never the text or token. Bulk undo, proposals,
+Audit keeps connection/client, tool, note reference, time and outcome for
+fourteen days, never the text, token or argument fingerprint. The request
+fingerprint stays only in the private 24-hour retry receipt. Bulk undo, proposals,
 reflections and semantic search remain separate future work.
 
 ## Authorization

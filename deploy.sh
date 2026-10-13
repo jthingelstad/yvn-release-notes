@@ -18,6 +18,8 @@ ARN=$(aws sts get-caller-identity --query Arn --output text)
 BREAK_GLASS=""
 NATIVE_HTTP_PHASE=""
 NATIVE_WORKER_PHASE=""
+ADMIN_USER_ID_SET=""
+ADMIN_USER_ID=""
 for arg in "$@"; do
   case "$arg" in
     --break-glass) BREAK_GLASS=1 ;;
@@ -27,11 +29,19 @@ for arg in "$@"; do
     --native-worker-phase=publish|--native-worker-phase=activate|--native-worker-phase=rollback)
       [[ -z "$NATIVE_WORKER_PHASE" ]] || { echo "refusing: duplicate native worker phase" >&2; exit 2; }
       NATIVE_WORKER_PHASE="${arg#*=}" ;;
-    *) echo "usage: $0 [--break-glass] [--native-http-phase=publish|activate|rollback] [--native-worker-phase=publish|activate|rollback]" >&2; exit 2 ;;
+    --admin-user-id=*)
+      [[ -z "$ADMIN_USER_ID_SET" ]] || { echo "refusing: duplicate administrator assignment" >&2; exit 2; }
+      ADMIN_USER_ID_SET=1
+      ADMIN_USER_ID="${arg#*=}" ;;
+    *) echo "usage: $0 [--break-glass] [--native-http-phase=publish|activate|rollback] [--native-worker-phase=publish|activate|rollback] [--admin-user-id=ID]" >&2; exit 2 ;;
   esac
 done
 [[ -z "$NATIVE_HTTP_PHASE" || -z "$NATIVE_WORKER_PHASE" ]] \
   || { echo "refusing: select one native release kind per deployment" >&2; exit 2; }
+if [[ -n "$ADMIN_USER_ID_SET" ]]; then
+  [[ "$NATIVE_HTTP_PHASE" == publish && ( -z "$ADMIN_USER_ID" || "$ADMIN_USER_ID" =~ ^[A-Za-z0-9_-]{1,80}$ ) ]] \
+    || { echo "refusing: administrator assignment requires native HTTP publication and a valid subscriber id (empty disables access)" >&2; exit 2; }
+fi
 [[ -n "$BREAK_GLASS" ]] || git fetch -q origin main
 HEAD_SHA=$(git rev-parse HEAD)
 [[ -z "$(git status --porcelain)" ]] || { echo "refusing: uncommitted changes" >&2; exit 1; }
@@ -226,6 +236,9 @@ WEB_CERT=$(aws acm list-certificates --certificate-statuses ISSUED \
 
 PARAMETER_OVERRIDES=("WebDomain=$WEB_DOMAIN" "WebCertificateArn=$WEB_CERT"
   "SenderScheduleArn=$SENDER_SCHEDULE_ARN" "TranscribeDoneArn=$TRANSCRIBE_DONE_ARN")
+if [[ -n "$ADMIN_USER_ID_SET" ]]; then
+  PARAMETER_OVERRIDES+=("AdminUserId=$ADMIN_USER_ID")
+fi
 if [[ ${#NATIVE_PARAMETERS[@]} -gt 0 ]]; then
   PARAMETER_OVERRIDES+=("${NATIVE_PARAMETERS[@]}")
 fi

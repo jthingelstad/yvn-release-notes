@@ -334,6 +334,11 @@ test('HTTP promotion checks actual APP_VERSION, S3 version and execution role, n
   f.publish();
   const config = f.revisions.App!;
   const service = config.serviceConfig as { environmentVariables: Record<string, string>; executionRoleArn: string };
+  service.environmentVariables.ADMIN_USER_ID = 'unexpected-admin';
+  await assert.rejects(f.phase('promote-http'), /configuration\/source mismatch App/);
+  f.parameters.AdminUserId = 'operator';
+  await assert.rejects(f.phase('promote-http'), /configuration\/source mismatch App/);
+  service.environmentVariables.ADMIN_USER_ID = 'operator';
   service.environmentVariables.APP_VERSION = previousBuild;
   await assert.rejects(f.phase('promote-http'), /configuration\/source mismatch App/);
   service.environmentVariables.APP_VERSION = build;

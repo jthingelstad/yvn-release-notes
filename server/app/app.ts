@@ -5,6 +5,7 @@ import { OAuthError, publicOAuth } from '../../packages/backend/oauth.ts';
 import { accountRoutes } from './account-routes.ts';
 import { archiveRoutes } from './archive-routes.ts';
 import { noteRoutes } from './note-routes.ts';
+import { adminRoutes } from './admin-routes.ts';
 import { exportRoutes } from '../../packages/backend/exports.ts';
 import { json, trustedViewer } from './requests.ts';
 export interface AppOptions {
@@ -50,7 +51,13 @@ export const ROUTES: [string, string][] = [
   ['POST', '/api/mcp/authorize'],
   ['GET', '/api/mcp/connections'],
   ['DELETE', '/api/mcp/connections/{id}'],
-  ['GET', '/api/mcp/activity']
+  ['GET', '/api/mcp/activity'],
+  ['GET', '/api/admin/updates'],
+  ['POST', '/api/admin/updates'],
+  ['PUT', '/api/admin/updates/{id}'],
+  ['DELETE', '/api/admin/updates/{id}'],
+  ['POST', '/api/admin/updates/{id}/schedule'],
+  ['DELETE', '/api/admin/updates/{id}/schedule']
 ];
 const compiled = ROUTES.map(([method, path]) => ({
   method,
@@ -95,6 +102,7 @@ export function createApp(options: AppOptions = {}): Hono {
             (await accountRoutes(service, matched.path, args, url.searchParams, viewer)) ??
             (await archiveRoutes(service, matched.path, args, url.searchParams)) ??
             (await noteRoutes(service, matched.path, args)) ??
+            (await adminRoutes(service, matched.path, args)) ??
             (await exportRoutes(service, matched.path, url.searchParams)) ??
             json({ error: 'not-found' }, 404);
         }

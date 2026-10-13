@@ -1,6 +1,7 @@
 import { SessionService, reject } from '../../packages/backend/sessions.ts';
 import { updateAccount, changePause, deleteAccount, replyToken } from '../../packages/backend/accounts.ts';
 import { profileView } from '../../packages/backend/views.ts';
+import { isAdmin } from '../../packages/backend/product-updates.ts';
 import * as auth from '../../packages/backend/auth.ts';
 import { OAuthService } from '../../packages/backend/oauth.ts';
 import { iso, localDay, validDay, validTimezone, anniversary, parseDay } from '../../packages/domain/dates.ts';
@@ -113,13 +114,20 @@ export async function accountRoutes(
     return json({ ok: true });
   }
   if (pattern === '/api/me') {
-    if (method === 'PUT') return json(await updateAccount(service, await body(service.request)));
+    if (method === 'PUT') {
+      const session = await service.signedIn();
+      const view = await updateAccount(service, await body(service.request));
+      return json({ ...view, ...(ctx.adminUserId && session.user_id === ctx.adminUserId ? { admin: true } : {}) });
+    }
     if (method === 'DELETE')
       return json({ ok: true }, 200, { 'set-cookie': await deleteAccount(service, await body(service.request)) });
     const s = await service.signedIn();
     if (!s.user_id) return json({ new: true, email: s.email });
     const { profile } = await service.account();
-    return json(profileView(profile, ctx.now, ctx.inboundDomain));
+    return json({
+      ...profileView(profile, ctx.now, ctx.inboundDomain),
+      ...(isAdmin(profile, ctx.adminUserId) ? { admin: true } : {})
+    });
   }
   if (pattern === '/api/me/delete-code') {
     const { uid, profile: p } = await service.account(true);

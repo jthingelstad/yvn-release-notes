@@ -222,6 +222,7 @@ export async function main(args = process.argv.slice(2)) {
     inboundDomain: 'in.yourversionnumber.com',
     senderFunction: 'dev-sender',
     exportFunction: 'dev-export',
+    adminUserId: 'u1',
     geocode: async (q) => cities.filter((c) => c.name.toLowerCase().startsWith(q.toLowerCase())),
     fetchTitle: (url) => ({ title: 'A page at ' + new URL(url).hostname, site: new URL(url).hostname }),
     weatherFetch: async (url) => {

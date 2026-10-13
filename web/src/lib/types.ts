@@ -76,6 +76,7 @@ export interface DaysPage {
 }
 
 export interface Me {
+  admin?: boolean;
   new: boolean;
   email: string;
   birthday: string;

@@ -24,7 +24,8 @@ test('verified signup creates profile/address and claims same live email session
       ExpressionAttributeValues: { ':u': 'u', ':e': email, ':now': 100, ':exp': 300 }
     }
   });
-  assert.equal(s.memory.calls.filter((c) => c.name === 'GetCommand').at(-2)?.input.ConsistentRead, true);
+  const input = s.memory.calls.filter((c) => c.name === 'GetCommand').at(-2)?.input;
+  assert.equal(input && 'ConsistentRead' in input && input.ConsistentRead, true);
 });
 test('revoked expired wrong-email or claimed signup proof leaves no account or index', async () => {
   for (const items of [

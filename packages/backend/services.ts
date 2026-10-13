@@ -22,6 +22,7 @@ export interface Objects {
   remove(key: string, version?: string): Promise<void>;
   list(prefix: string): Promise<string[]>;
   tag(key: string, tags: Record<string, string>): Promise<void>;
+  tags(key: string, version?: string): Promise<Record<string, string>>;
   download(
     key: string,
     type: string,

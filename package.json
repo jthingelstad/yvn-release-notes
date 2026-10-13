@@ -11,7 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint web/src packages server tools tests-node --deny-warnings",
+    "lint": "oxlint web/src packages server workers tools tests-node --deny-warnings",
     "format": "prettier --write --no-error-on-unmatched-pattern \"web/**/*.{ts,tsx,html}\" \"{packages,server,workers,tools,tests-node}/**/*.ts\" \"*.{ts,json}\"",
     "format:check": "prettier --check --no-error-on-unmatched-pattern \"web/**/*.{ts,tsx,html}\" \"{packages,server,workers,tools,tests-node}/**/*.ts\" \"*.{ts,json}\"",
     "test": "vitest run",

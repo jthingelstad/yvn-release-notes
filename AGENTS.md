@@ -112,11 +112,12 @@ same PR/validate gate. Sign-in and origin signing may improve while keeping
 ownership, privacy and existing access. See `docs/TYPESCRIPT-REBUILD.md`.
 
 New code lives in `packages/domain/` (calendar/version/notes/tags/streak/search
-and Unicode compatibility), `packages/backend/` (`auth.ts`, `links.ts`,
+and Unicode compatibility), `packages/backend/` (`auth.ts`, `links.ts`, `oauth.ts`,
 `store.ts`, `store-types.ts`, `services.ts`, `aws.ts`, `media.ts`, `exif.ts`,
 `thumbs.ts`, `places.ts`, `weather.ts`), `packages/testing/` (fictional AWS/store fakes),
 `server/app/` (native API), `server/mcp/` (separate MCP server), `workers/`
-(event entrypoints), and `tools/` (`build-server.ts` and operator tools).
+(event entrypoints, including private `capture.ts`), and `tools/`
+(`build-server.ts`, `export-mcp-contract.ts` and operator tools).
 `tsconfig.server.json` and `tests-node/` check the server separately from
 the browser. `npm run verify` checks both; Python tests remain required
 while their runtime or rollback artifacts remain deployed. Native health

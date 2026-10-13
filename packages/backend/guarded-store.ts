@@ -56,7 +56,8 @@ export function withWebProof(
           entry.ConditionExpression = entry.ConditionExpression
             ? `(${entry.ConditionExpression}) AND (${proof})`
             : proof;
-          entry.ExpressionAttributeNames = { ...entry.ExpressionAttributeNames, ...names };
+          if (Object.keys(names).length)
+            entry.ExpressionAttributeNames = { ...entry.ExpressionAttributeNames, ...names };
           if (Object.keys(values).length)
             entry.ExpressionAttributeValues = { ...entry.ExpressionAttributeValues, ...values };
         } else
@@ -65,7 +66,7 @@ export function withWebProof(
               TableName: store.tableName,
               Key: key,
               ConditionExpression: proof,
-              ExpressionAttributeNames: names,
+              ...(Object.keys(names).length ? { ExpressionAttributeNames: names } : {}),
               ...(Object.keys(values).length ? { ExpressionAttributeValues: values } : {})
             }
           });

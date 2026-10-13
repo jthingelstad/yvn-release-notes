@@ -42,12 +42,6 @@ Parameters:
     AllowedPattern: ^arn:[^:]+:events:[^:]+:[0-9]{12}:rule/.+$
     Description: Existing transcription-completion rule ARN, read from control-plane metadata; the rule itself keeps its physical name.
 
-  NativeLegacyDrainPending:
-    Type: String
-    Default: "true"
-    AllowedValues: ["true", "false"]
-    Description: Retain old unqualified grants and async settings until prior source retries and accepted events have drained; never removes native live configuration.
-
   NativeWorkersEnabled:
     Type: String
     Default: "true"
@@ -271,7 +265,6 @@ Rules:
         AssertDescription: Install and read back both endpoint resource policies before moving CloudFront origins.
 
 Conditions:
-  KeepLegacyDrain: !Equals [!Ref NativeLegacyDrainPending, "true"]
   HasWebCertificate: !Not [!Equals [!Ref WebCertificateArn, ""]]
 
 Resources:
@@ -1093,17 +1086,6 @@ Resources:
           FROM_ADDRESS: !Ref FromAddress
           CONFIG_SET: !Ref ConfigurationSet
 
-  InboundInvokePermission:
-    Type: AWS::Lambda::Permission
-    Condition: KeepLegacyDrain
-    Properties:
-      FunctionName: !Ref InboundFunction
-      Action: lambda:InvokeFunction
-      Principal: ses.amazonaws.com
-      SourceAccount: !Ref AWS::AccountId
-      SourceArn: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/${AWS::StackName}:receipt-rule/replies"
-
-  # Quarter hours, so a 20:00 send time lands at 20:00.
   SenderSchedule:
     Type: AWS::Events::Rule
     DependsOn: SenderAliasSchedulePermission
@@ -1114,22 +1096,6 @@ Resources:
       Targets:
         - Id: sender
           Arn: !Ref SenderAlias
-
-  SenderSchedulePermission:
-    Type: AWS::Lambda::Permission
-    Condition: KeepLegacyDrain
-    Properties:
-      FunctionName: !Ref SenderFunction
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt SenderSchedule.Arn
-
-  # --- web app: notes.yourversionnumber.com -----------------------------------
-  #
-  # The same shape as Drop and Thingy: CloudFront in front, a private S3
-  # bucket of static pages as the default origin, and an HTTP API for /api/*.
-  # Same origin for both, so there is no CORS and the session cookie is
-  # host-only.
 
   WebBucket:
     Type: AWS::S3::Bucket
@@ -1653,22 +1619,6 @@ Resources:
           TABLE: !Ref Table
           MAIL_BUCKET: !Ref MailBucket
 
-  # A failed build is marked failed and the person starts another; Lambda's
-  # own retries would only race the new one.
-  ExportInvokeConfig:
-    Type: AWS::Lambda::EventInvokeConfig
-    Condition: KeepLegacyDrain
-    Properties:
-      FunctionName: !Ref ExportFunction
-      Qualifier: $LATEST
-      MaximumRetryAttempts: 0
-
-  # --- bounces and complaints -----------------------------------------------
-  # The configuration set publishes SES's events to their own topic
-  # (MailEventsTopic), never the ops queue: they carry addresses. This
-  # function stops the subscriber on a hard bounce or complaint and puts
-  # one scrubbed line on the alarms topic.
-
   EventsLogs:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -1747,15 +1697,6 @@ Resources:
       TopicArn: !Ref MailEventsTopic
       Protocol: lambda
       Endpoint: !Ref EventsAlias
-
-  EventsInvokePermission:
-    Type: AWS::Lambda::Permission
-    Condition: KeepLegacyDrain
-    Properties:
-      FunctionName: !Ref EventsFunction
-      Action: lambda:InvokeFunction
-      Principal: sns.amazonaws.com
-      SourceArn: !Ref MailEventsTopic
 
   EventsAlias:
     Type: AWS::Lambda::Alias
@@ -1918,24 +1859,6 @@ Resources:
         - Id: transcribe
           Arn: !Ref TranscribeAlias
 
-  TranscribeDonePermission:
-    Type: AWS::Lambda::Permission
-    Condition: KeepLegacyDrain
-    Properties:
-      FunctionName: !Ref TranscribeFunction
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt TranscribeDone.Arn
-
-  # --- photos: thumbnails and descriptions ---------------------------------------
-  # workers/describe.ts: every photo's thumbnail (packages/backend/thumbs.ts, for everyone), then
-  # Claude, through the Anthropic API, describes each photo, for subscribers who
-  # turned it on, from the same stream; turning it on starts a pass over
-  # every photo already kept, which hands on to a new pass near its limit.
-  # A JPEG's EXIF spot names a note with no place (Amazon Location, packages/backend/places.ts).
-  # One function for all of it: a third reader of the stream would pass the
-  # two readers a shard DynamoDB Streams allows without throttling.
-
   DescribeLogs:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -2044,16 +1967,6 @@ Resources:
           BUCKET: !Ref MailBucket
           SELF: !Sub "${AWS::StackName}-describe:live"
           SECRET: !Ref AnthropicSecretName
-
-  DescribeInvokeConfig:
-    Type: AWS::Lambda::EventInvokeConfig
-    Condition: KeepLegacyDrain
-    Properties:
-      FunctionName: !Ref DescribeFunction
-      Qualifier: $LATEST
-      # A pass that failed (throttled, say) tries again; photos done are
-      # skipped.
-      MaximumRetryAttempts: 2
 
   DescribeStream:
     Type: AWS::Lambda::EventSourceMapping

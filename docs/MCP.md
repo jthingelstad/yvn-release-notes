@@ -34,14 +34,20 @@ DELETE return 405; there is no server event stream or session id.
 Requests without a bearer token return 401 and protected-resource metadata.
 Every request checks the token, canonical family and account with strong
 reads. Any supplied Origin must match the site. CloudFront forwards the
-Authorization and MCP headers and never caches MCP/OAuth responses.
+Authorization and MCP headers and never caches MCP/OAuth responses. Every
+response, including errors, carries `Cache-Control: no-store`. Each request
+owns its identity/context; reusable SDK clients carry no subscriber state.
 
-The generated `contracts/mcp-surface.json` is the full interface. Every tool
-has a strict input schema, output schema and accurate read/write annotations. Results
+The generated `contracts/mcp-surface.json` is the full interface, exported by
+`node --import tsx tools/export-mcp-contract.ts` from the native contract.
+`packages/backend/oauth.ts`, `server/mcp/` and `workers/capture.ts` implement
+the protocol and preserve existing families, refresh rotation and capture
+receipts. Every tool has a strict input schema, output schema and accurate
+read/write annotations. Results
 include structuredContent plus text, a server version and explicit errors
 with a next step. Notes are untrusted data, never agent instructions.
 
-| Tool | What it reads |
+| Tool | What it does |
 | --- | --- |
 | `notes_context` | Local today, timezone, current version, archive range, capabilities. |
 | `notes_list` | Recent notes, a date range or release, newest first, previews. |
@@ -142,14 +148,16 @@ deletable. Stopping daily emails still permits archive access, like the web.
 
 ## Infrastructure and operations
 
-A dedicated MCP Lambda uses the existing table and private bucket. Its IAM
-role reads USER, access-token, family and MCPMETA rows; only PutItem under
+A dedicated Hono MCP server on Node 24 runs as its own Lambda Web Function,
+using the existing table and private bucket. Its IAM role reads USER, access-token, family and MCPMETA rows; only PutItem under
 MCPMETA is allowed. It has GetObject for media only, and no SES, model,
 upload, deletion or OAuth write permissions. Its only Lambda invocation
-permission is the private capture writer. The existing
-web function handles OAuth and account-authorized consent/revocation. Both
-require CloudFront's generated origin proof; nobody reads the secret.
-No new Python package, search index, embedding job or model service is added.
+permission is the private capture writer. The web Hono server handles OAuth and account-authorized consent/revocation. Both
+Web Function origins require IAM authentication and CloudFront OAC signatures
+(`always`, `amz-auth`), with an endpoint-only policy for this distribution.
+Direct origin calls are denied; no generated origin-secret header is needed.
+The reader and private capture Event Function retain separate least-privilege
+roles. No search index, embedding job or model service is added.
 Unexpected tool or activity-recording failures log only the exception type
 and user id, with no original exception details or chain. Structured
 retryable errors are returned to the client. A count-only
@@ -163,7 +171,7 @@ note/receipt fields; note and grant conditions constrain the code's writes.
 The reader itself still cannot write USER rows. Append updates only text,
 tags, links, edited time and revision, preserving owner-added files/place.
 
-The dev server dispatches `/mcp`, `/oauth/*` and discovery to these same
+`tools/dev-server.ts` dispatches `/mcp`, `/oauth/*` and discovery to these same
 handlers against the in-memory fakes. Test with fictional data only. Unit
 tests cover OAuth ownership, resource binding, PKCE, expiry, rotation and
 replay, revocation, deletion, account isolation, media scopes, strict schemas,
@@ -177,11 +185,3 @@ References: [MCP authorization](https://modelcontextprotocol.io/specification/20
 [MCP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports),
 [Claude remote connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp),
 [Claude integration support](https://support.anthropic.com/en/articles/11503834-building-custom-integrations-via-remote-mcp-servers).
-# Native runtime transition
-
-The Node 24 implementation lives in `packages/backend/oauth.ts`,
-`server/mcp/` and `workers/capture.ts`. It preserves the current public
-contract, grant families, refresh rotation and private capture receipts.
-`tools/export-mcp-contract.ts` exports that same contract. The servers are
-ordinary Hono HTTP applications; production routing stays on the deployed
-baseline until the full API and platform release gates pass.

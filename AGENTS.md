@@ -13,8 +13,8 @@ Nothing on the sites links here yet: whether to add a link is Jamie's call,
 so leave the sites alone.
 
 This file holds the rules, the decisions behind them and how to operate.
-The design detail lives with the code: each module's docstring (named
-below), `src/release_notes/store.py` for the table's key layout, and
+The design detail lives with the code: each module's design comment (named
+below), `packages/backend/store.ts` for the table's key layout, and
 `docs/WEB-APP.md` for the web app, its API and its front end. Read those
 before changing a module.
 
@@ -26,122 +26,107 @@ Every write proves the writer owns the subscriber's address:
   120 random bits, within 72 hours of that email going out, from the
   subscriber's own address (the message's one From), with a DMARC pass or,
   where the domain publishes no DMARC policy, an aligned DKIM pass
-  (`inbound.py`).
+  (`workers/inbound.ts`).
 - **On the web**: inside a session that began with a link or code sent to
-  that address (`auth.py`).
+  that address (`packages/backend/auth.ts`).
 - **By an agent**: the owner explicitly delegates `notes:write` in that
-  email-verified web session. `capture.py` proves the live grant and account
+  email-verified web session. `workers/capture.ts` proves the live grant and account
   in the same transaction as each create or append. Only a connection's
   own assistant-authored notes may be appended to; no MCP edit or delete.
 - **By the standing address** (Jamie, 2026-10-12): `<token>@` the inbound
   domain, 120 random bits naming the person, not a day (`INBOX#`), shown
   only in their settings and the footer of their emails, with every check
   a reply has but the 72 hours: from the subscriber's own address, DMARC
-  or an aligned DKIM, not automatic (`inbound.py`). It is filed for their
+  or an aligned DKIM, not automatic (`workers/inbound.ts`). It is filed for their
   own day when SES received it, and it never expires; "New address" in
   settings replaces it, and the old one files nothing from then on. A
   stopped subscriber's address files nothing. It is never logged.
 
 Each subscriber's data is their own. Do not add an endpoint that writes
-without one of those three proofs.
+without these ownership proofs.
 
 ## Shape
 
 ```
 SES inbound (in.yourversionnumber.com MX)
   -> S3 raw/<messageId>                 the message, untouched
-  -> Lambda yvn-release-notes-inbound  token -> person + day (a reply) or person (the standing
-                                         address: today, theirs), auth checks, text -> DynamoDB
+  -> inbound Event Function :live       ownership checks -> DynamoDB
 
 EventBridge, every quarter hour
-  -> Lambda yvn-release-notes-sender   anyone whose local send time has come -> one email
+  -> sender Event Function :live        each subscriber's local send window -> one email
 
-SES delivery events, on their own topic (yvn-release-notes-mail-events)
-  -> Lambda yvn-release-notes-events   hard bounce or complaint -> that subscriber stopped;
-                                         one scrubbed line (kinds, user ids) -> the alarms topic
+SES delivery events (yvn-release-notes-mail-events)
+  -> events Event Function :live        hard bounce/complaint -> stopped;
+                                       one scrubbed line -> alarms topic
 
 notes.yourversionnumber.com (CloudFront)
-  default -> S3 web bucket              web/: the React app, built by Vite (dist/web)
-  /api/*  -> HTTP API -> Lambda yvn-release-notes-web
-                            -> Lambda yvn-release-notes-export   (async) the zip export -> S3 exports/
+  default -> private S3 web bucket      React/Vite app (dist/web)
+  /api/*, /oauth/*, discovery
+          -> private Lambda Web Function (server/app, Hono/Node 24)
+  /mcp    -> private Lambda Web Function (server/mcp, separate reader role)
+  web     -> export Event Function :live -> S3 exports/
+  MCP     -> private capture Event Function :live -> guarded text writes
 
-DynamoDB stream (for subscribers who turn them on)
-  -> Lambda yvn-release-notes-transcribe  recordings -> Amazon Transcribe -> transcript on the note
-  -> Lambda yvn-release-notes-describe    photos -> Claude Haiku 5.5 -> description on the note
+DynamoDB stream, for subscribers who opt in
+  -> transcribe Event Function :live    recordings -> Amazon Transcribe -> transcript
+  -> describe Event Function :live      photos -> Claude Haiku 5.5 -> description
+                                       thumbnails for everyone, independently of opt-in
 ```
 
-Where things are (each module's docstring is its design):
+The application, workers and operator tools are TypeScript on Node 24
+(Jamie, 2026-10-13), with ordinary port-listening Hono HTTP servers on Lambda
+Web Functions and a React web UI. Shared accounts, sessions, grants and
+archives keep their persisted contracts. Each HTTP request owns its session
+state; only service clients are reused. The domain uses ISO date-only strings,
+code-point note limits and Unicode case folding compatible with existing data.
 
-- Mail: `send.py` (the sender), `compose.py` (the email), `inbound.py`
-  (replies), `parse.py` (MIME to note text, quote and signature stripping),
-  `events.py` (bounces and complaints).
-- Notes: `notes.py` (the record, the same from every channel), `tags.py`,
-  `links.py` (link titles and the guarded fetch), `media.py` (photos,
-  recordings and PDFs, by email and on the web), `streak.py`, `weather.py`,
-  `places.py` (city search, and naming a photo's place), `exif.py` (a
-  JPEG's time and place, standard library).
-- Agent connections: `oauth.py` (owner consent, OAuth, connections), `mcp.py` (reading and capture tools),
-  `capture.py` (private delegated text writer), `docs/MCP.md`;
-  `scripts/export_mcp_contract.py` keeps `contracts/mcp-surface.json` current.
-- The web: `web.py` (the API, a small router), `auth.py` (sign-in,
-  sessions, limits), `export.py` (JSON and Markdown), `export_job.py` (the
-  zip). `web/` is the React app (`docs/WEB-APP.md`, Front end); its Home
-  Screen icons are drawn by `scripts/make_icons.mjs`.
-- Opt-in processing: `transcribe.py`, `describe.py`. Thumbnails, for
-  everyone: `thumbs.py`, run by the describe function.
-- Imports: `dayone.py` (plans), `importer.py` (writes).
-- `store.py`: the one table. `census.py`: the dashboard's counts.
-- `version.py`: the version arithmetic, ported from the site's
-  `computeVersion`, and a release ("5.4", a year of life, birthday to
-  birthday: `release_span`), which the release pages, the birthday
-  email and the export's headings share. `tests/fixtures/versions.json` is generated from the
-  site's own function by `scripts/gen-version-fixtures.mjs` (needs the
-  sibling checkout). If the site's arithmetic changes, regenerate and
-  re-test.
-- `infra/template.yaml`: the whole stack. `deploy.sh` checks it is
-  deploying a green `origin/main`, runs the tests, builds the web app,
-  packages and deploys the stack, makes its receipt rule set the active one
-  (only if no other set is active), then syncs the web app.
+Where things are (each module's design comment explains its contract):
 
-**TypeScript rebuild (Jamie, 2026-10-13):** the application, workers and
-operator tools are moving to TypeScript on Node 24, with ordinary Hono HTTP
-servers on Lambda Web Functions and a redesigned React web UI. This replaces
-the earlier Python language decision below. Shared persisted accounts and
-archives remain in place; deploy staged compatible releases through the
-same PR/validate gate. Sign-in and origin signing may improve while keeping
-ownership, privacy and existing access. See `docs/TYPESCRIPT-REBUILD.md`.
-
-New code lives in `packages/domain/` (calendar/version/notes/tags/streak/search
-and Unicode compatibility), `packages/backend/` (`auth.ts`, `links.ts`, `oauth.ts`,
-`store.ts`, `store-types.ts`, `services.ts`, `aws.ts`, `media.ts`, `exif.ts`,
-`thumbs.ts`, `places.ts`, `weather.ts`), `packages/testing/` (fictional AWS/store fakes),
-`server/app/` (native API), `server/mcp/` (separate MCP server), `workers/`
-(event entrypoints, including private `capture.ts`), and `tools/`
-(`build-server.ts`, `export-mcp-contract.ts` and operator tools).
-`tsconfig.server.json` and `tests-node/` check the server separately from
-the browser. `npm run verify` checks both; Python tests remain required
-while their runtime or rollback artifacts remain deployed. Native health
-scaffolding is not a production API cutover. Do not enable unfinished routes.
-
-**Legacy Python baseline: standard library only.** No `requirements.txt`; `boto3`
-comes from the Lambda runtime and is imported lazily so the tests run
-without it. Python stays the language for the web API too (decided
-2026-10-08): one language, one copy of the version arithmetic, nothing to
-install. The front end is React and TypeScript (decided 2026-10-09).
-The one exception (decided 2026-10-12, for photos in the email) is
-Pillow, in `thumbs.py` only, imported when a thumbnail is made, and only
-in the describe function, through a Lambda layer `deploy.sh` builds from
-the wheel pinned with its hash in `layers/pillow.txt`. Nothing else
-imports it, and nothing in the web or inbound path waits on it. To bump
-it, change the version and hash there together (check the hash against
-PyPI); the layer's key is the file's hash, so the next deploy builds it.
-
-`tests/fakes.py` is an in-memory table, SES, S3 and Lambda for the web
-tests, also used by `scripts/dev_server.py`. The fakes do not check
-DynamoDB's request shapes, so a new kind of table call also gets a test of
-the exact request (`tests/test_store.py`). `table.meta.client` takes plain
-Python values like the table does; typed values are typed twice (sign-up
-failed on live until 2026-10-08 because of it).
+- `packages/domain/`: `dates.ts`, `version.ts`, `notes.ts`, `tags.ts`,
+  `streak.ts`, `search.ts`, `unicode.ts` and `unicode-data.ts`. The version
+  arithmetic follows the site's `computeVersion`; `releaseSpan` defines a
+  year of life, birthday to birthday. `tests-node/fixtures/versions.json`
+  is generated from the site's own function by `scripts/gen-version-fixtures.mjs`
+  (needs the sibling checkout). Regenerate and test if that arithmetic changes.
+- `packages/mail/{parse,compose,auth}.ts`: MIME parsing, note/quote/signature
+  extraction, the daily email, and sign-in/deletion emails.
+- `packages/backend/{store,store-types,services,aws}.ts`: the one table's key
+  layout, document-value SDK requests and injected service contracts/adapters.
+  `census.ts` supplies the count-only dashboard.
+- `packages/backend/{links,media,uploads,exif,thumbs,places,weather}.ts`:
+  guarded title fetches, private file handling, image metadata, thumbnails,
+  city naming and weather. Sharp is confined to thumbnail/image processing;
+  its pinned Linux Arm64 runtime closure is packaged only with the describe worker.
+- `packages/backend/{auth,sessions,accounts,guarded-store,views,exports}.ts`:
+  email-verified sign-in, request-local sessions, owner DTOs, upload/account
+  proofs and export endpoints. `export.ts` produces JSON/Markdown;
+  `workers/export.ts` builds the ZIP with bounded multipart uploads.
+- `packages/backend/{oauth,transcribe,describe,dayone,importer}.ts`:
+  agent consent/grants, opt-in processing, untrusted Day One plans and imports.
+- `server/app/{app,account-routes,archive-routes,note-routes,requests,index}.ts` is the native API. `server/mcp/`
+  contains the separate native MCP server, reader and contract; `docs/MCP.md`
+  describes it. `server/shared/listen.ts` handles bounded graceful shutdown.
+- `workers/{send,inbound,events,transcribe,describe,export,capture}.ts`:
+  Event Function handlers. `workers/entries/{send,inbound,events}.ts` bind
+  production services. `workers/runtime.ts` supplies content-free runtime probes.
+- `web/` is the React app (`docs/WEB-APP.md`, Front end); Home Screen icons
+  are drawn by `scripts/make_icons.mjs`.
+- `packages/testing/{store,services}.ts` are fictional DynamoDB, mail, S3
+  and invocation fakes. `tools/dev-server.ts` serves the built app and the
+  actual native API against them. New DynamoDB request kinds also need exact
+  SDK-shape tests in `tests-node/store/`; fakes alone do not prove AWS shapes.
+- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather}.ts`
+  are operator tools, with shared setup in `tools/operator.ts`.
+  `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current.
+- `tools/{build-server,package-native,native-artifacts,native-release,web-platform}.ts`
+  build deterministic native artifacts, retain immutable S3 versions and
+  manage private release/policy receipts. `infra/template.yaml` is the stack.
+  `deploy.sh` requires a clean green `origin/main`, verifies an archived
+  committed tree, publishes/activates only the requested native phase, and
+  syncs the web app. `docs/TYPESCRIPT-REBUILD.md` records the migration gates.
+- `tsconfig.server.json` and `tests-node/` check servers, workers and tools;
+  `npm run verify` checks the complete application. Shared `package-lock.json`
+  pins runtime/build dependencies; installs do not run package scripts.
 
 ## Rules
 
@@ -158,13 +143,13 @@ failed on live until 2026-10-08 because of it).
   should not fail silently"), only for a reply that passes every other
   check, so a forged sender never gets one, and never to a stopped
   subscriber; at most one per reply address and 3 a subscriber a day.
-  `inbound.py` has the detail.
+  `workers/inbound.ts` has the detail.
 - **Reply as often as you like.** Each reply is its own note
   (`NOTE#<day>#<messageId>`); together, oldest first, they are that day's
   release notes (Jamie, 2026-10-08: "keep them in the database as separate
   things" but "treated as one day's release notes"). Read a day with
-  `Store.day_notes` and join it with `notes.combine`. Sort by
-  `notes.written_at`, never by key. A day with any note counts once for
+  `Store.dayNotes` and join it with `notes.combine`. Sort by
+  `notes.writtenAt`, never by key. A day with any note counts once for
   the streak.
 - **Notes written on the web** are `NOTE#<day>#w-<id>` with `source=web`,
   for today or any day back to the birthday. Every note, emailed or not,
@@ -176,30 +161,30 @@ failed on live until 2026-10-08 because of it).
   the web, an import: none is the only way in for text, photos, recordings
   or anything else. Where a channel does not carry something yet, that is
   work not done, never a rule.
-- **A note is the same record from every channel** (`notes.py` lists its
+- **A note is the same record from every channel** (`packages/domain/notes.ts` lists its
   fields). Its `place` shows by name, never the coordinates, the name
   linking to Apple Maps unless the place is only the subscriber's city
-  (`notes.map_url`, Jamie 2026-10-09).
+  (`notes.mapUrl`, Jamie 2026-10-09).
 - **Where a note was** (Jamie, 2026-10-12): chosen on the web (the
   optional "Where" on the Today and Day forms, from the city search), or
-  else its first photo's, read from the JPEG's EXIF GPS (`exif.py`) and
-  named once, at city or locality level, by Amazon Location (`places.py`),
+  else its first photo's, read from the JPEG's EXIF GPS (`packages/backend/exif.ts`) and
+  named once, at city or locality level, by Amazon Location (`packages/backend/places.ts`),
   which is told the coordinates alone. By email only a reply's photos give
   a place; there is no text convention. A day can have its own place with
   no note (`PLACE#<day>`), and it comes before any note's. A past day's
   weather follows the day's place; days with none keep the subscriber's
   city, and the morning forecast is always the subscriber's city
-  (`weather.py`). The original photo is never changed. Coordinates and
+  (`packages/backend/weather.ts`). The original photo is never changed. Coordinates and
   place names are never logged.
 - **Raw mail is the source of truth.** Every filed reply stays whole in S3
   (`raw/`, tagged `outcome=note`, kept indefinitely); never expire those.
   Ignored mail is tagged `outcome=ignored` and expires in 30 days.
 - **Automatic replies are not notes** (Auto-Submitted, X-Autoreply,
-  Precedence bulk and the rest, `inbound.py`), and nor is mail with more
+  Precedence bulk and the rest, `workers/inbound.ts`), and nor is mail with more
   than one From. A note is at most 20,000 characters (`notes.MAX_NOTE`),
   emailed or typed.
 - **Tags are hashtags** in the text (Jamie, 2026-10-09: "hashtags",
-  lowercase with hyphens, "maine-2016"; `tags.py`). The text is the one
+  lowercase with hyphens, "maine-2016"; `packages/domain/tags.ts`). The text is the one
   place a tag lives. `/search/` lists every tag and `/tag/?t=<tag>` shows
   a tag's days. No index: one person's notes are read whole.
 - **Search** (Jamie, 2026-10-09: "pull posts by tag, showing all tags
@@ -211,14 +196,14 @@ failed on live until 2026-10-08 because of it).
   logged.
 - **Links show by name, never raw, and there is no Markdown** (Jamie,
   2026-10-08). A title is fetched once, when the note is written, never
-  when it is shown, through the guarded fetch in `links.py` (the address is
+  when it is shown, through the guarded fetch in `packages/backend/links.ts` (the address is
   whatever someone typed: keep every guard). `links.segments` is the one
   rendering for the email, the web and the Markdown export.
 
 ### Files and processing
 
 - **Photos, recordings and PDFs** (Jamie, 2026-10-08 and 2026-10-09) are
-  kept with their note, whatever channel brought them (`media.py`: keys,
+  kept with their note, whatever channel brought them (`packages/backend/media.ts`: keys,
   limits, uploads). They are shown only to their owner, by signed links,
   never a public URL; the S3 key is never a field of an API answer.
 - **No model processing of notes** (summaries, prompts, anything) without
@@ -228,27 +213,27 @@ failed on live until 2026-10-08 because of it).
   Amazon Transcribe) are off until the subscriber ticks "Write out what I
   say" (`transcribe` on the profile); at most 30 jobs a subscriber a day.
   The account has no AI services opt-out (Jamie, 2026-10-09: "I don't care
-  if they keep it"). `transcribe.py` has the rest.
+  if they keep it"). `packages/backend/transcribe.ts` has the rest.
 - **Photo descriptions** (Jamie, 2026-10-09: "image descriptions to allow
   images to appear in search", Claude Haiku 5.5 through the Anthropic API)
   are off until the subscriber ticks "Describe my photos" (`describe` on
   the profile). The API key is `api_key` in the secret
   `yvn-release-notes-anthropic`, made by hand outside the stack. Jamie
-  keeps its value; agents never read it. `describe.py` has the rest.
+  keeps its value; agents never read it. `packages/backend/describe.ts` has the rest.
 - **Thumbnails** (Jamie, 2026-10-12: photos in the email) are made for
   every photo, opted in or not, once, when it is filed: about 640px, a
   JPEG under 80 KB, beside the original, with no EXIF or GPS. The email
   reads only these, never an original. The same read records a JPEG's
-  `taken_at` and spot on its media entry. `thumbs.py` has the rest.
+  `taken_at` and spot on its media entry. `packages/backend/thumbs.ts` has the rest.
 - **Day One imports are planned before anything is written** (Jamie,
-  2026-10-09: "keep it to dry-run"). `scripts/import_dayone.py EMAIL
+  2026-10-09: "keep it to dry-run"). `node --import tsx tools/import-dayone.ts EMAIL
   ZIP...` prints what an import would do, as counts (`--plan-out` to a
   folder outside the repo for the full plan, note text included;
   `--weather-sample N` to check the weather archive for N days). `--write`
-  imports (`importer.py`), using boto3 from a virtualenv; **every live run
+  imports (`packages/backend/importer.ts`), through the Node AWS SDK; **every live run
   needs Jamie's go**. A repeat skips what was imported before, deleted
   since or not (the `IMPORT#` ledger). The export is read as untrusted
-  (`dayone.py`). `scripts/dev_server.py --dayone ZIP` runs the same
+  (`packages/backend/dayone.ts`). `node --import tsx tools/dev-server.ts --dayone ZIP` runs the same
   importer into the fakes first.
 - **Imported days count** toward streaks and every lifetime count (Jamie,
   2026-10-09). The dashboard splits notes into email, web and imported.
@@ -264,13 +249,13 @@ failed on live until 2026-10-08 because of it).
   once, through the sender's `send_now`, with one welcome line; the
   schedule starts the next day.
 - **Sessions last 14 days from the last visit** and every visit renews
-  them, with no outer limit (Jamie, 2026-10-08). `auth.py` has the detail.
+  them, with no outer limit (Jamie, 2026-10-08). `packages/backend/sessions.ts` has the detail.
 - **A subscriber is `active` or `stopped`.** Stopped means no email, with
   `stopped_reason`: `unsubscribed` (the email's one-click
   `List-Unsubscribe`, or the page it opens), `bounce` (a hard bounce) or
   `complaint`. Nothing is deleted; the person starts the emails again in
   settings, which for a bounce or complaint also takes the address off
-  SES's account suppression list (`web.unsuppress`), or SES would drop
+  SES's account suppression list (`Mail.unsuppress`), or SES would drop
   every email to it.
 - **Pauses** are dated (`PAUSE#<from>`, at most 60 days) and end on their
   own; stopping does not. Paused days neither break a streak nor add to it.
@@ -279,9 +264,9 @@ failed on live until 2026-10-08 because of it).
   in every browser, the address's newest codes, the address and the
   profile. Nothing is kept; the export is offered first. Old versions of
   deleted files expire 30 days later, as backups. A deletion code only
-  deletes and a sign-in code only signs in (`auth.py`).
+  deletes and a sign-in code only signs in (`packages/backend/auth.ts`).
 - **The export is a zip** (Jamie, 2026-10-08): the Markdown and JSON plus
-  every file (`export_job.py`). The words alone come straight from
+  every file (`workers/export.ts`). The words alone come straight from
   `/api/export`.
 - **Times:** each subscriber has an IANA `tz` and a `send_time` on a quarter
   hour (default 06:00, Jamie 2026-10-07: the email opens the day and replies
@@ -289,17 +274,17 @@ failed on live until 2026-10-08 because of it).
 
 ### The email
 
-- **Plain text plus HTML** (`compose.py`). The HTML is type on paper in the
+- **Plain text plus HTML** (`packages/mail/compose.ts`). The HTML is type on paper in the
   site's colours: no borders, boxes, shadows or filled panels (Jamie,
   2026-10-07: "obsessed with borders and boxes"), and it loads **nothing
-  remote**. `tests/test_compose.py` holds both lines. Preview by writing
-  `html_body()` to a file and screenshotting it; for phone width use a
+  remote**. `tests-node/mail/` holds both lines. Preview by writing
+  `htmlBody()` to a file and screenshotting it; for phone width use a
   390px iframe in a wider window, since headless Chrome will not lay out
   below ~500px.
 - **The number stands alone.** No decades/years/days breakdown under it
   (Jamie, 2026-10-07: "super redundant"). Below it: 24 text dots for how
   far through the year, the ask, then the streak.
-- **Streaks** (`streak.py`) count days in a row with a note, up to
+- **Streaks** (`packages/domain/streak.ts`) count days in a row with a note, up to
   yesterday, from the NOTE keys alone. A late note mends its day (Jamie:
   "we don't need to be obsessive"). A missed day resets the count quietly
   and the email shows the longest instead; never call a break out. If the
@@ -313,7 +298,7 @@ failed on live until 2026-10-08 because of it).
   yesterday as the day reads on the web, cut at a sentence, with its files
   as one short line. A day with no notes has no block (a missed day is never
   called out). It costs two small reads (the day's notes and its own
-  place), only when the note index says yesterday has notes. `compose.py`
+  place), only when the note index says yesterday has notes. `packages/mail/compose.ts`
   has the layout.
 - **Photos in the email** (Jamie, 2026-10-12) travel inside the message
   as inline parts (`multipart/related`, `cid:`), never a link to the
@@ -325,10 +310,10 @@ failed on live until 2026-10-08 because of it).
   the notes from the same patch number in every
   earlier release, by version, not calendar, with their tags (Jamie:
   "just have the tags on the posts"). It replaced "A year ago"
-  (2026-10-08). `compose.py` has the layout.
+  (2026-10-08). `packages/mail/compose.ts` has the layout.
 - **Weather** (Jamie, 2026-10-08: "Record + today's forecast"): each day's
   weather kept with the city it is for, and one forecast line in the
-  email (`weather.py`). Open-Meteo is CC BY 4.0: credit it wherever
+  email (`packages/backend/weather.ts`). Open-Meteo is CC BY 4.0: credit it wherever
   weather shows. A failure is no weather, never a held email or a failed
   note.
 - **The ask** is the same every day and says photos and voice memos work
@@ -348,28 +333,27 @@ failed on live until 2026-10-08 because of it).
   anything another service answers goes through `/api`. Its few named
   exceptions are in `docs/WEB-APP.md` (Front end); add one only when
   there is no way through `/api`.
-- **The API answers only CloudFront** (2026-10-09, a security review).
-  CloudFront adds `X-Origin-Verify` with the stack's generated secret
-  `yvn-release-notes-origin` (resolved into the distribution and the web
-  function's `ORIGIN_SECRET`; nobody reads it, agents included), and
-  `web.handler` answers anything without it with a fixed 403 (`web.py`). That is what makes
-  `CloudFront-Viewer-Address` (the sign-in limit per network) and `Origin`
-  trustworthy. The web function `DependsOn` the distribution, so a deploy
-  that changes the header updates CloudFront first. Never put
-  `ORIGIN_SECRET` in an output or a log.
+- **The API answers only CloudFront.** Each Lambda Web Function endpoint uses
+  IAM authentication. CloudFront OAC signs every origin request with SigV4
+  (`SigningBehavior=always`, `SigningProtocol=amz-auth`); its policy permits
+  only this distribution to invoke the live endpoint. Direct origin access
+  is denied by the platform. The rollback endpoint has no distribution grant
+  and zero request allowance. This replaces the generated origin-secret
+  header. `CloudFront-Viewer-Address` is trusted only behind that boundary;
+  client `Origin` is still checked before every cookie-authenticated write.
 - **SES events never reach the ops queue as is**: they carry the address,
-  the subject (a sign-in code) and the reply token. `events.py` sends the
+  the subject (a sign-in code) and the reply token. `workers/events.ts` sends the
   alarms topic one scrubbed line.
 - **Counts, not people** (`TALLY#<YYYY-MM>`): sign-ups, unsubscribes,
   restarts, bounces, complaints and deletes, one number each a month
-  (`scripts/tally.py`). Never per person. A stopped subscriber gets
+  (`tools/tally.ts`). Never per person. A stopped subscriber gets
   nothing from the product, so the unsubscribe count is the one to watch
   (Jamie, 2026-10-08).
 - **The operations dashboard is CloudWatch, not the web app** (Jamie,
   2026-10-09: "instead of part of the application ... an AWS dashboard"):
   dashboard `yvn-release-notes`, counts only, no address, user id or note
-  text. A new number goes in `census.py`; `tests/test_census.py` checks the
-  dashboard's JSON. The per-person view is `scripts/subscribers.py`, on
+  text. A new number goes in `packages/backend/census.ts`; `tests-node/census.test.ts` checks the
+  dashboard's JSON. The per-person view is `tools/subscribers.ts`, on
   this Mac only.
   Agent captures are counted separately as `AgentNotes`; structured MCP
   infrastructure failures emit a count-only `McpFailures` metric.
@@ -379,9 +363,9 @@ failed on live until 2026-10-08 because of it).
 - **Never verify with a write against live data.** The sender takes
   `{"dry_run": true, "now": "<ISO UTC>"}` and writes nothing; `now` is
   refused on a real send. Never sign in on live to check something.
-- Tests never fetch: pass a fake `fetch` to `web.handler` and
-  `inbound.process`, `fetch` to the sender and `weather_fetch` to
-  `web.handler`.
+- Tests never fetch real services: inject fake title/weather/place fetchers,
+  mail, objects, store and invocation services into the HTTP app and workers.
+  The native harness and all fixtures use fictional subscribers only.
 
 ## Landing changes
 
@@ -391,22 +375,21 @@ failed on live until 2026-10-08 because of it).
   `validate` check is green on a branch up to date with main. The `main`
   ruleset requires that check, rebase merges and linear history, with 0
   approvals and no bypass, Jamie's account included (agents push as it).
-- `validate` (`.github/workflows/validate.yml`) runs the workflow lint, the
-  unit tests, cfn-lint and the web app's `npm run verify`. Workflows stay
+- `validate` (`.github/workflows/validate.yml`) runs the
+  workflow lint, pinned cfn-lint and `npm run verify`. Workflows stay
   SHA-pinned with `permissions: {}`, per-job grants and
   `persist-credentials: false`; `sh scripts/test-workflows.sh` checks that.
 - Dependabot opens two grouped PRs a month, one for the action pins and one
-  for the web app's npm packages, each reviewed like any other: they do not
+  for the application's npm packages, each reviewed like any other: they do not
   auto-merge, because a merged action runs with the repository's token and
   a package runs in the build. It skips `@types/node` majors, which move
   with Node. cfn-lint is pinned too (`pipx run --spec cfn-lint==<version>`),
   which Dependabot cannot see: bump it by hand to PyPI's latest, after a
   local run, when the template needs a newer one.
-- `tests/test_docs.py` fails when the docs miss something the code has:
-  a route in `web.ROUTES` not in `docs/WEB-APP.md`'s API table (or a row
-  with no route), a page in `main.tsx` not in its Pages, a key prefix not
-  in `store.py`'s docstring, or a module or script this file never names.
-  Update the doc in the same PR.
+- `tests-node/docs/inventory.test.ts` checks the documented API routes,
+  frontend Pages and MCP tool inventory against the native implementation.
+  Update the docs in the same PR as a changed public contract. Table key
+  layouts belong in `packages/backend/store.ts`'s design comment.
 - The repository is public. Never commit subscriber data, note text, DNS
   values or anything from the live table or bucket, including in tests and
   fixtures (the tests use a fictional subscriber at example.com).
@@ -422,28 +405,38 @@ failed on live until 2026-10-08 because of it).
   so nothing git ignores goes in; a failed build stops the deploy. Its
   comments have the rest (the code bucket, cache lifetimes, the
   invalidation).
-- Rebuild worker preparation uses two deployments of the same validated
-  main revision: `./deploy.sh --worker-alias-phase=prepare`, then
-  `./deploy.sh --worker-alias-phase=activate`. The first publishes the six
-  complete Python rollback versions and `live` aliases; the second moves
-  the existing receipt, schedule, internal calls and two stream mappings.
-  Ordinary deploys preserve active aliases. The mail-events SNS target is
-  unchanged until its new worker has transactional delivery deduplication.
+- Native publication and activation are separate: `./deploy.sh
+  --native-http-phase=publish`, then `--native-http-phase=activate`;
+  `--native-worker-phase=publish`, then `--native-worker-phase=activate`.
+  Use `--native-http-phase=rollback` or `--native-worker-phase=rollback`
+  to restore the recorded prior routing/versions. Ordinary deploys preserve
+  current native artifact versions and live pins. A full-shell private lock,
+  exact source/build identity, immutable per-build receipts and fresh metadata
+  checks protect retries; an uncertain CloudFormation update must finish
+  before another phase runs. Candidate worker probes use only
+  `{"self_test":true}` on published immutable versions, never subscriber data.
+  Never remove origin policies before restoring legacy routing during a
+  retained-runtime recovery. Receipts stay mode 600 in a private directory
+  outside the public repository; never commit their cloud identifiers.
 - **Node 24** everywhere (`.node-version`, both workflows; `engines` says
   24 or later). This Mac's default `node` is newer, so put Homebrew's
   `/opt/homebrew/opt/node@24/bin` first on PATH for npm here; `deploy.sh`
   does that itself and refuses any other major. Moving to a new major
   changes all of those together, with `@types/node`.
-- Tests: `PYTHONPATH=src python3 -m unittest discover -s tests`. The web
-  app: `npm ci --ignore-scripts`, then `npm run verify`.
-- The web app locally: `npm run build`, then `scripts/dev_server.py`
-  serves the built `dist/web` and the real API against in-memory fakes,
-  prints sign-in emails instead of sending them, and starts with a
-  fictional subscriber, ada@example.com. `--fake-places` answers city
-  search and weather without Open-Meteo, and `--fake-links` names every
-  link without fetching it. Use it (and this repo's Playwright) to see
-  pages. For hot reload, run `scripts/dev_server.py --port 8790` and
-  `npm run dev` (Vite on 5173, sending `/api` and the dev routes to it).
+- Tests and builds: `npm ci --ignore-scripts`, then `npm run verify`
+  (format, lint, browser/native types and unit tests, both builds).
+  `npm run test:server` runs Node's native test suite alone. Pinned
+  `pipx run --spec cfn-lint==1.57.2 cfn-lint infra/template.yaml` checks
+  CloudFormation; Python is a dependency of this infrastructure linter,
+  not an application runtime.
+- Locally: `npm run build`, then `node --import tsx tools/dev-server.ts
+  --fake-places --fake-links`. It serves `dist/web` and the real Hono HTTP/MCP
+  API against in-memory fakes, captures mail at `/dev-mail/`, and starts with
+  fictional ada@example.com. Fake places/weather and link titles prevent
+  external fetches. `--dayone ZIP` imports into those fakes first. For hot
+  reload, start it with `--port 8790`, then `npm run dev` (Vite on 5173,
+  forwarding `/api` and development routes). `/dev-runtime` identifies the
+  native Node harness; Playwright starts its own, never reusing another server.
 - Browser tests (optional, Jamie 2026-10-08: quick deploys for most
   changes, the browser run when wanted): `e2e/` drives sign-up in Chromium
   against the dev server, reading sign-in codes and links from its
@@ -458,23 +451,24 @@ failed on live until 2026-10-08 because of it).
   with `{"send_now": "<user id>"}` (add `"dry_run": true` first to see it).
   Still once per local day; never fake the clock with `now` to do it.
 - Subscribers sign up on the web; there is no way to add one by hand
-  (`scripts/add_subscriber.py` was retired 2026-10-09: it skipped the
-  city, the tally and the first email).
-- `scripts/read_notes.py EMAIL [YYYY-MM-DD]` prints someone's release
+  (the hand-added subscriber shortcut was retired 2026-10-09: it skipped
+  the city, the tally and the first email).
+- `node --import tsx tools/read-notes.ts EMAIL [YYYY-MM-DD]` prints someone's release
   notes, from before the web app had a reader. It prints note text, so run
   it only for the subscriber's own notes; agents do not run it to check
   things.
 - The fill-in scripts for notes from before a feature
-  (`scripts/extract_media.py`, `fill_link_titles.py`, `fill_weather.py`)
-  take `EMAIL [--dry-run]`; run the dry run first.
+  (`tools/extract-media.ts`, `tools/fill-link-titles.ts`, `tools/fill-weather.ts`)
+  take `EMAIL [--dry-run]` and default to planning only. Run the dry run
+  first; use `--write` only for an approved live run.
 - Thumbnails for photos kept before they existed: invoke the describe
   function with `{"thumbs_all": "*", "dry_run": true}` (or one user id)
   to count them; the real run (no `dry_run`) needs Jamie's go. It hands
   itself on near its time limit and skips any photo that has one.
 - One row per subscriber (address, state, sign-up day, send time, last
-  email, last note, notes, 30-day reply rate): `scripts/subscribers.py`.
+  email, last note, notes, 30-day reply rate): `node --import tsx tools/subscribers.ts`.
   Reads keys and a few fields, never note text. It prints addresses, so
-  its output stays on this Mac. The monthly counts: `scripts/tally.py`.
+  its output stays on this Mac. The monthly counts: `node --import tsx tools/tally.ts`.
   Both read only.
 - Alarms go to SNS `yvn-release-notes-alarms`, which is subscribed to the
   sysadmin `projects-ops-alerts` queue. The queue's policy must list the
@@ -495,7 +489,7 @@ failed on live until 2026-10-08 because of it).
   hour late for two quarter hours (census `Overdue`); a send time moved
   past today's window also trips it, for that day.
 - Alarm `yvn-release-notes-signin-total` fires when the hour's sign-in
-  emails for everyone (200, `auth.LIMIT_TOTAL`) are used up, counted from
+  emails for everyone (200, `LIMIT_TOTAL` in `packages/backend/auth.ts`) are used up, counted from
   the web function's `{"event":"mail-limited","limit":"total"}` log line
   (renaming it silently breaks the alarm): nobody can
   sign in until the hour turns. The narrower limits are checked first and
@@ -568,43 +562,4 @@ private links remain with the receiving service. Deleting an account
 blocks new MCP metadata/OAuth writes first and removes all indexed grants.
 Never test a connection by reading or writing live subscriber notes or signing in
 against production. Use the dev server and fakes. Regenerate the contract
-with `PYTHONPATH=src python3 scripts/export_mcp_contract.py` when tools change.
-
-Native mail and exports (2026-10-13): `packages/mail/{parse,compose,auth}.ts`
-retain MIME, email rendering, and email-verified ownership behavior.
-`workers/{send,inbound,events}.ts` use atomic live-account proofs and delivery
-receipts; `packages/backend/export.ts` formats private JSON/Markdown and
-`workers/export.ts` builds archives on temporary disk with bounded multipart
-uploads, then proves the live account and current build when publishing.
-`tests-node/{mail,export}/` compare independent fictional Python fixtures.
-These are additive until native worker releases are explicitly activated.
-
-The SES event migration uses `./deploy.sh --events-alias-phase=prepare`, then
-`--events-alias-phase=activate` only after complete Python bridge hashes are
-verified. Shared USER-owned MAILEVENT receipts make overlapping SNS targets
-idempotent. `EventsPythonCodeSha256` is the first bridge's ZIP hash and stays
-fixed forever; later source/runtime releases must not republish that baseline.
-
-Native HTTP implementation (2026-10-13): `server/app/` is the Hono router;
-`packages/backend/{sessions,accounts,views,uploads,exports,guarded-store}.ts`
-carry email-verified sessions, owner DTOs and atomic session/account proofs.
-`tools/dev-server.ts` serves the real native HTTP/MCP API against fictional
-fakes, with `/dev-mail/`, `/dev-upload/` and `/dev-media/`; it never uses AWS.
-`packages/backend/census.ts` and `workers/entries/{send,inbound,events}.ts`
-wire Event workers and their count-only raw JSON/embedded metrics. Native
-HTTP logging uses structured console objects, no request URLs or arguments.
-
-Native processing lives in `packages/backend/{transcribe,describe}.ts` and
-`workers/{transcribe,describe}.ts`; existing opt-in and deletion proofs are
-transactional. `workers/runtime.ts` supports an exact content-free candidate
-probe before any SDK configuration. `tools/{build-server,package-native,
-native-artifacts,native-release,web-platform}.ts` build, retain and release
-immutable source artifacts with private metadata receipts. HTTP/MCP rollback
-pins and all seven worker alias versions are recorded before publication.
-
-Native operator tools (2026-10-13): `tools/{subscribers,tally,read-notes,
-import-dayone,extract-media,fill-link-titles,fill-weather}.ts` share the narrow
-identity gate in `tools/operator.ts`. `packages/backend/{dayone,importer}.ts`
-provide bounded ZIP planning and atomic import-ledger commits. Plans containing
-note text remain private outside Git; imports/backfills still require Jamie's
-explicit approval, and no live verification runs these writers.
+with `node --import tsx tools/export-mcp-contract.ts` when tools change.

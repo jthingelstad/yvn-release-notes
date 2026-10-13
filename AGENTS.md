@@ -387,7 +387,8 @@ Where things are (each module's design comment explains its contract):
   which Dependabot cannot see: bump it by hand to PyPI's latest, after a
   local run, when the template needs a newer one.
 - `tests-node/docs/inventory.test.ts` checks the documented API routes,
-  frontend Pages and MCP tool inventory against the native implementation.
+  frontend Pages, MCP tools, operator coverage, table key prefixes and native
+  verification configuration against the implementation.
   Update the docs in the same PR as a changed public contract. Table key
   layouts belong in `packages/backend/store.ts`'s design comment.
 - The repository is public. Never commit subscriber data, note text, DNS
@@ -435,7 +436,7 @@ Where things are (each module's design comment explains its contract):
   fictional ada@example.com. Fake places/weather and link titles prevent
   external fetches. `--dayone ZIP` imports into those fakes first. For hot
   reload, start it with `--port 8790`, then `npm run dev` (Vite on 5173,
-  forwarding `/api` and development routes). `/dev-runtime` identifies the
+  forwarding `/api` and development routes). `/dev-runtime/` identifies the
   native Node harness; Playwright starts its own, never reusing another server.
 - Browser tests (optional, Jamie 2026-10-08: quick deploys for most
   changes, the browser run when wanted): `e2e/` drives sign-up in Chromium

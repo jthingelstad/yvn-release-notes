@@ -1,7 +1,6 @@
-# The Python is standard library only, so what to keep current is the pinned
-# actions in .github/workflows and the web app's packages (package.json:
-# React, TanStack, Vite and the tools, @playwright/test for the browser
-# tests). Monthly, one grouped PR each.
+# Keep the pinned actions and the complete application's npm dependencies
+# current: React, Hono, AWS adapters, Event workers, processing and build/test
+# tools share package.json. Monthly, one grouped PR for each ecosystem.
 version: 2
 updates:
   - package-ecosystem: github-actions

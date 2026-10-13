@@ -235,3 +235,6 @@ mark { background: none; color: var(--orange-ink); font-weight: 700; }
 .release-head { margin-top: 12px; }
 .release-counts { margin: 8px 0 0; font-size: 17px; }
 a.tag { white-space: nowrap; }
+
+/* Agent names and connector addresses are unbroken external strings. */
+.agent-content { overflow-wrap: anywhere; }

@@ -31,7 +31,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from . import auth, export, export_job, links, media, places, tags, transcribe, weather
+from . import auth, export, export_job, links, media, places, tags, transcribe, weather, oauth
 from .compose import DOTS, MAIL_TAG, from_header, new_token, next_release, standing_address
 from .notes import MAX_NOTE, map_url, place_label, written_at
 from .streak import ONE_DAY, compute_streak, pause_days
@@ -1456,6 +1456,7 @@ def delete_me(app: App, req: Request) -> dict:
         raise Reject(400, "email-and-code")
     check_code(app, p["email"], code, auth.DELETE)
 
+    oauth.delete_user(app, user_id)
     items = app.store.user_items(user_id)
     raw = [i["raw_key"] for i in items if str(i.get("raw_key", "")).startswith("raw/")]
     files = raw + [k for i in items for k in media.keys(i)]
@@ -1511,6 +1512,10 @@ def inbox_keys(p: dict) -> list[dict]:
 
 
 ROUTES = [
+    ("POST", "/api/mcp/authorize", oauth.authorize),
+    ("GET", "/api/mcp/connections", oauth.connections),
+    ("DELETE", "/api/mcp/connections/{id}", oauth.connections),
+    ("GET", "/api/mcp/activity", oauth.activity),
     ("GET", "/api/health", health),
     ("GET", "/api/sample", sample),
     ("POST", "/api/auth/start", auth_start),
@@ -1568,6 +1573,13 @@ def handler(event, context, *, store=None, ses=None, s3=None, lam=None, geocode=
         # Straight to the API's own URL: one fixed answer, whatever the route.
         log(event="web", method=req.method, path="direct", status=403)
         return respond(403, {"error": "forbidden"})
+    if req.path.startswith("/oauth/") or req.path.startswith("/.well-known/oauth-"):
+        try:
+            return oauth.public(App(store, ses, int(clock()), s3, lam), req)
+        except Reject as r:
+            return r.response
+        except (ValueError, UnicodeError):
+            return respond(400, {"error": "invalid_request"})
     pattern, route, args = match(req.method, req.path)
     if not route:
         response = respond(404, {"error": "not-found"})

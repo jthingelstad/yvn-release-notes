@@ -54,7 +54,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "tests")]
 
 from fakes import FakeLambda, FakeS3, FakeSES, FakeStore  # noqa: E402
-from release_notes import describe, dayone, export_job, importer, links, media, places, tags, transcribe, weather, web  # noqa: E402
+from release_notes import describe, dayone, export_job, importer, links, mcp, media, places, tags, transcribe, weather, web  # noqa: E402
 
 FAKE_PLACES = [
     {"name": "Minneapolis", "region": "Minnesota", "country": "United States", "tz": "America/Chicago", "lat": 44.98, "lon": -93.26},
@@ -251,8 +251,11 @@ def main():
                 "queryStringParameters": dict(parse_qsl(url.query)) or None,
                 "body": self.rfile.read(length).decode() if length else None,
             }
-            r = web.handler(event, None, store=store, ses=ses, s3=s3, lam=lam, geocode=geocode, fetch=fetch,
-                            weather_fetch=weather_fetch)
+            if url.path == "/mcp":
+                r = mcp.handler(event, None, store=store, s3=s3)
+            else:
+                r = web.handler(event, None, store=store, ses=ses, s3=s3, lam=lam, geocode=geocode, fetch=fetch,
+                                weather_fetch=weather_fetch)
             body = r["body"].encode()
             self.send_response(r["statusCode"])
             for k, v in r["headers"].items():
@@ -264,7 +267,7 @@ def main():
             self.wfile.write(body)
 
         def do_GET(self):
-            if self.path.startswith("/api/"):
+            if self.path.startswith(("/api/", "/oauth/", "/.well-known/oauth-")) or urlsplit(self.path).path == "/mcp":
                 return self.api()
             if self.path.startswith("/dev-mail/"):
                 # The newest email to ?to=, as text: only this server has it.

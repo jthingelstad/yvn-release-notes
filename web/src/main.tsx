@@ -51,7 +51,7 @@ function bounce(error: Error, meta?: { bounce?: boolean }) {
   if (meta?.bounce === false || !(error instanceof ApiError)) return;
   const { status, data } = error.answer;
   if (status === 401) {
-    store.set('rn-back', location.pathname + location.search);
+    store.set('rn-back', location.pathname + location.search + location.hash);
     router.navigate({ href: '/#sign-in', replace: true });
   } else if (status === 403 && data.error === 'no-account') {
     router.navigate({ href: home(true), replace: true });
@@ -113,7 +113,7 @@ const signedInRoute = createRoute({
     } catch (e) {
       if (preload || !(e instanceof ApiError)) throw e;
       if (e.answer.status === 401) {
-        store.set('rn-back', location.pathname + location.searchStr);
+        store.set('rn-back', location.pathname + location.searchStr + (location.hash ? '#' + location.hash : ''));
         throw redirect({ to: '/', hash: 'sign-in', replace: true });
       }
       // Anything else: the page says it couldn't load.
@@ -167,6 +167,7 @@ const behind = [
     loader: ({ context }: Ctx) => context.queryClient.prefetchQuery(tagsQuery)
   }),
   ...[
+    page('/connect', () => import('./pages/Connect.tsx'), 'Connect'),
     page('/settings', () => import('./pages/Settings.tsx'), 'Settings'),
     page('/pause', () => import('./pages/Pause.tsx'), 'Pause'),
     page('/delete', () => import('./pages/Delete.tsx'), 'Delete')

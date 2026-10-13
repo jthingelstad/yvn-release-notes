@@ -659,6 +659,33 @@ Resources:
             OriginRequestPolicyId: !Ref WebApiRequestPolicy
             ResponseHeadersPolicyId: !Ref WebHeadersPolicy
 
+          - PathPattern: /mcp
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            # AllViewerExceptHostHeader forwards Authorization and MCP headers.
+            # The cookie is ignored by the separate MCP handler.
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          - PathPattern: /oauth/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: !Ref WebApiRequestPolicy
+          - PathPattern: /.well-known/oauth-*
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: !Ref WebApiRequestPolicy
+
   # The API's own execute-api URL cannot be turned off (it is CloudFront's
   # origin), so CloudFront proves itself: it sends this value as
   # X-Origin-Verify on every request to the API, and the web function refuses
@@ -697,6 +724,49 @@ Resources:
       ApiId: !Ref WebApi
       RouteKey: ANY /api/{proxy+}
       Target: !Sub "integrations/${WebApiIntegration}"
+
+  OAuthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebApi
+      RouteKey: ANY /oauth/{proxy+}
+      Target: !Sub "integrations/${WebApiIntegration}"
+
+  OAuthMetadataRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebApi
+      RouteKey: ANY /.well-known/oauth-authorization-server
+      Target: !Sub "integrations/${WebApiIntegration}"
+
+  ProtectedMetadataRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebApi
+      RouteKey: ANY /.well-known/oauth-protected-resource
+      Target: !Sub "integrations/${WebApiIntegration}"
+
+  ProtectedMcpMetadataRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebApi
+      RouteKey: ANY /.well-known/oauth-protected-resource/mcp
+      Target: !Sub "integrations/${WebApiIntegration}"
+
+  McpIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt McpFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  McpRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebApi
+      RouteKey: ANY /mcp
+      Target: !Sub "integrations/${McpIntegration}"
 
   # A ceiling for the whole API, well above one person's use. Per-address
   # and per-IP limits on sign-in mail live in the function.
@@ -744,6 +814,7 @@ Resources:
                 # which IAM authorizes as a PutItem for each. Deleting an
                 # account deletes its items in batches.
                 Action:
+                  - dynamodb:ConditionCheckItem
                   - dynamodb:GetItem
                   - dynamodb:PutItem
                   - dynamodb:UpdateItem
@@ -855,6 +926,75 @@ Resources:
           EXPORT_FUNCTION: !Ref ExportFunction
           SENDER_FUNCTION: !Ref SenderFunction
           INBOUND_DOMAIN: !Ref InboundDomain
+
+  McpLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-mcp"
+      RetentionInDays: 14
+
+  McpRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: read-only-notes
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:ConditionCheckItem]
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*", "OAUTHACCESS#*", "OAUTHFAMILY#*", "MCPMETA#*"]
+              - Effect: Allow
+                Action: [dynamodb:PutItem]
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["MCPMETA#*"]
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${MailBucket.Arn}/media/*"
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt McpLogs.Arn
+
+  McpFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: WebDistribution
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-mcp"
+      Description: Read-only personal notes and private media over MCP
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: release_notes.mcp.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt McpRole.Arn
+      MemorySize: 1024
+      Timeout: 28
+      LoggingConfig:
+        LogGroup: !Ref McpLogs
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          WEB_ORIGIN: !Sub "https://${WebDomain}"
+          ORIGIN_SECRET: !Sub "{{resolve:secretsmanager:${OriginSecret}:SecretString}}"
+          MAIL_BUCKET: !Ref MailBucket
+
+  McpInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref McpFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WebApi}/*"
 
   # --- the zip export ---------------------------------------------------------
   # Every note, photo and recording in one zip, built in the background
@@ -1355,6 +1495,22 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlarmTopic]
 
+  McpErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-mcp-errors"
+      AlarmDescription: Release Notes MCP function errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref McpFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
   WebErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -1511,7 +1667,7 @@ Resources:
               "markdown": "# Release Notes\nCounts only: no addresses, no note text. Subscribers, notes and writers come from the sender's census line every quarter hour (`census.py`); emails from SES; mail in and account events from the functions' logs, kept 90 days. One row per person: `scripts/subscribers.py`."}},
             {"type": "alarm", "x": 0, "y": 2, "width": 24, "height": 3, "properties": {
               "title": "Alarms",
-              "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${InboundErrorsAlarm.Arn}", "${EventsErrorsAlarm.Arn}", "${WebErrorsAlarm.Arn}", "${ExportErrorsAlarm.Arn}", "${FailedQueueAlarm.Arn}"]}},
+              "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${InboundErrorsAlarm.Arn}", "${EventsErrorsAlarm.Arn}", "${WebErrorsAlarm.Arn}", "${McpErrorsAlarm.Arn}", "${ExportErrorsAlarm.Arn}", "${FailedQueueAlarm.Arn}"]}},
             {"type": "metric", "x": 0, "y": 5, "width": 24, "height": 4, "properties": {
               "title": "Right now", "view": "singleValue", "region": "${AWS::Region}",
               "period": 900, "stat": "Maximum", "setPeriodToTimeRange": false, "sparkline": true,
@@ -1571,6 +1727,7 @@ Resources:
                 ["AWS/Lambda", "Errors", "FunctionName", "${SenderFunction}", {"label": "sender"}],
                 ["AWS/Lambda", "Errors", "FunctionName", "${InboundFunction}", {"label": "inbound"}],
                 ["AWS/Lambda", "Errors", "FunctionName", "${WebFunction}", {"label": "web"}],
+                ["AWS/Lambda", "Errors", "FunctionName", "${McpFunction}", {"label": "mcp"}],
                 ["AWS/Lambda", "Errors", "FunctionName", "${EventsFunction}", {"label": "events"}],
                 ["AWS/Lambda", "Errors", "FunctionName", "${ExportFunction}", {"label": "export"}]
               ]}},
@@ -1590,7 +1747,7 @@ Resources:
               ]}},
             {"type": "log", "x": 0, "y": 33, "width": 24, "height": 7, "properties": {
               "title": "Recent problems", "view": "table", "region": "${AWS::Region}",
-              "query": "SOURCE '${SenderLogs}' | SOURCE '${InboundLogs}' | SOURCE '${WebLogs}' | SOURCE '${EventsLogs}' | SOURCE '${ExportLogs}' | filter (ispresent(event) and (event like /error|failed|out-of-time|census-skipped/ or status >= 500)) or (not ispresent(event) and @message like /ERROR|Task timed out/) | fields @timestamp, @log, coalesce(event, @message) as what, error, code, status | sort @timestamp desc | limit 25"}}
+              "query": "SOURCE '${SenderLogs}' | SOURCE '${InboundLogs}' | SOURCE '${WebLogs}' | SOURCE '${EventsLogs}' | SOURCE '${ExportLogs}' | SOURCE '${McpLogs}' | filter (ispresent(event) and (event like /error|failed|out-of-time|census-skipped/ or status >= 500)) or (not ispresent(event) and @message like /ERROR|Task timed out/) | fields @timestamp, @log, coalesce(event, @message) as what, error, code, status | sort @timestamp desc | limit 25"}}
           ]
         }
 

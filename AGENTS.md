@@ -76,6 +76,8 @@ Where things are (each module's docstring is its design):
   recordings and PDFs, by email and on the web), `streak.py`, `weather.py`,
   `places.py` (city search, and naming a photo's place), `exif.py` (a
   JPEG's time and place, standard library).
+- Agent reading: `oauth.py` (owner consent, OAuth, connections), `mcp.py` (read-only tools),
+  `docs/MCP.md`; `scripts/export_mcp_contract.py` keeps `contracts/mcp-surface.json` current.
 - The web: `web.py` (the API, a small router), `auth.py` (sign-in,
   sessions, limits), `export.py` (JSON and Markdown), `export_job.py` (the
   zip). `web/` is the React app (`docs/WEB-APP.md`, Front end); its Home
@@ -500,3 +502,21 @@ failed on live until 2026-10-08 because of it).
    descriptions; the Day One import; the CloudWatch dashboard; the React
    app and Home Screen app (2026-10-09). Not yet: a yearly "release notes
    for 5.2" collection on the birthday.
+
+## Agent connections (2026-10-12)
+
+MCP is read-only, approved explicitly by each subscriber in their existing
+email-verified web session. `notes:read` shares the archive and existing
+transcripts/descriptions; optional `media:read` shares private file bytes
+and ten-minute links. This consent permits an external agent to process
+what it reads; it never turns on the product's transcription or description
+settings. No MCP token can authenticate a web write. The MCP function's
+separate role cannot write USER or OAuth rows, send mail, invoke models,
+upload/delete files, or invoke another function. Its writes are MCPMETA only.
+Activity records contain no arguments or returned content. Disconnect
+revokes the family immediately; already shared content and unexpired
+private links remain with the receiving service. Deleting an account
+blocks new MCP metadata/OAuth writes first and removes all indexed grants.
+Never test a connection by reading live subscriber notes or signing in
+against production. Use the dev server and fakes. Regenerate the contract
+with `PYTHONPATH=src python3 scripts/export_mcp_contract.py` when tools change.

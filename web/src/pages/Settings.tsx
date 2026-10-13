@@ -13,6 +13,7 @@ import {
   useProblem,
   useTitle
 } from '../components/common.tsx';
+import { Connections } from '../components/connections.tsx';
 import { SendTimeSelect, ZipExport } from '../components/fields.tsx';
 import { PlacePicker } from '../components/placepicker.tsx';
 import { api } from '../lib/api.ts';
@@ -198,6 +199,7 @@ function Account({ p }: { p: Me }) {
       </section>
 
       <Inbox p={p} />
+      <Connections />
 
       <section className="section">
         <label>

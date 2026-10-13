@@ -23,6 +23,9 @@ class FakeStore:
         if pk.startswith("USER#") and sk == "PROFILE":
             p = self.profile(pk[5:])
             return dict(p) if p else None
+        if pk.startswith("USER#"):
+            item = next((i for i in self.items.get(pk[5:], []) if i["sk"] == sk), None)
+            return dict(item) if item else None
         i = self.mcp_items.get((pk, sk))
         return dict(i) if i else None
 
@@ -45,6 +48,39 @@ class FakeStore:
 
     def mcp_block(self, uid):
         self.profiles[uid]["mcp_deleting"] = True
+
+    def capture_commit(self, note, old, receipt, audit, rate, previous, family, now):
+        uid = family['user_id']
+        profile, current = self.profile(uid), self.mcp_get('OAUTHFAMILY#' + family['id'])
+        if (not profile or profile.get('mcp_deleting') or not current or current.get('revoked') or
+                current['expires_at'] <= now or current['revision'] != family['revision'] or
+                'notes:write' not in current['scope'].split()):
+            return False
+        existing = self.mcp_get(note['pk'], note['sk'])
+        if old:
+            if not existing or any(existing.get(k) != old.get(k) for k in ('text', 'revision', 'updated_at')):
+                return False
+            if existing.get('author') != 'assistant' or existing.get('connection') != family['id']:
+                return False
+        elif existing:
+            return False
+        prior_receipt = self.mcp_get(receipt['pk'], receipt['sk'])
+        if prior_receipt and prior_receipt['expires_at'] > now:
+            return False
+        prior_rate = self.mcp_get(rate['pk'], rate['sk'])
+        if (prior_rate or {}).get('revision') != (previous or {}).get('revision'):
+            return False
+        if self.mcp_get(audit['pk'], audit['sk']):
+            return False
+        if old:
+            existing.update({k: note[k] for k in ('text', 'tags', 'links', 'updated_at', 'revision')})
+            self.items[uid] = [existing if i['sk'] == note['sk'] else i for i in self.items[uid]]
+        else:
+            self.items.setdefault(uid, []).append(dict(note))
+        self.items[uid] = [i for i in self.items[uid] if i['sk'] != receipt['sk']] + [dict(receipt)]
+        self.mcp_items[(audit['pk'], audit['sk'])] = dict(audit)
+        self.mcp_items[(rate['pk'], rate['sk'])] = dict(rate)
+        return True
 
     def user_for_email(self, email):
         return self.emails.get(email)

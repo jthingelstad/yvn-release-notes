@@ -3,13 +3,12 @@ import base64
 import hashlib
 import json
 import os
-import traceback
 from contextlib import redirect_stdout
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit, parse_qs
 from unittest.mock import patch
 
-from release_notes import auth, mcp, oauth, web
+from release_notes import auth, capture, mcp, oauth, web
 from test_web import WebCase, request, ORIGIN
 from test_store import Store, FakeTable, FakeClient, Cancelled
 
@@ -44,17 +43,17 @@ class ConnectionCase(WebCase):
         pending = parse_qs(urlsplit(r['headers']['location']).fragment)['request'][0]
         return cid, pending
 
-    def consent(self, media=True):
-        cid, pending = self.pending()
-        r, b = self.call('POST', '/api/mcp/authorize', {'request': pending, 'approve': True, 'media': media}, cookies=[self.cookie])
+    def consent(self, media=True, write=False):
+        cid, pending = self.pending('notes:read media:read notes:write' if write else 'notes:read media:read')
+        r, b = self.call('POST', '/api/mcp/authorize', {'request': pending, 'approve': True, 'media': media, 'write': write}, cookies=[self.cookie])
         self.assertEqual(r['statusCode'], 200)
         query = parse_qs(urlsplit(b['redirect']).query)
         self.assertEqual(query['state'], ['state-123'])
         return {'grant_type': 'authorization_code', 'code': query['code'][0], 'client_id': cid,
                 'resource': self.target, 'redirect_uri': self.redirect, 'code_verifier': self.verifier}
 
-    def connected(self, media=True):
-        code = self.consent(media)
+    def connected(self, media=True, write=False):
+        code = self.consent(media, write)
         r, tokens = self.protocol('POST', '/oauth/token', code)
         self.assertEqual(r['statusCode'], 200, tokens)
         return tokens, code['client_id']
@@ -64,7 +63,8 @@ class ConnectionCase(WebCase):
             'params': {'name': name, 'arguments': arguments or {}} if method == 'tools/call' else extra}, origin=None)
         event['headers'].update(authorization='Bearer ' + token, **{'content-type': 'application/json'})
         with redirect_stdout(self.out):
-            r = mcp.handler(event, None, store=self.store, s3=self.s3, clock=lambda: self.now)
+            r = mcp.handler(event, None, store=self.store, s3=self.s3, clock=lambda: self.now,
+                writer=lambda e: capture.handler(e, None, store=self.store, clock=lambda: self.now, fetch=lambda url: None))
         body = json.loads(r['body'])
         if r['statusCode'] == 200 and method == 'tools/call' and 'structuredContent' in body.get('result', {}):
             schema = next((t['outputSchema'] for t in mcp.TOOLS if t['name'] == name), None)
@@ -318,18 +318,16 @@ class ReaderTests(ConnectionCase):
                  (self.store, 'mcp_commit', 'notes_context', {}, fail_activity_write))
         for target, method, tool, arguments, failure in cases:
             with self.subTest(method=method), patch.object(target, method, side_effect=failure):
-                try:
-                    self.rpc(token, name=tool, arguments=arguments)
-                except RuntimeError as e:
-                    self.assertEqual(str(e), 'MCP temporarily unavailable')
-                    self.assertTrue(e.__suppress_context__)
-                    emitted = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
-                    for secret in ('private-note', 'ada@example.com', 'media/u1/private-file', token):
-                        self.assertNotIn(secret, emitted + self.out.getvalue())
-                else:
-                    self.fail('Unexpected failures must fail the Lambda invocation for its error alarm.')
+                r, b = self.rpc(token, name=tool, arguments=arguments)
+                self.assertEqual(r['statusCode'], 200)
+                self.assertTrue(b['result']['isError'])
+                self.assertEqual(b['result']['structuredContent']['error'], 'temporarily_unavailable')
+                for secret in ('private-note', 'ada@example.com', 'media/u1/private-file', token):
+                    self.assertNotIn(secret, json.dumps(b) + self.out.getvalue())
         errors = [json.loads(line) for line in self.out.getvalue().splitlines() if 'mcp-error' in line]
         self.assertEqual(errors, [{'event': 'mcp-error', 'user': 'u1', 'error': 'OSError'}] * 4)
+        metrics = [json.loads(line) for line in self.out.getvalue().splitlines() if 'McpFailures' in line]
+        self.assertEqual([m['McpFailures'] for m in metrics], [1] * 4)
 
     def test_long_unicode_note_and_transcript_continuations(self):
         words = '🎵' * 20000
@@ -447,8 +445,8 @@ class ReaderTests(ConnectionCase):
         _, b = self.rpc(token, method='initialize', protocolVersion='2026-new')
         self.assertEqual(b['result']['protocolVersion'], '2025-06-18')
         _, b = self.rpc(token, method='tools/list')
-        self.assertEqual(len(b['result']['tools']), 8)
-        self.assertTrue(all(t['annotations']['readOnlyHint'] and t['inputSchema']['additionalProperties'] is False for t in b['result']['tools']))
+        self.assertEqual(len(b['result']['tools']), 10)
+        self.assertTrue(all(t['annotations']['readOnlyHint'] == (t['name'] not in mcp.WRITE_TOOLS) and t['inputSchema']['additionalProperties'] is False for t in b['result']['tools']))
         _, b = self.rpc(token, method='unknown')
         self.assertEqual(b['error']['code'], -32601)
         event = request('POST', '/mcp', {'jsonrpc': '2.0', 'method': 'notifications/initialized'}, origin=None)
@@ -472,6 +470,7 @@ class StorageContractTests(WebCase):
         self.assertEqual(ops[2]['Put']['ExpressionAttributeValues'], {':r': 3})
         self.assertEqual(ops[2]['Put']['Item']['revision'], 4)
         self.assertFalse(Store(FakeTable(FakeClient(Cancelled('None', 'ConditionalCheckFailed')))).mcp_commit([(item, None)]))
+        self.assertFalse(Store(FakeTable(FakeClient(Cancelled('None', 'TransactionConflict')))).mcp_commit([(item, None)]))
         with self.assertRaises(Cancelled):
             Store(FakeTable(FakeClient(Cancelled('ValidationError')))).mcp_commit([(item, None)])
 
@@ -497,5 +496,6 @@ class StorageContractTests(WebCase):
         self.assertIn('dynamodb:LeadingKeys: ["MCPMETA#*"]', role)
         self.assertIn('Action: [dynamodb:PutItem]', role)
         self.assertIn('${MailBucket.Arn}/media/*', role)
-        for forbidden in ('UpdateItem', 'DeleteItem', 'BatchWriteItem', 'PutObject', 'DeleteObject', 'InvokeFunction', 'ses:', 'bedrock:', '/raw/', '/exports/'):
+        self.assertIn('Action: lambda:InvokeFunction\n                Resource: !GetAtt CaptureFunction.Arn', role)
+        for forbidden in ('UpdateItem', 'DeleteItem', 'BatchWriteItem', 'PutObject', 'DeleteObject', 'ses:', 'bedrock:', '/raw/', '/exports/'):
             self.assertNotIn(forbidden, role)

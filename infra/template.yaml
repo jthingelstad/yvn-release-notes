@@ -963,6 +963,9 @@ Resources:
                 Action: s3:GetObject
                 Resource: !Sub "${MailBucket.Arn}/media/*"
               - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt CaptureFunction.Arn
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt McpLogs.Arn
 
@@ -971,7 +974,7 @@ Resources:
     DependsOn: WebDistribution
     Properties:
       FunctionName: !Sub "${AWS::StackName}-mcp"
-      Description: Read-only personal notes and private media over MCP
+      Description: Personal notes over MCP; reading and delegated text capture
       Runtime: python3.13
       Architectures: [arm64]
       Handler: release_notes.mcp.handler
@@ -987,6 +990,68 @@ Resources:
           WEB_ORIGIN: !Sub "https://${WebDomain}"
           ORIGIN_SECRET: !Sub "{{resolve:secretsmanager:${OriginSecret}:SecretString}}"
           MAIL_BUCKET: !Ref MailBucket
+          CAPTURE_FUNCTION: !Ref CaptureFunction
+
+  CaptureLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-capture"
+      RetentionInDays: 14
+
+  CaptureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: owner-approved-capture
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:ConditionCheckItem]
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*", "OAUTHACCESS#*", "OAUTHFAMILY#*", "MCPMETA#*"]
+              - Effect: Allow
+                Action: [dynamodb:PutItem]
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*", "MCPMETA#*"]
+              - Effect: Allow
+                Action: [dynamodb:UpdateItem]
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*"]
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt CaptureLogs.Arn
+
+  CaptureFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-capture"
+      Description: Private owner-approved MCP text capture; create and append only
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: release_notes.capture.handler
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt CaptureRole.Arn
+      MemorySize: 1024
+      Timeout: 20
+      LoggingConfig:
+        LogGroup: !Ref CaptureLogs
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          WEB_ORIGIN: !Sub "https://${WebDomain}"
 
   McpInvokePermission:
     Type: AWS::Lambda::Permission
@@ -1500,11 +1565,34 @@ Resources:
     Properties:
       AlarmName: !Sub "${AWS::StackName}-mcp-errors"
       AlarmDescription: Release Notes MCP function errors
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref McpFunction }]
-      Statistic: Sum
-      Period: 300
+      Metrics:
+        - Id: failures
+          Expression: SUM(METRICS())
+          ReturnData: true
+        - Id: reader
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Lambda
+              MetricName: Errors
+              Dimensions: [{ Name: FunctionName, Value: !Ref McpFunction }]
+            Stat: Sum
+            Period: 300
+        - Id: writer
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Lambda
+              MetricName: Errors
+              Dimensions: [{ Name: FunctionName, Value: !Ref CaptureFunction }]
+            Stat: Sum
+            Period: 300
+        - Id: tools
+          ReturnData: false
+          MetricStat:
+            Metric: { Namespace: ReleaseNotes, MetricName: McpFailures }
+            Stat: Sum
+            Period: 300
       EvaluationPeriods: 1
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
@@ -1703,7 +1791,8 @@ Resources:
               "metrics": [
                 ["ReleaseNotes", "EmailNotes", {"label": "By email"}],
                 ["ReleaseNotes", "WebNotes", {"label": "On the web"}],
-                ["ReleaseNotes", "ImportedNotes", {"label": "Imported"}]
+                ["ReleaseNotes", "ImportedNotes", {"label": "Imported"}],
+                ["ReleaseNotes", "AgentNotes", {"label": "Added by agents"}]
               ]}},
             {"type": "metric", "x": 12, "y": 15, "width": 12, "height": 6, "properties": {
               "title": "Subscribers and writers", "view": "timeSeries", "region": "${AWS::Region}",
@@ -1728,6 +1817,8 @@ Resources:
                 ["AWS/Lambda", "Errors", "FunctionName", "${InboundFunction}", {"label": "inbound"}],
                 ["AWS/Lambda", "Errors", "FunctionName", "${WebFunction}", {"label": "web"}],
                 ["AWS/Lambda", "Errors", "FunctionName", "${McpFunction}", {"label": "mcp"}],
+                ["AWS/Lambda", "Errors", "FunctionName", "${CaptureFunction}", {"label": "capture"}],
+                ["ReleaseNotes", "McpFailures", {"label": "MCP tool failures"}],
                 ["AWS/Lambda", "Errors", "FunctionName", "${EventsFunction}", {"label": "events"}],
                 ["AWS/Lambda", "Errors", "FunctionName", "${ExportFunction}", {"label": "export"}]
               ]}},

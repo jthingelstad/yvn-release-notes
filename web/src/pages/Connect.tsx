@@ -22,12 +22,13 @@ export function Connect() {
     retry: false
   });
   const [media, setMedia] = useState(false);
+  const [write, setWrite] = useState(false);
   const [busy, run] = useBusy();
   const problem = useProblem();
   const decide = (approve: boolean) =>
     run(async () => {
       problem.clear();
-      const r = await api<{ redirect: string }>('POST', '/api/mcp/authorize', { request, approve, media });
+      const r = await api<{ redirect: string }>('POST', '/api/mcp/authorize', { request, approve, media, write });
       if (!r.ok)
         return problem.show('This connection request expired or could not be approved. Start again from your agent.');
       window.location.assign(r.data.redirect);
@@ -58,10 +59,22 @@ export function Connect() {
               and recordings
             </label>
           )}
+          {info.data.scope.includes('notes:write') && (
+            <label className="check">
+              <input type="checkbox" checked={write} onChange={(e) => setWrite(e.target.checked)} /> Also allow adding
+              notes when I ask
+            </label>
+          )}
+          {write && (
+            <p className="hint">
+              The agent can create notes and append to notes this connection created. They show who added them. It
+              cannot rewrite your notes or delete anything. Turn off adding in Settings without stopping reads.
+            </p>
+          )}
           <p className="hint">
-            The agent service receives what it reads under its own privacy and retention policies. It cannot write or
-            delete notes, change settings, or start processing. Your transcription and photo description choices stay as
-            they are.
+            The agent service receives what it reads under its own privacy and retention policies. Adding notes is off
+            unless you choose it above. It cannot delete notes, change settings, or start processing. Your transcription
+            and photo description choices stay as they are. Jamie, the operator, can read notes added here too.
           </p>
           <p className="hint">
             Disconnect in Settings whenever you like. It stops future reads; content already shared and private file
@@ -69,7 +82,7 @@ export function Connect() {
           </p>
           <div className="row">
             <button className="go" type="button" disabled={busy} onClick={() => decide(true)}>
-              Allow reading
+              {write ? 'Allow reading and adding' : 'Allow reading'}
             </button>
             <button type="button" className="quiet" disabled={busy} onClick={() => decide(false)}>
               Cancel

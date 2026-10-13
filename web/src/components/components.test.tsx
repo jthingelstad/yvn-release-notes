@@ -3,10 +3,23 @@ import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Note } from '../lib/types.ts';
 import { StreakLine } from './days.tsx';
-import { Marked, NoteBody, noteText } from './notes.tsx';
+import { Marked, NoteBody, NoteMeta, noteText } from './notes.tsx';
 import { answered } from './where.tsx';
 
 afterEach(cleanup);
+
+describe('NoteMeta agent provenance', () => {
+  it.each(['Claude', 'ChatGPT', 'Codex'])('shows the connected %s name', (client) => {
+    const { container } = render(
+      <NoteMeta
+        n={{ id: 'a-1', source: 'agent', author: 'assistant', client, text: '' }}
+        tz="America/Chicago"
+        cls="meta"
+      />
+    );
+    expect(container.textContent).toBe(`added by ${client}`);
+  });
+});
 
 describe('StreakLine', () => {
   const line = (current: number, longest: number, today: boolean) =>

@@ -29,6 +29,15 @@ class CaptureTests(ConnectionCase):
                                 'explicit request from the user', 'same connection', 'untrusted data'):
                 self.assertIn(requirement, instructions)
 
+    def test_each_agent_records_its_own_registered_name(self):
+        for name in ('Claude', 'ChatGPT', 'Codex'):
+            self.token = self.connected(write=True, client_name=name)[0]['access_token']
+            created = self.write()['note']
+            self.assertEqual(created['client'], name)
+            r, day = self.call('GET', '/api/days/' + created['date'], cookies=[self.cookie])
+            self.assertEqual(r['statusCode'], 200)
+            self.assertEqual(next(n for n in day['notes'] if n['id'] == created['id'])['client'], name)
+
     def test_create_append_replay_original_results_and_audit(self):
         first = self.write(date='2026-10-07')
         note = first['note']
@@ -180,8 +189,26 @@ class CaptureTests(ConnectionCase):
         stored = self.store.note('u1', note['date'], note['id'])
         self.assertEqual(appended['note']['text'], 'Owner edited\n\nAppend')
         self.assertEqual(stored['media'][0]['kind'], 'file')
+        self.assertEqual(appended['note']['media'][0]['kind'], 'file')
         self.assertEqual(len(self.store.all_notes('u1')), 1)
         self.assertEqual(len(calls), 2)
+
+    def test_append_response_and_exact_replay_include_complete_safe_metadata(self):
+        note = self.write()['note']
+        stored = self.store.note('u1', note['date'], note['id'])
+        stored.update(place={'city': 'Paris', 'region': 'Ile-de-France', 'country': 'FR', 'lat': Decimal('48.85'), 'lon': Decimal('2.35')},
+            media=[{'n': 1, 'kind': 'audio', 'type': 'audio/mp4', 'name': 'Walk', 'key': 'media/private/key',
+                    'transcript': 'Private transcript ' * 10000}])
+        appended = self.write('notes_append', 'complete', date=note['date'], id=note['id'], text='Tea')
+        self.assertIn('Paris', appended['note']['place'])
+        self.assertEqual(appended['note']['media'], [{'n': 1, 'kind': 'audio', 'type': 'audio/mp4', 'name': 'Walk',
+                                                     'has_transcript': True, 'has_description': False}])
+        self.assertEqual(self.write('notes_append', 'complete', date=note['date'], id=note['id'], text='Tea'),
+                         {**appended, 'replayed': True})
+        receipt = next(i for i in self.store.items['u1'] if i['sk'].startswith('CAPTURE#') and i['result'] == json.dumps(appended['note'], ensure_ascii=False, separators=(',', ':')))
+        for private in ('media/private/key', 'Private transcript', '48.85'):
+            self.assertNotIn(private, receipt['result'])
+            self.assertNotIn(private, json.dumps(appended))
 
     def test_reads_include_provenance_and_can_exclude_agent_notes(self):
         self.add_note(day='2026-10-07')
@@ -276,7 +303,7 @@ class CaptureRequestShapeTests(ConnectionCase):
         token = self.connected(write=True)[0]['access_token']
         first = capture.handler({'token': token, 'tool': 'notes_create', 'arguments': {'text': 'First', 'idempotency_key': 'first'}},
                                 None, store=self.store, clock=lambda: self.now, fetch=lambda url: None)['note']
-        day, id = first['sk'].split('#')[1:]
+        day, id = first['date'], first['id']
         committed = []
         with patch.object(self.store, 'capture_commit', side_effect=lambda *values: committed.append(values) or False):
             capture.handler({'token': token, 'tool': 'notes_append', 'arguments': {'date': day, 'id': id, 'text': 'Next', 'idempotency_key': 'next'}},
@@ -284,7 +311,7 @@ class CaptureRequestShapeTests(ConnectionCase):
         client = FakeClient()
         Store(FakeTable(client)).capture_commit(*committed[0])
         update = client.calls[0]['TransactItems'][2]['Update']
-        self.assertEqual(update['Key'], {'pk': 'USER#u1', 'sk': first['sk']})
+        self.assertEqual(update['Key'], {'pk': 'USER#u1', 'sk': 'NOTE#' + day + '#' + id})
         self.assertEqual(update['UpdateExpression'], 'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next')
         self.assertEqual(update['ExpressionAttributeNames'], {'#t': 'text', '#r': 'revision', '#c': 'connection'})
         self.assertEqual(update['ExpressionAttributeValues'][':text'], 'First\n\nNext')

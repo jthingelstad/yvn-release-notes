@@ -421,7 +421,7 @@ def _handle(event, context, *, store=None, s3=None, clock=time.time, writer=None
                     answer = capture(app, authorization[7:], name, args, writer)
                     if answer.get("error"):
                         raise ToolError(answer["error"], answer["next_step"])
-                    value, extra = {"note": reader.view(answer["note"], True), "replayed": answer["replayed"]}, []
+                    value, extra = {"note": answer["note"], "replayed": answer["replayed"]}, []
                 else:
                     value, extra = reader.run(name, args)
                 value["server_version"] = VERSION

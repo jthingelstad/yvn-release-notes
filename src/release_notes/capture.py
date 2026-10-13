@@ -77,14 +77,15 @@ def write(app, family, name, args, fetch=None):
             raise ToolError("rate_limited", "Try again after this UTC day ends; exact retries of completed writes are still safe.")
         rate = {"pk": "MCPMETA#" + uid, "sk": rate_key, "n": count + 1,
                 "revision": int((previous or {}).get("revision", 0)) + 1, "expires_at": (app.now // 86400 + 2) * 86400}
+        shown = reader.view({**(old or {}), **note}, True)
         receipt = {"pk": "USER#" + uid, "sk": key, "request_hash": fingerprint,
-                   "result": json.dumps(note, ensure_ascii=False, separators=(",", ":")), "expires_at": app.now + 86400}
+                   "result": json.dumps(shown, ensure_ascii=False, separators=(",", ":")), "expires_at": app.now + 86400}
         audit = {"pk": "MCPMETA#" + uid, "sk": "LOG#" + f"{app.now:012d}#" + uuid.uuid4().hex,
                  "at": app.now, "tool": name, "outcome": "ok", "connection": fid,
                  "client": family["client_name"], "date": day, "note_id": note["sk"].split("#", 2)[2],
                  "request_hash": fingerprint, "expires_at": app.now + 14 * 86400}
         if app.store.capture_commit(note, old, receipt, audit, rate, previous, family, app.now):
-            return {"note": note, "replayed": False}
+            return {"note": shown, "replayed": False}
         # A conflict can also mean disconnection, scope removal or deletion.
         current = app.store.mcp_get("OAUTHFAMILY#" + fid)
         profile = app.store.mcp_profile(uid)

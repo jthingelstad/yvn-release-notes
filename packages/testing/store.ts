@@ -154,6 +154,10 @@ class Expression {
     return getPath(this.item, t, this.names);
   }
   atom(): boolean {
+    if (this.peek() === 'NOT') {
+      this.take();
+      return !this.atom();
+    }
     if (this.peek() === '(') {
       this.take();
       const result = this.or();

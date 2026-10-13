@@ -925,9 +925,46 @@ export class Store {
       }
     }
   }
+  async importedIds(user: string): Promise<Set<string>> {
+    const rows = await this.rows({
+      KeyConditionExpression: 'pk = :u AND begins_with(sk, :p)',
+      ExpressionAttributeValues: { ':u': `USER#${user}`, ':p': 'IMPORT#' },
+      ProjectionExpression: 'ids',
+      ConsistentRead: true
+    });
+    return new Set(rows.flatMap((row) => [...((row.ids ?? []) as Iterable<string>)]));
+  }
   async imported(user: string, ledger: string) {
     const item = await this.get(key(user, ledger), { ProjectionExpression: 'ids' });
     return new Set(item?.ids as Iterable<string> | undefined);
+  }
+  /** The import ledger and note commit together, so an owner-deleted note
+   * can never be revived by an interrupted/repeated import. */
+  async putImportedNote(
+    user: string,
+    day: string,
+    id: string,
+    note: Item,
+    ledger: string,
+    originId: string,
+    at: string
+  ): Promise<boolean> {
+    return this.provedTransaction([
+      this.profileProof(user),
+      this.putOperation(
+        { ...key(user, `NOTE#${day}#${id}`), ...note },
+        { ConditionExpression: 'attribute_not_exists(pk)' }
+      ),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, ledger),
+          UpdateExpression: 'ADD ids :ids SET updated_at = :at',
+          ConditionExpression: 'attribute_not_exists(ids) OR NOT contains(ids, :id)',
+          ExpressionAttributeValues: { ':ids': new Set([originId]), ':id': originId, ':at': at }
+        }
+      }
+    ]);
   }
   async addImported(user: string, ledger: string, ids: string[], at: string) {
     if (!ids.length) return;

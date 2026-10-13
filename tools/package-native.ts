@@ -3,7 +3,7 @@
  * libraries are added explicitly for the isolated description worker. */
 import { ZipFile } from 'yazl';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { readdir, lstat, readFile, mkdir } from 'node:fs/promises';
+import { readdir, lstat, readFile, mkdir, rm } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
@@ -23,6 +23,7 @@ export async function packageBundle(
     zip.addBuffer(await readFile(join(directory, 'index.js')), 'index.js', { mtime: stamp, mode: 0o100644 });
     zip.addBuffer(Buffer.from('{"type":"module"}\n'), 'package.json', { mtime: stamp, mode: 0o100644 });
     if (nativeModules) {
+      if ((await lstat(nativeModules)).isSymbolicLink()) throw new Error('Native package contains a symlink');
       const walk = async (folder: string) => {
         for (const name of (await readdir(folder)).sort()) {
           const path = join(folder, name),
@@ -43,6 +44,7 @@ export async function packageBundle(
   } catch (error) {
     output.destroy(error instanceof Error ? error : new Error('Artifact packaging failed'));
     await done.catch(() => undefined);
+    await rm(destination, { force: true }).catch(() => undefined);
     throw error;
   }
   const hash = createHash('sha256');

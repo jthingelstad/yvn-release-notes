@@ -1,4 +1,4 @@
-"""Read-only connection boundary tests, using fictional accounts only."""
+"""Connection boundary tests, using fictional accounts only."""
 import base64
 import hashlib
 import json

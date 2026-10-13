@@ -72,7 +72,17 @@ function production() {
     log: safeLog
   });
 }
-export async function handler(event: Item, _context?: unknown, injected?: transcribe.Services): Promise<void> {
+export async function handler(
+  event: Item,
+  _context?: unknown,
+  injected?: transcribe.Services
+): Promise<Item | undefined> {
+  if (event.self_test === true)
+    return {
+      ok: true,
+      runtime: `${process.version}/${process.platform}/${process.arch}`,
+      build: process.env.BUILD_SHA ?? process.env.BUILD ?? 'unknown'
+    };
   const s = injected ?? production();
   try {
     if (event.source === 'aws.transcribe') {

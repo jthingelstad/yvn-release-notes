@@ -227,6 +227,16 @@ function production(): Services {
   return runtime;
 }
 export async function handler(event: Item, context: Context = {}, injected?: Services): Promise<Item | undefined> {
+  if (event.self_test === true) {
+    const made = await thumbs.make(describe.testImage(1, 1));
+    if (!made || made.width !== 1 || made.height !== 1 || made.body.length === 0)
+      throw new Error('Thumbnail runtime self test failed');
+    return {
+      ok: true,
+      runtime: `${process.version}/${process.platform}/${process.arch}`,
+      build: process.env.BUILD_SHA ?? process.env.BUILD ?? 'unknown'
+    };
+  }
   const base = injected ?? production();
   let model: Promise<describe.Model> | undefined;
   const s = { ...base, model: () => (model ??= base.model()) },

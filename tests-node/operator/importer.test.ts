@@ -212,3 +212,70 @@ test('even a final single-note import reports a concurrent account deletion afte
   assert.deepEqual(await objects.list('raw/'), []);
   assert.equal((await store.allNotes('u1')).length, 0);
 });
+test('overlapping imports with different bytes keep winner references immutable and clean only loser staging', async () => {
+  const { store, objects, s } = setup(),
+    winningBytes = Buffer.from('fictional winning photo'),
+    losingBytes = Buffer.from('fictional different losing photo'),
+    make = (text: string, body: Buffer) =>
+      d.plan('Journal', [{ ...entries[0], text }], { 'photos/p1.jpeg': body.length }, profile, 'u1'),
+    winning = make('Winning original JSON', winningBytes),
+    losing = make('Losing original JSON', losingBytes),
+    originalPlans = structuredClone([winning, losing]);
+  s.fetchWeather = undefined;
+  let entered!: () => void, resume!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    }),
+    proceed = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+  // Both attempts observe the absent note/ledger. Pause the future loser before
+  // its upload, let the winner commit, then let stale loser uploads proceed.
+  const loser = importer.write(
+    [
+      [
+        losing,
+        async () => {
+          entered();
+          await proceed;
+          return losingBytes;
+        }
+      ]
+    ],
+    'u1',
+    s
+  );
+  await waiting;
+  const winner = await importer.write([[winning, () => winningBytes]], 'u1', s),
+    storedBefore = (await store.note('u1', '2016-07-04', `d1-${A}`))!,
+    winnerRaw = String(storedBefore.raw_key),
+    winnerMedia = String((storedBefore.media as Item[])[0]!.key);
+  resume();
+  const lost = await loser,
+    storedAfter = (await store.note('u1', '2016-07-04', `d1-${A}`))!;
+  assert.equal(winner.notes, 1);
+  assert.equal(lost.notes, 0);
+  assert.equal(lost.id_taken, 1);
+  assert.deepEqual(storedAfter, storedBefore);
+  assert.equal((await objects.get(winnerMedia)).body.equals(winningBytes), true);
+  assert.equal(
+    (await objects.get(winnerRaw)).body.equals(Buffer.from(JSON.stringify(winning.notes[0]!.original, null, 1))),
+    true
+  );
+  assert.equal(objects.versions.get(winnerMedia)?.length, 1);
+  assert.equal(objects.versions.get(winnerRaw)?.length, 1);
+  assert.notEqual(winnerRaw, winning.notes[0]!.item.raw_key);
+  assert.notEqual(winnerMedia, (winning.notes[0]!.item.media as Item[])[0]!.key);
+  assert.deepEqual(await store.imported('u1', 'IMPORT#dayone#journal'), new Set([A]));
+  const puts = objects.calls.filter((c) => c.operation === 'put').map((c) => c.key),
+    removed = objects.calls.filter((c) => c.operation === 'remove').map((c) => c.key),
+    losers = puts.filter((key) => key !== winnerRaw && key !== winnerMedia);
+  assert.equal(new Set(puts).size, 4);
+  assert.equal(losers.length, 2);
+  assert.deepEqual(new Set(removed), new Set(losers));
+  assert.deepEqual(await objects.list('media/'), [winnerMedia]);
+  assert.deepEqual(await objects.list('raw/'), [winnerRaw]);
+  assert.deepEqual(await objects.tags(winnerMedia), { outcome: 'note' });
+  assert.deepEqual(await objects.tags(winnerRaw), { outcome: 'note' });
+  assert.deepEqual([winning, losing], originalPlans);
+});

@@ -1,7 +1,10 @@
 /** Execute already-reviewed import plans. Ordered file/original staging precedes
- * atomic note+ledger commits; all references require a live account. Repeat
+ * atomic note+ledger commits; all references require a live account.
+ * Each attempt stages at unique object keys, so a losing concurrent import
+ * cannot overwrite the bytes already referenced by the winning note. Repeat
  * skips the ledger even if its owner deleted a note. Console/reporting counts
  * contain no text, tags, coordinates, addresses, filenames or object keys. */
+import { randomUUID } from 'node:crypto';
 import type { Store, Item } from './store.ts';
 import type { Objects } from './services.ts';
 import type { Day } from '../domain/dates.ts';
@@ -25,6 +28,10 @@ export interface Services {
 export type Input = readonly [plan: dayone.Plan, read: (name: string) => Promise<Buffer> | Buffer];
 function keys(note: Item): Set<string> {
   return new Set([String(note.raw_key ?? ''), ...((note.media ?? []) as Item[]).map((m) => String(m.key))]);
+}
+function attemptKey(key: string, attempt: string): string {
+  const dot = key.lastIndexOf('.');
+  return dot > key.lastIndexOf('/') ? `${key.slice(0, dot)}-${attempt}${key.slice(dot)}` : `${key}-${attempt}`;
 }
 export async function write(plans: readonly Input[], user: string, s: Services): Promise<Record<string, number>> {
   if (plans.some(([p]) => p.missing_files > 0)) throw new Error('Import refused: missing export files');
@@ -66,25 +73,34 @@ export async function write(plans: readonly Input[], user: string, s: Services):
       }
       const profile = await s.store.profile(user, true);
       if (!profile || profile.mcp_deleting) throw new Error('Import account unavailable');
+      const attempt = randomUUID(),
+        files = n.files.map((file) => ({ ...file, key: attemptKey(file.key, attempt) })),
+        replacements = new Map(n.files.map((file, i) => [file.key, files[i]!.key])),
+        item: Item = { ...n.item, raw_key: attemptKey(String(n.item.raw_key), attempt) };
+      if (Array.isArray(n.item.media))
+        item.media = (n.item.media as Item[]).map((entry) => {
+          const key = replacements.get(String(entry.key));
+          if (!key) throw new Error('Import media plan mismatch');
+          return { ...entry, key };
+        });
       const staged: string[] = [];
       let committed = false;
       try {
-        for (const f of n.files) {
+        for (const f of files) {
           const body = await read(f.from);
           await s.objects.put(f.key, body, { type: f.type, disposition: 'inline', tags: { outcome: 'pending' } });
           staged.push(f.key);
           counts.files!++;
           counts.file_bytes! += body.length;
         }
-        const raw = String(n.item.raw_key);
+        const raw = String(item.raw_key);
         await s.objects.put(raw, Buffer.from(JSON.stringify(n.original, null, 1)), {
           type: 'application/json',
           tags: { outcome: 'ignored' }
         });
         staged.push(raw);
         counts.originals!++;
-        const item = { ...n.item },
-          found = await links.collect(String(item.text ?? ''), { named: n.named, fetch: s.fetchTitle });
+        const found = await links.collect(String(item.text ?? ''), { named: n.named, fetch: s.fetchTitle });
         if (found.length) {
           item.links = found.map((link) => ({ ...link }));
           counts.links_named! += found.filter((l) => l.named).length;

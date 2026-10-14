@@ -96,6 +96,9 @@ input.code { font-family: var(--mono); font-size: 32px; font-weight: 700; letter
   font: inherit; font-size: 15px; font-weight: 700; color: var(--blue); text-decoration: underline;
 }
 .quiet.danger { color: var(--orange-ink); }
+.quiet.icon-button { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 44px; min-height: 44px; padding: 10px; text-decoration: none; border-radius: 4px; }
+.icon-button .icon { width: 20px; height: 20px; }
+.icon-button:disabled { opacity: .45; cursor: progress; }
 .row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
 .lede + .row { margin-top: 32px; }
 .error { margin: 0; font-size: 15px; font-weight: 600; color: var(--orange-ink); }
@@ -167,8 +170,8 @@ html:has(.viewer[open]) { overflow: hidden; }
 label.check { flex-direction: row; align-items: center; gap: 12px; min-height: 44px; font-size: 16px; cursor: pointer; }
 input[type=checkbox] { accent-color: var(--orange); width: 20px; height: 20px; margin: 0; padding: 0; border: 0; flex: none; }
 .tday .media img { max-height: 180px; }
-.note .actions { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
-.note .actions .quiet { min-height: 40px; padding: 8px 0; font-size: 14px; }
+.note .actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.note .actions .quiet:not(.icon-button) { min-height: 44px; padding: 8px 0; font-size: 14px; }
 .confirm { font-size: 14px; color: var(--ink-2); }
 /* The note form's file picker: a quiet link that opens the device's own. */
 label.picker { position: relative; display: inline-block; font-size: 15px; font-weight: 700; }
@@ -280,7 +283,7 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
 .saved-notes .notes { gap: 28px; margin-top: 22px; }
 .saved-notes .text { order: -1; font-size: 18px; line-height: 1.65; }
 .saved-notes .meta { color: var(--ink-2); font-weight: 400; }
-.saved-notes .note .actions { gap: 20px; }
+.saved-notes .note .actions { gap: 6px; }
 .saved-notes .empty-day { max-width: 60ch; }
 #day .streak { margin-top: 36px; font-size: 15px; font-weight: 400; }
 .days { gap: 36px; }
@@ -543,8 +546,9 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
 .upcoming-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; }
 .upcoming-filters label { flex: 1 1 180px; min-width: 0; }
 .upcoming-filters select { width: 100%; }
-.upcoming-actions { flex-wrap: nowrap; gap: 16px; }
-.upcoming-actions .quiet { padding: 8px 0; }
+.upcoming-actions { flex-wrap: nowrap; gap: 4px; }
+.upcoming-kind { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: var(--ink-2); }
+.upcoming-kind .icon { width: 21px; height: 21px; }
 .upcoming-empty { max-width: 32rem; font-size: 22px; line-height: 1.5; }
 .upcoming-past { margin-top: 44px; }
 .upcoming-past summary { cursor: pointer; min-height: 44px; font-weight: 700; }

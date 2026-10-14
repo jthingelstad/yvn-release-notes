@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Bar, ErrorLine, Loading, useBusy, useTitle } from '../components/common.tsx';
 import { AdminNav } from '../components/admin-nav.tsx';
+import { Icon } from '../components/icon.tsx';
 import { api, get, ApiError } from '../lib/api.ts';
 import { addDays } from '../lib/format.ts';
 import type { Part } from '../lib/types.ts';
@@ -192,8 +193,10 @@ export function Admin() {
                 </button>
                 {selected && (
                   <button
-                    className="quiet danger"
+                    className="quiet danger icon-button"
                     type="button"
+                    aria-label="Delete draft"
+                    title="Delete draft"
                     disabled={busy}
                     onClick={() => {
                       if (window.confirm('Delete this draft?'))
@@ -207,7 +210,7 @@ export function Admin() {
                         );
                     }}
                   >
-                    Delete draft
+                    <Icon name="delete" />
                   </button>
                 )}
               </div>

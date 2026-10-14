@@ -2,6 +2,7 @@
 // the subscriber's zone; forms retain unsaved values after errors or conflicts.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import { Icon } from '../components/icon.tsx';
 import { lazy, Suspense, useRef, useState, type FormEvent } from 'react';
 import { AppLink, Bar, ErrorLine, Failed, Loading, useBusy, useFocusLater, useTitle } from '../components/common.tsx';
 import { useHashParam } from '../lib/nav.ts';
@@ -128,38 +129,47 @@ export function Upcoming() {
                   {entry.tag && <span className="table-detail">#{entry.tag}</span>}
                 </th>
                 <td>
-                  {NAMES[entry.kind]}
-                  {annual(entry.kind) && <span className="table-detail">Every year</span>}
+                  <span
+                    className="upcoming-kind"
+                    role="img"
+                    aria-label={NAMES[entry.kind] + (annual(entry.kind) ? ' (every year)' : '')}
+                    title={NAMES[entry.kind] + (annual(entry.kind) ? ' (every year)' : '')}
+                  >
+                    <Icon name={entry.kind} />
+                  </span>
                 </td>
                 <td>{entry.email ? 'Daily email' : 'Web only'}</td>
                 <td>
                   <div className="row upcoming-actions">
                     {entry.tag && (
                       <AppLink
-                        className="quiet"
+                        className="quiet icon-button"
                         href={`/today/#tag=${encodeURIComponent(entry.tag)}`}
                         aria-label={`Write a note tagged #${entry.tag} for ${entry.title}`}
+                        title={`Write a note tagged #${entry.tag}`}
                       >
-                        Write a note
+                        <Icon name="write" />
                       </AppLink>
                     )}
                     <button
-                      className="quiet"
+                      className="quiet icon-button"
                       type="button"
                       disabled={busy}
                       aria-label={`Edit ${entry.title}`}
+                      title="Edit"
                       onClick={() => choose(entry)}
                     >
-                      Edit
+                      <Icon name="edit" />
                     </button>
                     <button
-                      className="quiet danger"
+                      className="quiet danger icon-button"
                       type="button"
                       disabled={busy}
                       aria-label={`Delete ${entry.title}`}
+                      title="Delete"
                       onClick={() => remove(entry)}
                     >
-                      Delete
+                      <Icon name="delete" />
                     </button>
                   </div>
                 </td>

@@ -238,8 +238,15 @@ its focal point. Today places the editor before saved notes, with labelled
 file, recording and place controls. Desktop navigation is a rail; phone
 navigation stays at the bottom with safe-area spacing. Archive uses the
 existing `/timeline/` address. Dark appearance and reduced-motion preferences
-are supported. Icons (`web/src/components/icon.tsx`) and fonts are local;
-no image dependency or new CSP exception is required.
+are supported. UI glyphs use Lucide React, bundled locally through the fixed
+named imports in `web/src/components/icon.tsx`; unused icons are excluded from
+the build. Navigation and writing tools retain visible labels. Compact edit,
+delete, attach-file and write-note actions use glyphs with accessible names,
+hover titles, keyboard focus rings and 44px touch targets. Delete confirmations
+retain their explicit text. Upcoming kinds use Cake (birthday), PartyPopper
+(anniversary), Plane (trip) and CalendarDays (one-time event), with accessible
+kind/recurrence labels and hover titles. Icons and fonts require no remote loads
+or new CSP exception.
 
 - CloudFront's function answers every address that is not a file with
   `index.html` (the dev server does the same), and the router shows the

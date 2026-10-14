@@ -39,13 +39,13 @@ test('Upcoming dates persist and remain usable on phone, tablet, desktop and lan
   await expect(page.getByRole('status').filter({hasText:'Date saved.'})).toBeVisible();
   await expect(page.getByLabel('Upcoming dates')).toContainText('Alex turns 5.0.0. A major release.');
   await page.reload();
-  await expect(page.getByRole('heading',{name:'Alex',exact:true})).toBeVisible();
+  await expect(page.getByRole('rowheader',{name:'Alex',exact:false})).toBeVisible();
   await page.getByRole('button',{name:'Edit Alex',exact:true}).click();
   await page.getByLabel('Name',{exact:true}).fill('Alexa');
   await page.getByLabel('Include in my daily email').uncheck();
   await page.getByRole('button',{name:'Save date',exact:true}).click();
   await expect(page.getByLabel('Upcoming dates')).toContainText('Web only');
-  await expect(page.getByRole('heading',{name:'Alexa',exact:true})).toBeVisible();
+  await expect(page.getByRole('rowheader',{name:'Alexa',exact:false})).toBeVisible();
 
   await page.getByRole('button',{name:'Add a date',exact:true}).click();
   await page.getByRole('combobox',{name:'Kind',exact:true}).selectOption('anniversary');
@@ -70,7 +70,7 @@ test('Upcoming dates persist and remain usable on phone, tablet, desktop and lan
   await page.getByLabel('Destination',{exact:true}).fill('Paris');
   await page.getByRole('listbox',{name:'Places'}).getByRole('option').first().click();
   await page.getByRole('button',{name:'Save date',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Autumn trip',exact:true})).toBeVisible();
+  await expect(page.getByRole('rowheader',{name:'Autumn trip',exact:false})).toBeVisible();
   await expect(page.getByLabel('Upcoming dates')).toContainText('Paris');
   expect((await (await context.request.get('/api/me')).json()).tz).toBe('America/Chicago');
 
@@ -80,7 +80,7 @@ test('Upcoming dates persist and remain usable on phone, tablet, desktop and lan
   await page.getByLabel('Date',{exact:true}).fill('2026-01-01');
   await page.getByRole('button',{name:'Save date',exact:true}).click();
   await page.getByText('Past events (1)',{exact:true}).click();
-  await expect(page.getByRole('heading',{name:'A concert',exact:true})).toBeVisible();
+  await expect(page.getByRole('rowheader',{name:'A concert',exact:false})).toBeVisible();
   await page.reload();
   await expect(page.getByText('Past events (1)',{exact:true})).toBeVisible();
 
@@ -101,7 +101,7 @@ test('Upcoming dates persist and remain usable on phone, tablet, desktop and lan
   }
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:'Delete Alexa',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Alexa',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('rowheader',{name:'Alexa',exact:false})).toHaveCount(0);
   const exported=await (await context.request.get('/api/export')).json();
   expect(exported.upcoming.map(e=>e.title)).toEqual(expect.arrayContaining(['A project','Autumn trip','A concert']));
   expect(exported.upcoming).toHaveLength(3);
@@ -134,5 +134,29 @@ test('a stale revision, invalid reminder and network failure retain the editable
   await page.unroute('**/api/upcoming/'+entry.id);
   await page.getByLabel('Title',{exact:true}).fill('Recovered edit');
   await page.getByRole('button',{name:'Save date',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Recovered edit',exact:true})).toBeVisible();
+  await expect(page.getByRole('rowheader',{name:'Recovered edit',exact:false})).toBeVisible();
+});
+
+
+test('event tables order occurrence dates ascending even when the response is unordered', async ({ page, context }) => {
+  const headers = { Origin: test.info().project.use.baseURL };
+  const { today } = await (await context.request.get('/api/upcoming')).json();
+  const offset = (days) => new Date(Date.parse(today + 'T12:00:00Z') + days * 86400000).toISOString().slice(0, 10);
+  for (const [title, days] of [['Later event', 30], ['Earlier event', 7], ['Older event', -30], ['Recent past event', -7]]) {
+    expect((await context.request.post('/api/upcoming', { headers, data: { kind: 'event', title, date: offset(days) } })).ok()).toBeTruthy();
+  }
+  const snapshot = await (await context.request.get('/api/upcoming')).json();
+  await page.route('**/api/upcoming', route => route.fulfill({ json: { ...snapshot, entries: snapshot.entries.toReversed() } }));
+  await page.goto('/upcoming/');
+  const future = page.getByRole('table', { name: 'Upcoming events', exact: true });
+  await expect(future.getByRole('rowheader', { name: 'Earlier event', exact: true })).toBeVisible();
+  const dates = await future.locator('tbody tr td:first-child time:first-child').evaluateAll(nodes => nodes.map(n => n.dateTime));
+  expect(dates).toEqual(dates.toSorted());
+  await page.locator('.upcoming-past summary').click();
+  const past = page.getByRole('table', { name: 'Past events', exact: true });
+  const pastDates = await past.locator('tbody tr td:first-child time:first-child').evaluateAll(nodes => nodes.map(n => n.dateTime));
+  expect(pastDates.length).toBeGreaterThan(1);
+  expect(pastDates).toEqual(pastDates.toSorted());
+  await page.getByRole('button', { name: 'Edit Earlier event', exact: true }).click();
+  await expect(page.getByLabel('Date', { exact: true })).toHaveValue(offset(7));
 });

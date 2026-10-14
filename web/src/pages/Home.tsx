@@ -408,9 +408,6 @@ export function Home() {
         </p>
       </form>
 
-      {/* Outside the forms, so "send it again" has it too. Empty unless Cloudflare asks. */}
-      <div className="turnstile" id="signin-check" ref={slotRef} />
-
       <section id="check" hidden={!shows('check')}>
         <h1 className="top">Check your email.</h1>
         <p className="lede">
@@ -479,6 +476,10 @@ export function Home() {
           emails out of junk.
         </p>
       </section>
+
+      {/* After both steps, so it sits under the email form or under "send it
+          again", and outside the forms. Shown only while Cloudflare asks. */}
+      <div className="turnstile" id="signin-check" ref={slotRef} />
 
       <p className="foot" id="home-foot" hidden={!shows('ask', 'number', 'signin')}>
         A hobby by <a href="https://www.thingelstad.com/">Jamie Thingelstad</a>. Your notes are yours: export or delete

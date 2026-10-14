@@ -283,7 +283,10 @@ or new CSP exception.
   someone focuses or types in the email field, renders explicitly and
   interaction-only into `#signin-check` (never id `turnstile`: that
   element would shadow `window.turnstile`), and when it cannot load the email
-  request goes without a token.
+  request goes without a token. `#signin-check` follows both the email form
+  and "Check your email", and takes room only while Cloudflare is asking
+  (`data-turnstile="asking"`); once answered it collapses (`quiet`), so
+  "Success!" never lingers on the next step.
 - **Recording on the page** (Jamie, 2026-10-09): the new-note form's
   Record button, shown only where the browser has MediaRecorder, records
   the microphone up to 30 minutes, as MP4 where the browser makes it

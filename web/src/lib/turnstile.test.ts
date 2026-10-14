@@ -32,6 +32,23 @@ describe('attachTurnstile', () => {
     expect(s.renders[0]).toMatchObject({ sitekey: SITE_KEY, action: 'signin', appearance: 'interaction-only' });
   });
 
+  it('shows the slot only while Cloudflare asks, and collapses it once answered', async () => {
+    const s = standIn();
+    const slot = document.createElement('div');
+    const t = attachTurnstile(() => slot, 'signin', s.load);
+    expect(slot.dataset.turnstile).toBeUndefined();
+    t.warm();
+    await Promise.resolve();
+    expect(slot.dataset.turnstile).toBe('quiet');
+    s.renders[0]!['before-interactive-callback']();
+    expect(slot.dataset.turnstile).toBe('asking');
+    s.renders[0]!.callback('tok-1');
+    expect(slot.dataset.turnstile).toBe('quiet');
+    s.renders[0]!['before-interactive-callback']();
+    s.renders[0]!['error-callback']();
+    expect(slot.dataset.turnstile).toBe('quiet');
+  });
+
   it('hands one token to the same address up to three times, then asks for a fresh one', async () => {
     const s = standIn();
     const t = attachTurnstile(() => document.createElement('div'), 'signin', s.load);

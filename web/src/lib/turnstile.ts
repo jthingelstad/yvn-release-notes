@@ -6,7 +6,10 @@
 // Cloudflare's script loads only once someone focuses or types in the email
 // field, never on a plain visit. Most people see nothing (interaction-only);
 // a doubtful browser gets a checkbox under the form. If the script cannot
-// load, the request goes without a token and the server decides.
+// load, the request goes without a token and the server decides. The slot is
+// shown only while Cloudflare is asking (`data-turnstile="asking"`); once it
+// has answered, the box collapses ("quiet") rather than leave "Success!"
+// sitting on the next step.
 //
 // A token is single-use at Cloudflare, but the server keeps its verdict for
 // five minutes and three uses, bound to the address it came with, so one
@@ -102,6 +105,8 @@ export function attachTurnstile(
     const container = slot();
     if (widgetId !== null || unavailable || !container) return;
     widgetId = 'pending';
+    const showing = (asking: boolean) => (container.dataset.turnstile = asking ? 'asking' : 'quiet');
+    showing(false);
     load().then(
       (loaded) => {
         api = loaded;
@@ -116,6 +121,7 @@ export function attachTurnstile(
             uses = 0;
             boundEmail = '';
             interactive = false;
+            showing(false);
             settle();
           },
           'expired-callback': () => {
@@ -123,10 +129,12 @@ export function attachTurnstile(
           },
           'before-interactive-callback': () => {
             interactive = true;
+            showing(true);
           },
           'error-callback': () => {
             token = '';
             interactive = false;
+            showing(false);
             settle();
           }
         });

@@ -211,7 +211,7 @@ test('enforce refuses a missing or failed token before any limit or mail, and pa
   assert.equal((await passing.start({ email: 'ada@example.com', turnstile_token: 'last' })).status, 429);
 });
 
-test('the secret loader reads secret_key, retries a missing secret after five minutes, and keeps a value', async () => {
+test('the secret loader reads TURNSTILE_SECRET_KEY, retries a missing secret after five minutes, and keeps a value', async () => {
   let clock = 0,
     calls = 0,
     answer: () => unknown = () => {
@@ -220,13 +220,13 @@ test('the secret loader reads secret_key, retries a missing secret after five mi
   const client = {
     send: async (command: { input: { SecretId: string } }) => {
       calls++;
-      assert.equal(command.input.SecretId, 'yvn-release-notes-turnstile');
+      assert.equal(command.input.SecretId, 'yvn-release-notes-runtime');
       return answer();
     }
   } as never;
-  const secret = createTurnstileSecret('yvn-release-notes-turnstile', 'us-east-1', client, () => clock);
+  const secret = createTurnstileSecret('yvn-release-notes-runtime', 'us-east-1', client, () => clock);
   assert.equal(await secret(), '');
-  answer = () => ({ SecretString: JSON.stringify({ secret_key: 'fictional' }) });
+  answer = () => ({ SecretString: JSON.stringify({ ANTHROPIC_API_KEY: 'other', TURNSTILE_SECRET_KEY: 'fictional' }) });
   clock = 299_000;
   assert.equal(await secret(), '', 'an absent secret is looked for again only after five minutes');
   clock = 300_001;
@@ -239,7 +239,7 @@ test('the secret loader reads secret_key, retries a missing secret after five mi
   assert.equal(calls, 2);
 
   const wrongKey = createTurnstileSecret('s', 'us-east-1', {
-    send: async () => ({ SecretString: '{"api_key":"x"}' })
+    send: async () => ({ SecretString: '{"secret_key":"x","TURNSTILE_SECRET_KEY":""}' })
   } as never);
   assert.equal(await wrongKey(), '');
   const notJson = createTurnstileSecret('s', 'us-east-1', { send: async () => ({ SecretString: 'plain' }) } as never);
@@ -253,10 +253,13 @@ test('the secret loader reads secret_key, retries a missing secret after five mi
   assert.equal(await createTurnstileSecret('')(), '');
 });
 
-test('the stack lets only the web function read only the Turnstile secret, and the CSP allows the challenge', async () => {
+test('the stack points the web function and describer at the runtime secret, and the CSP allows the challenge', async () => {
   const template = await readFile(new URL('../../infra/template.yaml', import.meta.url), 'utf8');
-  assert.match(template, /TurnstileSecretName:\n\s+Type: String\n\s+Default: yvn-release-notes-turnstile/);
-  assert.match(template, /TURNSTILE_SECRET: !Ref TurnstileSecretName/);
+  assert.match(template, /RuntimeSecretName:\n\s+Type: String\n\s+Default: yvn-release-notes-runtime/);
+  assert.match(template, /RUNTIME_SECRET: !Ref RuntimeSecretName/);
+  assert.match(template, /SECRET: !Ref RuntimeSecretName/);
+  assert.doesNotMatch(template, /SECRET: !Ref (Turnstile|Anthropic)SecretName/);
+  assert.equal(template.match(/secret:\$\{RuntimeSecretName\}-\?\?\?\?\?\?/g)?.length, 2);
   assert.match(template, /TURNSTILE_MODE: !If \[HasTurnstileMode, !Ref TurnstileMode, !Ref AWS::NoValue\]/);
   assert.equal(template.match(/secret:\$\{TurnstileSecretName\}-\?\?\?\?\?\?/g)?.length, 1);
   const csp = /ContentSecurityPolicy: !Sub "([^"]+)"/.exec(template)![1]!;

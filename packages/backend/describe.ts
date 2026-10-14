@@ -121,7 +121,7 @@ export async function keyFrom(secrets: SecretSource, id: string): Promise<string
   } catch {
     throw new NoKey();
   }
-  const key = value && typeof value === 'object' ? (value as Item).api_key : null;
+  const key = value && typeof value === 'object' ? (value as Item).ANTHROPIC_API_KEY : null;
   if (typeof key !== 'string' || !key.startsWith('sk-ant-')) throw new NoKey();
   return key;
 }

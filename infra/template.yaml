@@ -34,15 +34,23 @@ Parameters:
     AllowedPattern: ^$|^arn:aws:acm:us-east-1:[0-9]{12}:certificate/[0-9a-f-]+$
     Description: The us-east-1 ACM certificate for WebDomain, issued outside the stack (as Drop's is). deploy.sh passes it once ACM says ISSUED; until then the distribution answers on its cloudfront.net name only.
 
+  RuntimeSecretName:
+    Type: String
+    Default: yvn-release-notes-runtime
+    Description: The Secrets Manager secret holding the runtime credentials, ANTHROPIC_API_KEY (photo descriptions) and TURNSTILE_SECRET_KEY (the sign-in Turnstile widget). Kept by hand; no deploy writes it. An empty or missing key means that feature is not set up.
+
+  # The two secrets RuntimeSecretName replaced (2026-10-14). Their grants stay
+  # until the describer and web versions that read them are retired; then
+  # these go, with the secrets.
   AnthropicSecretName:
     Type: String
     Default: yvn-release-notes-anthropic
-    Description: The Secrets Manager secret holding api_key, the Anthropic API key photo descriptions use. Made by hand; the describer sends nothing while it holds the placeholder.
+    Description: Retiring. The old secret holding api_key, read only by describer versions from before RuntimeSecretName.
 
   TurnstileSecretName:
     Type: String
     Default: yvn-release-notes-turnstile
-    Description: The Secrets Manager secret holding secret_key, the Release Notes sign-in Turnstile widget's secret. Made by hand; until it exists every check records unconfigured and goes ahead.
+    Description: Retiring. The old secret holding secret_key, read only by web revisions from before RuntimeSecretName.
   TurnstileMode:
     Type: String
     Default: ""
@@ -480,7 +488,7 @@ Resources:
           SENDER_FUNCTION: !Ref SenderAlias
           EXPORT_FUNCTION: !Ref ExportAlias
           ADMIN_USER_ID: !If [HasAdmin, !Ref AdminUserId, !Ref AWS::NoValue]
-          TURNSTILE_SECRET: !Ref TurnstileSecretName
+          RUNTIME_SECRET: !Ref RuntimeSecretName
           TURNSTILE_MODE: !If [HasTurnstileMode, !Ref TurnstileMode, !Ref AWS::NoValue]
         TelemetryConfig:
           LoggingConfig:
@@ -1423,10 +1431,13 @@ Resources:
                       pause_through, written_at, received_at, source, updated_at,
                       mcp_deleting]
               - Effect: Allow
-                # The sign-in Turnstile widget's secret (packages/backend/turnstile.ts),
-                # and no other secret.
+                # The runtime secret, for the sign-in Turnstile widget's secret
+                # (packages/backend/turnstile.ts), and no other secret. The
+                # retiring Turnstile secret is for revisions from before it.
                 Action: secretsmanager:GetSecretValue
-                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TurnstileSecretName}-??????"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-??????"
+                  - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TurnstileSecretName}-??????"
               - Effect: Allow
                 # The sign-in email, as raw MIME through SESv2 (see SenderRole).
                 Action: [ses:SendEmail, ses:SendRawEmail]
@@ -1990,11 +2001,14 @@ Resources:
                 Action: s3:PutObjectTagging
                 Resource: !Sub "${MailBucket.Arn}/media/*.thumb.jpg"
               - Effect: Allow
-                # The Anthropic API key. The secret is made by hand outside
-                # the stack (its value never passes through a template);
-                # the ?????? is the suffix Secrets Manager adds.
+                # The runtime secret, for the Anthropic API key. It is kept
+                # by hand outside the stack (its value never passes through
+                # a template); the ?????? is the suffix Secrets Manager adds.
+                # The retiring Anthropic secret is for versions from before it.
                 Action: secretsmanager:GetSecretValue
-                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AnthropicSecretName}-??????"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-??????"
+                  - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AnthropicSecretName}-??????"
               - Effect: Allow
                 # Naming a photo's place, at the city, to keep (places.reverse).
                 Action: geo-places:ReverseGeocode
@@ -2042,7 +2056,7 @@ Resources:
           TABLE: !Ref Table
           BUCKET: !Ref MailBucket
           SELF: !Sub "${AWS::StackName}-describe:live"
-          SECRET: !Ref AnthropicSecretName
+          SECRET: !Ref RuntimeSecretName
 
   DescribeStream:
     Type: AWS::Lambda::EventSourceMapping

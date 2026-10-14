@@ -185,8 +185,12 @@ export async function main(
             new GetFunctionConfigurationCommand({ FunctionName: functionName, Qualifier: priorVersion })
           )
         : config;
-      const expected = prior.Environment?.Variables ?? {},
+      const expected = { ...prior.Environment?.Variables },
         actual = config.Environment?.Variables ?? {};
+      // The describer reads the secret the stack names (RuntimeSecretName), so
+      // a promotion may move it off the live version's; a rollback may not.
+      if (priorVersion && name === 'Describe' && parameters.RuntimeSecretName)
+        expected.SECRET = parameters.RuntimeSecretName;
       if (
         !config.Role ||
         config.Role !== prior.Role ||

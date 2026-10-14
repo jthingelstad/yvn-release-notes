@@ -153,8 +153,18 @@ test('HTTP model adapter uses bounded fixed origin/no redirects and scrubbed err
   );
 });
 test('secret parser is injected/lazy, accepts synthetic key and never echoes malformed plaintext', async () => {
-  assert.equal(await d.keyFrom({ get: async () => '{"api_key":"sk-ant-fixture"}' }, 'secret-id'), 'sk-ant-fixture');
-  for (const raw of [undefined, '{"api_key":"placeholder"}', 'malformed private token', 'null', '[]'])
+  assert.equal(
+    await d.keyFrom({ get: async () => '{"ANTHROPIC_API_KEY":"sk-ant-fixture"}' }, 'secret-id'),
+    'sk-ant-fixture'
+  );
+  for (const raw of [
+    undefined,
+    '{"ANTHROPIC_API_KEY":""}',
+    '{"api_key":"sk-ant-fixture"}',
+    'malformed private token',
+    'null',
+    '[]'
+  ])
     await assert.rejects(() => d.keyFrom({ get: async () => raw }, 'synthetic'), {
       name: 'NoKey',
       message: 'Description key unavailable'
@@ -163,7 +173,7 @@ test('secret parser is injected/lazy, accepts synthetic key and never echoes mal
     source = worker.createSecretSource({
       async send(command: { input: Item }) {
         calls.push(command.input);
-        return { SecretString: '{"api_key":"sk-ant-fixture"}' };
+        return { SecretString: '{"ANTHROPIC_API_KEY":"sk-ant-fixture"}' };
       }
     } as never);
   assert.equal(await d.keyFrom(source, 'synthetic-id'), 'sk-ant-fixture');

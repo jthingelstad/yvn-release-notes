@@ -220,9 +220,8 @@ Where things are (each module's design comment explains its contract):
 - **Photo descriptions** (Jamie, 2026-10-09: "image descriptions to allow
   images to appear in search", Claude Haiku 5.5 through the Anthropic API)
   are off until the subscriber ticks "Describe my photos" (`describe` on
-  the profile). The API key is `api_key` in the secret
-  `yvn-release-notes-anthropic`, made by hand outside the stack. Jamie
-  keeps its value; agents never read it. `packages/backend/describe.ts` has the rest.
+  the profile). The API key is `ANTHROPIC_API_KEY` in the runtime secret
+  (see "Runtime secret" under Operating). `packages/backend/describe.ts` has the rest.
 - **Thumbnails** (Jamie, 2026-10-12: photos in the email) are made for
   every photo, opted in or not, once, when it is filed: about 640px, a
   JPEG under 80 KB, beside the original, with no EXIF or GPS. The email
@@ -392,10 +391,9 @@ Where things are (each module's design comment explains its contract):
   per-address, per-network and 200-an-hour total limits and their alarm
   stay as they are. Widget "Release Notes sign-in" (managed, site key
   `0x4AAAAAAFW0y7cvQQshNAwH`, public, domain notes.yourversionnumber.com),
-  made with the `cf` CLI. Its secret is `secret_key` in the secret
-  `yvn-release-notes-turnstile`, made by hand outside the stack like the
-  Anthropic one; agents never read it. Until it exists every check records
-  `unconfigured` and goes ahead (looked for again every five minutes). One
+  made with the `cf` CLI. Its secret is `TURNSTILE_SECRET_KEY` in the
+  runtime secret (see "Runtime secret" under Operating). Until it is there
+  every check records `unconfigured` and goes ahead (looked for again every five minutes). One
   token serves one address for five minutes and three uses
   (`TURNSTILE#`). The page loads Cloudflare's script only on focus or
   typing in the email field; tests and e2e stub it (`e2e/turnstile-stub.mjs`).
@@ -575,6 +573,18 @@ named native regressions and explicit obsolete implementation assumptions.
   on the web function's log group:
   `filter event = "turnstile" | stats count() by result, mode, codes`
   (add `| filter result != "pass"` to see what enforce would refuse).
+- **Runtime secret**: the credentials live in one Secrets Manager secret,
+  `yvn-release-notes-runtime` (stack parameter `RuntimeSecretName`), a
+  JSON object of `ANTHROPIC_API_KEY` (the describer) and
+  `TURNSTILE_SECRET_KEY` (the web function), as the Librarian keeps
+  `weekly-thing-librarian-runtime`. Jamie keeps it by hand in the
+  console: the stack does not own it, no deploy writes it, and agents
+  never read its value. Rotate a key by editing the secret: Turnstile
+  picks a new value up when a container starts (an empty one is looked
+  for again every five minutes); the describer reads it on each run. A
+  new credential is a new key in this secret, not a new secret. It
+  replaced `yvn-release-notes-anthropic` and
+  `yvn-release-notes-turnstile` on 2026-10-14.
 - DNS for `yourversionnumber.com` is at Namecheap; Jamie applies records by
   hand. The stack needs: the three DKIM CNAMEs (stack outputs
   `DkimRecord1-3`), an MX on the inbound subdomain to SES inbound, and an

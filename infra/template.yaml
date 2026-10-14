@@ -38,19 +38,6 @@ Parameters:
     Type: String
     Default: yvn-release-notes-runtime
     Description: The Secrets Manager secret holding the runtime credentials, ANTHROPIC_API_KEY (photo descriptions) and TURNSTILE_SECRET_KEY (the sign-in Turnstile widget). Kept by hand; no deploy writes it. An empty or missing key means that feature is not set up.
-
-  # The two secrets RuntimeSecretName replaced (2026-10-14). Their grants stay
-  # until the describer and web versions that read them are retired; then
-  # these go, with the secrets.
-  AnthropicSecretName:
-    Type: String
-    Default: yvn-release-notes-anthropic
-    Description: Retiring. The old secret holding api_key, read only by describer versions from before RuntimeSecretName.
-
-  TurnstileSecretName:
-    Type: String
-    Default: yvn-release-notes-turnstile
-    Description: Retiring. The old secret holding secret_key, read only by web revisions from before RuntimeSecretName.
   TurnstileMode:
     Type: String
     Default: ""
@@ -1432,12 +1419,9 @@ Resources:
                       mcp_deleting]
               - Effect: Allow
                 # The runtime secret, for the sign-in Turnstile widget's secret
-                # (packages/backend/turnstile.ts), and no other secret. The
-                # retiring Turnstile secret is for revisions from before it.
+                # (packages/backend/turnstile.ts), and no other secret.
                 Action: secretsmanager:GetSecretValue
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-??????"
-                  - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TurnstileSecretName}-??????"
+                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-??????"
               - Effect: Allow
                 # The sign-in email, as raw MIME through SESv2 (see SenderRole).
                 Action: [ses:SendEmail, ses:SendRawEmail]
@@ -2004,11 +1988,8 @@ Resources:
                 # The runtime secret, for the Anthropic API key. It is kept
                 # by hand outside the stack (its value never passes through
                 # a template); the ?????? is the suffix Secrets Manager adds.
-                # The retiring Anthropic secret is for versions from before it.
                 Action: secretsmanager:GetSecretValue
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-??????"
-                  - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AnthropicSecretName}-??????"
+                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-??????"
               - Effect: Allow
                 # Naming a photo's place, at the city, to keep (places.reverse).
                 Action: geo-places:ReverseGeocode

@@ -111,6 +111,9 @@ Where things are (each module's design comment explains its contract):
   production services. `workers/runtime.ts` supplies content-free runtime probes.
 - `web/` is the React app (`docs/WEB-APP.md`, Front end); Home Screen icons
   are drawn by `scripts/make_icons.mjs`.
+  UI glyphs use Lucide React through `web/src/components/icon.tsx` (2026-10-14).
+  Import only named icons; keep icon-only actions named for assistive technology,
+  with hover titles, visible focus and 44px targets. Brand marks remain their own artwork.
 - `packages/testing/{store,services}.ts` are fictional DynamoDB, mail, S3
   and invocation fakes. `tools/dev-server.ts` serves the built app and the
   actual native API against them. New DynamoDB request kinds also need exact

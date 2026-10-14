@@ -67,6 +67,39 @@ test('a photo goes with a new note, and a PDF joins it later', async ({ page }) 
   await expect(note.locator('.media a.file')).toHaveAttribute('href', /^\/dev-media\/media\/.*\.pdf$/);
 });
 
+test('note glyph actions support keyboard editing and explicit delete confirmation', async ({page}) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.goto('/today/');
+  await page.getByRole('textbox',{name:'Add to today',exact:true}).fill('A note for glyph controls.');
+  await page.getByRole('button',{name:'Save note',exact:true}).click();
+  const note = page.locator('article.note',{hasText:'A note for glyph controls.'});
+  await expect(note).toBeVisible();
+  for (const action of ['Edit','Add files','Delete']) {
+    const button = note.getByRole('button',{name:action,exact:true});
+    await expect(button).toHaveAttribute('title',action);
+    const bounds = await button.boundingBox();
+    expect(bounds.width).toBeGreaterThanOrEqual(44);
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+  }
+  await note.getByRole('button',{name:'Edit',exact:true}).focus();
+  await page.keyboard.press('Enter');
+  await expect(note.getByRole('textbox',{name:'Edit this note',exact:true})).toBeFocused();
+  await note.getByRole('textbox',{name:'Edit this note',exact:true}).fill('A note for glyph controls. Edited.');
+  await note.getByRole('button',{name:'Save',exact:true}).click();
+  await expect(note.locator('.text')).toContainText('Edited.');
+  await page.screenshot({path:'/tmp/yvn-lucide-note-actions.png',fullPage:true});
+  await note.getByRole('button',{name:'Delete',exact:true}).click();
+  await expect(note.getByText('Delete this note?',{exact:true})).toBeVisible();
+  await note.getByRole('button',{name:'Keep it',exact:true}).click();
+  await expect(note.getByRole('button',{name:'Edit',exact:true})).toBeVisible();
+  await note.getByRole('button',{name:'Delete',exact:true}).click();
+  await note.getByRole('button',{name:'Delete',exact:true}).click();
+  await expect(note).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test('a photo opens over the page and closes back to it', async ({ page }) => {
   await page.goto('/timeline/');
   const photo = page.locator('.media img').first();

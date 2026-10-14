@@ -73,6 +73,9 @@ test('Upcoming dates persist and remain usable on phone, tablet, desktop and lan
   await expect(page.getByRole('rowheader',{name:'Autumn trip',exact:false})).toBeVisible();
   await expect(page.getByLabel('Upcoming dates')).toContainText('Paris');
   expect((await (await context.request.get('/api/me')).json()).tz).toBe('America/Chicago');
+  await expect(page.getByRole('img',{name:'Birthday (every year)',exact:true})).toBeVisible();
+  await expect(page.getByRole('img',{name:'Anniversary (every year)',exact:true})).toBeVisible();
+  await expect(page.getByRole('img',{name:'Trip',exact:true})).toBeVisible();
 
   await page.getByRole('button',{name:'Add a date',exact:true}).click();
   await page.getByRole('combobox',{name:'Kind',exact:true}).selectOption('event');
@@ -90,6 +93,12 @@ test('Upcoming dates persist and remain usable on phone, tablet, desktop and lan
       await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
       await expect(page.getByRole('navigation',{name:'Main navigation'}).getByRole('link',{name:'Upcoming',exact:true})).toHaveAttribute('aria-current','page');
       expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth+1)).toBeTruthy();
+      for (const action of ['Edit Autumn trip','Delete Autumn trip']) {
+        const button = page.getByRole('button',{name:action,exact:true});
+        const bounds = await button.boundingBox();
+        expect(bounds.width).toBeGreaterThanOrEqual(44);
+        expect(bounds.height).toBeGreaterThanOrEqual(44);
+      }
       await page.screenshot({path:`/tmp/yvn-upcoming-${name}-${colorScheme}.png`,fullPage:true});
       await page.getByRole('button',{name:'Edit Autumn trip',exact:true}).click();
       await expect(page.getByLabel('Start date')).toHaveValue(today);
@@ -202,7 +211,10 @@ test('kind and tag filters combine, survive reloads and carry a tag into an exis
   await page.getByLabel('Tag (optional)',{exact:true}).fill('#SPS');
   await page.getByRole('button',{name:'Save date',exact:true}).click();
   await expect(page.getByRole('rowheader',{name:'Second team milestone',exact:false})).toContainText('#sps');
-  await page.getByRole('button',{name:'Edit Second team milestone',exact:true}).click();
+  const edit = page.getByRole('button',{name:'Edit Second team milestone',exact:true});
+  await edit.focus();
+  await expect(edit).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(page.getByLabel('Tag (optional)',{exact:true})).toHaveValue('sps');
   await page.getByLabel('Tag (optional)',{exact:true}).fill('');
   await page.getByRole('button',{name:'Save date',exact:true}).click();

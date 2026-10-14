@@ -11,6 +11,7 @@ import { sayFor, type Line, type Problem } from '../lib/say.ts';
 import type { Note } from '../lib/types.ts';
 import { ErrorLine, LineText, useFocusLater } from './common.tsx';
 import { NoteBody, NoteMedia, NoteMeta } from './notes.tsx';
+import { Icon } from './icon.tsx';
 
 export function useRefresh() {
   const client = useQueryClient();
@@ -118,14 +119,32 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
       <div className="actions" hidden={mode.is === 'edit'}>
         {mode.is === 'view' && (
           <>
-            <button className="quiet" type="button" onClick={() => setMode({ is: 'edit' })}>
-              Edit
+            <button
+              className="quiet icon-button"
+              type="button"
+              aria-label="Edit"
+              title="Edit"
+              onClick={() => setMode({ is: 'edit' })}
+            >
+              <Icon name="edit" />
             </button>
-            <button className="quiet" type="button" onClick={() => pick.current?.click()}>
-              Add files
+            <button
+              className="quiet icon-button"
+              type="button"
+              aria-label="Add files"
+              title="Add files"
+              onClick={() => pick.current?.click()}
+            >
+              <Icon name="files" />
             </button>
-            <button className="quiet" type="button" onClick={() => setMode({ is: 'ask' })}>
-              Delete
+            <button
+              className="quiet danger icon-button"
+              type="button"
+              aria-label="Delete"
+              title="Delete"
+              onClick={() => setMode({ is: 'ask' })}
+            >
+              <Icon name="delete" />
             </button>
           </>
         )}

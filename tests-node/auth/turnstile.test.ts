@@ -261,7 +261,7 @@ test('the stack points the web function and describer at the runtime secret, and
   assert.doesNotMatch(template, /SECRET: !Ref (Turnstile|Anthropic)SecretName/);
   assert.equal(template.match(/secret:\$\{RuntimeSecretName\}-\?\?\?\?\?\?/g)?.length, 2);
   assert.match(template, /TURNSTILE_MODE: !If \[HasTurnstileMode, !Ref TurnstileMode, !Ref AWS::NoValue\]/);
-  assert.equal(template.match(/secret:\$\{TurnstileSecretName\}-\?\?\?\?\?\?/g)?.length, 1);
+  assert.doesNotMatch(template, /(Turnstile|Anthropic)SecretName/);
   const csp = /ContentSecurityPolicy: !Sub "([^"]+)"/.exec(template)![1]!;
   assert.match(csp, /script-src 'self' https:\/\/challenges\.cloudflare\.com;/);
   assert.match(csp, /frame-src https:\/\/challenges\.cloudflare\.com;/);

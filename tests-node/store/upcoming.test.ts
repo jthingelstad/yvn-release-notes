@@ -8,6 +8,7 @@ import type { UpcomingEntry } from '../../packages/domain/upcoming.ts';
 const entry: UpcomingEntry = {
   id: 'date',
   kind: 'event',
+  tag: null,
   title: 'Concert',
   date: '2026-10-20',
   year: null,

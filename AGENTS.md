@@ -291,6 +291,11 @@ Where things are (each module's design comment explains its contract):
   checks and the current session/account proof on writes. Include them in all
   owner exports and account deletion; never log titles, dates or destinations.
   Existing MCP scopes and tools do not read or write Upcoming.
+- **Grouping dates** (2026-10-14): one optional tag per entry, such as `#sps`,
+  normalized like note hashtags. Kind and Tag filters combine on Upcoming,
+  including past events. A tagged entry can start today's editable note draft
+  with its hashtag, preserving existing text; it never creates a note on its own.
+  Upcoming tags remain separate from journal tags until written in a saved note.
 
 ### The email
 

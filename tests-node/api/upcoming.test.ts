@@ -7,6 +7,7 @@ import { FakeObjects, FakeMail, FakeInvocations } from '../../packages/testing/s
 import * as auth from '../../packages/backend/auth.ts';
 import type { ApiContext } from '../../packages/backend/sessions.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
+import { markdown } from '../../packages/backend/export.ts';
 const now = Date.parse('2026-10-13T12:00:00Z') / 1000,
   origin = 'https://notes.example.com';
 const birthday = { kind: 'birthday', title: 'Alex', date: '10-20', year: 1976 };
@@ -84,6 +85,30 @@ test('all kinds create, read, update and delete privately without touching notes
   assert.equal((await f.store.profile('u'))?.upcoming_count, 3);
   assert.doesNotMatch(JSON.stringify(f.logs), /Alex|Paris|Concert|@example/);
 });
+test('optional tags normalize, persist, clear and export without entering journal tags or logs', async () => {
+  const f = await fixture();
+  const saved = (await f.call('POST', undefined, { ...birthday, tag: ' #SPS ' })).data;
+  assert.equal(saved.tag, 'sps');
+  assert.equal((await f.call('GET')).data.entries[0].tag, 'sps');
+  const exported = (await f.call('GET', '/api/export')).data;
+  assert.equal(exported.upcoming[0].tag, 'sps');
+  assert.ok(markdown(exported).includes('Tag: \\#sps.'));
+  assert.deepEqual((await f.call('GET', '/api/tags')).data.tags, []);
+  for (const [revision, tag] of [
+    [1, 'Équipe-2016'],
+    [2, ''],
+    [3, null],
+    [4, undefined]
+  ] as const) {
+    const result = await f.call('PUT', '/api/upcoming/' + saved.id, { ...birthday, tag, revision });
+    assert.equal(result.status, 200);
+    assert.equal(result.data.tag, revision === 1 ? 'equipe-2016' : null);
+  }
+  // Older saved rows have no tag field and require no migration.
+  f.store.seed({ pk: 'USER#u', sk: 'UPCOMING#legacy', ...birthday, id: 'legacy', revision: 1 });
+  assert.equal((await f.call('GET')).data.entries.find((e: Item) => e.id === 'legacy').tag, null);
+  assert.doesNotMatch(JSON.stringify(f.logs), /sps|SPS|quipe/);
+});
 test('signed-out, wrong Origin, no-account and deleting-account requests cannot write', async () => {
   const f = await fixture();
   assert.equal((await f.call('GET', undefined, undefined, '')).status, 401);
@@ -119,6 +144,19 @@ test('invalid dates, years, ranges, destinations, reminder bounds and unapproved
     { ...birthday, reminders: ['1'] },
     { ...birthday, reminders: [0, 1, 2, 3, 4, 5, 6] },
     { ...birthday, email: 'yes' },
+    ...[
+      '#',
+      '#sps #family',
+      'sps family',
+      'sps/family',
+      'two--hyphens',
+      '123',
+      'a'.repeat(51),
+      'a\nb',
+      '😀',
+      true,
+      []
+    ].map((tag) => ({ ...birthday, tag })),
     { ...birthday, user_id: 'b' },
     { ...birthday, auto_timezone: true },
     { ...birthday, place },

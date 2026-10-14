@@ -10,7 +10,8 @@
  * PRODUCT#UPDATES / UPDATE#<id> holds operator drafts/history; DATE#<YYYY-MM-DD>
  * holds the sole scheduled text snapshot for that subscriber-local email day.
  * Both are outside USER# archives; revision CAS and date-slot ownership are atomic.
- * USER#<owner> / UPCOMING#<id> holds private personal dates, separate from notes.
+ * USER#<owner> / UPCOMING#<id> holds private personal dates and an optional
+ * normalized tag (null when absent), separate from notes; legacy rows omit tag.
  * PROFILE.upcoming_count and entry revision change atomically (200 retained
  * entries per owner); web transactions also prove the live account/session.
  */

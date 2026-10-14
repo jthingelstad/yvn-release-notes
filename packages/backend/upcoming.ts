@@ -4,6 +4,7 @@ import { reject } from './sessions.ts';
 import { clean } from './places.ts';
 import { validDay, parseDay, formatDay } from '../domain/dates.ts';
 import { pythonTrim, codePointLength } from '../domain/unicode.ts';
+import { MAX_TAG, slug } from '../domain/tags.ts';
 import { annual, defaultReminders, UPCOMING_KINDS, UPCOMING_TITLE_MAX, type UpcomingKind } from '../domain/upcoming.ts';
 import type { Item } from './store-types.ts';
 
@@ -11,7 +12,7 @@ export function upcomingContent(value: Item, today: string) {
   if (
     Object.keys(value).some(
       (field) =>
-        !['kind', 'title', 'date', 'year', 'end_date', 'place', 'email', 'reminders', 'revision'].includes(field)
+        !['kind', 'title', 'tag', 'date', 'year', 'end_date', 'place', 'email', 'reminders', 'revision'].includes(field)
     )
   )
     reject(400, 'upcoming-fields');
@@ -21,6 +22,16 @@ export function upcomingContent(value: Item, today: string) {
   const title = pythonTrim(value.title);
   if (!title || codePointLength(title) > UPCOMING_TITLE_MAX || /[\p{Cc}\u2028\u2029]/u.test(title))
     reject(400, 'upcoming-title');
+  let tag: string | null = null;
+  if (value.tag != null) {
+    if (typeof value.tag !== 'string') reject(400, 'upcoming-tag');
+    const raw = pythonTrim(value.tag).replace(/^#/, '');
+    if (raw) {
+      tag = slug(raw);
+      if (codePointLength(raw) > MAX_TAG || !/^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(raw) || !/[a-z]/.test(tag))
+        reject(400, 'upcoming-tag');
+    } else if (pythonTrim(value.tag)) reject(400, 'upcoming-tag');
+  }
   const date = value.date;
   if (
     typeof date !== 'string' ||
@@ -59,6 +70,7 @@ export function upcomingContent(value: Item, today: string) {
   return {
     kind,
     title,
+    tag,
     date,
     year: year as number | null,
     end_date: end_date as string | null,

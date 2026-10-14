@@ -1449,6 +1449,9 @@ Resources:
                   - s3:PutObject
                   - s3:PutObjectTagging
                   - s3:GetObjectTagging
+                  # Native attachment checks bind tags to the exact uploaded
+                  # version; ordinary GetObjectTagging does not authorize it.
+                  - s3:GetObjectVersionTagging
                   - s3:GetObjectVersion
                   - s3:DeleteObjectVersion
                 Resource: !Sub "${MailBucket.Arn}/media/*/web/*"

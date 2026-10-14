@@ -390,6 +390,8 @@ stopped accounts and the daily-send claim retain their existing behavior.
 
 The page shows annual dates' next occurrence, active trips and future events;
 completed trips/events remain under **Past events**, editable or deletable.
+Each event occupies one compact table row, ordered by occurrence date ascending
+(including past events). Tables scroll horizontally within the page on phones.
 Trips store a destination only in this first stage. They do not change the
 account's saved home, time zone, forecast or default note location. Automatic
 travel switching and associations between an occasion and written notes are
@@ -466,7 +468,9 @@ export preserves provenance. `workers/capture.ts` is private, invoked only by MC
 with no public web route or ability to authenticate cookie writes.
 
 The **Users** link in administration opens a read-only subscriber overview with
-address search, status filtering, totals and reload. It shows email status,
+address search, status filtering, totals and reload. Each subscriber occupies
+one compact table row. Column headings sort in either direction, with email
+ascending by default and missing dates last in both directions. It shows email status,
 schedule/time zone, last sent local date, last addition time, join time, entry
 count and distinct journal-day count. Active means daily sending is enabled,
 not proof of delivery or reading. Pauses use each subscriber's current local

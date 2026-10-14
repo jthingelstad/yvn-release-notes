@@ -508,22 +508,40 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
 .update-preview h2 { font-size: 22px; line-height: 1.2; font-weight: 800; color: var(--ink); margin: 0 0 12px; }
 .update-preview .update-words { font-size: 17px; line-height: 1.5; margin: 0; }
 
-.admin-nav{gap:1rem;flex-wrap:wrap;margin:1.5rem 0}.admin-nav [aria-current=page]{font-weight:700}.subscriber-list{list-style:none;padding:0}.subscriber-list>li{margin:2.5rem 0}.subscriber-list h2{font-size:1.15rem;overflow-wrap:anywhere}.subscriber-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.subscriber-facts dt{font-size:.85rem;color:var(--ink-2)}.subscriber-facts dd{margin:.2rem 0 0;overflow-wrap:anywhere}
-.admin-filters{margin:1.5rem 0}
+.admin-nav { gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0; }
+.admin-nav [aria-current=page] { font-weight: 700; }
+.admin-filters { display: flex; flex-wrap: wrap; gap: 16px 28px; margin: 20px 0 12px; }
+.admin-filters label:first-child { flex: 1 1 240px; }
+.admin-filters label:last-child { flex: 0 1 200px; }
 
-/* Personal dates: type on paper, with a simple editor and an ordered list. */
-.upcoming-toolbar { margin: 28px 0; }
-.upcoming-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 32px; }
-.upcoming-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
-.upcoming-copy { min-width: 0; overflow-wrap: anywhere; }
-.upcoming-copy h3 { font-size: 25px; margin: 6px 0 8px; }
-.upcoming-copy p { margin: 4px 0; }
-.upcoming-copy .eyebrow { font-size: 12px; color: var(--ink-2); }
-.upcoming-actions { flex: none; gap: 16px; }
+/* Compact tables keep a row per record, with contained scrolling on phones. */
+.table-scroll { max-width: 100%; min-width: 0; overflow-x: auto; margin: 12px 0; }
+.data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; line-height: 1.4; }
+.data-table th, .data-table td { padding: 8px 20px 8px 0; vertical-align: middle; }
+.data-table tr > :last-child { padding-right: 0; }
+.data-table thead th { font-size: 13px; font-weight: 700; color: var(--ink-2); white-space: nowrap; }
+.data-table tbody th { font-weight: 600; }
+.table-detail { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--ink-2); }
+.table-date { min-width: 120px; font-variant-numeric: tabular-nums; }
+.table-event { min-width: 220px; max-width: 360px; overflow-wrap: anywhere; }
+.table-email { min-width: 170px; max-width: 260px; overflow-wrap: anywhere; }
+.table-number { font-variant-numeric: tabular-nums; }
+.table-sort { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+.table-sort span { color: var(--blue); }
+.table-sort:hover { color: var(--blue); }
+.users-table { min-width: 960px; }
+.users-table td { max-width: 180px; }
+.upcoming-table { min-width: 720px; }
+.upcoming-table td:nth-child(3), .upcoming-table td:nth-child(4) { white-space: nowrap; }
+
+/* Personal dates: type on paper, with a simple editor and date-ordered rows. */
+.upcoming-toolbar { margin: 24px 0 8px; }
+.upcoming-actions { flex-wrap: nowrap; gap: 16px; }
+.upcoming-actions .quiet { padding: 8px 0; }
 .upcoming-empty { max-width: 32rem; font-size: 22px; line-height: 1.5; }
 .upcoming-past { margin-top: 44px; }
 .upcoming-past summary { cursor: pointer; min-height: 44px; font-weight: 700; }
-.upcoming-past .upcoming-list { margin-top: 24px; }
+.upcoming-past .table-scroll { margin-top: 8px; }
 .upcoming-footnote { margin-top: 44px; }
 .upcoming-form { margin-bottom: 44px; }
 .upcoming-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
@@ -531,8 +549,5 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
 .upcoming-date-fields label { min-width: 0; }
 .upcoming-date-fields input { min-width: 0; }
 @media (max-width: 760px) {
-  .upcoming-list li { flex-direction: column; gap: 0; }
-  .upcoming-actions { gap: 24px; }
-  .upcoming-copy h3 { font-size: 22px; }
   .upcoming-date-fields { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
 }

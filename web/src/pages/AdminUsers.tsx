@@ -5,6 +5,18 @@ import { Bar, ErrorLine, Loading, useTitle } from '../components/common.tsx';
 import { AdminNav } from '../components/admin-nav.tsx';
 import { get, ApiError } from '../lib/api.ts';
 import type { SubscriberOverview } from '../../../packages/backend/subscriber-overview.ts';
+type SortColumn =
+  'email' | 'status' | 'entries' | 'days' | 'last_added_at' | 'last_sent_date' | 'send_time' | 'joined_at';
+const COLUMNS: { key: SortColumn; label: string }[] = [
+  { key: 'email', label: 'Email address' },
+  { key: 'status', label: 'Email status' },
+  { key: 'entries', label: 'Entries' },
+  { key: 'days', label: 'Days' },
+  { key: 'last_added_at', label: 'Last added' },
+  { key: 'last_sent_date', label: 'Last email' },
+  { key: 'send_time', label: 'Daily send' },
+  { key: 'joined_at', label: 'Joined' }
+];
 const statusName = (user: SubscriberOverview) => {
   if (user.status === 'active') return 'Receiving emails';
   if (user.status === 'paused') return `Paused through ${user.pause_through}`;
@@ -33,11 +45,34 @@ export function AdminUsers() {
     queryFn: () => get<{ users: SubscriberOverview[]; as_of: string }>('/api/admin/users')
   });
   const [search, setSearch] = useState(''),
-    [status, setStatus] = useState('all');
+    [status, setStatus] = useState('all'),
+    [sort, setSort] = useState<{ column: SortColumn; direction: 'ascending' | 'descending' }>({
+      column: 'email',
+      direction: 'ascending'
+    });
   const all = users.data?.users ?? [];
-  const filtered = all.filter(
-    (u) => u.email.toLowerCase().includes(search.trim().toLowerCase()) && (status === 'all' || u.status === status)
-  );
+  const filtered = all
+    .filter(
+      (u) => u.email.toLowerCase().includes(search.trim().toLowerCase()) && (status === 'all' || u.status === status)
+    )
+    .toSorted((a, b) => {
+      const left = sort.column === 'status' ? statusName(a) : a[sort.column],
+        right = sort.column === 'status' ? statusName(b) : b[sort.column];
+      // Missing activity stays last in either direction.
+      if (left === null || right === null)
+        return left === right ? a.email.localeCompare(b.email) : left === null ? 1 : -1;
+      const order =
+        typeof left === 'number' && typeof right === 'number'
+          ? left - right
+          : String(left).localeCompare(String(right));
+      return (sort.direction === 'ascending' ? order : -order) || a.email.localeCompare(b.email);
+    });
+  function sortBy(column: SortColumn) {
+    setSort((current) => ({
+      column,
+      direction: current.column === column && current.direction === 'ascending' ? 'descending' : 'ascending'
+    }));
+  }
   return (
     <>
       <Bar current="/settings/" />
@@ -61,11 +96,6 @@ export function AdminUsers() {
             receiving emails · {all.filter((u) => u.status === 'paused').length} paused ·{' '}
             {all.filter((u) => u.status === 'stopped').length} stopped
           </p>
-          <p className="hint">
-            Email status shows whether daily sends are enabled. Last email is its local date sent, without open or click
-            tracking. Entry totals include imports; last added includes import activity. Dates and times below use each
-            person’s time zone.
-          </p>
           <div className="roomy admin-filters">
             <label>
               Find an email address
@@ -88,44 +118,52 @@ export function AdminUsers() {
           <p className="hint" role="status">
             Showing {filtered.length} of {all.length} users.
           </p>
-          <ul className="subscriber-list">
-            {filtered.map((user) => (
-              <li key={user.email}>
-                <h2>{user.email}</h2>
-                <p>{statusName(user)}</p>
-                <dl className="subscriber-facts">
-                  <div>
-                    <dt>Last added</dt>
-                    <dd>{dateTime(user.last_added_at, user.tz)}</dd>
-                  </div>
-                  <div>
-                    <dt>Entries</dt>
-                    <dd>
-                      {user.entries} across {user.days} days
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Last email</dt>
-                    <dd>{user.last_sent_date ?? 'None recorded'}</dd>
-                  </div>
-                  <div>
-                    <dt>Daily send</dt>
-                    <dd>
-                      {user.send_time} · {user.tz}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Joined</dt>
-                    <dd>{dateTime(user.joined_at, user.tz)}</dd>
-                  </div>
-                </dl>
-              </li>
-            ))}
-          </ul>
+          <div className="table-scroll" role="region" aria-label="Users table" tabIndex={0}>
+            <table className="data-table users-table" aria-label="Users">
+              <thead>
+                <tr>
+                  {COLUMNS.map(({ key, label }) => (
+                    <th key={key} scope="col" aria-sort={sort.column === key ? sort.direction : undefined}>
+                      <button className="table-sort" type="button" onClick={() => sortBy(key)}>
+                        {label}{' '}
+                        <span aria-hidden="true">
+                          {sort.column === key ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}
+                        </span>
+                      </button>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((user) => (
+                  <tr key={user.email}>
+                    <th scope="row" className="table-email">
+                      {user.email}
+                    </th>
+                    <td>{statusName(user)}</td>
+                    <td className="table-number">{user.entries}</td>
+                    <td className="table-number">{user.days}</td>
+                    <td>{dateTime(user.last_added_at, user.tz)}</td>
+                    <td>{user.last_sent_date ?? 'None recorded'}</td>
+                    <td>
+                      {user.send_time}
+                      <span className="table-detail">{user.tz}</span>
+                    </td>
+                    <td>{dateTime(user.joined_at, user.tz)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {!filtered.length && <p className="hint">{all.length ? 'No users match these filters.' : 'No users yet.'}</p>}
           <button className="quiet" type="button" disabled={users.isFetching} onClick={() => users.refetch()}>
             Reload users
           </button>
+          <p className="hint">
+            Email status shows whether daily sends are enabled. Last email is its local date sent, without open or click
+            tracking. Entry totals include imports; last added includes import activity. Dates and times use each
+            person’s time zone.
+          </p>
           <p className="hint">
             Updated {dateTime(users.data?.as_of ?? null, Intl.DateTimeFormat().resolvedOptions().timeZone)} (your time).
           </p>

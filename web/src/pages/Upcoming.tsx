@@ -5,7 +5,7 @@ import { lazy, Suspense, useRef, useState, type FormEvent } from 'react';
 import { Bar, ErrorLine, Failed, Loading, useBusy, useFocusLater, useTitle } from '../components/common.tsx';
 import { api } from '../lib/api.ts';
 import { upcomingQuery } from '../lib/queries.ts';
-import { dayName } from '../lib/format.ts';
+import { shortDay } from '../lib/format.ts';
 import type { Place } from '../lib/types.ts';
 import {
   annual,
@@ -51,9 +51,11 @@ export function Upcoming() {
   const [busy, run] = useBusy(),
     heading = useRef<HTMLHeadingElement>(null),
     focusLater = useFocusLater();
-  const entries = query.data?.entries ?? [],
+  const entries = (query.data?.entries ?? []).toSorted(
+      (a, b) => a.occurrence.date.localeCompare(b.occurrence.date) || a.title.localeCompare(b.title)
+    ),
     future = entries.filter((e) => e.occurrence.status !== 'past'),
-    past = entries.filter((e) => e.occurrence.status === 'past').toReversed();
+    past = entries.filter((e) => e.occurrence.status === 'past');
   function choose(entry: UpcomingView | null) {
     setSelected(entry);
     setProblem(null);
@@ -72,49 +74,72 @@ export function Upcoming() {
       setNotice('Date deleted.');
     });
   }
-  function list(items: UpcomingView[]) {
+  function list(items: UpcomingView[], label: string) {
+    const year = Number(query.data?.today.slice(0, 4));
     return (
-      <ul className="upcoming-list">
-        {items.map((entry) => (
-          <li key={entry.id}>
-            <div className="upcoming-copy">
-              <p className="eyebrow">
-                {entry.occurrence.status === 'ongoing'
-                  ? 'Happening now'
-                  : entry.occurrence.status === 'today'
-                    ? 'Today'
-                    : dayName(entry.occurrence.date, Number(query.data?.today.slice(0, 4)))}
-              </p>
-              <h3>{entry.title}</h3>
-              <p>{entry.occurrence.line}</p>
-              <p className="hint">
-                {NAMES[entry.kind]}
-                {annual(entry.kind) ? ' · Every year' : ''} · {entry.email ? 'In your daily email' : 'Web only'}
-              </p>
-            </div>
-            <div className="row upcoming-actions">
-              <button
-                className="quiet"
-                type="button"
-                disabled={busy}
-                aria-label={`Edit ${entry.title}`}
-                onClick={() => choose(entry)}
-              >
-                Edit
-              </button>
-              <button
-                className="quiet danger"
-                type="button"
-                disabled={busy}
-                aria-label={`Delete ${entry.title}`}
-                onClick={() => remove(entry)}
-              >
-                Delete
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <div className="table-scroll" role="region" aria-label={label} tabIndex={0}>
+        <table className="data-table upcoming-table" aria-label={label}>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Event</th>
+              <th scope="col">Kind</th>
+              <th scope="col">Email</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((entry) => (
+              <tr key={entry.id}>
+                <td className="table-date">
+                  <time dateTime={entry.occurrence.date}>{shortDay(entry.occurrence.date, year)}</time>
+                  {entry.occurrence.end_date && entry.occurrence.end_date !== entry.occurrence.date && (
+                    <>
+                      {' '}
+                      – <time dateTime={entry.occurrence.end_date}>{shortDay(entry.occurrence.end_date, year)}</time>
+                    </>
+                  )}
+                  {(entry.occurrence.status === 'ongoing' || entry.occurrence.status === 'today') && (
+                    <span className="table-detail">
+                      {entry.occurrence.status === 'ongoing' ? 'Happening now' : 'Today'}
+                    </span>
+                  )}
+                </td>
+                <th scope="row" className="table-event">
+                  {entry.occurrence.line}
+                </th>
+                <td>
+                  {NAMES[entry.kind]}
+                  {annual(entry.kind) && <span className="table-detail">Every year</span>}
+                </td>
+                <td>{entry.email ? 'Daily email' : 'Web only'}</td>
+                <td>
+                  <div className="row upcoming-actions">
+                    <button
+                      className="quiet"
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Edit ${entry.title}`}
+                      onClick={() => choose(entry)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="quiet danger"
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Delete ${entry.title}`}
+                      onClick={() => remove(entry)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     );
   }
   return (
@@ -169,7 +194,7 @@ export function Upcoming() {
           </p>
           <section className="section wide" aria-label="Upcoming dates">
             {future.length ? (
-              list(future)
+              list(future, 'Upcoming events')
             ) : (
               <p className="upcoming-empty">
                 {past.length
@@ -181,7 +206,7 @@ export function Upcoming() {
           {past.length > 0 && (
             <details className="upcoming-past">
               <summary>Past events ({past.length})</summary>
-              {list(past)}
+              {list(past, 'Past events')}
             </details>
           )}
           <p className="hint upcoming-footnote">

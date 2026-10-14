@@ -269,8 +269,8 @@ export function createInvocations(region = 'us-east-1'): Invocations {
   };
 }
 
-/** The Turnstile widget's secret: `secret_key` in a hand-made secret (no
- * stack resource). A secret or key that is not there yet is '' (checks record
+/** The Turnstile widget's secret: `TURNSTILE_SECRET_KEY` in the hand-kept
+ * runtime secret (no stack resource). A secret or key that is not there yet is '' (checks record
  * `unconfigured`), looked for again after five minutes; a value is kept for
  * the container's life. Other failures throw (checks record `error`). */
 export function createTurnstileSecret(
@@ -292,7 +292,7 @@ export function createTurnstileSecret(
     let value = '';
     try {
       const parsed: unknown = JSON.parse(raw ?? '{}');
-      const key = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>).secret_key : '';
+      const key = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>).TURNSTILE_SECRET_KEY : '';
       value = typeof key === 'string' ? key.trim() : '';
     } catch {
       value = '';

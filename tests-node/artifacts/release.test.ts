@@ -292,6 +292,21 @@ test('worker candidates require actual immutable code, role and complete owner e
     false
   );
 });
+test('a describer candidate must read the secret the stack names, which may differ from the live one', async (t) => {
+  const f = await fixture(t);
+  f.parameters.RuntimeSecretName = 'fictional-runtime-secret';
+  await f.phase('prepare-workers');
+  f.publish();
+  await assert.rejects(f.phase('promote-workers'), /ownership\/environment Describe/);
+  assert.equal(f.probes(), 4, 'the four workers before it, never the describer');
+  (f.configs['Describe:2']!.Environment as { Variables: Record<string, string> }).Variables.SECRET =
+    'fictional-runtime-secret';
+  const target = await f.phase('promote-workers');
+  assert.equal(target.DescribeNativeLiveVersion, '2');
+  f.serveWorkers('2');
+  const rollback = await f.phase('rollback-workers');
+  assert.equal(rollback.DescribeNativeLiveVersion, '1', 'the old version keeps its own secret on rollback');
+});
 test('worker rollback refuses stale build metadata and alias drift rather than using an old receipt', async (t) => {
   const f = await fixture(t);
   await f.phase('prepare-workers');

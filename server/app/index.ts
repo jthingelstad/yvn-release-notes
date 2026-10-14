@@ -15,7 +15,7 @@ const region = process.env.AWS_REGION ?? 'us-east-1',
   invocations = createInvocations(region),
   turnstile = {
     mode: process.env.TURNSTILE_MODE,
-    secret: createTurnstileSecret(process.env.TURNSTILE_SECRET ?? '', region)
+    secret: createTurnstileSecret(process.env.RUNTIME_SECRET ?? '', region)
   };
 listen(
   createApp({

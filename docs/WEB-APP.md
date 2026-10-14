@@ -280,9 +280,16 @@ no image dependency or new CSP exception is required.
   payment and USB. The e2e test records Chromium's fake microphone.
 - **Home Screen**: `web/public/manifest.webmanifest` (standalone, opening
   on `/today/`) and the icons in `web/public/icons/`, drawn by
-  `scripts/make_icons.mjs` (the version number's "v" and its tangerine
-  dot). No service worker: every page needs the API, and one would only
-  risk an old build. On an iPhone the Home Screen app keeps its own
+  `scripts/make_icons.mjs`: a cobalt "v", its tangerine dot and two note
+  lines on warm paper. The font-independent shapes in
+  `web/src/lib/brand-mark.ts` also draw the small decorative mark beside
+  "Release Notes" in every header, using the theme's blue in dark mode.
+  [The logo files](BRAND.md) include scalable masters and reusable PNGs
+  through 4096px, with transparent or warm-paper backgrounds.
+  Favicons have their own 16px and 32px renders; Home Screen icons have
+  more breathing room, and the maskable icon keeps the whole mark inside
+  its central safe circle. No service worker: every page needs the API,
+  and one would only risk an old build. On an iPhone the Home Screen app keeps its own
   cookies, so the emailed link signs in Safari, not the app; there the
   sign-in page points at the code.
 - **Page counts** (`lib/pagecount.ts`) go to Tinylytics on each page shown,

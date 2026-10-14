@@ -42,8 +42,11 @@ a:hover { color: var(--blue-hover); }
 strong { color: var(--ink); }
 
 /* the bar along the top */
-.bar { display: flex; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; font-size: 15px; font-weight: 600; }
-.brand { font-weight: 800; font-size: 18px; margin-right: auto; color: var(--ink); text-decoration: none; white-space: nowrap; }
+.bar { display: flex; align-items: center; gap: 6px 16px; flex-wrap: wrap; font-size: 15px; font-weight: 600; }
+.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 18px; margin-right: auto; color: var(--ink); text-decoration: none; white-space: nowrap; }
+.brand-mark { width: 26px; height: 26px; flex: none; }
+.brand-mark-blue { fill: var(--blue); }
+.brand-mark-dot { fill: var(--orange); }
 .bar a:not(.brand) { text-decoration: none; padding: 4px 0; min-height: 24px; }
 .bar a[aria-current="page"] { color: var(--ink); text-decoration: underline; text-decoration-color: var(--orange); text-decoration-thickness: 3px; text-underline-offset: 6px; }
 /* The router marks the name too, on the front page; it stays plain. */
@@ -246,7 +249,7 @@ a.tag { white-space: nowrap; }
 :focus-visible { outline: 2px solid var(--blue); outline-offset: 5px; }
 .primary-nav { display: flex; gap: 20px; }
 .primary-nav a { display: flex; gap: 13px; align-items: center; }
-.bar--app .brand { font-size: 26px; letter-spacing: -.04em; }
+.bar--app .brand { font-size: 24px; letter-spacing: -.04em; }
 .rail-signout { display: flex; align-items: center; gap: 13px; text-decoration: none; }
 main:has(.bar--app) { max-width: 1180px; margin-left: 248px; padding: 64px 72px 72px; }
 .bar--app { position: fixed; inset: 0 auto 0 0; width: 248px; padding: 40px 28px; align-items: flex-start; flex-direction: column; flex-wrap: nowrap; }
@@ -287,7 +290,8 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
 @media (min-width: 761px) and (max-width: 1100px) {
   main:has(.bar--app) { margin-left: 210px; padding: 48px 36px 60px; }
   .bar--app { width: 210px; padding: 36px 22px; }
-  .bar--app .brand { font-size: 23px; }
+  .bar--app .brand { font-size: 21px; gap: 6px; }
+  .bar--app .brand-mark { width: 24px; height: 24px; }
   .note-tools { gap: 10px 16px; }
 }
 @media (max-width: 760px) {

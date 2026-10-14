@@ -6,6 +6,7 @@ import { sayFor, type Line, type Problem } from '../lib/say.ts';
 import { api } from '../lib/api.ts';
 import { useSignedInAs } from '../lib/nav.ts';
 import { Icon, type IconName } from './icon.tsx';
+import { BrandMark } from './brand-mark.tsx';
 import { signedIn, store } from '../lib/storage.ts';
 
 // A same-site address as a router link: path, ?query and #hash.
@@ -58,6 +59,7 @@ export function Bar({ nav = true, current, children }: { nav?: boolean; current?
   return (
     <header className={nav ? 'bar bar--app' : 'bar'}>
       <Link className="brand" to={nav ? '/today/' : '/'}>
+        <BrandMark />
         Release Notes
       </Link>
       {nav && (

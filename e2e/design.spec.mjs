@@ -9,6 +9,8 @@ test.beforeAll(async ({ browser }, info) => {
   const address = `design-${Date.now()}@example.com`;
   await page.locator('#start-form [name=email]').fill(address);
   await page.getByRole('button', { name: 'Send me a link' }).click();
+  // The code form appears after the response; reading captured mail sooner races it.
+  await expect(page.locator('#code-form')).toBeVisible();
   const email = await (await context.request.get(`/dev-mail/?to=${encodeURIComponent(address)}`)).text();
   await page.locator('#code-form [name=code]').fill(email.match(/type this code where you asked: (\d{6})/)[1]);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();

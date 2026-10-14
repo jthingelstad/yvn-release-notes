@@ -1,9 +1,11 @@
 // Rendered responsive/appearance checks against fictional local data only.
 import { test, expect } from '@playwright/test';
+import { stubTurnstile } from './turnstile-stub.mjs';
 test.describe.configure({mode:'serial'});
 let cookies;
 test.beforeAll(async ({ browser }, info) => {
   const context = await browser.newContext({ baseURL: info.project.use.baseURL });
+  await stubTurnstile(context);
   const page = await context.newPage();
   await page.goto('/#sign-in');
   const address = `design-${Date.now()}@example.com`;
@@ -28,6 +30,7 @@ test.beforeAll(async ({ browser }, info) => {
   cookies = await context.cookies();
   await context.close();
 });
+test.beforeEach(({ context }) => stubTurnstile(context));
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 for (const size of [{width:320,height:740},{width:390,height:844},{width:768,height:1024},{width:844,height:390},{width:1440,height:1000}]) {
   for (const colorScheme of ['light', 'dark']) {

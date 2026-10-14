@@ -13,6 +13,7 @@ export const SAY: Record<string, Line> = {
   email: 'That doesn’t look like an email address.',
   limited: 'That’s a lot of sign-in emails for one hour. Try again a little later.',
   'mail-failed': 'We couldn’t send the email just now. Try again in a minute.',
+  turnstile: 'We couldn’t check that a person asked for this email. Reload the page and try again.',
   'email-and-code': 'Type the six digits from the email.',
   'wrong-code': 'That code doesn’t match.',
   'too-many-tries': 'Too many wrong codes. Send yourself a new one.',

@@ -19,6 +19,7 @@ import { api } from '../lib/api.ts';
 import { browserZone, longDate } from '../lib/format.ts';
 import { useGo, useSignedInAs } from '../lib/nav.ts';
 import { home, pendingBirthday, signedIn, store } from '../lib/storage.ts';
+import { useTurnstile } from '../lib/turnstile.ts';
 import type { Sample } from '../lib/types.ts';
 
 // One of ask (the birthday), number (it explained, then the email), signin
@@ -76,6 +77,8 @@ export function Home() {
   const email = useRef<HTMLInputElement>(null);
   const code = useRef<HTMLInputElement>(null);
   const youAre = useRef<HTMLHeadingElement>(null);
+  // Cloudflare's check, loaded once someone starts on the email field.
+  const { slotRef, turnstile } = useTurnstile('signin');
 
   // Read inside answers that arrive later.
   const now = useRef({ mode: null as Mode | null, before: 'ask' as Mode, explained: false, view: 0, resending: false });
@@ -184,7 +187,10 @@ export function Home() {
     runStart(async () => {
       startProblem.clear();
       const address = email.current!.value.trim();
-      const r = await api('POST', '/api/auth/start', { email: address });
+      const r = await api('POST', '/api/auth/start', {
+        email: address,
+        turnstile_token: await turnstile.tokenFor(address)
+      });
       if (r.status !== 202) return startProblem.show(r.data, null, email.current?.form);
       store.set('rn-email', address);
       store.set('rn-before', now.current.mode || 'ask');
@@ -198,7 +204,11 @@ export function Home() {
     now.current.resending = true;
     codeProblem.clear();
     setResent('');
-    const r = await api('POST', '/api/auth/start', { email: store.get('rn-email') || sentTo });
+    const address = store.get('rn-email') || sentTo;
+    const r = await api('POST', '/api/auth/start', {
+      email: address,
+      turnstile_token: await turnstile.tokenFor(address)
+    });
     now.current.resending = false;
     if (r.status !== 202) return codeProblem.show(r.data, code.current);
     code.current!.value = '';
@@ -363,7 +373,16 @@ export function Home() {
       >
         <label>
           Your email
-          <input ref={email} type="email" name="email" autoComplete="email" placeholder="you@example.com" required />
+          <input
+            ref={email}
+            type="email"
+            name="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            required
+            onFocus={turnstile.warm}
+            onInput={turnstile.warm}
+          />
         </label>
         <button className="go" type="submit" disabled={startBusy}>
           Send me a link
@@ -388,6 +407,9 @@ export function Home() {
           We’ll email you a link and a six-digit code.
         </p>
       </form>
+
+      {/* Outside the forms, so "send it again" has it too. Empty unless Cloudflare asks. */}
+      <div className="turnstile" id="signin-check" ref={slotRef} />
 
       <section id="check" hidden={!shows('check')}>
         <h1 className="top">Check your email.</h1>

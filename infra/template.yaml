@@ -39,6 +39,16 @@ Parameters:
     Default: yvn-release-notes-anthropic
     Description: The Secrets Manager secret holding api_key, the Anthropic API key photo descriptions use. Made by hand; the describer sends nothing while it holds the placeholder.
 
+  TurnstileSecretName:
+    Type: String
+    Default: yvn-release-notes-turnstile
+    Description: The Secrets Manager secret holding secret_key, the Release Notes sign-in Turnstile widget's secret. Made by hand; until it exists every check records unconfigured and goes ahead.
+  TurnstileMode:
+    Type: String
+    Default: ""
+    AllowedValues: ["", "off", "observe", "enforce"]
+    Description: TURNSTILE_MODE for the sign-in email. Empty uses the code's default (observe). Set with deploy.sh --turnstile-mode on an HTTP publish.
+
   SenderScheduleArn:
     Type: String
     AllowedPattern: ^arn:[^:]+:events:[^:]+:[0-9]{12}:rule/.+$
@@ -272,6 +282,7 @@ Rules:
 
 Conditions:
   HasAdmin: !Not [!Equals [!Ref AdminUserId, ""]]
+  HasTurnstileMode: !Not [!Equals [!Ref TurnstileMode, ""]]
   HasWebCertificate: !Not [!Equals [!Ref WebCertificateArn, ""]]
 
 Resources:
@@ -469,6 +480,8 @@ Resources:
           SENDER_FUNCTION: !Ref SenderAlias
           EXPORT_FUNCTION: !Ref ExportAlias
           ADMIN_USER_ID: !If [HasAdmin, !Ref AdminUserId, !Ref AWS::NoValue]
+          TURNSTILE_SECRET: !Ref TurnstileSecretName
+          TURNSTILE_MODE: !If [HasTurnstileMode, !Ref TurnstileMode, !Ref AWS::NoValue]
         TelemetryConfig:
           LoggingConfig:
             LogGroup: !Ref NativeAppLogs
@@ -1247,7 +1260,7 @@ Resources:
         Comment: Security headers for notes.yourversionnumber.com
         SecurityHeadersConfig:
           ContentSecurityPolicy:
-            ContentSecurityPolicy: !Sub "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://${MailBucket.RegionalDomainName}; media-src 'self' blob: https://${MailBucket.RegionalDomainName}; font-src 'self'; connect-src 'self' https://tinylytics.app https://${MailBucket.RegionalDomainName}; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+            ContentSecurityPolicy: !Sub "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data: https://${MailBucket.RegionalDomainName}; media-src 'self' blob: https://${MailBucket.RegionalDomainName}; font-src 'self'; connect-src 'self' https://tinylytics.app https://${MailBucket.RegionalDomainName}; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
             Override: true
           ContentTypeOptions:
             Override: true
@@ -1409,6 +1422,11 @@ Resources:
                       created_at, tz, send_time, last_sent_date, pause_from,
                       pause_through, written_at, received_at, source, updated_at,
                       mcp_deleting]
+              - Effect: Allow
+                # The sign-in Turnstile widget's secret (packages/backend/turnstile.ts),
+                # and no other secret.
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TurnstileSecretName}-??????"
               - Effect: Allow
                 # The sign-in email, as raw MIME through SESv2 (see SenderRole).
                 Action: [ses:SendEmail, ses:SendRawEmail]

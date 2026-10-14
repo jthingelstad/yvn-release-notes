@@ -376,7 +376,7 @@ export async function main(args = process.argv.slice(2)) {
           'content-type': types[extname(file)] ?? 'application/octet-stream',
           'cache-control': 'no-store',
           'content-security-policy':
-            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://tinylytics.app; form-action 'self'; frame-ancestors 'none'"
+            "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://tinylytics.app; form-action 'self'; frame-ancestors 'none'"
         }
       });
     } catch {

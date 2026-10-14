@@ -20,6 +20,8 @@ NATIVE_HTTP_PHASE=""
 NATIVE_WORKER_PHASE=""
 ADMIN_USER_ID_SET=""
 ADMIN_USER_ID=""
+TURNSTILE_MODE_SET=""
+TURNSTILE_MODE=""
 for arg in "$@"; do
   case "$arg" in
     --break-glass) BREAK_GLASS=1 ;;
@@ -33,7 +35,11 @@ for arg in "$@"; do
       [[ -z "$ADMIN_USER_ID_SET" ]] || { echo "refusing: duplicate administrator assignment" >&2; exit 2; }
       ADMIN_USER_ID_SET=1
       ADMIN_USER_ID="${arg#*=}" ;;
-    *) echo "usage: $0 [--break-glass] [--native-http-phase=publish|activate|rollback] [--native-worker-phase=publish|activate|rollback] [--admin-user-id=ID]" >&2; exit 2 ;;
+    --turnstile-mode=*)
+      [[ -z "$TURNSTILE_MODE_SET" ]] || { echo "refusing: duplicate Turnstile mode" >&2; exit 2; }
+      TURNSTILE_MODE_SET=1
+      TURNSTILE_MODE="${arg#*=}" ;;
+    *) echo "usage: $0 [--break-glass] [--native-http-phase=publish|activate|rollback] [--native-worker-phase=publish|activate|rollback] [--admin-user-id=ID] [--turnstile-mode=off|observe|enforce|default]" >&2; exit 2 ;;
   esac
 done
 [[ -z "$NATIVE_HTTP_PHASE" || -z "$NATIVE_WORKER_PHASE" ]] \
@@ -41,6 +47,13 @@ done
 if [[ -n "$ADMIN_USER_ID_SET" ]]; then
   [[ "$NATIVE_HTTP_PHASE" == publish && ( -z "$ADMIN_USER_ID" || "$ADMIN_USER_ID" =~ ^[A-Za-z0-9_-]{1,80}$ ) ]] \
     || { echo "refusing: administrator assignment requires native HTTP publication and a valid subscriber id (empty disables access)" >&2; exit 2; }
+fi
+# The sign-in Turnstile mode rides an HTTP publication, as the admin id does;
+# "default" clears it back to the code's DEFAULT_TURNSTILE_MODE (observe).
+if [[ -n "$TURNSTILE_MODE_SET" ]]; then
+  [[ "$NATIVE_HTTP_PHASE" == publish && "$TURNSTILE_MODE" =~ ^(off|observe|enforce|default)$ ]] \
+    || { echo "refusing: Turnstile mode requires native HTTP publication and one of off, observe, enforce, default" >&2; exit 2; }
+  [[ "$TURNSTILE_MODE" == default ]] && TURNSTILE_MODE=""
 fi
 [[ -n "$BREAK_GLASS" ]] || git fetch -q origin main
 HEAD_SHA=$(git rev-parse HEAD)
@@ -238,6 +251,9 @@ PARAMETER_OVERRIDES=("WebDomain=$WEB_DOMAIN" "WebCertificateArn=$WEB_CERT"
   "SenderScheduleArn=$SENDER_SCHEDULE_ARN" "TranscribeDoneArn=$TRANSCRIBE_DONE_ARN")
 if [[ -n "$ADMIN_USER_ID_SET" ]]; then
   PARAMETER_OVERRIDES+=("AdminUserId=$ADMIN_USER_ID")
+fi
+if [[ -n "$TURNSTILE_MODE_SET" ]]; then
+  PARAMETER_OVERRIDES+=("TurnstileMode=$TURNSTILE_MODE")
 fi
 if [[ ${#NATIVE_PARAMETERS[@]} -gt 0 ]]; then
   PARAMETER_OVERRIDES+=("${NATIVE_PARAMETERS[@]}")

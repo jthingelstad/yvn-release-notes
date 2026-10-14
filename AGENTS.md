@@ -374,6 +374,31 @@ Where things are (each module's design comment explains its contract):
   anything another service answers goes through `/api`. Its few named
   exceptions are in `docs/WEB-APP.md` (Front end); add one only when
   there is no way through `/api`.
+- **Turnstile on the sign-in email** (2026-10-14, after subscription
+  bombing on the Weekly Thing forms: bots type victims' real addresses so
+  our mail fills their inboxes). `POST /api/auth/start` is the one public
+  request that mails a typed address (the front page, "Sign in", "send it
+  again" and the MCP connector's sign-in all use it); the delete code goes
+  only to a signed-in account's own address, and nothing under `/oauth/`
+  sends mail. It checks a Cloudflare Turnstile token before any limit or
+  mail (`packages/backend/turnstile.ts`) and logs one
+  `{"event":"turnstile",...}` line per request: `result` (`pass`, `fail`,
+  `missing`, `error`, `unconfigured`, `off`), `mode`, `allowed`, `reused`,
+  `codes`, and Cloudflare's `hostname`/`action`, never the address or token.
+  **Mode** is `observe` (`DEFAULT_TURNSTILE_MODE`), which refuses nobody;
+  `enforce` refuses only `fail` and `missing` (403 `turnstile`), and since
+  a Cloudflare script outage also means `missing`, enforcing is its own
+  decision, made from the observe numbers. `off` skips the check. The
+  per-address, per-network and 200-an-hour total limits and their alarm
+  stay as they are. Widget "Release Notes sign-in" (managed, site key
+  `0x4AAAAAAFW0y7cvQQshNAwH`, public, domain notes.yourversionnumber.com),
+  made with the `cf` CLI. Its secret is `secret_key` in the secret
+  `yvn-release-notes-turnstile`, made by hand outside the stack like the
+  Anthropic one; agents never read it. Until it exists every check records
+  `unconfigured` and goes ahead (looked for again every five minutes). One
+  token serves one address for five minutes and three uses
+  (`TURNSTILE#`). The page loads Cloudflare's script only on focus or
+  typing in the email field; tests and e2e stub it (`e2e/turnstile-stub.mjs`).
 - **The API answers only CloudFront.** Each Lambda Web Function endpoint uses
   IAM authentication. CloudFront OAC signs every origin request with SigV4
   (`SigningBehavior=always`, `SigningProtocol=amz-auth`); its policy permits
@@ -543,6 +568,13 @@ named native regressions and explicit obsolete implementation assumptions.
   sign in until the hour turns. The narrower limits are checked first and
   a refused request counts against none, so reaching the total takes many
   networks.
+- **Turnstile mode** rides an HTTP publication, as the admin id does:
+  `./deploy.sh --native-http-phase=publish --turnstile-mode=enforce` (or
+  `observe`, `off`, `default` to clear it back to the code's default), then
+  `--native-http-phase=activate`. Read the observe numbers in Logs Insights
+  on the web function's log group:
+  `filter event = "turnstile" | stats count() by result, mode, codes`
+  (add `| filter result != "pass"` to see what enforce would refuse).
 - DNS for `yourversionnumber.com` is at Namecheap; Jamie applies records by
   hand. The stack needs: the three DKIM CNAMEs (stack outputs
   `DkimRecord1-3`), an MX on the inbound subdomain to SES inbound, and an

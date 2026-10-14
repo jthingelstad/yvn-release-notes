@@ -14,6 +14,9 @@
  * normalized tag (null when absent), separate from notes; legacy rows omit tag.
  * PROFILE.upcoming_count and entry revision change atomically (200 retained
  * entries per owner); web transactions also prove the live account/session.
+ * TURNSTILE#<sha256 of token> / VERDICT keeps Cloudflare's answer for one
+ * sign-in token (result, codes, email_hash, uses, verified_at) for five
+ * minutes and three uses (`turnstile.ts`); no address, only its hash.
  */
 import {
   BatchWriteCommand,
@@ -1369,6 +1372,43 @@ export class Store {
       )
     ).Attributes;
     return Number(item?.n ?? 0);
+  }
+  async turnstileVerdict(tokenHash: string) {
+    return this.get({ pk: `TURNSTILE#${tokenHash}`, sk: 'VERDICT' });
+  }
+  /** The first answer for a token wins; it counts as its first use. */
+  async saveTurnstileVerdict(
+    tokenHash: string,
+    v: { result: 'pass' | 'fail'; email_hash: string; codes: string; now: number; ttl: number }
+  ) {
+    return this.conditional(() =>
+      this.put(
+        {
+          pk: `TURNSTILE#${tokenHash}`,
+          sk: 'VERDICT',
+          result: v.result,
+          email_hash: v.email_hash,
+          codes: v.codes,
+          uses: 1,
+          verified_at: v.now,
+          expires_at: v.now + v.ttl
+        },
+        { ConditionExpression: 'attribute_not_exists(pk)' }
+      )
+    );
+  }
+  /** One more use of a kept verdict, for the same address, while under the cap. */
+  async useTurnstileVerdict(tokenHash: string, emailHash: string, maxUses: number) {
+    return this.conditional(() =>
+      this.update(
+        { pk: `TURNSTILE#${tokenHash}`, sk: 'VERDICT' },
+        {
+          UpdateExpression: 'ADD uses :one',
+          ConditionExpression: 'email_hash = :email AND uses < :max',
+          ExpressionAttributeValues: { ':one': 1, ':email': emailHash, ':max': maxUses }
+        }
+      )
+    );
   }
   /** Atomic eligibility+reservation, narrow counters first; no counter is consumed on denial. */
   async reserveMail(counters: MailCounter[]): Promise<{ ok: boolean; limited?: string }> {

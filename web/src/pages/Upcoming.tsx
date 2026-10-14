@@ -1,8 +1,11 @@
 // Personal dates, from a birthday to a trip. The API calculates occurrences in
 // the subscriber's zone; forms retain unsaved values after errors or conflicts.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { lazy, Suspense, useRef, useState, type FormEvent } from 'react';
-import { Bar, ErrorLine, Failed, Loading, useBusy, useFocusLater, useTitle } from '../components/common.tsx';
+import { AppLink, Bar, ErrorLine, Failed, Loading, useBusy, useFocusLater, useTitle } from '../components/common.tsx';
+import { useHashParam } from '../lib/nav.ts';
+import { MAX_TAG } from '../../../packages/domain/tags.ts';
 import { api } from '../lib/api.ts';
 import { upcomingQuery } from '../lib/queries.ts';
 import { shortDay } from '../lib/format.ts';
@@ -27,6 +30,7 @@ const MONTHS = Array.from({ length: 12 }, (_, i) =>
 );
 const PROBLEMS: Record<string, string> = {
   'upcoming-title': 'Add a name or title, up to 120 characters, on one line.',
+  'upcoming-tag': 'Use one tag, up to 50 characters, with letters, numbers and hyphens. For example, #sps.',
   'upcoming-date': 'Choose a valid date.',
   'upcoming-year': 'Use a valid original year and date, no later than today. You can leave the year empty.',
   'upcoming-end': 'Choose an end date on or after the start date.',
@@ -44,6 +48,9 @@ export function Upcoming() {
   useTitle('Upcoming');
   const query = useQuery(upcomingQuery),
     client = useQueryClient();
+  const navigate = useNavigate();
+  const kindFilter = useHashParam('kind') ?? '',
+    tagFilter = useHashParam('tag') ?? '';
   // undefined: closed; null: new; a saved entry: editing that revision.
   const [selected, setSelected] = useState<UpcomingView | null | undefined>(undefined);
   const [problem, setProblem] = useState<string | null>(null),
@@ -54,8 +61,19 @@ export function Upcoming() {
   const entries = (query.data?.entries ?? []).toSorted(
       (a, b) => a.occurrence.date.localeCompare(b.occurrence.date) || a.title.localeCompare(b.title)
     ),
-    future = entries.filter((e) => e.occurrence.status !== 'past'),
-    past = entries.filter((e) => e.occurrence.status === 'past');
+    tags = [...new Set(entries.flatMap((e) => (e.tag ? [e.tag] : [])))].toSorted(),
+    filtered = entries.filter(
+      (e) =>
+        (!kindFilter || e.kind === kindFilter) && (!tagFilter || (tagFilter === '-' ? !e.tag : e.tag === tagFilter))
+    ),
+    future = filtered.filter((e) => e.occurrence.status !== 'past'),
+    past = filtered.filter((e) => e.occurrence.status === 'past');
+  function filter(kind: string, tag: string) {
+    const hash = new URLSearchParams();
+    if (kind) hash.set('kind', kind);
+    if (tag) hash.set('tag', tag);
+    navigate({ to: '/upcoming/', hash: hash.toString(), replace: true });
+  }
   function choose(entry: UpcomingView | null) {
     setSelected(entry);
     setProblem(null);
@@ -107,6 +125,7 @@ export function Upcoming() {
                 </td>
                 <th scope="row" className="table-event">
                   {entry.occurrence.line}
+                  {entry.tag && <span className="table-detail">#{entry.tag}</span>}
                 </th>
                 <td>
                   {NAMES[entry.kind]}
@@ -115,6 +134,15 @@ export function Upcoming() {
                 <td>{entry.email ? 'Daily email' : 'Web only'}</td>
                 <td>
                   <div className="row upcoming-actions">
+                    {entry.tag && (
+                      <AppLink
+                        className="quiet"
+                        href={`/today/#tag=${encodeURIComponent(entry.tag)}`}
+                        aria-label={`Write a note tagged #${entry.tag} for ${entry.title}`}
+                      >
+                        Write a note
+                      </AppLink>
+                    )}
                     <button
                       className="quiet"
                       type="button"
@@ -176,6 +204,9 @@ export function Upcoming() {
             <UpcomingForm
               key={selected?.id + ':' + selected?.revision}
               entry={selected}
+              initialKind={Object.hasOwn(NAMES, kindFilter) ? (kindFilter as UpcomingKind) : 'birthday'}
+              initialTag={tagFilter === '-' ? '' : tagFilter}
+              tags={tags}
               today={query.data!.today}
               headingRef={heading}
               busy={busy}
@@ -193,13 +224,55 @@ export function Upcoming() {
             {notice}
           </p>
           <section className="section wide" aria-label="Upcoming dates">
+            {entries.length > 0 && (
+              <>
+                <div className="upcoming-filters">
+                  <label>
+                    Filter by kind
+                    <select value={kindFilter} onChange={(e) => filter(e.target.value, tagFilter)}>
+                      <option value="">All kinds</option>
+                      {Object.entries(NAMES).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Filter by tag
+                    <select value={tagFilter} onChange={(e) => filter(kindFilter, e.target.value)}>
+                      <option value="">All tags</option>
+                      <option value="-">No tag</option>
+                      {tags.map((tag) => (
+                        <option key={tag} value={tag}>
+                          #{tag}
+                        </option>
+                      ))}
+                      {tagFilter && tagFilter !== '-' && !tags.includes(tagFilter) && (
+                        <option value={tagFilter}>#{tagFilter}</option>
+                      )}
+                    </select>
+                  </label>
+                  {(kindFilter || tagFilter) && (
+                    <button className="quiet" type="button" onClick={() => filter('', '')}>
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+                <p className="hint" role="status">
+                  Showing {filtered.length} of {entries.length} saved dates.
+                </p>
+              </>
+            )}
             {future.length ? (
               list(future, 'Upcoming events')
             ) : (
               <p className="upcoming-empty">
-                {past.length
-                  ? 'Nothing ahead just yet.'
-                  : 'Start with a birthday, an anniversary, a trip, or an event you’re looking forward to.'}
+                {(kindFilter || tagFilter) && !filtered.length
+                  ? 'No dates match these filters.'
+                  : entries.some((e) => e.occurrence.status === 'past')
+                    ? 'Nothing ahead just yet.'
+                    : 'Start with a birthday, an anniversary, a trip, or an event you’re looking forward to.'}
               </p>
             )}
           </section>
@@ -220,6 +293,9 @@ export function Upcoming() {
 
 function UpcomingForm({
   entry,
+  initialKind,
+  initialTag,
+  tags,
   today,
   headingRef,
   busy,
@@ -228,6 +304,9 @@ function UpcomingForm({
   onSaved
 }: {
   entry: UpcomingView | null;
+  initialKind: UpcomingKind;
+  initialTag: string;
+  tags: string[];
   today: string;
   headingRef: React.Ref<HTMLHeadingElement>;
   busy: boolean;
@@ -235,14 +314,15 @@ function UpcomingForm({
   onCancel: () => void;
   onSaved: () => Promise<void>;
 }) {
-  const [kind, setKind] = useState<UpcomingKind>(entry?.kind ?? 'birthday'),
+  const [kind, setKind] = useState<UpcomingKind>(entry?.kind ?? initialKind),
     [title, setTitle] = useState(entry?.title ?? ''),
-    [date, setDate] = useState(entry?.date ?? today.slice(5)),
+    [tag, setTag] = useState(entry ? (entry.tag ?? '') : initialTag),
+    [date, setDate] = useState(entry?.date ?? (annual(initialKind) ? today.slice(5) : today)),
     [year, setYear] = useState(entry?.year?.toString() ?? ''),
     [end, setEnd] = useState(entry?.end_date ?? today),
     [place, setPlace] = useState<Place | null>(entry?.place ?? null),
     [email, setEmail] = useState(entry?.email ?? true),
-    [reminders, setReminders] = useState((entry?.reminders ?? defaultReminders('birthday')).join(', ')),
+    [reminders, setReminders] = useState((entry?.reminders ?? defaultReminders(initialKind)).join(', ')),
     [picking, setPicking] = useState(false),
     [problem, setProblem] = useState<string | null>(null);
   function changeKind(next: UpcomingKind) {
@@ -264,6 +344,7 @@ function UpcomingForm({
       const answer = await api(entry ? 'PUT' : 'POST', '/api/upcoming' + (entry ? '/' + entry.id : ''), {
         kind,
         title,
+        tag,
         date,
         year: annual(kind) && year ? Number(year) : null,
         end_date: kind === 'trip' ? end : null,
@@ -299,6 +380,27 @@ function UpcomingForm({
         </label>
         <p className="hint">
           {Array.from(title).length} / {UPCOMING_TITLE_MAX} characters
+        </p>
+        <label>
+          Tag (optional)
+          <input
+            name="tag"
+            value={tag}
+            maxLength={MAX_TAG + 1}
+            list="upcoming-tags"
+            aria-describedby="upcoming-tag-help"
+            placeholder="#sps"
+            onChange={(e) => setTag(e.target.value)}
+          />
+        </label>
+        <datalist id="upcoming-tags">
+          {tags.map((tag) => (
+            <option key={tag} value={'#' + tag} />
+          ))}
+        </datalist>
+        <p className="hint" id="upcoming-tag-help">
+          One tag to group related dates, like #sps. Write a note from a tagged date to start today’s draft with that
+          hashtag.
         </p>
         {annual(kind) ? (
           <>

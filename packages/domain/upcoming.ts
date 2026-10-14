@@ -1,7 +1,8 @@
 /** Personal dates are plans, never journal notes. Annual dates use the same
  * March 1 leap-day rollover as birthday versions. Reminder selection depends
  * only on the daily email's local date; it never creates extra sends or writes.
- * Trips retain a destination but do not change home, time zone or note places. */
+ * Trips retain a destination but do not change home, time zone or note places.
+ * An optional tag groups plans; journal tags still live only in note text. */
 import { anniversary, daysBetween, parseDay } from './dates.ts';
 import { computeVersion } from './version.ts';
 
@@ -22,6 +23,7 @@ export interface UpcomingEntry {
   id: string;
   kind: UpcomingKind;
   title: string;
+  tag: string | null;
   /** MM-DD for annual dates; YYYY-MM-DD for trips and one-time events. */
   date: string;
   year: number | null;
@@ -129,20 +131,23 @@ export function remindersFor(entries: readonly UpcomingEntry[], today: string): 
 }
 /** Explicit projection for HTTP and exports: never expose table keys. */
 export function upcomingEntry(row: Record<string, unknown>): UpcomingEntry {
-  return Object.fromEntries(
-    [
-      'id',
-      'kind',
-      'title',
-      'date',
-      'year',
-      'end_date',
-      'place',
-      'email',
-      'reminders',
-      'revision',
-      'created_at',
-      'updated_at'
-    ].map((field) => [field, row[field]])
-  ) as unknown as UpcomingEntry;
+  return {
+    ...Object.fromEntries(
+      [
+        'id',
+        'kind',
+        'title',
+        'date',
+        'year',
+        'end_date',
+        'place',
+        'email',
+        'reminders',
+        'revision',
+        'created_at',
+        'updated_at'
+      ].map((field) => [field, row[field]])
+    ),
+    tag: row.tag ?? null
+  } as unknown as UpcomingEntry;
 }

@@ -6,7 +6,7 @@ import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
 import { DayWhere } from '../components/where.tsx';
 import { dayName } from '../lib/format.ts';
-import { useMe } from '../lib/nav.ts';
+import { useHashParam, useMe } from '../lib/nav.ts';
 import { todayQuery } from '../lib/queries.ts';
 import type { Me, Today as TodayData } from '../lib/types.ts';
 
@@ -28,6 +28,7 @@ export function Today() {
 }
 
 function Day({ t, me }: { t: TodayData; me?: Me }) {
+  const initialTag = useHashParam('tag');
   const [, nm, nd] = t.next.date.split('-').map(Number);
   const on = new Date(2000, nm - 1, nd).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
   return (
@@ -55,7 +56,8 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
           What changed today?
         </h2>
         <NoteForm
-          key={t.date}
+          key={t.date + ':' + initialTag}
+          initialTag={initialTag}
           day={t.date}
           label="Add to today"
           placeholder="A few words, a photo, a voice memo…"

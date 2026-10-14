@@ -199,6 +199,7 @@ export function markdown(data: ExportData): string {
         `### ${escapeText(entry.title)}`,
         '',
         `${entry.kind}: ${entry.date}${entry.year === null ? '' : ` (original year ${entry.year})`}${entry.end_date ? ` through ${entry.end_date}` : ''}.`,
+        ...(entry.tag ? [`Tag: ${escapeText('#' + entry.tag)}.`] : []),
         ...(entry.place
           ? [`At ${escapeText(entry.place.name)}${entry.place.region ? ', ' + escapeText(entry.place.region) : ''}.`]
           : []),

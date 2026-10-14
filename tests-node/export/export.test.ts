@@ -122,6 +122,7 @@ test('ZIP carries Upcoming separately in both exports without adding journal not
   const context = await setup();
   const entry = {
     id: 'concert',
+    tag: 'sps',
     kind: 'event' as const,
     title: 'A concert',
     date: '2026-10-20',
@@ -143,6 +144,12 @@ test('ZIP carries Upcoming separately in both exports without adding journal not
   assert.deepEqual(data.upcoming, [entry]);
   assert.equal(data.notes.length, 1);
   assert.match(zip.get(prefix + 'release-notes.md')!.toString(), /## Upcoming/);
+  assert.ok(
+    zip
+      .get(prefix + 'release-notes.md')!
+      .toString()
+      .includes('Tag: \\#sps.')
+  );
 });
 test('replaced or deleting builds cannot publish an export', async () => {
   const context = await setup();

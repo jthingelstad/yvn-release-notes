@@ -4,6 +4,7 @@ import { occurrence, remindersFor, upcomingViews, type UpcomingEntry } from '../
 const entry: UpcomingEntry = {
   id: 'alex',
   kind: 'birthday',
+  tag: null,
   title: 'Alex',
   date: '10-20',
   year: 1976,

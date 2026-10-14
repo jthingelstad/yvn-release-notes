@@ -12,6 +12,7 @@ import type { Item } from '../../packages/backend/store.ts';
 const entry: UpcomingEntry = {
   id: 'concert',
   kind: 'event',
+  tag: null,
   title: 'Concert <script>',
   date: '2026-10-14',
   year: null,

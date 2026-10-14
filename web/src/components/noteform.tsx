@@ -18,18 +18,33 @@ import { useRefresh } from './notelist.tsx';
 import { canRecord, recordClock, useRecorder } from './recorder.ts';
 import { Icon } from './icon.tsx';
 import { NoteWhere } from './where.tsx';
+import { spans, MAX_TAG } from '../../../packages/domain/tags.ts';
 
 interface Props {
   day: string;
   label: ReactNode;
   placeholder: string;
   submit: ReactNode;
+  initialTag?: string | null;
 }
 
 // Give it a `key` of the day, so another day starts with that day's draft.
-export function NoteForm({ day, label, placeholder, submit }: Props) {
+export function NoteForm({ day, label, placeholder, submit, initialTag }: Props) {
   const key = `rn-draft-${day}`;
-  const [text, setText] = useState(() => store.get(key) || '');
+  const [text, setText] = useState(() => {
+    const draft = store.get(key) || '';
+    // Tags travel in the fragment, never a server-visible query or request.
+    // Keep an existing draft and never duplicate a hashtag already in its text.
+    if (
+      !initialTag ||
+      initialTag.length > MAX_TAG ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(initialTag) ||
+      !/[a-z]/.test(initialTag) ||
+      spans(draft).some(([, , tag]) => tag === initialTag)
+    )
+      return draft;
+    return draft + (draft ? '\n\n' : '') + '#' + initialTag;
+  });
   const [chosen, setChosen] = useState<string>('');
   const [place, setPlace] = useState<Place | null>(null);
   const [busy, run] = useBusy();

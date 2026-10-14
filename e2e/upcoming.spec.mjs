@@ -160,3 +160,75 @@ test('event tables order occurrence dates ascending even when the response is un
   await page.getByRole('button', { name: 'Edit Earlier event', exact: true }).click();
   await expect(page.getByLabel('Date', { exact: true })).toHaveValue(offset(7));
 });
+
+test('kind and tag filters combine, survive reloads and carry a tag into an existing note draft', async ({page, context}) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  const headers = { Origin: test.info().project.use.baseURL };
+  const {today} = await (await context.request.get('/api/upcoming')).json();
+  for (const entry of [
+    {kind:'anniversary',title:'Team milestone',date:today.slice(5),tag:'#SPS'},
+    {kind:'birthday',title:'Team birthday',date:today.slice(5),tag:'sps'},
+    {kind:'anniversary',title:'Family milestone',date:today.slice(5),tag:'family'},
+    {kind:'event',title:'Past team event',date:'2026-01-02',tag:'sps'},
+    {kind:'event',title:'Untagged event',date:today}
+  ]) expect((await context.request.post('/api/upcoming',{headers,data:entry})).status()).toBe(201);
+  await page.goto('/upcoming/');
+  await expect(page).toHaveTitle('Upcoming: Release Notes');
+  await page.getByRole('combobox',{name:'Filter by kind',exact:true}).selectOption('anniversary');
+  await page.getByRole('combobox',{name:'Filter by tag',exact:true}).selectOption('sps');
+  await expect(page.getByRole('rowheader',{name:'Team milestone',exact:false})).toBeVisible();
+  await expect(page.getByRole('rowheader',{name:'Family milestone',exact:false})).toHaveCount(0);
+  await expect(page.getByRole('rowheader',{name:'Team birthday',exact:false})).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('combobox',{name:'Filter by kind',exact:true})).toHaveValue('anniversary');
+  await expect(page.getByRole('combobox',{name:'Filter by tag',exact:true})).toHaveValue('sps');
+  for (const [width,height,name] of [[390,844,'phone'],[768,1024,'tablet'],[1280,1000,'desktop'],[844,390,'landscape']]) {
+    await page.setViewportSize({width,height});
+    for (const colorScheme of ['light','dark']) {
+      await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth+1)).toBeTruthy();
+      await page.screenshot({path:`/tmp/yvn-upcoming-filter-${name}-${colorScheme}.png`,fullPage:true});
+    }
+  }
+  await page.getByRole('button',{name:'Add a date',exact:true}).click();
+  await expect(page.getByRole('combobox',{name:'Kind',exact:true})).toHaveValue('anniversary');
+  await expect(page.getByLabel('Tag (optional)',{exact:true})).toHaveValue('sps');
+  await page.getByLabel('Title',{exact:true}).fill('Second team milestone');
+  await page.getByLabel('Tag (optional)',{exact:true}).fill('#sps #family');
+  await page.getByRole('button',{name:'Save date',exact:true}).click();
+  await expect(page.getByRole('alert').filter({hasText:'Use one tag'})).toBeVisible();
+  await page.getByLabel('Tag (optional)',{exact:true}).fill('#SPS');
+  await page.getByRole('button',{name:'Save date',exact:true}).click();
+  await expect(page.getByRole('rowheader',{name:'Second team milestone',exact:false})).toContainText('#sps');
+  await page.getByRole('button',{name:'Edit Second team milestone',exact:true}).click();
+  await expect(page.getByLabel('Tag (optional)',{exact:true})).toHaveValue('sps');
+  await page.getByLabel('Tag (optional)',{exact:true}).fill('');
+  await page.getByRole('button',{name:'Save date',exact:true}).click();
+  await expect(page.getByRole('rowheader',{name:'Second team milestone',exact:false})).toHaveCount(0);
+  await page.getByRole('combobox',{name:'Filter by kind',exact:true}).selectOption('trip');
+  await expect(page.getByText('No dates match these filters.',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Clear filters',exact:true}).click();
+  await page.getByRole('combobox',{name:'Filter by tag',exact:true}).selectOption('-');
+  await expect(page.getByRole('rowheader',{name:'Untagged event',exact:true})).toBeVisible();
+  await expect(page.getByRole('rowheader',{name:'Second team milestone',exact:false})).toBeVisible();
+  await page.getByRole('combobox',{name:'Filter by tag',exact:true}).selectOption('sps');
+  await page.locator('.upcoming-past summary').click();
+  await expect(page.getByRole('table',{name:'Past events',exact:true})).toContainText('Past team event');
+  await page.evaluate(day => sessionStorage.setItem(`rn-draft-${day}`,'Already writing about today.'),today);
+  const write = () => page.getByRole('link',{name:'Write a note tagged #sps for Team milestone',exact:true});
+  await write().click();
+  await expect(page).toHaveURL(/\/today\/#tag=sps$/);
+  await expect(page.getByRole('textbox',{name:'Add to today',exact:true})).toHaveValue('Already writing about today.\n\n#sps');
+  await page.getByRole('textbox',{name:'Add to today',exact:true}).fill('Celebrated a milestone. #sps');
+  await page.goto('/upcoming/');
+  await write().click();
+  await expect(page.getByRole('textbox',{name:'Add to today',exact:true})).toHaveValue('Celebrated a milestone. #sps');
+  await page.getByRole('button',{name:'Save note',exact:true}).click();
+  await expect(page.locator('#notes')).toContainText('Celebrated a milestone.');
+  const tagged = await (await context.request.get('/api/tags/sps')).json();
+  expect(JSON.stringify(tagged)).toContain('Celebrated a milestone.');
+  // The intentional invalid-tag request above is the only console error.
+  expect(errors).toEqual(['Failed to load resource: the server responded with a status of 400 (Bad Request)']);
+});

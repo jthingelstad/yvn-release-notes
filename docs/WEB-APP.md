@@ -320,7 +320,7 @@ no image dependency or new CSP exception is required.
 | `GET /api/export/zip` | how it is going: `none`, `building`, `failed`, or `ready` with size, files and until |
 | `GET /api/export/zip/file` | the built zip: a redirect to a five-minute signed link |
 | `GET /api/upcoming` | owner-only saved `entries`, each with its next/current/past `occurrence` (`date`, `end_date`, `days_until`, `status`, `line`); local `today`, `tz`, and retained-entry `limit` (200). No table keys |
-| `POST /api/upcoming` | create a private date (201): `kind`, `title`, `date`, optional `year`, `end_date`, `place`, `email`, `reminders`; see Upcoming below |
+| `POST /api/upcoming` | create a private date (201): `kind`, `title`, `date`, optional `tag`, `year`, `end_date`, `place`, `email`, `reminders`; see Upcoming below |
 | `PUT /api/upcoming/{id}` | replace an owned date with the same fields and its saved `revision`; 409 for stale revision, 404 for a missing/foreign entry |
 | `DELETE /api/upcoming/{id}` `{revision}` | delete an owned date using its current revision; frees retained-entry capacity |
 | `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
@@ -356,7 +356,7 @@ no image dependency or new CSP exception is required.
 
 `/upcoming/`, in the main navigation, keeps personal dates independently of
 journal notes: birthdays, anniversaries, trips and one-time events. Each entry
-has a name/title (1–120 code points on one line), dates, email preference,
+has a name/title (1–120 code points on one line), an optional tag, dates, email preference,
 reminder offsets, revision and creation/update times. Entries never generate
 notes, increment journal counts, contribute to streaks or appear in note search.
 No model processes these entries. The owner adds, edits and deletes them in
@@ -364,7 +364,14 @@ an email-verified session; Origin is required for writes, and each transaction
 proves the current account/session, entry revision and retained-entry capacity.
 At most 200 entries, including past events, are retained per owner. Concurrent
 edits are refused instead of overwriting another tab. No titles, personal dates,
-destinations or addresses appear in logs; sender diagnostics report counts only.
+destinations, tags or addresses appear in logs; sender diagnostics report counts only.
+
+`tag` is one optional hashtag, accepted with or without `#`, trimmed and normalized
+through the journal's tag slug rules (lowercase, accents folded, hyphens).
+Use 1–50 letters/numbers with single separating hyphens and at least one letter
+that normalizes to a–z. Missing, null or blank clears it; legacy entries read as
+null. Multiple tags and invalid punctuation are refused as `upcoming-tag`.
+The tag groups plans only; it does not add anything to journal tag lists or search.
 
 Kinds and dates:
 
@@ -401,8 +408,16 @@ Each event occupies one compact table row, ordered by occurrence date ascending
 (including past events). Tables scroll horizontally within the page on phones.
 Trips store a destination only in this first stage. They do not change the
 account's saved home, time zone, forecast or default note location. Automatic
-travel switching and associations between an occasion and written notes are
-future work. Notes remain the owner's account of what actually happened.
+travel switching remains future work. Kind and Tag filters combine across both
+future and past entries; Tag also offers **No tag**. Filters are kept in the page
+fragment across reloads, with matching counts and a clear action. New dates start
+with the selected kind/tag. Existing tags are suggested in the editor.
+**Write a note** on a tagged entry opens today's editable draft with its hashtag,
+preserving existing draft text and avoiding a duplicate hashtag. The tag travels
+in a fragment, never a server-visible query. Nothing is saved until the owner
+submits the note; there is no separate event-note relationship, and changing an
+event's tag does not change saved notes. Notes remain the owner's account of what
+actually happened.
 
 Upcoming entries are included in JSON, Markdown and ZIP exports, in a separate
 `upcoming` collection/section (omitted when there are none for legacy export

@@ -21,6 +21,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { SESv2Client, SendEmailCommand, DeleteSuppressedDestinationCommand } from '@aws-sdk/client-sesv2';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { Readable } from 'node:stream';
 import { createReadStream } from 'node:fs';
 import { stat, open } from 'node:fs/promises';
@@ -265,5 +266,38 @@ export function createInvocations(region = 'us-east-1'): Invocations {
       if (result.FunctionError) throw new Error('Worker invocation failed');
       return result.Payload?.length ? JSON.parse(Buffer.from(result.Payload).toString('utf8')) : null;
     }
+  };
+}
+
+/** The Turnstile widget's secret: `secret_key` in a hand-made secret (no
+ * stack resource). A secret or key that is not there yet is '' (checks record
+ * `unconfigured`), looked for again after five minutes; a value is kept for
+ * the container's life. Other failures throw (checks record `error`). */
+export function createTurnstileSecret(
+  secretId: string,
+  region = 'us-east-1',
+  client: Pick<SecretsManagerClient, 'send'> = new SecretsManagerClient({ region }),
+  clock = () => Date.now()
+): () => Promise<string> {
+  let kept: { value: string; until: number } | null = null;
+  return async () => {
+    if (!secretId) return '';
+    if (kept && clock() < kept.until) return kept.value;
+    let raw: string | undefined;
+    try {
+      raw = (await client.send(new GetSecretValueCommand({ SecretId: secretId }))).SecretString;
+    } catch (error) {
+      if ((error as Error)?.name !== 'ResourceNotFoundException') throw error;
+    }
+    let value = '';
+    try {
+      const parsed: unknown = JSON.parse(raw ?? '{}');
+      const key = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>).secret_key : '';
+      value = typeof key === 'string' ? key.trim() : '';
+    } catch {
+      value = '';
+    }
+    kept = { value, until: value ? Infinity : clock() + 300_000 };
+    return value;
   };
 }

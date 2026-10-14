@@ -9,6 +9,7 @@ import { computeVersion } from '../../packages/domain/version.ts';
 import { pythonTrim, codePointLength } from '../../packages/domain/unicode.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { signinMessage, deleteMessage } from '../../packages/mail/auth.ts';
+import { checkTurnstile, turnstileToken } from '../../packages/backend/turnstile.ts';
 import { json, body } from './requests.ts';
 export async function accountRoutes(
   service: SessionService,
@@ -45,6 +46,26 @@ export async function accountRoutes(
     const b = await body(service.request),
       email = auth.normalEmail(b.email);
     if (!email) reject(400, 'email');
+    // Before any limit is spent or mail sent; observe mode only records it.
+    const turnstile = await checkTurnstile({
+      token: turnstileToken(b),
+      email,
+      viewer,
+      store,
+      now: ctx.now,
+      config: ctx.turnstile
+    });
+    service.log({
+      event: 'turnstile',
+      result: turnstile.result,
+      mode: turnstile.mode,
+      allowed: turnstile.allowed,
+      reused: turnstile.reused,
+      codes: turnstile.codes.join(','),
+      ...(turnstile.hostname ? { hostname: turnstile.hostname } : {}),
+      ...(turnstile.action ? { action: turnstile.action } : {})
+    });
+    if (!turnstile.allowed) reject(403, 'turnstile');
     await service.reserveMail(email, viewer);
     const login = await service.newLogin(email);
     try {

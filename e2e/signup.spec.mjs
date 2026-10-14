@@ -3,6 +3,7 @@
 // newest email to each address at /dev-mail/. The number depends on today,
 // so the expected one comes from /api/sample, never a fixed string.
 import { test, expect } from '@playwright/test';
+import { STUB_TOKEN, stubTurnstile } from './turnstile-stub.mjs';
 
 const TZ = 'America/Chicago';
 const someone = () => `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
@@ -29,11 +30,18 @@ async function typeBirthday(page, month, day, year) {
 
 async function sendLink(page, email) {
   await page.locator('#start-form [name=email]').fill(email);
+  const sent = page.waitForRequest((r) => r.url().endsWith('/api/auth/start'));
   await page.getByRole('button', { name: 'Send me a link' }).click();
+  expect((await sent).postDataJSON(), 'the sign-in email request carries the Turnstile token').toEqual({
+    email,
+    turnstile_token: STUB_TOKEN
+  });
   await expect(page.locator('#check')).toBeVisible();
 }
 
 const waiting = (page) => page.evaluate(() => localStorage.getItem('rn-birthday'));
+
+test.beforeEach(({ context }) => stubTurnstile(context));
 
 test('a new person sees their number, signs in with the code, and setup has the birthday', async ({ page, request }) => {
   const s = await sample(request, '1981-06-14');

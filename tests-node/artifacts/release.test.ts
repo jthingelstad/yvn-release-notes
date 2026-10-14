@@ -339,6 +339,12 @@ test('HTTP promotion checks actual APP_VERSION, S3 version and execution role, n
   f.parameters.AdminUserId = 'operator';
   await assert.rejects(f.phase('promote-http'), /configuration\/source mismatch App/);
   service.environmentVariables.ADMIN_USER_ID = 'operator';
+  service.environmentVariables.TURNSTILE_MODE = 'enforce';
+  await assert.rejects(f.phase('promote-http'), /configuration\/source mismatch App/);
+  delete service.environmentVariables.TURNSTILE_MODE;
+  f.parameters.TurnstileMode = 'enforce';
+  await assert.rejects(f.phase('promote-http'), /configuration\/source mismatch App/);
+  f.parameters.TurnstileMode = '';
   service.environmentVariables.APP_VERSION = previousBuild;
   await assert.rejects(f.phase('promote-http'), /configuration\/source mismatch App/);
   service.environmentVariables.APP_VERSION = build;

@@ -1,12 +1,22 @@
 import { fromHeader } from '../../packages/mail/compose.ts';
 import { createApp } from './app.ts';
 import { listen } from '../shared/listen.ts';
-import { createStore, createObjects, createMail, createInvocations } from '../../packages/backend/aws.ts';
+import {
+  createStore,
+  createObjects,
+  createMail,
+  createInvocations,
+  createTurnstileSecret
+} from '../../packages/backend/aws.ts';
 const region = process.env.AWS_REGION ?? 'us-east-1',
   store = createStore(process.env.TABLE ?? '', region),
   objects = createObjects(process.env.MAIL_BUCKET ?? '', region),
   mail = createMail(fromHeader(process.env.FROM_ADDRESS ?? ''), process.env.CONFIG_SET ?? '', region),
-  invocations = createInvocations(region);
+  invocations = createInvocations(region),
+  turnstile = {
+    mode: process.env.TURNSTILE_MODE,
+    secret: createTurnstileSecret(process.env.TURNSTILE_SECRET ?? '', region)
+  };
 listen(
   createApp({
     context: () => ({
@@ -21,7 +31,8 @@ listen(
       inboundDomain: process.env.INBOUND_DOMAIN ?? '',
       senderFunction: process.env.SENDER_FUNCTION ?? '',
       exportFunction: process.env.EXPORT_FUNCTION ?? '',
-      adminUserId: process.env.ADMIN_USER_ID ?? ''
+      adminUserId: process.env.ADMIN_USER_ID ?? '',
+      turnstile
     })
   })
 );

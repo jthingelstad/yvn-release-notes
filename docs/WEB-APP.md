@@ -127,8 +127,9 @@ notes.yourversionnumber.com
 - **Security headers** on every response: a CSP of `'self'` (no inline
   script or style), HSTS, `DENY` framing, and a Permissions-Policy that
   allows only the microphone. The CSP names its few exceptions: Tinylytics
-  for the page count, and the mail bucket's host for signed file links and
-  uploads. Everything else goes through `/api`: the city search asks
+  for the page count, the mail bucket's host for signed file links and
+  uploads, and Cloudflare's challenge host (script and frame) for the
+  sign-in Turnstile. Everything else goes through `/api`: the city search asks
   Open-Meteo's geocoder (no key, CC BY 4.0) from there.
 - **New items in the table.** `expires_at` (epoch seconds) is the table's
   TTL. The web app's first items were these; the design comment at the top of
@@ -275,8 +276,14 @@ or new CSP exception.
   element with its id so it does not, and `site.css` has the rule.
 - **The CSP** is `'self'`: no inline script or style (nothing inlined by
   the build, no `style` props), nothing remote. The exceptions it names:
-  Tinylytics (connect) and the mail bucket's host (img and media for
-  signed file links, connect for uploads), plus `blob:` in media-src.
+  Tinylytics (connect), the mail bucket's host (img and media for
+  signed file links, connect for uploads), plus `blob:` in media-src, and
+  `https://challenges.cloudflare.com` in script-src and frame-src for the
+  sign-in Turnstile (`lib/turnstile.ts`). That script loads only once
+  someone focuses or types in the email field, renders explicitly and
+  interaction-only into `#signin-check` (never id `turnstile`: that
+  element would shadow `window.turnstile`), and when it cannot load the email
+  request goes without a token.
 - **Recording on the page** (Jamie, 2026-10-09): the new-note form's
   Record button, shown only where the browser has MediaRecorder, records
   the microphone up to 30 minutes, as MP4 where the browser makes it
@@ -316,7 +323,7 @@ or new CSP exception.
 | `GET /api/mcp/activity` | Up to 50 content-free tool records from fourteen days; successful writes include client and note references. |
 | `GET /api/health` | |
 | `GET /api/sample?birthday=&tz=` | a version number today: the front page's example (1981-06-14), or the birthday being typed at sign-up |
-| `POST /api/auth/start` `{email}` | always 202; mails a link and code when the limits allow |
+| `POST /api/auth/start` `{email, turnstile_token}` | 202 and mails a link and code; 429 `limited` past a limit; 403 `turnstile` only in enforce mode, for a missing or failed token (`packages/backend/turnstile.ts`) |
 | `POST /api/auth/verify` `{email, code}` or `{token}` | sets the cookie; says whether the account is new |
 | `POST /api/auth/signout` | |
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |

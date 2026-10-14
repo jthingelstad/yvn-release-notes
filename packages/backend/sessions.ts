@@ -8,6 +8,7 @@ import type { TitleFetcher } from './links.ts';
 import { search, fetchJson, type JsonFetch, type City } from './places.ts';
 import * as auth from './auth.ts';
 import { withWebProof } from './guarded-store.ts';
+import type { TurnstileConfig } from './turnstile.ts';
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -35,6 +36,7 @@ export interface ApiContext {
   geocode?: (q: string) => Promise<City[]>;
   weatherFetch?: JsonFetch;
   fetchTitle?: TitleFetcher;
+  turnstile?: TurnstileConfig;
   log?: Log;
 }
 export class SessionService {

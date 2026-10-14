@@ -1,5 +1,6 @@
 // Whole OAuth/consent/reading/revocation flow against fictional local data.
 import { test, expect } from '@playwright/test';
+import { stubTurnstile } from './turnstile-stub.mjs';
 import { createHash } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 
@@ -11,6 +12,7 @@ const callback = 'https://client.example.com/callback';
 // must stay within the real five-emails-per-address limit in the fakes.
 test.describe.configure({ mode: 'serial' });
 let session;
+test.beforeEach(({ context }) => stubTurnstile(context));
 test.beforeEach(async ({ context }) => {
   if (session) await context.addCookies(session.cookies);
 });

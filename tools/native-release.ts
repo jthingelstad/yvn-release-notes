@@ -273,6 +273,7 @@ export async function main(
         service.maxConcurrencyPerEnvironment !== Number(required(parameters, 'NativeMaxConcurrency')) ||
         'ORIGIN_SECRET' in (service.environmentVariables ?? {}) ||
         (name === 'App' && (service.environmentVariables?.ADMIN_USER_ID ?? '') !== (parameters.AdminUserId ?? '')) ||
+        (name === 'App' && (service.environmentVariables?.TURNSTILE_MODE ?? '') !== (parameters.TurnstileMode ?? '')) ||
         Object.entries(expected).some(([key, value]) => service?.environmentVariables?.[key] !== value)
       )
         throw new Error(`HTTP candidate configuration/source mismatch ${name}`);

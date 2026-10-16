@@ -5,6 +5,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { Store } from '../backend/store.ts';
 import type { DocumentResult, DocumentSender, Item, Key, StoreCommand } from '../backend/store-types.ts';
+import { bareReserved } from './dynamo-reserved.ts';
 
 type Input = {
   TableName?: string;
@@ -235,6 +236,28 @@ class Expression {
     return result;
   }
 }
+const EXPRESSIONS = [
+  'ConditionExpression',
+  'UpdateExpression',
+  'KeyConditionExpression',
+  'FilterExpression',
+  'ProjectionExpression'
+] as const;
+/** DynamoDB refuses a request naming a reserved word bare in any expression,
+ * before it reads anything, whether or not the condition would pass. */
+function refuseReserved(input: Input) {
+  for (const field of EXPRESSIONS) {
+    const text = input[field];
+    if (typeof text !== 'string') continue;
+    const word = bareReserved(text)[0];
+    if (word)
+      throw error(
+        'ValidationException',
+        `Invalid ${field}: Attribute name is a reserved keyword; reserved keyword: ${word}`
+      );
+  }
+  for (const op of input.TransactItems ?? []) for (const request of Object.values(op)) refuseReserved(request);
+}
 function condition(input: Input, item: Item) {
   return !input.ConditionExpression || new Expression(input.ConditionExpression, item, input).condition();
 }
@@ -337,6 +360,7 @@ export class InMemoryDocumentClient implements DocumentSender {
     const input = command.input as Input,
       name = command.constructor.name;
     this.calls.push({ name, input: clone(input) });
+    refuseReserved(input);
     if (name === 'GetCommand') {
       const item = this.items.get(id(input.Key!));
       return item ? { Item: project(item, input) } : {};

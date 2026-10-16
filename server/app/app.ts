@@ -8,6 +8,7 @@ import { noteRoutes } from './note-routes.ts';
 import { adminRoutes } from './admin-routes.ts';
 import { upcomingRoutes } from './upcoming-routes.ts';
 import { exportRoutes } from '../../packages/backend/exports.ts';
+import { errorFields } from '../../packages/backend/services.ts';
 import { json, trustedViewer } from './requests.ts';
 export interface AppOptions {
   context?: () => ApiContext | Promise<ApiContext>;
@@ -118,7 +119,7 @@ export function createApp(options: AppOptions = {}): Hono {
       if (error instanceof ApiError) response = json({ error: error.error, ...error.extra }, error.status);
       else if (error instanceof OAuthError) response = json({ error: error.error }, error.status);
       else {
-        service?.log({ event: 'web-error' });
+        service?.log({ event: 'web-error', ...errorFields(error) });
         response = json({ error: 'temporarily-unavailable' }, 503);
       }
     }

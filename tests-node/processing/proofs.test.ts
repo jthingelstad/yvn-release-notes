@@ -177,8 +177,8 @@ test('completion request uses native text values and source/owner proof; list re
     Delete: {
       TableName: 'T',
       Key: { pk: 'USER#u', sk: `PROCESS#describe#${day}#${id}#0` },
-      ConditionExpression: 'owner = :o AND #src = :k',
-      ExpressionAttributeNames: { '#src': 'source' },
+      ConditionExpression: '#owner = :o AND #src = :k',
+      ExpressionAttributeNames: { '#owner': 'owner', '#src': 'source' },
       ExpressionAttributeValues: { ':o': 'o', ':k': photo().key }
     }
   });

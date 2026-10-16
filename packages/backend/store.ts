@@ -680,7 +680,8 @@ export class Store {
         Put: {
           TableName: this.tableName,
           Item: { ...key(user, 'PROCESSLOCK#describe'), owner: holder, expires_at: now + seconds },
-          ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now OR owner = :o',
+          ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now OR #owner = :o',
+          ExpressionAttributeNames: { '#owner': 'owner' },
           ExpressionAttributeValues: { ':now': now, ':o': holder }
         }
       }
@@ -689,7 +690,8 @@ export class Store {
   async releaseProcessingLock(user: string, holder: string): Promise<boolean> {
     return this.conditional(() =>
       this.del(key(user, 'PROCESSLOCK#describe'), {
-        ConditionExpression: 'owner = :o',
+        ConditionExpression: '#owner = :o',
+        ExpressionAttributeNames: { '#owner': 'owner' },
         ExpressionAttributeValues: { ':o': holder }
       })
     );
@@ -707,7 +709,8 @@ export class Store {
   ) {
     return this.conditional(() =>
       this.del(key(user, `PROCESS#${kind}#${day}#${id}#${n}`), {
-        ConditionExpression: 'owner = :o',
+        ConditionExpression: '#owner = :o',
+        ExpressionAttributeNames: { '#owner': 'owner' },
         ExpressionAttributeValues: { ':o': owner }
       })
     );
@@ -745,8 +748,8 @@ export class Store {
               Delete: {
                 TableName: this.tableName,
                 Key: key(user, `PROCESS#${kind}#${day}#${id}#${n}`),
-                ConditionExpression: 'owner = :o AND #src = :k',
-                ExpressionAttributeNames: { '#src': 'source' },
+                ConditionExpression: '#owner = :o AND #src = :k',
+                ExpressionAttributeNames: { '#owner': 'owner', '#src': 'source' },
                 ExpressionAttributeValues: { ':o': owner, ':k': source }
               }
             }

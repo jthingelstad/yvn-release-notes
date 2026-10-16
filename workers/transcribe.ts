@@ -8,7 +8,7 @@ import {
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import type { AttributeValue } from '@aws-sdk/client-dynamodb';
 import { createStore, createObjects } from '../packages/backend/aws.ts';
-import { safeLog } from '../packages/backend/services.ts';
+import { errorFields, safeLog } from '../packages/backend/services.ts';
 import * as transcribe from '../packages/backend/transcribe.ts';
 import type { Item } from '../packages/backend/store.ts';
 export type StreamRecord = {
@@ -86,7 +86,8 @@ export async function runEvent(event: Item, injected?: transcribe.Services): Pro
       return;
     }
     for (const record of (event.Records ?? []) as StreamRecord[]) await changed(record, s);
-  } catch {
+  } catch (error) {
+    s.log?.({ event: 'transcribe', outcome: 'failed', ...errorFields(error) });
     throw new Error('Transcription worker failed');
   }
 }

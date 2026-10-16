@@ -46,6 +46,32 @@ export interface Invocations {
 }
 export type Log = (fields: Record<string, string | number | boolean>) => void;
 export const safeLog: Log = (fields) => process.stdout.write(`${JSON.stringify(fields)}\n`);
+const LABEL = /^[A-Za-z0-9_.:-]{1,80}$/;
+/** What failed, never what it was working on: the error's class and code, an
+ * AWS status and transaction cancellation codes. A message is kept only for an
+ * AWS ValidationException, which describes the request's shape (it named the
+ * bare reserved word `owner` on 2026-10-16); any other message may carry
+ * content or a provider's words and is dropped. */
+export function errorFields(error: unknown): Record<string, string | number> {
+  if (!(error instanceof Error)) return { error: typeof error };
+  const e = error as Error & {
+    code?: unknown;
+    $metadata?: { httpStatusCode?: unknown };
+    CancellationReasons?: { Code?: unknown }[];
+  };
+  const out: Record<string, string | number> = { error: LABEL.test(e.name) ? e.name : 'Error' };
+  if ((typeof e.code === 'string' || typeof e.code === 'number') && LABEL.test(String(e.code)))
+    out.error_code = String(e.code);
+  if (e.$metadata && typeof e.$metadata === 'object') {
+    if (typeof e.$metadata.httpStatusCode === 'number') out.error_status = e.$metadata.httpStatusCode;
+    if (e.name === 'ValidationException') out.error_message = e.message.slice(0, 300);
+  }
+  if (Array.isArray(e.CancellationReasons))
+    out.error_reasons = e.CancellationReasons.map((r) =>
+      typeof r?.Code === 'string' && LABEL.test(r.Code) ? r.Code : '?'
+    ).join(',');
+  return out;
+}
 export function missing(error: unknown): boolean {
   return error instanceof Error && ['NoSuchKey', 'NotFound', 'NoSuchVersion'].includes(error.name);
 }

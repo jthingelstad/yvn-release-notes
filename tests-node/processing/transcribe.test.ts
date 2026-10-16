@@ -80,6 +80,8 @@ test('Transcribe conflict retains fixed-name job lease; real start failure relea
   await assert.rejects(() => worker.runEvent({ Records: [stream(failed.note)] }, failed.services), {
     message: 'Transcription worker failed'
   });
+  assert.deepEqual(failed.logs.at(-1), { event: 'transcribe', outcome: 'failed', error: 'Error' });
+  assert.equal(JSON.stringify(failed.logs).includes('private'), false);
   assert.equal(await failed.store.processing('u', 'transcribe', day, id, 0), null);
 });
 test('30job quota held across independent worker instances; oversized and overquota stay waiting', async () => {

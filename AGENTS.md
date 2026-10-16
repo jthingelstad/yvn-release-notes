@@ -118,6 +118,8 @@ Where things are (each module's design comment explains its contract):
   and invocation fakes. `tools/dev-server.ts` serves the built app and the
   actual native API against them. New DynamoDB request kinds also need exact
   SDK-shape tests in `tests-node/store/`; fakes alone do not prove AWS shapes.
+  The fake table refuses a DynamoDB reserved word used bare in any expression
+  (`packages/testing/dynamo-reserved.ts`), as DynamoDB does; alias it (`#owner`).
 - `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather}.ts`
   are operator tools, with shared setup in `tools/operator.ts`.
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current.

@@ -449,3 +449,52 @@ test('replacing first photo while geocoding cannot put old location on new media
   assert.equal(await worker.placeNote(s.note, 'u', s.services), 'gone');
   assert.equal((await s.store.note('u', day, id))?.place, undefined);
 });
+test('a failed batch logs what failed, by class and AWS validation message, never the content', async () => {
+  const s = setup();
+  await seedPhoto(s);
+  const message = 'Invalid ConditionExpression: Attribute name is a reserved keyword; reserved keyword: owner';
+  s.store.memory.beforeSend = (command) => {
+    if (command instanceof TransactWriteCommand)
+      throw Object.assign(new Error(message), { name: 'ValidationException', $metadata: { httpStatusCode: 400 } });
+  };
+  await assert.rejects(() => worker.runEvent({ Records: [stream(s.note)] }, {}, s.services), {
+    message: 'Description worker failed'
+  });
+  assert.deepEqual(
+    s.logs.filter((l) => l.outcome === 'failed'),
+    [
+      {
+        event: 'describe',
+        outcome: 'failed',
+        error: 'ValidationException',
+        error_status: 400,
+        error_message: message
+      }
+    ]
+  );
+  assert.equal(JSON.stringify(s.logs).includes('blue'), false);
+  assert.equal(JSON.stringify(s.logs).includes('synthetic fixture'), false);
+  assert.equal(await s.store.processing('u', 'describe', day, id, 0), null);
+  s.store.memory.beforeSend = undefined;
+  s.services.invocations = s.invocations;
+  await assert.rejects(
+    () =>
+      worker.runEvent(
+        { describe_all: 'u' },
+        {},
+        {
+          ...s.services,
+          model: async () => {
+            throw new Error('private provider failure');
+          }
+        }
+      ),
+    { message: 'Description worker failed' }
+  );
+  assert.deepEqual(s.logs.filter((l) => l.outcome === 'failed').at(-1), {
+    event: 'describe',
+    outcome: 'failed',
+    error: 'Error'
+  });
+  assert.equal(JSON.stringify(s.logs).includes('private'), false);
+});

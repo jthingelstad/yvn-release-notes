@@ -7,7 +7,7 @@ import { GeoPlacesClient } from '@aws-sdk/client-geo-places';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import type { AttributeValue } from '@aws-sdk/client-dynamodb';
 import { createStore, createObjects, createInvocations } from '../packages/backend/aws.ts';
-import { safeLog, type Invocations, type Objects } from '../packages/backend/services.ts';
+import { errorFields, safeLog, type Invocations, type Objects } from '../packages/backend/services.ts';
 import type { Item } from '../packages/backend/store.ts';
 import type { NoteRecord, PlaceRecord } from '../packages/domain/notes.ts';
 import { localDay, validTimezone } from '../packages/domain/dates.ts';
@@ -226,6 +226,12 @@ function production(): Services {
   }
   return runtime;
 }
+class BatchFailed extends Error {
+  constructor() {
+    super('Description batch failed');
+    this.name = 'BatchFailed';
+  }
+}
 export async function runEvent(event: Item, context: Context = {}, injected?: Services): Promise<Item | undefined> {
   if (event.self_test === true) {
     const made = await thumbs.make(describe.testImage(1, 1));
@@ -267,10 +273,15 @@ export async function runEvent(event: Item, context: Context = {}, injected?: Se
             : Array.isArray(event.thumbs_all)
               ? event.thumbs_all.filter((v): v is string => typeof v === 'string')
               : [];
-      return thumbsAll(users, s, timeLeft, event.dry_run === true);
+      return await thumbsAll(users, s, timeLeft, event.dry_run === true);
     }
     if (typeof event.describe_all === 'string')
-      return describeAll(event.describe_all, s, timeLeft, typeof event.chain === 'string' ? event.chain : undefined);
+      return await describeAll(
+        event.describe_all,
+        s,
+        timeLeft,
+        typeof event.chain === 'string' ? event.chain : undefined
+      );
     let failed = false,
       noKey = false;
     for (const record of (event.Records ?? []) as StreamRecord[])
@@ -278,15 +289,20 @@ export async function runEvent(event: Item, context: Context = {}, injected?: Se
         await changed(record, s);
       } catch (error) {
         if (error instanceof describe.NoKey) noKey = true;
-        else failed = true;
+        else {
+          failed = true;
+          s.log?.({ event: 'describe', outcome: 'failed', ...errorFields(error) });
+        }
       }
-    if (failed) throw new Error('Description batch failed');
+    if (failed) throw new BatchFailed();
     if (noKey) s.log?.({ event: 'describe', outcome: 'no-key' });
   } catch (error) {
     if (error instanceof describe.NoKey) {
       s.log?.({ event: 'describe', outcome: 'no-key' });
       return;
     }
+    // A batch's records were each logged above; anything else is logged here.
+    if (!(error instanceof BatchFailed)) s.log?.({ event: 'describe', outcome: 'failed', ...errorFields(error) });
     throw new Error('Description worker failed');
   }
 }

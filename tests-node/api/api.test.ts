@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { createApp, ROUTES } from '../../server/app/app.ts';
+import { MAX_BODY } from '../../server/app/requests.ts';
 import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects, FakeMail, FakeInvocations } from '../../packages/testing/services.ts';
 import type { ApiContext } from '../../packages/backend/sessions.ts';
@@ -401,4 +402,43 @@ test('a deleting account blocks ordinary writes but an existing live owner sessi
         if (entry.ExpressionAttributeValues) assert.ok(Object.keys(entry.ExpressionAttributeValues).length > 0);
       }
   assert.equal(await s.store.profile('u'), null);
+});
+test('HEAD answers like GET with no body, stays a safe method, and 404s where no GET exists', async () => {
+  const s = await setup(),
+    head = async (path: string, cookie = '') => {
+      const r = await s.app.request(path, {
+        method: 'HEAD',
+        headers: cookie ? { cookie: auth.COOKIE + '=' + cookie } : {}
+      });
+      return { r, b: await r.text() };
+    };
+  const get = await s.call('GET', '/api/me'),
+    me = await head('/api/me', s.token);
+  assert.equal(get.r.status, 200);
+  assert.equal(me.r.status, 200);
+  assert.equal(me.b, '');
+  assert.equal(me.r.headers.get('content-type'), get.r.headers.get('content-type'));
+  assert.equal(me.r.headers.get('cache-control'), 'no-store');
+  assert.equal((await head('/api/health')).r.status, 200);
+  assert.equal((await head('/api/me')).r.status, (await s.call('GET', '/api/me', undefined, '')).r.status);
+  const postOnly = await head('/api/search', s.token);
+  assert.equal(postOnly.r.status, 404);
+  assert.equal(postOnly.b, '');
+  assert.equal((await head('/no-such-path')).r.status, 404);
+  assert.ok(s.logs.some((l) => l.event === 'web' && l.method === 'HEAD' && l.path === '/api/me' && l.status === 200));
+  assert.equal((await createApp().request('/api/health', { method: 'HEAD' })).status, 200);
+});
+test('a full-length note of four-byte characters fits the body cap; only oversize bodies are 413', async () => {
+  const s = await setup(),
+    face = String.fromCodePoint(0x1f600),
+    full = await s.call('POST', '/api/days/2026-10-13/notes', { text: face.repeat(20_000) });
+  assert.ok(Buffer.byteLength(JSON.stringify({ text: face.repeat(20_000) })) > 64 * 1024);
+  assert.equal(full.r.status, 201);
+  assert.equal([...String((await s.store.allNotes('u'))[0]!.text)].length, 20_000);
+  const over = await s.call('POST', '/api/days/2026-10-13/notes', { text: face.repeat(20_001) });
+  assert.equal(over.r.status, 400);
+  assert.equal((over.b as Item).error, 'too-long');
+  const huge = await s.call('POST', '/api/days/2026-10-13/notes', { text: 'a'.repeat(MAX_BODY) });
+  assert.equal(huge.r.status, 413);
+  assert.equal((await s.store.allNotes('u')).length, 1);
 });

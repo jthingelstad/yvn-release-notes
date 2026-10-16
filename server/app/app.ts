@@ -83,7 +83,9 @@ const compiled = ROUTES.map(([method, path]) => ({
 export function createApp(options: AppOptions = {}): Hono {
   const app = new Hono();
   app.all('*', async (c) => {
-    const req = c.req.raw,
+    // HEAD is answered as GET with the body dropped: the routes see a GET request.
+    const head = c.req.raw.method === 'HEAD',
+      req = head ? new Request(c.req.raw, { method: 'GET' }) : c.req.raw,
       url = new URL(req.url),
       matched = compiled.find((r) => r.method === req.method && r.re.test(url.pathname)),
       isOAuth = url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/.well-known/oauth-');
@@ -128,10 +130,14 @@ export function createApp(options: AppOptions = {}): Hono {
     response.headers.set('cache-control', 'no-store');
     service?.log({
       event: 'web',
-      method: req.method,
+      method: c.req.raw.method,
       path: isOAuth ? 'oauth' : (matched?.path ?? 'unmatched'),
       status: response.status
     });
+    if (head) {
+      await response.body?.cancel();
+      return new Response(null, { status: response.status, headers: response.headers });
+    }
     return response;
   });
   return app;

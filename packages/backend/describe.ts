@@ -185,7 +185,8 @@ export async function wanted(store: Store, user: string) {
   const p = await store.profile(user, true);
   return Boolean(p?.describe && !p.mcp_deleting);
 }
-export async function describe(note: NoteRecord, user: string, s: Services): Promise<number> {
+/** `chain` names the describe_all run calling; a stream run passes none. */
+export async function describe(note: NoteRecord, user: string, s: Services, chain?: string): Promise<number> {
   const [, day, id] = String(note.sk).split('#');
   if (!day || !id) return 0;
   let done = 0;
@@ -200,10 +201,19 @@ export async function describe(note: NoteRecord, user: string, s: Services): Pro
       const lease = await s.store.processing(user, 'describe', day, id, n);
       const current = await s.store.note(user, day, id, true);
       const pending = waiting(current ?? {}).some((entry) => Number(entry.n) === n && entry.key === key);
-      // An interrupted invocation keeps its lease until expiry. A retry must
-      // stay retryable/alarmed, never acknowledge unfinished work as success.
-      if (pending && lease?.source === key && Number(lease.expires_at) > now && (await wanted(s.store, user)))
+      if (pending && lease?.source === key && Number(lease.expires_at) > now && (await wanted(s.store, user))) {
+        // A live describe_all run holds this photo and finishes it; if it dies,
+        // its own invocation fails (alarmed) and both leases lapse together,
+        // after which any trigger claims the photo. A stream run's skip is not
+        // an error and does not send its batch to the failed queue.
+        if (!chain && (await s.store.describeChainLive(user, now))) {
+          s.log?.({ event: 'describe', outcome: 'lease-busy', user });
+          continue;
+        }
+        // Otherwise an interrupted invocation keeps its lease until expiry. A
+        // retry must stay retryable/alarmed, never acknowledge unfinished work.
         throw new Error('Description processing lease busy');
+      }
       continue;
     }
     try {

@@ -2,6 +2,7 @@
  * first-photo places, and describes only opted-in accounts. Operator backfills
  * remain explicit, chain-limited and off by default. No third stream reader. */
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { GeoPlacesClient } from '@aws-sdk/client-geo-places';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
@@ -105,6 +106,27 @@ export async function placeNote(note: NoteRecord, user: string, s: Services): Pr
 export type StreamRecord = {
   dynamodb?: { NewImage?: Record<string, AttributeValue>; OldImage?: Record<string, AttributeValue> };
 };
+/** Results the processing workers write back onto a media entry. */
+const RESULTS = ['description', 'transcript'];
+const withoutResults = (row: Item) =>
+  Array.isArray(row.media)
+    ? {
+        ...row,
+        media: (row.media as Item[]).map((m) =>
+          Object.fromEntries(Object.entries(m).filter(([field]) => !RESULTS.includes(field)))
+        )
+      }
+    : row;
+/** A note change that only adds a description or transcript is a worker's
+ * own write. Every photo still waiting was already waiting before it, so the
+ * run that wrote it (or the stream event that brought the photo) covers it. */
+export function ownResultOnly(row: Item, old: Item): boolean {
+  return (
+    Object.keys(old).length > 0 &&
+    !isDeepStrictEqual(row, old) &&
+    isDeepStrictEqual(withoutResults(row), withoutResults(old))
+  );
+}
 export async function changed(record: StreamRecord, s: Services): Promise<number> {
   const row = unmarshall(record.dynamodb?.NewImage ?? {}),
     old = unmarshall(record.dynamodb?.OldImage ?? {});
@@ -120,6 +142,10 @@ export async function changed(record: StreamRecord, s: Services): Promise<number
   if (!String(row.sk ?? '').startsWith('NOTE#')) return 0;
   const [, day, id] = String(row.sk).split('#');
   if (!day || !id) return 0;
+  if (ownResultOnly(row, old)) {
+    s.log?.({ event: 'describe', outcome: 'own-result', user });
+    return 0;
+  }
   let note = await s.store.note(user, day, id, true);
   if (!note) return 0;
   if (thumbs.waiting(note).length) {
@@ -157,7 +183,7 @@ export async function describeAll(
         s.log?.({ event: 'describe-all', user, photos, outcome: handedOn ? 'continued' : 'turned-off' });
         return { photos, more: handedOn };
       }
-      photos += await describe.describe(note, user, s);
+      photos += await describe.describe(note, user, s, chain);
     }
     s.log?.({ event: 'describe-all', user, photos, outcome: 'done' });
     return { photos, more: false };

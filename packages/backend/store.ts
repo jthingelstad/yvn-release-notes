@@ -696,6 +696,11 @@ export class Store {
       })
     );
   }
+  /** Whether a describe_all chain holds this account's describe lock now. */
+  async describeChainLive(user: string, now: number): Promise<boolean> {
+    const lock = await this.get(key(user, 'PROCESSLOCK#describe'), { ConsistentRead: true });
+    return Boolean(lock && Number(lock.expires_at) > now);
+  }
   async processing(user: string, kind: 'transcribe' | 'describe', day: string, id: string, n: number) {
     return this.get(key(user, `PROCESS#${kind}#${day}#${id}#${n}`), { ConsistentRead: true });
   }

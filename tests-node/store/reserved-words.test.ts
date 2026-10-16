@@ -4,8 +4,7 @@
  * in the processing lease broke every photo description since 2026-10-13). */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync } from 'node:fs';
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { InMemoryDocumentClient } from '../../packages/testing/store.ts';
 import { bareReserved, RESERVED } from '../../packages/testing/dynamo-reserved.ts';
@@ -97,11 +96,10 @@ test('the fake table refuses a bare reserved word in every expression and transa
 });
 
 test('no expression in the source names a reserved word bare', () => {
-  const files = execFileSync('git', ['ls-files', 'packages', 'server', 'workers', 'tools', 'tests-node'], {
-    encoding: 'utf8'
-  })
-    .split('\n')
-    .filter((f) => f.endsWith('.ts') && !f.endsWith('reserved-words.test.ts'));
+  // Read from the tree, not git: deploy.sh verifies a `git archive` copy with no .git.
+  const files = ['packages', 'server', 'workers', 'tools', 'tests-node']
+    .flatMap((dir) => readdirSync(dir, { recursive: true, encoding: 'utf8' }).map((f) => `${dir}/${f}`))
+    .filter((f) => f.endsWith('.ts') && !f.includes('node_modules') && !f.endsWith('reserved-words.test.ts'));
   const found: string[] = [];
   let sites = 0;
   for (const file of files) {

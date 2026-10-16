@@ -89,3 +89,11 @@ test('GitHub verification uses the Node 24 application and native fictional brow
   assert.match(await read('e2e/playwright.config.mjs'), /node --import tsx tools\/dev-server\.ts/);
   assert.match(await read('e2e/playwright.config.mjs'), /reuseExistingServer: false/);
 });
+test('Logs Insights queries in the agent guide read the structured fields under message', async () => {
+  const guide = await read('AGENTS.md'),
+    queries = Array.from(guide.matchAll(/`([^`\n]*\bfilter [^`\n]*)`/g), (match) => match[1]!);
+  assert.ok(queries.some((query) => query.includes('message.event = "turnstile"')));
+  for (const query of queries)
+    for (const field of query.matchAll(/(?:filter|by|,)\s+([A-Za-z_@][\w.@]*)/g))
+      assert.match(field[1]!, /^(message\.|@)|^count\(/, `bare log field in Logs Insights query: ${query}`);
+});

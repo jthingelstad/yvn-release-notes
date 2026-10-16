@@ -231,7 +231,7 @@ Where things are (each module's design comment explains its contract):
   `taken_at` and spot on its media entry. `packages/backend/thumbs.ts` has the rest.
 - **Day One imports are planned before anything is written** (Jamie,
   2026-10-09: "keep it to dry-run"). `node --import tsx tools/import-dayone.ts EMAIL
-  ZIP...` prints what an import would do, as counts (`--plan-out` to a
+ZIP...` prints what an import would do, as counts (`--plan-out` to a
   folder outside the repo for the full plan, note text included;
   `--weather-sample N` to check the weather archive for N days). `--write`
   imports (`packages/backend/importer.ts`), through the Node AWS SDK; **every live run
@@ -479,7 +479,7 @@ named native regressions and explicit obsolete implementation assumptions.
   comments have the rest (the code bucket, cache lifetimes, the
   invalidation).
 - Native publication and activation are separate: `./deploy.sh
-  --native-http-phase=publish`, then `--native-http-phase=activate`;
+--native-http-phase=publish`, then `--native-http-phase=activate`;
   `--native-worker-phase=publish`, then `--native-worker-phase=activate`.
   Use `--native-http-phase=rollback` or `--native-worker-phase=rollback`
   to restore the recorded prior routing/versions. Ordinary deploys preserve
@@ -503,7 +503,7 @@ named native regressions and explicit obsolete implementation assumptions.
   CloudFormation; Python is a dependency of this infrastructure linter,
   not an application runtime.
 - Locally: `npm run build`, then `node --import tsx tools/dev-server.ts
-  --fake-places --fake-links`. It serves `dist/web` and the real Hono HTTP/MCP
+--fake-places --fake-links`. It serves `dist/web` and the real Hono HTTP/MCP
   API against in-memory fakes, captures mail at `/dev-mail/`, and starts with
   fictional ada@example.com. Fake places/weather and link titles prevent
   external fetches. `--dayone ZIP` imports into those fakes first. For hot
@@ -573,8 +573,9 @@ named native regressions and explicit obsolete implementation assumptions.
   `observe`, `off`, `default` to clear it back to the code's default), then
   `--native-http-phase=activate`. Read the observe numbers in Logs Insights
   on the web function's log group:
-  `filter event = "turnstile" | stats count() by result, mode, codes`
-  (add `| filter result != "pass"` to see what enforce would refuse).
+  `filter message.event = "turnstile" | stats count() by message.result, message.mode, message.codes`
+  (add `| filter message.result != "pass"` to see what enforce would refuse).
+  The function logs JSON under `message`, so a bare `event` matches nothing.
 - **Runtime secret**: the credentials live in one Secrets Manager secret,
   `yvn-release-notes-runtime` (stack parameter `RuntimeSecretName`), a
   JSON object of `ANTHROPIC_API_KEY` (the describer) and

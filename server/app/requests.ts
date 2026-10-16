@@ -5,8 +5,12 @@ import { validDay, localDay } from '../../packages/domain/dates.ts';
 import { codePointLength, pythonTrim } from '../../packages/domain/unicode.ts';
 import { MAX_NOTE } from '../../packages/domain/notes.ts';
 export const json = (value: unknown, status = 200, headers: HeadersInit = {}) => oauthResponse(status, value, headers);
+/** Largest JSON body a valid request can need. Note text is limited to MAX_NOTE code points after
+ * trimming, and JSON.stringify spends at most 6 bytes on one code point (a \u00XX control escape;
+ * astral characters are 4 raw UTF-8 bytes), so a full note plus its envelope always fits. */
+export const MAX_BODY = MAX_NOTE * 6 + 16 * 1024;
 export async function body(request: Request): Promise<Item> {
-  if (Number(request.headers.get('content-length') ?? 0) > 64 * 1024) reject(413, 'too-large');
+  if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY) reject(413, 'too-large');
   const reader = request.body?.getReader(),
     chunks: Uint8Array[] = [];
   let size = 0;
@@ -16,7 +20,7 @@ export async function body(request: Request): Promise<Item> {
         const part = await reader.read();
         if (part.done) break;
         size += part.value.byteLength;
-        if (size > 64 * 1024) {
+        if (size > MAX_BODY) {
           await reader.cancel();
           reject(413, 'too-large');
         }

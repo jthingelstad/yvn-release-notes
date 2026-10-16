@@ -498,3 +498,58 @@ test('a failed batch logs what failed, by class and AWS validation message, neve
   });
   assert.equal(JSON.stringify(s.logs).includes('private'), false);
 });
+test('describe_all race: its own description write re-triggering the stream is no error and no failed batch', async () => {
+  for (const edit of [false, true]) {
+    const s = setup([photo(), photo(1)]);
+    await seedPhoto(s);
+    await seedPhoto(s, 1);
+    let calls = 0,
+      raced: Promise<unknown> | undefined;
+    const answer = async () => ({ content: [{ type: 'text', text: 'A blue square.' }] });
+    s.services.model = async () => async () => {
+      // describe_all is about to describe photo 1, holding its lease, after
+      // saving photo 0's description: the stream delivers that write now.
+      if (++calls === 2) {
+        const before = { ...s.note, media: [photo(), photo(1)] },
+          after = (await s.store.note('u', day, id, true))!;
+        const record = edit
+          ? stream({ ...after, text: 'An edit made meanwhile' }, before)
+          : stream(after as Item, before);
+        raced = worker.runEvent({ Records: [record] }, {}, s.services);
+        await raced;
+      }
+      return answer();
+    };
+    assert.deepEqual(await worker.describeAll('u', s.services, () => 900, 'chain'), { photos: 2, more: false });
+    await raced;
+    assert.equal(calls, 2);
+    const media = (await s.store.note('u', day, id))!.media as Item[];
+    assert.ok(media.every((m) => typeof m.description === 'string' && m.description));
+    assert.equal(
+      s.logs.some((l) => l.outcome === 'failed'),
+      false
+    );
+    assert.ok(s.logs.some((l) => l.event === 'describe' && l.outcome === (edit ? 'lease-busy' : 'own-result')));
+    assert.equal(await s.store.processing('u', 'describe', day, id, 1), null);
+  }
+});
+test('a lease left by a dead describe_all lapses with its lock, then any trigger describes the photo', async () => {
+  const s = setup();
+  await seedPhoto(s);
+  assert.ok(await s.store.takeProcessingLock('u', 'dead-chain', now, d.LOCK_FOR));
+  await s.store.claimProcessing('describe', 'u', day, id, 0, String(photo().key), 'image/png', 'dead', now);
+  assert.equal(await d.describe(s.note, 'u', s.services), 0);
+  assert.ok(s.logs.some((l) => l.outcome === 'lease-busy'));
+  assert.equal(((await s.store.note('u', day, id))!.media as Item[])[0]?.description, undefined);
+  s.services.clock = () => now + d.LOCK_FOR;
+  assert.equal(await worker.changed(stream({ ...s.note, text: 'Later edit' }, s.note), s.services), 1);
+});
+test('only a description or transcript added is the worker’s own write; a new photo is not', () => {
+  const before = { pk: 'USER#u', sk: `NOTE#${day}#${id}`, media: [photo()] };
+  assert.equal(worker.ownResultOnly({ ...before, media: [{ ...photo(), description: 'x' }] }, before), true);
+  assert.equal(worker.ownResultOnly({ ...before, media: [{ ...photo(), transcript: '' }] }, before), true);
+  assert.equal(worker.ownResultOnly({ ...before, media: [photo(), photo(1)] }, before), false);
+  assert.equal(worker.ownResultOnly({ ...before, text: 'edit' }, before), false);
+  assert.equal(worker.ownResultOnly(before, before), false);
+  assert.equal(worker.ownResultOnly(before, {}), false);
+});

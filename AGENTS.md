@@ -125,14 +125,21 @@ Where things are (each module's design comment explains its contract):
   are operator tools, with shared setup in `tools/operator.ts`.
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current.
 - `tools/{build-server,package-native,native-artifacts,native-release,web-platform}.ts`
-  build deterministic native artifacts, retain immutable S3 versions and
-  manage private release/policy receipts. `infra/template.yaml` is the stack.
-  `infra/github-deploy-role.yaml` is the separate `yvn-release-notes-deploy`
-  stack: the GitHub Actions deploy role, the CloudFormation service role and
-  the private release receipts bucket, applied by hand (its header has the command).
-  `deploy.sh` requires a clean green `origin/main`, verifies an archived
-  committed tree, publishes/activates only the requested native phase, and
-  syncs the web app. `docs/TYPESCRIPT-REBUILD.md` records the migration gates.
+  build deterministic native artifacts (with a `manifest.json` of their content
+  hashes), retain immutable S3 versions and run the native phases and origin
+  policies. `tools/{receipt-store,release-identity,release-cli,migrate-receipts}.ts`
+  are the receipts bucket and deploy lock, who may release, the one bundled
+  release tool and the one-time move of the old local receipts.
+  `infra/template.yaml` is the stack. `infra/github-deploy-role.yaml` is the
+  separate `yvn-release-notes-deploy` stack: the GitHub Actions deploy role,
+  the CloudFormation service role and the private release receipts bucket,
+  applied by hand (its header has the command).
+  `scripts/build-release.sh` builds a release bundle from a committed tree
+  with no cloud credentials; `scripts/release.sh` releases a bundle: the lock,
+  the requested native phase, the stack update through the service role, the
+  origin policies and the web app. `deploy.sh` is the Mac's path to both: it
+  requires a clean green `origin/main` and builds from a `git archive` of it.
+  `docs/TYPESCRIPT-REBUILD.md` records the migration gates.
 - `tsconfig.server.json` and `tests-node/` check servers, workers and tools;
   `npm run verify` checks the complete application. Shared `package-lock.json`
   pins runtime/build dependencies; installs do not run package scripts.
@@ -496,25 +503,44 @@ named native regressions and explicit obsolete implementation assumptions.
 - Deploy: `./deploy.sh` (cloud-engineer profile, us-east-1), from a clean
   checkout of `origin/main` with a green `validate` run by GitHub Actions;
   it refuses anything else. `--break-glass` is for GitHub being down, never
-  a red check: it skips only the fetch and the check lookup, so HEAD must
-  still be a clean checkout of `origin/main` as last fetched. It runs the
-  tests again first, and builds the web app from a `git archive` of HEAD,
-  so nothing git ignores goes in; a failed build stops the deploy. Its
-  comments have the rest (the code bucket, cache lifetimes, the
-  invalidation).
+  a red check: it skips only the fetch and the check lookups, so HEAD must
+  still be a clean checkout of `origin/main` as last fetched. It builds a
+  bundle from a `git archive` of HEAD with `scripts/build-release.sh`
+  (`npm run verify` again, the web app, the native artifacts), so nothing
+  git ignores goes in and a failed build stops the deploy, then hands it to
+  `scripts/release.sh`. Their comments have the rest (the code bucket, cache
+  lifetimes, the invalidation). The admin id and Turnstile mode are set only
+  here, never from a workflow.
 - Native publication and activation are separate: `./deploy.sh
 --native-http-phase=publish`, then `--native-http-phase=activate`;
   `--native-worker-phase=publish`, then `--native-worker-phase=activate`.
-  Use `--native-http-phase=rollback` or `--native-worker-phase=rollback`
-  to restore the recorded prior routing/versions. Ordinary deploys preserve
-  current native artifact versions and live pins. A full-shell private lock,
-  exact source/build identity, immutable per-build receipts and fresh metadata
-  checks protect retries; an uncertain CloudFormation update must finish
-  before another phase runs. Candidate worker probes use only
-  `{"self_test":true}` on published immutable versions, never subscriber data.
-  Never remove origin policies before restoring legacy routing during a
-  retained-runtime recovery. Receipts stay mode 600 in a private directory
-  outside the public repository; never commit their cloud identifiers.
+  Both publications may run in one deploy; activation and rollback are one
+  kind at a time. Use `--native-http-phase=rollback` or
+  `--native-worker-phase=rollback` to restore the recorded prior
+  routing/versions. Ordinary deploys preserve current native artifact
+  versions and live pins. One deploy lock, exact source/build identity,
+  immutable per-build receipts and fresh metadata checks protect retries; an
+  uncertain CloudFormation update must finish before another phase runs.
+  Candidate worker probes use only `{"self_test":true}` on published
+  immutable versions, never subscriber data. Never remove origin policies
+  before restoring legacy routing during a retained-runtime recovery.
+- **Receipts and the lock** live in the private receipts bucket
+  (`yvn-rn-deploy-receipts-<account>`, the deploy stack): `receipts/` written
+  once each (policy journals rewritten, the bucket keeps every version),
+  `locks/deploy.lock` created only when absent, and each release's private
+  log under `logs/` (the stack outputs and native parameters, kept a year).
+  Every release holds the lock for its whole run, the Mac's and CI's alike.
+  A held lock means a run is going or one died: find out which before
+  deleting it by hand; nothing ever takes it over. Never commit or print
+  receipts, logs or their cloud identifiers.
+- **The one-time receipt move** (Jamie runs it, after this tooling merges,
+  before any release): with node@24 on PATH and the cloud-engineer profile,
+  `node --import tsx tools/release-cli.ts migrate-receipts --from /Users/otto/.codex/tmp/yvn-native-release-receipts`,
+  then the same with `--check`, which must say `"ok":true`. It copies each
+  receipt byte for byte, never over a different one, and writes
+  `migration/complete.json`; native phases and policy steps refuse to run
+  until it is there (an ordinary deploy needs only the lock). Keep the local
+  folder until a native release has run from the bucket.
 - **Node 24** everywhere (`.node-version`, both workflows; `engines` says
   24 or later). This Mac's default `node` is newer, so put Homebrew's
   `/opt/homebrew/opt/node@24/bin` first on PATH for npm here; `deploy.sh`

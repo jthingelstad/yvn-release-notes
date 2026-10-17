@@ -1,5 +1,6 @@
 /** Sole owner of native HTTP endpoint policies and release pin receipts.
- * Run with Node 24, AWS_PROFILE=cloud-engineer and --receipt-dir OUTSIDE the repo.
+ * Runs through tools/release-cli.ts, under the deploy lock, with its policy
+ * journals and receipts in the private receipts bucket (tools/receipt-store.ts).
  * No data-plane reads, credential retrieval, source deletion or CloudFront edits.
  * Publish flow: prepare -> CF pinned candidate -> policy-install -> policy-verify
  * -> CF origin switch. Revert routing before policy-remove or disabling compute.
@@ -13,11 +14,9 @@ import {
   type GetWebFunctionEndpointResponse
 } from '@aws-sdk/client-lambda-web';
 import { CloudFormationClient, DescribeStacksCommand } from '@aws-sdk/client-cloudformation';
-import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, realpath, rename, stat, unlink } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createReceipt, readReceipt, writeReceipt, type ReceiptStore } from './receipt-store.ts';
+import { releaseIdentity } from './release-identity.ts';
 
 type Kind = 'App' | 'Mcp';
 type Artifact = { key: string; versionId: string; buildId: string };
@@ -117,10 +116,7 @@ function required(fields: Record<string, string>, key: string): string {
 
 async function context(region: string, stackName: string): Promise<Context> {
   if (stackName !== 'yvn-release-notes') throw new Error('This release tool is scoped to yvn-release-notes');
-  const identity = await new STSClient({ region }).send(new GetCallerIdentityCommand({}));
-  if (!identity.Arn?.includes(':assumed-role/ProjectsCloudEngineer/') || !identity.Account) {
-    throw new Error('Expected ProjectsCloudEngineer execution role');
-  }
+  const identity = { Account: (await releaseIdentity()).account };
   const response = await new CloudFormationClient({ region }).send(new DescribeStacksCommand({ StackName: stackName }));
   const stack = response.Stacks?.[0];
   if (
@@ -185,30 +181,14 @@ function artifact(ctx: Context, kind: Kind): Artifact {
   };
 }
 
-async function save(path: string, value: unknown): Promise<void> {
-  const temp = `${path}.${randomUUID()}.tmp`;
-  const file = await open(temp, 'wx', 0o600);
-  try {
-    await file.writeFile(`${JSON.stringify(value, null, 2)}\n`);
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-  await rename(temp, path);
-}
+const journalName = (kind: Kind) => `${kind.toLowerCase()}-policy.json`;
 
-async function journalAt(path: string): Promise<Journal | undefined> {
-  try {
-    const value: unknown = JSON.parse(await readFile(path, 'utf8'));
-    const journal = value as Journal;
-    if (journal.schema !== 1 || journal.owner !== 'yvn-web-platform-v1') {
-      throw new Error('Unrecognized policy journal');
-    }
-    return journal;
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
-    throw error;
+async function journalAt(store: ReceiptStore, kind: Kind): Promise<Journal | undefined> {
+  const journal = await readReceipt<Journal>(store, journalName(kind));
+  if (journal && (journal.schema !== 1 || journal.owner !== 'yvn-web-platform-v1')) {
+    throw new Error('Unrecognized policy journal');
   }
+  return journal;
 }
 
 function checkJournal(ctx: Context, functionArn: string, endpointArn: string, journal: Journal): void {
@@ -217,12 +197,12 @@ function checkJournal(ctx: Context, functionArn: string, endpointArn: string, jo
   }
 }
 
-export async function installPolicy(ctx: Context, kind: Kind, receiptDir: string): Promise<void> {
+export async function installPolicy(ctx: Context, kind: Kind, store: ReceiptStore): Promise<void> {
   const live = await endpoint(ctx, kind, 'live');
   const functionArn = live.functionArn!;
   const endpointArn = live.endpointArn!;
-  const path = resolve(receiptDir, `${kind.toLowerCase()}-policy.json`);
-  let journal = await journalAt(path);
+  const save = (value: Journal) => writeReceipt(store, journalName(kind), value);
+  let journal = await journalAt(store, kind);
   const actual = await currentPolicy(ctx, functionArn);
   const desired = endpointPolicy(endpointArn, ctx.distributionArn);
   if (journal) checkJournal(ctx, functionArn, endpointArn, journal);
@@ -232,7 +212,7 @@ export async function installPolicy(ctx: Context, kind: Kind, receiptDir: string
     // Recover a prior unknown Put outcome only if its full desired policy matches.
     if (policyHash(desired) === policyHash(JSON.parse(actual.policy))) {
       journal = { ...journal, revisionId: actual.revisionId, state: 'installed', savedAt: new Date().toISOString() };
-      await save(path, journal);
+      await save(journal);
       return;
     }
   } else if (journal && !['pending', 'deleted'].includes(journal.state)) {
@@ -252,9 +232,9 @@ export async function installPolicy(ctx: Context, kind: Kind, receiptDir: string
     savedAt: new Date().toISOString()
   };
   // Persist intent before API submission. The initial empty policy has no CAS
-  // token in this API; the sole owner, fresh private endpoint and local lock
+  // token in this API; the sole owner, fresh private endpoint and deploy lock
   // bound that first write. Every subsequent mutation uses its returned token.
-  await save(path, journal);
+  await save(journal);
   await ctx.web.send(
     new PutResourcePolicyCommand({
       resourceArn: functionArn,
@@ -265,13 +245,13 @@ export async function installPolicy(ctx: Context, kind: Kind, receiptDir: string
   const installed = await currentPolicy(ctx, functionArn);
   if (!installed) throw new Error('Policy installation was not confirmed');
   assertOwnedPolicy(journal, installed.policy, installed.revisionId);
-  await save(path, { ...journal, state: 'installed', revisionId: installed.revisionId });
+  await save({ ...journal, state: 'installed', revisionId: installed.revisionId });
 }
 
-export async function verifyPolicy(ctx: Context, kind: Kind, receiptDir: string): Promise<void> {
+export async function verifyPolicy(ctx: Context, kind: Kind, store: ReceiptStore): Promise<void> {
   const live = await endpoint(ctx, kind, 'live');
   await endpoint(ctx, kind, 'rollback');
-  const journal = await journalAt(resolve(receiptDir, `${kind.toLowerCase()}-policy.json`));
+  const journal = await journalAt(store, kind);
   if (!journal || journal.state !== 'installed') throw new Error('No installed owner journal');
   checkJournal(ctx, live.functionArn!, live.endpointArn!, journal);
   const actual = await currentPolicy(ctx, live.functionArn!);
@@ -282,32 +262,32 @@ export async function verifyPolicy(ctx: Context, kind: Kind, receiptDir: string)
   }
 }
 
-export async function removePolicy(ctx: Context, kind: Kind, receiptDir: string): Promise<void> {
+export async function removePolicy(ctx: Context, kind: Kind, store: ReceiptStore): Promise<void> {
   if (ctx.parameters.NativeHttpRouting !== 'legacy') {
     throw new Error('Restore legacy CloudFront routing before removing endpoint policies');
   }
   const live = await endpoint(ctx, kind, 'live', false);
-  const path = resolve(receiptDir, `${kind.toLowerCase()}-policy.json`);
-  const journal = await journalAt(path);
+  const save = (value: Journal) => writeReceipt(store, journalName(kind), value);
+  const journal = await journalAt(store, kind);
   if (!journal) throw new Error('No owner journal; refusing policy removal');
   checkJournal(ctx, live.functionArn!, live.endpointArn!, journal);
   const actual = await currentPolicy(ctx, live.functionArn!);
   if (!actual) {
     if (!['removing', 'deleted'].includes(journal.state)) throw new Error('Policy disappeared unexpectedly');
-    await save(path, { ...journal, state: 'deleted' });
+    await save({ ...journal, state: 'deleted' });
     return;
   }
   if (!['installed', 'removing'].includes(journal.state)) throw new Error('Policy must have a confirmed owner');
   assertOwnedPolicy(journal, actual.policy, actual.revisionId);
-  await save(path, { ...journal, state: 'removing' });
+  await save({ ...journal, state: 'removing' });
   await ctx.web.send(
     new DeleteResourcePolicyCommand({ resourceArn: live.functionArn!, revisionId: actual.revisionId })
   );
   if (await currentPolicy(ctx, live.functionArn!)) throw new Error('Policy deletion was not confirmed');
-  await save(path, { ...journal, state: 'deleted' });
+  await save({ ...journal, state: 'deleted' });
 }
 
-async function prepare(ctx: Context, receiptDir: string) {
+async function prepare(ctx: Context, store: ReceiptStore) {
   const pins: Record<string, string> = {};
   const receipt: Record<string, unknown> = { stackId: ctx.stackId, savedAt: new Date().toISOString() };
   if (ctx.parameters.NativeWebFunctionsEnabled === 'true') {
@@ -324,73 +304,33 @@ async function prepare(ctx: Context, receiptDir: string) {
       };
     }
   }
-  await save(resolve(receiptDir, `release-${randomUUID()}.json`), { ...receipt, pins });
-  return { pins, sourceBucket: required(ctx.outputs, 'NativeSourceBucketName') };
+  required(ctx.outputs, 'NativeSourceBucketName');
+  await createReceipt(store, `release-${randomUUID()}.json`, { ...receipt, pins });
+  return pins;
 }
 
-async function main(): Promise<void> {
-  if (Number(process.versions.node.split('.')[0]) !== 24) throw new Error('Release tooling requires Node 24');
-  const [command, ...args] = process.argv.slice(2);
-  if (!['prepare', 'policy-install', 'policy-verify', 'policy-remove'].includes(command ?? '')) {
-    throw new Error(
-      'Usage: web-platform.ts prepare|policy-install|policy-verify|policy-remove --receipt-dir /private/path [--region us-east-1]'
-    );
-  }
-  const options: Record<string, string> = {};
-  for (let index = 0; index < args.length; index += 2) {
-    const key = args[index];
-    const value = args[index + 1];
-    if (!['--receipt-dir', '--region', '--stack'].includes(key ?? '') || !value || options[key!]) {
-      throw new Error('Invalid or duplicate release tool option');
-    }
-    options[key!] = value;
-  }
-  const dir = options['--receipt-dir'];
-  if (!dir || !isAbsolute(dir)) throw new Error('A private absolute receipt directory is required');
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  const receiptDir = await realpath(dir);
-  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  const fromRepo = relative(repoRoot, receiptDir);
-  if (fromRepo === '' || (!fromRepo.startsWith(`..${sep}`) && fromRepo !== '..' && !isAbsolute(fromRepo))) {
-    throw new Error('Release journals must stay outside the public repository');
-  }
-  if (((await stat(receiptDir)).mode & 0o077) !== 0) throw new Error('Receipt directory must have mode 700');
-  const lockPath = resolve(receiptDir, 'web-platform.lock');
-  const lock = await open(lockPath, 'wx', 0o600);
-  try {
-    await lock.writeFile(`${process.pid}\n`);
-    const ctx = await context(options['--region'] ?? 'us-east-1', options['--stack'] ?? 'yvn-release-notes');
-    if (command === 'prepare') {
-      console.info(JSON.stringify(await prepare(ctx, receiptDir)));
-    } else {
-      for (const kind of ['App', 'Mcp'] as const) {
-        if (command === 'policy-install') await installPolicy(ctx, kind, receiptDir);
-        else if (command === 'policy-remove') await removePolicy(ctx, kind, receiptDir);
-        else await verifyPolicy(ctx, kind, receiptDir);
-      }
-      if (command === 'policy-install') {
-        for (const kind of ['App', 'Mcp'] as const) await verifyPolicy(ctx, kind, receiptDir);
-      }
-      console.info(
-        JSON.stringify({ command, confirmed: true, NativeOriginPoliciesReady: command !== 'policy-remove' })
-      );
-    }
-  } finally {
-    await lock.close();
-    await unlink(lockPath);
-  }
-}
+export type PlatformCommand = 'prepare' | 'policy-install' | 'policy-verify' | 'policy-remove';
+export const platformCommands: readonly PlatformCommand[] = [
+  'prepare',
+  'policy-install',
+  'policy-verify',
+  'policy-remove'
+];
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error: unknown) => {
-    // SDK error names, never response bodies/headers or credential chains.
-    console.error(
-      error instanceof Error && error.name === 'Error'
-        ? error.message
-        : error instanceof Error
-          ? error.name
-          : 'Release tool failed'
-    );
-    process.exitCode = 1;
-  });
+/** One platform step against the live stack; the caller holds the deploy lock. */
+export async function runPlatform(
+  command: PlatformCommand,
+  store: ReceiptStore
+): Promise<{ pins: Record<string, string>; confirmed?: boolean }> {
+  const ctx = await context('us-east-1', 'yvn-release-notes');
+  if (command === 'prepare') return { pins: await prepare(ctx, store) };
+  for (const kind of ['App', 'Mcp'] as const) {
+    if (command === 'policy-install') await installPolicy(ctx, kind, store);
+    else if (command === 'policy-remove') await removePolicy(ctx, kind, store);
+    else await verifyPolicy(ctx, kind, store);
+  }
+  if (command === 'policy-install') {
+    for (const kind of ['App', 'Mcp'] as const) await verifyPolicy(ctx, kind, store);
+  }
+  return { pins: {}, confirmed: true };
 }

@@ -3,7 +3,7 @@
  * libraries are added explicitly for the isolated description worker. */
 import { ZipFile } from 'yazl';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { readdir, lstat, readFile, mkdir, rm } from 'node:fs/promises';
+import { readdir, lstat, readFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
@@ -88,4 +88,36 @@ export async function packageWorkers(buildDirectory: string, outputDirectory: st
     });
   }
   return outputs;
+}
+
+export type Manifest = {
+  schema: 1;
+  artifacts: {
+    kind: 'http' | 'workers';
+    name: string;
+    file: string;
+    sha256: string;
+    codeSha256: string;
+    size: number;
+  }[];
+};
+/** Every native artifact, packaged in the build step with no cloud access,
+ * and a manifest of their hashes for the deploy step to check and upload. */
+export async function packageRelease(buildDirectory: string, nativeModules: string, outputDirectory: string) {
+  const manifest: Manifest = { schema: 1, artifacts: [] };
+  for (const [kind, artifacts] of [
+    ['http', await packageHttp(buildDirectory, outputDirectory)],
+    ['workers', await packageWorkers(buildDirectory, outputDirectory, nativeModules)]
+  ] as const)
+    for (const artifact of artifacts)
+      manifest.artifacts.push({
+        kind,
+        name: artifact.kind,
+        file: `${artifact.kind}.zip`,
+        sha256: artifact.sha256,
+        codeSha256: artifact.codeSha256,
+        size: (await lstat(artifact.path)).size
+      });
+  await writeFile(resolve(outputDirectory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  return manifest;
 }

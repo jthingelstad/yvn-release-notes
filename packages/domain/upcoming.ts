@@ -5,6 +5,7 @@
  * An optional tag groups plans; journal tags still live only in note text. */
 import { anniversary, daysBetween, parseDay } from './dates.ts';
 import { computeVersion } from './version.ts';
+import { fold } from './unicode.ts';
 
 export const UPCOMING_KINDS = ['birthday', 'anniversary', 'trip', 'event'] as const;
 export type UpcomingKind = (typeof UPCOMING_KINDS)[number];
@@ -135,6 +136,22 @@ export function remindersFor(entries: readonly UpcomingEntry[], today: string): 
   due.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   return { shown: due.slice(0, UPCOMING_SHOWN), more: Math.max(0, due.length - UPCOMING_SHOWN) };
 }
+/** What the page's search reads, folded like note search: the title, tag, kind,
+ * destination and the occurrence line (so "5.0.0" or "major" find a birthday). */
+export function upcomingSearchText(view: UpcomingView, kindName: string): string {
+  const place = view.place;
+  return fold(
+    [
+      view.title,
+      view.tag ? '#' + view.tag : '',
+      kindName,
+      place ? [place.name, place.region, place.country].filter(Boolean).join(', ') : '',
+      view.occurrence.line
+    ].join('\n')
+  );
+}
+/** Every term must appear (AND), as in note search. No terms match everything. */
+export const upcomingMatches = (text: string, terms: readonly string[]) => terms.every((term) => text.includes(term));
 /** Explicit projection for HTTP and exports: never expose table keys. */
 export function upcomingEntry(row: Record<string, unknown>): UpcomingEntry {
   return {

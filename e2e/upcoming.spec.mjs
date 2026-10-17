@@ -226,6 +226,18 @@ test('kind and tag filters combine, survive reloads and carry a tag into an exis
   await expect(page.getByRole('rowheader',{name:'Untagged event',exact:true})).toBeVisible();
   await expect(page.getByRole('rowheader',{name:'Second team milestone',exact:false})).toBeVisible();
   await page.getByRole('combobox',{name:'Filter by tag',exact:true}).selectOption('sps');
+  // Search combines with the selects, survives a reload in the fragment, and clears with them.
+  await page.getByRole('searchbox',{name:'Search dates',exact:true}).fill('MILESTONE');
+  await expect(page.getByRole('rowheader',{name:'Team milestone',exact:false})).toBeVisible();
+  await expect(page.getByRole('rowheader',{name:'Team birthday',exact:false})).toHaveCount(0);
+  await expect(page).toHaveURL(/#.*q=MILESTONE/);
+  await page.reload();
+  await expect(page.getByRole('searchbox',{name:'Search dates',exact:true})).toHaveValue('MILESTONE');
+  await page.getByRole('searchbox',{name:'Search dates',exact:true}).fill('"family milestone"');
+  await expect(page.getByText('No dates match these filters.',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Clear filters',exact:true}).click();
+  await expect(page.getByRole('searchbox',{name:'Search dates',exact:true})).toHaveValue('');
+  await page.getByRole('combobox',{name:'Filter by tag',exact:true}).selectOption('sps');
   await page.locator('.upcoming-past summary').click();
   await expect(page.getByRole('table',{name:'Past events',exact:true})).toContainText('Past team event');
   await page.evaluate(day => sessionStorage.setItem(`rn-draft-${day}`,'Already writing about today.'),today);

@@ -297,7 +297,9 @@ ZIP...` prints what an import would do, as counts (`--plan-out` to a
   Existing MCP scopes and tools do not read or write Upcoming.
 - **Grouping dates** (2026-10-14): one optional tag per entry, such as `#sps`,
   normalized like note hashtags. Kind and Tag filters combine on Upcoming,
-  including past events. A tagged entry can start today's editable note draft
+  including past events, with a text search (Jamie, 2026-10-17: "a general
+  string search") over the loaded list, folded like note search; the words
+  stay in the fragment, never a request. A tagged entry can start today's editable note draft
   with its hashtag, preserving existing text; it never creates a note on its own.
   Upcoming tags remain separate from journal tags until written in a saved note.
 - **A private calendar link** (Jamie, 2026-10-17: an iCal feed of Upcoming "the

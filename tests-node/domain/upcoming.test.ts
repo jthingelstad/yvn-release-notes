@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { occurrence, remindersFor, upcomingViews, type UpcomingEntry } from '../../packages/domain/upcoming.ts';
+import {
+  occurrence,
+  remindersFor,
+  upcomingMatches,
+  upcomingSearchText,
+  upcomingViews,
+  type UpcomingEntry
+} from '../../packages/domain/upcoming.ts';
+import { fold } from '../../packages/domain/unicode.ts';
 const entry: UpcomingEntry = {
   id: 'alex',
   kind: 'birthday',
@@ -66,4 +74,25 @@ test('trip departure/last day, ongoing/past status and one-day trips appear only
   const past = { ...trip, kind: 'event' as const, end_date: null, date: '2026-10-01' };
   assert.equal(remindersFor([past], '2026-10-13').shown.length, 0);
   assert.equal(upcomingViews([past, entry, trip], '2026-10-13').at(-1)?.id, past.id);
+});
+test('page search reads title, tag, kind, destination and the line, folded, every term required', () => {
+  const view = { ...entry, occurrence: occurrence(entry, '2026-10-13') };
+  const text = upcomingSearchText(view, 'Birthday');
+  for (const terms of [['alex'], ['ALEX'.toLowerCase()], ['5.0.0'], ['major', 'alex'], ['birthday']])
+    assert.ok(upcomingMatches(text, terms), terms.join(' '));
+  assert.ok(!upcomingMatches(text, ['alex', 'paris']));
+  assert.ok(upcomingMatches(text, []));
+  const trip = {
+    ...entry,
+    kind: 'trip' as const,
+    title: 'Été à Zürich',
+    tag: 'sps',
+    date: '2026-10-20',
+    year: null,
+    end_date: '2026-10-27',
+    place: { name: 'Zürich', region: 'Zurich', country: 'Switzerland', tz: 'Europe/Zurich', lat: 47.4, lon: 8.5 }
+  };
+  const folded = upcomingSearchText({ ...trip, occurrence: occurrence(trip, '2026-10-13') }, 'Trip');
+  for (const term of ['ete', 'zurich', 'switzerland', '#sps', 'trip', 'october 20'])
+    assert.ok(upcomingMatches(folded, [fold(term)]), term);
 });

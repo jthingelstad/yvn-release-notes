@@ -24,10 +24,13 @@ import type { Place } from '../lib/types.ts';
 import {
   annual,
   defaultReminders,
+  upcomingMatches,
+  upcomingSearchText,
   UPCOMING_TITLE_MAX,
   type UpcomingKind,
   type UpcomingView
 } from '../../../packages/domain/upcoming.ts';
+import { MAX_QUERY, searchTerms } from '../../../packages/domain/search.ts';
 
 const PlacePicker = lazy(() => import('../components/placepicker.tsx').then((m) => ({ default: m.PlacePicker })));
 const NAMES: Record<UpcomingKind, string> = {
@@ -60,8 +63,12 @@ export function Upcoming() {
   const query = useQuery(upcomingQuery),
     client = useQueryClient();
   const navigate = useNavigate();
+  // The filters live in the fragment, which no server sees, so a reload keeps them.
   const kindFilter = useHashParam('kind') ?? '',
-    tagFilter = useHashParam('tag') ?? '';
+    tagFilter = useHashParam('tag') ?? '',
+    searchFilter = useHashParam('q') ?? '',
+    terms = searchTerms(searchFilter),
+    filtering = Boolean(kindFilter || tagFilter || terms.length);
   // undefined: closed; null: new; a saved entry: editing that revision.
   const [selected, setSelected] = useState<UpcomingView | null | undefined>(undefined);
   const [problem, setProblem] = useState<string | null>(null),
@@ -75,14 +82,17 @@ export function Upcoming() {
     tags = [...new Set(entries.flatMap((e) => (e.tag ? [e.tag] : [])))].toSorted(),
     filtered = entries.filter(
       (e) =>
-        (!kindFilter || e.kind === kindFilter) && (!tagFilter || (tagFilter === '-' ? !e.tag : e.tag === tagFilter))
+        (!kindFilter || e.kind === kindFilter) &&
+        (!tagFilter || (tagFilter === '-' ? !e.tag : e.tag === tagFilter)) &&
+        (!terms.length || upcomingMatches(upcomingSearchText(e, NAMES[e.kind]), terms))
     ),
     future = filtered.filter((e) => e.occurrence.status !== 'past'),
     past = filtered.filter((e) => e.occurrence.status === 'past');
-  function filter(kind: string, tag: string) {
+  function filter(kind: string, tag: string, q = searchFilter) {
     const hash = new URLSearchParams();
     if (kind) hash.set('kind', kind);
     if (tag) hash.set('tag', tag);
+    if (q) hash.set('q', q);
     navigate({ to: '/upcoming/', hash: hash.toString(), replace: true });
   }
   function choose(entry: UpcomingView | null) {
@@ -273,8 +283,21 @@ export function Upcoming() {
                       )}
                     </select>
                   </label>
-                  {(kindFilter || tagFilter) && (
-                    <button className="quiet" type="button" onClick={() => filter('', '')}>
+                  <label className="upcoming-search">
+                    Search dates
+                    <input
+                      type="search"
+                      name="q"
+                      maxLength={MAX_QUERY}
+                      autoComplete="off"
+                      enterKeyHint="search"
+                      placeholder={'paris, "big day"'}
+                      value={searchFilter}
+                      onChange={(e) => filter(kindFilter, tagFilter, e.target.value)}
+                    />
+                  </label>
+                  {filtering && (
+                    <button className="quiet" type="button" onClick={() => filter('', '', '')}>
                       Clear filters
                     </button>
                   )}
@@ -288,7 +311,7 @@ export function Upcoming() {
               list(future, 'Upcoming events')
             ) : (
               <p className="upcoming-empty">
-                {(kindFilter || tagFilter) && !filtered.length
+                {filtering && !filtered.length
                   ? 'No dates match these filters.'
                   : entries.some((e) => e.occurrence.status === 'past')
                     ? 'Nothing ahead just yet.'

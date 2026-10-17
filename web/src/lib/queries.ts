@@ -9,7 +9,8 @@ import type { UpcomingView } from '../../../packages/domain/upcoming.ts';
 
 export const upcomingQuery = queryOptions({
   queryKey: ['upcoming'],
-  queryFn: () => get<{ entries: UpcomingView[]; today: string; tz: string; limit: number }>('/api/upcoming')
+  queryFn: () =>
+    get<{ entries: UpcomingView[]; today: string; tz: string; limit: number; calendar: string | null }>('/api/upcoming')
 });
 
 // A recording being written out: look again every 30 seconds, 20 times.

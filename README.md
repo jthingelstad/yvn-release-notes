@@ -99,8 +99,9 @@ regressions run with `npm run e2e`; the native tests with `npm run test:server`.
 CloudFront signs requests to the private Web Function origins using OAC;
 email link/code sign-in still proves ownership before any subscriber write.
 
-`infra/template.yaml` is the whole stack (CloudFormation) and `deploy.sh`
-deploys it. `AGENTS.md` has the design rules and the operating notes, and
+`infra/template.yaml` is the whole stack (CloudFormation). `deploy.sh`
+deploys it from the Mac, and the `deploy` and `activate` workflows run the
+same release (`scripts/release.sh`) from GitHub Actions after an approval. `AGENTS.md` has the design rules and the operating notes, and
 `docs/WEB-APP.md` the web app's design.
 
 ## License

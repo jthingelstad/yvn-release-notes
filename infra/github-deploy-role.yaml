@@ -359,6 +359,9 @@ Resources:
                 Resource:
                   - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*"
                   - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*:*"
+              # The allow needs a qualifier, so unqualified invokes stay denied.
+              # A deny on the unqualified pattern would also deny every version:
+              # an ARN wildcard matches across the colon.
               - Sid: ProbePublishedVersions
                 Effect: Allow
                 Action: lambda:InvokeFunction
@@ -367,8 +370,8 @@ Resources:
                 Effect: Deny
                 Action: lambda:InvokeFunction
                 Resource:
-                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*"
                   - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*:live"
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*:$LATEST"
               # web-platform.ts and native-release.ts: endpoint pins, candidate
               # revisions and the CloudFront-only endpoint policy. Never
               # DeleteResourcePolicy: removal is a Mac-only recovery step.

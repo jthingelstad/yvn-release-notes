@@ -1578,7 +1578,7 @@ Resources:
                   ForAllValues:StringLike:
                     dynamodb:LeadingKeys: ["USER#*", "MCPMETA#*"]
               - Effect: Allow
-                Action: [dynamodb:UpdateItem]
+                Action: [dynamodb:UpdateItem, dynamodb:DeleteItem]
                 Resource: !GetAtt Table.Arn
                 Condition:
                   ForAllValues:StringLike:

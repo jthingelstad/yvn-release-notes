@@ -2,7 +2,7 @@
  * calendar feed is the one exception: its private link is the whole proof. */
 import { randomUUID } from 'node:crypto';
 import { SessionService, reject, type ApiContext } from '../../packages/backend/sessions.ts';
-import { upcomingContent } from '../../packages/backend/upcoming.ts';
+import { batchShape, prepareUpcomingBatch, upcomingContent } from '../../packages/backend/upcoming.ts';
 import { replyToken } from '../../packages/backend/accounts.ts';
 import { occurrence, upcomingViews, UPCOMING_MAX, type UpcomingEntry } from '../../packages/domain/upcoming.ts';
 import { calendarEvents, ics } from '../../packages/domain/calendar.ts';
@@ -35,8 +35,28 @@ export async function upcomingRoutes(
       limit: UPCOMING_MAX,
       calendar: feedUrl(ctx, profile)
     });
-  const value = await body(service.request),
-    previous = pattern === '/api/upcoming' ? null : await store.upcoming(uid, args[0]!);
+  const value = await body(service.request);
+  if (pattern === '/api/upcoming/batch') {
+    const batch = batchShape(value),
+      existing = await store.upcomingEntries(uid),
+      { changes, count } = await prepareUpcomingBatch(batch, existing, today, at, (q) => service.geocode(q));
+    if (value.dry_run === true)
+      return json({
+        ok: true,
+        dry_run: true,
+        ...count,
+        plan: {
+          add: changes.filter((c) => !c.previous).map((c) => c.next),
+          change: changes.filter((c) => c.previous && c.next).map((c) => ({ before: c.previous, after: c.next })),
+          remove: changes.filter((c) => !c.next).map((c) => c.previous!.id)
+        }
+      });
+    const outcome = await store.upcomingBatch(uid, changes);
+    service.log({ event: 'upcoming', user: uid, action: 'batch', ...count, applied: outcome.applied });
+    if (!outcome.ok) reject(409, 'upcoming-conflict', { applied: outcome.applied });
+    return json({ ok: true, ...count });
+  }
+  const previous = pattern === '/api/upcoming' ? null : await store.upcoming(uid, args[0]!);
   if (pattern !== '/api/upcoming' && !previous) reject(404, 'upcoming-missing');
   if (previous && (!Number.isSafeInteger(value.revision) || value.revision !== previous.revision))
     reject(409, 'upcoming-changed');

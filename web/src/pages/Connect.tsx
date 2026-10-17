@@ -23,12 +23,19 @@ export function Connect() {
   });
   const [media, setMedia] = useState(false);
   const [write, setWrite] = useState(false);
+  const [upcoming, setUpcoming] = useState(false);
   const [busy, run] = useBusy();
   const problem = useProblem();
   const decide = (approve: boolean) =>
     run(async () => {
       problem.clear();
-      const r = await api<{ redirect: string }>('POST', '/api/mcp/authorize', { request, approve, media, write });
+      const r = await api<{ redirect: string }>('POST', '/api/mcp/authorize', {
+        request,
+        approve,
+        media,
+        write,
+        upcoming
+      });
       if (!r.ok)
         return problem.show('This connection request expired or could not be approved. Start again from your agent.');
       window.location.assign(r.data.redirect);
@@ -71,6 +78,18 @@ export function Connect() {
               cannot rewrite your notes or delete anything. Turn off adding in Settings without stopping reads.
             </p>
           )}
+          {info.data.scope.includes('upcoming') && (
+            <label className="check">
+              <input type="checkbox" checked={upcoming} onChange={(e) => setUpcoming(e.target.checked)} /> Also allow
+              reading and changing my Upcoming dates
+            </label>
+          )}
+          {upcoming && (
+            <p className="hint">
+              The agent can list your Upcoming dates and, when you ask, add, change and remove them. This never touches
+              your notes.
+            </p>
+          )}
           <p className="hint">
             The agent service receives what it reads under its own privacy and retention policies. Adding notes is off
             unless you choose it above. It cannot delete notes, change settings, or start processing. Your transcription
@@ -82,7 +101,13 @@ export function Connect() {
           </p>
           <div className="row">
             <button className="go" type="button" disabled={busy} onClick={() => decide(true)}>
-              {write ? 'Allow reading and adding' : 'Allow reading'}
+              {write && upcoming
+                ? 'Allow reading, adding and Upcoming'
+                : write
+                  ? 'Allow reading and adding'
+                  : upcoming
+                    ? 'Allow reading and Upcoming'
+                    : 'Allow reading'}
             </button>
             <button type="button" className="quiet" disabled={busy} onClick={() => decide(false)}>
               Cancel

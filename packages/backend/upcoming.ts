@@ -1,11 +1,20 @@
 /** Owner-only entry validation. All writes go through the request-local
  * guarded Store, proving the live session/account in the same transaction. */
-import { reject } from './sessions.ts';
-import { clean } from './places.ts';
+import { randomUUID } from 'node:crypto';
+import { reject, ApiError } from './sessions.ts';
+import { clean, type City } from './places.ts';
 import { validDay, parseDay, formatDay } from '../domain/dates.ts';
-import { pythonTrim, codePointLength } from '../domain/unicode.ts';
+import { pythonTrim, codePointLength, fold } from '../domain/unicode.ts';
 import { MAX_TAG, slug } from '../domain/tags.ts';
-import { annual, defaultReminders, UPCOMING_KINDS, UPCOMING_TITLE_MAX, type UpcomingKind } from '../domain/upcoming.ts';
+import {
+  annual,
+  defaultReminders,
+  UPCOMING_KINDS,
+  UPCOMING_MAX,
+  UPCOMING_TITLE_MAX,
+  type UpcomingEntry,
+  type UpcomingKind
+} from '../domain/upcoming.ts';
 import type { Item } from './store-types.ts';
 
 export function upcomingContent(value: Item, today: string) {
@@ -78,4 +87,111 @@ export function upcomingContent(value: Item, today: string) {
     email,
     reminders: (reminders as number[]).toSorted((a, b) => b - a)
   };
+}
+
+/** A batch of adds, changes and removes (the text editor, and agents through
+ * `workers/capture.ts`) validated as a whole before anything is written. A
+ * destination may be a city object from the picker or text, "Name" or
+ * "Name, Region, Country", resolved through the same city search as the form;
+ * qualifiers pick among same-named cities. Problems name their list and index. */
+export interface UpcomingChange {
+  next: UpcomingEntry | null;
+  previous: UpcomingEntry | null;
+}
+export interface UpcomingBatch {
+  add: Item[];
+  change: Item[];
+  remove: Item[];
+}
+export const UPCOMING_BATCH_LISTS = ['add', 'change', 'remove'] as const;
+export const UPCOMING_BATCH_MAX = UPCOMING_MAX;
+export function batchShape(value: Item): UpcomingBatch {
+  if (Object.keys(value).some((field) => !['add', 'change', 'remove', 'dry_run'].includes(field)))
+    reject(400, 'upcoming-fields');
+  const lists = Object.fromEntries(
+    UPCOMING_BATCH_LISTS.map((list) => {
+      const items = value[list] ?? [];
+      if (!Array.isArray(items) || items.some((item) => !item || typeof item !== 'object' || Array.isArray(item)))
+        reject(400, 'upcoming-fields', { list });
+      return [list, items as Item[]];
+    })
+  ) as unknown as UpcomingBatch;
+  if (lists.add.length + lists.change.length + lists.remove.length > UPCOMING_BATCH_MAX)
+    reject(400, 'upcoming-batch', { limit: UPCOMING_BATCH_MAX });
+  return lists;
+}
+export async function resolvePlace(text: string, geocode: (q: string) => Promise<City[]>): Promise<City | null> {
+  const [name = '', ...rest] = text.split(',').map((part) => pythonTrim(part)),
+    wanted = rest.map(fold).filter(Boolean);
+  if (!name) return null;
+  let cities: City[];
+  try {
+    cities = await geocode(name);
+  } catch {
+    reject(502, 'places-failed');
+  }
+  const matching = cities.filter((city) =>
+    wanted.every((part) => [city.region, city.country].map(fold).includes(part))
+  );
+  return (wanted.length ? matching : cities)[0] ?? null;
+}
+export async function prepareUpcomingBatch(
+  batch: UpcomingBatch,
+  existing: readonly UpcomingEntry[],
+  today: string,
+  at: string,
+  geocode: (q: string) => Promise<City[]>
+): Promise<{ changes: UpcomingChange[]; count: Record<(typeof UPCOMING_BATCH_LISTS)[number], number> }> {
+  const byId = new Map(existing.map((entry) => [entry.id, entry])),
+    seen = new Set<string>(),
+    changes: UpcomingChange[] = [];
+  const at_ = (list: string, index: number, run: () => UpcomingChange) => {
+    try {
+      changes.push(run());
+    } catch (error) {
+      if (error instanceof ApiError) throw new ApiError(error.status, error.error, { ...error.extra, list, index });
+      throw error;
+    }
+  };
+  const previousFor = (item: Item, list: string, index: number): UpcomingEntry => {
+    const previous = typeof item.id === 'string' ? byId.get(item.id) : undefined;
+    if (!previous) reject(404, 'upcoming-missing', { list, index });
+    if (seen.has(previous.id)) reject(400, 'upcoming-fields', { list, index });
+    seen.add(previous.id);
+    if (!Number.isSafeInteger(item.revision) || item.revision !== previous.revision)
+      reject(409, 'upcoming-changed', { list, index });
+    return previous;
+  };
+  batch.remove.forEach((item, index) => {
+    if (Object.keys(item).some((field) => !['id', 'revision'].includes(field)))
+      reject(400, 'upcoming-fields', { list: 'remove', index });
+    at_('remove', index, () => ({ next: null, previous: previousFor(item, 'remove', index) }));
+  });
+  for (const list of ['change', 'add'] as const)
+    for (const [index, item] of batch[list].entries()) {
+      const { id, ...fields } = item,
+        previous = list === 'change' ? previousFor(item, list, index) : null;
+      if (list === 'add' && (Object.hasOwn(item, 'id') || Object.hasOwn(item, 'revision')))
+        reject(400, 'upcoming-fields', { list, index });
+      delete fields.revision;
+      if (typeof fields.place === 'string') {
+        const city = await resolvePlace(fields.place, geocode);
+        if (!city) reject(400, 'upcoming-place', { list, index, place: fields.place });
+        fields.place = city;
+      }
+      void id;
+      at_(list, index, () => ({
+        next: {
+          id: previous?.id ?? randomUUID(),
+          ...upcomingContent(fields, today),
+          revision: (previous?.revision ?? 0) + 1,
+          created_at: previous?.created_at ?? at,
+          updated_at: at
+        },
+        previous
+      }));
+    }
+  if (existing.length + batch.add.length - batch.remove.length > UPCOMING_MAX)
+    reject(400, 'upcoming-limit', { limit: UPCOMING_MAX });
+  return { changes, count: { add: batch.add.length, change: batch.change.length, remove: batch.remove.length } };
 }

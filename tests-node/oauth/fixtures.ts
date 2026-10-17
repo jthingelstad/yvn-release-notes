@@ -45,9 +45,9 @@ export async function pending(context: OAuthContext, scope = 'notes:read media:r
   const id = new URLSearchParams(new URL(authorization.headers.get('location')!).hash.slice(1)).get('request')!;
   return { cid, id };
 }
-export async function consent(context: OAuthContext, write = true, media = true, uid = 'u') {
-  const { cid, id } = await pending(context),
-    approved = await new OAuthService(context).authorize(uid, { request: id, approve: true, media, write });
+export async function consent(context: OAuthContext, write = true, media = true, uid = 'u', upcoming = false) {
+  const { cid, id } = await pending(context, 'notes:read media:read notes:write upcoming'),
+    approved = await new OAuthService(context).authorize(uid, { request: id, approve: true, media, write, upcoming });
   const code = new URL(String(approved.redirect)).searchParams.get('code')!;
   return {
     grant_type: 'authorization_code',
@@ -58,8 +58,8 @@ export async function consent(context: OAuthContext, write = true, media = true,
     code_verifier: VERIFIER
   };
 }
-export async function connected(context: OAuthContext, write = true, media = true, uid = 'u') {
-  const code = await consent(context, write, media, uid),
+export async function connected(context: OAuthContext, write = true, media = true, uid = 'u', upcoming = false) {
+  const code = await consent(context, write, media, uid, upcoming),
     tokens = await new OAuthService(context).exchange(code),
     family = await new OAuthService(context).bearer(String(tokens.access_token));
   assert.ok(family);

@@ -249,3 +249,67 @@ test('no implicit write approval and receipts expire at 24 hours', async () => {
     'scope_required'
   );
 });
+test('an Upcoming batch commits entries, count, receipt, audit, daily count and live grant together, and rechecks the grant after a refusal', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx, true, true, 'u', true),
+    sent: OAuthRow[] = [],
+    original = ctx.store.memory.send.bind(ctx.store.memory);
+  ctx.store.memory.send = async (command) => {
+    if (command instanceof TransactWriteCommand) sent.push(command.input as OAuthRow);
+    return original(command);
+  };
+  const event = {
+    token: a.token,
+    tool: 'upcoming_save',
+    arguments: {
+      entries: [
+        { kind: 'birthday', title: 'Alex', date: '10-20' },
+        { kind: 'event', title: 'Concert', date: '2026-11-01' }
+      ],
+      idempotency_key: 'first'
+    }
+  };
+  const first = await captureNote(event, { ...ctx, geocode: async () => [] });
+  assert.equal(first.replayed, false);
+  const items = (sent.at(-1)!.TransactItems as OAuthRow[]).map(
+    (op) =>
+      Object.keys(op)[0] +
+      ':' +
+      String(
+        (Object.values(op)[0] as OAuthRow).Key
+          ? ((Object.values(op)[0] as OAuthRow).Key as OAuthRow).sk
+          : ((Object.values(op)[0] as OAuthRow).Item as OAuthRow).sk
+      ).split('#')[0]
+  );
+  assert.deepEqual(items, [
+    'Put:UPCOMING',
+    'Put:UPCOMING',
+    'Update:PROFILE',
+    'ConditionCheck:STATE',
+    'Put:CAPTURE',
+    'Put:LOG',
+    'Put:WRITERATE'
+  ]);
+  const family = (sent.at(-1)!.TransactItems as OAuthRow[])[3]!.ConditionCheck as OAuthRow;
+  assert.equal((family.ExpressionAttributeValues as OAuthRow)[':write'], 'upcoming');
+  assert.equal((await ctx.store.mcpProfile('u'))!.upcoming_count, 2);
+  const rate = ctx.store.memory.all().find((i) => String(i.sk).startsWith('WRITERATE#upcoming#'));
+  assert.equal(rate!.n, 1);
+  // Daily cap of 50 calls, counted per call.
+  ctx.store.seed({ ...rate!, n: 50 });
+  const capped = await captureNote(
+    { ...event, arguments: { ...event.arguments, idempotency_key: 'capped' } },
+    { ...ctx, geocode: async () => [] }
+  );
+  assert.equal(capped.error, 'rate_limited');
+  // A removed grant after the pre-check commits nothing.
+  const fid = String(a.family.id);
+  const row = (await ctx.store.mcpGet('OAUTHFAMILY#' + fid))!;
+  ctx.store.seed({ ...row, scope: 'notes:read', revision: Number(row.revision) + 1 });
+  const refused = await captureNote(
+    { ...event, arguments: { ...event.arguments, idempotency_key: 'later' } },
+    { ...ctx, geocode: async () => [] }
+  );
+  assert.equal(refused.error, 'scope_required');
+  assert.equal((await ctx.store.upcomingEntries('u')).length, 2);
+});

@@ -32,7 +32,8 @@ Every write proves the writer owns the subscriber's address:
 - **By an agent**: the owner explicitly delegates `notes:write` in that
   email-verified web session. `workers/capture.ts` proves the live grant and account
   in the same transaction as each create or append. Only a connection's
-  own assistant-authored notes may be appended to; no MCP edit or delete.
+  own assistant-authored notes may be appended to; no MCP edit or delete of
+  notes. Upcoming dates have their own `upcoming` scope (below).
 - **By the standing address** (Jamie, 2026-10-12): `<token>@` the inbound
   domain, 120 random bits naming the person, not a day (`INBOX#`), shown
   only in their settings and the footer of their emails, with every check
@@ -294,7 +295,16 @@ ZIP...` prints what an import would do, as counts (`--plan-out` to a
 - Entries live under `USER#` as `UPCOMING#<id>`, with atomic revision/capacity
   checks and the current session/account proof on writes. Include them in all
   owner exports and account deletion; never log titles, dates or destinations.
-  Existing MCP scopes and tools do not read or write Upcoming.
+  Note scopes never reach Upcoming.
+- **Bulk editing** (Jamie, 2026-10-17: changing many dates "is a lot of
+  clicking"): `/upcoming-text/` edits every date as a line of text
+  (`packages/domain/upcoming-text.ts`; kind and date first, title free, the
+  rest marked, so columns never have to line up), previewed by a dry run and
+  applied through `POST /api/upcoming/batch`, which commits all or nothing
+  with the same revision and capacity proofs. The separate MCP scope
+  `upcoming` (Jamie: "here's a bunch of information, go add it to my
+  upcoming") gives `upcoming_list`, `upcoming_save` and `upcoming_delete`
+  through the capture function, at most 50 per call, 50 calls a day.
 - **Grouping dates** (2026-10-14): one optional tag per entry, such as `#sps`,
   normalized like note hashtags. Kind and Tag filters combine on Upcoming,
   including past events, with a text search (Jamie, 2026-10-17: "a general
@@ -645,7 +655,8 @@ what it reads; it never turns on the product's transcription or description
 settings. Optional `notes:write` is separately approved, off by default,
 and existing grants stay read-only. It permits text-only `notes_create`
 and `notes_append`, at the user's explicit request. Hashtags stay in the
-text. All captures show author/client provenance on the web, in emails
+text. Optional `upcoming` (2026-10-17) is a third separate approval: it
+lists, saves and removes Upcoming dates only, never notes. All captures show author/client provenance on the web, in emails
 and in both exports, and the owner can edit
 or delete them through the web as usual. An append belongs to the exact
 connection that created the note, never to a name supplied by a client.
@@ -655,7 +666,8 @@ upload/delete files. Its table writes are MCPMETA only; its one invocation
 permission is the private capture function. That writer rechecks the bearer
 and conditionally commits the note, live family/profile proof, 24-hour
 idempotency receipt, daily quota (20 creates, 50 appends per account) and
-content-free audit together. It cannot delete data, write OAuth rows, use
+content-free audit together. It cannot delete notes or files; under
+`upcoming` it removes only the dates named by id and revision. It cannot write OAuth rows, use
 SES, S3 or models, or invoke functions. Receipts live under USER and are
 deleted with the account; their original result may include note text,
 never logged. Reusing a key with changed arguments is refused. In Settings,

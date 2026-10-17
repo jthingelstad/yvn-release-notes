@@ -40,6 +40,7 @@ import type {
 import { Subscriber } from './store-types.ts';
 import type { ProductUpdate } from '../domain/product-updates.ts';
 import { upcomingEntry, UPCOMING_MAX, type UpcomingEntry } from '../domain/upcoming.ts';
+import type { UpcomingChange } from './upcoming.ts';
 import type { DocumentSender, Item, Key, MailCounter, Purpose, SessionInput } from './store-types.ts';
 export { Subscriber } from './store-types.ts';
 export type { Item, Key, DocumentSender, MailCounter } from './store-types.ts';
@@ -181,6 +182,60 @@ export class Store {
       });
     else ops.push(this.profileProof(user));
     return this.provedTransaction(ops);
+  }
+  /** Many entries at once, each with the single-entry guards, the count moved
+   * by the net change (never past 200) in the same transaction. Up to 90 per
+   * transaction; a longer batch commits in order and reports how far it got.
+   * `extra` (an agent's proof, receipt and audit) must fit one transaction. */
+  async upcomingBatch(
+    user: string,
+    changes: readonly UpcomingChange[],
+    extra: NonNullable<TransactWriteCommandInput['TransactItems']> = []
+  ): Promise<{ ok: boolean; applied: number }> {
+    const size = 90;
+    if (extra.length && changes.length > size) throw new RangeError('Batch too large for one transaction');
+    let applied = 0;
+    for (let start = 0; start < changes.length; start += size) {
+      const chunk = changes.slice(start, start + size),
+        net = chunk.filter((c) => !c.previous).length - chunk.filter((c) => !c.next).length;
+      const ops: NonNullable<TransactWriteCommandInput['TransactItems']> = chunk.map(({ next, previous }) => {
+        const entryKey = key(user, 'UPCOMING#' + (next?.id ?? previous!.id)),
+          guard = previous
+            ? {
+                ConditionExpression: '#revision = :revision',
+                ExpressionAttributeNames: { '#revision': 'revision' },
+                ExpressionAttributeValues: { ':revision': previous.revision }
+              }
+            : { ConditionExpression: 'attribute_not_exists(pk)' };
+        return next
+          ? this.putOperation({ ...entryKey, ...next }, guard)
+          : { Delete: { TableName: this.tableName, Key: entryKey, ...guard } };
+      });
+      ops.push(
+        net
+          ? {
+              Update: {
+                TableName: this.tableName,
+                Key: key(user, 'PROFILE'),
+                UpdateExpression: 'SET #count = if_not_exists(#count, :zero) + :change',
+                ConditionExpression:
+                  'attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND ' +
+                  (net > 0 ? '(attribute_not_exists(#count) OR #count <= :room)' : '#count >= :need'),
+                ExpressionAttributeNames: { '#count': 'upcoming_count' },
+                ExpressionAttributeValues: {
+                  ':zero': 0,
+                  ':change': net,
+                  ...(net > 0 ? { ':room': UPCOMING_MAX - net } : { ':need': -net })
+                }
+              }
+            }
+          : this.profileProof(user),
+        ...extra
+      );
+      if (!(await this.provedTransaction(ops))) return { ok: false, applied };
+      applied += chunk.length;
+    }
+    return { ok: true, applied };
   }
   async productUpdates(): Promise<ProductUpdate[]> {
     const rows = await this.rows({
@@ -1750,26 +1805,7 @@ export class Store {
     family: Item,
     now: number
   ) {
-    const uid = String(family.user_id);
-    const ops: NonNullable<TransactWriteCommandInput['TransactItems']> = [
-      {
-        ConditionCheck: {
-          TableName: this.tableName,
-          Key: key(uid, 'PROFILE'),
-          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting)'
-        }
-      },
-      {
-        ConditionCheck: {
-          TableName: this.tableName,
-          Key: { pk: `OAUTHFAMILY#${family.id}`, sk: 'STATE' },
-          ConditionExpression:
-            '#r = :revision AND expires_at > :now AND attribute_not_exists(revoked) AND contains(#s, :write)',
-          ExpressionAttributeNames: { '#r': 'revision', '#s': 'scope' },
-          ExpressionAttributeValues: { ':revision': family.revision, ':now': now, ':write': 'notes:write' }
-        }
-      }
-    ];
+    const ops: NonNullable<TransactWriteCommandInput['TransactItems']> = this.agentProof(family, now, 'notes:write');
     if (old) {
       const values: Item = {
         ':author': 'assistant',
@@ -1796,7 +1832,40 @@ export class Store {
         }
       });
     } else ops.push(this.putOperation(note, { ConditionExpression: 'attribute_not_exists(pk)' }));
-    ops.push(
+    ops.push(...this.agentReceipts(receipt, audit, rate, previous, now));
+    return this.transact(ops);
+  }
+  /** An agent write proves the live account and the family's revision, expiry
+   * and the scope it needs, in the same transaction as what it writes. */
+  agentProof(family: Item, now: number, scope: string): NonNullable<TransactWriteCommandInput['TransactItems']> {
+    return [this.profileProof(String(family.user_id)), ...this.familyProof(family, now, scope)];
+  }
+  /** The family check alone, for a transaction that already touches PROFILE
+   * (DynamoDB refuses two operations on one key). */
+  familyProof(family: Item, now: number, scope: string): NonNullable<TransactWriteCommandInput['TransactItems']> {
+    return [
+      {
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: { pk: `OAUTHFAMILY#${family.id}`, sk: 'STATE' },
+          ConditionExpression:
+            '#r = :revision AND expires_at > :now AND attribute_not_exists(revoked) AND contains(#s, :write)',
+          ExpressionAttributeNames: { '#r': 'revision', '#s': 'scope' },
+          ExpressionAttributeValues: { ':revision': family.revision, ':now': now, ':write': scope }
+        }
+      }
+    ];
+  }
+  /** The 24-hour idempotency receipt, the content-free audit row and the daily
+   * write count, each guarded so a retry or a race commits at most once. */
+  agentReceipts(
+    receipt: Item,
+    audit: Item,
+    rate: Item,
+    previous: Item | null,
+    now: number
+  ): NonNullable<TransactWriteCommandInput['TransactItems']> {
+    return [
       this.putOperation(receipt, {
         ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now',
         ExpressionAttributeValues: { ':now': now }
@@ -1812,8 +1881,7 @@ export class Store {
             }
           : { ConditionExpression: 'attribute_not_exists(pk)' }
       )
-    );
-    return this.transact(ops);
+    ];
   }
   async mcpBlock(user: string) {
     await this.update(key(user, 'PROFILE'), {

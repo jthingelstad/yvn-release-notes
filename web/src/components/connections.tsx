@@ -69,6 +69,7 @@ export function Connections() {
             Connected {when(c.created_at)}.
           </p>
           {c.scope.includes('notes:write') && <p>Can add notes and append to notes this connection created.</p>}
+          {c.scope.includes('upcoming') && <p>Can read and change your Upcoming dates.</p>}
           {c.last_used && <p className="hint">Last used {when(c.last_used)}.</p>}
           {c.scope.includes('notes:write') && (
             <button type="button" className="quiet" disabled={busy} onClick={() => disconnect(c.id, true)}>

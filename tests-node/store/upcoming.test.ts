@@ -195,3 +195,115 @@ test('calendar link rows commit with the profile pointer and live proofs; remova
     ]
   });
 });
+test('a batch commits adds, changes and removes with each guard and one net count move; long batches chunk', async () => {
+  const commands: StoreCommand[] = [],
+    raw = new Store(
+      {
+        send: async (c) => {
+          commands.push(c);
+          return {};
+        }
+      },
+      'T'
+    ),
+    store = withWebProof(raw, 'u', 'hash', 100),
+    other = { ...entry, id: 'old', revision: 3 };
+  assert.deepEqual(
+    await store.upcomingBatch('u', [
+      { next: null, previous: other },
+      { next: { ...entry, revision: 2 }, previous: entry },
+      { next: { ...entry, id: 'new' }, previous: null },
+      { next: { ...entry, id: 'new2' }, previous: null }
+    ]),
+    { ok: true, applied: 4 }
+  );
+  assert.equal(commands.length, 1);
+  const items = (commands[0]!.input as { TransactItems: Record<string, unknown>[] }).TransactItems;
+  assert.deepEqual(items[0], {
+    Delete: {
+      TableName: 'T',
+      Key: { pk: 'USER#u', sk: 'UPCOMING#old' },
+      ConditionExpression: '#revision = :revision',
+      ExpressionAttributeNames: { '#revision': 'revision' },
+      ExpressionAttributeValues: { ':revision': 3 }
+    }
+  });
+  assert.deepEqual(items[1], {
+    Put: {
+      TableName: 'T',
+      Item: { pk: 'USER#u', sk: 'UPCOMING#date', ...entry, revision: 2 },
+      ConditionExpression: '#revision = :revision',
+      ExpressionAttributeNames: { '#revision': 'revision' },
+      ExpressionAttributeValues: { ':revision': 1 }
+    }
+  });
+  assert.deepEqual(items[2], {
+    Put: {
+      TableName: 'T',
+      Item: { pk: 'USER#u', sk: 'UPCOMING#new', ...entry, id: 'new' },
+      ConditionExpression: 'attribute_not_exists(pk)'
+    }
+  });
+  assert.deepEqual(items[4], {
+    Update: {
+      TableName: 'T',
+      Key: { pk: 'USER#u', sk: 'PROFILE' },
+      UpdateExpression: 'SET #count = if_not_exists(#count, :zero) + :change',
+      ConditionExpression:
+        '(attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND (attribute_not_exists(#count) OR #count <= :room)) AND (attribute_exists(pk) AND attribute_not_exists(#webDeleting))',
+      ExpressionAttributeNames: { '#count': 'upcoming_count', '#webDeleting': 'mcp_deleting' },
+      ExpressionAttributeValues: { ':zero': 0, ':change': 1, ':room': 199 }
+    }
+  });
+  assert.deepEqual(items[5], session);
+  assert.equal(items.length, 6);
+  // Removing more than adding lowers the count and needs that many saved.
+  commands.length = 0;
+  await store.upcomingBatch('u', [
+    { next: null, previous: other },
+    { next: null, previous: entry }
+  ]);
+  const lower = (commands[0]!.input as { TransactItems: Record<string, unknown>[] }).TransactItems[2] as {
+    Update: { ConditionExpression: string; ExpressionAttributeValues: Record<string, number> };
+  };
+  assert.match(lower.Update.ConditionExpression, /#count >= :need/);
+  assert.equal(lower.Update.ExpressionAttributeValues[':need'], 2);
+  // Changes only: the live-account proof instead of a count move.
+  commands.length = 0;
+  await store.upcomingBatch('u', [{ next: { ...entry, revision: 2 }, previous: entry }]);
+  const proof = (commands[0]!.input as { TransactItems: Record<string, unknown>[] }).TransactItems[1] as {
+    ConditionCheck: { Key: { sk: string } };
+  };
+  assert.equal(proof.ConditionCheck.Key.sk, 'PROFILE');
+  // 95 adds take two transactions, 90 then 5, each moving the count by its own size.
+  commands.length = 0;
+  const many = Array.from({ length: 95 }, (_, i) => ({ next: { ...entry, id: 'n' + i }, previous: null }));
+  assert.deepEqual(await store.upcomingBatch('u', many), { ok: true, applied: 95 });
+  assert.equal(commands.length, 2);
+  const sizes = commands.map((c) => (c.input as { TransactItems: unknown[] }).TransactItems.length);
+  assert.deepEqual(sizes, [92, 7]);
+  await assert.rejects(raw.upcomingBatch('u', many, [session]), RangeError);
+  // A refused second chunk reports what the first committed.
+  let calls = 0;
+  const flaky = withWebProof(
+    new Store(
+      {
+        send: async () => {
+          if (++calls === 2) {
+            const e = new Error('cancelled');
+            e.name = 'TransactionCanceledException';
+            Object.assign(e, { CancellationReasons: [{ Code: 'ConditionalCheckFailed' }] });
+            throw e;
+          }
+          return {};
+        }
+      },
+      'T'
+    ),
+    'u',
+    'hash',
+    100
+  );
+  assert.deepEqual(await flaky.upcomingBatch('u', many), { ok: false, applied: 90 });
+  assert.deepEqual(await store.upcomingBatch('u', []), { ok: true, applied: 0 });
+});

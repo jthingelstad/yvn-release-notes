@@ -20,7 +20,7 @@ export interface OAuthContext {
   origin: string;
   now: number;
 }
-export const SCOPES = ['media:read', 'notes:read', 'notes:write'];
+export const SCOPES = ['media:read', 'notes:read', 'notes:write', 'upcoming'];
 export const ACCESS_SECONDS = 3600,
   REFRESH_SECONDS = 30 * 86400;
 export class OAuthError extends Error {
@@ -193,14 +193,17 @@ export class OAuthService {
     if (
       typeof body.approve !== 'boolean' ||
       typeof (Object.hasOwn(body, 'media') ? body.media : false) !== 'boolean' ||
-      typeof (Object.hasOwn(body, 'write') ? body.write : false) !== 'boolean'
+      typeof (Object.hasOwn(body, 'write') ? body.write : false) !== 'boolean' ||
+      typeof (Object.hasOwn(body, 'upcoming') ? body.upcoming : false) !== 'boolean'
     )
       fail();
     if (body.write && !scopes(item.scope).includes('notes:write')) fail('invalid_scope');
+    if (body.upcoming && !scopes(item.scope).includes('upcoming')) fail('invalid_scope');
     const scope =
       'notes:read' +
       (body.media && scopes(item.scope).includes('media:read') ? ' media:read' : '') +
-      (body.write ? ' notes:write' : '');
+      (body.write ? ' notes:write' : '') +
+      (body.upcoming ? ' upcoming' : '');
     const code = newToken(),
       fid = newToken();
     const family = row('OAUTHFAMILY#' + fid, {
@@ -448,7 +451,7 @@ export async function publicOAuth(
       if (!/^[A-Za-z0-9_-]{43}$/.test(cid)) fail('invalid_client');
       const client = await context.store.mcpGet('OAUTHCLIENT#' + cid);
       if (!live(client, context.now) || !(client.redirect_uris as string[]).includes(redirect)) fail('invalid_client');
-      const requested = [...new Set(scopes(b.scope ?? 'notes:read media:read notes:write'))],
+      const requested = [...new Set(scopes(b.scope ?? 'notes:read media:read notes:write upcoming'))],
         challenge = b.code_challenge ?? '',
         state = b.state ?? '';
       if (

@@ -55,6 +55,11 @@ export function validate(arguments_: unknown, schema: JsonSchema): asserts argum
       throw new ToolError('invalid_arguments', 'Check the format and length of your parameters.');
     if (typeof value === 'number' && (value < (spec.minimum ?? 0) || value > (spec.maximum ?? 1e9)))
       throw new ToolError('invalid_arguments', "Use a number within the tool's limits.");
+    if (
+      spec.type === 'array' &&
+      (!Array.isArray(value) || value.length < (spec.minItems ?? 0) || value.length > (spec.maxItems ?? 1000))
+    )
+      throw new ToolError('invalid_arguments', "Use a list within the tool's limits.");
   }
 }
 export type SafeLog = (fields: Record<string, unknown>) => void;

@@ -133,6 +133,11 @@ const behind = [
   }),
   createRoute({
     getParentRoute: () => signedInRoute,
+    ...page('/upcoming-text', () => import('./pages/UpcomingText.tsx'), 'UpcomingText'),
+    loader: ({ context }: Ctx) => context.queryClient.prefetchQuery(upcomingQuery)
+  }),
+  createRoute({
+    getParentRoute: () => signedInRoute,
     ...page('/today', () => import('./pages/Today.tsx'), 'Today'),
     loader: ({ context }: Ctx) => context.queryClient.prefetchQuery(todayQuery)
   }),

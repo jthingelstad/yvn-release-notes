@@ -179,3 +179,30 @@ test('consent booleans distinguish explicit null from omitted fields, preserving
     assert.equal((await ctx.store.mcpGet('OAUTHPENDING#' + id))!.used, undefined);
   }
 });
+test('the upcoming scope is offered by default, granted only when ticked, and never when the client did not ask', async () => {
+  const ctx = fixture(),
+    service = new OAuthService(ctx);
+  const { id } = await pending(ctx, 'notes:read media:read notes:write upcoming');
+  assert.deepEqual(await service.authorize('u', { request: id }), {
+    client_name: 'Assistant',
+    scope: 'media:read notes:read notes:write upcoming'
+  });
+  const granted = await service.authorize('u', { request: id, approve: true, upcoming: true });
+  const code = new URL(String(granted.redirect)).searchParams.get('code')!;
+  assert.ok(code);
+  const families = ctx.store.memory.all().filter((i) => String(i.pk).startsWith('OAUTHFAMILY#'));
+  assert.equal(families.at(-1)!.scope, 'notes:read upcoming');
+  const { id: plain } = await pending(ctx, 'notes:read');
+  await assert.rejects(service.authorize('u', { request: plain, approve: true, upcoming: true }), OAuthError);
+  const { id: quiet } = await pending(ctx, 'notes:read media:read notes:write upcoming');
+  await service.authorize('u', { request: quiet, approve: true, write: true });
+  assert.equal(
+    ctx.store.memory
+      .all()
+      .filter((i) => String(i.pk).startsWith('OAUTHFAMILY#'))
+      .at(-1)!.scope,
+    'notes:read notes:write'
+  );
+  const { id: nulled } = await pending(ctx, 'notes:read media:read notes:write upcoming');
+  await assert.rejects(service.authorize('u', { request: nulled, approve: true, upcoming: null }), OAuthError);
+});

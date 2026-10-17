@@ -546,6 +546,12 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
 
 /* Personal dates: type on paper, with a simple editor and date-ordered rows. */
 .upcoming-toolbar { margin: 24px 0 8px; }
+.upcoming-text label { display: block; }
+.upcoming-text textarea { display: block; width: 100%; margin-top: 8px; font-family: var(--mono); font-size: 14px; line-height: 1.6; white-space: pre; overflow-x: auto; tab-size: 4; }
+.upcoming-problems { margin: 12px 0 0; padding-left: 20px; }
+.mono-list { margin: 8px 0 16px; padding-left: 20px; font-family: var(--mono); font-size: 14px; line-height: 1.6; }
+.mono-list del { display: block; color: var(--ink-3); }
+.mono-list ins { display: block; text-decoration: none; }
 .upcoming-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; }
 .upcoming-filters label { flex: 1 1 180px; min-width: 0; }
 .upcoming-filters select { width: 100%; }

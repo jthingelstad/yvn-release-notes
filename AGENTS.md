@@ -685,4 +685,6 @@ private links remain with the receiving service. Deleting an account
 blocks new MCP metadata/OAuth writes first and removes all indexed grants.
 Never test a connection by reading or writing live subscriber notes or signing in
 against production. Use the dev server and fakes. Regenerate the contract
-with `node --import tsx tools/export-mcp-contract.ts` when tools change.
+with `node --import tsx tools/export-mcp-contract.ts` when tools change:
+any tool change is a new `server_version` with a `changes` entry, since
+clients cache the tool list (`docs/MCP.md`, When tools change).

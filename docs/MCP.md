@@ -78,6 +78,30 @@ Every note includes `author` and `client`; older notes default to user/null.
 List, search and day accept `include_assistant=false` to read only the user's
 own voice. Descriptions on every tool mark archive content as untrusted.
 
+## When tools change
+
+Clients keep their own copy of `tools/list`: ChatGPT keeps it until the
+connector is refreshed in its settings, and an open conversation may keep
+the list it started with. A stateless server with no event stream cannot
+announce a change, so the contract carries it instead:
+
+- Any change to the tools (a new tool, a schema or a description) is a new
+  `server_version` with an entry in `changes`, newest first.
+  `contracts/mcp-versions.json` records each version's tools digest;
+  `tools/export-mcp-contract.ts` refuses changed tools under a recorded
+  version, and the tests refuse a contract that the ledger does not match.
+- `notes_context` returns `tools`, every tool offered now with the scope it
+  needs and whether this connection has it, and the three latest `changes`.
+  An agent that cannot find a listed tool tells the user to refresh or
+  reconnect the connector and start a new conversation. Every result's
+  `server_version` lets a client notice the change too.
+- A new tool names its scope in `TOOL_SCOPES` (`server/mcp/contract.ts`).
+  A new scope also needs a way to grant it to existing connections, as
+  Settings does for `upcoming`.
+
+To announce a tool to subscribers, a product update can say what it does
+and that a connector may need a refresh to show it.
+
 ## Adding notes
 
 Reconnect from your agent to request `notes:write`, then tick "Also allow

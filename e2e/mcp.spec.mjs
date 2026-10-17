@@ -65,9 +65,15 @@ for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['ph
       const media = page.getByRole('checkbox', { name: 'Also allow photos and recordings' });
       await expect(media).not.toBeChecked();
       await media.check();
+      // Upcoming is offered although this client asked for reading only.
+      await expect(page.getByRole('checkbox', { name: 'Also allow adding notes when I ask' })).toHaveCount(0);
+      const upcoming = page.getByRole('checkbox', { name: 'Also allow reading and changing my Upcoming dates' });
+      await expect(upcoming).not.toBeChecked();
+      await upcoming.check();
+      await expect(page.getByText('Upcoming is separate from notes', { exact: false })).toBeVisible();
       await mkdir('/tmp/yvn-mcp-qa', { recursive: true });
       await page.screenshot({ path: `/tmp/yvn-mcp-qa/consent-${name}.png`, fullPage: true });
-      await page.getByRole('button', { name: 'Allow reading' }).click();
+      await page.getByRole('button', { name: 'Allow reading and Upcoming', exact: true }).click();
       await expect(page).toHaveURL(new RegExp('^' + callback.replaceAll('.', '\\.')));
       expect(returned.searchParams.get('state')).toBe('state-from-client');
       const exchange = await request.post('/oauth/token', { form: {
@@ -81,7 +87,9 @@ for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['ph
       } });
       const answer = await read();
       expect(answer.status()).toBe(200);
-      expect((await answer.json()).result.structuredContent.scope).toContain('media:read');
+      const granted = (await answer.json()).result.structuredContent.scope;
+      expect(granted).toContain('media:read');
+      expect(granted).toContain('upcoming');
       await page.goto('/settings/');
       await page.locator('#agent-connections > summary').click();
       await page.locator('#agent-activity > summary').click();

@@ -200,7 +200,10 @@ export class OAuthService {
     )
       fail();
     if (body.write && !scopes(item.scope).includes('notes:write')) fail('invalid_scope');
-    if (body.upcoming && !scopes(item.scope).includes('upcoming')) fail('invalid_scope');
+    // Upcoming is offered on every consent screen whatever the client asked for
+    // (Jamie, 2026-10-17: the connect screen "does not reference anything for
+    // upcoming"): clients re-request the scopes they were first granted, and
+    // the owner can add it to a live connection from Settings anyway.
     const scope =
       'notes:read' +
       (body.media && scopes(item.scope).includes('media:read') ? ' media:read' : '') +

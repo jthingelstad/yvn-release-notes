@@ -125,7 +125,10 @@ ticking "Also allow reading and changing my Upcoming dates", or, for a
 connection you already have, with "Allow Upcoming for <client>" under
 Settings, Connected agents, which widens that connection in place so the
 existing token works on its next request. It is separate from note
-scopes, initially unchecked, and never added without one of those choices. It
+scopes, initially unchecked, and never added without one of those choices.
+The checkbox appears on every consent screen whatever scope the client
+requested, because clients re-request the scopes they were first granted
+and would otherwise never offer it. It
 covers the three `upcoming_*` tools: a list of saved dates with their next
 occurrence, and all-or-nothing saves and removals of up to 50 dates per
 call, each needing an explicit user request. A change carries the id and

@@ -659,7 +659,11 @@ text. Optional `upcoming` (2026-10-17) is a third separate approval: it
 lists, saves and removes Upcoming dates only, never notes. An existing
 connection gains it in place from Settings (Jamie, 2026-10-17: without
 "disconnecting and reconnecting"), the mirror of "Turn off adding": the
-family row is the live grant, so no new token is needed. All captures show author/client provenance on the web, in emails
+family row is the live grant, so no new token is needed. The consent
+screen offers Upcoming whatever the client requested (Jamie, 2026-10-17:
+it "does not reference anything for upcoming"): a client reconnecting
+re-requests its old scopes, and reconnecting is also how it refreshes its
+tool list, so a stale list of notes-only tools is fixed the same way. All captures show author/client provenance on the web, in emails
 and in both exports, and the owner can edit
 or delete them through the web as usual. An append belongs to the exact
 connection that created the note, never to a name supplied by a client.

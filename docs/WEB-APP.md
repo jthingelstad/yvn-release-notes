@@ -429,8 +429,13 @@ Each event occupies one compact table row, ordered by occurrence date ascending
 Trips store a destination only in this first stage. They do not change the
 account's saved home, time zone, forecast or default note location. Automatic
 travel switching remains future work. Kind and Tag filters combine across both
-future and past entries; Tag also offers **No tag**. Filters are kept in the page
-fragment across reloads, with matching counts and a clear action. New dates start
+future and past entries; Tag also offers **No tag**. **Search dates** (2026-10-17)
+filters as you type: every word or "quoted phrase" must appear, without case or
+accents, in the title, tag, kind, destination or the occurrence line (so "5.0.0"
+or "major" finds a birthday), through the note search's term rules
+(`upcomingSearchText` in `packages/domain/upcoming.ts`). It reads the list already
+loaded; no request carries the words. Filters are kept in the page fragment
+across reloads (`kind`, `tag`, `q`), with matching counts and a clear action. New dates start
 with the selected kind/tag. Existing tags are suggested in the editor.
 **Write a note** on a tagged entry opens today's editable draft with its hashtag,
 preserving existing draft text and avoiding a duplicate hashtag. The tag travels

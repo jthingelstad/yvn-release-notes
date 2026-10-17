@@ -3,8 +3,9 @@ name: validate
 # The merge gate. main takes changes only through a pull request whose
 # `validate` check is green on a branch up to date with main, and deploy.sh
 # refuses a HEAD without a green `validate`. The job's name IS the required
-# check's name in the main ruleset and in deploy.sh: rename all three
-# together or merges and deploys stop.
+# check's name in the main ruleset, deploy.sh and scripts/release.sh (which
+# checks a published candidate): rename them all together or merges and
+# deploys stop.
 on:
   push:
     branches: [main]

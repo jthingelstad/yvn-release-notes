@@ -1,9 +1,6 @@
 /** Fictional control-plane receipts; no AWS calls or subscriber data. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
 import {
   GetResourcePolicyCommand,
   PutResourcePolicyCommand,
@@ -21,6 +18,7 @@ import {
   removePolicy,
   type Context
 } from '../tools/web-platform.ts';
+import { MemoryReceiptStore, readReceipt } from '../tools/receipt-store.ts';
 
 const functionArn = 'arn:aws:lambda:us-east-1:123456789012:web-function/yvn-release-notes-web-native';
 const endpointArn = `${functionArn}/endpoint/live`;
@@ -113,14 +111,11 @@ function fixture() {
   return { state, ctx };
 }
 
-async function withReceipt(run: (dir: string) => Promise<void>) {
-  const dir = await mkdtemp(resolve(tmpdir(), 'fictional-web-platform-'));
-  try {
-    await run(dir);
-  } finally {
-    await rm(dir, { recursive: true });
-  }
+async function withReceipt(run: (store: MemoryReceiptStore) => Promise<void>) {
+  await run(new MemoryReceiptStore());
 }
+const journal = async (store: MemoryReceiptStore) =>
+  (await readReceipt<{ state: string; revisionId: string }>(store, 'app-policy.json'))!;
 
 test('exact grant is limited to one distribution and one live endpoint', () => {
   const policy = endpointPolicy(endpointArn, distributionArn);
@@ -150,69 +145,67 @@ test('release pin refuses public/latest/in-progress/canary endpoints', () => {
 });
 
 test('install readback, no-op repeat, verify and conditional remove lifecycle', async () => {
-  await withReceipt(async (dir) => {
+  await withReceipt(async (store) => {
     const { ctx, state } = fixture();
-    await installPolicy(ctx, 'App', dir);
-    const path = resolve(dir, 'app-policy.json');
-    assert.equal((await stat(path)).mode & 0o777, 0o600);
-    const journal = JSON.parse(await readFile(path, 'utf8'));
-    assert.equal(journal.state, 'installed');
-    assert.equal(journal.revisionId, state.revisionId);
-    await installPolicy(ctx, 'App', dir);
+    await installPolicy(ctx, 'App', store);
+    const installed = await journal(store);
+    assert.equal(installed.state, 'installed');
+    assert.equal(installed.revisionId, state.revisionId);
+    await installPolicy(ctx, 'App', store);
     assert.equal(state.writes, 1);
-    await verifyPolicy(ctx, 'App', dir);
-    await removePolicy(ctx, 'App', dir);
-    await removePolicy(ctx, 'App', dir);
+    await verifyPolicy(ctx, 'App', store);
+    await removePolicy(ctx, 'App', store);
+    await removePolicy(ctx, 'App', store);
     assert.equal(state.deletes, 1);
-    assert.equal(JSON.parse(await readFile(path, 'utf8')).state, 'deleted');
+    assert.equal((await journal(store)).state, 'deleted');
   });
 });
 
 test('existing unowned or concurrently changed policy is never overwritten/deleted', async () => {
-  await withReceipt(async (dir) => {
+  await withReceipt(async (store) => {
     const { ctx, state } = fixture();
     state.policy = JSON.stringify(endpointPolicy(endpointArn, distributionArn));
-    await assert.rejects(installPolicy(ctx, 'App', dir), /no active owner journal/);
+    await assert.rejects(installPolicy(ctx, 'App', store), /no active owner journal/);
     state.policy = undefined;
-    await installPolicy(ctx, 'App', dir);
+    await installPolicy(ctx, 'App', store);
     state.revisionId = 'concurrent-revision';
-    await assert.rejects(installPolicy(ctx, 'App', dir), /CAS revision changed/);
-    await assert.rejects(removePolicy(ctx, 'App', dir), /CAS revision changed/);
+    await assert.rejects(installPolicy(ctx, 'App', store), /CAS revision changed/);
+    await assert.rejects(removePolicy(ctx, 'App', store), /CAS revision changed/);
     assert.equal(state.writes, 1);
     assert.equal(state.deletes, 0);
   });
 });
 
 test('unknown Put outcome is recovered from saved intent and exact readback without another Put', async () => {
-  await withReceipt(async (dir) => {
+  await withReceipt(async (store) => {
     const { ctx, state } = fixture();
     state.losePutResponse = true;
-    await assert.rejects(installPolicy(ctx, 'App', dir));
-    assert.equal(JSON.parse(await readFile(resolve(dir, 'app-policy.json'), 'utf8')).state, 'pending');
-    await installPolicy(ctx, 'App', dir);
+    await assert.rejects(installPolicy(ctx, 'App', store));
+    assert.equal((await journal(store)).state, 'pending');
+    await installPolicy(ctx, 'App', store);
     assert.equal(state.writes, 1);
-    await verifyPolicy(ctx, 'App', dir);
+    await verifyPolicy(ctx, 'App', store);
   });
 });
 
 test('unknown Delete outcome is recovered from saved intent without another Delete', async () => {
-  await withReceipt(async (dir) => {
+  await withReceipt(async (store) => {
     const { ctx, state } = fixture();
-    await installPolicy(ctx, 'App', dir);
+    await installPolicy(ctx, 'App', store);
     state.loseDeleteResponse = true;
-    await assert.rejects(removePolicy(ctx, 'App', dir));
-    await removePolicy(ctx, 'App', dir);
+    await assert.rejects(removePolicy(ctx, 'App', store));
+    await removePolicy(ctx, 'App', store);
     assert.equal(state.deletes, 1);
-    assert.equal(JSON.parse(await readFile(resolve(dir, 'app-policy.json'), 'utf8')).state, 'deleted');
+    assert.equal((await journal(store)).state, 'deleted');
   });
 });
 
 test('policy removal is blocked until CloudFront has returned to legacy routing', async () => {
-  await withReceipt(async (dir) => {
+  await withReceipt(async (store) => {
     const { ctx, state } = fixture();
-    await installPolicy(ctx, 'App', dir);
+    await installPolicy(ctx, 'App', store);
     ctx.parameters.NativeHttpRouting = 'native';
-    await assert.rejects(removePolicy(ctx, 'App', dir), /Restore legacy/);
+    await assert.rejects(removePolicy(ctx, 'App', store), /Restore legacy/);
     assert.equal(state.deletes, 0);
   });
 });

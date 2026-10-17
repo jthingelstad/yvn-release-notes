@@ -1,13 +1,11 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { STSClient } from '@aws-sdk/client-sts';
 import { CloudFormationClient } from '@aws-sdk/client-cloudformation';
 import { LambdaClient } from '@aws-sdk/client-lambda';
 import { LambdaWebClient } from '@aws-sdk/client-lambda-web';
 import { main } from '../../tools/native-release.ts';
+import { MemoryReceiptStore } from '../../tools/receipt-store.ts';
 type Fields = Record<string, unknown>;
 const names = ['Sender', 'Inbound', 'Events', 'Transcribe', 'Describe', 'Export', 'Capture'];
 const build = 'a'.repeat(40),
@@ -15,8 +13,7 @@ const build = 'a'.repeat(40),
   account = '999153317627';
 const stackId = `arn:aws:cloudformation:us-east-1:${account}:stack/yvn-release-notes/fictional-stack`;
 async function fixture(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'yvn-release-test-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  const store = new MemoryReceiptStore();
   const parameters: Record<string, string> = {
     WorkerAliasesReady: 'true',
     EventsAliasesReady: 'true',
@@ -137,10 +134,6 @@ async function fixture(t: TestContext) {
   }
   let status = 'UPDATE_COMPLETE',
     probes = 0;
-  const printed: Record<string, string>[] = [];
-  t.mock.method(console, 'info', (value: string) =>
-    printed.push((JSON.parse(value) as { parameters: Record<string, string> }).parameters)
-  );
   t.mock.method(STSClient.prototype, 'send', async () => ({
     Account: account,
     Arn: `arn:aws:sts::${account}:assumed-role/ProjectsCloudEngineer/fictional-session`
@@ -212,8 +205,7 @@ async function fixture(t: TestContext) {
     return { pins: { ...pins }, confirmed: true };
   };
   const phase = async (command: string) => {
-    await main([command, '--receipt-dir', dir, '--commit', build], { platform });
-    return printed.at(-1)!;
+    return (await main([command, '--commit', build], { store, platform })).parameters;
   };
   const publish = () => {
     parameters.NativeWorkersEnabled = 'true';
@@ -226,7 +218,7 @@ async function fixture(t: TestContext) {
     parameters.NativeWorkerAliasesReady = version === '2' ? 'true' : 'false';
   };
   return {
-    dir,
+    store,
     parameters,
     outputs,
     current,
@@ -245,29 +237,28 @@ async function fixture(t: TestContext) {
 test('worker promotion intents survive unknown CFN outcomes, completed retries and exact rollback', async (t) => {
   const f = await fixture(t);
   await f.phase('prepare-workers');
-  const preparedPath = join(f.dir, `${build}-workers-prepared.json`),
-    before = await readFile(preparedPath);
+  const receipt = (name: string) => f.store.objects.get(`${build}-${name}.json`);
+  const before = receipt('workers-prepared');
+  assert.ok(before);
   await f.phase('prepare-workers');
-  assert.deepEqual(await readFile(preparedPath), before);
+  assert.deepEqual(receipt('workers-prepared'), before);
   f.publish();
   const target = await f.phase('promote-workers');
-  const promotionPath = join(f.dir, `${build}-workers-promotion.json`),
-    promotion = await readFile(promotionPath);
-  assert.equal((await stat(promotionPath)).mode & 0o077, 0);
+  const promotion = receipt('workers-promotion');
+  assert.ok(promotion);
   f.status('UPDATE_IN_PROGRESS');
   await assert.rejects(f.phase('promote-workers'), /idle reviewed stack/);
   f.status('UPDATE_COMPLETE');
   f.serveWorkers('2');
   assert.deepEqual(await f.phase('promote-workers'), target);
-  assert.deepEqual(await readFile(promotionPath), promotion);
-  assert.deepEqual(await readFile(preparedPath), before);
+  assert.deepEqual(receipt('workers-promotion'), promotion);
+  assert.deepEqual(receipt('workers-prepared'), before);
   await assert.rejects(f.phase('prepare-workers'), /Promotion intent already exists/);
   const rollback = await f.phase('rollback-workers');
   assert.equal(rollback.NativeWorkerAliasesReady, 'false');
   for (const name of names) assert.equal(rollback[`${name}NativeLiveVersion`], '1');
   f.serveWorkers('1');
   assert.deepEqual(await f.phase('rollback-workers'), rollback);
-  assert.equal((await readdir(f.dir)).includes('native-release.lock'), false);
   assert.equal(f.probes(), 14);
 });
 test('worker candidates require actual immutable code, role and complete owner environment before probing', async (t) => {
@@ -288,7 +279,7 @@ test('worker candidates require actual immutable code, role and complete owner e
   await assert.rejects(f.phase('promote-workers'), /Incomplete candidate configuration Sender/);
   assert.equal(f.probes(), 0);
   assert.equal(
-    (await readdir(f.dir)).some((name) => name.endsWith('promotion.json')),
+    f.store.names().some((name) => name.endsWith('promotion.json')),
     false
   );
 });
@@ -319,7 +310,7 @@ test('worker rollback refuses stale build metadata and alias drift rather than u
   f.current.Capture = { version: '99', revision: 'unrelated' };
   await assert.rejects(f.phase('rollback-workers'), /aliases changed since this promotion/);
   assert.equal(
-    (await readdir(f.dir)).some((name) => name.endsWith('rollback.json')),
+    f.store.names().some((name) => name.endsWith('rollback.json')),
     false
   );
 });
@@ -331,9 +322,10 @@ test('HTTP source/configuration verification and completed retries preserve prio
   assert.equal(target.NativeAppRollbackRevisionId, 'old-app');
   assert.equal(target.NativeMcpRollbackRevisionId, 'old-mcp');
   Object.assign(f.pins, Object.fromEntries(Object.entries(target).filter(([key]) => key.endsWith('RevisionId'))));
-  const prepared = await readFile(join(f.dir, `${build}-http-prepared.json`));
+  const prepared = f.store.objects.get(`${build}-http-prepared.json`);
+  assert.ok(prepared);
   assert.deepEqual(await f.phase('promote-http'), target);
-  assert.deepEqual(await readFile(join(f.dir, `${build}-http-prepared.json`)), prepared);
+  assert.deepEqual(f.store.objects.get(`${build}-http-prepared.json`), prepared);
   const rollback = await f.phase('rollback-http');
   assert.equal(rollback.NativeAppLiveRevisionId, 'old-app');
   assert.equal(rollback.NativeMcpLiveRevisionId, 'old-mcp');
@@ -370,7 +362,7 @@ test('HTTP promotion checks actual APP_VERSION, S3 version and execution role, n
   service.executionRoleArn = 'wrong-role';
   await assert.rejects(f.phase('promote-http'), /configuration\/source mismatch App/);
   assert.equal(
-    (await readdir(f.dir)).some((name) => name.endsWith('promotion.json')),
+    f.store.names().some((name) => name.endsWith('promotion.json')),
     false
   );
 });
@@ -461,12 +453,11 @@ for (const draining of ['true', 'false', undefined]) {
     retirement(f.parameters, draining);
     await assert.rejects(f.phase('rollback-workers'), /Legacy rollback is unavailable after native-only retirement/);
     assert.equal(
-      (await readdir(f.dir)).some((name) => name.endsWith('rollback.json')),
+      f.store.names().some((name) => name.endsWith('rollback.json')),
       false
     );
     assert.equal(f.probes(), 7);
     assert.equal(f.parameters.NativeWorkerAliasesReady, 'true');
-    assert.equal((await readdir(f.dir)).includes('native-release.lock'), false);
   });
   test(`native-only retirement refuses first legacy HTTP rollback while drain=${draining ?? 'removed'}`, async (t) => {
     const f = await fixture(t);
@@ -479,11 +470,10 @@ for (const draining of ['true', 'false', undefined]) {
     retirement(f.parameters, draining);
     await assert.rejects(f.phase('rollback-http'), /Legacy rollback is unavailable after native-only retirement/);
     assert.equal(
-      (await readdir(f.dir)).some((name) => name.endsWith('rollback.json')),
+      f.store.names().some((name) => name.endsWith('rollback.json')),
       false
     );
     assert.equal(f.parameters.NativeHttpRouting, 'native');
-    assert.equal((await readdir(f.dir)).includes('native-release.lock'), false);
   });
   test(`native-only worker preparation promotion and native rollback preserve complete pins while drain=${draining ?? 'removed'}`, async (t) => {
     const f = await fixture(t);

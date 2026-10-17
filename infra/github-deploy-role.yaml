@@ -11,14 +11,13 @@ Description: Release Notes deploy identity - the GitHub Actions deploy role, the
 # Three resources that matter:
 # - ReleaseNotesGitHubDeploy: assumed only by this repository's `production`
 #   GitHub environment through the account's OIDC provider. It may call
-#   exactly what the release scripts (deploy.sh, tools/native-*.ts,
-#   tools/web-platform.ts) call, and
-#   it changes the application stack only through change sets that name the
-#   service role below.
+#   exactly what the release steps (scripts/release.sh and the release tool
+#   it runs, tools/release-cli.ts) call, and it changes the application
+#   stack only through change sets that name the service role below.
 # - ReleaseNotesCloudFormation: the role CloudFormation itself uses for the
 #   application stack, scoped to the resource names that template makes.
-#   Once a stack update names it, the stack keeps it, so the Mac's deploy.sh
-#   uses it too.
+#   Once a stack update names it, the stack keeps it; scripts/release.sh
+#   names it on every run, from CI and from the Mac's deploy.sh alike.
 # - The receipts bucket: release receipts, policy journals and the one deploy
 #   lock, shared by CI and the Mac.
 #
@@ -305,6 +304,13 @@ Resources:
                 Condition:
                   StringEquals:
                     cloudformation:RoleArn: !GetAtt CloudFormationRole.Arn
+              # The stack's tags (Application, Project and the rest) ride
+              # each change set, which tag-on-create authorizes as tagging
+              # the stack.
+              - Sid: TagApplicationStack
+                Effect: Allow
+                Action: cloudformation:TagResource
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ApplicationStackName}/*"
               - Sid: PassTheServiceRole
                 Effect: Allow
                 Action: iam:PassRole
@@ -342,7 +348,7 @@ Resources:
                 Resource: !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-nativesourcebucket-*/native/*"
               # Release-time reads: the certificate, the two
               # worker rules, the active receipt rule set (CI never activates
-              # one; it warns, as deploy.sh does for a different active set).
+              # one; it warns, as scripts/release.sh does for a different active set).
               - Sid: ReleaseReads
                 Effect: Allow
                 Action: [acm:ListCertificates, ses:DescribeActiveReceiptRuleSet]

@@ -326,3 +326,18 @@ test('a batch previews with dry_run, resolves destinations by text, applies as o
   assert.ok(!JSON.stringify(f.logs).includes('Holiday'));
   assert.equal((await f.call('POST', '/api/upcoming/batch', batch, 'u', 'https://evil.example')).status, 403);
 });
+test('the owner adds the upcoming scope to a live connection over the API; origin, ownership and the scope are checked', async () => {
+  const f = await fixture(),
+    { connected } = await import('../oauth/fixtures.ts'),
+    a = await connected(f.ctx as never),
+    path = '/api/mcp/connections/' + a.family.id + '/scope';
+  assert.equal((await f.call('POST', path, { scope: 'upcoming' }, 'u', 'https://evil.example.com')).status, 403);
+  assert.equal((await f.call('POST', path, { scope: 'upcoming' }, 'b')).status, 404);
+  assert.equal((await f.call('POST', path, { scope: 'notes:write' })).status, 400);
+  assert.equal((await f.call('POST', '/api/mcp/connections/nope/scope', { scope: 'upcoming' })).status, 404);
+  const granted = await f.call('POST', path, { scope: 'upcoming' });
+  assert.deepEqual([granted.status, granted.data.scope], [200, 'notes:read media:read notes:write upcoming']);
+  const listed = (await f.call('GET', '/api/mcp/connections')).data.connections;
+  assert.equal(listed[0].scope, 'notes:read media:read notes:write upcoming');
+  assert.ok(!JSON.stringify(f.logs).includes(String(a.family.id)));
+});

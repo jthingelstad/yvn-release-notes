@@ -40,6 +40,8 @@ export function live(item: OAuthRow | null | undefined, now: number): item is OA
 const row = (pk: string, fields: OAuthRow = {}): OAuthRow => ({ pk, sk: 'STATE', ...fields });
 const tracked = (item: OAuthRow, uid: string): OAuthRow =>
   row(`OAUTHUSER#${uid}`, { sk: `ROW#${item.pk}`, target: item.pk, expires_at: item.expires_at });
+/** Scopes an owner can add to a live connection from Settings. */
+const GRANTABLE = ['upcoming'];
 const scopes = (value: unknown): string[] =>
   String(value ?? '')
     .split(/\s+/)
@@ -263,6 +265,23 @@ export class OAuthService {
         )
       )
         return { ok: true };
+    }
+    return fail('temporarily_unavailable', 503);
+  }
+  /** Widen a live connection in place (Jamie, 2026-10-17: the new Upcoming
+   * permission without "disconnecting and reconnecting"). The owner's
+   * email-verified session is the consent, as it is on /connect/; the family
+   * row is the live grant, so the existing token sees it on its next request. */
+  async grant(uid: string, fid: string, scope: unknown): Promise<{ ok: true; scope: string }> {
+    if (typeof scope !== 'string' || !GRANTABLE.includes(scope)) fail('invalid_scope');
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const item = await this.context.store.mcpGet('OAUTHFAMILY#' + fid);
+      if (!live(item, this.context.now) || item.user_id !== uid) fail('not_found', 404);
+      const current = scopes(item.scope);
+      if (current.includes(scope)) return { ok: true, scope: current.join(' ') };
+      const next = [...current, scope];
+      if (await this.context.store.mcpCommit([[{ ...item, scope: next.join(' ') }, Number(item.revision)]], uid))
+        return { ok: true, scope: next.join(' ') };
     }
     return fail('temporarily_unavailable', 503);
   }

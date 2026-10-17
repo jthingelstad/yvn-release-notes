@@ -323,6 +323,7 @@ or new CSP exception.
 | `POST /api/mcp/authorize` | Inspect or approve/deny a pending OAuth request; session and Origin required. |
 | `GET /api/mcp/connections` | Active agent connections, approved scopes and last use. |
 | `DELETE /api/mcp/connections/{id}` | Revoke the owner's connection immediately; `?write_only=true` removes only adding permission. |
+| `POST /api/mcp/connections/{id}/scope` | Add a permission to the owner's live connection in place: `{scope: 'upcoming'}` is the only one offered; the existing token sees it on its next request. 404 for a missing or foreign connection. |
 | `GET /api/mcp/activity` | Up to 50 content-free tool records from fourteen days; successful writes include client and note references. |
 | `GET /api/health` | |
 | `GET /api/sample?birthday=&tz=` | a version number today: the front page's example (1981-06-14), or the birthday being typed at sign-up |
@@ -544,7 +545,8 @@ names are self-reported. Existing notes read as user-authored. The JSON
 export preserves provenance. The separate `upcoming` scope, its own
 checkbox on `/connect/`, lets an agent list, add, change and remove
 Upcoming dates through the same capture function; Settings shows it on the
-connection, and existing connections never gain it. `workers/capture.ts` is private, invoked only by MCP,
+connection, and an existing connection gains it only when the owner chooses
+"Allow Upcoming" for it in Settings (no reconnect needed). `workers/capture.ts` is private, invoked only by MCP,
 with no public web route or ability to authenticate cookie writes.
 
 The **Users** link in administration opens a read-only subscriber overview with

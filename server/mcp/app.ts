@@ -134,7 +134,7 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
               throw new ToolError(
                 'scope_required',
                 upcoming
-                  ? 'Reconnect and approve reading and changing Upcoming dates.'
+                  ? 'Ask the user to allow Upcoming for this connection under Settings, Connected agents, or to reconnect and approve it.'
                   : 'Reconnect and explicitly approve adding agent notes.'
               );
             const captured = await options.capture({ token, tool: name, arguments: args });

@@ -46,6 +46,19 @@ export function Connections() {
       if (!r.ok) return problem.show('Couldn’t disconnect. Try again.');
       await client.invalidateQueries({ queryKey: ['mcp-connections'] });
     });
+  const allowUpcoming = (c: Connection) =>
+    run(async () => {
+      problem.clear();
+      if (
+        !window.confirm(
+          `Let ${c.client_name} read your Upcoming dates and, when you ask it to, add, change and remove them? It still cannot change or delete notes.`
+        )
+      )
+        return;
+      const r = await api('POST', '/api/mcp/connections/' + encodeURIComponent(c.id) + '/scope', { scope: 'upcoming' });
+      if (!r.ok) return problem.show('Couldn’t change this connection. Reload and try again.');
+      await client.invalidateQueries({ queryKey: ['mcp-connections'] });
+    });
   return (
     <SettingsGroup
       id="agent-connections"
@@ -71,6 +84,11 @@ export function Connections() {
           {c.scope.includes('notes:write') && <p>Can add notes and append to notes this connection created.</p>}
           {c.scope.includes('upcoming') && <p>Can read and change your Upcoming dates.</p>}
           {c.last_used && <p className="hint">Last used {when(c.last_used)}.</p>}
+          {!c.scope.includes('upcoming') && (
+            <button type="button" className="quiet" disabled={busy} onClick={() => allowUpcoming(c)}>
+              Allow Upcoming for {c.client_name}
+            </button>
+          )}
           {c.scope.includes('notes:write') && (
             <button type="button" className="quiet" disabled={busy} onClick={() => disconnect(c.id, true)}>
               Turn off adding for {c.client_name}

@@ -253,7 +253,10 @@ export class Reader {
   }
   allowedUpcoming(): void {
     if (!String(this.family.scope).split(/\s+/).includes('upcoming'))
-      throw new ToolError('scope_required', 'Reconnect and approve reading and changing Upcoming dates.');
+      throw new ToolError(
+        'scope_required',
+        'Ask the user to allow Upcoming for this connection under Settings, Connected agents, or to reconnect and approve it.'
+      );
   }
   allowedMedia(): void {
     if (!String(this.family.scope).split(/\s+/).includes('media:read'))

@@ -120,9 +120,12 @@ reflections and semantic search remain separate future work.
 
 ## Upcoming dates
 
-Reconnect from your agent and tick "Also allow reading and changing my
-Upcoming dates" to grant the `upcoming` scope. It is separate from note
-scopes, initially unchecked, and existing connections never gain it. It
+Grant the `upcoming` scope either by reconnecting from your agent and
+ticking "Also allow reading and changing my Upcoming dates", or, for a
+connection you already have, with "Allow Upcoming for <client>" under
+Settings, Connected agents, which widens that connection in place so the
+existing token works on its next request. It is separate from note
+scopes, initially unchecked, and never added without one of those choices. It
 covers the three `upcoming_*` tools: a list of saved dates with their next
 occurrence, and all-or-nothing saves and removals of up to 50 dates per
 call, each needing an explicit user request. A change carries the id and

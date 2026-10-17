@@ -206,3 +206,36 @@ test('the upcoming scope is offered by default, granted only when ticked, and ne
   const { id: nulled } = await pending(ctx, 'notes:read media:read notes:write upcoming');
   await assert.rejects(service.authorize('u', { request: nulled, approve: true, upcoming: null }), OAuthError);
 });
+test('an owner widens a live connection with the upcoming scope in place; the existing token sees it, others cannot', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx),
+    service = new OAuthService(ctx),
+    fid = String(a.family.id);
+  assert.equal((await service.bearer(a.token))!.scope, 'notes:read media:read notes:write');
+  await assert.rejects(
+    service.grant('someone-else', fid, 'upcoming'),
+    (e) => e instanceof OAuthError && e.status === 404
+  );
+  for (const bad of ['notes:write', 'media:read', '', null, 'upcoming extra'])
+    await assert.rejects(service.grant('u', fid, bad), (e) => e instanceof OAuthError && e.error === 'invalid_scope');
+  assert.deepEqual(await service.grant('u', fid, 'upcoming'), {
+    ok: true,
+    scope: 'notes:read media:read notes:write upcoming'
+  });
+  assert.deepEqual(await service.grant('u', fid, 'upcoming'), {
+    ok: true,
+    scope: 'notes:read media:read notes:write upcoming'
+  });
+  assert.equal((await service.bearer(a.token))!.scope, 'notes:read media:read notes:write upcoming');
+  const refreshed = await service.exchange({
+    grant_type: 'refresh_token',
+    refresh_token: String(a.tokens.refresh_token),
+    client_id: a.cid,
+    resource: ORIGIN + '/mcp'
+  });
+  assert.equal(refreshed.scope, 'notes:read media:read notes:write upcoming');
+  await service.disconnect('u', fid, true);
+  assert.equal((await service.bearer(String(refreshed.access_token)))!.scope, 'notes:read media:read upcoming');
+  await service.disconnect('u', fid);
+  await assert.rejects(service.grant('u', fid, 'upcoming'), (e) => e instanceof OAuthError && e.status === 404);
+});

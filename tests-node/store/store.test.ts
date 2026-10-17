@@ -207,6 +207,28 @@ test('standing address replacement atomically removes old and fails closed for r
   assert.equal(await s.setInbox('u', 'c', 'now', 'b'), false);
   assert.equal(await s.getInbox('c'), null);
 });
+test('calendar link replacement and removal are atomic with the profile pointer and fail closed', async () => {
+  const s = setup();
+  assert.equal(await s.setCalendar('u', 'a', 'now'), true);
+  assert.deepEqual(await s.getCalendar('a'), { pk: 'CALENDAR#a', sk: 'CALENDAR', user_id: 'u', created_at: 'now' });
+  assert.equal(await s.setCalendar('u', 'b', 'now'), false);
+  assert.equal(await s.getCalendar('b'), null);
+  assert.equal(await s.setCalendar('u', 'b', 'now', 'a'), true);
+  assert.equal(await s.getCalendar('a'), null);
+  assert.equal((await s.profile('u'))?.calendar, 'b');
+  assert.equal(await s.dropCalendar('u', 'a'), false);
+  assert.equal(await s.getCalendar('b')?.then((r) => r?.user_id), 'u');
+  // The profile goes only with the link it names; the standing address stays independent.
+  assert.equal(await s.setInbox('u', 'i', 'now'), true);
+  assert.equal(await s.deleteProfile('u', 'i'), false);
+  assert.equal(await s.deleteProfile('u', 'i', 'a'), false);
+  assert.equal(await s.dropCalendar('u', 'b'), true);
+  assert.equal(await s.getCalendar('b'), null);
+  assert.equal((await s.profile('u'))?.calendar, undefined);
+  assert.equal(await s.dropCalendar('u', 'b'), false);
+  assert.equal(await s.deleteProfile('u', 'i', 'b'), false);
+  assert.equal(await s.deleteProfile('u', 'i'), true);
+});
 test('notes order by writing time across pages, range includes last day, duplicate ids are no-op', async () => {
   const s = setup(1);
   assert.equal(

@@ -57,6 +57,13 @@ export interface UpcomingSection {
 }
 export const annual = (kind: UpcomingKind) => kind === 'birthday' || kind === 'anniversary';
 export const defaultReminders = (kind: UpcomingKind) => (kind === 'trip' ? [14, 1, 0] : [7, 1, 0]);
+/** The version a birthday with a known year turns on one of its dates, by the site's arithmetic. */
+export const birthdayVersion = (entry: UpcomingEntry, date: string) =>
+  entry.year === null ? null : computeVersion(String(entry.year).padStart(4, '0') + '-' + entry.date, date);
+export const majorRelease = (v: { major: number; minor: number }) => v.minor === 0 && v.major > 0;
+/** How many years an anniversary with a known year marks on one of its dates. */
+export const anniversaryYears = (entry: UpcomingEntry, date: string) =>
+  entry.year === null ? null : parseDay(date).year - entry.year;
 
 function dateLabel(date: string, today: string): string {
   return new Intl.DateTimeFormat('en-US', {
@@ -81,12 +88,11 @@ export function occurrence(entry: UpcomingEntry, today: string): Occurrence {
       days_until === 0 ? 'today' : days_until > 0 ? 'upcoming' : end_date && end_date >= today ? 'ongoing' : 'past';
   let line = entry.title;
   if (entry.kind === 'birthday') {
-    if (entry.year !== null) {
-      const v = computeVersion(String(entry.year).padStart(4, '0') + '-' + entry.date, date);
-      line += ` turns ${v}.` + (v.minor === 0 && v.major > 0 ? ' A major release.' : '');
-    } else line += ' — birthday.';
+    const v = birthdayVersion(entry, date);
+    if (v) line += ` turns ${v}.` + (majorRelease(v) ? ' A major release.' : '');
+    else line += ' — birthday.';
   } else if (entry.kind === 'anniversary') {
-    const years = entry.year === null ? null : parseDay(date).year - entry.year;
+    const years = anniversaryYears(entry, date);
     line += years === null ? ' — anniversary.' : ` — ${years} ${years === 1 ? 'year' : 'years'}.`;
   } else if (entry.kind === 'trip') {
     if (entry.place) line += ` — ${entry.place.name}.`;

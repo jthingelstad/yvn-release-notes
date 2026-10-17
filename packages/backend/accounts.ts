@@ -145,7 +145,12 @@ export async function changePause(service: SessionService, b: Item | null): Prom
 }
 const sessionsOf = (items: Item[]): Key[] =>
   items.filter((i) => String(i.sk).startsWith('SESSION#')).map((i) => ({ pk: String(i.sk), sk: 'SESSION' }));
-const inboxKeys = (p: Item): Key[] => (p.inbox ? [{ pk: 'INBOX#' + p.inbox, sk: 'INBOX' }] : []);
+// The standing address and the calendar feed link: private tokens the profile points at.
+const handleKeys = (p: Item): Key[] => [
+  ...(p.inbox ? [{ pk: 'INBOX#' + p.inbox, sk: 'INBOX' }] : []),
+  ...(p.calendar ? [{ pk: 'CALENDAR#' + p.calendar, sk: 'CALENDAR' }] : [])
+];
+const handle = (value: unknown) => (value ? String(value) : null);
 export async function deleteAccount(service: SessionService, b: Item): Promise<string> {
   const { uid, profile: p, session: s } = await service.account(true),
     ctx = service.context,
@@ -167,7 +172,7 @@ export async function deleteAccount(service: SessionService, b: Item): Promise<s
     ...items
       .filter((i) => String(i.sk).startsWith('DAY#') && i.token)
       .map((i) => ({ pk: 'TOKEN#' + i.token, sk: 'TOKEN' })),
-    ...inboxKeys(p),
+    ...handleKeys(p),
     ...sessionsOf(items),
     ...items.filter((i) => i.sk !== 'PROFILE').map((i) => ({ pk: String(i.pk), sk: String(i.sk) })),
     ...(await ctx.store.loginKeys(digest(String(p.email)))),
@@ -177,8 +182,8 @@ export async function deleteAccount(service: SessionService, b: Item): Promise<s
   let deleted = false;
   for (let i = 0; i < 3; i++) {
     const again = (await ctx.store.profile(uid)) ?? {};
-    await ctx.store.deleteKeys(inboxKeys(again));
-    if (await ctx.store.deleteProfile(uid, again.inbox ? String(again.inbox) : null)) {
+    await ctx.store.deleteKeys(handleKeys(again));
+    if (await ctx.store.deleteProfile(uid, handle(again.inbox), handle(again.calendar))) {
       deleted = true;
       break;
     }

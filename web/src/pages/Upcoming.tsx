@@ -4,7 +4,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Icon } from '../components/icon.tsx';
 import { lazy, Suspense, useRef, useState, type FormEvent } from 'react';
-import { AppLink, Bar, ErrorLine, Failed, Loading, useBusy, useFocusLater, useTitle } from '../components/common.tsx';
+import {
+  AppLink,
+  Bar,
+  ErrorLine,
+  Failed,
+  Loading,
+  useBusy,
+  useFocusLater,
+  useProblem,
+  useTitle
+} from '../components/common.tsx';
 import { useHashParam } from '../lib/nav.ts';
 import { MAX_TAG } from '../../../packages/domain/tags.ts';
 import { api } from '../lib/api.ts';
@@ -292,12 +302,108 @@ export function Upcoming() {
               {list(past, 'Past events')}
             </details>
           )}
+          <CalendarLink calendar={query.data!.calendar} busy={busy} run={run} />
           <p className="hint upcoming-footnote">
             These are saved plans. Write what happened in your release notes when the day comes.
           </p>
         </>
       )}
     </>
+  );
+}
+
+// The private calendar link (AGENTS.md, Upcoming): these dates as a calendar
+// subscription the calendar app keeps fresh itself. The link alone opens it,
+// so "New link" replaces it and "Remove" ends it; the old one answers nothing.
+function CalendarLink({
+  calendar,
+  busy,
+  run
+}: {
+  calendar: string | null;
+  busy: boolean;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+}) {
+  const client = useQueryClient();
+  const problem = useProblem();
+  const [copied, setCopied] = useState(false);
+  const copyButton = useRef<HTMLButtonElement>(null),
+    newButton = useRef<HTMLButtonElement>(null),
+    removeButton = useRef<HTMLButtonElement>(null);
+  const keep = (next: string | null) =>
+    client.setQueryData(upcomingQuery.queryKey, (old) => old && { ...old, calendar: next });
+  const copy = async () => {
+    problem.clear();
+    try {
+      await navigator.clipboard.writeText(calendar || '');
+      setCopied(true);
+    } catch {
+      problem.show('Couldn’t copy it. Select the link and copy it from there.', copyButton.current);
+    }
+  };
+  const make = () =>
+    run(async () => {
+      problem.clear();
+      setCopied(false);
+      if (calendar && !window.confirm('Calendars using the current link will stop updating. Make a new one?')) return;
+      const r = await api<{ calendar: string }>('POST', '/api/calendar');
+      if (!r.ok) return problem.show(r.data, newButton.current);
+      keep(r.data.calendar);
+    });
+  const remove = () =>
+    run(async () => {
+      problem.clear();
+      setCopied(false);
+      if (!window.confirm('Calendars using this link will stop updating. Remove it?')) return;
+      const r = await api('DELETE', '/api/calendar');
+      if (!r.ok) return problem.show(r.data, removeButton.current);
+      keep(null);
+    });
+  return (
+    <section className="section upcoming-calendar" id="calendar" aria-labelledby="calendar-heading">
+      <h2 id="calendar-heading">In your calendar</h2>
+      <p className="hint">
+        Subscribe to these dates from your calendar app and it keeps them current on its own: each birthday with the
+        version it turns, every anniversary, trip and event. Reminders still come only in your daily email.
+      </p>
+      {calendar && (
+        <p className="value mono" data-field="calendar">
+          {calendar}
+        </p>
+      )}
+      <p className="hint" hidden={!calendar}>
+        On an iPhone, iPad or Mac, Subscribe opens Calendar. In Google Calendar and others, add a calendar from a URL
+        and paste the link. Keep it to yourself: anyone who has it can read these dates.
+      </p>
+      <div className="row">
+        {calendar && (
+          <a className="quiet" href={calendar.replace(/^https?:/, 'webcal:')} id="calendar-subscribe">
+            Subscribe
+          </a>
+        )}
+        <button ref={copyButton} className="quiet" type="button" id="calendar-copy" hidden={!calendar} onClick={copy}>
+          Copy link
+        </button>
+        <button ref={newButton} className="quiet" type="button" id="calendar-new" disabled={busy} onClick={make}>
+          {calendar ? 'New link' : 'Make a calendar link'}
+        </button>
+        <button
+          ref={removeButton}
+          className="quiet danger"
+          type="button"
+          id="calendar-remove"
+          hidden={!calendar}
+          disabled={busy}
+          onClick={remove}
+        >
+          Remove link
+        </button>
+      </div>
+      <p className="aside saved" id="calendar-copied" role="status" hidden={!copied}>
+        Copied.
+      </p>
+      <ErrorLine line={problem.line} />
+    </section>
   );
 }
 

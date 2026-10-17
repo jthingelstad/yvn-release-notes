@@ -340,6 +340,9 @@ or new CSP exception.
 | `POST /api/upcoming` | create a private date (201): `kind`, `title`, `date`, optional `tag`, `year`, `end_date`, `place`, `email`, `reminders`; see Upcoming below |
 | `PUT /api/upcoming/{id}` | replace an owned date with the same fields and its saved `revision`; 409 for stale revision, 404 for a missing/foreign entry |
 | `DELETE /api/upcoming/{id}` `{revision}` | delete an owned date using its current revision; frees retained-entry capacity |
+| `POST /api/calendar` | make the private calendar link, or a new one in place of the old, which answers nothing from then on: `{calendar}`, the feed's URL; 409 `try-again` if another tab changed it first |
+| `DELETE /api/calendar` | remove the link; `{ok: true}`, even when there was none |
+| `GET /api/calendar/{token}.ics` | the iCalendar feed of the link's owner's Upcoming dates, `text/calendar`; the link is the proof, no session or cookie; 404 `not-found` for any other token |
 | `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
 | `GET /api/releases` | the releases index: each release with notes, and the current one (`current`), newest first, with `from`, `through`, `days` (with notes) and `notes`; from the notes' keys alone |
@@ -435,6 +438,25 @@ in a fragment, never a server-visible query. Nothing is saved until the owner
 submits the note; there is no separate event-note relationship, and changing an
 event's tag does not change saved notes. Notes remain the owner's account of what
 actually happened.
+
+**In your calendar** (2026-10-17): the page offers a private iCalendar link,
+`/api/calendar/<token>.ics`, 120 random bits naming the owner
+(`CALENDAR#<token>`, `PROFILE.calendar`), made and replaced on the page, never at
+sign-up. The link alone opens the feed, with no session and no cookie, so the
+page says to keep it private; **New link** replaces it (the old one answers 404
+from then on) and **Remove link** ends it. **Subscribe** is the same link as
+`webcal:`, which opens Calendar on Apple devices; elsewhere the link is pasted
+as a calendar from a URL. The feed (`packages/domain/calendar.ts`) holds every
+saved date as an all-day event: trips over their inclusive days, one-time events,
+and annual dates once a year from last year through three years ahead, each
+birthday with the version it turns that year (a leap day on March 1 outside leap
+years, as in the email) and a known anniversary with its count of years. A tag
+and "A major release." go in the description, a destination in the location.
+No alarms: reminders travel only in the daily email. Entries' own update times
+stamp the events (`DTSTAMP`, `LAST-MODIFIED`, `SEQUENCE` is the revision), so an
+unchanged feed reads the same twice and calendar apps update in place. The
+token is never logged (reads log the owner and a count) and never exported; a
+deleted account's token goes with its profile.
 
 Upcoming entries are included in JSON, Markdown and ZIP exports, in a separate
 `upcoming` collection/section (omitted when there are none for legacy export

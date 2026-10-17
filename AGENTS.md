@@ -300,6 +300,15 @@ ZIP...` prints what an import would do, as counts (`--plan-out` to a
   including past events. A tagged entry can start today's editable note draft
   with its hashtag, preserving existing text; it never creates a note on its own.
   Upcoming tags remain separate from journal tags until written in a saved note.
+- **A private calendar link** (Jamie, 2026-10-17: an iCal feed of Upcoming "the
+  user can add in their calendar"): `/api/calendar/<token>.ics`, made on
+  `/upcoming/`, with the checks the standing address has (120 random bits naming
+  the person, `CALENDAR#`, replaced by "New link", removed with the account) but
+  no session: the link is the proof, so it is never logged or exported. Every
+  saved date is an all-day event, annual ones once a year from last year through
+  three years ahead with that year's version; no alarms, since reminders travel
+  only in the daily email. `packages/domain/calendar.ts` and `docs/WEB-APP.md`
+  have the rest.
 
 ### The email
 

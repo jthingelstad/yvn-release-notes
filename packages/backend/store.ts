@@ -14,6 +14,9 @@
  * normalized tag (null when absent), separate from notes; legacy rows omit tag.
  * PROFILE.upcoming_count and entry revision change atomically (200 retained
  * entries per owner); web transactions also prove the live account/session.
+ * CALENDAR#<token> / CALENDAR names the owner of a private iCalendar feed link
+ * (PROFILE.calendar points back), as INBOX# does the standing address: made and
+ * replaced on the Upcoming page, removed with the profile, never logged.
  * TURNSTILE#<sha256 of token> / VERDICT keeps Cloudflare's answer for one
  * sign-in token (result, codes, email_hash, uses, verified_at) for five
  * minutes and three uses (`turnstile.ts`); no address, only its hash.
@@ -384,22 +387,59 @@ export class Store {
     return this.get({ pk: `INBOX#${token}`, sk: 'INBOX' }, { ConsistentRead: consistent });
   }
   async setInbox(user: string, token: string, now: string, old: string | null = null) {
+    return this.setHandle('INBOX', 'inbox', user, token, now, old);
+  }
+  async getCalendar(token: string) {
+    return this.get({ pk: `CALENDAR#${token}`, sk: 'CALENDAR' });
+  }
+  async setCalendar(user: string, token: string, now: string, old: string | null = null) {
+    return this.setHandle('CALENDAR', 'calendar', user, token, now, old);
+  }
+  /** Ends the feed link: its row goes with the profile's pointer, which must still name it. */
+  async dropCalendar(user: string, token: string): Promise<boolean> {
+    try {
+      await this.client.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            { Delete: { TableName: this.tableName, Key: { pk: `CALENDAR#${token}`, sk: 'CALENDAR' } } },
+            {
+              Update: {
+                TableName: this.tableName,
+                Key: key(user, 'PROFILE'),
+                UpdateExpression: 'REMOVE calendar',
+                ConditionExpression: 'attribute_exists(pk) AND calendar = :t',
+                ExpressionAttributeValues: { ':t': token }
+              }
+            }
+          ]
+        })
+      );
+      return true;
+    } catch (e) {
+      if (reasons(e).some((r) => r.Code === 'ConditionalCheckFailed')) return false;
+      throw e;
+    }
+  }
+  /** A private token row naming its owner, with the profile pointing back. Replacing
+   * one removes the old row in the same transaction and fails closed on a race. */
+  private async setHandle(prefix: string, field: string, user: string, token: string, now: string, old: string | null) {
     const operations: NonNullable<TransactWriteCommandInput['TransactItems']> = [
       this.putOperation(
-        { pk: `INBOX#${token}`, sk: 'INBOX', user_id: user, created_at: now },
+        { pk: `${prefix}#${token}`, sk: prefix, user_id: user, created_at: now },
         { ConditionExpression: 'attribute_not_exists(pk)' }
       ),
       {
         Update: {
           TableName: this.tableName,
           Key: key(user, 'PROFILE'),
-          UpdateExpression: 'SET inbox = :t',
-          ConditionExpression: 'attribute_exists(pk) AND ' + (old ? 'inbox = :old' : 'attribute_not_exists(inbox)'),
+          UpdateExpression: `SET ${field} = :t`,
+          ConditionExpression:
+            'attribute_exists(pk) AND ' + (old ? `${field} = :old` : `attribute_not_exists(${field})`),
           ExpressionAttributeValues: { ':t': token, ...(old ? { ':old': old } : {}) }
         }
       }
     ];
-    if (old) operations.push({ Delete: { TableName: this.tableName, Key: { pk: `INBOX#${old}`, sk: 'INBOX' } } });
+    if (old) operations.push({ Delete: { TableName: this.tableName, Key: { pk: `${prefix}#${old}`, sk: prefix } } });
     try {
       await this.client.send(new TransactWriteCommand({ TransactItems: operations }));
       return true;
@@ -875,14 +915,17 @@ export class Store {
   async profile(user: string, consistent = false) {
     return this.get(key(user, 'PROFILE'), consistent ? { ConsistentRead: true } : {});
   }
-  async deleteProfile(user: string, inbox: string | null) {
+  /** Only once the standing address and feed link are the ones being removed with it. */
+  async deleteProfile(user: string, inbox: string | null, calendar: string | null = null) {
+    const values = { ...(inbox ? { ':t': inbox } : {}), ...(calendar ? { ':c': calendar } : {}) };
     return this.conditional(() =>
-      this.del(
-        key(user, 'PROFILE'),
-        inbox
-          ? { ConditionExpression: 'inbox = :t', ExpressionAttributeValues: { ':t': inbox } }
-          : { ConditionExpression: 'attribute_not_exists(inbox)' }
-      )
+      this.del(key(user, 'PROFILE'), {
+        ConditionExpression:
+          (inbox ? 'inbox = :t' : 'attribute_not_exists(inbox)') +
+          ' AND ' +
+          (calendar ? 'calendar = :c' : 'attribute_not_exists(calendar)'),
+        ...(Object.keys(values).length ? { ExpressionAttributeValues: values } : {})
+      })
     );
   }
   async createSubscriber(user: string, email: string, profile: Item) {

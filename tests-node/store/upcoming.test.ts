@@ -138,3 +138,60 @@ test('consistent owner-prefix queries paginate with exact native keys and return
     ConsistentRead: true
   });
 });
+test('calendar link rows commit with the profile pointer and live proofs; removal needs the pointer', async () => {
+  const commands: StoreCommand[] = [],
+    raw = new Store(
+      {
+        send: async (c) => {
+          commands.push(c);
+          return {};
+        }
+      },
+      'T'
+    ),
+    store = withWebProof(raw, 'u', 'hash', 100);
+  assert.equal(await store.setCalendar('u', 'new', 'now', 'old'), true);
+  assert.equal(commands[0]!.constructor.name, 'TransactWriteCommand');
+  assert.deepEqual(commands[0]!.input, {
+    TransactItems: [
+      {
+        Put: {
+          TableName: 'T',
+          Item: { pk: 'CALENDAR#new', sk: 'CALENDAR', user_id: 'u', created_at: 'now' },
+          ConditionExpression: 'attribute_not_exists(pk)'
+        }
+      },
+      {
+        Update: {
+          TableName: 'T',
+          Key: { pk: 'USER#u', sk: 'PROFILE' },
+          UpdateExpression: 'SET calendar = :t',
+          ConditionExpression:
+            '(attribute_exists(pk) AND calendar = :old) AND (attribute_exists(pk) AND attribute_not_exists(#webDeleting))',
+          ExpressionAttributeNames: { '#webDeleting': 'mcp_deleting' },
+          ExpressionAttributeValues: { ':t': 'new', ':old': 'old' }
+        }
+      },
+      { Delete: { TableName: 'T', Key: { pk: 'CALENDAR#old', sk: 'CALENDAR' } } },
+      session
+    ]
+  });
+  assert.equal(await store.dropCalendar('u', 'new'), true);
+  assert.deepEqual(commands[1]!.input, {
+    TransactItems: [
+      { Delete: { TableName: 'T', Key: { pk: 'CALENDAR#new', sk: 'CALENDAR' } } },
+      {
+        Update: {
+          TableName: 'T',
+          Key: { pk: 'USER#u', sk: 'PROFILE' },
+          UpdateExpression: 'REMOVE calendar',
+          ConditionExpression:
+            '(attribute_exists(pk) AND calendar = :t) AND (attribute_exists(pk) AND attribute_not_exists(#webDeleting))',
+          ExpressionAttributeNames: { '#webDeleting': 'mcp_deleting' },
+          ExpressionAttributeValues: { ':t': 'new' }
+        }
+      },
+      session
+    ]
+  });
+});

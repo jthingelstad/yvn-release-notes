@@ -24,7 +24,7 @@ test('every native frontend route appears in the documented Pages list', async (
   for (const page of pages) assert.ok(listed.includes('`' + page), `page missing from documentation: ${page}`);
 });
 test('MCP documentation and generated JSON match the complete native tool contract', async () => {
-  const documented = Array.from(mcp.matchAll(/^\| `(notes_[a-z_]+)` \|/gm), (match) => match[1]);
+  const documented = Array.from(mcp.matchAll(/^\| `((?:notes|upcoming)_[a-z_]+)` \|/gm), (match) => match[1]);
   assert.equal(new Set(documented).size, documented.length, 'MCP table contains duplicate tools');
   assert.deepEqual(documented.sort(), TOOLS.map((tool) => tool.name).sort());
   assert.deepEqual(

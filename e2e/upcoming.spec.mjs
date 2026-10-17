@@ -256,3 +256,45 @@ test('kind and tag filters combine, survive reloads and carry a tag into an exis
   // The intentional invalid-tag request above is the only console error.
   expect(errors).toEqual(['Failed to load resource: the server responded with a status of 400 (Bad Request)']);
 });
+
+test('Upcoming can be edited as text: preview shows adds, changes and removals, and apply commits them together', async ({page,context}) => {
+  test.setTimeout(60_000);
+  const headers={Origin:test.info().project.use.baseURL},errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  page.on('console',message=>{if(message.type()==='error') errors.push(message.text());});
+  const {today,entries:before}=await (await context.request.get('/api/upcoming')).json();
+  const year=Number(today.slice(0,4));
+  expect((await context.request.post('/api/upcoming',{headers,data:{kind:'birthday',title:'Text Bulk',date:'03-04'}})).status()).toBe(201);
+  await page.goto('/upcoming/');
+  await page.getByRole('link',{name:'Edit as text',exact:true}).click();
+  await expect(page).toHaveURL(/\/upcoming-text\/$/);
+  const box=page.getByRole('textbox',{name:'Upcoming dates as text'});
+  await expect(box).toHaveValue(/birthday 03-04 Text Bulk/);
+  const lines=(await box.inputValue()).split('\n').filter(l=>!l.startsWith('birthday 03-04 Text Bulk'));
+  lines.push(`birthday 1980-03-04 Text Bulk #family`);
+  lines.push(`event ${year+1}-07-04 Text Picnic email:off remind:1,0`);
+  lines.push(`trip ${year+1}-08-01..${year+1}-08-03 Text Trip @Minneapolis, Minnesota, United States`);
+  await box.fill(lines.join('\n'));
+  await page.getByRole('button',{name:'Preview changes',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Preview: add 2, change 1, remove 0'})).toBeVisible();
+  await expect(page.locator('.upcoming-plan')).toContainText('birthday 1980-03-04 Text Bulk #family');
+  await expect(page.locator('.upcoming-plan')).toContainText('@Minneapolis, Minnesota, United States');
+  await page.getByRole('button',{name:'Apply: add 2, change 1, remove 0',exact:true}).click();
+  await expect(page.getByRole('status').filter({hasText:'Applied: add 2, change 1, remove 0.'})).toBeVisible();
+  await expect(box).toHaveValue(/birthday 1980-03-04 Text Bulk #family/);
+  // A bad line is named before anything is sent; deleting lines removes dates.
+  await box.fill(['lunch 03-04 Nobody',...lines.filter(l=>!l.includes('Text Picnic')&&!l.includes('Text Trip'))].join('\n'));
+  await page.getByRole('button',{name:'Preview changes',exact:true}).click();
+  await expect(page.getByRole('alert')).toContainText('Line 1:');
+  await box.fill(lines.filter(l=>!l.includes('Text Picnic')&&!l.includes('Text Trip')).join('\n'));
+  await page.getByRole('button',{name:'Preview changes',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Preview: add 0, change 0, remove 2'})).toBeVisible();
+  await page.getByRole('button',{name:'Apply: add 0, change 0, remove 2',exact:true}).click();
+  await expect(page.getByRole('status').filter({hasText:'Applied: add 0, change 0, remove 2.'})).toBeVisible();
+  const {entries:after}=await (await context.request.get('/api/upcoming')).json();
+  expect(after.length).toBe(before.length+1);
+  const bulk=after.find(e=>e.title==='Text Bulk');
+  expect([bulk.year,bulk.tag,bulk.revision]).toEqual([1980,'family',2]);
+  expect(after.some(e=>e.title==='Text Picnic'||e.title==='Text Trip')).toBe(false);
+  expect(errors).toEqual([]);
+});

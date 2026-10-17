@@ -182,7 +182,7 @@ notes.yourversionnumber.com
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/search/`,
-  `/tag/?t=<tag>`, `/upcoming/`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
+  `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
   `/connect/` approves an external agent request whose opaque id stays in the fragment.
   `/admin/` manages product updates; `/admin-users/` shows subscriber metadata. Administration is visible in settings only to the configured administrator.
 
@@ -340,6 +340,7 @@ or new CSP exception.
 | `POST /api/upcoming` | create a private date (201): `kind`, `title`, `date`, optional `tag`, `year`, `end_date`, `place`, `email`, `reminders`; see Upcoming below |
 | `PUT /api/upcoming/{id}` | replace an owned date with the same fields and its saved `revision`; 409 for stale revision, 404 for a missing/foreign entry |
 | `DELETE /api/upcoming/{id}` `{revision}` | delete an owned date using its current revision; frees retained-entry capacity |
+| `POST /api/upcoming/batch` | many dates in one atomic request: `add` (entry fields, `place` may be destination text), `change` (the same plus `id` and `revision`), `remove` (`id` and `revision`); `dry_run: true` checks, resolves destinations and returns the `plan` without saving. Problems name the `list` and `index`; 409 `upcoming-conflict` when a revision or the 200-entry capacity changed underneath |
 | `POST /api/calendar` | make the private calendar link, or a new one in place of the old, which answers nothing from then on: `{calendar}`, the feed's URL; 409 `try-again` if another tab changed it first |
 | `DELETE /api/calendar` | remove the link; `{ok: true}`, even when there was none |
 | `GET /api/calendar/{token}.ics` | the iCalendar feed of the link's owner's Upcoming dates, `text/calendar`; the link is the proof, no session or cookie; 404 `not-found` for any other token |
@@ -392,6 +393,16 @@ Use 1–50 letters/numbers with single separating hyphens and at least one lette
 that normalizes to a–z. Missing, null or blank clears it; legacy entries read as
 null. Multiple tags and invalid punctuation are refused as `upcoming-tag`.
 The tag groups plans only; it does not add anything to journal tag lists or search.
+
+**Editing as text.** `/upcoming-text/`, linked from Upcoming, shows every saved
+date as one line (`packages/domain/upcoming-text.ts`): the kind and the date
+first, then the title as free text, then any of `#tag`, `@destination`,
+`email:off` and `remind:30,7,0`. Nothing has to line up in columns. Preview
+parses the text in the browser, pairs lines with saved dates by kind and
+title, and asks the API for a dry run, which resolves destinations and shows
+what would be added, changed and removed; Apply sends the same batch, which
+commits all of it or nothing. A deleted line removes its date. Agents do the
+same through the MCP `upcoming` scope (`docs/MCP.md`).
 
 Kinds and dates:
 
@@ -530,7 +541,10 @@ connections, disconnect and turn-off-adding controls, and content-free
 recent activity. Adding consent is separate and initially unchecked.
 Note metadata shows assistant provenance as "added by <client>"; client
 names are self-reported. Existing notes read as user-authored. The JSON
-export preserves provenance. `workers/capture.ts` is private, invoked only by MCP,
+export preserves provenance. The separate `upcoming` scope, its own
+checkbox on `/connect/`, lets an agent list, add, change and remove
+Upcoming dates through the same capture function; Settings shows it on the
+connection, and existing connections never gain it. `workers/capture.ts` is private, invoked only by MCP,
 with no public web route or ability to authenticate cookie writes.
 
 The **Users** link in administration opens a read-only subscriber overview with

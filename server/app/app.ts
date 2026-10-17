@@ -33,6 +33,7 @@ export const ROUTES: [string, string][] = [
   ['GET', '/api/today'],
   ['GET', '/api/upcoming'],
   ['POST', '/api/upcoming'],
+  ['POST', '/api/upcoming/batch'],
   ['PUT', '/api/upcoming/{id}'],
   ['DELETE', '/api/upcoming/{id}'],
   ['POST', '/api/calendar'],

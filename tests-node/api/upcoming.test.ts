@@ -240,3 +240,89 @@ test('purpose-verified account deletion removes Upcoming entries with the owner 
   assert.equal((await f.store.upcomingEntries('u')).length, 0);
   assert.equal(await f.store.profile('u'), null);
 });
+test('a batch previews with dry_run, resolves destinations by text, applies as one, and refuses whole on a problem', async () => {
+  const f = await fixture();
+  const texas = { ...place, region: 'Texas', country: 'United States', tz: 'America/Chicago', lat: 33.66, lon: -95.56 };
+  f.ctx.geocode = async (q) => (q.toLowerCase() === 'paris' ? [place, texas] : []);
+  const first = (await f.call('POST', undefined, birthday)).data as Item,
+    second = (await f.call('POST', undefined, { kind: 'event', title: 'Concert', date: '2026-10-01' })).data as Item;
+  const batch = {
+    add: [
+      { kind: 'trip', title: 'Holiday', date: '2026-12-05', end_date: '2026-12-12', place: 'Paris, Texas' },
+      { kind: 'trip', title: 'Spring', date: '2027-04-05', end_date: '2027-04-06', place: 'paris' },
+      { kind: 'birthday', title: 'Sam', date: '03-03', tag: 'Family' }
+    ],
+    change: [{ id: first.id, revision: first.revision, kind: 'birthday', title: 'Alex', date: '10-21', year: 1976 }],
+    remove: [{ id: second.id, revision: second.revision }]
+  };
+  const preview = await f.call('POST', '/api/upcoming/batch', { ...batch, dry_run: true });
+  assert.equal(preview.status, 200, JSON.stringify(preview.data));
+  const plan = preview.data.plan as { add: Item[]; change: { before: Item; after: Item }[]; remove: string[] };
+  assert.deepEqual([preview.data.add, preview.data.change, preview.data.remove], [3, 1, 1]);
+  assert.deepEqual(
+    plan.add.map((e) => (e.place as Item | null)?.region ?? e.tag),
+    ['Texas', 'Ile-de-France', 'family']
+  );
+  assert.deepEqual([plan.change[0]!.before.date, plan.change[0]!.after.date], ['10-20', '10-21']);
+  assert.deepEqual(plan.remove, [second.id]);
+  assert.equal((await f.store.upcomingEntries('u')).length, 2, 'a preview writes nothing');
+  // Problems name the list and index, and nothing is written.
+  for (const [value, status, error, where] of [
+    [
+      {
+        add: [{ kind: 'trip', title: 'Nowhere', date: '2026-12-05', end_date: '2026-12-12', place: 'Atlantis' }],
+        ...{}
+      },
+      400,
+      'upcoming-place',
+      ['add', 0]
+    ],
+    [
+      { ...batch, add: [...batch.add, { kind: 'birthday', title: 'Bad', date: '13-40' }] },
+      400,
+      'upcoming-date',
+      ['add', 3]
+    ],
+    [{ ...batch, change: [{ ...batch.change[0], revision: 9 }] }, 409, 'upcoming-changed', ['change', 0]],
+    [{ ...batch, remove: [{ id: 'missing', revision: 1 }] }, 404, 'upcoming-missing', ['remove', 0]],
+    [{ ...batch, remove: [batch.remove[0], batch.remove[0]] }, 400, 'upcoming-fields', ['remove', 1]],
+    [{ add: [{ id: 'x', kind: 'birthday', title: 'Bad', date: '01-01' }] }, 400, 'upcoming-fields', ['add', 0]],
+    [{ add: 'no' }, 400, 'upcoming-fields', ['add', undefined]],
+    [{ extra: true }, 400, 'upcoming-fields', [undefined, undefined]]
+  ] as const) {
+    const answer = await f.call('POST', '/api/upcoming/batch', value);
+    assert.equal(answer.status, status, JSON.stringify(value));
+    assert.equal(answer.data.error, error);
+    assert.deepEqual([answer.data.list, answer.data.index], where);
+  }
+  assert.equal((await f.store.upcomingEntries('u')).length, 2);
+  assert.equal(
+    (await f.call('POST', '/api/upcoming/batch', { add: Array.from({ length: 199 }, () => birthday) })).data.error,
+    'upcoming-limit'
+  );
+  assert.equal(
+    (await f.call('POST', '/api/upcoming/batch', { add: Array.from({ length: 201 }, () => birthday) })).data.error,
+    'upcoming-batch'
+  );
+  // Apply.
+  const applied = await f.call('POST', '/api/upcoming/batch', batch);
+  assert.equal(applied.status, 200, JSON.stringify(applied.data));
+  assert.deepEqual(applied.data, { ok: true, add: 3, change: 1, remove: 1 });
+  const entries = await f.store.upcomingEntries('u');
+  assert.deepEqual(entries.map((e) => e.title).toSorted(), ['Alex', 'Holiday', 'Sam', 'Spring']);
+  assert.equal(entries.find((e) => e.id === first.id)!.revision, 2);
+  assert.equal(entries.find((e) => e.title === 'Holiday')!.place!.region, 'Texas');
+  assert.equal((await f.store.profile('u'))!.upcoming_count, 4);
+  assert.equal((await f.call('POST', '/api/upcoming/batch', batch)).status, 404, 'the removed id is gone');
+  // The other owner sees nothing of it, and the log carries counts only.
+  assert.equal(
+    (await f.call('POST', '/api/upcoming/batch', { remove: [{ id: first.id, revision: 2 }] }, 'b')).status,
+    404
+  );
+  const logged = f.logs.filter((l) => l.event === 'upcoming' && l.action === 'batch');
+  assert.deepEqual(logged, [
+    { event: 'upcoming', user: 'u', action: 'batch', add: 3, change: 1, remove: 1, applied: 5 }
+  ]);
+  assert.ok(!JSON.stringify(f.logs).includes('Holiday'));
+  assert.equal((await f.call('POST', '/api/upcoming/batch', batch, 'u', 'https://evil.example')).status, 403);
+});

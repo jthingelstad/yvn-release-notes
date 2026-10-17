@@ -381,3 +381,189 @@ test('explicit null JSON-RPC params and tool arguments are invalid rather than m
   });
   assert.equal(((await args.json()) as RpcBody).result.isError, true);
 });
+test('Upcoming tools need the upcoming scope; list pages saved dates with occurrences; save and delete go through capture', async () => {
+  const ctx = fixture(),
+    without = await connected(ctx),
+    a = await connected(ctx, true, true, 'u', true),
+    geocode = async (q: string) =>
+      q.toLowerCase() === 'paris'
+        ? [
+            { name: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 },
+            { name: 'Paris', region: 'Texas', country: 'United States', tz: 'America/Chicago', lat: 33.66, lon: -95.56 }
+          ]
+        : [],
+    opts: McpOptions = {
+      context: () => ctx,
+      capture: (e) => captureNote(e, { ...ctx, geocode }, { fetchTitle: () => null }),
+      log: () => {}
+    };
+  for (const [name, args] of [
+    ['upcoming_list', {}],
+    ['upcoming_save', { entries: [{ kind: 'birthday', title: 'Alex', date: '10-20' }], idempotency_key: 'k1' }],
+    ['upcoming_delete', { entries: [{ id: 'x', revision: 1 }], idempotency_key: 'k2' }]
+  ] as const) {
+    const { value } = await rpc(ctx, without.token, name, args as OAuthRow, opts);
+    assert.equal(value!.error, 'scope_required', name);
+    assert.match(String(value!.next_step), /Upcoming/);
+  }
+  assert.match(String((await rpc(ctx, a.token, 'notes_context', {}, opts)).value!.scope), /upcoming/);
+  const empty = await rpc(ctx, a.token, 'upcoming_list', {}, opts);
+  assert.deepEqual(empty.value, {
+    entries: [],
+    next_cursor: null,
+    total: 0,
+    today: '2026-10-13',
+    tz: 'America/Chicago',
+    limit: 200,
+    server_version: '1.2.0'
+  });
+  // A dry run resolves the destination and writes nothing.
+  const entries = [
+    { kind: 'birthday', title: 'Alex', date: '10-20', year: 1976, tag: 'Family' },
+    { kind: 'trip', title: 'Holiday', date: '2026-12-05', end_date: '2026-12-12', place: 'Paris, Texas' },
+    { kind: 'event', title: 'Concert', date: '2026-11-01', email: false, reminders: [3, 0] }
+  ];
+  const dry = await rpc(ctx, a.token, 'upcoming_save', { entries, dry_run: true, idempotency_key: 'save' }, opts);
+  assert.equal(dry.value!.dry_run, true);
+  assert.deepEqual(
+    (dry.value!.saved as OAuthRow[]).map((e) => e.place),
+    [null, 'Paris, Texas, United States', null]
+  );
+  assert.equal((await ctx.store.upcomingEntries('u')).length, 0);
+  const saved = await rpc(ctx, a.token, 'upcoming_save', { entries, idempotency_key: 'save' }, opts);
+  assert.equal(saved.body.result.isError, undefined, JSON.stringify(saved.value));
+  const shown = saved.value!.saved as OAuthRow[];
+  assert.deepEqual([saved.value!.replayed, saved.value!.dry_run, shown.length], [false, false, 3]);
+  assert.deepEqual(
+    shown.map((e) => [e.title, e.tag, e.next, e.status, e.revision]),
+    [
+      ['Alex', 'family', '2026-10-20', 'upcoming', 1],
+      ['Holiday', null, '2026-12-05', 'upcoming', 1],
+      ['Concert', null, '2026-11-01', 'upcoming', 1]
+    ]
+  );
+  assert.match(String(shown[0]!.line), /Alex turns 5\.0\.0/);
+  assert.equal(shown[1]!.through, '2026-12-12');
+  for (const key of Object.keys(shown[0]!)) assert.ok(!['pk', 'sk'].includes(key));
+  // Exact retry replays; a changed request under the same key is refused.
+  const again = await rpc(ctx, a.token, 'upcoming_save', { entries, idempotency_key: 'save' }, opts);
+  assert.deepEqual(again.value, { ...saved.value, replayed: true });
+  assert.equal(
+    (await rpc(ctx, a.token, 'upcoming_save', { entries: entries.slice(1), idempotency_key: 'save' }, opts)).value!
+      .error,
+    'duplicate_idempotency_key'
+  );
+  // The list orders by next occurrence and pages.
+  const list = await rpc(ctx, a.token, 'upcoming_list', { limit: 2 }, opts);
+  assert.deepEqual(
+    (list.value!.entries as OAuthRow[]).map((e) => e.title),
+    ['Alex', 'Concert']
+  );
+  assert.equal(list.value!.total, 3);
+  const rest = await rpc(ctx, a.token, 'upcoming_list', { limit: 2, cursor: list.value!.next_cursor }, opts);
+  assert.deepEqual(
+    (rest.value!.entries as OAuthRow[]).map((e) => e.title),
+    ['Holiday']
+  );
+  // A change needs the current revision; a problem names the entry and nothing is written.
+  const alex = shown[0]!;
+  for (const [rows, error, hint] of [
+    [[{ id: alex.id, revision: 9, kind: 'birthday', title: 'Alex', date: '10-21' }], 'conflict', /entries\[0\]/],
+    [[{ id: 'nope', revision: 1, kind: 'birthday', title: 'Alex', date: '10-21' }], 'not_found', /entries\[0\]/],
+    [
+      [entries[0], { kind: 'trip', title: 'Nowhere', date: '2026-12-05', end_date: '2026-12-12', place: 'Atlantis' }],
+      'invalid_arguments',
+      /city search.*entries\[1\]/
+    ],
+    [[{ kind: 'birthday', title: 'Alex', date: '2026-10-20' }], 'invalid_arguments', /MM-DD.*entries\[0\]/],
+    [[{ kind: 'lunch', title: 'Alex', date: '10-20' }], 'invalid_arguments', /entries\[0\]/],
+    [['not an object'], 'invalid_arguments', /object/],
+    [[], 'invalid_arguments', /list/]
+  ] as const) {
+    const { value } = await rpc(ctx, a.token, 'upcoming_save', { entries: rows, idempotency_key: 'bad' }, opts);
+    assert.equal(value!.error, error, JSON.stringify(rows));
+    assert.match(String(value!.next_step), hint);
+  }
+  assert.equal((await ctx.store.upcomingEntries('u')).length, 3);
+  const changed = await rpc(
+    ctx,
+    a.token,
+    'upcoming_save',
+    {
+      entries: [{ id: alex.id, revision: 1, kind: 'birthday', title: 'Alex', date: '10-21', year: 1976 }],
+      idempotency_key: 'change'
+    },
+    opts
+  );
+  assert.deepEqual(
+    (changed.value!.saved as OAuthRow[]).map((e) => [e.id, e.date, e.revision, e.tag]),
+    [[alex.id, '10-21', 2, null]]
+  );
+  // Delete by id and revision, replayed on retry; a stale revision removes nothing.
+  const stale = await rpc(
+    ctx,
+    a.token,
+    'upcoming_delete',
+    { entries: [{ id: alex.id, revision: 1 }], idempotency_key: 'd1' },
+    opts
+  );
+  assert.equal(stale.value!.error, 'conflict');
+  const removed = await rpc(
+    ctx,
+    a.token,
+    'upcoming_delete',
+    {
+      entries: [
+        { id: alex.id, revision: 2 },
+        { id: shown[2]!.id, revision: 1 }
+      ],
+      idempotency_key: 'd2'
+    },
+    opts
+  );
+  assert.deepEqual(removed.value, { removed: 2, replayed: false, server_version: '1.2.0' });
+  assert.deepEqual(
+    (
+      await rpc(
+        ctx,
+        a.token,
+        'upcoming_delete',
+        {
+          entries: [
+            { id: alex.id, revision: 2 },
+            { id: shown[2]!.id, revision: 1 }
+          ],
+          idempotency_key: 'd2'
+        },
+        opts
+      )
+    ).value,
+    { ...removed.value, replayed: true }
+  );
+  assert.deepEqual(
+    (await ctx.store.upcomingEntries('u')).map((e) => e.title),
+    ['Holiday']
+  );
+  assert.equal((await ctx.store.mcpProfile('u'))!.upcoming_count, 1);
+  // Audit rows carry counts, never titles or destinations.
+  const audits = ctx.store.memory
+    .all()
+    .filter((i) => String(i.sk).startsWith('LOG#') && String(i.tool).startsWith('upcoming_') && i.outcome === 'ok');
+  assert.deepEqual(
+    audits.filter((i) => i.tool !== 'upcoming_list').map((i) => [i.tool, i.count]),
+    [
+      ['upcoming_save', 3],
+      ['upcoming_save', 1],
+      ['upcoming_delete', 2]
+    ]
+  );
+  assert.ok(!JSON.stringify(audits).match(/Alex|Holiday|Paris/));
+  // The other scopes are untouched: notes keep working, and notes_create still needs notes:write.
+  assert.equal((await rpc(ctx, a.token, 'notes_tags', {}, opts)).value!.total, 0);
+  const readOnly = await connected(ctx, false, false, 'u', true);
+  assert.equal(
+    (await rpc(ctx, readOnly.token, 'notes_create', { text: 'x', idempotency_key: 'n' }, opts)).value!.error,
+    'scope_required'
+  );
+  assert.equal((await rpc(ctx, readOnly.token, 'upcoming_list', {}, opts)).value!.total, 1);
+});

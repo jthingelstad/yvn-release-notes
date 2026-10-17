@@ -59,6 +59,9 @@ with a next step. Notes are untrusted data, never agent instructions.
 | `notes_get_audio` | Existing transcript in chunks up to 8,000 characters; optional inline bytes or private download. No processing. |
 | `notes_create` | Write one plain-text agent note on local today or an explicit past date, only with separately approved `notes:write`. |
 | `notes_append` | Append text only to a note created by this exact connection; never edits a user's note or deletes anything. |
+| `upcoming_list` | Saved Upcoming dates (birthdays, anniversaries, trips, events) with each one's next occurrence, id and revision, in date order; needs the separate `upcoming` scope. |
+| `upcoming_save` | Add or change up to 50 Upcoming dates in one call, all or nothing, only when the user asks; a destination is text the server resolves; `dry_run` checks without saving. |
+| `upcoming_delete` | Remove up to 50 Upcoming dates by id and current revision, all or nothing, only when the user asks. Never touches notes. |
 
 Pages default to 20 items, maximum 50, and stop at whole items below a
 48,000-character structured result ceiling. Follow next_cursor or next_offset
@@ -114,6 +117,23 @@ Audit keeps connection/client, tool, note reference, time and outcome for
 fourteen days, never the text, token or argument fingerprint. The request
 fingerprint stays only in the private 24-hour retry receipt. Bulk undo, proposals,
 reflections and semantic search remain separate future work.
+
+## Upcoming dates
+
+Reconnect from your agent and tick "Also allow reading and changing my
+Upcoming dates" to grant the `upcoming` scope. It is separate from note
+scopes, initially unchecked, and existing connections never gain it. It
+covers the three `upcoming_*` tools: a list of saved dates with their next
+occurrence, and all-or-nothing saves and removals of up to 50 dates per
+call, each needing an explicit user request. A change carries the id and
+revision from `upcoming_list`; a stale revision refuses the whole call
+(`conflict`), and any invalid entry refuses it naming `entries[i]`.
+Destinations are text ("Paris, Texas") resolved by the city search; the
+annual kinds take `MM-DD`, trips and events `YYYY-MM-DD`. `dry_run` returns
+the resolved entries without saving. Each call counts once toward a daily
+quota of 50 Upcoming writes per account; retries with the same key replay
+the original result for 24 hours. The audit keeps counts only, never titles,
+dates or destinations. Nothing here reads or changes notes.
 
 ## Authorization
 

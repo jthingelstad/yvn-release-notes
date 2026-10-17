@@ -127,6 +127,9 @@ Where things are (each module's design comment explains its contract):
 - `tools/{build-server,package-native,native-artifacts,native-release,web-platform}.ts`
   build deterministic native artifacts, retain immutable S3 versions and
   manage private release/policy receipts. `infra/template.yaml` is the stack.
+  `infra/github-deploy-role.yaml` is the separate `yvn-release-notes-deploy`
+  stack: the GitHub Actions deploy role, the CloudFormation service role and
+  the private release receipts bucket, applied by hand (its header has the command).
   `deploy.sh` requires a clean green `origin/main`, verifies an archived
   committed tree, publishes/activates only the requested native phase, and
   syncs the web app. `docs/TYPESCRIPT-REBUILD.md` records the migration gates.
@@ -520,8 +523,8 @@ named native regressions and explicit obsolete implementation assumptions.
 - Tests and builds: `npm ci --ignore-scripts`, then `npm run verify`
   (format, lint, browser/native types and unit tests, both builds).
   `npm run test:server` runs Node's native test suite alone. Pinned
-  `pipx run --spec cfn-lint==1.57.2 cfn-lint infra/template.yaml` checks
-  CloudFormation; Python is a dependency of this infrastructure linter,
+  `pipx run --spec cfn-lint==1.57.2 cfn-lint infra/template.yaml infra/github-deploy-role.yaml`
+  checks CloudFormation; Python is a dependency of this infrastructure linter,
   not an application runtime.
 - Locally: `npm run build`, then `node --import tsx tools/dev-server.ts
 --fake-places --fake-links`. It serves `dist/web` and the real Hono HTTP/MCP

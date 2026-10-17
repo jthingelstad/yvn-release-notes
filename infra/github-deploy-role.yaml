@@ -1,0 +1,409 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Release Notes deploy identity - the GitHub Actions deploy role, the CloudFormation service role and the private release receipts bucket
+
+# A separate small stack (yvn-release-notes-deploy), never the application
+# stack: it holds who may deploy, and the receipts that make deploys safe to
+# retry and roll back. Applied by hand with the cloud-engineer profile:
+#
+#   aws cloudformation deploy --stack-name yvn-release-notes-deploy \
+#     --template-file infra/github-deploy-role.yaml --capabilities CAPABILITY_NAMED_IAM
+#
+# Three resources that matter:
+# - ReleaseNotesGitHubDeploy: assumed only by this repository's `production`
+#   GitHub environment through the account's OIDC provider. It may call
+#   exactly what the release scripts (deploy.sh, tools/native-*.ts,
+#   tools/web-platform.ts) call, and
+#   it changes the application stack only through change sets that name the
+#   service role below.
+# - ReleaseNotesCloudFormation: the role CloudFormation itself uses for the
+#   application stack, scoped to the resource names that template makes.
+#   Once a stack update names it, the stack keeps it, so the Mac's deploy.sh
+#   uses it too.
+# - The receipts bucket: release receipts, policy journals and the one deploy
+#   lock, shared by CI and the Mac.
+#
+# Neither role name starts with yvn-release-notes-, and nor does the bucket,
+# so the service role, which manages yvn-release-notes-* roles and buckets,
+# cannot edit them.
+
+Parameters:
+  ApplicationStackName:
+    Type: String
+    Default: yvn-release-notes
+    AllowedValues: [yvn-release-notes]
+  CreateOidcProvider:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: The account already has GitHub's OIDC provider (2026-10-17), so it is reused. "true" only for an account without one.
+
+Conditions:
+  MakeOidcProvider: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  ReceiptsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "yvn-rn-deploy-receipts-${AWS::AccountId}"
+      VersioningConfiguration: { Status: Enabled }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+            BucketKeyEnabled: true
+      # Receipts are kept for good: a rollback reads the receipt of the build
+      # it undoes. Overwritten journals and released locks leave old versions,
+      # kept a year as history; deploy logs are kept a year.
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 365 }
+            ExpiredObjectDeleteMarker: true
+          - Id: expire-deploy-logs
+            Status: Enabled
+            Prefix: logs/
+            ExpirationInDays: 365
+      Tags:
+        - { Key: Application, Value: YourVersionNumber }
+        - { Key: Project, Value: yvn-release-notes }
+
+  ReceiptsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ReceiptsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt ReceiptsBucket.Arn, !Sub "${ReceiptsBucket.Arn}/*"]
+            Condition:
+              Bool: { "aws:SecureTransport": "false" }
+
+  CloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ReleaseNotesCloudFormation
+      Description: CloudFormation service role for the yvn-release-notes application stack
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudformation.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+      Policies:
+        # Each statement is one service the application template uses, scoped
+        # to the names it makes (yvn-release-notes-*, its log groups, its
+        # domain). Whole-service actions on those names, so a new property in
+        # the template does not fail a deploy halfway, and a rollback can undo
+        # what an update did. Its IAM reach is the template's generated
+        # <stack>-<Logical>Role-<suffix> roles, inline policies only.
+        - PolicyName: application-stack
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Lambda
+                Effect: Allow
+                Action: lambda:*
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:web-function/${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:event-source-mapping:*"
+              - Sid: LambdaUnscoped
+                Effect: Allow
+                Action:
+                  - lambda:CreateEventSourceMapping
+                  - lambda:GetEventSourceMapping
+                  - lambda:ListEventSourceMappings
+                  - lambda:ListFunctions
+                Resource: "*"
+              - Sid: Roles
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:UpdateRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:ListRoleTags
+                  - iam:PassRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApplicationStackName}-*Role-*"
+              - Sid: Table
+                Effect: Allow
+                Action: dynamodb:*
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ApplicationStackName}"
+                  - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ApplicationStackName}/*"
+              - Sid: Buckets
+                Effect: Allow
+                Action: s3:*
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-*/*"
+              - Sid: Logs
+                Effect: Allow
+                Action: logs:*
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda-web/${ApplicationStackName}-*"
+              - Sid: LogsUnscoped
+                Effect: Allow
+                Action: [logs:DescribeLogGroups, logs:DescribeMetricFilters, logs:ListTagsForResource]
+                Resource: "*"
+              - Sid: AlarmsAndDashboard
+                Effect: Allow
+                Action: cloudwatch:*
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:cloudwatch::${AWS::AccountId}:dashboard/${ApplicationStackName}"
+              - Sid: AlarmsUnscoped
+                Effect: Allow
+                Action: [cloudwatch:DescribeAlarms, cloudwatch:ListDashboards]
+                Resource: "*"
+              - Sid: Rules
+                Effect: Allow
+                Action: events:*
+                Resource: !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ApplicationStackName}-*"
+              - Sid: Topics
+                Effect: Allow
+                Action: sns:*
+                Resource: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ApplicationStackName}-*"
+              - Sid: Queue
+                Effect: Allow
+                Action: sqs:*
+                Resource: !Sub "arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ApplicationStackName}-*"
+              # The alarm topic subscribes the sysadmin alerts queue (OpsQueueName).
+              - Sid: OpsQueueRead
+                Effect: Allow
+                Action: [sqs:GetQueueAttributes, sqs:GetQueueUrl]
+                Resource: !Sub "arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:projects-ops-alerts"
+              # SES identities are domain names; receipt rule sets and the
+              # account's active set have no resource-level permissions.
+              - Sid: Mail
+                Effect: Allow
+                Action: ses:*
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/yourversionnumber.com"
+                  - !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*.yourversionnumber.com"
+                  - !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ApplicationStackName}"
+                  - !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ApplicationStackName}/*"
+              - Sid: MailReceiptRules
+                Effect: Allow
+                Action:
+                  - ses:CreateReceiptRuleSet
+                  - ses:DeleteReceiptRuleSet
+                  - ses:DescribeReceiptRuleSet
+                  - ses:CreateReceiptRule
+                  - ses:UpdateReceiptRule
+                  - ses:DeleteReceiptRule
+                  - ses:DescribeReceiptRule
+                  - ses:DescribeActiveReceiptRuleSet
+                  - ses:ListReceiptRuleSets
+                Resource: "*"
+              # CloudFront ids are generated, so its resources are account-wide.
+              - Sid: Distribution
+                Effect: Allow
+                Action: cloudfront:*
+                Resource: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:*"
+              - Sid: DistributionUnscoped
+                Effect: Allow
+                Action:
+                  - cloudfront:List*
+                  - cloudfront:GetCachePolicy
+                  - cloudfront:GetOriginRequestPolicy
+                  - cloudfront:GetResponseHeadersPolicy
+                  - cloudfront:GetOriginAccessControl
+                  - acm:DescribeCertificate
+                  - acm:ListCertificates
+                Resource: "*"
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    # cfn-lint 1.57.2 (PyPI's latest, 2026-10-17) does not yet list the Web
+    # Function read actions lambda:GetWebFunctionEndpoint and
+    # lambda:GetWebFunctionRevision, which the Lambda guide names after their
+    # APIs as it does lambda:GetWebFunction; the IAM policy simulator checks
+    # them on the applied role. Drop this when cfn-lint knows them.
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks: [W3037]
+    Properties:
+      RoleName: ReleaseNotesGitHubDeploy
+      Description: GitHub Actions production deploys of jthingelstad/yvn-release-notes
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # The name form and the immutable-id form (owner 5351,
+                # repository 1408586441; the repository uses the id form
+                # today), as Drop's role does, so a change to the repository's
+                # OIDC subject setting does not lock CI out. Only the
+                # production environment, which admits main and Jamie's
+                # approval, ever gets one of these subjects.
+                token.actions.githubusercontent.com:sub:
+                  - repo:jthingelstad/yvn-release-notes:environment:production
+                  - repo:jthingelstad@5351/yvn-release-notes@1408586441:environment:production
+      Policies:
+        # Derived from the release scripts, call by call; nothing else.
+        - PolicyName: release
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # aws cloudformation deploy (DescribeStacks, GetTemplateSummary,
+              # change sets), the release's stack reads and the failure detail
+              # it keeps in the receipts bucket (DescribeStackEvents).
+              - Sid: ReadApplicationStack
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ApplicationStackName}/*"
+              # Every change set CI makes runs as the service role.
+              - Sid: ChangeSetsUseTheServiceRole
+                Effect: Allow
+                Action: cloudformation:CreateChangeSet
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ApplicationStackName}/*"
+                Condition:
+                  StringEquals:
+                    cloudformation:RoleArn: !GetAtt CloudFormationRole.Arn
+              - Sid: PassTheServiceRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt CloudFormationRole.Arn
+                Condition:
+                  StringEquals: { "iam:PassedToService": cloudformation.amazonaws.com }
+              # The code bucket holds the uploaded template (over the inline
+              # limit). CI never creates the bucket or rewrites its policy; it
+              # only checks the policy is the TLS-only one.
+              - Sid: CodeBucket
+                Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketPolicy]
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-code-${AWS::AccountId}"
+              - Sid: CodeBucketTemplates
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-code-${AWS::AccountId}/code/templates/*"
+              # The web app sync and its invalidation.
+              - Sid: WebBucketList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-web-${AWS::AccountId}"
+              - Sid: WebBucketObjects
+                Effect: Allow
+                Action: [s3:PutObject, s3:DeleteObject]
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-web-${AWS::AccountId}/*"
+              - Sid: Invalidate
+                Effect: Allow
+                Action: cloudfront:CreateInvalidation
+                Resource: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*"
+              # Native artifacts: immutable, content-addressed, versioned.
+              - Sid: NativeArtifacts
+                Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-nativesourcebucket-*/native/*"
+              # Release-time reads: the certificate, the two
+              # worker rules, the active receipt rule set (CI never activates
+              # one; it warns, as deploy.sh does for a different active set).
+              - Sid: ReleaseReads
+                Effect: Allow
+                Action: [acm:ListCertificates, ses:DescribeActiveReceiptRuleSet]
+                Resource: "*"
+              - Sid: WorkerRules
+                Effect: Allow
+                Action: events:DescribeRule
+                Resource: !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ApplicationStackName}-*"
+              # native-release.ts: alias and version metadata, and the one
+              # content-free {"self_test":true} probe on a published version.
+              - Sid: WorkerMetadata
+                Effect: Allow
+                Action: [lambda:GetAlias, lambda:GetFunctionConfiguration]
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*:*"
+              - Sid: ProbePublishedVersions
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*:*"
+              - Sid: NeverInvokeLiveAliases
+                Effect: Deny
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*:live"
+              # web-platform.ts and native-release.ts: endpoint pins, candidate
+              # revisions and the CloudFront-only endpoint policy. Never
+              # DeleteResourcePolicy: removal is a Mac-only recovery step.
+              - Sid: WebFunctionReads
+                Effect: Allow
+                Action: [lambda:GetWebFunctionEndpoint, lambda:GetWebFunctionRevision]
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:web-function/${ApplicationStackName}-*-native/endpoint/*"
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:web-function/${ApplicationStackName}-*-native/revision/*"
+              - Sid: WebFunctionPolicies
+                Effect: Allow
+                Action: [lambda:GetResourcePolicy, lambda:PutResourcePolicy]
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:web-function/${ApplicationStackName}-*-native"
+              # Receipts and policy journals are written, never deleted (an
+              # overwritten journal keeps its old version). The one delete is
+              # a run releasing its own lock, named by its ETag (If-Match).
+              - Sid: ReceiptsList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt ReceiptsBucket.Arn
+              - Sid: ReceiptsReadWrite
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub "${ReceiptsBucket.Arn}/*"
+              - Sid: ReleaseOwnLock
+                Effect: Allow
+                Action: s3:DeleteObject
+                Resource: !Sub "${ReceiptsBucket.Arn}/locks/*"
+                Condition:
+                  "Null": { "s3:if-match": "false" }
+
+Outputs:
+  DeployRoleArn:
+    Value: !GetAtt DeployRole.Arn
+  CloudFormationRoleArn:
+    Value: !GetAtt CloudFormationRole.Arn
+  ReceiptsBucketName:
+    Value: !Ref ReceiptsBucket

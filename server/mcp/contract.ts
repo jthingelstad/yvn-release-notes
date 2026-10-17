@@ -1,5 +1,13 @@
 /** Explicit MCP contract ported from the validated Python 1.1.0 surface.
- * Regenerate contracts/mcp-surface.json with tools/export-mcp-contract.ts. */
+ * Regenerate contracts/mcp-surface.json with tools/export-mcp-contract.ts.
+ *
+ * Clients keep their own copy of tools/list (ChatGPT until the connector is
+ * refreshed), and this stateless server has no stream to announce a change.
+ * So any change to the tools is a new server_version with a `changes` entry,
+ * and notes_context names every tool offered now: an agent missing one can
+ * tell the user to refresh or reconnect. contracts/mcp-versions.json records
+ * the tools each version shipped, so a change without a new version fails. */
+import { createHash } from 'node:crypto';
 export interface JsonSchema {
   type?: string | string[];
   properties?: Record<string, JsonSchema>;
@@ -24,14 +32,34 @@ export interface ToolDefinition {
   outputSchema: JsonSchema;
   annotations: Record<string, boolean>;
 }
+export interface McpChange {
+  version: string;
+  date: string;
+  summary: string;
+}
 export interface McpContract {
   server_version: string;
   protocol_versions: string[];
+  /** Newest first; the first is server_version. */
+  changes: McpChange[];
   tools: ToolDefinition[];
 }
 export const MCP_CONTRACT: McpContract = {
-  server_version: '1.2.0',
+  server_version: '1.3.0',
   protocol_versions: ['2025-06-18', '2025-03-26'],
+  changes: [
+    {
+      version: '1.3.0',
+      date: '2026-10-17',
+      summary:
+        'notes_context lists every tool this server offers and whether this connection may use it, with recent changes.'
+    },
+    {
+      version: '1.2.0',
+      date: '2026-10-17',
+      summary: 'Upcoming dates: upcoming_list, upcoming_save and upcoming_delete, with the separate upcoming scope.'
+    }
+  ],
   tools: [
     {
       name: 'notes_context',
@@ -75,6 +103,35 @@ export const MCP_CONTRACT: McpContract = {
           },
           scope: {
             type: 'string'
+          },
+          tools: {
+            type: 'array',
+            description:
+              'Every tool this server offers now, with the scope it needs and whether this connection has it. A tool missing from your own list means your client has an older copy.',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                scope: { type: 'string' },
+                granted: { type: 'boolean' }
+              },
+              required: ['name', 'scope', 'granted'],
+              additionalProperties: false
+            }
+          },
+          changes: {
+            type: 'array',
+            description: 'Recent server changes, newest first',
+            items: {
+              type: 'object',
+              properties: {
+                version: { type: 'string' },
+                date: { type: 'string' },
+                summary: { type: 'string' }
+              },
+              required: ['version', 'date', 'summary'],
+              additionalProperties: false
+            }
           },
           instructions: {
             type: 'string'
@@ -1020,5 +1077,24 @@ export const MCP_CONTRACT: McpContract = {
 export const VERSION = MCP_CONTRACT.server_version;
 export const PROTOCOLS = MCP_CONTRACT.protocol_versions;
 export const TOOLS = MCP_CONTRACT.tools;
-export const UPCOMING_TOOLS = new Set(['upcoming_list', 'upcoming_save', 'upcoming_delete']);
+/** The scope each tool needs. A new tool names one here (tests check). */
+export const TOOL_SCOPES: Record<string, string> = {
+  notes_context: 'notes:read',
+  notes_list: 'notes:read',
+  notes_search: 'notes:read',
+  notes_get_day: 'notes:read',
+  notes_get_note: 'notes:read',
+  notes_tags: 'notes:read',
+  notes_view_photo: 'notes:read',
+  notes_get_audio: 'notes:read',
+  notes_create: 'notes:write',
+  notes_append: 'notes:write',
+  upcoming_list: 'upcoming',
+  upcoming_save: 'upcoming',
+  upcoming_delete: 'upcoming'
+};
+export const UPCOMING_TOOLS = new Set(TOOLS.filter((t) => TOOL_SCOPES[t.name] === 'upcoming').map((t) => t.name));
 export const WRITE_TOOLS = new Set(['notes_create', 'notes_append', 'upcoming_save', 'upcoming_delete']);
+/** What a client's cached tools/list would differ by. */
+export const toolsDigest = (tools: ToolDefinition[] = TOOLS): string =>
+  createHash('sha256').update(JSON.stringify(tools)).digest('hex');

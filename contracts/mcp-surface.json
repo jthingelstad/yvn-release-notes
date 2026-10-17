@@ -1,8 +1,20 @@
 {
-  "server_version": "1.2.0",
+  "server_version": "1.3.0",
   "protocol_versions": [
     "2025-06-18",
     "2025-03-26"
+  ],
+  "changes": [
+    {
+      "version": "1.3.0",
+      "date": "2026-10-17",
+      "summary": "notes_context lists every tool this server offers and whether this connection may use it, with recent changes."
+    },
+    {
+      "version": "1.2.0",
+      "date": "2026-10-17",
+      "summary": "Upcoming dates: upcoming_list, upcoming_save and upcoming_delete, with the separate upcoming scope."
+    }
   ],
   "tools": [
     {
@@ -52,6 +64,54 @@
           },
           "scope": {
             "type": "string"
+          },
+          "tools": {
+            "type": "array",
+            "description": "Every tool this server offers now, with the scope it needs and whether this connection has it. A tool missing from your own list means your client has an older copy.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "granted": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "scope",
+                "granted"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "changes": {
+            "type": "array",
+            "description": "Recent server changes, newest first",
+            "items": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "string"
+                },
+                "date": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "version",
+                "date",
+                "summary"
+              ],
+              "additionalProperties": false
+            }
           },
           "instructions": {
             "type": "string"

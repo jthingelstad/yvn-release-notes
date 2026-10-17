@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createMcpApp, handleMcp, type McpOptions } from '../../server/mcp/app.ts';
 import { Reader, quota } from '../../server/mcp/reader.ts';
 import { ToolError, asciiJson, validate, MAX_MEDIA } from '../../server/mcp/common.ts';
-import { MCP_CONTRACT, TOOLS } from '../../server/mcp/contract.ts';
+import { MCP_CONTRACT, TOOLS, TOOL_SCOPES, VERSION, toolsDigest } from '../../server/mcp/contract.ts';
 import { captureNote } from '../../workers/capture.ts';
 import { OAuthService, type OAuthRow } from '../../packages/backend/oauth.ts';
 import { fixture, connected, note, ORIGIN, NOW } from '../oauth/fixtures.ts';
@@ -407,6 +407,21 @@ test('Upcoming tools need the upcoming scope; list pages saved dates with occurr
     assert.match(String(value!.next_step), /Upcoming/);
   }
   assert.match(String((await rpc(ctx, a.token, 'notes_context', {}, opts)).value!.scope), /upcoming/);
+  // Context names every tool offered now, so an agent can see its own list is stale.
+  for (const [token, upcoming] of [
+    [without.token, false],
+    [a.token, true]
+  ] as const) {
+    const context = (await rpc(ctx, token, 'notes_context', {}, opts)).value!,
+      tools = context.tools as OAuthRow[];
+    assert.deepEqual(
+      tools.map((t) => t.name),
+      TOOLS.map((t) => t.name)
+    );
+    for (const t of tools) assert.equal(t.granted, t.scope === 'upcoming' ? upcoming : true, String(t.name));
+    assert.equal((context.changes as OAuthRow[])[0]!.version, VERSION);
+    assert.match(String(context.instructions), /refresh this connector/);
+  }
   const empty = await rpc(ctx, a.token, 'upcoming_list', {}, opts);
   assert.deepEqual(empty.value, {
     entries: [],
@@ -415,7 +430,7 @@ test('Upcoming tools need the upcoming scope; list pages saved dates with occurr
     today: '2026-10-13',
     tz: 'America/Chicago',
     limit: 200,
-    server_version: '1.2.0'
+    server_version: VERSION
   });
   // A dry run resolves the destination and writes nothing.
   const entries = [
@@ -521,7 +536,7 @@ test('Upcoming tools need the upcoming scope; list pages saved dates with occurr
     },
     opts
   );
-  assert.deepEqual(removed.value, { removed: 2, replayed: false, server_version: '1.2.0' });
+  assert.deepEqual(removed.value, { removed: 2, replayed: false, server_version: VERSION });
   assert.deepEqual(
     (
       await rpc(
@@ -566,4 +581,16 @@ test('Upcoming tools need the upcoming scope; list pages saved dates with occurr
     'scope_required'
   );
   assert.equal((await rpc(ctx, readOnly.token, 'upcoming_list', {}, opts)).value!.total, 1);
+});
+test('every tool change ships as a new server version with a changes entry', async () => {
+  assert.deepEqual(Object.keys(TOOL_SCOPES).sort(), TOOLS.map((t) => t.name).sort());
+  for (const scope of Object.values(TOOL_SCOPES)) assert.match(scope, /^(notes:read|notes:write|upcoming)$/);
+  assert.equal(MCP_CONTRACT.changes[0]?.version, VERSION, 'add a changes entry for the new server_version');
+  assert.equal(new Set(MCP_CONTRACT.changes.map((c) => c.version)).size, MCP_CONTRACT.changes.length);
+  const versions = JSON.parse(await readFile('contracts/mcp-versions.json', 'utf8')) as Record<string, string>;
+  assert.equal(
+    versions[VERSION],
+    toolsDigest(),
+    'the tools changed: bump server_version, add a changes entry, then run tools/export-mcp-contract.ts'
+  );
 });

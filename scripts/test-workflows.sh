@@ -17,7 +17,11 @@ no() { FAIL=$((FAIL + 1)); echo "FAIL - $1"; [ -n "${2:-}" ] && echo "       $2"
 
 for f in "$WF"/*.yml; do
   name="$(basename "$f")"
-  unpinned="$(grep -nE '^[[:space:]]*-?[[:space:]]*uses:' "$f" | grep -vE 'uses:[[:space:]]*[^@[:space:]]+@[0-9a-f]{40}([[:space:]]|$)')"
+  # A workflow of this repository (./.github/workflows/...) runs from the
+  # same commit as its caller, so it needs no pin.
+  unpinned="$(grep -nE '^[[:space:]]*-?[[:space:]]*uses:' "$f" \
+    | grep -vE 'uses:[[:space:]]*[^@[:space:]]+@[0-9a-f]{40}([[:space:]]|$)' \
+    | grep -vE 'uses:[[:space:]]*\./\.github/workflows/[A-Za-z0-9_-]+\.yml[[:space:]]*$')"
   if [ -z "$unpinned" ]; then ok "$name: every action is pinned to a commit SHA"
   else no "$name: every action is pinned to a commit SHA" "$unpinned"; fi
 

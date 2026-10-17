@@ -481,7 +481,28 @@ named native regressions and explicit obsolete implementation assumptions.
 - `validate` (`.github/workflows/validate.yml`) runs the
   workflow lint, pinned cfn-lint and `npm run verify`. Workflows stay
   SHA-pinned with `permissions: {}`, per-job grants and
-  `persist-credentials: false`; `sh scripts/test-workflows.sh` checks that.
+  `persist-credentials: false`; `sh scripts/test-workflows.sh` checks that
+  (workflows of this repository, `./.github/workflows/...`, need no pin), and
+  `tests-node/infra/workflows.test.ts` holds the deploy workflows below to
+  their guarantees.
+- **Deploying from GitHub** (2026-10-17). `deploy` (`.github/workflows/deploy.yml`)
+  follows each green `validate` push run on main and waits for Jamie to
+  approve the `production` environment (required reviewer jthingelstad, main
+  only). It builds the bundle in a job with no credentials or token
+  permissions (`build-release.yml`, the same `scripts/build-release.sh`), then
+  runs `scripts/release.sh` as `ReleaseNotesGitHubDeploy` through OIDC: the
+  stack, the web app and a publication of only the native code that changed
+  (`--only-changed`). Nothing goes live there. `activate`
+  (`.github/workflows/activate.yml`, the Actions tab, on main) activates or
+  rolls back the published HTTP or worker candidate after the same approval.
+  Both refuse unless main is still the commit they built, share the
+  `production-deploy` concurrency group (never cancelled; a newer waiting run
+  replaces an older waiting one) and use the Mac's lock and receipts. The
+  role ARN is the environment secret `RELEASE_DEPLOY_ROLE_ARN` (the deploy
+  stack's `DeployRoleArn` output), so the public log masks it. The admin id,
+  the Turnstile mode, `--break-glass` and the code bucket's and receipt rule
+  set's first setup stay with `deploy.sh`. Until a no-op CI deploy and one CI
+  publish/activate cycle have run, `deploy.sh` is still the normal path.
 - Dependabot opens two grouped PRs a month, one for the action pins and one
   for the application's npm packages, each reviewed like any other: they do not
   auto-merge, because a merged action runs with the repository's token and
@@ -510,7 +531,8 @@ named native regressions and explicit obsolete implementation assumptions.
   git ignores goes in and a failed build stops the deploy, then hands it to
   `scripts/release.sh`. Their comments have the rest (the code bucket, cache
   lifetimes, the invalidation). The admin id and Turnstile mode are set only
-  here, never from a workflow.
+  here, never from a workflow. GitHub Actions runs the same release (Landing
+  changes, Deploying from GitHub).
 - Native publication and activation are separate: `./deploy.sh
 --native-http-phase=publish`, then `--native-http-phase=activate`;
   `--native-worker-phase=publish`, then `--native-worker-phase=activate`.

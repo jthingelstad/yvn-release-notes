@@ -1,0 +1,110 @@
+name: activate
+
+# Moves what serves, by hand, after Jamie approves the `production`
+# environment: activate the published HTTP or worker candidate, or roll one
+# back to its recorded prior release. Run it from the Actions tab on main.
+# The candidate is the one the stack publishes (often older than main), and
+# release.sh refuses it unless it is in main's history with a green
+# `validate`. The release also brings the stack and the web app up to main.
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: What to change
+        type: choice
+        required: true
+        options:
+          - http-activate
+          - workers-activate
+          - http-rollback
+          - workers-rollback
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: read
+    outputs:
+      commit: ${{ steps.commit.outputs.commit }}
+    steps:
+      # main only, and only a commit whose own validate run passed.
+      - id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ github.sha }}
+          REF: ${{ github.ref }}
+        run: |
+          [[ "$REF" == refs/heads/main && "$COMMIT" =~ ^[a-f0-9]{40}$ ]] \
+            || { echo "refusing: activation runs from main" >&2; exit 1; }
+          green=$(gh api "repos/$GITHUB_REPOSITORY/commits/$COMMIT/check-runs?check_name=validate" \
+            --jq '[.check_runs[] | select(.conclusion == "success" and .app.slug == "github-actions")] | length')
+          [[ "$green" -gt 0 ]] || { echo "refusing: validate is not green on main" >&2; exit 1; }
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build
+    needs: gate
+    permissions: {}
+    uses: ./.github/workflows/build-release.yml
+    with:
+      commit: ${{ needs.gate.outputs.commit }}
+
+  activate:
+    name: activate
+    needs: [gate, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      contents: read
+      checks: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: still main
+        env:
+          COMMIT: ${{ needs.gate.outputs.commit }}
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$COMMIT" ]] \
+            || { echo "refusing: main has moved on; run activate again from main" >&2; exit 1; }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-bundle
+          path: ${{ runner.temp }}/bundle
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.RELEASE_DEPLOY_ROLE_ARN }}
+          role-session-name: release-notes-activate-${{ github.run_id }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+      # GH_TOKEN: release.sh checks the candidate's validate run.
+      - name: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ needs.gate.outputs.commit }}
+          PHASE: ${{ inputs.phase }}
+        run: |
+          case "$PHASE" in
+            http-activate) flag=--native-http-phase=activate ;;
+            workers-activate) flag=--native-worker-phase=activate ;;
+            http-rollback) flag=--native-http-phase=rollback ;;
+            workers-rollback) flag=--native-worker-phase=rollback ;;
+            *) echo "refusing: unknown phase" >&2; exit 2 ;;
+          esac
+          scripts/release.sh --bundle "$RUNNER_TEMP/bundle" --commit "$COMMIT" --repo "$GITHUB_WORKSPACE" "$flag"

@@ -1,0 +1,50 @@
+name: build-release
+
+# The release bundle, built where no cloud credential exists: this job has no
+# token permissions, no environment and no AWS role. scripts/build-release.sh
+# installs the locked packages without their install scripts, runs
+# `npm run verify`, stages Sharp's Linux Arm64 runtime and packages the native
+# artifacts. The deploy and activate workflows call it, then release the
+# bundle in a separate job that holds the credentials and runs no npm install.
+on:
+  workflow_call:
+    inputs:
+      commit:
+        description: The commit on main to build
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: {}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: build the release bundle
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          [[ "$COMMIT" =~ ^[a-f0-9]{40}$ && "$(git rev-parse HEAD)" == "$COMMIT" ]] \
+            || { echo "refusing: not the requested commit" >&2; exit 1; }
+          scripts/build-release.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/bundle" "$COMMIT"
+      # Content hashes only: the same code built on the Mac gives the same
+      # hashes, and the release publishes only what the stack lacks.
+      - name: artifact hashes
+        run: node -e 'for (const a of require(process.argv[1]).artifacts) console.log(`${a.kind}/${a.name} ${a.sha256}`)' "$RUNNER_TEMP/bundle/artifacts/manifest.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-bundle
+          path: ${{ runner.temp }}/bundle
+          if-no-files-found: error
+          retention-days: 3

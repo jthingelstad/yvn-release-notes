@@ -154,6 +154,15 @@ for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['ph
       await expect(off).toHaveCount(0);
       expect((await rpc('notes_context')).scope).not.toContain('notes:write');
       expect((await rpc('notes_create', { ...args, idempotency_key: 'blocked-ui' })).error).toBe('scope_required');
+      // The Upcoming permission is added to this same connection in place (no reconnect).
+      expect((await rpc('upcoming_list')).error).toBe('scope_required');
+      page.once('dialog', (dialog) => dialog.accept());
+      const allow = page.getByRole('button', { name: 'Allow Upcoming for Claude test', exact: true });
+      await allow.click();
+      await expect(allow).toHaveCount(0);
+      await expect(page.getByText('Can read and change your Upcoming dates.', { exact: true })).toBeVisible();
+      expect((await rpc('notes_context')).scope).toContain('upcoming');
+      expect((await rpc('upcoming_list')).total).toBe(0);
       await page.getByRole('button', { name: 'Disconnect Claude test', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Disconnect Claude test', exact: true })).toHaveCount(0);
       expect(errors).toEqual([]);

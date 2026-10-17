@@ -184,6 +184,7 @@ export async function accountRoutes(
       oauth = new OAuthService(ctx);
     if (pattern.endsWith('/authorize')) return json(await oauth.authorize(uid, await body(service.request)));
     if (pattern.endsWith('/activity')) return json(await oauth.activity(uid));
+    if (pattern.endsWith('/scope')) return json(await oauth.grant(uid, args[0]!, (await body(service.request)).scope));
     if (args[0]) return json(await oauth.disconnect(uid, args[0], query.get('write_only') === 'true'));
     return json(await oauth.connections(uid));
   }

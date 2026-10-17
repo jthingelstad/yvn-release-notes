@@ -78,22 +78,22 @@ export function Connect() {
               cannot rewrite your notes or delete anything. Turn off adding in Settings without stopping reads.
             </p>
           )}
-          {info.data.scope.includes('upcoming') && (
-            <label className="check">
-              <input type="checkbox" checked={upcoming} onChange={(e) => setUpcoming(e.target.checked)} /> Also allow
-              reading and changing my Upcoming dates
-            </label>
-          )}
+          <label className="check">
+            <input type="checkbox" checked={upcoming} onChange={(e) => setUpcoming(e.target.checked)} /> Also allow
+            reading and changing my Upcoming dates
+          </label>
           {upcoming && (
             <p className="hint">
-              The agent can list your Upcoming dates and, when you ask, add, change and remove them. This never touches
-              your notes.
+              The agent can list your Upcoming dates (birthdays, anniversaries, trips and events) and, when you ask,
+              add, change and remove them. Upcoming is separate from notes: this never adds, rewrites or deletes a note.
+              Turn it off in Settings by disconnecting; add it later there without reconnecting.
             </p>
           )}
           <p className="hint">
-            The agent service receives what it reads under its own privacy and retention policies. Adding notes is off
-            unless you choose it above. It cannot delete notes, change settings, or start processing. Your transcription
-            and photo description choices stay as they are. Jamie, the operator, can read notes added here too.
+            The agent service receives what it reads under its own privacy and retention policies. Adding notes and
+            Upcoming are off unless you choose them above. It cannot delete notes, change settings, or start processing.
+            Your transcription and photo description choices stay as they are. Jamie, the operator, can read notes added
+            here too.
           </p>
           <p className="hint">
             Disconnect in Settings whenever you like. It stops future reads; content already shared and private file

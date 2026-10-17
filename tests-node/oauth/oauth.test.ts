@@ -179,7 +179,7 @@ test('consent booleans distinguish explicit null from omitted fields, preserving
     assert.equal((await ctx.store.mcpGet('OAUTHPENDING#' + id))!.used, undefined);
   }
 });
-test('the upcoming scope is offered by default, granted only when ticked, and never when the client did not ask', async () => {
+test('the upcoming scope is granted only when ticked, even when the client asked for reading only', async () => {
   const ctx = fixture(),
     service = new OAuthService(ctx);
   const { id } = await pending(ctx, 'notes:read media:read notes:write upcoming');
@@ -193,7 +193,15 @@ test('the upcoming scope is offered by default, granted only when ticked, and ne
   const families = ctx.store.memory.all().filter((i) => String(i.pk).startsWith('OAUTHFAMILY#'));
   assert.equal(families.at(-1)!.scope, 'notes:read upcoming');
   const { id: plain } = await pending(ctx, 'notes:read');
-  await assert.rejects(service.authorize('u', { request: plain, approve: true, upcoming: true }), OAuthError);
+  await service.authorize('u', { request: plain, approve: true, upcoming: true });
+  assert.equal(
+    ctx.store.memory
+      .all()
+      .filter((i) => String(i.pk).startsWith('OAUTHFAMILY#'))
+      .at(-1)!.scope,
+    'notes:read upcoming'
+  );
+  await assert.rejects(service.authorize('u', { request: plain, approve: true, write: true }), OAuthError);
   const { id: quiet } = await pending(ctx, 'notes:read media:read notes:write upcoming');
   await service.authorize('u', { request: quiet, approve: true, write: true });
   assert.equal(

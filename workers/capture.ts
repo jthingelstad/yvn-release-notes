@@ -368,7 +368,7 @@ export async function captureNote(
       : writeCapture(context, family, name, args, options));
   } catch (error) {
     if (error instanceof ToolError) return { error: error.code, next_step: error.nextStep };
-    failure(context.now, uid, options.log);
+    failure(context.now, uid, options.log, error);
     return {
       error: 'temporarily_unavailable',
       next_step: 'Try again shortly with exactly the same idempotency_key and arguments.'

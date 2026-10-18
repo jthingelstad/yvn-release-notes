@@ -1571,6 +1571,13 @@ Resources:
                 Condition:
                   ForAllValues:StringLike:
                     dynamodb:LeadingKeys: ["USER#*", "OAUTHACCESS#*", "OAUTHFAMILY#*", "MCPMETA#*"]
+              # Upcoming writes read the owner's saved dates first.
+              - Effect: Allow
+                Action: [dynamodb:Query]
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*"]
               - Effect: Allow
                 Action: [dynamodb:PutItem]
                 Resource: !GetAtt Table.Arn

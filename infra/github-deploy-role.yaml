@@ -346,6 +346,14 @@ Resources:
                 Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
                 Resource: !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-nativesourcebucket-*/native/*"
+              # The upload asks for each artifact's key first (HeadObject).
+              # Without ListBucket, S3 answers a missing key with 403, not
+              # 404, and a new artifact never uploads. No prefix condition:
+              # HeadObject's check carries no s3:prefix.
+              - Sid: NativeArtifactsList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-nativesourcebucket-*"
               # Release-time reads: the certificate, the two
               # worker rules, the active receipt rule set (CI never activates
               # one; it warns, as scripts/release.sh does for a different active set).

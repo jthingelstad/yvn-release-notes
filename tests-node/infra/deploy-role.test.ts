@@ -58,6 +58,13 @@ test('versions may be probed but never a live alias, $LATEST or an unqualified f
   assert.doesNotMatch(template, /lambda:DeleteResourcePolicy|lambda:UpdateAlias/);
 });
 
+test('the deploy role can tell a new native artifact from a forbidden one', () => {
+  // HeadObject on a missing key is 404 only with ListBucket on the bucket.
+  assert.match(statement('NativeArtifacts'), /s3:PutObject\]\n.*nativesourcebucket-\*\/native\/\*"$/);
+  assert.match(statement('NativeArtifactsList'), /Action: s3:ListBucket\n.*nativesourcebucket-\*"$/);
+  assert.doesNotMatch(statement('NativeArtifactsList'), /Condition/);
+});
+
 test('the deploy role deletes nothing but its own lock, named by ETag', () => {
   const role = template.slice(template.indexOf('  DeployRole:'), template.indexOf('\nOutputs:'));
   assert.deepEqual(role.match(/\b[a-z0-9]+:Delete\w*/g), ['s3:DeleteObject', 's3:DeleteObject']);

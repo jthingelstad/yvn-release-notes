@@ -126,6 +126,7 @@ async function fixture() {
     // The suite itself may run in GitHub Actions; each case says where it runs.
     GITHUB_ACTIONS: options.actions ? 'true' : '',
     GITHUB_RUN_ID: options.actions ? '4242' : '',
+    GITHUB_OUTPUT: '',
     RELEASE_LOCK: '',
     FIXTURE_LOG: log,
     FIXTURE_UPLOADED: uploaded,
@@ -276,6 +277,23 @@ test('both publications combine in one update; --only-changed leaves out unchang
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(cli(events, 'native-release'), []);
     assert.ok(!aws(events, 'deploy')[0]!.args.some((a) => a.startsWith('Native')));
+  });
+});
+
+test('in GitHub Actions a release tells the workflow which kinds it published', async () => {
+  await withFixture(async (f) => {
+    const output = join(await mkdtemp(join(tmpdir(), 'yvn-release-output-')), 'output');
+    const env = {
+      FIXTURE_ARN: `arn:aws:sts::${account}:assumed-role/ReleaseNotesGitHubDeploy/run`,
+      FIXTURE_NO_RULE_SET: '1',
+      FIXTURE_UNCHANGED: 'http',
+      GITHUB_OUTPUT: output
+    };
+    const both = ['--native-http-phase=publish', '--native-worker-phase=publish', '--only-changed'];
+    const { result } = await f.release(both, { actions: true, env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(await readFile(output, 'utf8'), 'published-http=\npublished-workers=true\n');
+    await rm(dirname(output), { recursive: true });
   });
 });
 

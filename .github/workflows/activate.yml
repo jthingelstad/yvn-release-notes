@@ -1,11 +1,11 @@
 name: activate
 
-# Moves what serves, by hand, after Jamie approves the `production`
-# environment: activate the published HTTP or worker candidate, or roll one
-# back to its recorded prior release. Run it from the Actions tab on main.
-# The candidate is the one the stack publishes (often older than main), and
-# release.sh refuses it unless it is in main's history with a green
-# `validate`. The release also brings the stack and the web app up to main.
+# By hand, from the Actions tab on main: roll the HTTP or worker release back
+# to its recorded prior one, or activate a published candidate that the
+# deploy workflow left (it activates what it publishes on its own). There is
+# no approval step. The candidate is the one the stack publishes (often older
+# than main), and release.sh refuses it unless it is in main's history with a
+# green `validate`. The release also brings the stack and the web app up to main.
 on:
   workflow_dispatch:
     inputs:

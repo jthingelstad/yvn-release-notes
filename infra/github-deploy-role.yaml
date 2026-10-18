@@ -272,8 +272,8 @@ Resources:
                 # repository 1408586441; the repository uses the id form
                 # today), as Drop's role does, so a change to the repository's
                 # OIDC subject setting does not lock CI out. Only the
-                # production environment, which admits main and Jamie's
-                # approval, ever gets one of these subjects.
+                # production environment, which admits only main, ever gets
+                # one of these subjects.
                 token.actions.githubusercontent.com:sub:
                   - repo:jthingelstad/yvn-release-notes:environment:production
                   - repo:jthingelstad@5351/yvn-release-notes@1408586441:environment:production

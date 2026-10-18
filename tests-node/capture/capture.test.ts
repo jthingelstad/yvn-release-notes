@@ -216,6 +216,7 @@ test('title fetches are cached over conflicts; unexpected errors sanitized and c
   });
   assert.equal(unavailable.error, 'temporarily_unavailable');
   assert.ok(logs.some((i) => i.McpFailures === 1));
+  assert.ok(logs.some((i) => i.event === 'mcp-error' && i.kind === 'Error'));
   assert.ok(!JSON.stringify(logs).includes('ada@example.com'));
 });
 test('no implicit write approval and receipts expire at 24 hours', async () => {

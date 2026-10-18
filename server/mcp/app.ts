@@ -155,14 +155,14 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
           outcome = error.code;
         }
         if (!WRITE_TOOLS.has(name) || outcome !== 'ok') await record(context, family, tool ? name : 'unknown', outcome);
-      } catch {
-        failure(context.now, String(family.user_id), options.log);
+      } catch (error) {
+        failure(context.now, String(family.user_id), options.log, error);
         answer = result(unavailable(), true);
       }
     } else rpcError = { code: -32601, message: 'Method not found' };
     return oauthResponse(200, { jsonrpc: '2.0', id: b.id, ...(rpcError ? { error: rpcError } : { result: answer }) });
-  } catch {
-    failure(context?.now ?? Math.floor(Date.now() / 1000), 'unknown', options.log);
+  } catch (error) {
+    failure(context?.now ?? Math.floor(Date.now() / 1000), 'unknown', options.log, error);
     try {
       const b = parsed ?? (!request.bodyUsed ? await jsonBody(request) : null);
       if (object(b) && b.jsonrpc === '2.0' && identifierValid(b.id))

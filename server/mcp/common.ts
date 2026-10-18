@@ -63,12 +63,21 @@ export function validate(arguments_: unknown, schema: JsonSchema): asserts argum
   }
 }
 export type SafeLog = (fields: Record<string, unknown>) => void;
+/** An unexpected failure: the user id and the error's class name (an SDK
+ * error's, such as AccessDeniedException), never its message. */
 export function failure(
   now: number,
   uid: string,
-  log: SafeLog = (fields) => console.log(JSON.stringify(fields))
+  log: SafeLog = (fields) => console.log(JSON.stringify(fields)),
+  error?: unknown
 ): void {
-  log({ event: 'mcp-error', user: uid, error: 'infrastructure' });
+  const name = error instanceof Error ? error.name : '';
+  log({
+    event: 'mcp-error',
+    user: uid,
+    error: 'infrastructure',
+    ...(/^[A-Za-z]\w{0,63}$/.test(name) ? { kind: name } : {})
+  });
   log({
     _aws: {
       Timestamp: now * 1000,

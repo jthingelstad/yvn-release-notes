@@ -1,5 +1,5 @@
 /** The deploy workflows keep their guarantees: credentials only in the
- * approved production job, never in the build; one release at a time, never
+ * production job, never in the build; one release at a time, never
  * cancelled; only a green push to main deploys; workflow inputs reach shells
  * only through the environment. scripts/test-workflows.sh checks pins,
  * default permissions and checkout tokens for every workflow. */
@@ -68,8 +68,18 @@ test('only a green push to main in this repository deploys, and only while it is
   assert.match(job(activate, 'gate'), /check_name=validate/);
 });
 
-test('publication publishes only changed code; activation takes one fixed phase', () => {
-  assert.match(job(deploy, 'deploy'), /--native-http-phase=publish --native-worker-phase=publish --only-changed/);
+test('a deploy publishes only changed code and activates only what it published', () => {
+  const release = job(deploy, 'deploy');
+  assert.match(release, /--native-http-phase=publish --native-worker-phase=publish --only-changed/);
+  assert.match(
+    release,
+    /if: steps\.publish\.outputs\.published-http == 'true'\n(?:.*\n){5}.*--native-http-phase=activate\n/
+  );
+  assert.match(
+    release,
+    /if: steps\.publish\.outputs\.published-workers == 'true'\n(?:.*\n){5}.*--native-worker-phase=activate\n/
+  );
+  assert.ok(release.indexOf('--native-http-phase=activate') < release.indexOf('--native-worker-phase=activate'));
   const phases = [...activate.matchAll(/^          - ([a-z]+-[a-z]+)$/gm)].map((m) => m[1]);
   assert.deepEqual(phases, ['http-activate', 'workers-activate', 'http-rollback', 'workers-rollback']);
   for (const workflow of [deploy, activate])

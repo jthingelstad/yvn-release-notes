@@ -485,24 +485,29 @@ named native regressions and explicit obsolete implementation assumptions.
   (workflows of this repository, `./.github/workflows/...`, need no pin), and
   `tests-node/infra/workflows.test.ts` holds the deploy workflows below to
   their guarantees.
-- **Deploying from GitHub** (2026-10-17). `deploy` (`.github/workflows/deploy.yml`)
-  follows each green `validate` push run on main and waits for Jamie to
-  approve the `production` environment (required reviewer jthingelstad, main
-  only). It builds the bundle in a job with no credentials or token
+- **Deploying from GitHub** (2026-10-17): merging to main deploys it, with
+  no approval step (Jamie, 2026-10-17: "I don't want the hand/manual
+  approval. This is a hobby project. I'm the only dev."). `deploy`
+  (`.github/workflows/deploy.yml`) follows each green `validate` push run on
+  main. It builds the bundle in a job with no credentials or token
   permissions (`build-release.yml`, the same `scripts/build-release.sh`), then
   runs `scripts/release.sh` as `ReleaseNotesGitHubDeploy` through OIDC: the
   stack, the web app and a publication of only the native code that changed
-  (`--only-changed`). Nothing goes live there. `activate`
-  (`.github/workflows/activate.yml`, the Actions tab, on main) activates or
-  rolls back the published HTTP or worker candidate after the same approval.
+  (`--only-changed`), then activates each kind it published, HTTP first.
+  A merge that changes no native code activates nothing. `activate`
+  (`.github/workflows/activate.yml`, the Actions tab, on main) rolls the
+  HTTP or worker release back, or activates a candidate a failed run left.
   Both refuse unless main is still the commit they built, share the
   `production-deploy` concurrency group (never cancelled; a newer waiting run
   replaces an older waiting one) and use the Mac's lock and receipts. The
-  role ARN is the environment secret `RELEASE_DEPLOY_ROLE_ARN` (the deploy
-  stack's `DeployRoleArn` output), so the public log masks it. The admin id,
-  the Turnstile mode, `--break-glass` and the code bucket's and receipt rule
-  set's first setup stay with `deploy.sh`. Until a no-op CI deploy and one CI
-  publish/activate cycle have run, `deploy.sh` is still the normal path.
+  `production` environment has no reviewers but admits only main, and the
+  deploy role trusts only its OIDC subject. The role ARN is the environment
+  secret `RELEASE_DEPLOY_ROLE_ARN` (the deploy stack's `DeployRoleArn`
+  output), so the public log masks it. The admin id, the Turnstile mode,
+  `--break-glass` and the code bucket's and receipt rule set's first setup
+  stay with `deploy.sh`. A Mac build zips the same files with different
+  bytes than the Linux runner, so a `deploy.sh` publication after a CI one
+  (or the reverse) republishes unchanged code once; that is harmless.
 - Dependabot opens two grouped PRs a month, one for the action pins and one
   for the application's npm packages, each reviewed like any other: they do not
   auto-merge, because a merged action runs with the repository's token and
@@ -521,9 +526,11 @@ named native regressions and explicit obsolete implementation assumptions.
 
 ## Operating
 
-- Deploy: `./deploy.sh` (cloud-engineer profile, us-east-1), from a clean
-  checkout of `origin/main` with a green `validate` run by GitHub Actions;
-  it refuses anything else. `--break-glass` is for GitHub being down, never
+- Deploy: merge to main; GitHub Actions takes it live (Landing changes,
+  Deploying from GitHub). `./deploy.sh` (cloud-engineer profile, us-east-1)
+  is the Mac's path, for the admin id, the Turnstile mode and GitHub being
+  down. It runs from a clean checkout of `origin/main` with a green
+  `validate` run by GitHub Actions and refuses anything else. `--break-glass` is for GitHub being down, never
   a red check: it skips only the fetch and the check lookups, so HEAD must
   still be a clean checkout of `origin/main` as last fetched. It builds a
   bundle from a `git archive` of HEAD with `scripts/build-release.sh`

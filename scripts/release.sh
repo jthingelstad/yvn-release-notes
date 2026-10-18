@@ -366,4 +366,9 @@ echo "web app synced and invalidated"
 
 aws cloudformation describe-stacks --stack-name "$STACK" \
   --query 'Stacks[0].Outputs[].[OutputKey,OutputValue]' --output text | private
+# The deploy workflow activates only what this run published.
+if [[ -n "$ACTIONS" && -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo "published-http=${PUBLISH_HTTP:+true}" >> "$GITHUB_OUTPUT"
+  echo "published-workers=${PUBLISH_WORKERS:+true}" >> "$GITHUB_OUTPUT"
+fi
 echo "released $COMMIT"

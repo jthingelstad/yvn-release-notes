@@ -1,11 +1,13 @@
 name: deploy
 
-# Deploys main once its `validate` run is green, after Jamie approves the
-# `production` environment (required reviewer, main only). It publishes the
-# native HTTP and worker code that changed (--only-changed) and nothing goes
-# live: activation is the separate activate workflow. The build runs without
-# credentials (build-release.yml); this deploy job runs only scripts/release.sh,
-# as the Mac's deploy.sh does, sharing its lock and receipts.
+# Takes main live once its `validate` run is green, with no approval step
+# (Jamie, 2026-10-17: a hobby project with one developer). The build runs
+# without credentials (build-release.yml); the deploy job runs only
+# scripts/release.sh, as the Mac's deploy.sh does, sharing its lock and
+# receipts. It publishes the native HTTP and worker code that changed
+# (--only-changed), updates the stack and the web app, then activates each
+# kind it published. A merge that changes no native code activates nothing.
+# Roll back from the Actions tab with the activate workflow.
 #
 # workflow_run runs this file from main with main's secrets. It is safe here
 # because nothing from the triggering run is executed: the gate admits only a
@@ -60,10 +62,13 @@ jobs:
     name: deploy
     needs: [gate, build]
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
+    # The environment has no reviewers; it admits only main, and the AWS role
+    # trusts only its OIDC subject.
     environment: production
     permissions:
       contents: read
+      checks: read
       id-token: write
     steps:
       # Full history, so release.sh can check the commit is in main's history.
@@ -72,8 +77,7 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      # The approval can come long after the merge: deploy only main's tip; a
-      # later merge has its own run.
+      # Deploy only main's tip; a later merge has its own run.
       - name: still main
         env:
           COMMIT: ${{ needs.gate.outputs.commit }}
@@ -95,9 +99,27 @@ jobs:
           role-session-name: release-notes-deploy-${{ github.run_id }}
           aws-region: us-east-1
           mask-aws-account-id: true
-      - name: release
+      - name: publish
+        id: publish
         env:
           COMMIT: ${{ needs.gate.outputs.commit }}
         run: |
           scripts/release.sh --bundle "$RUNNER_TEMP/bundle" --commit "$COMMIT" --repo "$GITHUB_WORKSPACE" \
             --native-http-phase=publish --native-worker-phase=publish --only-changed
+      # GH_TOKEN: release.sh checks the candidate's validate run.
+      - name: activate HTTP
+        if: steps.publish.outputs.published-http == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ needs.gate.outputs.commit }}
+        run: |
+          scripts/release.sh --bundle "$RUNNER_TEMP/bundle" --commit "$COMMIT" --repo "$GITHUB_WORKSPACE" \
+            --native-http-phase=activate
+      - name: activate workers
+        if: steps.publish.outputs.published-workers == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ needs.gate.outputs.commit }}
+        run: |
+          scripts/release.sh --bundle "$RUNNER_TEMP/bundle" --commit "$COMMIT" --repo "$GITHUB_WORKSPACE" \
+            --native-worker-phase=activate

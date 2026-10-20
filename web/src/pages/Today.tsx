@@ -74,9 +74,7 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
         <EmptyLine t={t} me={me} />
       </section>
 
-      <StreakLine s={t.streak}>
-        <BadgesLink />
-      </StreakLine>
+      <StreakLine s={t.streak}>{me?.badges !== false && <BadgesLink />}</StreakLine>
       <p className="hint">
         <AppLink href="/day/">Add notes for another day</AppLink>
       </p>

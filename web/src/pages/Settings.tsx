@@ -178,6 +178,7 @@ function Account({ p }: { p: Me }) {
   const time = useSetting(p.send_time);
   const transcribe = useSetting(!!p.transcribe);
   const describe = useSetting(!!p.describe);
+  const badges = useSetting(p.badges !== false);
   const cityProblem = useProblem();
   const emailsProblem = useProblem();
   const focusLater = useFocusLater();
@@ -300,7 +301,7 @@ function Account({ p }: { p: Me }) {
       <SettingsGroup
         id="writing-settings"
         title="Writing & search"
-        description="Your email address, recordings and photos"
+        description="Your email address, recordings, photos and badges"
       >
         <Inbox p={p} />
         <section className="section">
@@ -343,6 +344,30 @@ function Account({ p }: { p: Me }) {
             Saved.
           </p>
           <ErrorLine line={describe.problem.line} />
+        </section>
+        <section className="section">
+          <h3>Badges</h3>
+          <label className="check">
+            <input
+              type="checkbox"
+              id="show-badges"
+              checked={badges.value}
+              onChange={async (e) => {
+                await badges.change(e.target.checked, { badges: e.target.checked }, e.target);
+                // Pages already read keep their badge lines until read again.
+                await client.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'me' });
+              }}
+            />{' '}
+            Show badges
+          </label>
+          <p className="hint">
+            Badges mark what your writing adds up to: firsts, runs of days, special version numbers. Off, they leave
+            your emails and pages. Nothing is lost, and turning them back on shows everything earned in the meantime.
+          </p>
+          <p className="aside saved" id="badges-saved" role="status" hidden={!badges.saved}>
+            Saved.
+          </p>
+          <ErrorLine line={badges.problem.line} />
         </section>
         <p className="hint settings-link-privacy">
           When a note has a link, we visit the page once, as the note is saved, to keep its title. Nothing else is

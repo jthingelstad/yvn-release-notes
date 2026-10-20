@@ -454,6 +454,8 @@ test('a saved note answers with what it unlocked; days and releases say what the
     { key: 'web', id: 'web', name: 'Web release', version: '4.5.121' },
     { key: 'commit', id: 'commit', name: 'Commit message', version: '4.5.121' }
   ]);
+  // What the line showed is seen, so the email will not say it again.
+  assert.deepEqual(await s.store.seenBadges('u'), new Set(['hello', 'web', 'commit']));
   assert.deepEqual((await read('POST', '/api/days/2026-10-13/notes', { text: 'Again' })).unlocked, []);
   // 4.4.100 imported, then 4.5.100 filled in: a hotfix, a twin, and this
   // release's round number for the album.
@@ -464,6 +466,8 @@ test('a saved note answers with what it unlocked; days and releases say what the
     { key: 'compatible', id: 'compatible', name: 'Backward compatible', version: '4.5.100' },
     { key: 'round@2026-09-22', id: 'round', name: 'Round number', version: '4.5.100', album: true }
   ]);
+  // A special day collected again is not a badge: it is not kept as seen.
+  assert.deepEqual(await s.store.seenBadges('u'), new Set(['hello', 'web', 'commit', 'hotfix', 'compatible']));
   assert.deepEqual((await read('GET', '/api/days/2026-09-22')).collected, ['Round number']);
   assert.ok(!('collected' in (await read('GET', '/api/days/2026-09-21'))));
   assert.deepEqual((await read('GET', '/api/releases/4.5')).badges, {
@@ -487,6 +491,33 @@ test('a saved note answers with what it unlocked; days and releases say what the
     s.logs.filter((l) => l.event === 'badges-error'),
     [{ event: 'badges-error', user: 'u', date: '2026-10-13' }]
   );
+});
+
+test('"Show badges" off hides every badge line; back on, what was earned meanwhile counts as seen', async () => {
+  const s = await setup(),
+    read = async (method: string, path: string, value?: unknown) => (await s.call(method, path, value)).b as Item;
+  assert.equal((await read('GET', '/api/me')).badges, true);
+  assert.equal((await s.call('PUT', '/api/me', { badges: 'no' })).r.status, 400);
+  assert.equal((await read('PUT', '/api/me', { badges: false })).badges, false);
+  assert.equal((await read('GET', '/api/me')).badges, false);
+  // Off: no unlock, nothing seen, no Day or Release lines.
+  const saved = await s.call('POST', '/api/days/2026-09-22/notes', { text: 'Filled in', tz: 'America/Chicago' });
+  assert.equal(saved.r.status, 201);
+  assert.ok(!('unlocked' in (saved.b as Item)));
+  assert.deepEqual(await s.store.seenBadges('u'), new Set());
+  assert.ok(!('collected' in (await read('GET', '/api/days/2026-09-22'))));
+  assert.ok(!('badges' in (await read('GET', '/api/releases/4.5'))));
+  // The page itself still answers: nothing is deleted.
+  assert.ok(((await read('GET', '/api/badges')).count as number) > 0);
+  // Back on: everything earned meanwhile is seen, unannounced.
+  const earned = ((await read('GET', '/api/badges')).earned as Item[]).map((e) => e.key);
+  assert.equal((await read('PUT', '/api/me', { badges: true })).badges, true);
+  assert.deepEqual(await s.store.seenBadges('u'), new Set(earned));
+  assert.deepEqual((await read('GET', '/api/days/2026-09-22')).collected, ['Round number']);
+  // Saving it on again, or once more, adds nothing new.
+  s.store.memory.calls.length = 0;
+  await read('PUT', '/api/me', { badges: true });
+  assert.ok(!s.store.memory.calls.some((c) => JSON.stringify(c.input).includes('BADGES')));
 });
 
 test('badges count stored fields, never answer with note text, and tell a reply from the standing address', async () => {

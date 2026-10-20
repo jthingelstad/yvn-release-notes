@@ -63,6 +63,7 @@ nothing there links here yet: that is Jamie's call.
    Connector setup and recent activity are secondary disclosures. Contains
    send time and location, the standing address (a note any
    day by email, no reply needed; Copy, and "New address" to replace it),
+   "Show badges" (on unless turned off; `docs/BADGES.md`),
    sign out, delete account (after an
    export is offered, and with a fresh code).
 8. **The daily email** gains a "Pause or manage" link and one-click
@@ -74,11 +75,13 @@ nothing there links here yet: that is Jamie's call.
     regularly has earned, each stamped with the version it came true on.
     Linked from the streak line on Today and from the Archive; no new
     navigation item. Worked out on each read from stored fields
-    (`packages/domain/badges.ts`), with nothing stored of its own yet.
-    A note saved on Today or another day says what it unlocked under the
-    form; a Day page says what its special day collected ("Collected here:
-    Palindrome."), a release's head its coverage and special days, and
-    both exports list the badges, oldest first.
+    (`packages/domain/badges.ts`); the one thing stored is `seen`, what
+    has already been celebrated. A note saved on Today or another day
+    says what it unlocked under the form; a Day page says what its
+    special day collected ("Collected here: Palindrome."), a release's
+    head its coverage and special days, and both exports list the
+    badges, oldest first. "Show badges" off in Settings hides the links,
+    the unlock and those lines; the page and the exports stay.
 
 ## Defaults (Jamie can change any)
 
@@ -340,8 +343,8 @@ or new CSP exception.
 | `POST /api/auth/verify` `{email, code}` or `{token}` | sets the cookie; says whether the account is new |
 | `POST /api/auth/signout` | |
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |
-| `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address; `admin: true` only for the configured administrator |
-| `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `status: "active"` to start again); the birthday cannot change |
+| `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address; `badges` is "Show badges"; `admin: true` only for the configured administrator |
+| `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `transcribe`, `describe`, `badges`, `status: "active"` to start again); the birthday cannot change. `badges: true` after `false` counts everything earned meanwhile as seen |
 | `GET /api/export?format=md\|json` | the words alone, as a download (JSON by default), with a `badges` list (a Badges section in Markdown), oldest first |
 | `POST /api/export/zip` | start a zip of everything, photos and recordings too (202); answers with the build already going, if one is |
 | `GET /api/export/zip` | how it is going: `none`, `building`, `failed`, or `ready` with size, files and until |
@@ -357,10 +360,10 @@ or new CSP exception.
 | `GET /api/today` | today: version, the year's 24 dots, the next release, today's notes, the streak (today counts once it has a note) |
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
 | `GET /api/releases` | the releases index: each release with notes, and the current one (`current`), newest first, with `from`, `through`, `days` (with notes) and `notes`; from the notes' keys alone |
-| `GET /api/releases/{v}?after=&limit=` | one release (`4.5`): its head (`from`, `through`, `current`, `days_with_notes`, `notes`, `longest`, `badges` with its coverage tier and special days `collected` by kind with a `count`, `tags` by count) and its days with notes, oldest first, 30 a page; `after` in the answer is the next page's cursor. 404 `release` for one not begun |
+| `GET /api/releases/{v}?after=&limit=` | one release (`4.5`): its head (`from`, `through`, `current`, `days_with_notes`, `notes`, `longest`, `badges` (not with badges off) with its coverage tier and special days `collected` by kind with a `count`, `tags` by count) and its days with notes, oldest first, 30 a page; `after` in the answer is the next page's cursor. 404 `release` for one not begun |
 | `GET /api/badges` | the subscriber's badges as of their `today` (with `tz` and today's `version`): `count`; `earned`, newest first, each with `key` (`id`, or `id:level` for a track tier), `name`, `line`, `shelf`, `earned` (the day it came true), and the `day` and `version` it is stamped with (a collectible's special day); `tracks` (`tier` 0-5, `level`, `best`, `now`, `since`, `next`); `release`, this release's `days`, `percent`, coverage `level`, `next` only while it can still be reached, `following` (the next release and its date), its `collected` special days and the next three `ahead` (never a secret one); `missing`, what is still to find, a secret one as its `hint` alone. Read from the notes' stored fields, never their text |
-| `GET /api/days/{date}` | one day: version, notes (each note's `parts` is its text split into strings and links by name), `weather`, the day's recorded weather as a line, when kept, `where`, the day's own place by name, when set, and `collected`, the special days (by name) a day with notes collected |
-| `POST /api/days/{date}/notes` | write for today or a past day; `uploads` attaches files, and a note with files may have no text; `place` (a city from `/api/places`) says where. Answers with the note and `unlocked`, what it just earned in the order it came true (`key`, `id`, `name`, `version`; `album` for this release's special day collected again), left out when that could not be read |
+| `GET /api/days/{date}` | one day: version, notes (each note's `parts` is its text split into strings and links by name), `weather`, the day's recorded weather as a line, when kept, `where`, the day's own place by name, when set, and `collected`, the special days (by name) a day with notes collected (not with badges off) |
+| `POST /api/days/{date}/notes` | write for today or a past day; `uploads` attaches files, and a note with files may have no text; `place` (a city from `/api/places`) says where. Answers with the note and `unlocked`, what it just earned in the order it came true (`key`, `id`, `name`, `version`; `album` for this release's special day collected again), left out with badges off or when that could not be read; the badges in it become `seen` |
 | `PUT/DELETE /api/days/{date}/place` | set the day's own place (a city from `/api/places`) or clear it; answers `{date, where, weather}`, the past day's weather fetched again for it |
 | `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete (an emailed note's email and files go with it) |
 | `POST /api/days/{date}/notes/{id}/media` `{uploads}` | add files to a note already there |

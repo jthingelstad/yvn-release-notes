@@ -16,8 +16,12 @@ const fixture = JSON.parse(readFileSync(new URL('./fixtures/python-readers.json'
   cases: { method: string; path: string; body: Item | null; status: number; response: Item }[];
 };
 // Fields added since the Python web app, each tested on its own: a
-// release's badges (docs/BADGES.md, api.test.ts).
-const ADDED: [string, string[]][] = [['/api/releases/', ['badges']]];
+// release's badges and the profile's "Show badges" (docs/BADGES.md,
+// api.test.ts). A path ending in / covers the paths under it.
+const ADDED: [string, string[]][] = [
+  ['/api/releases/', ['badges']],
+  ['/api/me', ['badges']]
+];
 for (const sample of fixture.cases)
   test('Python HTTP wire parity: ' + sample.method + ' ' + sample.path, async () => {
     const store = new FakeStore([fixture.profile, ...fixture.items]),
@@ -53,7 +57,7 @@ for (const sample of fixture.cases)
     assert.equal(answer.status, sample.status);
     const body = (await answer.json()) as Item;
     for (const [prefix, keys] of ADDED)
-      if (sample.status === 200 && sample.path.startsWith(prefix))
+      if (sample.status === 200 && (prefix.endsWith('/') ? sample.path.startsWith(prefix) : sample.path === prefix))
         for (const key of keys) {
           assert.ok(key in body, key);
           delete body[key];

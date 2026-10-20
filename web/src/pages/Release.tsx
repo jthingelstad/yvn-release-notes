@@ -111,7 +111,7 @@ export function Release() {
 // What the release earned (docs/BADGES.md): its coverage tier and the
 // special days collected. Nothing when it has neither, never a miss.
 function ReleaseBadges({ b, current }: { b: ReleasePage['badges']; current: boolean }) {
-  if (!b.coverage && !b.collected.length) return null;
+  if (!b || (!b.coverage && !b.collected.length)) return null;
   return (
     <p className="release-counts" id="release-badges">
       {b.coverage && `Coverage: ${b.coverage}${current ? ' so far' : ''}. `}

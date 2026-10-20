@@ -397,3 +397,38 @@ test('a past special day: the unlock, the Day page line and the release head', a
   await page.goto('/release/?v=4.5');
   await expect(page.locator('#release-badges')).toContainText('Collected: Release day');
 });
+test('"Show badges" off hides their links and lines, and on brings them back', async ({ page }) => {
+  const me = await (await page.request.get('/api/me')).json();
+  let first = me.today.slice(0, 4) + me.birthday.slice(4);
+  if (first > me.today) first = String(Number(first.slice(0, 4)) - 1) + first.slice(4);
+  const setting = async (on) => {
+    await page.goto('/settings/');
+    await page.locator('#writing-settings > summary').click();
+    const box = page.getByLabel('Show badges');
+    await expect(box).toBeChecked({ checked: !on });
+    await box.setChecked(on);
+    await expect(page.locator('#badges-saved')).toBeVisible();
+  };
+  await setting(false);
+  await page.goto('/today/');
+  await expect(page.locator('#streak')).toBeVisible();
+  await expect(page.locator('#badges-link')).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Add to today' }).fill('A quiet note.');
+  await page.getByRole('button', { name: 'Save note', exact: true }).click();
+  await expect(page.locator('article.note', { hasText: 'A quiet note.' })).toBeVisible();
+  await expect(page.locator('#unlock')).toBeHidden();
+  await page.goto('/timeline/');
+  await expect(page.getByRole('link', { name: 'Tags' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Badges', exact: true })).toHaveCount(0);
+  await page.goto(`/day/?d=${first}`);
+  await expect(page.locator('article.note', { hasText: 'Cake for breakfast.' })).toBeVisible();
+  await expect(page.locator('#collected-here')).toHaveCount(0);
+  await page.goto('/release/?v=4.5');
+  await expect(page.locator('#release-counts')).toBeVisible();
+  await expect(page.locator('#release-badges')).toHaveCount(0);
+  await setting(true);
+  await page.goto('/today/');
+  await expect(page.locator('#badges-link')).toHaveText(/^\d+ badges?$/);
+  await page.goto(`/day/?d=${first}`);
+  await expect(page.locator('#collected-here')).toHaveText('Collected here: Release day.');
+});

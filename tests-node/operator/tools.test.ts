@@ -14,6 +14,7 @@ import { report as readNotes } from '../../tools/read-notes.ts';
 import { fill as fillLinks } from '../../tools/fill-link-titles.ts';
 import { fill as fillWeather } from '../../tools/fill-weather.ts';
 import { extract } from '../../tools/extract-media.ts';
+import { baseline } from '../../tools/badges-baseline.ts';
 import { privatePlanDirectory, savePlans, report, sampleWeather } from '../../tools/import-dayone.ts';
 import { plan } from '../../packages/backend/dayone.ts';
 const p = {
@@ -169,6 +170,36 @@ const raw = Buffer.from(
     ''
   ].join('\r\n')
 );
+test('badges baseline counts only, writes only with --write, repeats harmlessly and skips deleting accounts', async () => {
+  const store = new FakeStore([p, { ...p, pk: 'USER#v', email: 'grace@example.com' }]);
+  await store.putNote('u', '2026-10-10', 'w-a', {
+    text: 'A fictional entry',
+    source: 'web',
+    written_at: '2026-10-10T12:00:00Z'
+  });
+  store.memory.calls.length = 0;
+  const dry = await baseline(store, false, now);
+  assert.deepEqual(dry, {
+    dry_run: true,
+    subscribers: 2,
+    skipped: 0,
+    earning: 1,
+    earned: 3,
+    already_seen: 0,
+    to_add: 3,
+    written: 0,
+    gone: 0
+  });
+  assert.equal(hasWrites(store), false);
+  assert.ok(!JSON.stringify(dry).includes('ada'));
+  assert.equal((await baseline(store, true, now)).written, 1);
+  assert.deepEqual(await store.seenBadges('u'), new Set(['hello', 'web', 'commit']));
+  assert.deepEqual(await store.seenBadges('v'), new Set());
+  const again = await baseline(store, true, now);
+  assert.deepEqual([again.already_seen, again.to_add, again.written], [3, 0, 0]);
+  store.seed({ ...p, mcp_deleting: true });
+  assert.equal((await baseline(store, false, now)).skipped, 1);
+});
 test('media backfill dry run leaves raw untouched; deletion guard cleans staged files only', async () => {
   const store = new FakeStore([p, { ...note(), raw_key: 'raw/m1', attachments: [{ filename: 'voice.wav' }] }]),
     objects = new FakeObjects();

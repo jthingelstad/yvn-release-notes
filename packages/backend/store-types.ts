@@ -48,6 +48,7 @@ export class Subscriber {
   pause_through: string | null;
   place: Item | null;
   describe: boolean;
+  badges: boolean;
   inbox: string | null;
   constructor(item: Item) {
     this.user_id = String(item.pk).replace(/^USER#/, '');
@@ -64,6 +65,7 @@ export class Subscriber {
         ? null
         : Object.fromEntries(['city', 'region', 'country', 'tz', 'lat', 'lon'].map((k) => [k, item[k] ?? '']));
     this.describe = Boolean(item.describe);
+    this.badges = item.badges !== false;
     this.inbox = item.inbox == null ? null : String(item.inbox);
   }
   static fromItem(item: Item) {

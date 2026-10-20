@@ -6,12 +6,14 @@ import { AppLink, Bar, Digits, Failed, Loading, useTitle } from '../components/c
 import { dayHref } from '../components/days.tsx';
 import { NoteBody, NoteMedia } from '../components/notes.tsx';
 import { addDays, count, dayName } from '../lib/format.ts';
-import { daysQuery, releasesQuery } from '../lib/queries.ts';
+import { daysQuery, meQuery, releasesQuery } from '../lib/queries.ts';
 import type { Day, ReleaseSummary } from '../lib/types.ts';
 
 export function Timeline() {
   useTitle('Archive');
   const days = useInfiniteQuery(daysQuery);
+  // The gate has the profile already; "Show badges" off drops the link.
+  const shown = useQuery(meQuery).data?.badges !== false;
   const list = useRef<HTMLDivElement>(null);
   const more = useRef<HTMLButtonElement>(null);
   // Set by a click on "Earlier releases": how many rows there were, and
@@ -48,8 +50,13 @@ export function Timeline() {
       <h1>Your archive.</h1>
       <p className="lede">Every day, a little more of your story.</p>
       <p className="hint spaced">
-        <AppLink href="/day/">Add notes for another day</AppLink> · <AppLink href="/tag/">Tags</AppLink> ·{' '}
-        <AppLink href="/badges/">Badges</AppLink>
+        <AppLink href="/day/">Add notes for another day</AppLink> · <AppLink href="/tag/">Tags</AppLink>
+        {shown && (
+          <>
+            {' '}
+            · <AppLink href="/badges/">Badges</AppLink>
+          </>
+        )}
       </p>
       <Releases />
 

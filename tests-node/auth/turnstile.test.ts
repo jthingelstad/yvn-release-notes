@@ -11,6 +11,7 @@ import * as auth from '../../packages/backend/auth.ts';
 import {
   checkTurnstile,
   turnstileAllows,
+  turnstileClient,
   turnstileMode,
   turnstileToken,
   SITEVERIFY_URL,
@@ -189,6 +190,45 @@ test('every sign-in email request logs its Turnstile outcome, without the addres
   assert.deepEqual([line.result, line.allowed, line.codes], ['fail', true, 'invalid-input-response']);
   assert.ok(!JSON.stringify(failing.logs).includes('ada@example.com'));
   assert.ok(!JSON.stringify(failing.logs).includes('tok-secret-7'));
+});
+
+test('the page says why it sent no token and how long it waited, logged but never trusted', async () => {
+  const observed = app();
+  await observed.start({ email: 'ada@example.com', turnstile_reason: 'script-blocked', turnstile_wait_ms: 12.6 });
+  assert.deepEqual(
+    observed.logs.find((l) => l.event === 'turnstile'),
+    {
+      event: 'turnstile',
+      result: 'missing',
+      mode: 'observe',
+      allowed: true,
+      reused: false,
+      codes: '',
+      client_reason: 'script-blocked',
+      client_wait_ms: 13
+    }
+  );
+
+  assert.deepEqual(turnstileClient({ turnstile_reason: 'error:110200', turnstile_wait_ms: 5001 }), {
+    client_reason: 'error:110200',
+    client_wait_ms: 5001
+  });
+  assert.deepEqual(turnstileClient({ turnstile_reason: 'ada@example.com', turnstile_wait_ms: -4 }), {
+    client_reason: 'other',
+    client_wait_ms: 0
+  });
+  assert.deepEqual(turnstileClient({ turnstile_reason: 'x'.repeat(41), turnstile_wait_ms: 1e12 }), {
+    client_reason: 'other',
+    client_wait_ms: 600000
+  });
+  assert.deepEqual(turnstileClient({ turnstile_reason: 7, turnstile_wait_ms: '5' }), {});
+  assert.deepEqual(turnstileClient({ turnstile_wait_ms: Number.NaN }), {});
+
+  // A reason never lets a missing token through enforce.
+  const enforced = app(configured(cloudflare({ success: true }).fetcher, 'enforce'));
+  const response = await enforced.start({ email: 'ada@example.com', turnstile_reason: 'script-blocked' });
+  assert.equal(response.status, 403);
+  assert.equal(enforced.mail.messages.length, 0);
 });
 
 test('enforce refuses a missing or failed token before any limit or mail, and passes the rest', async () => {

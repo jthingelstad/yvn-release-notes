@@ -6,7 +6,10 @@
 // Cloudflare's script loads only once someone focuses or types in the email
 // field, never on a plain visit. Most people see nothing (interaction-only);
 // a doubtful browser gets a checkbox under the form. If the script cannot
-// load, the request goes without a token and the server decides. The slot is
+// load, the request goes without a token and the server decides. A request
+// without a token says why (`turnstile_reason`), and every request says how
+// long it waited (`turnstile_wait_ms`), so the observe numbers can tell a
+// content blocker from a slow answer before anyone enforces. The slot is
 // shown only while Cloudflare is asking (`data-turnstile="asking"`); once it
 // has answered, the box collapses ("quiet") rather than leave "Success!"
 // sitting on the next step.
@@ -34,7 +37,7 @@ interface RenderOptions {
   callback: (token: string) => void;
   'expired-callback': () => void;
   'before-interactive-callback': () => void;
-  'error-callback': () => void;
+  'error-callback': (code?: string) => void;
 }
 export interface TurnstileApi {
   render(container: HTMLElement, options: RenderOptions): string;
@@ -68,16 +71,35 @@ function loadScript(): Promise<TurnstileApi> {
     script.async = true;
     script.onerror = () => {
       loading = null; // the next visit to the field tries again
-      reject(new Error('turnstile-unavailable'));
+      reject(new Error('turnstile-blocked'));
     };
     document.head.appendChild(script);
   });
   return loading;
 }
 
+/**
+ * Why a request went without a token: `no-slot` (nowhere to render),
+ * `script-blocked` (the script did not load: a content blocker or the
+ * network), `script-empty` (it loaded without the API), `error:<code>`
+ * (Cloudflare's error-callback), `loading-timeout` / `solving-timeout` (five
+ * seconds passed before the script loaded / before it answered) and
+ * `interactive-timeout` (two minutes on a visible challenge); `no-widget`
+ * when none of those applies.
+ */
+export type TurnstileReason = string;
+
+export interface TurnstileFields {
+  turnstile_token: string;
+  turnstile_wait_ms: number;
+  turnstile_reason?: TurnstileReason;
+}
+
 export interface TurnstileHandle {
   warm(): void;
   tokenFor(email: string): Promise<string>;
+  /** The sign-in request's Turnstile fields for this address. */
+  fieldsFor(email: string): Promise<TurnstileFields>;
 }
 
 export function attachTurnstile(
@@ -93,6 +115,10 @@ export function attachTurnstile(
   let boundEmail = '';
   let interactive = false;
   let unavailable = false;
+  // The latest failure, kept for the request that waited on it.
+  let failure: TurnstileReason = '';
+  let lastReason: TurnstileReason = '';
+  let lastWaitMs = 0;
   let waiters: (() => void)[] = [];
 
   const settle = () => {
@@ -103,8 +129,13 @@ export function attachTurnstile(
 
   function warm() {
     const container = slot();
-    if (widgetId !== null || unavailable || !container) return;
+    if (widgetId !== null || unavailable) return;
+    if (!container) {
+      failure = 'no-slot';
+      return;
+    }
     widgetId = 'pending';
+    failure = '';
     const showing = (asking: boolean) => (container.dataset.turnstile = asking ? 'asking' : 'quiet');
     showing(false);
     load().then(
@@ -117,6 +148,7 @@ export function attachTurnstile(
           'refresh-expired': 'auto',
           callback: (value) => {
             token = value;
+            failure = '';
             issuedAt = Date.now();
             uses = 0;
             boundEmail = '';
@@ -131,16 +163,22 @@ export function attachTurnstile(
             interactive = true;
             showing(true);
           },
-          'error-callback': () => {
+          'error-callback': (code) => {
             token = '';
+            failure = `error:${
+              String(code ?? '')
+                .replace(/[^a-z0-9]/gi, '')
+                .slice(0, 12) || 'unknown'
+            }`;
             interactive = false;
             showing(false);
             settle();
           }
         });
       },
-      () => {
+      (error: unknown) => {
         // Submit without a token; a later focus may try the script again.
+        failure = (error as Error)?.message === 'turnstile-blocked' ? 'script-blocked' : 'script-empty';
         widgetId = null;
         unavailable = true;
         settle();
@@ -151,6 +189,7 @@ export function attachTurnstile(
 
   function reset() {
     token = '';
+    failure = '';
     uses = 0;
     boundEmail = '';
     if (api && widgetId !== null && widgetId !== 'pending') {
@@ -172,15 +211,29 @@ export function attachTurnstile(
     if (token && !fresh(email)) reset();
     return new Promise((resolve) => {
       const started = Date.now();
-      const finish = () => {
-        if (!token) return resolve('');
+      const finish = (timedOut = false) => {
+        lastWaitMs = Date.now() - started;
+        if (!token) {
+          // An error Cloudflare reported says more than the wait that followed it.
+          lastReason =
+            failure ||
+            (timedOut
+              ? interactive
+                ? 'interactive-timeout'
+                : widgetId === 'pending'
+                  ? 'loading-timeout'
+                  : 'solving-timeout'
+              : 'no-widget');
+          return resolve('');
+        }
+        lastReason = '';
         uses += 1;
         boundEmail = email;
         resolve(token);
       };
       const poll = () => {
         if (token || unavailable || widgetId === null) return finish();
-        if (Date.now() - started >= (interactive ? INTERACTIVE_WAIT_MS : QUIET_WAIT_MS)) return finish();
+        if (Date.now() - started >= (interactive ? INTERACTIVE_WAIT_MS : QUIET_WAIT_MS)) return finish(true);
         const wake = () => {
           window.clearTimeout(timer);
           poll();
@@ -195,7 +248,16 @@ export function attachTurnstile(
     });
   }
 
-  return { warm, tokenFor };
+  async function fieldsFor(email: string): Promise<TurnstileFields> {
+    const token = await tokenFor(email);
+    return {
+      turnstile_token: token,
+      turnstile_wait_ms: lastWaitMs,
+      ...(lastReason ? { turnstile_reason: lastReason } : {})
+    };
+  }
+
+  return { warm, tokenFor, fieldsFor };
 }
 
 // One widget per component, rendered into the element given to `slotRef`

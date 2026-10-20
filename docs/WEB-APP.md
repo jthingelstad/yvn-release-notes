@@ -295,7 +295,7 @@ or new CSP exception.
   someone focuses or types in the email field, renders explicitly and
   interaction-only into `#signin-check` (never id `turnstile`: that
   element would shadow `window.turnstile`), and when it cannot load the email
-  request goes without a token. `#signin-check` follows both the email form
+  request goes without a token and says why (`turnstile_reason`). `#signin-check` follows both the email form
   and "Check your email", and takes room only while Cloudflare is asking
   (`data-turnstile="asking"`); once answered it collapses (`quiet`), so
   "Success!" never lingers on the next step.
@@ -339,7 +339,7 @@ or new CSP exception.
 | `GET /api/mcp/activity` | Up to 50 content-free tool records from fourteen days; successful writes include client and note references. |
 | `GET /api/health` | |
 | `GET /api/sample?birthday=&tz=` | a version number today: the front page's example (1981-06-14), or the birthday being typed at sign-up |
-| `POST /api/auth/start` `{email, turnstile_token}` | 202 and mails a link and code; 429 `limited` past a limit; 403 `turnstile` only in enforce mode, for a missing or failed token (`packages/backend/turnstile.ts`) |
+| `POST /api/auth/start` `{email, turnstile_token, turnstile_wait_ms, turnstile_reason?}` | 202 and mails a link and code; 429 `limited` past a limit; 403 `turnstile` only in enforce mode, for a missing or failed token (`packages/backend/turnstile.ts`) |
 | `POST /api/auth/verify` `{email, code}` or `{token}` | sets the cookie; says whether the account is new |
 | `POST /api/auth/signout` | |
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |

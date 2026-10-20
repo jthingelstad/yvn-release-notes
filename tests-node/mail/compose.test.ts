@@ -107,3 +107,70 @@ test('safe HTML/link rendering and code-point/sentence budgets', () => {
     { image: 0, audio: 1 }
   );
 });
+test('badges in the email: the clause beside a special number, one line for what is new, the closed release', () => {
+  const at = (patch: number) => {
+      const d = new Date(Date.parse('2026-03-05T00:00:00Z') + patch * 86400000).toISOString().slice(0, 10);
+      return computeVersion('1972-03-05', d);
+    },
+    v = at(300);
+  assert.equal(c.specialLine(v), '5.4.300 is a round number.');
+  assert.equal(c.specialLine(at(345)), '5.4.345 reads the same both ways.');
+  assert.equal(c.specialLine(at(364)), '5.4.364 is the last patch of 5.4.');
+  // Release day is the birthday line's; secrets stay secret; most days are none.
+  for (const patch of [0, 42, 256, 314, 299]) assert.equal(c.specialLine(at(patch)), null, String(patch));
+  assert.equal(c.newsLine([]), null);
+  assert.equal(c.newsLine([{ name: 'Round number', version: '5.4.300' }]), 'New badge: Round number, 5.4.300.');
+  assert.equal(
+    c.newsLine(['Hotfix', 'Cold start', 'Cadence beta'].map((name) => ({ name, version: '5.4.299' }))),
+    'New badges: Hotfix, Cold start and Cadence beta.'
+  );
+  assert.equal(
+    c.newsLine(['A', 'B', 'C', 'D', 'E', 'F'].map((name) => ({ name, version: '5.4.299' }))),
+    'New badges: A, B, C and 3 more.'
+  );
+  const news = [{ name: 'Don’t panic', version: '5.4.42' }],
+    text = c.body(v, '1972-03-05', { badges: { news }, lifetime: { notes: 3, days: 2, photos: 0, since: 2026 } }),
+    html = c.htmlBody(v, '1972-03-05', '2026-12-30', { badges: { news } });
+  assert.match(text, /^You're 5\.4\.300 today\. 5\.4\.300 is a round number\.\n/);
+  assert.match(
+    text,
+    /3 notes across 2 days since 2026\.\nNew badge: Don’t panic, 5\.4\.42\. See your badges: https:\/\/notes\.yourversionnumber\.com\/badges\/\n/
+  );
+  assert.match(html, /<p class="ink-2" id="special-day"[^>]*>5\.4\.300 is a round number\.<\/p>/);
+  assert.match(
+    html,
+    /id="badge-news"[^>]*>New badge: <strong[^>]*>Don&#8217;t panic<\/strong>, <span[^>]*>5\.4\.42<\/span>\./
+  );
+  assert.match(
+    html,
+    /<a class="link" href="https:\/\/notes\.yourversionnumber\.com\/badges\/"[^>]*>See your badges<\/a>/
+  );
+  // Nothing new: no line. Badges off: neither line.
+  assert.ok(!c.body(v, '1972-03-05', { badges: { news: [] } }).includes('New badge'));
+  assert.match(c.body(v, '1972-03-05', { badges: { news: [] } }), /round number/);
+  for (const off of [c.body(v, '1972-03-05', { badges: null }), c.htmlBody(v, '1972-03-05', '2026-12-30', {})]) {
+    assert.ok(!off.includes('round number'));
+    assert.ok(!off.includes('New badge'));
+    assert.ok(!off.includes('/badges/'));
+  }
+  const closed = { age: 54, days: 212, notes: 260, photos: 90, longest: 30 };
+  assert.equal(
+    c.closedLine({
+      ...closed,
+      badges: {
+        coverage: 'beta',
+        collected: [
+          { name: 'Round number', count: 2 },
+          { name: 'Pi', count: 1 },
+          { name: 'Palindrome', count: 1 }
+        ]
+      }
+    }),
+    '212 days with notes, 260 notes and 90 photos. Longest streak: 30 days. Coverage: beta. Collected: Round number ×2, Pi and Palindrome.'
+  );
+  assert.equal(c.closedLine({ ...closed, badges: { coverage: null, collected: [] } }), c.closedLine(closed));
+  assert.match(
+    c.closedHtml({ ...closed, badges: { coverage: 'rc', collected: [{ name: 'Pi', count: 3 }] } }),
+    /Coverage: rc\. Collected: Pi &#215;3\./
+  );
+});

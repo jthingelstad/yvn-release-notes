@@ -3,9 +3,9 @@
 Designed 2026-10-20, with Jamie's calls made the same day (at the end,
 under "Jamie's calls"). Steps 1 and 2 of the build order are built: the
 evaluator, `GET /api/badges`, the Badges page, the unlock line, the Day and
-Release page lines and the export. Step 3 has begun: the "Show badges"
-setting, the `BADGES` item and the baseline tool are built. Nothing is in
-the email yet.
+Release page lines and the export. Step 3 is built: the "Show badges"
+setting, the `BADGES` item, the baseline tool, both email lines and the
+birthday block. The launch product update is Jamie's to write.
 
 Release Notes works when people write most days. Badges should make
 showing up feel good and make the version number more fun to live with,
@@ -316,8 +316,13 @@ they are found by writing on those days or not at all.
   after the save, with and without the new one (a failed read leaves it
   out and never fails the note). A Day answers with `collected` and a
   release with `badges`. All are in `docs/WEB-APP.md`'s API table.
-- **Sender:** reads badges after the note index. A failed read sends the
-  email without the line, as the streak does.
+- **Sender:** reads badges and `seen` after the note index, before
+  claiming the day; adds what the line named to `seen` once the email has
+  gone (a failed write only means telling it again tomorrow). A track's
+  tiers earned the same night show as the highest; past four names the
+  line ends "and N more". A failed read sends the email without the line
+  (the clause still shows: it needs only the version), as the streak does.
+  The dry run reports `badges` (how many are new) and `special_day`.
 - **Cost:** one more read of a person's notes per email and per saved
   note. At today's scale that is well under a cent a month. If it ever
   matters, the facts can be cached on the `BADGES` item.
@@ -339,9 +344,10 @@ they are found by writing on those days or not at all.
 3. The "Show badges" setting, then the email: the badge line, the
    special-day clause, the `BADGES` item, the baseline (Jamie's go) and the
    launch product update. Then the birthday block. The setting ships before
-   any email line, so the way out exists from the first one. **The
-   setting, the `BADGES` item and the baseline tool built 2026-10-20**;
-   the baseline runs after they deploy and before the email line does.
+   any email line, so the way out exists from the first one. **Built
+   2026-10-20**, in two changes: the setting, the `BADGES` item and the
+   baseline tool first, the baseline run between them, then the email
+   lines and the birthday block.
 4. Later: badges for agents through `notes_context`.
 
 ## Jamie's calls (2026-10-20)

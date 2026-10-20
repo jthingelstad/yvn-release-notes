@@ -367,6 +367,15 @@ ZIP...` prints what an import would do, as counts (`--plan-out` to a
 - **Lifetime counts** (Jamie, 2026-10-09: "a good reminder of creating
   value"): one quiet line under the streak. Every note counts, imported
   ones too.
+- **Badges** (Jamie, 2026-10-20: the email "for sure" carries both
+  lines; `docs/BADGES.md`): one line under the lifetime line naming what
+  was earned and not yet `seen`, and on a special day that is not secret
+  one clause beside the number ("5.4.300 is a round number."); a
+  birthday's closed release gains its coverage and collected days. Never
+  a line about what is close, at risk or missed. A badge is told once:
+  `seen` takes it only after the email has gone, and a web save's unlock
+  line counts too. "Show badges" off drops all of it. A failed read sends
+  the email without the line.
 - **Yesterday** (Jamie, 2026-10-12: the email confirms everything sent the
   day before came through): under the streak, the subscriber's own
   yesterday as the day reads on the web, cut at a sentence, with its files

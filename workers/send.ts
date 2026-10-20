@@ -1,5 +1,6 @@
-/** Quarter-hour daily sender. Optional history/weather/photo/product-news reads happen
- * before claiming a local day. The DynamoDB claim prevents competing runs;
+/** Quarter-hour daily sender. Optional history/weather/photo/product-news/badge reads happen
+ * before claiming a local day. Badges announced go into `seen` only once the
+ * email has gone (docs/BADGES.md). The DynamoDB claim prevents competing runs;
  * failed sends restore it conditionally. SES acceptance followed by transport
  * failure remains an unavoidable ambiguous send, as in the original worker.
  * dry_run (including alternate now) reads only and never sends or writes. */
@@ -24,10 +25,13 @@ import type { ProductUpdate } from '../packages/domain/product-updates.ts';
 import { remindersFor, type UpcomingSection } from '../packages/domain/upcoming.ts';
 import { computeStreak, pauseDays, type Streak } from '../packages/domain/streak.ts';
 import { computeVersion, releaseName, releaseSpan, sameDayBefore, type Version } from '../packages/domain/version.ts';
+import { releaseBadges } from '../packages/domain/badges.ts';
+import { badges as readBadgesOf } from '../packages/backend/badges.ts';
 import {
   buildMessage,
   newToken,
   welcomeLine,
+  specialLine,
   SHOWN,
   PHOTOS_A_DAY,
   PHOTOS_AN_EMAIL,
@@ -37,6 +41,7 @@ import {
   type OnThisDay,
   type Lifetime,
   type Closed,
+  type NewBadge,
   type Inline,
   type Thumbnail
 } from '../packages/mail/compose.ts';
@@ -203,11 +208,44 @@ export async function readClosed(
       days: have.size,
       notes: within.length,
       photos: within.reduce((n, [, p]) => n + p, 0),
-      longest: computeStreak(have, addDays(last, 1), paused).longest
+      longest: computeStreak(have, addDays(last, 1), paused).longest,
+      ...(sub.badges ? { badges: releaseBadges(sub.birthday, v.age - 1, have) } : {})
     };
   } catch (e) {
     s.log?.({ event: 'closed-error', user: sub.user_id, date: day, error: errorName(e) });
     return null;
+  }
+}
+/** With "Show badges" on: what was earned and is not yet `seen`, oldest
+ * first, and the keys to add once the email has gone. A track's tiers
+ * earned together show as the highest. Off: null, so neither email line
+ * shows. A failed read: no news, so the email goes without the line. */
+export async function readBadges(
+  s: SenderServices,
+  sub: Subscriber,
+  day: string
+): Promise<{ news: NewBadge[]; keys: string[] } | null> {
+  if (!sub.badges) return null;
+  try {
+    const profile = {
+        birthday: sub.birthday,
+        tz: sub.tz,
+        ...(sub.place ? { city: sub.place.city, country: sub.place.country } : {})
+      },
+      [earned, seen] = await Promise.all([
+        readBadgesOf(s.store, sub.user_id, profile, day),
+        s.store.seenBadges(sub.user_id)
+      ]),
+      fresh = earned.earned.filter((e) => !seen.has(e.key)).reverse(),
+      top = new Map<string, number>();
+    fresh.forEach((e, i) => top.set(e.id, i));
+    return {
+      news: fresh.filter((e, i) => top.get(e.id) === i).map((e) => ({ name: e.name, version: e.version })),
+      keys: fresh.map((e) => e.key)
+    };
+  } catch (e) {
+    s.log?.({ event: 'badges-error', user: sub.user_id, date: day, error: errorName(e) });
+    return { news: [], keys: [] };
   }
 }
 export async function readOnThisDay(
@@ -413,6 +451,7 @@ export async function sendOne(
   let [past, lifetime, yesterday, notes, own, closed] = await readHistory(s, sub, day);
   const productUpdate = await readProductUpdate(s, day);
   const upcoming = await readUpcoming(s, sub.user_id, day);
+  const earned = await readBadges(s, sub, day);
   const photos = await withPhotos(s, sub, day, yesterday, past);
   [yesterday, past] = photos;
   const forecast = await readWeather(s, sub, day, fetcher, true, notes, own);
@@ -478,6 +517,7 @@ export async function sendOne(
       closed,
       productUpdate,
       upcoming,
+      badges: earned && { news: earned.news },
       images: photos[2],
       inbox,
       forecast,
@@ -493,6 +533,17 @@ export async function sendOne(
     await cleanup();
     return refused();
   }
+  // Told now, so not again; a failed write only means telling it tomorrow.
+  if (earned?.keys.length)
+    try {
+      await s.store.addSeenBadges(
+        sub.user_id,
+        earned.keys,
+        new Date((s.clock ?? (() => Date.now() / 1000))() * 1000).toISOString()
+      );
+    } catch (e) {
+      s.log?.({ event: 'badges-seen-error', user: sub.user_id, date: day, error: errorName(e) });
+    }
   s.log?.({ event: 'sent', user: sub.user_id, date: day, version: String(v) });
   return { user: sub.user_id, date: day, version: String(v), outcome: 'sent' };
 }
@@ -561,6 +612,7 @@ export async function handler(
       const forecast = await readWeather(s, sub, day, fetcher, false, notes, own);
       const productUpdate = await readProductUpdate(s, day);
       const upcoming = await readUpcoming(s, sub.user_id, day);
+      const earned = await readBadges(s, sub, day);
       results.push({
         user: sub.user_id,
         date: day,
@@ -584,9 +636,12 @@ export async function handler(
               days: closed.days,
               notes: closed.notes,
               photos: closed.photos,
-              longest: closed.longest
+              longest: closed.longest,
+              ...(closed.badges ? { badges: closed.badges } : {})
             }
           : null,
+        badges: earned ? earned.news.length : null,
+        special_day: earned ? specialLine(v) !== null : null,
         photos: Object.keys(photo[2]).length,
         photo_bytes: Object.values(photo[2]).reduce((n, p) => n + p.length, 0),
         forecast: Boolean(forecast),

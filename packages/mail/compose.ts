@@ -10,6 +10,7 @@ import type { Streak } from '../domain/streak.ts';
 import { codePointLength, codePointSlice, pythonRstrip, pythonTrim } from '../domain/unicode.ts';
 import { UPDATE_LABEL, type ProductUpdate } from '../domain/product-updates.ts';
 import type { UpcomingSection } from '../domain/upcoming.ts';
+import { specialKinds } from '../domain/badges.ts';
 export const SITE = 'https://yourversionnumber.com',
   APP = 'https://notes.yourversionnumber.com';
 export const PAPER = '#fffbf2',
@@ -72,6 +73,13 @@ export interface Closed {
   notes: number;
   photos: number;
   longest: number;
+  /** The release's badges, with "Show badges" on (docs/BADGES.md). */
+  badges?: { coverage: string | null; collected: { name: string; count: number }[] } | null;
+}
+/** A badge earned and not yet celebrated, oldest first. */
+export interface NewBadge {
+  name: string;
+  version: string;
 }
 export interface Yesterday extends Omit<PastDay, 'sky'> {
   others: number;
@@ -89,6 +97,9 @@ export interface BodyOptions {
   yesterday?: Yesterday | null;
   inbox?: string | null;
   closed?: Closed | null;
+  /** Set with "Show badges" on: the special-day clause shows, and `news`
+   * (empty when nothing is new, or it could not be read) gets one line. */
+  badges?: { news: NewBadge[] } | null;
 }
 const FILE_WORDS = [
   ['image', 'photo'],
@@ -156,10 +167,44 @@ export const lifetimeLine = (life: Lifetime) =>
   `${countPhrase(life.notes, 'note', 'notes')} across ${countPhrase(life.days, 'day', 'days')} since ${life.since}` +
   (life.photos ? `, and ${countPhrase(life.photos, 'photo', 'photos')}.` : '.');
 export const releaseLink = (age: number) => `${APP}/release/?v=${releaseName(age)}`;
+export const listed = (names: readonly string[]) =>
+  names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+export const closedBadges = (b: NonNullable<Closed['badges']>) =>
+  (b.coverage ? ` Coverage: ${b.coverage}.` : '') +
+  (b.collected.length
+    ? ` Collected: ${listed(b.collected.map((c) => (c.count > 1 ? `${c.name} \u00d7${c.count}` : c.name)))}.`
+    : '');
 export const closedLine = (c: Closed) =>
   `${countPhrase(c.days, 'day', 'days')} with notes, ${countPhrase(c.notes, 'note', 'notes')}` +
   (c.photos ? ` and ${countPhrase(c.photos, 'photo', 'photos')}.` : '.') +
-  (c.longest > 1 ? ` Longest streak: ${countPhrase(c.longest, 'day', 'days')}.` : '');
+  (c.longest > 1 ? ` Longest streak: ${countPhrase(c.longest, 'day', 'days')}.` : '') +
+  (c.badges ? closedBadges(c.badges) : '');
+export const BADGES_LINK = `${APP}/badges/`;
+/** At most this many names, then "and N more" (a long import's first morning). */
+export const NEWS_NAMED = 4;
+/** One line for what was earned and not yet celebrated (docs/BADGES.md, The
+ * email): a single badge with its version, several by name. Never what is
+ * close, at risk or missed. */
+export function newsLine(news: readonly NewBadge[]): string | null {
+  if (!news.length) return null;
+  if (news.length === 1) return `New badge: ${news[0]!.name}, ${news[0]!.version}.`;
+  const names = news.map((n) => n.name),
+    shown =
+      names.length > NEWS_NAMED ? [...names.slice(0, NEWS_NAMED - 1), `${names.length - NEWS_NAMED + 1} more`] : names;
+  return `New badges: ${listed(shown)}.`;
+}
+/** The clause beside the number on a special day that is not secret. A
+ * birthday's email celebrates the release already, so x.y.0 has none. */
+export function specialLine(v: Version): string | null {
+  if (!v.patch) return null;
+  const kinds = specialKinds(v.major, v.minor, v.patch, v.cycleDays),
+    said = [
+      ...(kinds.includes('round') ? ['is a round number'] : []),
+      ...(kinds.includes('palindrome') ? ['reads the same both ways'] : []),
+      ...(kinds.includes('code-freeze') ? [`is the last patch of ${v.major}.${v.minor}`] : [])
+    ];
+  return said.length ? `${v} ${said.join(' and ')}.` : null;
+}
 export const closedBody = (c: Closed) =>
   `${releaseName(c.age)} is closed: ${closedLine(c)}\nSee all of it: ${releaseLink(c.age)}\n\n`;
 export function pastText(text: string, limit = PAST_MAX): [string, boolean] {
@@ -271,12 +316,16 @@ export const unsubscribeLink = (token: string) => `${APP}/unsubscribe/#t=${token
 export function body(v: Version, birthday: string, o: BodyOptions = {}): string {
   let opening = `You're ${v} today.`;
   if (birthdayLine(v)) opening += ' ' + birthdayLine(v);
+  const special = o.badges ? specialLine(v) : null,
+    news = o.badges ? newsLine(o.badges.news) : null;
+  if (special) opening += ' ' + special;
   if (o.forecast) opening += '\n' + o.forecast;
   if (o.welcome) opening = o.welcome + '\n\n' + opening;
   if (o.productUpdate)
     opening += `\n\n${UPDATE_LABEL}\n${o.productUpdate.title}\n\n${links.plain(o.productUpdate.text, o.productUpdate.links)}`;
   let text = o.streak ? streakLines(v, o.streak).join(' ') + '\n' : '';
   if (o.lifetime) text += lifetimeLine(o.lifetime) + '\n';
+  if (news) text += `${news} See your badges: ${BADGES_LINK}\n`;
   if (text) text += '\n';
   if (o.upcoming?.shown.length) text += upcomingBody(o.upcoming);
   if (o.closed) text += closedBody(o.closed);
@@ -312,8 +361,24 @@ export function yearDots(v: Version): string {
   const on = roundEven((v.patch / v.cycleDays) * DOTS);
   return `<p aria-hidden="true" style="margin:0;font-family:${MONO};font-size:11px;line-height:1;letter-spacing:4px;white-space:nowrap;"><span class="dot-on" style="color:${ORANGE};">${'&#9679;'.repeat(on)}</span><span class="dot-off" style="color:#e3e8f7;">${'&#9679;'.repeat(DOTS - on)}</span></p>`;
 }
-export function streakHtml(v: Version, birthday: string, s?: Streak | null, life?: Lifetime | null): string {
-  if (!s && !life) return '';
+export function newsHtml(news: readonly NewBadge[], after: boolean): string {
+  const line = newsLine(news);
+  if (!line) return '';
+  const [label, rest] = [line.slice(0, line.indexOf(':') + 1), line.slice(line.indexOf(':') + 2)],
+    shown =
+      news.length === 1
+        ? `<strong class="ink" style="color:${INK};">${asciiHtml(news[0]!.name)}</strong>, <span class="vnum" style="font-family:${MONO};font-weight:700;letter-spacing:-0.03em;color:${BLUE};white-space:nowrap;">${escape(news[0]!.version)}</span>.`
+        : `<strong class="ink" style="color:${INK};">${asciiHtml(rest.slice(0, -1))}</strong>.`;
+  return `<p class="ink-2" id="badge-news" style="margin:${after ? 10 : 0}px 0 0;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${label} ${shown} <a class="link" href="${BADGES_LINK}" style="color:${BLUE};font-weight:700;text-decoration:underline;white-space:nowrap;">See your badges</a></p>\n`;
+}
+export function streakHtml(
+  v: Version,
+  birthday: string,
+  s?: Streak | null,
+  life?: Lifetime | null,
+  news: readonly NewBadge[] = []
+): string {
+  if (!s && !life && !news.length) return '';
   const parts: string[] = [];
   if (s) {
     const past = s.days
@@ -338,6 +403,7 @@ export function streakHtml(v: Version, birthday: string, s?: Streak | null, life
     parts.push(
       `<p class="ink-2" style="margin:${s ? 10 : 0}px 0 0;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${asciiHtml(lifetimeLine(life))}</p>\n`
     );
+  parts.push(newsHtml(news, Boolean(s || life)));
   return `<tr><td style="padding:36px 0 0;">\n${parts.join('')}</td></tr>\n`;
 }
 export function notesHtml(shown: string, found?: links.Link[], mark = ''): string {
@@ -503,6 +569,10 @@ export function htmlBody(v: Version, birthday: string, day: string, o: BodyOptio
     partyHtml = party
       ? `<p class="party" style="margin:16px 0 0;font-family:${FONT};font-size:20px;font-weight:800;color:${PINK_INK};">${escape(party)}</p>`
       : '',
+    special = o.badges ? specialLine(v) : null,
+    specialHtml = special
+      ? `<p class="ink-2" id="special-day" style="margin:16px 0 0;font-family:${FONT};font-size:17px;line-height:1.45;color:${INK_2};">${escape(special)}</p>`
+      : '',
     link = `${SITE}/birthday/?p=${birthday}`,
     inlineV = vs.replace(/\./g, `<span class="sep" style="color:${ORANGE_INK};">.</span>`),
     welcomeHtml = welcome
@@ -541,7 +611,7 @@ export function htmlBody(v: Version, birthday: string, day: string, o: BodyOptio
 ${welcomeHtml}<tr><td>
 <p class="ink" style="margin:0 0 10px;font-family:${FONT};font-size:18px;color:${INK};">Today you&rsquo;re</p>
 <div class="vnum-hero" role="heading" aria-level="1" aria-label="${vs}">${vnumHtml(v, 76)}</div>
-${partyHtml}
+${partyHtml}${specialHtml}
 </td></tr>
 
 <tr><td style="padding:36px 0 0;">
@@ -560,7 +630,7 @@ What happened, what you made, who you saw. Whatever you send back becomes the re
 <p class="ink-2" style="margin:0;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">Just hit reply. A line is plenty, and photos and voice memos work too. Reply as often as you like; it all adds up to today&rsquo;s notes.</p>
 </td></tr>
 
-${streakHtml(v, birthday, streak, lifetime)}
+${streakHtml(v, birthday, streak, lifetime, o.badges?.news)}
 ${upcomingHtml(o.upcoming)}${closed ? closedHtml(closed) : ''}${yesterday ? yesterdayHtml(birthday, yesterday) : ''}
 ${past ? pastHtml(v, birthday, past) : ''}
 <tr><td class="ink-2" style="padding:48px 0 0;font-family:${FONT};font-size:13px;line-height:1.5;color:${INK_2};">

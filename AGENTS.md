@@ -390,8 +390,9 @@ ZIP...` prints what an import would do, as counts (`--plan-out` to a
   weather shows. A failure is no weather, never a held email or a failed
   note.
 - **The ask** is the same every day and says photos and voice memos work
-  too. No rotating prompts or nudges for now (Jamie, 2026-10-07: "keep it
-  simple").
+  too. No rotating list of prompts for now (Jamie, 2026-10-07: "keep it
+  simple"). Nudges as such are fine (Jamie, 2026-10-20: "Badges are a form
+  of a nudge. I think that is fine."); `docs/BADGES.md` has the badges.
 
 ### Privacy and security
 

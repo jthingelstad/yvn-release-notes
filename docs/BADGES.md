@@ -1,7 +1,8 @@
 # Badges
 
 Designed 2026-10-20, with Jamie's calls made the same day (at the end,
-under "Jamie's calls"). Not built yet.
+under "Jamie's calls"). Step 1 of the build order is built: the evaluator,
+`GET /api/badges` and the Badges page. Nothing is in the email yet.
 
 Release Notes works when people write most days. Badges should make
 showing up feel good and make the version number more fun to live with,
@@ -99,7 +100,7 @@ Most of these land in the first week. Each one points at a feature.
 | Hello, world     | Your first note                                                           |
 | ACK              | Answering the daily email                                                 |
 | Web release      | Writing a note on the web                                                 |
-| Webhook          | Sending a note to your own standing address (`via: address`)              |
+| Webhook          | Sending a note to your own standing address                               |
 | Pair programming | A note added by an agent you connected                                    |
 | Release assets   | Attaching a photo                                                         |
 | Audio changelog  | Adding a voice memo                                                       |
@@ -271,15 +272,18 @@ she finds them by writing on those days or not at all.
   days ahead. Earned days are derived from history, which is what makes the
   shelf work for imports and lets every badge carry its version stamp.
 - **The stamp is the day it came true.** The evaluator replays notes in the
-  order they were written (`writtenAt`, in the subscriber's zone) and
-  stamps each badge with the version on the first day its rule held. A
+  order they were written (`writtenAt`, in the zone the note was written
+  in, as "added later" reads it) and stamps each badge with the version on
+  the first day its rule held. A
   note backfilled today for last year earns on today's version, not the
   day it is filed under; an imported note earns on the day it was first
   written. Collectibles name the special version they were collected on
   ("Palindrome, 4.1.314") and record when they were written separately.
-- **`packages/backend/badges.ts`**: `badgeFacts(store, user)` reads the
-  person's `NOTE#` rows (dates, written and received times, source, via,
-  author, media kinds, place city and country, link count, text), their
+- **`packages/backend/badges.ts`**: `badgeFacts(store, user, profile, today)` reads the
+  person's `NOTE#` rows (dates, written and received times, source,
+  whether an email note has a `subject`: a reply always keeps one, the
+  standing address never does; author, media kinds, place city and
+  country, link count, text), their
   `WEATHER#` rows (high and code), `PAUSE#` rows and the profile (birthday,
   zone, home). One person's notes are read whole, as search already does.
   Text is used in memory for word counts and hashtags only, never stored or
@@ -313,7 +317,7 @@ she finds them by writing on those days or not at all.
 ## Build order
 
 1. Domain, facts, `GET /api/badges` and the Badges page, with links from
-   Today and the Archive. Nothing in the email yet.
+   Today and the Archive. Nothing in the email yet. **Built 2026-10-20.**
 2. The unlock moment, Day and Release page lines, and the export.
 3. The "Show badges" setting, then the email: the badge line, the
    special-day clause, the `BADGES` item, the baseline (Jamie's go) and the

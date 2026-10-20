@@ -140,7 +140,8 @@ export async function main(args = process.argv.slice(2)) {
       written_at: addDays(day, late) + 'T17:00:00Z',
       tz: 'America/Chicago',
       tags: found(text),
-      ...(id.startsWith('w-') ? {} : { raw_key: 'raw/' + id })
+      // Replies, so they keep their email's subject, as inbound does.
+      ...(id.startsWith('w-') ? {} : { raw_key: 'raw/' + id, subject: 'Re: Release notes' })
     });
   }
   store.seed({

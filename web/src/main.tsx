@@ -22,6 +22,7 @@ import { ViewerProvider } from './components/viewer.tsx';
 import { ApiError } from './lib/api.ts';
 import { countPage } from './lib/pagecount.ts';
 import {
+  badgesQuery,
   daysQuery,
   dayQuery,
   meQuery,
@@ -149,6 +150,11 @@ const behind = [
         context.queryClient.prefetchInfiniteQuery(daysQuery),
         context.queryClient.prefetchQuery(releasesQuery)
       ])
+  }),
+  createRoute({
+    getParentRoute: () => signedInRoute,
+    ...page('/badges', () => import('./pages/Badges.tsx'), 'Badges'),
+    loader: ({ context }: Ctx) => context.queryClient.prefetchQuery(badgesQuery)
   }),
   createRoute({
     getParentRoute: () => signedInRoute,

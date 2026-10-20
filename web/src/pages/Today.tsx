@@ -5,9 +5,9 @@ import { StreakLine } from '../components/days.tsx';
 import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
 import { DayWhere } from '../components/where.tsx';
-import { dayName } from '../lib/format.ts';
+import { count, dayName } from '../lib/format.ts';
 import { useHashParam, useMe } from '../lib/nav.ts';
-import { todayQuery } from '../lib/queries.ts';
+import { badgesQuery, todayQuery } from '../lib/queries.ts';
 import type { Me, Today as TodayData } from '../lib/types.ts';
 
 export function Today() {
@@ -74,11 +74,24 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
         <EmptyLine t={t} me={me} />
       </section>
 
-      <StreakLine s={t.streak} />
+      <StreakLine s={t.streak}>
+        <BadgesLink />
+      </StreakLine>
       <p className="hint">
         <AppLink href="/day/">Add notes for another day</AppLink>
       </p>
     </div>
+  );
+}
+
+// The way to the badges, with how many once they are counted. They are
+// read after the page shows, so they never hold it up.
+function BadgesLink() {
+  const n = useQuery(badgesQuery).data?.count;
+  return (
+    <AppLink href="/badges/" id="badges-link">
+      {n ? count(n, 'badge', 'badges') : 'Badges'}
+    </AppLink>
   );
 }
 

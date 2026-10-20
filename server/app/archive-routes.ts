@@ -8,6 +8,7 @@ import { pauseDays, computeStreak } from '../../packages/domain/streak.ts';
 import { searchTerms, searchedText } from '../../packages/domain/search.ts';
 import { pythonTrim, codePointLength } from '../../packages/domain/unicode.ts';
 import { rounded } from '../../packages/backend/places.ts';
+import { badges } from '../../packages/backend/badges.ts';
 import { json, body, dayFrom, dateOf, pageLimit } from './requests.ts';
 export async function renderedDays(
   service: SessionService,
@@ -41,6 +42,7 @@ export async function archiveRoutes(
       '/api/days/{date}',
       '/api/releases',
       '/api/releases/{v}',
+      '/api/badges',
       '/api/tags',
       '/api/tags/{tag}',
       '/api/search'
@@ -151,6 +153,13 @@ export async function archiveRoutes(
       after: picked.length > page.length ? page.at(-1) : null
     });
   }
+  if (pattern === '/api/badges')
+    return json({
+      today,
+      tz: p.tz,
+      version: computeVersion(String(p.birthday), today).toString(),
+      ...(await badges(store, uid, p, today))
+    });
   if (pattern === '/api/tags') {
     const counts = new Map<string, { tag: string; notes: number; days: Set<string>; first: string; last: string }>();
     for (const n of await store.noteTags(uid))

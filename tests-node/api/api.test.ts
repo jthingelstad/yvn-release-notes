@@ -69,7 +69,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 55);
+  assert.equal(ROUTES.length, 56);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -441,4 +441,41 @@ test('a full-length note of four-byte characters fits the body cap; only oversiz
   const huge = await s.call('POST', '/api/days/2026-10-13/notes', { text: 'a'.repeat(MAX_BODY) });
   assert.equal(huge.r.status, 413);
   assert.equal((await s.store.allNotes('u')).length, 1);
+});
+test('badges count stored fields, never answer with note text, and tell a reply from the standing address', async () => {
+  const s = await setup(),
+    empty = (await s.call('GET', '/api/badges')).b as Item;
+  assert.deepEqual([empty.today, empty.version, empty.count], ['2026-10-13', '4.5.121', 0]);
+  await s.store.putNote('u', '2026-10-12', 'm1', {
+    text: 'A quiet reply',
+    source: 'email',
+    subject: '',
+    written_at: '2026-10-12T23:00:00Z',
+    tz: 'America/Chicago'
+  });
+  await s.store.putNote('u', '2026-10-12', 'm2', {
+    text: 'To the standing address',
+    source: 'email',
+    written_at: '2026-10-13T01:00:00Z'
+  });
+  const web = await s.call('POST', '/api/days/2026-10-13/notes', {
+    text: 'Private words #Kubb',
+    tz: 'America/Chicago'
+  });
+  assert.equal(web.r.status, 201);
+  const answer = await s.call('GET', '/api/badges'),
+    b = answer.b as Item,
+    earned = new Map((b.earned as Item[]).map((e) => [e.key, e]));
+  assert.equal(answer.r.status, 200);
+  for (const key of ['hello', 'ack', 'webhook', 'web', 'tag', 'commit']) assert.ok(earned.has(key), key);
+  assert.ok(!earned.has('hotfix'), 'an evening reply is not late');
+  assert.deepEqual([earned.get('ack')!.version, earned.get('web')!.version], ['4.5.120', '4.5.121']);
+  assert.equal(b.count, (b.earned as Item[]).length);
+  const delivery = (b.tracks as Item[]).find((t) => t.id === 'delivery')!;
+  assert.deepEqual([delivery.best, delivery.now, delivery.level], [2, 2, null]);
+  assert.equal((b.release as Item).v, '4.5');
+  for (const private_ of ['quiet', 'standing', 'Private', 'Kubb', 'm1', 'USER#', 'NOTE#'])
+    assert.ok(!JSON.stringify(b).includes(private_), private_);
+  assert.ok(!JSON.stringify(s.logs).includes('Private'));
+  assert.equal((await s.call('GET', '/api/badges', undefined, '')).r.status, 401);
 });

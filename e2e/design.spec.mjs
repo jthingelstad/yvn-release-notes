@@ -39,7 +39,7 @@ for (const size of [{width:320,height:740},{width:390,height:844},{width:768,hei
       page.on('pageerror', error => errors.push(error.message));
       await page.setViewportSize(size);
       await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
-      for (const [url, selected] of [['/today/', 'Today'], ['/timeline/', 'Archive'], ['/search/', 'Search'], ['/settings/', 'Settings']]) {
+      for (const [url, selected] of [['/today/', 'Today'], ['/timeline/', 'Archive'], ['/badges/', 'Archive'], ['/search/', 'Search'], ['/settings/', 'Settings']]) {
         await page.goto(url);
         const nav = page.getByRole('navigation', { name: 'Main navigation' });
         await expect(nav.getByRole('link', { name: selected, exact: true })).toHaveAttribute('aria-current', 'page');

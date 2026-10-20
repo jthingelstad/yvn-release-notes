@@ -12,6 +12,7 @@
 // and cleared, its weather following.
 // The standing address: shown in settings, copied, and replaced.
 // Releases: the Timeline's index, and a release's page, oldest first.
+// Badges: reached from Today, the release's album, the tracks and the shelf.
 import { test, expect } from '@playwright/test';
 
 // A real 1 x 1 PNG, so the browser draws it, and a small PDF.
@@ -335,6 +336,24 @@ test('the timeline lists the releases, and a release shows its days oldest first
   // A release not begun goes back to the Timeline.
   await page.goto('/release/?v=9.9');
   await expect(page).toHaveURL(/\/timeline\/$/);
+});
+
+test('badges open from Today, with this release, the tracks and the shelf', async ({ page }) => {
+  await page.goto('/today/');
+  const link = page.locator('#badges-link');
+  await expect(link).toHaveText(/^\d+ badges?$/);
+  await link.click();
+  await expect(page).toHaveURL(/\/badges\/$/);
+  await expect(page.locator('h1')).toHaveText('Badges');
+  await expect(page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Archive', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('#badges-lede')).toContainText('Latest:');
+  await expect(page.locator('#coverage')).toContainText('with notes in 4.5 so far');
+  await expect(page.locator('#tracks .track')).toHaveCount(4);
+  await expect(page.locator('#track-delivery .tiers')).toHaveAttribute('aria-label', /^\d of 5 tiers$/);
+  await expect(page.locator('#collected')).toContainText('Hello, world');
+  // A secret still to find shows its hint, never its name.
+  await expect(page.locator('#missing .locked', { hasText: 'Secret' }).first()).toBeVisible();
+  await expect(page.locator('#missing')).not.toContainText('Don’t panic');
 });
 
 test('a release index that fails to load says so, and the days still show', async ({ page }) => {

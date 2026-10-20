@@ -1,22 +1,59 @@
 // Lucide glyphs are bundled locally, with a fixed import list so unused icons
 // stay out of the build. The surrounding control supplies its accessible name.
+// Badges have a glyph each (docs/BADGES.md); a secret one is a question.
 import {
   Archive,
+  ArrowLeftRight,
+  Binary,
+  Bot,
   Cake,
   CalendarDays,
   CalendarPlus,
+  CalendarRange,
+  CircleHelp,
+  CloudSunRain,
+  Crown,
+  Earth,
+  FileText,
+  Flame,
+  Gauge,
+  GitBranch,
+  GitCommitHorizontal,
+  Globe,
+  Hash,
+  History,
+  Image,
+  Languages,
+  Layers,
+  Link,
+  Lock,
   LogOut,
   MapPin,
   Mic,
   NotebookPen,
+  Package,
   Paperclip,
   PartyPopper,
   Pencil,
+  Pi,
   Plane,
+  Rabbit,
+  Repeat,
+  Reply,
+  Rocket,
   Search,
   Settings,
+  Snowflake,
+  Sparkles,
   SquarePen,
-  Trash2
+  Tags,
+  Target,
+  Terminal,
+  Trash2,
+  TrendingUp,
+  Webhook,
+  Wrench,
+  type LucideIcon
 } from 'lucide-react';
 
 const icons = {
@@ -41,5 +78,50 @@ export type IconName = keyof typeof icons;
 
 export function Icon({ name }: { name: IconName }) {
   const Glyph = icons[name];
+  return <Glyph className="icon" strokeWidth={1.75} aria-hidden="true" focusable="false" />;
+}
+
+const badges: Record<string, LucideIcon> = {
+  delivery: Rocket,
+  cadence: CalendarRange,
+  patches: Package,
+  coverage: Gauge,
+  hello: Terminal,
+  ack: Reply,
+  web: Globe,
+  webhook: Webhook,
+  pair: Bot,
+  assets: Image,
+  audio: Mic,
+  geotagged: MapPin,
+  tag: Hash,
+  dependencies: Link,
+  commit: GitCommitHorizontal,
+  hotfix: Wrench,
+  backport: History,
+  fullstack: Layers,
+  rfc: FileText,
+  taxonomy: Tags,
+  multiregion: Earth,
+  i18n: Languages,
+  cold: Snowflake,
+  hot: Flame,
+  allweather: CloudSunRain,
+  'release-day': Cake,
+  'code-freeze': Lock,
+  round: Target,
+  palindrome: ArrowLeftRight,
+  compatible: Repeat,
+  history: GitBranch,
+  'dont-panic': Sparkles,
+  overflow: Binary,
+  pi: Pi,
+  leap: Rabbit,
+  straight: TrendingUp,
+  major: Crown
+};
+
+export function BadgeIcon({ id }: { id?: string }) {
+  const Glyph = (id && badges[id]) || CircleHelp;
   return <Glyph className="icon" strokeWidth={1.75} aria-hidden="true" focusable="false" />;
 }

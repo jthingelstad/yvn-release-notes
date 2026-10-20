@@ -1,4 +1,5 @@
 // Days in a list, and the streak line.
+import type { ReactNode } from 'react';
 import { dayName, thisYearOf } from '../lib/format.ts';
 import type { Day, Streak } from '../lib/types.ts';
 import { AppLink, Digits } from './common.tsx';
@@ -50,7 +51,7 @@ function NoteParts({ day, n, tz, mark }: { day: Day; n: Day['notes'][number]; tz
 
 const days = (n: number) => (n === 1 ? '1 day' : `${n} days`);
 
-export function StreakLine({ s }: { s: Streak }) {
+export function StreakLine({ s, children }: { s: Streak; children?: ReactNode }) {
   let head: string;
   let tail = '';
   if (!s.current) {
@@ -72,6 +73,7 @@ export function StreakLine({ s }: { s: Streak }) {
           <span className="aside">{tail}</span>
         </>
       )}
+      {children && <> {children}</>}
     </p>
   );
 }

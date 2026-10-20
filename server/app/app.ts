@@ -43,6 +43,7 @@ export const ROUTES: [string, string][] = [
   ['GET', '/api/days/{date}'],
   ['GET', '/api/releases'],
   ['GET', '/api/releases/{v}'],
+  ['GET', '/api/badges'],
   ['POST', '/api/days/{date}/notes'],
   ['PUT', '/api/days/{date}/notes/{id}'],
   ['DELETE', '/api/days/{date}/notes/{id}'],

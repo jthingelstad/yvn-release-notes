@@ -9,6 +9,7 @@ import { profileView, pauseStart } from './views.ts';
 import { validCode, digest, clearCookie } from './auth.ts';
 import { keys, thumbKeys } from './media.ts';
 import { OAuthService } from './oauth.ts';
+import { badges } from './badges.ts';
 export function replyToken(): string {
   const alphabet = 'abcdefghijklmnopqrstuvwxyz234567',
     bytes = randomBytes(15);
@@ -81,10 +82,23 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
   if (Object.hasOwn(b, 'birthday') && b.birthday !== p.birthday) reject(400, 'birthday-locked');
   if (Object.hasOwn(b, 'send_time')) fields.send_time = sendTime(b);
   if (Object.hasOwn(b, 'place')) Object.assign(fields, placeFields(b));
-  for (const k of ['transcribe', 'describe'])
+  for (const k of ['transcribe', 'describe', 'badges'])
     if (Object.hasOwn(b, k)) {
       if (typeof b[k] !== 'boolean') reject(400, k);
       fields[k] = b[k];
+    }
+  // Badges back on show what was earned meanwhile without announcing it
+  // (docs/BADGES.md): it all counts as seen. Never a reason to fail settings.
+  if (fields.badges === true && p.badges === false)
+    try {
+      const earned = await badges(ctx.store, uid, p, localDay(ctx.now, String(p.tz)));
+      await ctx.store.addSeenBadges(
+        uid,
+        earned.earned.map((e) => e.key),
+        iso(ctx.now)
+      );
+    } catch {
+      service.log({ event: 'badges-error', user: uid });
     }
   if (Object.hasOwn(b, 'status')) {
     if (b.status !== 'active') reject(400, 'status');

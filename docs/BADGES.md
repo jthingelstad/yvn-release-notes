@@ -3,7 +3,9 @@
 Designed 2026-10-20, with Jamie's calls made the same day (at the end,
 under "Jamie's calls"). Steps 1 and 2 of the build order are built: the
 evaluator, `GET /api/badges`, the Badges page, the unlock line, the Day and
-Release page lines and the export. Nothing is in the email yet.
+Release page lines and the export. Step 3 has begun: the "Show badges"
+setting, the `BADGES` item and the baseline tool are built. Nothing is in
+the email yet.
 
 Release Notes works when people write most days. Badges should make
 showing up feel good and make the version number more fun to live with,
@@ -298,10 +300,13 @@ they are found by writing on those days or not at all.
   Text is used in memory for word counts and hashtags only, never stored or
   logged.
 - **`USER#<id> / BADGES`**: the one new item, `seen`, a string set of
-  `id` or `id:tier` already celebrated. A web save adds what it answered as
-  `unlocked`; the sender adds to it after an email with the line has gone.
-  Both use `ADD`, so a repeat is harmless. It goes with the account. It is
-  not exported, since it is only bookkeeping.
+  `id` or `id:tier` already celebrated. A web save adds the badges it
+  answered as `unlocked` (not a special day collected again, which is no
+  new badge); the sender adds to it after an email with the line has gone.
+  Turning "Show badges" back on adds everything earned meanwhile, so it is
+  shown and not announced. All use `ADD` with the account proof, so a
+  repeat is harmless and a deleted account gains no row. It goes with the
+  account. It is not exported, since it is only bookkeeping.
 - **Launch:** `tools/badges-baseline.ts` seeds `seen` with what each
   subscriber has already earned, so nobody's first email lists thirty
   badges. It is a live write, so it runs on Jamie's go. The launch is
@@ -334,7 +339,9 @@ they are found by writing on those days or not at all.
 3. The "Show badges" setting, then the email: the badge line, the
    special-day clause, the `BADGES` item, the baseline (Jamie's go) and the
    launch product update. Then the birthday block. The setting ships before
-   any email line, so the way out exists from the first one.
+   any email line, so the way out exists from the first one. **The
+   setting, the `BADGES` item and the baseline tool built 2026-10-20**;
+   the baseline runs after they deploy and before the email line does.
 4. Later: badges for agents through `notes_context`.
 
 ## Jamie's calls (2026-10-20)

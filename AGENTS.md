@@ -122,7 +122,7 @@ Where things are (each module's design comment explains its contract):
   SDK-shape tests in `tests-node/store/`; fakes alone do not prove AWS shapes.
   The fake table refuses a DynamoDB reserved word used bare in any expression
   (`packages/testing/dynamo-reserved.ts`), as DynamoDB does; alias it (`#owner`).
-- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather}.ts`
+- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline}.ts`
   are operator tools, with shared setup in `tools/operator.ts`.
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current.
 - `tools/{build-server,package-native,native-artifacts,native-release,web-platform}.ts`
@@ -619,6 +619,11 @@ named native regressions and explicit obsolete implementation assumptions.
   function with `{"thumbs_all": "*", "dry_run": true}` (or one user id)
   to count them; the real run (no `dry_run`) needs Jamie's go. It hands
   itself on near its time limit and skips any photo that has one.
+- **The badges baseline** (once, at the Badges launch): `node --import tsx tools/badges-baseline.ts`
+  counts what every subscriber has already earned and is not yet `seen`;
+  `--write` adds it, so nobody's first email with the badge line lists
+  everything at once. Counts only, never a name or address. The write
+  needs Jamie's go.
 - One row per subscriber (address, state, sign-up day, send time, last
   email, last note, notes, 30-day reply rate): `node --import tsx tools/subscribers.ts`.
   Reads keys and a few fields, never note text. It prints addresses, so

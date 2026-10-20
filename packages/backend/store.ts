@@ -20,6 +20,10 @@
  * TURNSTILE#<sha256 of token> / VERDICT keeps Cloudflare's answer for one
  * sign-in token (result, codes, email_hash, uses, verified_at) for five
  * minutes and three uses (`turnstile.ts`); no address, only its hash.
+ * USER#<owner> / BADGES holds `seen`, a string set of the badges (`id` or
+ * `id:tier`) already celebrated, so the email names each once
+ * (docs/BADGES.md). Only ever ADDed to, with the account proof; deleted
+ * with the account and never exported.
  */
 import {
   BatchWriteCommand,
@@ -1262,6 +1266,25 @@ export class Store {
       UpdateExpression: 'ADD ids :i SET updated_at = :t',
       ExpressionAttributeValues: { ':i': new Set(ids), ':t': at }
     });
+  }
+  async seenBadges(user: string): Promise<Set<string>> {
+    const item = await this.get(key(user, 'BADGES'), { ProjectionExpression: 'seen', ConsistentRead: true });
+    return new Set(item?.seen as Iterable<string> | undefined);
+  }
+  /** ADD, so a repeat is harmless; false once the account is gone. */
+  async addSeenBadges(user: string, badges: readonly string[], at: string): Promise<boolean> {
+    if (!badges.length) return true;
+    return this.provedTransaction([
+      this.profileProof(user),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, 'BADGES'),
+          UpdateExpression: 'ADD seen :s SET updated_at = :t',
+          ExpressionAttributeValues: { ':s': new Set(badges), ':t': at }
+        }
+      }
+    ]);
   }
   async putWeather(user: string, day: string, fields: Item) {
     return this.conditional(() =>

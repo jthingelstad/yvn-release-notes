@@ -94,7 +94,7 @@ export async function archiveRoutes(
     const day = dayFrom(p, args[0], ctx.now),
       view = (await renderedDays(service, uid, p, [day]))[0]!,
       // The special days a day with notes collected (docs/BADGES.md).
-      collected = (view.notes as unknown[]).length ? collectedOn(String(p.birthday), day) : [];
+      collected = (view.notes as unknown[]).length && p.badges !== false ? collectedOn(String(p.birthday), day) : [];
     return json({ ...view, ...(collected.length ? { collected } : {}), tz: p.tz, today: day === today });
   }
   if (pattern === '/api/releases') {
@@ -150,7 +150,7 @@ export async function archiveRoutes(
       days_with_notes: have.length,
       notes: index.length,
       longest: computeStreak(new Set(have), addDays(shownLast, 1), paused).longest,
-      badges: releaseBadges(String(p.birthday), age, new Set(have)),
+      ...(p.badges !== false ? { badges: releaseBadges(String(p.birthday), age, new Set(have)) } : {}),
       tags: [...counts]
         .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
         .map(([tag, notes]) => ({ tag, notes })),

@@ -89,6 +89,8 @@ export interface Me {
   stopped_reason?: 'unsubscribed' | 'bounce' | 'complaint';
   transcribe: boolean;
   describe: boolean;
+  // "Show badges" (docs/BADGES.md), on unless turned off
+  badges: boolean;
   today: string;
   version: string;
   city?: string;
@@ -140,7 +142,8 @@ export interface ReleasePage {
   days_with_notes: number;
   notes: number;
   longest: number;
-  badges: { coverage: string | null; collected: { id: string; name: string; count: number }[] };
+  // absent with badges turned off
+  badges?: { coverage: string | null; collected: { id: string; name: string; count: number }[] };
   tags: { tag: string; notes: number }[];
   days: Day[];
   after?: string | null;

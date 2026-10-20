@@ -310,6 +310,56 @@ test('import ledger uses DynamoDB string sets and repeated ids are unioned', asy
     s.memory.calls.find((c) => c.name === 'UpdateCommand')?.input.ExpressionAttributeValues?.[':i'] instanceof Set
   );
 });
+test('seen badges are a string set ADDed with the account proof, in exact SDK requests', async () => {
+  const s = setup();
+  assert.deepEqual(await s.seenBadges('u'), new Set());
+  s.memory.calls.length = 0;
+  assert.equal(await s.addSeenBadges('u', [], 'now'), true);
+  assert.deepEqual(s.memory.calls, []);
+  assert.equal(await s.addSeenBadges('u', ['hello', 'delivery:alpha'], 'now'), true);
+  assert.deepEqual(s.memory.calls, [
+    {
+      name: 'TransactWriteCommand',
+      input: {
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: 'T',
+              Key: { pk: 'USER#u', sk: 'PROFILE' },
+              ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting)'
+            }
+          },
+          {
+            Update: {
+              TableName: 'T',
+              Key: { pk: 'USER#u', sk: 'BADGES' },
+              UpdateExpression: 'ADD seen :s SET updated_at = :t',
+              ExpressionAttributeValues: { ':s': new Set(['hello', 'delivery:alpha']), ':t': 'now' }
+            }
+          }
+        ]
+      }
+    }
+  ]);
+  await s.addSeenBadges('u', ['hello', 'web'], 'later');
+  s.memory.calls.length = 0;
+  assert.deepEqual(await s.seenBadges('u'), new Set(['hello', 'delivery:alpha', 'web']));
+  assert.deepEqual(s.memory.calls, [
+    {
+      name: 'GetCommand',
+      input: {
+        TableName: 'T',
+        Key: { pk: 'USER#u', sk: 'BADGES' },
+        ProjectionExpression: 'seen',
+        ConsistentRead: true
+      }
+    }
+  ]);
+  // A deleted or deleting account gains no orphan row.
+  s.seed({ ...profile, mcp_deleting: true });
+  assert.equal(await s.addSeenBadges('u', ['ack'], 'now'), false);
+  assert.ok(!(await s.seenBadges('u')).has('ack'));
+});
 test('weather first write, replacement, conditional rename and deletion retain newer location', async () => {
   const s = setup();
   const fields = { lat: 44.75, lon: -93.1, city: 'Old', region: '', country: 'US', high_c: 20.3 };

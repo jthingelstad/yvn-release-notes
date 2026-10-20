@@ -82,14 +82,18 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
     await keepWeather(service, uid, p, day);
     const saved = { sk: `NOTE#${day}#${noteId}`, ...item },
       view = await noteView(saved, String(p.tz), Boolean(p.transcribe), links);
-    // What it earned, for the line under the form. Never a reason to fail
-    // a saved note: without it the answer just has no `unlocked`.
+    // What it earned, for the line under the form, and then seen, so the
+    // email does not say it again. Never a reason to fail a saved note:
+    // without it the answer just has no `unlocked`. Nothing with badges off.
     let unlocked: Unlocked[] | null = null;
-    try {
-      unlocked = await unlockedBy(store, uid, p, localDay(ctx.now, String(p.tz)), saved);
-    } catch {
-      service.log({ event: 'badges-error', user: uid, date: day });
-    }
+    if (p.badges !== false)
+      try {
+        unlocked = await unlockedBy(store, uid, p, localDay(ctx.now, String(p.tz)), saved);
+        const earned = unlocked.filter((u) => !u.album).map((u) => u.key);
+        if (earned.length) await store.addSeenBadges(uid, earned, iso(ctx.now));
+      } catch {
+        service.log({ event: 'badges-error', user: uid, date: day });
+      }
     return json(unlocked ? { ...view, unlocked } : view, 201);
   }
   const old = id ? await store.note(uid, day, id, true) : null;

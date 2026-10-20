@@ -309,7 +309,73 @@ test('on birthday closed release counts imported notes, paused gaps and photos',
   await f.store.putPause('u', '2026-10-10', '2026-10-10', 'now');
   const sub = (await f.store.getSubscriber('u'))!,
     closed = await sender.readClosed(f.services, sub, day, await f.store.noteIndex('u'));
-  assert.deepEqual(closed, { age: 53, days: 2, notes: 3, photos: 1, longest: 2 });
+  assert.deepEqual(closed, {
+    age: 53,
+    days: 2,
+    notes: 3,
+    photos: 1,
+    longest: 2,
+    badges: { coverage: null, collected: [] }
+  });
+  sub.badges = false;
+  assert.ok(!('badges' in (await sender.readClosed(f.services, sub, day, await f.store.noteIndex('u')))!));
+});
+test('the email names new badges once, beside a special day; a failed read or "Show badges" off sends without', async () => {
+  // 2026-10-13 is 4.4.300 for this Ada; yesterday's reply earned the firsts.
+  const reply = note('2026-10-12', 'r1', 'A synthetic reply', {
+      subject: 'Re: today',
+      written_at: '2026-10-12T22:00:00Z'
+    }),
+    f = setup({ birthday: '1981-12-17' });
+  f.store.seed(reply);
+  await f.store.addSeenBadges('u', ['hello'], 'before');
+  const dry = ((await sender.handler({ dry_run: true }, null, f.services)).results as Item[])[0]!;
+  assert.deepEqual([dry.badges, dry.special_day], [2, true]);
+  await sender.handler({}, null, f.services);
+  const sent = await simpleParser(f.mail.messages[0]!.raw);
+  assert.match(sent.text!, /^You're 4\.4\.300 today\. 4\.4\.300 is a round number\.$/m);
+  assert.match(
+    sent.text!,
+    /^New badges: ACK and Commit message\. See your badges: https:\/\/notes\.yourversionnumber\.com\/badges\/$/m
+  );
+  assert.ok(!sent.text!.includes('Hello, world'), 'seen before');
+  assert.match(String(sent.html), /id="badge-news"/);
+  assert.deepEqual(await f.store.seenBadges('u'), new Set(['hello', 'ack', 'commit']));
+  // Told once: the next morning has nothing new and no special day.
+  const next = Date.parse('2026-10-14T11:00:00Z') / 1000,
+    later = (
+      (await sender.handler({ dry_run: true, now: new Date(next * 1000).toISOString() }, null, f.services))
+        .results as Item[]
+    )[0]!;
+  assert.deepEqual([later.version, later.badges, later.special_day], ['4.4.301', 0, false]);
+
+  // A failed read: the email goes, with the clause and without the line.
+  const g = setup({ birthday: '1981-12-17' });
+  g.store.seed(reply);
+  g.store.seenBadges = async () => {
+    throw Object.assign(new Error('private'), { name: 'ProvisionedThroughputExceededException' });
+  };
+  await sender.handler({}, null, g.services);
+  const failed = await simpleParser(g.mail.messages[0]!.raw);
+  assert.match(failed.text!, /4\.4\.300 is a round number\./);
+  assert.ok(!failed.text!.includes('New badge'));
+  assert.equal(g.store.memory.read({ pk: 'USER#u', sk: 'BADGES' }), null);
+  assert.deepEqual(
+    g.logs.filter((l) => l.event === 'badges-error'),
+    [{ event: 'badges-error', user: 'u', date: day, error: 'ProvisionedThroughputExceededException' }]
+  );
+
+  // "Show badges" off: neither line, nothing read or kept.
+  const h = setup({ birthday: '1981-12-17', badges: false });
+  h.store.seed(reply);
+  await sender.handler({}, null, h.services);
+  const off = await simpleParser(h.mail.messages[0]!.raw);
+  for (const text of [off.text!, String(off.html)]) {
+    assert.ok(!text.includes('round number'));
+    assert.ok(!text.includes('New badge'));
+  }
+  assert.equal(h.store.memory.read({ pk: 'USER#u', sk: 'BADGES' }), null);
+  assert.ok(!JSON.stringify([f.logs, g.logs, h.logs]).includes('synthetic'));
 });
 test('photo ordering, caps, stale size protection and opt-in-only alt text', async () => {
   const f = setup(),

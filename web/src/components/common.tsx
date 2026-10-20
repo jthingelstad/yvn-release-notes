@@ -49,7 +49,7 @@ export function Bar({ nav = true, current, children }: { nav?: boolean; current?
   const path = useRouterState({ select: (s) => s.location.pathname });
   const here =
     current ||
-    (/^\/(day|release|timeline)\//.test(path)
+    (/^\/(day|release|timeline|badges)\//.test(path)
       ? '/timeline/'
       : /^\/(tag|search)\//.test(path)
         ? '/search/'

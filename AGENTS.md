@@ -84,7 +84,7 @@ code-point note limits and Unicode case folding compatible with existing data.
 Where things are (each module's design comment explains its contract):
 
 - `packages/domain/`: `dates.ts`, `version.ts`, `notes.ts`, `tags.ts`, `upcoming.ts`,
-  `streak.ts`, `search.ts`, `unicode.ts` and `unicode-data.ts`. The version
+  `streak.ts`, `badges.ts`, `search.ts`, `unicode.ts` and `unicode-data.ts`. The version
   arithmetic follows the site's `computeVersion`; `releaseSpan` defines a
   year of life, birthday to birthday. `tests-node/fixtures/versions.json`
   is generated from the site's own function by `scripts/gen-version-fixtures.mjs`
@@ -93,7 +93,8 @@ Where things are (each module's design comment explains its contract):
   extraction, the daily email, and sign-in/deletion emails.
 - `packages/backend/{store,store-types,services,aws}.ts`: the one table's key
   layout, document-value SDK requests and injected service contracts/adapters.
-  `census.ts` supplies the count-only dashboard.
+  `census.ts` supplies the count-only dashboard. `badges.ts` reads one
+  subscriber's badge facts (`docs/BADGES.md`).
 - `packages/backend/{links,media,uploads,exif,thumbs,places,weather}.ts`:
   guarded title fetches, private file handling, image metadata, thumbnails,
   city naming and weather. Sharp is confined to thumbnail/image processing;

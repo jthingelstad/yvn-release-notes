@@ -70,6 +70,11 @@ nothing there links here yet: that is Jamie's call.
 9. **Since**: tags (`/tag/?t=`) and search (`/search/`), photos,
    recordings and PDFs added on the web (`packages/backend/media.ts`), recording on the
    page (Front end, below). AGENTS.md has their rules.
+10. **Badges** (`/badges/`, `docs/BADGES.md`, 2026-10-20): what writing
+    regularly has earned, each stamped with the version it came true on.
+    Linked from the streak line on Today and from the Archive; no new
+    navigation item. Worked out on each read from stored fields
+    (`packages/domain/badges.ts`), with nothing stored of its own yet.
 
 ## Defaults (Jamie can change any)
 
@@ -181,7 +186,7 @@ notes.yourversionnumber.com
   then the email; `/#sign-in` the email alone), `/signin/` (the link lands
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
-  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/search/`,
+  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/badges/`, `/search/`,
   `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/settings/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
   `/connect/` approves an external agent request whose opaque id stays in the fragment.
   `/admin/` manages product updates; `/admin-users/` shows subscriber metadata. Administration is visible in settings only to the configured administrator.
@@ -349,6 +354,7 @@ or new CSP exception.
 | `GET /api/days?before=&limit=` | the timeline, 30 days a page; `before` in the answer is the next page's cursor |
 | `GET /api/releases` | the releases index: each release with notes, and the current one (`current`), newest first, with `from`, `through`, `days` (with notes) and `notes`; from the notes' keys alone |
 | `GET /api/releases/{v}?after=&limit=` | one release (`4.5`): its head (`from`, `through`, `current`, `days_with_notes`, `notes`, `longest`, `tags` by count) and its days with notes, oldest first, 30 a page; `after` in the answer is the next page's cursor. 404 `release` for one not begun |
+| `GET /api/badges` | the subscriber's badges as of their `today` (with `tz` and today's `version`): `count`; `earned`, newest first, each with `key` (`id`, or `id:level` for a track tier), `name`, `line`, `shelf`, `earned` (the day it came true), and the `day` and `version` it is stamped with (a collectible's special day); `tracks` (`tier` 0-5, `level`, `best`, `now`, `since`, `next`); `release`, this release's `days`, `percent`, coverage `level`, `next` only while it can still be reached, `following` (the next release and its date), its `collected` special days and the next three `ahead` (never a secret one); `missing`, what is still to find, a secret one as its `hint` alone. Read from the notes' stored fields, never their text |
 | `GET /api/days/{date}` | one day: version, notes (each note's `parts` is its text split into strings and links by name), `weather`, the day's recorded weather as a line, when kept, and `where`, the day's own place by name, when set |
 | `POST /api/days/{date}/notes` | write for today or a past day; `uploads` attaches files, and a note with files may have no text; `place` (a city from `/api/places`) says where |
 | `PUT/DELETE /api/days/{date}/place` | set the day's own place (a city from `/api/places`) or clear it; answers `{date, where, weather}`, the past day's weather fetched again for it |

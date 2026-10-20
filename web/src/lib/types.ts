@@ -1,4 +1,5 @@
 // What the API answers (server/app/), as the pages read it.
+import type { Badges as Shelf } from '../../../packages/domain/badges.ts';
 
 // A note's text as shown: plain strings, links by name (links.segments) and
 // hashtags (tags.split).
@@ -164,3 +165,7 @@ export interface ZipStatus {
   size?: number;
   files?: number;
 }
+
+// GET /api/badges: everything earned, newest first, the tracks, this
+// release's album and what is still to find, as of the subscriber's today.
+export type Badges = Shelf & { today: string; tz: string; version: string };

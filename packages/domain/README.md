@@ -10,6 +10,7 @@ clock arguments to `localDay` and `iso` are epoch seconds.
 - `notes.ts`: stored-record interfaces, timestamps, names/maps and attributed combined text.
 - `tags.ts`: hashtag spans use code-point offsets, matching Python. Render via `split`.
 - `streak.ts`: email streaks through yesterday and bounded pause expansion.
+- `badges.ts`: the badge catalog and `evaluateBadges`, a replay of note facts in writing order (`docs/BADGES.md`).
 - `search.ts`: shared AND/quoted-term matching against existing note fields.
 - `unicode.ts`: code-point length/slicing, legacy whitespace and search normalization.
 

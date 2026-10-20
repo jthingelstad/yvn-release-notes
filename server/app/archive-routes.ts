@@ -9,6 +9,7 @@ import { searchTerms, searchedText } from '../../packages/domain/search.ts';
 import { pythonTrim, codePointLength } from '../../packages/domain/unicode.ts';
 import { rounded } from '../../packages/backend/places.ts';
 import { badges } from '../../packages/backend/badges.ts';
+import { collectedOn, releaseBadges } from '../../packages/domain/badges.ts';
 import { json, body, dayFrom, dateOf, pageLimit } from './requests.ts';
 export async function renderedDays(
   service: SessionService,
@@ -90,8 +91,11 @@ export async function archiveRoutes(
     return json({ today, tz: p.tz, days: views, before: picked.length > limit ? page.at(-1) : null });
   }
   if (pattern === '/api/days/{date}') {
-    const day = dayFrom(p, args[0], ctx.now);
-    return json({ ...(await renderedDays(service, uid, p, [day]))[0]!, tz: p.tz, today: day === today });
+    const day = dayFrom(p, args[0], ctx.now),
+      view = (await renderedDays(service, uid, p, [day]))[0]!,
+      // The special days a day with notes collected (docs/BADGES.md).
+      collected = (view.notes as unknown[]).length ? collectedOn(String(p.birthday), day) : [];
+    return json({ ...view, ...(collected.length ? { collected } : {}), tz: p.tz, today: day === today });
   }
   if (pattern === '/api/releases') {
     const current = computeVersion(String(p.birthday), today).age,
@@ -146,6 +150,7 @@ export async function archiveRoutes(
       days_with_notes: have.length,
       notes: index.length,
       longest: computeStreak(new Set(have), addDays(shownLast, 1), paused).longest,
+      badges: releaseBadges(String(p.birthday), age, new Set(have)),
       tags: [...counts]
         .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
         .map(([tag, notes]) => ({ tag, notes })),

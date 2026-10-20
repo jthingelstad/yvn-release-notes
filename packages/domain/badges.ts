@@ -207,6 +207,7 @@ export interface Track {
 export interface AlbumDay {
   day: Day;
   version: string;
+  ids: string[];
   names: string[];
 }
 export interface SpecialDay {
@@ -240,6 +241,15 @@ export interface Badges {
   tracks: Track[];
   release: ReleaseAlbum;
   missing: Missing[];
+}
+/** Something a save just earned: a badge, or (`album`) a special day of this
+ * release collected again, its badge earned in an earlier one. */
+export interface Unlocked {
+  key: string;
+  id: string;
+  name: string;
+  version: string;
+  album?: true;
 }
 
 /** The special days a version is: kind ids in catalog order. */
@@ -492,11 +502,10 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
     left = daysBetween(today, through) + (have.has(today) ? 0 : 1),
     reached = TRACKS[3].at.filter((t) => inRelease >= needed(t, v.cycleDays)).length,
     target = reached < 5 ? needed(TRACKS[3].at[reached]!, v.cycleDays) : 0;
-  const named = (d: SpecialDay, all: boolean): AlbumDay => ({
-    day: d.day,
-    version: d.version,
-    names: d.kinds.filter((k) => all || !INFO.get(k)!.secret).map((k) => INFO.get(k)!.name)
-  });
+  const named = (d: SpecialDay, all: boolean): AlbumDay => {
+    const ids = d.kinds.filter((k) => all || !INFO.get(k)!.secret);
+    return { day: d.day, version: d.version, ids, names: ids.map((k) => INFO.get(k)!.name) };
+  };
   const ahead = [...album(birthday, v.age), ...album(birthday, v.age + 1)]
     .filter((d) => d.day >= today && !have.has(d.day))
     .map((d) => named(d, false))
@@ -532,6 +541,55 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
         ? { hint: b.hint, shelf: b.shelf, secret: true }
         : { id: b.id, name: b.name, hint: b.hint, shelf: b.shelf }
     )
+  };
+}
+
+/** What a save earned: what `after` (with the new note) has that `before`
+ * (without it) did not, in the order it came true, then this release's
+ * special days it collected for badges earned before. */
+export function unlocked(before: Badges, after: Badges): Unlocked[] {
+  const had = new Set(before.earned.map((e) => e.key)),
+    out: Unlocked[] = after.earned
+      .filter((e) => !had.has(e.key))
+      .reverse()
+      .map((e) => ({ key: e.key, id: e.id, name: e.name, version: e.version })),
+    told = new Set(out.map((u) => u.id)),
+    collected = new Set(before.release.collected.map((d) => d.day));
+  for (const d of after.release.collected)
+    if (!collected.has(d.day))
+      d.ids.forEach((id, i) => {
+        if (!told.has(id)) out.push({ key: `${id}@${d.day}`, id, name: d.names[i]!, version: d.version, album: true });
+      });
+  return out;
+}
+
+/** The special days a day with notes collected, by name (a Day page's
+ * "Collected here"). */
+export function collectedOn(birthday: Day, day: Day): string[] {
+  const v = computeVersion(birthday, day);
+  return specialKinds(v.major, v.minor, v.patch, v.cycleDays).map((k) => INFO.get(k)!.name);
+}
+
+/** One release's badges, for its page head: the coverage tier its days with
+ * notes reached, and the special days collected, by kind, with how many. */
+export function releaseBadges(
+  birthday: Day,
+  age: number,
+  have: ReadonlySet<Day>
+): { coverage: string | null; collected: { id: string; name: string; count: number }[] } {
+  const [first, last] = releaseSpan(birthday, age),
+    cycle = computeVersion(birthday, first).cycleDays;
+  let days = 0;
+  for (const d of have) if (d >= first && d <= last) days++;
+  const reached = TRACKS[3].at.filter((t) => days >= needed(t, cycle)).length,
+    counts = new Map<string, number>();
+  for (const d of album(birthday, age))
+    if (have.has(d.day)) for (const k of d.kinds) counts.set(k, (counts.get(k) ?? 0) + 1);
+  return {
+    coverage: reached ? LEVELS[reached - 1]! : null,
+    collected: [...counts]
+      .sort(([a], [b]) => ORDER.get(a)! - ORDER.get(b)!)
+      .map(([id, count]) => ({ id, name: INFO.get(id)!.name, count }))
   };
 }
 

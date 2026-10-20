@@ -5,6 +5,8 @@ import { attachUploads, startUpload } from '../../packages/backend/uploads.ts';
 import { mediaLinks, noteView, dayView } from '../../packages/backend/views.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { collect, type Link } from '../../packages/backend/links.ts';
+import { unlockedBy } from '../../packages/backend/badges.ts';
+import type { Unlocked } from '../../packages/domain/badges.ts';
 import * as media from '../../packages/backend/media.ts';
 import { keepDay, placeOf } from '../../packages/backend/weather.ts';
 import { localDay, iso, validTimezone } from '../../packages/domain/dates.ts';
@@ -78,10 +80,17 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
       throw error;
     }
     await keepWeather(service, uid, p, day);
-    return json(
-      await noteView({ sk: `NOTE#${day}#${noteId}`, ...item }, String(p.tz), Boolean(p.transcribe), links),
-      201
-    );
+    const saved = { sk: `NOTE#${day}#${noteId}`, ...item },
+      view = await noteView(saved, String(p.tz), Boolean(p.transcribe), links);
+    // What it earned, for the line under the form. Never a reason to fail
+    // a saved note: without it the answer just has no `unlocked`.
+    let unlocked: Unlocked[] | null = null;
+    try {
+      unlocked = await unlockedBy(store, uid, p, localDay(ctx.now, String(p.tz)), saved);
+    } catch {
+      service.log({ event: 'badges-error', user: uid, date: day });
+    }
+    return json(unlocked ? { ...view, unlocked } : view, 201);
   }
   const old = id ? await store.note(uid, day, id, true) : null;
   if (!old) reject(404, 'note');

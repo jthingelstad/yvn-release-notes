@@ -51,6 +51,10 @@ export const thisYearOf = (today: string) => Number(today.slice(0, 4));
 
 export const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
 
+// "A, B and C".
+export const listed = (items: string[]) =>
+  items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? '');
+
 export function megabytes(n: number): string {
   if (n < 1e6) return `${Math.max(1, Math.round(n / 1e3))} KB`;
   return n < 1e9 ? `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB` : `${(n / 1e9).toFixed(1)} GB`;

@@ -19,7 +19,9 @@ test('JSON and Markdown owner exports match 16 independent Python goldens', () =
   for (const f of fixtures) {
     const files = f.with_files ? filePaths(f.items) : undefined;
     if (f.with_files) assert.deepEqual(files, f.files);
-    const data = build(f.items, '2026-10-13T07:00:00Z', files);
+    // Badges came after Python; their own test below covers them.
+    const { badges, ...data } = build(f.items, '2026-10-13T07:00:00Z', files);
+    assert.ok(badges === undefined || badges.length > 0);
     assert.deepEqual(data, f.data);
     assert.equal(markdown(data), f.markdown);
     const serialized = JSON.stringify(data);
@@ -116,6 +118,37 @@ test('disk zip contains complete data and original files; missing files remain c
       .get(prefix + 'release-notes.json')!
       .toString()
       .includes('media/u1')
+  );
+});
+test('both exports carry badges, oldest first, worked out from the rows at export time', async () => {
+  const context = await setup();
+  assert.equal(await run(context, 'u1', 'build-a'), 'ready');
+  const row = await context.store.export('u1'),
+    zip = await unzip((await context.objects.get(String(row?.export_key))).body),
+    prefix = 'release-notes-2026-10-13/',
+    data = JSON.parse(zip.get(prefix + 'release-notes.json')!.toString()) as ExportData,
+    md = zip.get(prefix + 'release-notes.md')!.toString();
+  assert.deepEqual(
+    data.badges?.map((b) => b.id),
+    ['hello', 'web', 'assets', 'audio', 'commit', 'fullstack']
+  );
+  assert.deepEqual(data.badges?.[0], {
+    id: 'hello',
+    name: 'Hello, world',
+    line: 'Your first note.',
+    version: '4.5.120',
+    day: '2026-10-12',
+    earned: '2026-10-12'
+  });
+  assert.match(
+    md,
+    /\n## Badges\n\n6 badges, each with the version it was earned on\.\n\n- 4\.5\.120: Hello, world\. Your first note\.\n/
+  );
+  assert.ok(md.indexOf('## Badges') < md.indexOf('Lake day'));
+  // No notes, no badges.
+  assert.equal(
+    build([{ sk: 'PROFILE', birthday: '1981-06-14', tz: 'America/Chicago' }], '2026-10-13T07:00:00Z').badges,
+    undefined
   );
 });
 test('ZIP carries Upcoming separately in both exports without adding journal notes', async () => {

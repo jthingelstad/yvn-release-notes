@@ -442,6 +442,53 @@ test('a full-length note of four-byte characters fits the body cap; only oversiz
   assert.equal(huge.r.status, 413);
   assert.equal((await s.store.allNotes('u')).length, 1);
 });
+test('a saved note answers with what it unlocked; days and releases say what they collected', async () => {
+  const s = await setup(),
+    keys = (b: Item) => (b.unlocked as Item[]).map((u) => u.key),
+    read = async (method: string, path: string, value?: unknown) => (await s.call(method, path, value)).b as Item,
+    first = await s.call('POST', '/api/days/2026-10-13/notes', { text: 'Short words', tz: 'America/Chicago' });
+  assert.equal(first.r.status, 201);
+  assert.deepEqual(keys(first.b as Item), ['hello', 'web', 'commit']);
+  assert.deepEqual((first.b as Item).unlocked, [
+    { key: 'hello', id: 'hello', name: 'Hello, world', version: '4.5.121' },
+    { key: 'web', id: 'web', name: 'Web release', version: '4.5.121' },
+    { key: 'commit', id: 'commit', name: 'Commit message', version: '4.5.121' }
+  ]);
+  assert.deepEqual((await read('POST', '/api/days/2026-10-13/notes', { text: 'Again' })).unlocked, []);
+  // 4.4.100 imported, then 4.5.100 filled in: a hotfix, a twin, and this
+  // release's round number for the album.
+  await s.store.putNote('u', '2025-09-22', 'd1', { text: 'Old', source: 'import', written_at: '2025-09-22T18:00:00Z' });
+  const late = await s.call('POST', '/api/days/2026-09-22/notes', { text: 'Filled in', tz: 'America/Chicago' });
+  assert.deepEqual((late.b as Item).unlocked, [
+    { key: 'hotfix', id: 'hotfix', name: 'Hotfix', version: '4.5.121' },
+    { key: 'compatible', id: 'compatible', name: 'Backward compatible', version: '4.5.100' },
+    { key: 'round@2026-09-22', id: 'round', name: 'Round number', version: '4.5.100', album: true }
+  ]);
+  assert.deepEqual((await read('GET', '/api/days/2026-09-22')).collected, ['Round number']);
+  assert.ok(!('collected' in (await read('GET', '/api/days/2026-09-21'))));
+  assert.deepEqual((await read('GET', '/api/releases/4.5')).badges, {
+    coverage: null,
+    collected: [{ id: 'round', name: 'Round number', count: 1 }]
+  });
+  assert.deepEqual((await read('GET', '/api/releases/4.3')).badges, { coverage: null, collected: [] });
+  for (const words of ['Short', 'Filled', 'Old']) assert.ok(!JSON.stringify((late.b as Item).unlocked).includes(words));
+  // A failed read never fails the note: it is saved, with no `unlocked`.
+  // (The web's store is its own wrapper round the same client.)
+  const send = s.store.client.send.bind(s.store.client);
+  s.store.client.send = async (command) => {
+    if (command.constructor.name === 'QueryCommand' && JSON.stringify(command.input).includes('NOTE#'))
+      throw new Error('read');
+    return send(command);
+  };
+  const failed = await s.call('POST', '/api/days/2026-10-13/notes', { text: 'Still saved' });
+  assert.equal(failed.r.status, 201);
+  assert.ok(!('unlocked' in (failed.b as Item)));
+  assert.deepEqual(
+    s.logs.filter((l) => l.event === 'badges-error'),
+    [{ event: 'badges-error', user: 'u', date: '2026-10-13' }]
+  );
+});
+
 test('badges count stored fields, never answer with note text, and tell a reply from the standing address', async () => {
   const s = await setup(),
     empty = (await s.call('GET', '/api/badges')).b as Item;

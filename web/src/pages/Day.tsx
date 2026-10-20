@@ -6,7 +6,7 @@ import { AppLink, Bar, Digits, Failed, Loading, useTitle, WeatherCredit } from '
 import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
 import { DayWhere } from '../components/where.tsx';
-import { addDays, dayName, shortDay, thisYearOf } from '../lib/format.ts';
+import { addDays, dayName, listed, shortDay, thisYearOf } from '../lib/format.ts';
 import { useMe, useQueryParam } from '../lib/nav.ts';
 import { dayQuery, pickDay } from '../lib/queries.ts';
 import type { Me } from '../lib/types.ts';
@@ -40,6 +40,11 @@ export function Day() {
           </p>
           <DayWhere key={d.date} day={d.date} where={d.where} />
           <NoteList day={d.date} notes={d.notes} tz={d.tz} version={d.version} />
+          {d.collected && (
+            <p className="hint collected-here" id="collected-here">
+              Collected here: <AppLink href="/badges/">{listed(d.collected)}</AppLink>.
+            </p>
+          )}
           <p className="hint" id="none" hidden={d.notes.length > 0}>
             No notes for this release yet.
           </p>

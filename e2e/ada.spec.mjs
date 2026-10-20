@@ -12,7 +12,8 @@
 // and cleared, its weather following.
 // The standing address: shown in settings, copied, and replaced.
 // Releases: the Timeline's index, and a release's page, oldest first.
-// Badges: reached from Today, the release's album, the tracks and the shelf.
+// Badges: reached from Today, the release's album, the tracks and the shelf;
+// a save's unlock line, and what a day and a release collected.
 import { test, expect } from '@playwright/test';
 
 // A real 1 x 1 PNG, so the browser draws it, and a small PDF.
@@ -362,4 +363,37 @@ test('a release index that fails to load says so, and the days still show', asyn
   await expect(page.locator('#releases')).toHaveCount(0);
   await expect(page.getByRole('status')).toHaveText('Couldn’t load this just now. Reload to try again.');
   await expect(page.locator('.tday').first()).toBeVisible();
+});
+
+test('a note that earns a badge says so under the form, and the count goes up', async ({ page }) => {
+  await page.goto('/today/');
+  const link = page.locator('#badges-link');
+  await expect(link).toHaveText(/^\d+ badges?$/);
+  const had = Number((await link.textContent()).split(' ')[0]);
+  const unlock = page.locator('#unlock');
+  await expect(unlock).toBeHidden();
+  // More than 1,000 words in a day earns RFC.
+  await page.getByRole('textbox', { name: 'Add to today' }).fill(Array.from({ length: 1001 }, (_, i) => `word${i}`).join(' '));
+  await page.getByRole('button', { name: 'Save note', exact: true }).click();
+  await expect(unlock).toHaveText(/^Unlocked: RFC, \d+\.\d+\.\d+\. See your badges$/);
+  await expect(unlock.locator('svg')).toBeVisible();
+  await expect(link).toHaveText(`${had + 1} badges`);
+  await unlock.getByRole('link', { name: 'See your badges' }).click();
+  await expect(page).toHaveURL(/\/badges\/$/);
+  await expect(page.locator('#badges-lede')).toContainText('Latest: RFC');
+});
+
+test('a past special day: the unlock, the Day page line and the release head', async ({ page }) => {
+  const me = await (await page.request.get('/api/me')).json();
+  // This release's first day, Ada's birthday: Release day.
+  let first = me.today.slice(0, 4) + me.birthday.slice(4);
+  if (first > me.today) first = String(Number(first.slice(0, 4)) - 1) + first.slice(4);
+  await page.goto(`/day/?d=${first}`);
+  await expect(page.locator('#collected-here')).toHaveCount(0);
+  await page.locator('#note-form textarea').fill('Cake for breakfast.');
+  await page.locator('#note-form button[type=submit]').click();
+  await expect(page.locator('#unlock')).toContainText('Release day');
+  await expect(page.locator('#collected-here')).toHaveText('Collected here: Release day.');
+  await page.goto('/release/?v=4.5');
+  await expect(page.locator('#release-badges')).toContainText('Collected: Release day');
 });

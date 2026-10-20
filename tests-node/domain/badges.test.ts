@@ -5,14 +5,18 @@ import { computeVersion } from '../../packages/domain/version.ts';
 import {
   album,
   BADGES,
+  collectedOn,
   evaluateBadges,
+  releaseBadges,
   specialKinds,
+  unlocked,
   type BadgeFacts,
   type BadgeNote,
   type Badges
 } from '../../packages/domain/badges.ts';
 
-// Fictional subscribers only. Ada is the dev server's: born 1987-03-14.
+// Fictional subscribers only. Ada here is born 1987-03-14 (the dev
+// server's Ada is another, born 1981-06-14).
 const ADA = '1987-03-14';
 const note = (day: Day, extra: Partial<BadgeNote> = {}): BadgeNote => ({
   day,
@@ -49,9 +53,9 @@ test("Ada's album: the next three special days, never a secret one", () => {
   const b = evaluateBadges(facts([]), '2026-10-20');
   assert.equal(v('2026-10-20'), '3.9.220');
   assert.deepEqual(b.release.ahead, [
-    { day: '2027-01-01', version: '3.9.293', names: ['Palindrome'] },
-    { day: '2027-01-08', version: '3.9.300', names: ['Round number'] },
-    { day: '2027-03-13', version: '3.9.364', names: ['Code freeze'] }
+    { day: '2027-01-01', version: '3.9.293', ids: ['palindrome'], names: ['Palindrome'] },
+    { day: '2027-01-08', version: '3.9.300', ids: ['round'], names: ['Round number'] },
+    { day: '2027-03-13', version: '3.9.364', ids: ['code-freeze'], names: ['Code freeze'] }
   ]);
   assert.deepEqual(b.release.following, { v: '4.0', date: '2027-03-14' });
   // 3.9.256 and 3.9.314 are secret, so they are found, never announced.
@@ -151,8 +155,8 @@ test('collectibles carry the special version, whenever the note was written', ()
   const day42 = addDays('2026-03-14', 42),
     now = evaluateBadges(facts([note(day42), note('2026-03-14')]), '2026-10-20');
   assert.deepEqual(now.release.collected, [
-    { day: '2026-03-14', version: '3.9.0', names: ['Release day'] },
-    { day: day42, version: '3.9.42', names: ['Don’t panic'] }
+    { day: '2026-03-14', version: '3.9.0', ids: ['release-day'], names: ['Release day'] },
+    { day: day42, version: '3.9.42', ids: ['dont-panic'], names: ['Don’t panic'] }
   ]);
   assert.ok(got(now, 'release-day') && got(now, 'dont-panic'));
 });
@@ -236,4 +240,62 @@ test('Version history: notes in five releases, imports included', () => {
   const b = evaluateBadges(facts(days.map((d) => note(d, { source: 'import' }))), '2026-10-20');
   assert.equal(got(b, 'history')!.day, days[4]);
   assert.ok(keys(b).has('hello'));
+});
+
+test('a save unlocks what the shelf lacked without it, in the order it came true', () => {
+  const first = note('2026-10-20');
+  assert.deepEqual(
+    unlocked(evaluateBadges(facts([]), '2026-10-20'), evaluateBadges(facts([first]), '2026-10-20')).map((u) => u.key),
+    ['hello', 'web']
+  );
+  // Nothing new: an empty list, never a repeat.
+  const again = facts([first, note('2026-10-20', { at: '2026-10-20T19:00:00Z' })]);
+  assert.deepEqual(unlocked(evaluateBadges(facts([first]), '2026-10-20'), evaluateBadges(again, '2026-10-20')), []);
+});
+
+test('a special day collected again unlocks its album entry, after any new badge', () => {
+  const lastYear = addDays('2025-03-14', 300),
+    today = '2027-01-08';
+  assert.deepEqual([v(lastYear), v(today)], ['3.8.300', '3.9.300']);
+  const before = facts([note(lastYear)]),
+    after = facts([note(lastYear), note(today)]);
+  assert.deepEqual(unlocked(evaluateBadges(before, today), evaluateBadges(after, today)), [
+    { key: 'compatible', id: 'compatible', name: 'Backward compatible', version: '3.9.300' },
+    { key: 'round@2027-01-08', id: 'round', name: 'Round number', version: '3.9.300', album: true }
+  ]);
+  // The first round number is the badge itself, told once.
+  assert.deepEqual(
+    unlocked(evaluateBadges(facts([]), lastYear), evaluateBadges(facts([note(lastYear)]), lastYear)).map((u) => [
+      u.key,
+      u.album ?? false
+    ]),
+    [
+      ['hello', false],
+      ['web', false],
+      ['round', false]
+    ]
+  );
+});
+
+test("a day's collected names, and a release's coverage and special days by kind", () => {
+  assert.deepEqual(collectedOn(ADA, '2027-01-01'), ['Palindrome']);
+  assert.deepEqual(collectedOn(ADA, '2027-03-14'), ['Release day', 'Major release']);
+  assert.deepEqual(collectedOn(ADA, '2026-10-20'), []);
+  const start = '2026-03-14',
+    some = new Set([start, addDays(start, 100), addDays(start, 200), '2025-06-22']);
+  assert.deepEqual(releaseBadges(ADA, 39, some), {
+    coverage: null,
+    collected: [
+      { id: 'release-day', name: 'Release day', count: 1 },
+      { id: 'round', name: 'Round number', count: 2 }
+    ]
+  });
+  const every = new Set(Array.from({ length: 365 }, (_, i) => addDays(start, i))),
+    all = releaseBadges(ADA, 39, every);
+  assert.equal(all.coverage, 'LTS');
+  assert.ok(all.collected.some((c) => c.id === 'pi'));
+  assert.equal(
+    releaseBadges(ADA, 39, new Set(Array.from({ length: 92 }, (_, i) => addDays(start, i)))).coverage,
+    'alpha'
+  );
 });

@@ -609,3 +609,11 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
   .ahead .when { grid-column: 2; }
   .ahead .what { grid-column: 2; margin-bottom: 10px; }
 }
+
+/* A save that earns something says so under the form; its glyph stamps in
+   (no motion with reduced motion, by the rule above). */
+.unlock { margin: 14px 0 0; font-size: 16px; line-height: 1.5; }
+.unlock .stamp-in { display: inline-block; vertical-align: -7px; margin-right: 8px; animation: stamp-in 300ms cubic-bezier(.2, .8, .3, 1.2) both; }
+.unlock .icon { width: 26px; height: 26px; color: var(--blue); }
+@keyframes stamp-in { from { transform: scale(1.8) rotate(-24deg); opacity: 0; } to { transform: none; opacity: 1; } }
+.collected-here { margin: 12px 0 0; }

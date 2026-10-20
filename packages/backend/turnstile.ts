@@ -79,6 +79,25 @@ export function turnstileToken(body: Record<string, unknown>): string {
   return typeof raw === 'string' ? raw.trim().slice(0, 2048) : '';
 }
 
+/**
+ * What the page says about its own token: why it sent none
+ * (`turnstile_reason`, see `web/src/lib/turnstile.ts`) and how long it waited
+ * (`turnstile_wait_ms`). Logged beside the verdict only, never trusted: a bot
+ * can say anything, so a reason never changes what is allowed.
+ */
+export function turnstileClient(body: Record<string, unknown>): { client_reason?: string; client_wait_ms?: number } {
+  const reason = body.turnstile_reason,
+    wait = body.turnstile_wait_ms;
+  return {
+    ...(typeof reason === 'string' && reason
+      ? { client_reason: /^[a-z0-9:-]{1,40}$/.test(reason) ? reason : 'other' }
+      : {}),
+    ...(typeof wait === 'number' && Number.isFinite(wait)
+      ? { client_wait_ms: Math.min(Math.max(Math.round(wait), 0), 600000) }
+      : {})
+  };
+}
+
 async function siteverify(
   fetcher: typeof fetch,
   secret: string,

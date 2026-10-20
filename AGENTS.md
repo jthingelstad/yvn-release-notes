@@ -428,6 +428,12 @@ ZIP...` prints what an import would do, as counts (`--plan-out` to a
   `{"event":"turnstile",...}` line per request: `result` (`pass`, `fail`,
   `missing`, `error`, `unconfigured`, `off`), `mode`, `allowed`, `reused`,
   `codes`, and Cloudflare's `hostname`/`action`, never the address or token.
+  The page adds what it knows (2026-10-20, after the first week's four
+  `missing` were all real people): `client_wait_ms`, how long it waited
+  for a token, and with no token `client_reason` (`script-blocked`,
+  `script-empty`, `error:<code>`, `loading-timeout`, `solving-timeout`,
+  `interactive-timeout`, `no-slot`; `web/src/lib/turnstile.ts`). Both are
+  the page's word, logged and never trusted: a reason lets nothing through.
   **Mode** is `observe` (`DEFAULT_TURNSTILE_MODE`), which refuses nobody;
   `enforce` refuses only `fail` and `missing` (403 `turnstile`), and since
   a Cloudflare script outage also means `missing`, enforcing is its own
@@ -670,6 +676,10 @@ named native regressions and explicit obsolete implementation assumptions.
   on the web function's log group:
   `filter message.event = "turnstile" | stats count() by message.result, message.mode, message.codes`
   (add `| filter message.result != "pass"` to see what enforce would refuse).
+  Why a page sent no token:
+  `filter message.event = "turnstile" and message.result = "missing" | stats count() by message.client_reason`.
+  Enforce once `missing` from real people (a sign-in code verified right
+  after) is near zero.
   The function logs JSON under `message`, so a bare `event` matches nothing.
 - **Runtime secret**: the credentials live in one Secrets Manager secret,
   `yvn-release-notes-runtime` (stack parameter `RuntimeSecretName`), a

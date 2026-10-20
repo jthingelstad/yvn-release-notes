@@ -9,7 +9,7 @@ import { computeVersion } from '../../packages/domain/version.ts';
 import { pythonTrim, codePointLength } from '../../packages/domain/unicode.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { signinMessage, deleteMessage } from '../../packages/mail/auth.ts';
-import { checkTurnstile, turnstileToken } from '../../packages/backend/turnstile.ts';
+import { checkTurnstile, turnstileClient, turnstileToken } from '../../packages/backend/turnstile.ts';
 import { json, body } from './requests.ts';
 export async function accountRoutes(
   service: SessionService,
@@ -63,7 +63,8 @@ export async function accountRoutes(
       reused: turnstile.reused,
       codes: turnstile.codes.join(','),
       ...(turnstile.hostname ? { hostname: turnstile.hostname } : {}),
-      ...(turnstile.action ? { action: turnstile.action } : {})
+      ...(turnstile.action ? { action: turnstile.action } : {}),
+      ...turnstileClient(b)
     });
     if (!turnstile.allowed) reject(403, 'turnstile');
     await service.reserveMail(email, viewer);

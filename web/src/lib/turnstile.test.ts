@@ -97,6 +97,80 @@ describe('attachTurnstile', () => {
     expect(await waiting).toBe('');
   });
 
+  it('says why a request goes without a token, and how long it waited', async () => {
+    const blocked = attachTurnstile(
+      () => document.createElement('div'),
+      'signin',
+      async () => {
+        throw new Error('turnstile-blocked');
+      }
+    );
+    expect(await blocked.fieldsFor('ada@example.com')).toMatchObject({
+      turnstile_token: '',
+      turnstile_reason: 'script-blocked'
+    });
+
+    const empty = attachTurnstile(
+      () => document.createElement('div'),
+      'signin',
+      async () => {
+        throw new Error('turnstile-unavailable');
+      }
+    );
+    expect((await empty.fieldsFor('ada@example.com')).turnstile_reason).toBe('script-empty');
+
+    const noSlot = attachTurnstile(() => null, 'signin', standIn().load);
+    expect((await noSlot.fieldsFor('ada@example.com')).turnstile_reason).toBe('no-slot');
+
+    vi.useFakeTimers();
+    const erroring = standIn();
+    const e = attachTurnstile(() => document.createElement('div'), 'signin', erroring.load);
+    const failing = e.fieldsFor('ada@example.com');
+    await vi.advanceTimersByTimeAsync(0);
+    erroring.renders[0]!['error-callback']('110200');
+    await vi.advanceTimersByTimeAsync(5300);
+    expect((await failing).turnstile_reason).toBe('error:110200');
+
+    const neverLoads = attachTurnstile(
+      () => document.createElement('div'),
+      'signin',
+      () => new Promise<TurnstileApi>(() => {})
+    );
+    const loading = neverLoads.fieldsFor('ada@example.com');
+    await vi.advanceTimersByTimeAsync(5300);
+    expect(await loading).toMatchObject({ turnstile_token: '', turnstile_reason: 'loading-timeout' });
+    expect((await loading).turnstile_wait_ms).toBeGreaterThanOrEqual(5000);
+
+    const silent = standIn();
+    const quiet = attachTurnstile(() => document.createElement('div'), 'signin', silent.load);
+    const solving = quiet.fieldsFor('ada@example.com');
+    await vi.advanceTimersByTimeAsync(5300);
+    expect((await solving).turnstile_reason).toBe('solving-timeout');
+
+    const asking = standIn();
+    const checkbox = attachTurnstile(() => document.createElement('div'), 'signin', asking.load);
+    const shown = checkbox.fieldsFor('ada@example.com');
+    await vi.advanceTimersByTimeAsync(0);
+    asking.renders[0]!['before-interactive-callback']();
+    await vi.advanceTimersByTimeAsync(120300);
+    expect((await shown).turnstile_reason).toBe('interactive-timeout');
+  });
+
+  it('sends no reason with a token, and forgets an error once a token comes', async () => {
+    vi.useFakeTimers();
+    const s = standIn();
+    const t = attachTurnstile(() => document.createElement('div'), 'signin', s.load);
+    const waiting = t.fieldsFor('ada@example.com');
+    await vi.advanceTimersByTimeAsync(0);
+    s.renders[0]!['error-callback']('300030');
+    await vi.advanceTimersByTimeAsync(1000);
+    s.renders[0]!.callback('tok-retried');
+    const fields = await waiting;
+    expect(fields).toMatchObject({ turnstile_token: 'tok-retried' });
+    expect(fields).not.toHaveProperty('turnstile_reason');
+    expect(fields.turnstile_wait_ms).toBeGreaterThanOrEqual(1000);
+  });
+
   it('waits for a person working through a visible challenge', async () => {
     vi.useFakeTimers();
     const s = standIn();

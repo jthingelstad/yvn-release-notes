@@ -189,7 +189,7 @@ export function Home() {
       const address = email.current!.value.trim();
       const r = await api('POST', '/api/auth/start', {
         email: address,
-        turnstile_token: await turnstile.tokenFor(address)
+        ...(await turnstile.fieldsFor(address))
       });
       if (r.status !== 202) return startProblem.show(r.data, null, email.current?.form);
       store.set('rn-email', address);
@@ -207,7 +207,7 @@ export function Home() {
     const address = store.get('rn-email') || sentTo;
     const r = await api('POST', '/api/auth/start', {
       email: address,
-      turnstile_token: await turnstile.tokenFor(address)
+      ...(await turnstile.fieldsFor(address))
     });
     now.current.resending = false;
     if (r.status !== 202) return codeProblem.show(r.data, code.current);

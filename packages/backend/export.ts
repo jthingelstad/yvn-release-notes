@@ -1,7 +1,8 @@
 /** Owner exports retain note provenance, files, places and weather while
  * leaving out reply addresses, raw keys, session tokens and SDK bookkeeping.
- * Markdown groups days under their birthday-to-birthday release. */
-import { parseDay, validDay } from '../domain/dates.ts';
+ * Markdown groups days under their birthday-to-birthday release. Badges are
+ * worked out at export time from the same rows, oldest first. */
+import { localDay, parseDay, validDay, validTimezone } from '../domain/dates.ts';
 import { combine, placeLabel, writtenAt, type NoteRecord, type PlaceRecord } from '../domain/notes.ts';
 import { computeVersion, releaseName } from '../domain/version.ts';
 import { markdown as namedLinks, type Link } from './links.ts';
@@ -10,6 +11,7 @@ import { extension } from './media.ts';
 import { object } from './places.ts';
 import type { Item } from './store.ts';
 import { upcomingEntry, type UpcomingEntry } from '../domain/upcoming.ts';
+import { badgesOf } from './badges.ts';
 export const PROFILE_FIELDS = [
   'email',
   'birthday',
@@ -39,6 +41,17 @@ export interface ExportNote extends Item {
   text: string;
   written_at: string | null;
 }
+export interface ExportBadge {
+  id: string;
+  level?: string;
+  name: string;
+  line: string;
+  /** The version it is stamped with, the day that version is, and the day
+   * it came true (later, for a special day written about afterwards). */
+  version: string;
+  day: string;
+  earned: string;
+}
 export interface ExportData {
   exported_at: string;
   profile: Item;
@@ -48,6 +61,7 @@ export interface ExportData {
   weather: Item[];
   places: Item[];
   upcoming?: UpcomingEntry[];
+  badges?: ExportBadge[];
 }
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const sortBy = (rows: Item[], key: string) => rows.sort((a, b) => cmp(String(a[key]), String(b[key])));
@@ -138,6 +152,21 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
   }
   if (typeof profile.birthday === 'string')
     for (const n of notes) n.version ||= computeVersion(profile.birthday, n.date).toString();
+  const epoch = Date.parse(exportedAt),
+    badges: ExportBadge[] =
+      validDay(profile.birthday) && validTimezone(profile.tz) && Number.isFinite(epoch) && notes.length
+        ? badgesOf(items, profile, localDay(Math.floor(epoch / 1000), String(profile.tz)))
+            .earned.reverse()
+            .map((e) => ({
+              id: e.id,
+              ...(e.level ? { level: e.level } : {}),
+              name: e.name,
+              line: e.line,
+              version: e.version,
+              day: e.day,
+              earned: e.earned
+            }))
+        : [];
   notes.sort((a, b) => cmp(a.date, b.date) || cmp(a.written_at || '', b.written_at || '') || cmp(a.id, b.id));
   for (const n of notes)
     for (const key of [
@@ -164,7 +193,8 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
     pauses: sortBy(pauses, 'from'),
     weather: sortBy(skies, 'date'),
     places: sortBy(spots, 'date'),
-    ...(upcoming.length ? { upcoming: upcoming.sort((a, b) => cmp(a.id, b.id)) } : {})
+    ...(upcoming.length ? { upcoming: upcoming.sort((a, b) => cmp(a.id, b.id)) } : {}),
+    ...(badges.length ? { badges } : {})
   };
 }
 export function longDate(day: string): string {
@@ -208,6 +238,16 @@ export function markdown(data: ExportData): string {
           : 'Kept on the web only.'
       );
     }
+  }
+  if (data.badges?.length) {
+    lines.push(
+      '',
+      '## Badges',
+      '',
+      `${data.badges.length === 1 ? '1 badge' : `${data.badges.length} badges`}, each with the version it was earned on.`,
+      ''
+    );
+    for (const b of data.badges) lines.push(`- ${b.version}: ${b.name}. ${b.line}`);
   }
   const skies = new Map(data.weather.map((w) => [String(w.date), w])),
     spots = new Map(data.places.map((p) => [String(p.date), p])),

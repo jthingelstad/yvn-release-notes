@@ -3,7 +3,8 @@
 // until it is saved, so a sign-out mid-note (or a reload) doesn't lose it.
 // Once any files are sent, the note shows in the list at once ("Saving…")
 // and the form empties; a write that fails puts it all back. "Where" is
-// optional (where.tsx).
+// optional (where.tsx). What a saved note earned shows under the form
+// (unlock.tsx).
 import { useQueryClient } from '@tanstack/react-query';
 import { useBlocker } from '@tanstack/react-router';
 import { useCallback, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -12,11 +13,12 @@ import { browserZone } from '../lib/format.ts';
 import { FILES, sendFiles } from '../lib/files.ts';
 import { addPending, dropNote } from '../lib/notecache.ts';
 import { store } from '../lib/storage.ts';
-import type { Place } from '../lib/types.ts';
+import type { Place, Unlocked } from '../lib/types.ts';
 import { ErrorLine, useBusy, useProblem } from './common.tsx';
 import { useRefresh } from './notelist.tsx';
 import { canRecord, recordClock, useRecorder } from './recorder.ts';
 import { Icon } from './icon.tsx';
+import { UnlockLine } from './unlock.tsx';
 import { NoteWhere } from './where.tsx';
 import { spans, MAX_TAG } from '../../../packages/domain/tags.ts';
 
@@ -47,6 +49,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag }: Props)
   });
   const [chosen, setChosen] = useState<string>('');
   const [place, setPlace] = useState<Place | null>(null);
+  const [won, setWon] = useState<Unlocked[]>([]);
   const [busy, run] = useBusy();
   const problem = useProblem();
   const area = useRef<HTMLTextAreaElement>(null);
@@ -73,6 +76,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag }: Props)
     e.preventDefault();
     run(async () => {
       problem.clear();
+      setWon([]);
       const files = [...(pick.current?.files || []), ...(await rec.files())];
       if (!text.trim() && !files.length) return problem.show({ error: 'text' }, area.current);
       // The zone it is being written in, so its time reads as it did here.
@@ -94,7 +98,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag }: Props)
       showChosen();
       rec.clear();
       setPlace(null);
-      const r = await api('POST', `/api/days/${day}/notes`, body);
+      const r = await api<{ unlocked?: Unlocked[] }>('POST', `/api/days/${day}/notes`, body);
       if (!r.ok) {
         await dropNote(client, day, pending);
         setText(text);
@@ -104,76 +108,80 @@ export function NoteForm({ day, label, placeholder, submit, initialTag }: Props)
         setPlace(place);
         return problem.show({ ...r.data, draft: 'kept' }, area.current);
       }
+      setWon(r.data.unlocked || []);
       await refresh();
     });
   };
 
   return (
-    <form id="note-form" className="note-form" noValidate onSubmit={onSubmit}>
-      <label className="write-label">
-        <span>{label}</span>
-        <textarea
-          ref={area}
-          name="text"
-          rows={3}
-          placeholder={placeholder}
-          value={text}
-          onChange={(e) => {
-            problem.clear();
-            setText(e.target.value);
-            if (e.target.value.trim()) store.set(key, e.target.value);
-            else store.drop(key);
-          }}
-        />
-      </label>
-      <p className="hint chosen" role="status" hidden={!chosen}>
-        {chosen}
-      </p>
-      <div className="recordings">
-        {rec.kept.map((r) => (
-          <div className="recording" key={r.url}>
-            <audio controls src={r.url} aria-label={r.file.name} />
-            <button className="quiet" type="button" onClick={() => rec.remove(r)}>
-              Remove
-            </button>
-          </div>
-        ))}
-      </div>
-      <div className="row note-tools">
-        <label className="quiet picker">
-          <Icon name="files" /> Add files
-          <input
-            ref={pick}
-            type="file"
-            name="files"
-            multiple
-            accept={FILES}
-            onChange={() => {
+    <>
+      <form id="note-form" className="note-form" noValidate onSubmit={onSubmit}>
+        <label className="write-label">
+          <span>{label}</span>
+          <textarea
+            ref={area}
+            name="text"
+            rows={3}
+            placeholder={placeholder}
+            value={text}
+            onChange={(e) => {
               problem.clear();
-              showChosen();
+              setText(e.target.value);
+              if (e.target.value.trim()) store.set(key, e.target.value);
+              else store.drop(key);
             }}
           />
         </label>
-        <button
-          ref={recordButton}
-          className="quiet record"
-          type="button"
-          aria-pressed={rec.seconds !== null}
-          hidden={!canRecord()}
-          onClick={() => {
-            problem.clear();
-            rec.toggle();
-          }}
-        >
-          <Icon name="record" /> {rec.seconds === null ? 'Record' : `Stop · ${recordClock(rec.seconds)}`}
-        </button>
-        <NoteWhere place={place} onPick={setPlace} />
-        <button className="go" type="submit" disabled={busy}>
-          {submit}
-        </button>
-      </div>
-      <ErrorLine line={problem.line} />
-    </form>
+        <p className="hint chosen" role="status" hidden={!chosen}>
+          {chosen}
+        </p>
+        <div className="recordings">
+          {rec.kept.map((r) => (
+            <div className="recording" key={r.url}>
+              <audio controls src={r.url} aria-label={r.file.name} />
+              <button className="quiet" type="button" onClick={() => rec.remove(r)}>
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="row note-tools">
+          <label className="quiet picker">
+            <Icon name="files" /> Add files
+            <input
+              ref={pick}
+              type="file"
+              name="files"
+              multiple
+              accept={FILES}
+              onChange={() => {
+                problem.clear();
+                showChosen();
+              }}
+            />
+          </label>
+          <button
+            ref={recordButton}
+            className="quiet record"
+            type="button"
+            aria-pressed={rec.seconds !== null}
+            hidden={!canRecord()}
+            onClick={() => {
+              problem.clear();
+              rec.toggle();
+            }}
+          >
+            <Icon name="record" /> {rec.seconds === null ? 'Record' : `Stop · ${recordClock(rec.seconds)}`}
+          </button>
+          <NoteWhere place={place} onPick={setPlace} />
+          <button className="go" type="submit" disabled={busy}>
+            {submit}
+          </button>
+        </div>
+        <ErrorLine line={problem.line} />
+      </form>
+      <UnlockLine items={won} />
+    </>
   );
 }
 

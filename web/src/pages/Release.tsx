@@ -6,9 +6,10 @@ import { useEffect, useRef } from 'react';
 import { AppLink, Bar, Digits, Failed, Loading, useTitle } from '../components/common.tsx';
 import { DayList } from '../components/days.tsx';
 import { ApiError } from '../lib/api.ts';
-import { count, longDate } from '../lib/format.ts';
+import { count, listed, longDate } from '../lib/format.ts';
 import { useGo, useQueryParam } from '../lib/nav.ts';
 import { releaseQuery } from '../lib/queries.ts';
+import type { ReleasePage } from '../lib/types.ts';
 
 export function Release() {
   const go = useGo();
@@ -60,6 +61,7 @@ export function Release() {
               : 'No notes in this release.'}
             {head.longest > 1 && ` Longest streak: ${count(head.longest, 'day', 'days')}.`}
           </p>
+          <ReleaseBadges b={head.badges} current={head.current} />
           {head.tags.length > 0 && (
             <ul className="tags" id="release-tags">
               {head.tags.map((t) => (
@@ -103,5 +105,25 @@ export function Release() {
         Later days
       </button>
     </>
+  );
+}
+
+// What the release earned (docs/BADGES.md): its coverage tier and the
+// special days collected. Nothing when it has neither, never a miss.
+function ReleaseBadges({ b, current }: { b: ReleasePage['badges']; current: boolean }) {
+  if (!b.coverage && !b.collected.length) return null;
+  return (
+    <p className="release-counts" id="release-badges">
+      {b.coverage && `Coverage: ${b.coverage}${current ? ' so far' : ''}. `}
+      {b.collected.length > 0 && (
+        <>
+          Collected:{' '}
+          <AppLink href="/badges/">
+            {listed(b.collected.map((c) => (c.count > 1 ? `${c.name} ×${c.count}` : c.name)))}
+          </AppLink>
+          .
+        </>
+      )}
+    </p>
   );
 }

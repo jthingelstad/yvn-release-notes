@@ -1,8 +1,9 @@
 # Badges
 
 Designed 2026-10-20, with Jamie's calls made the same day (at the end,
-under "Jamie's calls"). Step 1 of the build order is built: the evaluator,
-`GET /api/badges` and the Badges page. Nothing is in the email yet.
+under "Jamie's calls"). Steps 1 and 2 of the build order are built: the
+evaluator, `GET /api/badges`, the Badges page, the unlock line, the Day and
+Release page lines and the export. Nothing is in the email yet.
 
 Release Notes works when people write most days. Badges should make
 showing up feel good and make the version number more fun to live with,
@@ -190,10 +191,13 @@ cobalt, version stamps tangerine mono, and unearned ones are ink-3.
 ### The moment you earn one
 
 When saving a note earns something, the answer to the save carries it and
-the Today page shows one line under the form: the glyph stamps in (a 300 ms
-scale and turn, none with reduced motion), then "Unlocked: Round number,
-5.4.300" and a link to the page. A badge celebrated here is not repeated in
-the email.
+the page shows one line under the form, on Today or another day (Hotfix and
+Backport are earned there): the glyph stamps in (a 300 ms scale and turn,
+none with reduced motion), then "Unlocked: Round number, 5.4.300" and a
+link to the page. A special day of this release collected again, its badge
+earned in an earlier one, reads "Collected: Round number, 5.5.200". A badge
+celebrated here is not repeated in the email (from step 3, through
+`seen`).
 
 ### The email
 
@@ -229,8 +233,13 @@ with its changelog.
 ### Elsewhere
 
 - **Day pages** say what the day collected: "Collected here: Palindrome."
+- **Release pages** say what the release earned under its counts:
+  "Coverage: beta. Collected: Round number ×2, Pi and Palindrome." The
+  current release's coverage reads "so far".
 - **The export** gains a Badges section in the Markdown and a `badges`
-  array in the JSON, computed at export time.
+  array in the JSON, computed at export time, oldest first: each with its
+  name, line, version and the day it came true ("- 5.4.300: Round number.
+  A note on a hundredth patch.").
 - **Agents** can read badges later through `notes_context`, so a connected
   assistant can say congratulations. Not in the first build.
 
@@ -250,8 +259,8 @@ just past its best run, most collectibles found and two still to find.
 What keeps such a shelf moving is the renewing part: coverage of the new
 release, its album, and the long tiers.
 
-**The album, for the fictional Ada** (born March 14, 1987; the dev
-server's subscriber), on 2026-10-20, 3.9.220. Her page's "Ahead" shows:
+**The album, for a fictional subscriber** born March 14, 1987 (the unit
+tests' Ada), on 2026-10-20, 3.9.220. The page's "Ahead" shows:
 
 | Ahead   | Date               |                               |
 | ------- | ------------------ | ----------------------------- |
@@ -259,9 +268,9 @@ server's subscriber), on 2026-10-20, 3.9.220. Her page's "Ahead" shows:
 | 3.9.300 | Friday, January 8  | Round number                  |
 | 3.9.364 | Saturday, March 13 | Code freeze                   |
 
-Her next birthday is 4.0.0, a Major release, and it falls on Pi Day.
+The next birthday is 4.0.0, a Major release, and it falls on Pi Day.
 Overflow (3.9.256) and Pi (3.9.314) are ahead too, but they are secret, so
-she finds them by writing on those days or not at all.
+they are found by writing on those days or not at all.
 
 ## How it works
 
@@ -289,8 +298,8 @@ she finds them by writing on those days or not at all.
   Text is used in memory for word counts and hashtags only, never stored or
   logged.
 - **`USER#<id> / BADGES`**: the one new item, `seen`, a string set of
-  `id` or `id:tier` already celebrated. The web adds to it when it shows an
-  unlock; the sender adds to it after an email with the line has gone.
+  `id` or `id:tier` already celebrated. A web save adds what it answered as
+  `unlocked`; the sender adds to it after an email with the line has gone.
   Both use `ADD`, so a repeat is harmless. It goes with the account. It is
   not exported, since it is only bookkeeping.
 - **Launch:** `tools/badges-baseline.ts` seeds `seen` with what each
@@ -298,8 +307,10 @@ she finds them by writing on those days or not at all.
   badges. It is a live write, so it runs on Jamie's go. The launch is
   announced through a product update at `/admin/`, in Jamie's words.
 - **API:** `GET /api/badges` for the page; a note create answers with
-  `earned`, the badges it just unlocked. Both go in `docs/WEB-APP.md`'s
-  API table, which the docs test checks.
+  `unlocked`, what it just earned, worked out from the person's notes read
+  after the save, with and without the new one (a failed read leaves it
+  out and never fails the note). A Day answers with `collected` and a
+  release with `badges`. All are in `docs/WEB-APP.md`'s API table.
 - **Sender:** reads badges after the note index. A failed read sends the
   email without the line, as the streak does.
 - **Cost:** one more read of a person's notes per email and per saved
@@ -319,6 +330,7 @@ she finds them by writing on those days or not at all.
 1. Domain, facts, `GET /api/badges` and the Badges page, with links from
    Today and the Archive. Nothing in the email yet. **Built 2026-10-20.**
 2. The unlock moment, Day and Release page lines, and the export.
+   **Built 2026-10-20.**
 3. The "Show badges" setting, then the email: the badge line, the
    special-day clause, the `BADGES` item, the baseline (Jamie's go) and the
    launch product update. Then the birthday block. The setting ships before

@@ -167,8 +167,13 @@ html:has(.viewer[open]) { overflow: hidden; }
 .media audio { width: 100%; max-width: 440px; }
 .media .hint { margin: 0; }
 /* What a recording said (transcribe.py), under its player: in italics,
-   so it never reads as something typed. */
-.media .said { flex-basis: 100%; margin: 0 0 4px; max-width: 60ch; color: var(--ink-2); font-size: 15px; line-height: 1.5; }
+   so it never reads as something typed. A full row of its own: a max-width
+   would shrink the row to 60ch and let it sit beside the player on a wide
+   screen, so the padding keeps the line length instead. */
+.media .said {
+  flex-basis: 100%; margin: 0 0 4px; padding-right: max(0px, 100% - 60ch);
+  color: var(--ink-2); font-size: 15px; line-height: 1.5;
+}
 .media .said:not(.hint) { font-style: italic; }
 label.check { flex-direction: row; align-items: center; gap: 12px; min-height: 44px; font-size: 16px; cursor: pointer; }
 input[type=checkbox] { accent-color: var(--orange); width: 20px; height: 20px; margin: 0; padding: 0; border: 0; flex: none; }

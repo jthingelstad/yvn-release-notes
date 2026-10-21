@@ -451,7 +451,7 @@ export async function sendOne(
   let [past, lifetime, yesterday, notes, own, closed] = await readHistory(s, sub, day);
   const productUpdate = await readProductUpdate(s, day);
   const upcoming = await readUpcoming(s, sub.user_id, day);
-  const earned = await readBadges(s, sub, day);
+  let earned = await readBadges(s, sub, day);
   const photos = await withPhotos(s, sub, day, yesterday, past);
   [yesterday, past] = photos;
   const forecast = await readWeather(s, sub, day, fetcher, true, notes, own);
@@ -468,6 +468,11 @@ export async function sendOne(
     }
     s.log?.({ event: 'skip', user: sub.user_id, date: day, reason: 'stopped' });
     return { user: sub.user_id, date: day, outcome: 'stopped' };
+  }
+  // "Show badges" turned off while the blocks above were read: none of it goes.
+  if (fresh.badges === false) {
+    earned = null;
+    if (closed) delete closed.badges;
   }
   const token = newToken(),
     inbox = await standing(s, sub);

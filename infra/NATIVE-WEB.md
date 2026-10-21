@@ -53,9 +53,12 @@ usually makes the same zips, already in the bucket under their hashes, and the
 web app comes from the same commit. There is no other rollback path. If GitHub
 is down, `./deploy.sh --break-glass` releases the reverted main from the Mac.
 
-CloudFormation runs one stack update at a time, so two releases never
-interleave, and the workflow queues them (`production-deploy`, never
-cancelled). A release that dies mid-update leaves CloudFormation to finish or
+CloudFormation runs one stack update at a time, and the workflow queues
+GitHub's releases (`production-deploy`, never cancelled). The web sync and
+the probe come after the stack update, so the Mac's `deploy.sh` refuses
+while a GitHub release is queued or running and again if main moved while it
+built, and every release stops before its web sync (and again after it) if
+another release has since replaced the stack's `BuildId`. A release that dies mid-update leaves CloudFormation to finish or
 roll back on its own; once the stack is idle, release main again ("Run
 workflow" on `deploy`, or re-run the failed run).
 

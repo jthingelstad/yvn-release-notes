@@ -509,6 +509,17 @@ test('"Show badges" off hides every badge line; back on, what was earned meanwhi
   assert.ok(!('badges' in (await read('GET', '/api/releases/4.5'))));
   // The page itself still answers: nothing is deleted.
   assert.ok(((await read('GET', '/api/badges')).count as number) > 0);
+  // A failed seen write keeps badges off, or a later email would announce
+  // everything earned meanwhile.
+  const send = s.store.client.send.bind(s.store.client);
+  s.store.client.send = async (command) => {
+    if (JSON.stringify(command.input).includes('"BADGES"')) throw new Error('write');
+    return send(command);
+  };
+  const refused = await s.call('PUT', '/api/me', { badges: true });
+  assert.deepEqual([refused.r.status, (refused.b as Item).error], [503, 'badges-failed']);
+  s.store.client.send = send;
+  assert.equal((await read('GET', '/api/me')).badges, false);
   // Back on: everything earned meanwhile is seen, unannounced.
   const earned = ((await read('GET', '/api/badges')).earned as Item[]).map((e) => e.key);
   assert.equal((await read('PUT', '/api/me', { badges: true })).badges, true);
@@ -518,6 +529,17 @@ test('"Show badges" off hides every badge line; back on, what was earned meanwhi
   s.store.memory.calls.length = 0;
   await read('PUT', '/api/me', { badges: true });
   assert.ok(!s.store.memory.calls.some((c) => JSON.stringify(c.input).includes('BADGES')));
+});
+
+test('a pause already set for the rest of this week lowers its cadence bar today', async () => {
+  const s = await setup();
+  // Today is Tuesday 2026-10-13: a steady week before, notes Monday and
+  // Tuesday, and Wednesday to Sunday paused, so two days make it steady.
+  for (const day of ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-12', '2026-10-13'])
+    await s.store.putNote('u', day, 'w-' + day, { text: 'Fictional', source: 'web', written_at: `${day}T15:00:00Z` });
+  await s.store.putPause('u', '2026-10-14', '2026-10-18', '2026-10-12T15:00:00Z');
+  const cadence = (((await s.call('GET', '/api/badges')).b as Item).tracks as Item[]).find((t) => t.id === 'cadence')!;
+  assert.deepEqual([cadence.best, cadence.now, cadence.level], [2, 2, 'alpha']);
 });
 
 test('badges count stored fields, never answer with note text, and tell a reply from the standing address', async () => {

@@ -285,6 +285,9 @@ const SNOW = (c: number) => (c >= 71 && c <= 77) || c === 85 || c === 86;
 const CLEAR = (c: number) => c === 0 || c === 1;
 const MONDAY = '2001-01-01';
 const weekOf = (day: Day) => Math.floor(daysBetween(MONDAY, day) / 7);
+/** The Sunday that ends `day`'s week: pauses are read through it, so a pause
+ * already set for later this week lowers this week's cadence bar today. */
+export const weekEnd = (day: Day) => addDays(day, 6 - (daysBetween(MONDAY, day) - weekOf(day) * 7));
 const number = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
 /** Runs of neighbours (days in a row, steady weeks in a row), merged as

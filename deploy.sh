@@ -25,6 +25,17 @@ HEAD_SHA=$(git rev-parse HEAD)
 [[ -z "$(git status --porcelain)" ]] || { echo "refusing: uncommitted changes" >&2; exit 1; }
 [[ "$HEAD_SHA" == "$(git rev-parse origin/main)" ]] \
   || { echo "refusing: HEAD is not origin/main; land it through a pull request" >&2; exit 1; }
+# GitHub queues its own releases but cannot see this one, so wait for its
+# queue to empty, and look again once the build is done (release.sh still
+# stops if a release replaces this one's stack before its web sync).
+quiet() {
+  [[ -z "$BREAK_GLASS" ]] || return 0
+  local running
+  running=$(gh run list --repo jthingelstad/yvn-release-notes --workflow deploy.yml --limit 20 \
+    --json status --jq '[.[] | select(.status != "completed")] | length')
+  [[ "$running" -eq 0 ]] || { echo "refusing: a GitHub release is running; try again when it finishes" >&2; exit 1; }
+}
+quiet
 if [[ -z "$BREAK_GLASS" ]]; then
   # Only the workflow's own run counts, not any app's check named validate.
   GREEN=$(gh api "repos/jthingelstad/yvn-release-notes/commits/$HEAD_SHA/check-runs?check_name=validate" \
@@ -49,4 +60,11 @@ mkdir "$BUILD/repo"
 git archive HEAD | tar -x -f - -C "$BUILD/repo"
 "$BUILD/repo/scripts/build-release.sh" "$BUILD/repo" "$BUILD/bundle" "$HEAD_SHA" >/dev/null \
   || { echo "archived build or verification failed; not deploying" >&2; exit 1; }
+# Main may have moved while this built; its own run releases it then.
+if [[ -z "$BREAK_GLASS" ]]; then
+  git fetch -q origin main
+  [[ "$HEAD_SHA" == "$(git rev-parse origin/main)" ]] \
+    || { echo "refusing: main moved while this built; its GitHub run releases it" >&2; exit 1; }
+fi
+quiet
 scripts/release.sh --bundle "$BUILD/bundle" --commit "$HEAD_SHA" "$@"

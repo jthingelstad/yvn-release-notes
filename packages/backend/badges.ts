@@ -11,6 +11,7 @@ import { pauseDays } from '../domain/streak.ts';
 import {
   evaluateBadges,
   unlocked,
+  weekEnd,
   type BadgeFacts,
   type BadgeNote,
   type Badges,
@@ -47,26 +48,28 @@ export function badgeNote(item: Item, profile: Item): BadgeNote {
   };
 }
 
-/** `except` leaves out one note (its sort key), to see the rest without it. */
+/** `except` leaves out one note (its sort key), to see the rest without it;
+ * `consistent` reads what was just written (a saved note, its weather). */
 export async function badgeFacts(
   store: Store,
   user: string,
   profile: Item,
   today: Day,
-  except?: string
+  except?: string,
+  consistent = false
 ): Promise<BadgeFacts> {
   const birthday = String(profile.birthday),
     [notes, pauses, weather] = await Promise.all([
-      store.allNotes(user),
-      store.pauses(user),
-      store.weatherBetween(user, birthday, today)
+      store.allNotes(user, consistent),
+      store.pauses(user, consistent),
+      store.weatherBetween(user, birthday, today, consistent)
     ]);
   return {
     birthday,
     ...(profile.country ? { homeCountry: String(profile.country) } : {}),
     notes: notes.filter((n) => n.sk !== except).map((n) => badgeNote(n, profile)),
     weather,
-    paused: pauseDays(pauses, today)
+    paused: pauseDays(pauses, weekEnd(today))
   };
 }
 
@@ -75,8 +78,8 @@ export async function badges(store: Store, user: string, profile: Item, today: D
 }
 
 /** What saving `note` (a NOTE# row, `sk` included) just earned. It is read
- * with the others and then without it, so a read that missed the new row
- * still answers the same. */
+ * with the others and then without it, consistently, so a note saved a
+ * moment before and the weather just kept are in both. */
 export async function unlockedBy(
   store: Store,
   user: string,
@@ -84,7 +87,7 @@ export async function unlockedBy(
   today: Day,
   note: Item
 ): Promise<Unlocked[]> {
-  const facts = await badgeFacts(store, user, profile, today, String(note.sk));
+  const facts = await badgeFacts(store, user, profile, today, String(note.sk), true);
   return unlocked(
     evaluateBadges(facts, today),
     evaluateBadges({ ...facts, notes: [...facts.notes, badgeNote(note, profile)] }, today)
@@ -110,7 +113,7 @@ export function badgesOf(items: readonly Item[], profile: Item, today: Day): Bad
       ...(profile.country ? { homeCountry: String(profile.country) } : {}),
       notes,
       weather,
-      paused: pauseDays(pauses, today)
+      paused: pauseDays(pauses, weekEnd(today))
     },
     today
   );

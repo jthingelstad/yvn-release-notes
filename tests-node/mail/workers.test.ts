@@ -378,6 +378,23 @@ test('the email names new badges once, beside a special day; a failed read or "S
   }
   assert.equal(h.store.memory.read({ pk: 'USER#u', sk: 'BADGES' }), null);
   assert.ok(!JSON.stringify([f.logs, g.logs, h.logs]).includes('synthetic'));
+
+  // Turned off after the badges were read but before the send claimed the
+  // day: the fresh profile wins, so neither line goes and nothing is seen.
+  const k = setup({ birthday: '1981-12-17' });
+  k.store.seed(reply);
+  const claim = k.store.claimDay.bind(k.store);
+  k.store.claimDay = async (...args: Parameters<typeof claim>) => {
+    await k.store.updateProfile('u', { badges: false });
+    return claim(...args);
+  };
+  await sender.handler({}, null, k.services);
+  const late = await simpleParser(k.mail.messages[0]!.raw);
+  for (const text of [late.text!, String(late.html)]) {
+    assert.ok(!text.includes('round number'));
+    assert.ok(!text.includes('New badge'));
+  }
+  assert.equal(k.store.memory.read({ pk: 'USER#u', sk: 'BADGES' }), null);
 });
 test('photo ordering, caps, stale size protection and opt-in-only alt text', async () => {
   const f = setup(),

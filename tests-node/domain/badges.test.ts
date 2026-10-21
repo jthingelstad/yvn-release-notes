@@ -10,6 +10,7 @@ import {
   releaseBadges,
   specialKinds,
   unlocked,
+  weekEnd,
   type BadgeFacts,
   type BadgeNote,
   type Badges
@@ -103,6 +104,16 @@ test('a break keeps the tier; a late note mends its day and earns on the day it 
   assert.deepEqual([delivery.best, delivery.now, delivery.level], [5, 0, 'alpha']);
 });
 
+test('a pause set for later this week lowers the bar today', () => {
+  // Mon 2026-06-01 .. Sun 06-07.
+  assert.deepEqual(['2026-06-01', '2026-06-04', '2026-06-07'].map(weekEnd), ['2026-06-07', '2026-06-07', '2026-06-07']);
+  // A steady week before, notes Mon to Wed, Thu to Sun paused: on Wednesday
+  // the week is steady at three, so the run is two weeks at once.
+  const notes = [...run('2026-05-25', 4), ...run('2026-06-01', 3)],
+    paused = new Set(run('2026-06-04', 4).map((n) => n.day)),
+    b = evaluateBadges(facts(notes, { paused }), '2026-06-03');
+  assert.deepEqual([b.tracks.find((t) => t.id === 'cadence')!.best, got(b, 'cadence:alpha')!.day], [2, '2026-06-03']);
+});
 test('paused days neither break a run nor add to it; a paused week lowers the bar, a fully paused one is skipped', () => {
   const paused = new Set(run('2026-06-03', 3).map((n) => n.day));
   const short = evaluateBadges(facts([...run('2026-06-01', 2), note('2026-06-06')], { paused }), '2026-06-07');

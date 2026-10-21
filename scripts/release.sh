@@ -14,8 +14,10 @@
 #
 # A failed stack update rolls itself back and nothing changed. A failed probe
 # leaves the release serving: roll back by reverting the merge, which releases
-# the previous code the same way. CloudFormation runs one update at a time, so
-# two releases never interleave.
+# the previous code the same way. CloudFormation runs one update at a time, but
+# the web sync and the probe come after it: GitHub queues its own releases
+# (`production-deploy`), deploy.sh waits for those, and a release whose stack
+# another release replaced stops before syncing the web app or probing.
 #
 #   scripts/release.sh --bundle DIR --commit SHA [--admin-user-id=ID] [--turnstile-mode=MODE]
 #   scripts/release.sh --check-arguments [options]   validate, then stop
@@ -192,6 +194,16 @@ output() {
   aws cloudformation describe-stacks --stack-name "$STACK" \
     --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
 }
+# The stack's BuildId is the last release's commit. Another release (the Mac's
+# while GitHub's ran, say) may have updated the stack since ours did: then its
+# web app is the one to serve, and its own run syncs and probes it.
+still_ours() {
+  local live
+  live=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+    --query "Stacks[0].Parameters[?ParameterKey=='BuildId'].ParameterValue" --output text)
+  [[ "$live" == "$COMMIT" ]] || refuse "$1: the stack now runs $live, released by another run"
+}
+still_ours "before the web sync"
 WEB_BUCKET=$(output WebBucketName)
 WEB_DISTRIBUTION=$(output WebDistributionId)
 mask "$WEB_BUCKET"
@@ -212,6 +224,7 @@ aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*
 aws cloudfront create-invalidation --distribution-id "$WEB_DISTRIBUTION" --paths '/*' \
   --query Invalidation.Id --output text >/dev/null
 echo "web app synced and invalidated"
+still_ours "after the web sync; re-run the newer release so its web app is whole"
 
 "${RELEASE[@]}" probe --commit "$COMMIT" >/dev/null \
   || refuse "$COMMIT is live but failed its probe; revert the merge to roll back"

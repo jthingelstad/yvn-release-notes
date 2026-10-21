@@ -84,8 +84,9 @@ Four tracks, each with five tiers: **alpha, beta, rc, stable, LTS**.
   mend, paused days are skipped.
 - **Cadence** is the forgiving one, and the one to lead with. A week runs
   Monday to Sunday in the subscriber's zone and is steady with notes on four
-  of its days; paused days lower the bar to the days left, and a fully
-  paused week is skipped. The week in progress joins the run as soon as it
+  of its days; paused days lower the bar to the days left (a pause already
+  set for later in the week counts at once), and a fully paused week is
+  skipped. The week in progress joins the run as soon as it
   is steady and never breaks it.
 - **Patches shipped** only goes up.
 - **Coverage** belongs to one release, birthday to birthday
@@ -288,7 +289,8 @@ they are found by writing on those days or not at all.
   the first day its rule held. A
   note backfilled today for last year earns on today's version, not the
   day it is filed under; an imported note earns on the day it was first
-  written. Collectibles name the special version they were collected on
+  written. A note keeps no history of its edits, so what an edit or a later
+  file adds counts from when the note was written. Collectibles name the special version they were collected on
   ("Palindrome, 4.1.314") and record when they were written separately.
 - **`packages/backend/badges.ts`**: `badgeFacts(store, user, profile, today)` reads the
   person's `NOTE#` rows (dates, written and received times, source,
@@ -304,7 +306,9 @@ they are found by writing on those days or not at all.
   answered as `unlocked` (not a special day collected again, which is no
   new badge); the sender adds to it after an email with the line has gone.
   Turning "Show badges" back on adds everything earned meanwhile, so it is
-  shown and not announced. All use `ADD` with the account proof, so a
+  shown and not announced; if that write fails the setting stays off and
+  the save says so. A send that finds badges turned off after it read them
+  drops both lines and marks nothing. All use `ADD` with the account proof, so a
   repeat is harmless and a deleted account gains no row. It goes with the
   account. It is not exported, since it is only bookkeeping.
 - **Launch:** `tools/badges-baseline.ts` seeds `seen` with what each

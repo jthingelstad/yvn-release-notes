@@ -198,14 +198,20 @@ output() {
 }
 # The stack's BuildId is the last release's commit. Another release (the Mac's
 # while GitHub's ran, say) may be updating the stack, or have updated it since
-# ours did: then its web app is the one to serve, and its own run syncs it
-# once its stack update is done, after ours has synced, and probes it.
+# ours did. While it updates, wait for the stack to settle, up to 30 minutes:
+# if its update rolls back, ours is still live and this run syncs it; if it
+# lands, its web app is the one to serve, and its own run syncs it once its
+# stack update is done, after ours has synced, and probes it.
 still_ours() {
-  local status live
-  read -r status live < <(aws cloudformation describe-stacks --stack-name "$STACK" \
-    --query "Stacks[0].[StackStatus, Parameters[?ParameterKey=='BuildId'].ParameterValue | [0]]" --output text)
-  [[ "$status" != *_IN_PROGRESS ]] \
-    || refuse "$1: another release is updating the stack ($status) and syncs its own web app after"
+  local status live tries=0
+  while :; do
+    read -r status live < <(aws cloudformation describe-stacks --stack-name "$STACK" \
+      --query "Stacks[0].[StackStatus, Parameters[?ParameterKey=='BuildId'].ParameterValue | [0]]" --output text)
+    [[ "$status" == *_IN_PROGRESS ]] || break
+    (( ++tries < 120 )) || refuse "$1: another release has been updating the stack for 30 minutes ($status)"
+    (( tries > 1 )) || echo "$1: another release is updating the stack ($status); waiting for it to settle"
+    sleep 15
+  done
   [[ "$live" == "$COMMIT" ]] || refuse "$1: the stack now runs $live, released by another run${2:+; $2}"
 }
 still_ours "before the web sync"

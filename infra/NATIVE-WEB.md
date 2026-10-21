@@ -57,8 +57,10 @@ CloudFormation runs one stack update at a time, and the workflow queues
 GitHub's releases (`production-deploy`, never cancelled). The web sync and
 the probe come after the stack update, so the Mac's `deploy.sh` refuses
 while a GitHub release is queued or running and again if main moved while it
-built, and every release stops before its web sync (and again after it) if
-another release is updating the stack or has since replaced its `BuildId`.
+built. Before its web sync, and again after it, every release checks the
+stack: while another release is updating it, it waits for the stack to settle
+(up to 30 minutes), then carries on if its own `BuildId` is still live (the
+other update rolled back) and stops if another release has replaced it.
 The newer release syncs its own web app once its stack update is done, so two
 syncs overlap only if a whole stack update fits inside one sync's seconds.
 There is no lock across runs: GitHub's role has no lock to take, and the

@@ -53,13 +53,18 @@ else if (args[1] === 'describe-stacks') {
   if (joined.includes('WebBucketName')) console.log('fictional-web-bucket');
   else if (joined.includes('WebDistributionId')) console.log('FICTIONALDIST');
   else if (joined.includes('BuildId')) {
-    // FIXTURE_REPLACED: another release has updated the stack after N reads;
-    // FIXTURE_UPDATING: another release is updating it, BuildId still ours.
+    // FIXTURE_REPLACED: another release has updated the stack after N reads.
+    // FIXTURE_UPDATING: another release starts updating it after N reads, for
+    // two reads, with BuildId still ours; FIXTURE_UPDATE_ENDS says how it ends:
+    // rolled-back (ours stays live), replaced (theirs is) or never.
     const seen = Number(process.env.FIXTURE_REPLACED_AFTER ?? 'NaN'),
       busy = Number(process.env.FIXTURE_UPDATING_AFTER ?? 'NaN'),
-      file = process.env.FIXTURE_LOG + '.builds', reads = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+      ends = process.env.FIXTURE_UPDATE_ENDS || 'rolled-back',
+      file = process.env.FIXTURE_LOG + '.builds', reads = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0,
+      settled = reads >= busy + 2 && ends !== 'never',
+      status = reads >= busy && !settled ? 'UPDATE_IN_PROGRESS' : settled && ends === 'rolled-back' ? 'UPDATE_ROLLBACK_COMPLETE' : 'UPDATE_COMPLETE';
     fs.writeFileSync(file, String(reads + 1));
-    console.log((reads >= busy ? 'UPDATE_IN_PROGRESS' : 'UPDATE_COMPLETE') + '\t' + (reads >= seen ? '${'b'.repeat(40)}' : '${commit}'));
+    console.log(status + '\t' + (reads >= seen || (settled && ends === 'replaced') ? '${'b'.repeat(40)}' : '${commit}'));
   }
 }
 else if (args[1] === 'head-bucket') process.exit(process.env.FIXTURE_NO_CODE_BUCKET ? 1 : 0);
@@ -100,6 +105,8 @@ async function fixture() {
     await mkdir(dir, { recursive: true });
   for (const [name, code] of Object.entries(programs))
     await writeFile(join(bin, name), `#!${process.execPath}\n` + header + code, { mode: 0o755 });
+  // A release waits in 15-second sleeps; the stand-in counts them and returns.
+  await writeFile(join(bin, 'sleep'), '#!/bin/sh\necho "$1" >> "$FIXTURE_LOG.sleeps"\n', { mode: 0o755 });
   await writeFile(join(bundle, 'release/package.json'), '{"type":"module"}\n');
   await writeFile(join(bundle, 'release/index.js'), header + releaseTool);
   await writeFile(join(bundle, 'template.yaml'), 'Resources: {}\n');
@@ -126,13 +133,14 @@ async function fixture() {
       .map((line) => JSON.parse(line) as Event);
   const spawn = async (command: string[], options: Options) => {
     await writeFile(log, '');
-    for (const extra of ['.builds', '.main']) await rm(log + extra, { force: true });
+    for (const extra of ['.builds', '.main', '.sleeps']) await rm(log + extra, { force: true });
     const result = spawnSync('bash', command, { env: environment(options), encoding: 'utf8', timeout: 30000 });
     return { result, events: await events() };
   };
   return {
     folder,
     bin,
+    log,
     bundle,
     repo,
     environment,
@@ -227,23 +235,43 @@ test('a release another one replaced stops before its web sync, or after it, and
   });
 });
 
-test('a release stops before its web sync while another one is updating the stack, even before BuildId moves', async () => {
+test('a release waits out another one updating the stack, then syncs if that update rolled back and stops if it landed', async () => {
   await withFixture(async (f) => {
+    const sleeps = async () =>
+      (await readFile(f.log + '.sleeps', 'utf8').catch(() => '')).split('\n').filter(Boolean).length;
+    // Before the sync, even before BuildId moves: the other update rolls back.
     let { result, events } = await f.release([], { env: { FIXTURE_UPDATING_AFTER: '0' } });
-    assert.equal(result.status, 1);
+    assert.equal(result.status, 0, result.stderr);
     assert.match(
-      result.stderr,
-      /refusing: before the web sync: another release is updating the stack \(UPDATE_IN_PROGRESS\)/
+      result.stdout,
+      /before the web sync: another release is updating the stack \(UPDATE_IN_PROGRESS\); waiting/
     );
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.equal(await sleeps(), 2);
+
+    ({ result, events } = await f.release([], {
+      env: { FIXTURE_UPDATING_AFTER: '0', FIXTURE_UPDATE_ENDS: 'replaced' }
+    }));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /refusing: before the web sync: the stack now runs b{40}, released by another run$/m);
     assert.deepEqual(steps(events), ['upload', 'deploy', 'policies']);
 
-    ({ result, events } = await f.release([], { env: { FIXTURE_UPDATING_AFTER: '1' } }));
+    // After the sync: the other update lands, so its run has the web app to fix.
+    ({ result, events } = await f.release([], {
+      env: { FIXTURE_UPDATING_AFTER: '1', FIXTURE_UPDATE_ENDS: 'replaced' }
+    }));
     assert.equal(result.status, 1);
     assert.match(
       result.stderr,
-      /refusing: after the web sync: another release is updating the stack \(UPDATE_IN_PROGRESS\) and syncs its own/
+      /after the web sync: the stack now runs b{40}, released by another run; re-run the newer/
     );
     assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation']);
+
+    ({ result, events } = await f.release([], { env: { FIXTURE_UPDATING_AFTER: '0', FIXTURE_UPDATE_ENDS: 'never' } }));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /before the web sync: another release has been updating the stack for 30 minutes/);
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies']);
+    assert.equal(await sleeps(), 119);
   });
 });
 

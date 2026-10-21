@@ -683,19 +683,24 @@ test('the whole account reads under notes:read alone: on this day, releases, bad
   assert.equal((badges.release as OAuthRow).v, '4.5');
 
   // The mail log: the owner's rows from the last 30 days, newest first, words cut short.
-  const row = (sk: string, extra: OAuthRow) =>
-    ctx.store.seed({ pk: 'USER#u', sk, via: 'reply', expires_at: NOW + 86400, ...extra });
-  row('MAILLOG#2026-10-11T10:00:00.000Z#m1', {
-    message: 'm1',
-    received_at: '2026-10-11T10:00:00.000Z',
+  const row = (at: string, id: string, extra: OAuthRow) =>
+    ctx.store.seed({
+      pk: 'USER#u',
+      sk: `ACTIVITY#${at}#mail#${id}`,
+      kind: 'mail',
+      at,
+      message: id,
+      received_at: at,
+      via: 'reply',
+      ...extra
+    });
+  row('2026-10-11T10:00:00.000Z', 'm1', {
     day: '2026-10-11',
     version: '4.5.119',
     subject: 'Re: Your release notes',
     outcome: 'filed'
   });
-  row('MAILLOG#2026-10-12T10:00:00.000Z#m2', {
-    message: 'm2',
-    received_at: '2026-10-12T10:00:00.000Z',
+  row('2026-10-12T10:00:00.000Z', 'm2', {
     subject: 'Late',
     outcome: 'not-filed',
     reason: 'expired',
@@ -703,7 +708,8 @@ test('the whole account reads under notes:read alone: on this day, releases, bad
     attempts: 1,
     notified_at: '2026-10-12T10:01:00.000Z'
   });
-  row('MAILLOG#2026-09-01T10:00:00.000Z#old', { message: 'old', outcome: 'filed', expires_at: NOW - 1 });
+  // Older than 30 days: not in the mail log.
+  row('2026-09-01T10:00:00.000Z', 'old', { outcome: 'filed' });
   const log = (await rpc(ctx, a.token, 'notes_mail_log')).value,
     [late, filed] = log.entries as OAuthRow[];
   assert.deepEqual(
@@ -801,15 +807,15 @@ test('notes_activity reads the activity log by local day and kind, a page at a t
     last_at: '2026-10-12T20:00:00.000Z',
     revision: 2
   });
-  // A mail log row from before the log reads as mail until it expires.
   ctx.store.seed({
     pk: 'USER#u',
-    sk: 'MAILLOG#2026-10-10T10:00:00.000Z#legacy',
-    message: 'legacy',
+    sk: 'ACTIVITY#2026-10-10T10:00:00.000Z#mail#m0',
+    kind: 'mail',
+    at: '2026-10-10T10:00:00.000Z',
+    message: 'm0',
     received_at: '2026-10-10T10:00:00.000Z',
     via: 'address',
-    outcome: 'filed',
-    expires_at: NOW + 86400
+    outcome: 'filed'
   });
   ctx.store.seed({ pk: 'USER#other', sk: 'ACTIVITY#2026-10-12T10:00:00.000Z#mail#theirs', kind: 'mail' });
 
@@ -848,7 +854,7 @@ test('notes_activity reads the activity log by local day and kind, a page at a t
       '2026-10-12T05:00:00.000Z#reads#f0',
       '2026-10-11T10:00:00.000Z#mail#m1',
       '2026-10-11T04:59:00.000Z#mail#m0',
-      '2026-10-10T10:00:00.000Z#mail#legacy'
+      '2026-10-10T10:00:00.000Z#mail#m0'
     ]
   );
   const late = rest[1]!;
@@ -885,7 +891,7 @@ test('notes_activity reads the activity log by local day and kind, a page at a t
       '2026-10-12T10:00:00.000Z#mail#m2',
       '2026-10-11T10:00:00.000Z#mail#m1',
       '2026-10-11T04:59:00.000Z#mail#m0',
-      '2026-10-10T10:00:00.000Z#mail#legacy'
+      '2026-10-10T10:00:00.000Z#mail#m0'
     ]
   );
 
@@ -904,7 +910,7 @@ test('notes_activity reads the activity log by local day and kind, a page at a t
     '2026-10-12T10:00:00.000Z#mail#m2',
     '2026-10-11T10:00:00.000Z#mail#m1',
     '2026-10-11T04:59:00.000Z#mail#m0',
-    '2026-10-10T10:00:00.000Z#mail#legacy'
+    '2026-10-10T10:00:00.000Z#mail#m0'
   ]);
   const first = (await rpc(ctx, a.token, 'notes_activity', { kinds: ['mail'], limit: 1 })).value;
   for (const args of [

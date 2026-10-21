@@ -194,7 +194,7 @@ test('photo description commits once, missing object marks empty without model c
   assert.equal(missing.calls.length, 0);
   assert.equal(((await missing.store.note('u', day, id))!.media as Item[])[0]?.description, '');
   // One activity row for the pass, never the words; nothing for the pass with none.
-  const rows = await s.store.activityAll('u', now);
+  const rows = await s.store.activityAll('u');
   assert.deepEqual(
     rows.map((r) => [r.kind, r.day, r.note, r.photos]),
     [['description.added', day, id, 1]]
@@ -208,7 +208,7 @@ test('photos described before a busy lease stopped the pass still get their acti
   await s.store.claimProcessing('describe', 'u', day, id, 1, String(photo(1).key), 'image/png', 'interrupted', now);
   await assert.rejects(() => d.describe(s.note, 'u', s.services), { message: 'Description processing lease busy' });
   assert.deepEqual(
-    (await s.store.activityAll('u', now)).map((r) => [r.kind, r.photos]),
+    (await s.store.activityAll('u')).map((r) => [r.kind, r.photos]),
     [['description.added', 1]]
   );
 });

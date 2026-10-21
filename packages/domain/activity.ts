@@ -54,8 +54,6 @@ import { codePointSlice } from './unicode.ts';
 export const ACTIVITY = 'ACTIVITY#';
 /** Above every activity key ('$' follows '#'). */
 export const ACTIVITY_END = 'ACTIVITY$';
-/** Mail rows written before the activity log (30 days, until moved). */
-export const LEGACY_MAIL = 'MAILLOG#';
 
 /** What a row's kind starts with, before any dot ("note.added" is a note
  * row), for filtering. */
@@ -105,12 +103,6 @@ export function activityKey(at: string, kind: string, id: string): string {
 
 /** A row's id, which is also where a page of older rows starts. */
 export const activityId = (sk: string): string => sk.slice(ACTIVITY.length);
-
-/** A mail log row from before the activity log, as an activity row. */
-export function legacyMail(row: Row): Row {
-  const at = String(row.received_at);
-  return { ...row, sk: activityKey(at, 'mail', String(row.message)), kind: 'mail', at };
-}
 
 const MAIL = ['message', 'received_at', 'via', 'day', 'version', 'subject', 'outcome', 'reason', 'sender', 'text'];
 const READS = ['day', 'client', 'connection', 'calls', 'tools', 'errors', 'last_at'];

@@ -179,9 +179,16 @@ test('the JSON carries the activity log oldest first, with the reads and live ol
     revision: 4
   });
   context.store.seed({ pk: 'MCPMETA#u1', sk: 'USE#f', at: 1 });
-  const old = { pk: 'USER#u1', message: 'm1', received_at: at('11T10'), via: 'address', outcome: 'filed' };
-  context.store.seed({ ...old, sk: `MAILLOG#${at('11T10')}#m1`, expires_at: context.now + 86400 });
-  context.store.seed({ ...old, sk: `MAILLOG#${at('01T10')}#m0`, message: 'm0', expires_at: context.now - 1 });
+  context.store.seed({
+    pk: 'USER#u1',
+    sk: `ACTIVITY#${at('11T10')}#mail#m1`,
+    kind: 'mail',
+    at: at('11T10'),
+    message: 'm1',
+    received_at: at('11T10'),
+    via: 'address',
+    outcome: 'filed'
+  });
   assert.equal(await run(context, 'u1', 'build-a'), 'ready');
   const row = await context.store.export('u1'),
     zip = await unzip((await context.objects.get(String(row?.export_key))).body),
@@ -207,7 +214,7 @@ test('the JSON carries the activity log oldest first, with the reads and live ol
     [data.activity?.[2]?.text, data.activity?.[2]?.notified, data.activity?.[0]?.kind],
     ['Late words', true, 'mail']
   );
-  for (const hidden of ['MAILLOG#', 'MCPMETA#', 'USE#', 'expires_at', 'revision'])
+  for (const hidden of ['MCPMETA#', 'USE#', 'expires_at', 'revision'])
     assert.ok(!JSON.stringify(data.activity).includes(hidden), hidden);
   assert.ok(!md.includes('Late words'));
   // The words alone come straight from the API with the same log.

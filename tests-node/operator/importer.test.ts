@@ -97,7 +97,7 @@ test('fictional legacy import writes files/originals/note links/weather with nat
   assert.equal((await store.weatherBetween('u1', '2016-07-04', '2016-07-04'))['2016-07-04']?.lat, 44.39);
   assert.ok(skies[0]!.includes('latitude=44.39&longitude=-68.2'));
   // One activity row for the run: its counts, never a journal, words or file.
-  const rows = await store.activityAll('u1', Date.parse(s.at) / 1000);
+  const rows = await store.activityAll('u1');
   assert.deepEqual(
     rows.map((r) => [r.kind, r.at, r.via, r.app, r.notes, r.files]),
     [['import.notes', '2026-10-09T12:00:00.000Z', 'import', 'dayone', 2, 2]]
@@ -105,8 +105,7 @@ test('fictional legacy import writes files/originals/note links/weather with nat
 });
 test('a run that stops partway records the notes it committed, and its retry the rest', async () => {
   const { s, store } = setup(),
-    rows = async () =>
-      (await store.activityAll('u1', Date.parse(s.at) / 1000)).map((r) => [r.kind, r.at, r.notes, r.files]);
+    rows = async () => (await store.activityAll('u1')).map((r) => [r.kind, r.at, r.notes, r.files]);
   // The second note's file cannot be read: the first note stays imported.
   await assert.rejects(
     () =>
@@ -143,7 +142,7 @@ test('repeat skips every upload; deleted note stays deleted even across journals
   assert.equal(counts.already_imported, 2);
   assert.equal(objects.calls.length, 0);
   // A run with nothing new adds no row.
-  assert.equal((await store.activityAll('u1', Date.parse(s.at) / 1000)).length, 1);
+  assert.equal((await store.activityAll('u1')).length, 1);
   assert.equal(await store.note('u1', '2016-07-06', `d1-${B}`), null);
   const p = plan('Gratitude');
   const changed = await run(s, p);

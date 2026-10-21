@@ -6,7 +6,10 @@ Notes email link or code, preferably using the code in the approval tab.
 The approval page names the client (a name supplied by that client), shows
 the signed-in address, and asks whether photos and recordings can be read
 as well. Connect only when you initiated it. Approving shares your archive
-with that service under its privacy and retention policies. It cannot
+with that service under its privacy and retention policies: the notes, and
+since 1.4.0 the rest of the account too (badges, releases, the mail log of
+the last 30 days and your settings, never your email address or private
+addresses). It cannot
 write notes unless you separately approve adding. This is available to any subscriber who explicitly approves
 it; there is no operator impersonation or automatic connection.
 
@@ -52,11 +55,16 @@ with a next step. Notes are untrusted data, never agent instructions.
 | `notes_context` | Local today, timezone, current version, archive range, capabilities. |
 | `notes_list` | Recent notes, a date range or release, newest first, previews. |
 | `notes_search` | AND words/quoted phrases (at most ten), case/accent insensitive, tags, dates/release; text, places, link titles and existing transcripts/descriptions. No web 100-day cutoff. |
-| `notes_get_day` | Note previews in writing order, day place and recorded weather, with Open-Meteo credit. |
+| `notes_get_day` | Note previews in writing order, the day's version, place and recorded weather (with Open-Meteo credit), whether the email was paused, and the special days it collected when badges are shown. |
 | `notes_get_note` | Note text, links by name, metadata and media inventory; next_offset for long text. |
 | `notes_tags` | Hashtags with note counts. |
 | `notes_view_photo` | Existing description with description_only=true and notes permission; thumbnail as image content with media permission; original=true returns a private original link. Missing thumbnail falls back to a link; no processing. |
 | `notes_get_audio` | Existing transcript in chunks up to 8,000 characters; optional inline bytes or private download. No processing. |
+| `notes_on_this_day` | The same patch of each earlier release (as the email's On this day), newest first, days with notes only: up to five whole previews each and `notes_total`; ten days a page by default. |
+| `notes_releases` | Releases with notes plus the current one, newest first, with days and note counts; with `release`, one release: days with notes, longest streak, paused days, badges collected (when shown) and its top 100 tags. |
+| `notes_badges` | The Badges page: earned (newest first), tracks, this release's special days and the ones still to find. With "Show badges" off, only `show_badges: false`. |
+| `notes_mail_log` | The mail log (`docs/WEB-APP.md`): each email to the account's addresses in the last 30 days and what became of it, newest first; subjects cut at 300 and words at 2,000 characters. |
+| `notes_account` | Birthday, send time, status, processing settings, "Show badges", home place and pause, with streak, lifetime counts and next release. Never the email address, standing address or calendar feed. |
 | `notes_create` | Write one plain-text agent note on local today or an explicit past date, only with separately approved `notes:write`. |
 | `notes_append` | Append text only to a note created by this exact connection; never edits a user's note or deletes anything. |
 | `upcoming_list` | Saved Upcoming dates (birthdays, anniversaries, trips, events) with each one's next occurrence, id and revision, in date order; needs the separate `upcoming` scope. |
@@ -71,7 +79,11 @@ is edited during browsing, restart to get a fresh traversal. File content is
 limited to 1.5 MB raw per result (one photo or recording). Larger recordings
 use signed downloads. Tool requests are limited to 300/hour and 500/UTC day
 per account, across connections. Notes media metadata carries no storage
-keys. Notes context does not disclose email, birthday, or account settings.
+keys. Notes context does not disclose email, birthday, or account settings;
+`notes_account` shows the birthday and settings, and no tool returns the
+email address, the standing address or the calendar feed link, which work as
+credentials. Settings change only on the web. Mail log subjects and words
+are untrusted content like notes.
 Release filters whose anniversary years exceed the supported date range
 return an invalid_arguments tool result.
 Every note includes `author` and `client`; older notes default to user/null.

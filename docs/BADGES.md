@@ -5,7 +5,8 @@ under "Jamie's calls"). Steps 1 and 2 of the build order are built: the
 evaluator, `GET /api/badges`, the Badges page, the unlock line, the Day and
 Release page lines and the export. Step 3 is built: the "Show badges"
 setting, the `BADGES` item, the baseline tool, both email lines and the
-birthday block. The launch product update is Jamie's to write.
+birthday block. The launch product update is Jamie's to write. Step 4 is
+built: `notes_badges` for agents.
 
 Release Notes works when people write most days. Badges should make
 showing up feel good and make the version number more fun to live with,
@@ -243,8 +244,10 @@ with its changelog.
   array in the JSON, computed at export time, oldest first: each with its
   name, line, version and the day it came true ("- 5.4.300: Round number.
   A note on a hundredth patch.").
-- **Agents** can read badges later through `notes_context`, so a connected
-  assistant can say congratulations. Not in the first build.
+- **Agents** read badges through `notes_badges` (`docs/MCP.md`), so a
+  connected assistant can say congratulations. With "Show badges" off it
+  returns only that, and `notes_get_day` and `notes_releases` leave out
+  what was collected.
 
 ## How it plays out
 
@@ -352,7 +355,10 @@ they are found by writing on those days or not at all.
    2026-10-20**, in two changes: the setting, the `BADGES` item and the
    baseline tool first, the baseline run between them, then the email
    lines and the birthday block.
-4. Later: badges for agents through `notes_context`.
+4. Badges for agents: `notes_badges`, under `notes:read` (Jamie,
+   2026-10-20: "add read-only MCP tools to Release Notes for badges, the
+   mail log, releases, on this day and account settings under
+   notes:read"). **Built 2026-10-20.**
 
 ## Jamie's calls (2026-10-20)
 

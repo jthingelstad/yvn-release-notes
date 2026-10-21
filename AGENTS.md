@@ -134,7 +134,7 @@ Where things are (each module's design comment has its contract):
   seen by the user in the web interface and we email the user if there is a
   problem in the log"): `/mail-log/` shows the owner what became of each
   email to their addresses, 30 days (`MAILLOG#`), never exported and gone
-  with the account. It keeps an email's words only once its sender is
+  with the account. Connected agents read it too (`notes_mail_log`). It keeps an email's words only once its sender is
   proven; mail from another address or that fails verification shows sender
   and subject alone, since inbound opens no MIME before proof and the web
   reads nothing under `raw/`. Another address, a failed verification, an
@@ -423,8 +423,12 @@ Where things are (each module's design comment has its contract):
 
 - **Each scope is the subscriber's own approval**, given in their
   email-verified web session. `notes:read` shares the archive with its
-  transcripts and descriptions; `media:read` adds file bytes and ten-minute
-  links. Consent lets the agent process what it reads; it never turns on the
+  transcripts and descriptions, and (Jamie, 2026-10-20: "read-only MCP
+  tools ... for badges, the mail log, releases, on this day and account
+  settings under notes:read") the rest of the account, read-only: never
+  the email address, the standing address or the calendar feed, which work
+  as credentials, and badges only while "Show badges" is on; `media:read`
+  adds file bytes and ten-minute links. Consent lets the agent process what it reads; it never turns on the
   product's own transcription or description.
 - **`notes:write`** is a separate approval, off by default, and existing
   grants stay read-only. It allows text-only creates and appends at the

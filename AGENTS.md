@@ -616,10 +616,11 @@ ZIP...` prints what an import would do, as counts (`--plan-out` to a
   changes, the browser run when wanted): `e2e/` drives sign-up in Chromium
   against the dev server, reading sign-in codes and links from its
   `/dev-mail/`. Locally: `npx playwright install chromium` once, then
-  `npm run e2e` (it builds first). On GitHub: the `e2e` workflow, from the
-  Actions tab or by labelling a PR `e2e`. Not a required check, and
-  `deploy.sh` does not wait for it; run it for any change under `web/`
-  that a page shows. The expected number comes from `/api/sample`, never a
+  `npm run e2e` (it builds first). On GitHub the `e2e` workflow runs by
+  itself on a PR that changes `web/` or `e2e/`, on any PR labelled `e2e`,
+  and from the Actions tab (2026-10-20). It is not a required check and
+  nothing deploys after it: a red e2e run does not stop a merge, so read
+  it before merging a change a page shows. The expected number comes from `/api/sample`, never a
   fixed string. The dev server's sign-in limits still apply (20 emails an
   hour from one network), so `--repeat-each` past about 4 trips them.
 - Send someone today's email now, outside their window: invoke the sender

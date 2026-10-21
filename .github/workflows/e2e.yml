@@ -1,14 +1,16 @@
 name: e2e
 
-# The browser tests for sign-up (e2e/), on demand. Not a required check and
-# not part of `validate`, so a change merges and deploys without them. Run
-# them from the Actions tab (workflow_dispatch) or by putting the `e2e`
-# label on a pull request; a labelled PR runs them again on each push.
+# The browser tests for sign-up (e2e/). They run by themselves on a pull
+# request that changes web/ or e2e/, on any pull request labelled `e2e`
+# (again on each push), and from the Actions tab (workflow_dispatch). Not a
+# required check and not part of `validate`, so a change merges and deploys
+# without waiting for them. A path filter on the trigger would also drop the
+# label runs, so the `changes` job reads the pull request's files instead.
 # They run against tools/dev-server.ts (Node 24) and its fakes: nothing live.
 on:
   workflow_dispatch:
   pull_request:
-    types: [labeled, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled]
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -18,9 +20,35 @@ concurrency:
 permissions: {}
 
 jobs:
+  changes:
+    name: changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      web: ${{ steps.files.outputs.web }}
+    steps:
+      - name: does the pull request change web/ or e2e/
+        id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
+          if printf '%s\n' "$files" | grep -qE '^(web|e2e)/'; then web=true; else web=false; fi
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+
   e2e:
     name: e2e
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    needs: changes
+    # !cancelled(): a dispatch skips `changes`, which must not skip this.
+    if: >-
+      !cancelled() && (github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'e2e') ||
+      needs.changes.outputs.web == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

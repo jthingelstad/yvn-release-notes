@@ -68,10 +68,7 @@ export async function uploadArtifacts(kind: Kind, directory: string, commit: str
   )
     throw new Error('Missing native source bucket');
   const s3 = new S3Client({ region }),
-    parameters: Record<string, string> =
-      kind === 'http'
-        ? { NativeWebFunctionsEnabled: 'true' }
-        : { NativeWorkersEnabled: 'true', NativeWorkerBuildId: commit };
+    parameters: Record<string, string> = kind === 'http' ? {} : { NativeWorkerBuildId: commit };
   const recorded = [];
   for (const artifact of artifacts) {
     const key = keyFor(kind, artifact.name, artifact.sha256),

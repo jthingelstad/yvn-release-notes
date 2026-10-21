@@ -28,12 +28,10 @@ locks and release drift; do not remove a lock merely to get a deployment through
 but still requires clean HEAD to match the last-fetched `origin/main`, Node 24
 and successful archived-tree verification. It never permits a red check.
 
-The native-only template requires `NativeWebFunctionsEnabled=true`,
-`NativeHttpRouting=native`, `NativeOriginPoliciesReady=true`,
-`NativeWorkersEnabled=true` and `NativeWorkerAliasesReady=true`. Keep all four
-HTTP revision pins and all seven worker live-version pins explicit. Retired
-`WorkerAliasesReady`, `EventsAliasesReady` and `EventsPythonCodeSha256`
-parameters are no longer part of the template.
+Keep all four HTTP revision pins and all seven worker live-version pins
+explicit. The stack has no routing or readiness flags (the migration's were
+retired on 2026-10-20): CloudFront always routes to the Web Functions, and the
+workers always serve their pinned `live` alias versions.
 
 Private release receipts and policy journals live outside this public repository
 in the directory selected by `deploy.sh` (`NATIVE_RECEIPT_DIR`). The directory is
@@ -145,19 +143,17 @@ or, for the worker group:
 The script resolves the published backend build identity from stack metadata,
 then `tools/native-release.ts` loads that build's immutable promotion receipt and
 recorded prior native release. HTTP rollback restores the prior four revision
-pins while retaining native routing and verified policies. Worker rollback
-restores the prior seven alias versions with `NativeWorkerAliasesReady=true`,
-verifying their recorded native identities and running the same content-free
-published-version probes. Neither rollback rewrites subscriber data or changes
+pins and re-verifies the endpoint policies. Worker rollback restores the prior
+seven alias versions, verifying their recorded build and code hash and running
+the same content-free published-version probes. Neither rollback rewrites subscriber data or changes
 the published source artifact/build parameters. Static assets still come from
 current HEAD; these flags do not restore an earlier UI build.
 
 The tooling refuses missing/mismatched receipts, changed build identities,
-unowned policies and routing/alias drift. Initial migration receipts targeting
-Python or legacy HTTP are refused after retirement. There is no supported
-`NativeHttpRouting=legacy` or `NativeWorkerAliasesReady=false` recovery path.
-`policy-remove` is a historical migration operation and refuses native routing;
-do not remove the serving policies or disable native compute for rollback.
+unowned policies and routing/alias drift. A recorded baseline with no serving
+revisions (HTTP) or no build and code hash (workers), as the first adoption's
+receipts have, is refused before any rollback intent. No release step removes an
+endpoint policy or disables compute; a rollback only moves pins and aliases.
 
 For an interrupted phase, first establish whether CloudFormation is still
 updating and read back the actual pins/aliases. Retry the matching phase with

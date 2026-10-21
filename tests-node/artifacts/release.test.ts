@@ -1,11 +1,14 @@
+/** The release phases against a fictional stack whose serving versions are
+ * all earlier Node builds. No AWS calls, credentials or subscriber data. */
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { STSClient } from '@aws-sdk/client-sts';
 import { CloudFormationClient } from '@aws-sdk/client-cloudformation';
 import { LambdaClient } from '@aws-sdk/client-lambda';
 import { LambdaWebClient } from '@aws-sdk/client-lambda-web';
 import { main } from '../../tools/native-release.ts';
-import { MemoryReceiptStore } from '../../tools/receipt-store.ts';
+import { MemoryReceiptStore, readReceipt, writeReceipt } from '../../tools/receipt-store.ts';
 type Fields = Record<string, unknown>;
 const names = ['Sender', 'Inbound', 'Events', 'Transcribe', 'Describe', 'Export', 'Capture'];
 const build = 'a'.repeat(40),
@@ -15,13 +18,7 @@ const stackId = `arn:aws:cloudformation:us-east-1:${account}:stack/yvn-release-n
 async function fixture(t: TestContext) {
   const store = new MemoryReceiptStore();
   const parameters: Record<string, string> = {
-    WorkerAliasesReady: 'true',
-    EventsAliasesReady: 'true',
-    NativeWorkersEnabled: 'false',
-    NativeWorkerAliasesReady: 'false',
     NativeWorkerBuildId: previousBuild,
-    NativeHttpRouting: 'native',
-    NativeWebFunctionsEnabled: 'true',
     NativeAppBuildId: previousBuild,
     NativeMcpBuildId: previousBuild,
     WebDomain: 'notes.example.com',
@@ -70,14 +67,17 @@ async function fixture(t: TestContext) {
     parameters[`${name}NodeCodeSha256`] = `hash-${name}`;
     current[name] = { version: '1', revision: 'initial' };
     const role = `arn:aws:iam::${account}:role/fictional-${name}`;
-    configs[`${name}:1`] = { Role: role, Runtime: 'python3.13', Environment: { Variables: envs[name] } };
+    const node = { Role: role, Runtime: 'nodejs24.x', Handler: 'index.handler', Architectures: ['arm64'] };
+    const ready = { State: 'Active', LastUpdateStatus: 'Successful' };
+    configs[`${name}:1`] = {
+      ...node,
+      ...ready,
+      CodeSha256: `old-${name}`,
+      Environment: { Variables: { ...envs[name], APP_VERSION: previousBuild } }
+    };
     configs[`${name}:2`] = {
-      Role: role,
-      Runtime: 'nodejs24.x',
-      Handler: 'index.handler',
-      Architectures: ['arm64'],
-      State: 'Active',
-      LastUpdateStatus: 'Successful',
+      ...node,
+      ...ready,
       CodeSha256: `hash-${name}`,
       Environment: { Variables: { ...envs[name], APP_VERSION: build } }
     };
@@ -208,14 +208,12 @@ async function fixture(t: TestContext) {
     return (await main([command, '--commit', build], { store, platform })).parameters;
   };
   const publish = () => {
-    parameters.NativeWorkersEnabled = 'true';
     parameters.NativeWorkerBuildId = build;
     parameters.NativeAppBuildId = build;
     parameters.NativeMcpBuildId = build;
   };
   const serveWorkers = (version: string) => {
     for (const name of names) current[name] = { version, revision: `serving-${version}` };
-    parameters.NativeWorkerAliasesReady = version === '2' ? 'true' : 'false';
   };
   return {
     store,
@@ -234,6 +232,18 @@ async function fixture(t: TestContext) {
     }
   };
 }
+const pinKeys = ['App', 'Mcp'].flatMap((name) => [`Native${name}LiveRevisionId`, `Native${name}RollbackRevisionId`]);
+const versionKeys = names.map((name) => `${name}NativeLiveVersion`);
+const retired = [
+  'NativeWorkersEnabled',
+  'NativeWorkerAliasesReady',
+  'NativeWebFunctionsEnabled',
+  'NativeHttpRouting',
+  'NativeOriginPoliciesReady'
+];
+const servePins = (f: Awaited<ReturnType<typeof fixture>>, target: Record<string, string>) =>
+  Object.assign(f.pins, Object.fromEntries(Object.entries(target).filter(([key]) => key.endsWith('RevisionId'))));
+
 test('worker promotion intents survive unknown CFN outcomes, completed retries and exact rollback', async (t) => {
   const f = await fixture(t);
   await f.phase('prepare-workers');
@@ -255,11 +265,21 @@ test('worker promotion intents survive unknown CFN outcomes, completed retries a
   assert.deepEqual(receipt('workers-prepared'), before);
   await assert.rejects(f.phase('prepare-workers'), /Promotion intent already exists/);
   const rollback = await f.phase('rollback-workers');
-  assert.equal(rollback.NativeWorkerAliasesReady, 'false');
+  assert.deepEqual(Object.keys(rollback).sort(), [...versionKeys].sort());
   for (const name of names) assert.equal(rollback[`${name}NativeLiveVersion`], '1');
   f.serveWorkers('1');
   assert.deepEqual(await f.phase('rollback-workers'), rollback);
-  assert.equal(f.probes(), 14);
+  // Seven self-tests per promotion and per rollback, the retries included.
+  assert.equal(f.probes(), 28);
+});
+test('worker preparation records each serving version build and code hash', async (t) => {
+  const f = await fixture(t);
+  f.configs['Export:1']!.Runtime = 'python3.13';
+  await assert.rejects(f.phase('prepare-workers'), /Incomplete prior release metadata Export/);
+  f.configs['Export:1']!.Runtime = 'nodejs24.x';
+  delete (f.configs['Export:1']!.Environment as { Variables: Record<string, string> }).Variables.APP_VERSION;
+  await assert.rejects(f.phase('prepare-workers'), /Incomplete prior release metadata Export/);
+  assert.equal(f.store.names().length, 0);
 });
 test('worker candidates require actual immutable code, role and complete owner environment before probing', async (t) => {
   const f = await fixture(t);
@@ -321,7 +341,7 @@ test('HTTP source/configuration verification and completed retries preserve prio
   const target = await f.phase('promote-http');
   assert.equal(target.NativeAppRollbackRevisionId, 'old-app');
   assert.equal(target.NativeMcpRollbackRevisionId, 'old-mcp');
-  Object.assign(f.pins, Object.fromEntries(Object.entries(target).filter(([key]) => key.endsWith('RevisionId'))));
+  servePins(f, target);
   const prepared = f.store.objects.get(`${build}-http-prepared.json`);
   assert.ok(prepared);
   assert.deepEqual(await f.phase('promote-http'), target);
@@ -329,7 +349,8 @@ test('HTTP source/configuration verification and completed retries preserve prio
   const rollback = await f.phase('rollback-http');
   assert.equal(rollback.NativeAppLiveRevisionId, 'old-app');
   assert.equal(rollback.NativeMcpLiveRevisionId, 'old-mcp');
-  Object.assign(f.pins, Object.fromEntries(Object.entries(rollback).filter(([key]) => key.endsWith('RevisionId'))));
+  assert.deepEqual(Object.keys(rollback).sort(), [...pinKeys].sort());
+  servePins(f, rollback);
   Object.assign(f.parameters, rollback);
   assert.deepEqual(await f.phase('rollback-http'), rollback);
   f.pins.NativeAppLiveRevisionId = 'unexpected-after-rollback';
@@ -370,59 +391,28 @@ test('HTTP rollback refuses unrelated pins and a different currently published b
   const f = await fixture(t);
   await f.phase('prepare-http');
   f.publish();
-  const target = await f.phase('promote-http');
-  Object.assign(f.pins, Object.fromEntries(Object.entries(target).filter(([key]) => key.endsWith('RevisionId'))));
+  servePins(f, await f.phase('promote-http'));
   f.parameters.NativeMcpBuildId = previousBuild;
   await assert.rejects(f.phase('rollback-http'), /Current HTTP build differs/);
   f.parameters.NativeMcpBuildId = build;
   f.pins.NativeAppLiveRevisionId = 'unrelated-app';
   await assert.rejects(f.phase('rollback-http'), /routing changed since this promotion/);
 });
-test('native worker rollback verifies actual prior alias build/hash after an earlier rollback left newer latest metadata', async (t) => {
+test('worker rollback verifies the actual prior build and hash after an earlier rollback left newer stack metadata', async (t) => {
   const f = await fixture(t);
-  f.parameters.NativeWorkerAliasesReady = 'true';
   f.parameters.NativeWorkerBuildId = 'c'.repeat(40);
-  for (const name of names) {
-    const old = f.configs[`${name}:1`]!,
-      candidate = f.configs[`${name}:2`]!;
-    Object.assign(old, {
-      Runtime: 'nodejs24.x',
-      Handler: 'index.handler',
-      Architectures: ['arm64'],
-      State: 'Active',
-      LastUpdateStatus: 'Successful',
-      CodeSha256: `old-${name}`
-    });
-    (old.Environment as { Variables: Record<string, string> }).Variables.APP_VERSION = previousBuild;
-    candidate.Role = old.Role;
-    f.parameters[`${name}NodeCodeSha256`] = `stale-latest-${name}`;
-  }
+  for (const name of names) f.parameters[`${name}NodeCodeSha256`] = `stale-latest-${name}`;
   await f.phase('prepare-workers');
   f.publish();
   for (const name of names) f.parameters[`${name}NodeCodeSha256`] = `hash-${name}`;
   await f.phase('promote-workers');
   f.serveWorkers('2');
+  f.configs['Inbound:1']!.CodeSha256 = 'replaced-code';
+  await assert.rejects(f.phase('rollback-workers'), /Incomplete candidate configuration Inbound/);
+  f.configs['Inbound:1']!.CodeSha256 = 'old-Inbound';
   const rollback = await f.phase('rollback-workers');
-  assert.equal(rollback.NativeWorkerAliasesReady, 'true');
-  assert.equal(f.probes(), 14);
   for (const name of names) assert.equal(rollback[`${name}NativeLiveVersion`], '1');
-});
-test('initial HTTP adoption records the newly provisioned private endpoints while preserving legacy rollback', async (t) => {
-  const f = await fixture(t);
-  f.parameters.NativeHttpRouting = 'legacy';
-  f.parameters.NativeWebFunctionsEnabled = 'false';
-  const original = { ...f.pins };
-  for (const key of Object.keys(f.pins)) delete f.pins[key];
-  assert.deepEqual(await f.phase('prepare-http'), { NativeHttpRouting: 'legacy' });
-  f.publish();
-  f.parameters.NativeWebFunctionsEnabled = 'true';
-  Object.assign(f.pins, original);
-  const target = await f.phase('promote-http');
-  Object.assign(f.pins, Object.fromEntries(Object.entries(target).filter(([key]) => key.endsWith('RevisionId'))));
-  f.parameters.NativeHttpRouting = 'native';
-  assert.deepEqual(await f.phase('rollback-http'), { NativeHttpRouting: 'legacy' });
-  f.parameters.NativeHttpRouting = 'legacy';
-  assert.deepEqual(await f.phase('rollback-http'), { NativeHttpRouting: 'legacy' });
+  assert.equal(f.probes(), 7 + 1 + 7);
 });
 test('automatic CloudFormation rollback to the exact recorded baseline is a safe resumable no-op', async (t) => {
   const f = await fixture(t);
@@ -431,115 +421,91 @@ test('automatic CloudFormation rollback to the exact recorded baseline is a safe
   await f.phase('promote-workers');
   f.status('UPDATE_ROLLBACK_COMPLETE');
   const rollback = await f.phase('rollback-workers');
-  assert.equal(rollback.NativeWorkerAliasesReady, 'false');
+  for (const name of names) assert.equal(rollback[`${name}NativeLiveVersion`], '1');
   assert.deepEqual(await f.phase('rollback-workers'), rollback);
 });
-function retirement(parameters: Record<string, string>, draining: string | undefined) {
-  if (draining === undefined) {
-    delete parameters.NativeLegacyDrainPending;
-    delete parameters.WorkerAliasesReady;
-    delete parameters.EventsAliasesReady;
-    parameters.NativeWorkersEnabled = 'true';
-    parameters.NativeWorkerAliasesReady = 'true';
-  } else parameters.NativeLegacyDrainPending = draining;
-}
-for (const draining of ['true', 'false', undefined]) {
-  test(`native-only retirement refuses first Python worker rollback while drain=${draining ?? 'removed'}`, async (t) => {
-    const f = await fixture(t);
-    await f.phase('prepare-workers');
-    f.publish();
-    await f.phase('promote-workers');
-    f.serveWorkers('2');
-    retirement(f.parameters, draining);
-    await assert.rejects(f.phase('rollback-workers'), /Legacy rollback is unavailable after native-only retirement/);
-    assert.equal(
-      f.store.names().some((name) => name.endsWith('rollback.json')),
-      false
-    );
-    assert.equal(f.probes(), 7);
-    assert.equal(f.parameters.NativeWorkerAliasesReady, 'true');
+test('every phase emits only pins and versions the template declares, never a retired stack flag', async (t) => {
+  const template = await readFile(new URL('../../infra/template.yaml', import.meta.url), 'utf8');
+  const block = template.slice(template.indexOf('\nParameters:\n'), template.indexOf('\nConditions:\n'));
+  const declared = new Set([...block.matchAll(/^ {2}([A-Za-z0-9]+):$/gm)].map((m) => m[1]!));
+  for (const name of retired) assert.ok(!declared.has(name), `${name} is still a template parameter`);
+  const f = await fixture(t);
+  const emitted: Record<string, string[]> = {};
+  const run = async (phase: string) => {
+    const parameters = await f.phase(phase);
+    emitted[phase] = Object.keys(parameters).sort();
+    return parameters;
+  };
+  await run('prepare-http');
+  await run('prepare-workers');
+  f.publish();
+  servePins(f, await run('promote-http'));
+  await run('promote-workers');
+  f.serveWorkers('2');
+  await run('rollback-http');
+  await run('rollback-workers');
+  for (const phase of ['prepare-http', 'promote-http', 'rollback-http'])
+    assert.deepEqual(emitted[phase], [...pinKeys].sort(), phase);
+  for (const phase of ['prepare-workers', 'promote-workers', 'rollback-workers'])
+    assert.deepEqual(emitted[phase], [...versionKeys].sort(), phase);
+  for (const key of Object.values(emitted).flat()) assert.ok(declared.has(key), `${key} is not a template parameter`);
+});
+test('intents recorded with the retired stack flags still resume and roll back', async (t) => {
+  const f = await fixture(t);
+  // Receipts written before 2026-10-20 carry the flags in their targets.
+  const age = async (name: string, flags: Record<string, string>) => {
+    const receipt = (await readReceipt<{ target: Record<string, string> }>(f.store, `${build}-${name}.json`))!;
+    await writeReceipt(f.store, `${build}-${name}.json`, { ...receipt, target: { ...receipt.target, ...flags } });
+  };
+  await f.phase('prepare-http');
+  await f.phase('prepare-workers');
+  f.publish();
+  const http = await f.phase('promote-http');
+  const workers = await f.phase('promote-workers');
+  await age('http-promotion', { NativeHttpRouting: 'native', NativeOriginPoliciesReady: 'true' });
+  await age('workers-promotion', { NativeWorkersEnabled: 'true', NativeWorkerAliasesReady: 'true' });
+  servePins(f, http);
+  f.serveWorkers('2');
+  assert.deepEqual(await f.phase('promote-http'), http);
+  assert.deepEqual(await f.phase('promote-workers'), workers);
+  const httpRollback = await f.phase('rollback-http');
+  const workerRollback = await f.phase('rollback-workers');
+  await age('http-rollback', { NativeHttpRouting: 'native', NativeOriginPoliciesReady: 'true' });
+  await age('workers-rollback', { NativeWorkerAliasesReady: 'true' });
+  assert.deepEqual(await f.phase('rollback-http'), httpRollback);
+  assert.deepEqual(await f.phase('rollback-workers'), workerRollback);
+  for (const key of [...Object.keys(httpRollback), ...Object.keys(workerRollback)]) assert.ok(!retired.includes(key));
+});
+test('a baseline recorded without serving revisions or build metadata is refused before any rollback intent', async (t) => {
+  const f = await fixture(t);
+  await f.phase('prepare-http');
+  await f.phase('prepare-workers');
+  f.publish();
+  servePins(f, await f.phase('promote-http'));
+  await f.phase('promote-workers');
+  f.serveWorkers('2');
+  // The shape of the first adoption's receipts: no private endpoints yet, and
+  // Python worker versions with no recorded build or code hash.
+  const strip = async (name: string, change: (previous: Record<string, unknown>) => void) => {
+    const receipt = (await readReceipt<{ previous: Record<string, unknown> }>(f.store, `${build}-${name}.json`))!;
+    change(receipt.previous);
+    await writeReceipt(f.store, `${build}-${name}.json`, receipt);
+  };
+  await strip('http-promotion', (previous) => {
+    previous.pins = {};
   });
-  test(`native-only retirement refuses first legacy HTTP rollback while drain=${draining ?? 'removed'}`, async (t) => {
-    const f = await fixture(t);
-    f.parameters.NativeHttpRouting = 'legacy';
-    await f.phase('prepare-http');
-    f.publish();
-    const target = await f.phase('promote-http');
-    Object.assign(f.pins, Object.fromEntries(Object.entries(target).filter(([key]) => key.endsWith('RevisionId'))));
-    f.parameters.NativeHttpRouting = 'native';
-    retirement(f.parameters, draining);
-    await assert.rejects(f.phase('rollback-http'), /Legacy rollback is unavailable after native-only retirement/);
-    assert.equal(
-      f.store.names().some((name) => name.endsWith('rollback.json')),
-      false
-    );
-    assert.equal(f.parameters.NativeHttpRouting, 'native');
-  });
-  test(`native-only worker preparation promotion and native rollback preserve complete pins while drain=${draining ?? 'removed'}`, async (t) => {
-    const f = await fixture(t);
-    delete f.parameters.WorkerAliasesReady;
-    delete f.parameters.EventsAliasesReady;
-    f.parameters.NativeWorkersEnabled = 'true';
-    f.parameters.NativeWorkerAliasesReady = 'true';
-    retirement(f.parameters, draining);
-    for (const name of names) {
-      const old = f.configs[`${name}:1`]!;
-      Object.assign(old, {
-        Runtime: 'nodejs24.x',
-        Handler: 'index.handler',
-        Architectures: ['arm64'],
-        State: 'Active',
-        LastUpdateStatus: 'Successful',
-        CodeSha256: `old-${name}`
-      });
-      (old.Environment as { Variables: Record<string, string> }).Variables.APP_VERSION = previousBuild;
+  await strip('workers-promotion', (previous) => {
+    for (const alias of Object.values(previous.aliases as Record<string, Record<string, string>>)) {
+      delete alias.build;
+      delete alias.sha;
     }
-    const prepared = await f.phase('prepare-workers');
-    assert.equal(prepared.NativeWorkerAliasesReady, undefined);
-    f.publish();
-    await f.phase('promote-workers');
-    f.serveWorkers('2');
-    const rollback = await f.phase('rollback-workers');
-    assert.equal(rollback.NativeWorkerAliasesReady, 'true');
-    for (const name of names) assert.equal(rollback[`${name}NativeLiveVersion`], '1');
-    assert.equal(rollback.NativeLegacyDrainPending, undefined);
-    assert.equal(f.parameters.NativeLegacyDrainPending, draining);
-    assert.equal(f.probes(), 14);
-    f.serveWorkers('1');
-    f.parameters.NativeWorkerAliasesReady = 'true';
-    assert.deepEqual(await f.phase('rollback-workers'), rollback);
   });
-  test(`native-only HTTP preparation promotion and native rollback retain private native routing while drain=${draining ?? 'removed'}`, async (t) => {
-    const f = await fixture(t);
-    retirement(f.parameters, draining);
-    f.parameters.NativeOriginPoliciesReady = 'true';
-    await f.phase('prepare-http');
-    f.publish();
-    const target = await f.phase('promote-http');
-    Object.assign(f.pins, Object.fromEntries(Object.entries(target).filter(([key]) => key.endsWith('RevisionId'))));
-    const rollback = await f.phase('rollback-http');
-    assert.equal(rollback.NativeHttpRouting, 'native');
-    assert.equal(rollback.NativeOriginPoliciesReady, 'true');
-    assert.equal(rollback.NativeAppLiveRevisionId, 'old-app');
-    assert.equal(rollback.NativeMcpLiveRevisionId, 'old-mcp');
-    assert.equal(rollback.NativeLegacyDrainPending, undefined);
-    Object.assign(f.pins, Object.fromEntries(Object.entries(rollback).filter(([key]) => key.endsWith('RevisionId'))));
-    Object.assign(f.parameters, rollback);
-    assert.deepEqual(await f.phase('rollback-http'), rollback);
-  });
-}
-
-for (const incomplete of ['NativeWorkersEnabled', 'NativeWorkerAliasesReady']) {
-  test(`absent legacy flags alone do not infer retirement when ${incomplete} is false`, async (t) => {
-    const f = await fixture(t);
-    f.parameters.NativeHttpRouting = 'legacy';
-    await f.phase('prepare-http');
-    f.publish();
-    const target = await f.phase('promote-http');
-    Object.assign(f.pins, Object.fromEntries(Object.entries(target).filter(([key]) => key.endsWith('RevisionId'))));
-    f.parameters.NativeHttpRouting = 'native';
-    retirement(f.parameters, undefined);
-    f.parameters[incomplete] = 'false';
-    assert.deepEqual(await f.phase('rollback-http'), { NativeHttpRouting: 'legacy' });
-  });
-}
+  const probes = f.probes();
+  await assert.rejects(f.phase('rollback-http'), /no serving revisions to restore/);
+  await assert.rejects(f.phase('rollback-workers'), /Missing release metadata build/);
+  assert.equal(f.probes(), probes);
+  assert.equal(
+    f.store.names().some((name) => name.endsWith('rollback.json')),
+    false
+  );
+});

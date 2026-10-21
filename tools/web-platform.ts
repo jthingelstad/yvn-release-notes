@@ -1,15 +1,15 @@
-/** Sole owner of native HTTP endpoint policies and release pin receipts.
+/** Sole owner of the HTTP endpoint policies and release pin receipts.
  * Runs through tools/release-cli.ts, under the deploy lock, with its policy
  * journals and receipts in the private receipts bucket (tools/receipt-store.ts).
  * No data-plane reads, credential retrieval, source deletion or CloudFront edits.
- * Publish flow: prepare -> CF pinned candidate -> policy-install -> policy-verify
- * -> CF origin switch. Revert routing before policy-remove or disabling compute.
+ * Publish flow: prepare -> CF pinned candidate -> policy-install -> policy-verify;
+ * activation (tools/native-release.ts) moves the pins. Nothing here removes a
+ * policy: CloudFront reaches the API only through these grants.
  */
 import {
   LambdaWebClient,
   GetResourcePolicyCommand,
   PutResourcePolicyCommand,
-  DeleteResourcePolicyCommand,
   GetWebFunctionEndpointCommand,
   type GetWebFunctionEndpointResponse
 } from '@aws-sdk/client-lambda-web';
@@ -31,6 +31,8 @@ type Journal = {
   policyHash: string;
   revisionId?: string;
   previousRevisionId?: string;
+  // 'removing' and 'deleted' appear only in journals written while a release
+  // could still remove a policy (retired 2026-10-20).
   state: 'pending' | 'installed' | 'removing' | 'deleted';
   artifact: Artifact;
   savedAt: string;
@@ -142,13 +144,13 @@ async function context(region: string, stackName: string): Promise<Context> {
   };
 }
 
-async function endpoint(ctx: Context, kind: Kind, target: 'live' | 'rollback', requireActive = true) {
+async function endpoint(ctx: Context, kind: Kind, target: 'live' | 'rollback') {
   const functionName = required(ctx.outputs, `Native${kind}FunctionName`);
   if (functionName !== `${ctx.stackName}-${kind === 'App' ? 'web' : 'mcp'}-native`) {
-    throw new Error('Unexpected native function identity');
+    throw new Error('Unexpected web function identity');
   }
   const response = await ctx.web.send(new GetWebFunctionEndpointCommand({ functionName, endpointName: target }));
-  if (requireActive) pinnedRevision(response);
+  pinnedRevision(response);
   if (
     response.functionArn !== required(ctx.outputs, `Native${kind}FunctionArn`) ||
     (target === 'live' &&
@@ -262,60 +264,28 @@ export async function verifyPolicy(ctx: Context, kind: Kind, store: ReceiptStore
   }
 }
 
-export async function removePolicy(ctx: Context, kind: Kind, store: ReceiptStore): Promise<void> {
-  if (ctx.parameters.NativeHttpRouting !== 'legacy') {
-    throw new Error('Restore legacy CloudFront routing before removing endpoint policies');
-  }
-  const live = await endpoint(ctx, kind, 'live', false);
-  const save = (value: Journal) => writeReceipt(store, journalName(kind), value);
-  const journal = await journalAt(store, kind);
-  if (!journal) throw new Error('No owner journal; refusing policy removal');
-  checkJournal(ctx, live.functionArn!, live.endpointArn!, journal);
-  const actual = await currentPolicy(ctx, live.functionArn!);
-  if (!actual) {
-    if (!['removing', 'deleted'].includes(journal.state)) throw new Error('Policy disappeared unexpectedly');
-    await save({ ...journal, state: 'deleted' });
-    return;
-  }
-  if (!['installed', 'removing'].includes(journal.state)) throw new Error('Policy must have a confirmed owner');
-  assertOwnedPolicy(journal, actual.policy, actual.revisionId);
-  await save({ ...journal, state: 'removing' });
-  await ctx.web.send(
-    new DeleteResourcePolicyCommand({ resourceArn: live.functionArn!, revisionId: actual.revisionId })
-  );
-  if (await currentPolicy(ctx, live.functionArn!)) throw new Error('Policy deletion was not confirmed');
-  await save({ ...journal, state: 'deleted' });
-}
-
 async function prepare(ctx: Context, store: ReceiptStore) {
   const pins: Record<string, string> = {};
   const receipt: Record<string, unknown> = { stackId: ctx.stackId, savedAt: new Date().toISOString() };
-  if (ctx.parameters.NativeWebFunctionsEnabled === 'true') {
-    for (const kind of ['App', 'Mcp'] as const) {
-      const live = await endpoint(ctx, kind, 'live');
-      const rollback = await endpoint(ctx, kind, 'rollback');
-      pins[`Native${kind}LiveRevisionId`] = pinnedRevision(live);
-      pins[`Native${kind}RollbackRevisionId`] = pinnedRevision(rollback);
-      receipt[kind] = {
-        liveRevisionId: pinnedRevision(live),
-        rollbackRevisionId: pinnedRevision(rollback),
-        candidateRevisionId: required(ctx.outputs, `Native${kind}CandidateRevisionId`),
-        artifact: artifact(ctx, kind)
-      };
-    }
+  for (const kind of ['App', 'Mcp'] as const) {
+    const live = await endpoint(ctx, kind, 'live');
+    const rollback = await endpoint(ctx, kind, 'rollback');
+    pins[`Native${kind}LiveRevisionId`] = pinnedRevision(live);
+    pins[`Native${kind}RollbackRevisionId`] = pinnedRevision(rollback);
+    receipt[kind] = {
+      liveRevisionId: pinnedRevision(live),
+      rollbackRevisionId: pinnedRevision(rollback),
+      candidateRevisionId: required(ctx.outputs, `Native${kind}CandidateRevisionId`),
+      artifact: artifact(ctx, kind)
+    };
   }
   required(ctx.outputs, 'NativeSourceBucketName');
   await createReceipt(store, `release-${randomUUID()}.json`, { ...receipt, pins });
   return pins;
 }
 
-export type PlatformCommand = 'prepare' | 'policy-install' | 'policy-verify' | 'policy-remove';
-export const platformCommands: readonly PlatformCommand[] = [
-  'prepare',
-  'policy-install',
-  'policy-verify',
-  'policy-remove'
-];
+export type PlatformCommand = 'prepare' | 'policy-install' | 'policy-verify';
+export const platformCommands: readonly PlatformCommand[] = ['prepare', 'policy-install', 'policy-verify'];
 
 /** One platform step against the live stack; the caller holds the deploy lock. */
 export async function runPlatform(
@@ -326,7 +296,6 @@ export async function runPlatform(
   if (command === 'prepare') return { pins: await prepare(ctx, store) };
   for (const kind of ['App', 'Mcp'] as const) {
     if (command === 'policy-install') await installPolicy(ctx, kind, store);
-    else if (command === 'policy-remove') await removePolicy(ctx, kind, store);
     else await verifyPolicy(ctx, kind, store);
   }
   if (command === 'policy-install') {

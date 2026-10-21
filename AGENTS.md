@@ -128,9 +128,9 @@ Where things are (each module's design comment explains its contract):
 - `tools/{build-server,package-native,native-artifacts,native-release,web-platform}.ts`
   build deterministic native artifacts (with a `manifest.json` of their content
   hashes), retain immutable S3 versions and run the native phases and origin
-  policies. `tools/{receipt-store,release-identity,release-cli,migrate-receipts}.ts`
-  are the receipts bucket and deploy lock, who may release, the one bundled
-  release tool and the one-time move of the old local receipts.
+  policies. `tools/{receipt-store,release-identity,release-cli}.ts`
+  are the receipts bucket and deploy lock, who may release, and the one
+  bundled release tool.
   `infra/template.yaml` is the stack. `infra/github-deploy-role.yaml` is the
   separate `yvn-release-notes-deploy` stack: the GitHub Actions deploy role,
   the CloudFormation service role and the private release receipts bucket,
@@ -585,14 +585,6 @@ named native regressions and explicit obsolete implementation assumptions.
   A held lock means a run is going or one died: find out which before
   deleting it by hand; nothing ever takes it over. Never commit or print
   receipts, logs or their cloud identifiers.
-- **The one-time receipt move** (Jamie runs it, after this tooling merges,
-  before any release): with node@24 on PATH and the cloud-engineer profile,
-  `node --import tsx tools/release-cli.ts migrate-receipts --from /Users/otto/.codex/tmp/yvn-native-release-receipts`,
-  then the same with `--check`, which must say `"ok":true`. It copies each
-  receipt byte for byte, never over a different one, and writes
-  `migration/complete.json`; native phases and policy steps refuse to run
-  until it is there (an ordinary deploy needs only the lock). Keep the local
-  folder until a native release has run from the bucket.
 - **Node 24** everywhere (`.node-version`, both workflows; `engines` says
   24 or later). This Mac's default `node` is newer, so put Homebrew's
   `/opt/homebrew/opt/node@24/bin` first on PATH for npm here; `deploy.sh`

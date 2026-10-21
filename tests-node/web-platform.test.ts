@@ -4,7 +4,6 @@ import { test } from 'node:test';
 import {
   GetResourcePolicyCommand,
   PutResourcePolicyCommand,
-  DeleteResourcePolicyCommand,
   GetWebFunctionEndpointCommand,
   type LambdaWebClient,
   type GetWebFunctionEndpointResponse
@@ -15,7 +14,7 @@ import {
   policyHash,
   installPolicy,
   verifyPolicy,
-  removePolicy,
+  platformCommands,
   type Context
 } from '../tools/web-platform.ts';
 import { MemoryReceiptStore, readReceipt } from '../tools/receipt-store.ts';
@@ -47,9 +46,7 @@ function fixture() {
     policy: undefined as string | undefined,
     revisionId: 'policy-1',
     writes: 0,
-    deletes: 0,
-    losePutResponse: false,
-    loseDeleteResponse: false
+    losePutResponse: false
   };
   const missing = () => Object.assign(new Error('fictional'), { name: 'ResourceNotFoundException' });
   const web = {
@@ -79,14 +76,6 @@ function fixture() {
         if (state.losePutResponse) throw Object.assign(new Error('fictional'), { name: 'TimeoutError' });
         return { policy: state.policy, revisionId: state.revisionId };
       }
-      if (command instanceof DeleteResourcePolicyCommand) {
-        assert.equal(command.input.resourceArn, functionArn);
-        assert.equal(command.input.revisionId, state.revisionId);
-        state.policy = undefined;
-        state.deletes++;
-        if (state.loseDeleteResponse) throw Object.assign(new Error('fictional'), { name: 'TimeoutError' });
-        return {};
-      }
       throw new Error('Unreviewed API request');
     }
   };
@@ -101,7 +90,6 @@ function fixture() {
       NativeAppLiveEndpointDomain: 'fixture.invalid'
     },
     parameters: {
-      NativeHttpRouting: 'legacy',
       NativeAppCodeKey: `native/app/${'0'.repeat(64)}.zip`,
       NativeAppCodeVersion: 'fictional-object-version',
       NativeAppBuildId: '0'.repeat(40)
@@ -144,7 +132,7 @@ test('release pin refuses public/latest/in-progress/canary endpoints', () => {
     assert.throws(() => pinnedRevision({ ...live, ...invalid }));
 });
 
-test('install readback, no-op repeat, verify and conditional remove lifecycle', async () => {
+test('install readback, no-op repeat and verify lifecycle', async () => {
   await withReceipt(async (store) => {
     const { ctx, state } = fixture();
     await installPolicy(ctx, 'App', store);
@@ -154,14 +142,15 @@ test('install readback, no-op repeat, verify and conditional remove lifecycle', 
     await installPolicy(ctx, 'App', store);
     assert.equal(state.writes, 1);
     await verifyPolicy(ctx, 'App', store);
-    await removePolicy(ctx, 'App', store);
-    await removePolicy(ctx, 'App', store);
-    assert.equal(state.deletes, 1);
-    assert.equal((await journal(store)).state, 'deleted');
+    assert.equal((await journal(store)).state, 'installed');
   });
 });
 
-test('existing unowned or concurrently changed policy is never overwritten/deleted', async () => {
+test('no platform step removes a policy: CloudFront reaches the functions only through these grants', () => {
+  assert.deepEqual([...platformCommands], ['prepare', 'policy-install', 'policy-verify']);
+});
+
+test('existing unowned or concurrently changed policy is never overwritten', async () => {
   await withReceipt(async (store) => {
     const { ctx, state } = fixture();
     state.policy = JSON.stringify(endpointPolicy(endpointArn, distributionArn));
@@ -170,9 +159,8 @@ test('existing unowned or concurrently changed policy is never overwritten/delet
     await installPolicy(ctx, 'App', store);
     state.revisionId = 'concurrent-revision';
     await assert.rejects(installPolicy(ctx, 'App', store), /CAS revision changed/);
-    await assert.rejects(removePolicy(ctx, 'App', store), /CAS revision changed/);
+    await assert.rejects(verifyPolicy(ctx, 'App', store), /CAS revision changed/);
     assert.equal(state.writes, 1);
-    assert.equal(state.deletes, 0);
   });
 });
 
@@ -185,27 +173,5 @@ test('unknown Put outcome is recovered from saved intent and exact readback with
     await installPolicy(ctx, 'App', store);
     assert.equal(state.writes, 1);
     await verifyPolicy(ctx, 'App', store);
-  });
-});
-
-test('unknown Delete outcome is recovered from saved intent without another Delete', async () => {
-  await withReceipt(async (store) => {
-    const { ctx, state } = fixture();
-    await installPolicy(ctx, 'App', store);
-    state.loseDeleteResponse = true;
-    await assert.rejects(removePolicy(ctx, 'App', store));
-    await removePolicy(ctx, 'App', store);
-    assert.equal(state.deletes, 1);
-    assert.equal((await journal(store)).state, 'deleted');
-  });
-});
-
-test('policy removal is blocked until CloudFront has returned to legacy routing', async () => {
-  await withReceipt(async (store) => {
-    const { ctx, state } = fixture();
-    await installPolicy(ctx, 'App', store);
-    ctx.parameters.NativeHttpRouting = 'native';
-    await assert.rejects(removePolicy(ctx, 'App', store), /Restore legacy/);
-    assert.equal(state.deletes, 0);
   });
 });

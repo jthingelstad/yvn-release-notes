@@ -4,7 +4,7 @@
  * subscriber data enter this harness. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, writeFile, readFile, readdir, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -45,19 +45,20 @@ if (command === 'native-release') {
   const phase = rest[0];
   if (failure === phase) process.exit(19);
   if (failure === 'unsafe-parameters') { console.log(JSON.stringify({ parameters: { CodeBucket: 'unowned' } })); process.exit(0); }
-  if (failure === 'newline-parameters') { console.log(JSON.stringify({ parameters: { NativeHttpRouting: 'native\\nCodeBucket=unowned' } })); process.exit(0); }
+  if (failure === 'newline-parameters') { console.log(JSON.stringify({ parameters: { NativeAppLiveRevisionId: 'x\\nCodeBucket=unowned' } })); process.exit(0); }
+  if (failure?.startsWith('retired:')) { console.log(JSON.stringify({ parameters: { [failure.slice(8)]: 'true' } })); process.exit(0); }
   const parameters = phase === 'prepare-http' ? { NativeAppLiveRevisionId: 'baseline-app', NativeMcpLiveRevisionId: 'baseline-mcp' }
-    : phase === 'promote-http' ? { NativeHttpRouting: 'native', NativeOriginPoliciesReady: 'true' }
-    : phase === 'rollback-http' ? { NativeHttpRouting: 'legacy' }
-    : phase === 'prepare-workers' ? { SenderNativeLiveVersion: '1', NativeWorkerAliasesReady: 'false' }
-    : phase === 'promote-workers' ? { SenderNativeLiveVersion: '3', NativeWorkerAliasesReady: 'true' }
-    : { SenderNativeLiveVersion: '2', NativeWorkerAliasesReady: 'true' };
+    : phase === 'promote-http' ? { NativeAppLiveRevisionId: 'candidate-app', NativeAppRollbackRevisionId: 'baseline-app' }
+    : phase === 'rollback-http' ? { NativeAppLiveRevisionId: 'baseline-app', NativeAppRollbackRevisionId: 'older-app' }
+    : phase === 'prepare-workers' ? { SenderNativeLiveVersion: '1' }
+    : phase === 'promote-workers' ? { SenderNativeLiveVersion: '3' }
+    : { SenderNativeLiveVersion: '2' };
   console.log(JSON.stringify({ parameters }));
 } else if (command === 'artifacts') {
   const kind = rest[rest.indexOf('--kind') + 1];
   console.log(JSON.stringify({ parameters: kind === 'http'
-    ? { NativeWebFunctionsEnabled: 'true', NativeAppCodeKey: 'native/app/fictional.zip', NativeAppCodeVersion: 'version with space=one' }
-    : { NativeWorkersEnabled: 'true', NativeWorkerBuildId: rest[rest.indexOf('--commit') + 1], SenderNodeCodeKey: 'native/workers/sender/fictional.zip' } }));
+    ? { NativeAppCodeKey: 'native/app/fictional.zip', NativeAppCodeVersion: 'version with space=one' }
+    : { NativeWorkerBuildId: rest[rest.indexOf('--commit') + 1], SenderNodeCodeKey: 'native/workers/sender/fictional.zip' } }));
 } else if (command === 'platform') {
   if (failure === rest[0]) process.exit(20);
   console.log('{"confirmed":true}');
@@ -245,7 +246,7 @@ test('all six native phases use structured parameters, and publication alone upl
           assert.ok(events.indexOf(cli(events, 'platform')[0]!) > events.indexOf(deploy));
         } else assert.deepEqual(cli(events, 'platform'), []);
         if (phase !== 'publish')
-          assert.ok(deploy.args.some((a) => /^(NativeHttpRouting|SenderNativeLiveVersion)=/.test(a)));
+          assert.ok(deploy.args.some((a) => /^(NativeAppLiveRevisionId|SenderNativeLiveVersion)=/.test(a)));
         lockedAndReleased(events);
       }
   });
@@ -306,6 +307,63 @@ test('preparation and malformed parameter failures stop before cloud writes and 
       lockedAndReleased(events);
     }
   });
+});
+
+/** Stack flags the migration needed and 2026-10-20 retired. CloudFormation
+ * fails a deploy that overrides a parameter the template does not declare. */
+const retired = [
+  'NativeWorkersEnabled',
+  'NativeWorkerAliasesReady',
+  'NativeWebFunctionsEnabled',
+  'NativeHttpRouting',
+  'NativeOriginPoliciesReady'
+];
+
+test('a retired stack flag from a release phase is refused before cloud writes', async () => {
+  await withFixture(async (f) => {
+    for (const name of retired) {
+      const { result, events } = await f.release(['--native-http-phase=activate'], { failure: `retired:${name}` });
+      assert.notEqual(result.status, 0);
+      assert.deepEqual(aws(events, 'deploy'), []);
+      assert.deepEqual(cloudWrites(events), []);
+      lockedAndReleased(events);
+    }
+  });
+});
+
+test('every parameter a release may override is one the template declares', async () => {
+  const template = await readFile(resolve('infra/template.yaml'), 'utf8');
+  const block = template.slice(template.indexOf('\nParameters:\n'), template.indexOf('\nConditions:\n'));
+  const declared = new Set([...block.matchAll(/^ {2}([A-Za-z0-9]+):$/gm)].map((m) => m[1]!));
+  assert.ok(declared.has('NativeWorkerBuildId') && declared.has('TurnstileMode'));
+  // The validator's own allow-list, run as release.sh runs it.
+  const script = await readFile(releaseScript, 'utf8');
+  const validator = /<<'JS'\n([\s\S]*?)\nconst parameters = new Map\(\);/.exec(script)?.[1];
+  assert.ok(validator);
+  const run = spawnSync('node', ['--input-type=module', '-'], {
+    input: `${validator}\nprocess.stdout.write(JSON.stringify([...allowed]));`,
+    encoding: 'utf8'
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const allowed = JSON.parse(run.stdout) as string[];
+  assert.ok(allowed.length > 30);
+  for (const name of allowed) assert.ok(declared.has(name), `${name} is not a template parameter`);
+  for (const [, name] of script.matchAll(/PARAMETER_OVERRIDES\+?=\("([A-Za-z]+)=/g))
+    assert.ok(declared.has(name!), `${name} is not a template parameter`);
+  for (const name of retired) {
+    assert.ok(!declared.has(name));
+    assert.ok(!allowed.includes(name));
+  }
+});
+
+test('the retired stack flags appear nowhere in the template, tooling or workflows', async () => {
+  const sources = ['infra/template.yaml', 'infra/github-deploy-role.yaml', 'deploy.sh'];
+  for (const dir of ['scripts', 'tools', '.github/workflows'])
+    for (const name of await readdir(resolve(dir))) sources.push(join(dir, name));
+  for (const source of sources) {
+    const text = await readFile(resolve(source), 'utf8');
+    for (const name of retired) assert.ok(!text.includes(name), `${source} still names ${name}`);
+  }
 });
 
 test('a held lock is refused, never stolen, before any release action', async () => {

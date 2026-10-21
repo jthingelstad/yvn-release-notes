@@ -32,6 +32,7 @@ test('all seven production probes branch before private configuration and SDK ef
     import { S3Client } from '@aws-sdk/client-s3';
     import { SESv2Client } from '@aws-sdk/client-sesv2';
     import { SNSClient } from '@aws-sdk/client-sns';
+    import { SQSClient } from '@aws-sdk/client-sqs';
     import { TranscribeClient } from '@aws-sdk/client-transcribe';
     import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
     import { GeoPlacesClient } from '@aws-sdk/client-geo-places';
@@ -39,9 +40,9 @@ test('all seven production probes branch before private configuration and SDK ef
     const paths = ['entries/send','entries/inbound','entries/events','export','capture','transcribe','describe'];
     const entries = await Promise.all(paths.map(path => import('./workers/' + path + '.ts')));
     let effects = 0;
-    for (const client of [DynamoDBClient,S3Client,SESv2Client,SNSClient,LambdaClient,TranscribeClient,SecretsManagerClient,GeoPlacesClient]) client.prototype.send = () => { effects++; throw new Error('Unexpected SDK effect'); };
+    for (const client of [DynamoDBClient,S3Client,SESv2Client,SNSClient,SQSClient,LambdaClient,TranscribeClient,SecretsManagerClient,GeoPlacesClient]) client.prototype.send = () => { effects++; throw new Error('Unexpected SDK effect'); };
     const original = process.env;
-    const privateConfig = new Set(['AWS_REGION','TABLE','TABLE_NAME','BUCKET','MAIL_BUCKET','FROM_ADDRESS','CONFIG_SET','INBOUND_DOMAIN','ALARM_TOPIC','WEB_ORIGIN','SELF','SECRET']);
+    const privateConfig = new Set(['AWS_REGION','TABLE','TABLE_NAME','BUCKET','MAIL_BUCKET','FROM_ADDRESS','CONFIG_SET','INBOUND_DOMAIN','ALARM_TOPIC','FAILED_QUEUE','WEB_ORIGIN','SELF','SECRET']);
     process.env = new Proxy({...original,APP_VERSION:'fictional-build'}, {get(target,key) { if(privateConfig.has(key)) throw new Error('Unexpected configuration read: ' + key); return Reflect.get(target,key); }});
     for (const entry of entries) {
       assert.ok(entry.handler.length <= 2, 'Node 24 rejects callback arity');
@@ -71,7 +72,7 @@ test('all seven actual worker bundles expose Node24 promise-only handlers and pr
     const blocked = () => { effects++; throw new Error('Unexpected network effect'); };
     http.request = blocked; https.request = blocked;
     net.Socket.prototype.connect = blocked; globalThis.fetch = blocked;
-    const privateConfig = new Set(['AWS_REGION','TABLE','TABLE_NAME','BUCKET','MAIL_BUCKET','FROM_ADDRESS','CONFIG_SET','INBOUND_DOMAIN','ALARM_TOPIC','WEB_ORIGIN','SELF','SECRET']);
+    const privateConfig = new Set(['AWS_REGION','TABLE','TABLE_NAME','BUCKET','MAIL_BUCKET','FROM_ADDRESS','CONFIG_SET','INBOUND_DOMAIN','ALARM_TOPIC','FAILED_QUEUE','WEB_ORIGIN','SELF','SECRET']);
     process.env = new Proxy({...process.env,APP_VERSION:'fictional-build'}, {get(target,key) { if(privateConfig.has(key)) throw new Error('Unexpected private configuration read: ' + key); return Reflect.get(target,key); }});
     for (const name of ['sender','inbound','events','export','capture','transcribe','describe']) {
       const entry = await import('./dist/workers/' + name + '/index.js');

@@ -899,9 +899,16 @@ Resources:
                       - !Sub "*<${FromAddress}>"
               - Effect: Allow
                 # A message still failing after its retries goes to the
-                # failed queue (InboundAliasInvokeConfig).
+                # inbound failed queue (InboundAliasInvokeConfig), which this
+                # function reads (InboundFailedSource) to log it and hand it on
+                # to the failed queue.
                 Action: sqs:SendMessage
-                Resource: !GetAtt FailedQueue.Arn
+                Resource:
+                  - !GetAtt InboundFailedQueue.Arn
+                  - !GetAtt FailedQueue.Arn
+              - Effect: Allow
+                Action: [sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes]
+                Resource: !GetAtt InboundFailedQueue.Arn
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt InboundLogs.Arn
@@ -961,6 +968,7 @@ Resources:
           INBOUND_DOMAIN: !Ref InboundDomain
           FROM_ADDRESS: !Ref FromAddress
           CONFIG_SET: !Ref ConfigurationSet
+          FAILED_QUEUE: !Ref FailedQueue
 
   SenderSchedule:
     Type: AWS::Events::Rule
@@ -1985,8 +1993,10 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !Ref TranscribeDoneArn
 
-  # Three tries (workers/inbound.ts ATTEMPTS), then the SES event goes to the
-  # failed queue. The owner's mail log already shows it as failed, with a notice.
+  # Three tries (workers/inbound.ts ATTEMPTS), then Lambda's failure record
+  # (the SES event) goes to the inbound failed queue. A failure the code caught
+  # already shows as failed in the owner's activity log, with a notice; a
+  # timeout or crash gets both there (workers/inbound.ts gaveUp).
   InboundAliasInvokeConfig:
     Type: AWS::Lambda::EventInvokeConfig
     # Lambda checks the role may send to the queue when the destination is set.
@@ -1998,7 +2008,17 @@ Resources:
       MaximumEventAgeInSeconds: 21600
       DestinationConfig:
         OnFailure:
-          Destination: !GetAtt FailedQueue.Arn
+          Destination: !GetAtt InboundFailedQueue.Arn
+
+  # Inbound reads its own failure records one at a time, logs each and hands
+  # it on to the failed queue unchanged. Three failed reads hand it on unread.
+  InboundFailedSource:
+    Type: AWS::Lambda::EventSourceMapping
+    DependsOn: InboundRole
+    Properties:
+      FunctionName: !Ref InboundAlias
+      EventSourceArn: !GetAtt InboundFailedQueue.Arn
+      BatchSize: 1
 
   ExportAliasInvokeConfig:
     Type: AWS::Lambda::EventInvokeConfig
@@ -2108,6 +2128,37 @@ Resources:
       QueueName: !Sub "${AWS::StackName}-failed"
       MessageRetentionPeriod: 1209600
       SqsManagedSseEnabled: true
+
+  # Inbound's failure records on their way to the failed queue (InboundFailedSource).
+  # Visible again after six times the function's timeout, as Lambda advises.
+  InboundFailedQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-inbound-failed"
+      MessageRetentionPeriod: 1209600
+      VisibilityTimeout: 360
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt FailedQueue.Arn
+        maxReceiveCount: 3
+
+  # Normally read within seconds; one waiting a quarter hour means inbound
+  # is not reading it, and the failed queue's own alarm would never fire.
+  InboundFailedQueueAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-inbound-failed-queue"
+      AlarmDescription: An email inbound gave up on has waited a quarter hour to be logged and handed on to the failed queue.
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions: [{ Name: QueueName, Value: !GetAtt InboundFailedQueue.QueueName }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 900
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
 
   FailedQueueAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -2298,7 +2349,7 @@ Resources:
               "markdown": "# Release Notes\nCounts only: no addresses, no note text. Subscribers, notes and writers come from the sender's census line every quarter hour (`packages/backend/census.ts`); emails from SES; mail in and account events from the functions' logs, kept 90 days. One row per person: `tools/subscribers.ts`."}},
             {"type": "alarm", "x": 0, "y": 2, "width": 24, "height": 3, "properties": {
               "title": "Alarms",
-              "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${InboundErrorsAlarm.Arn}", "${EventsErrorsAlarm.Arn}", "${McpErrorsAlarm.Arn}", "${ExportErrorsAlarm.Arn}", "${FailedQueueAlarm.Arn}", "${NativeAppErrorsAlarm.Arn}", "${NativeMcpErrorsAlarm.Arn}", "${NativeAppCapacityAlarm.Arn}", "${NativeMcpCapacityAlarm.Arn}", "${NativeAppRateAlarm.Arn}", "${NativeMcpRateAlarm.Arn}", "${TranscribeErrorsAlarm.Arn}", "${DescribeErrorsAlarm.Arn}", "${SignInTotalAlarm.Arn}"]}},
+              "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${InboundErrorsAlarm.Arn}", "${EventsErrorsAlarm.Arn}", "${McpErrorsAlarm.Arn}", "${ExportErrorsAlarm.Arn}", "${FailedQueueAlarm.Arn}", "${InboundFailedQueueAlarm.Arn}", "${NativeAppErrorsAlarm.Arn}", "${NativeMcpErrorsAlarm.Arn}", "${NativeAppCapacityAlarm.Arn}", "${NativeMcpCapacityAlarm.Arn}", "${NativeAppRateAlarm.Arn}", "${NativeMcpRateAlarm.Arn}", "${TranscribeErrorsAlarm.Arn}", "${DescribeErrorsAlarm.Arn}", "${SignInTotalAlarm.Arn}"]}},
             {"type": "metric", "x": 0, "y": 5, "width": 24, "height": 4, "properties": {
               "title": "Right now", "view": "singleValue", "region": "${AWS::Region}",
               "period": 900, "stat": "Maximum", "setPeriodToTimeRange": false, "sparkline": true,

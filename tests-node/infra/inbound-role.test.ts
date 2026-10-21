@@ -1,15 +1,16 @@
 /** The inbound function's role grants what filing a reply requests: the raw
  * mail read and its outcome tags, media staged with pending tags then tagged
  * or removed (a duplicate the owner trimmed, a refused account), the late
- * notice with its reservation, the standing address, and the badges a filed
- * note earned (tests-node/infra/grants.ts). */
+ * notice with its reservation, the standing address, the badges a filed
+ * note earned, and a message given up on, read from the inbound failed queue,
+ * logged and handed on to the failed queue (tests-node/infra/grants.ts). */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects, FakeMail } from '../../packages/testing/services.ts';
 import type { Item } from '../../packages/backend/store.ts';
 import * as inbound from '../../workers/inbound.ts';
-import { Recorder } from './grants.ts';
+import { Recorder, queueArn } from './grants.ts';
 
 const now = Date.parse('2026-10-13T11:00:00Z') / 1000,
   token = 'a'.repeat(24),
@@ -64,7 +65,9 @@ test('the inbound role grants every request filing a reply makes', async () => {
       mail: aws.mail(mail),
       fromAddress: aws.env.FROM_ADDRESS!,
       inboundDomain: domain,
-      titleFetch: async () => null
+      titleFetch: async () => null,
+      // The entry sends each record on to FAILED_QUEUE.
+      forward: async () => aws.add('forward', 'sqs:SendMessage', queueArn(aws.env.FAILED_QUEUE!))
     };
   await store.setInbox('u', standing, 'now');
   for (const id of ['reply', 'late', 'address', 'refused'])
@@ -83,6 +86,13 @@ test('the inbound role grants every request filing a reply makes', async () => {
   assert.equal(await inbound.process(ses('late', `n-${token}@${domain}`, '2026-10-20T12:00:00Z'), services), 'ignored');
   assert.equal(mail.messages.length, 1);
   assert.equal(await inbound.process(ses('address', `${standing}@${domain}`), services), 'note');
+  // A reply that timed out three times: its failed row and notice, then on.
+  const record = {
+    requestContext: { approximateInvokeCount: 3 },
+    requestPayload: { Records: [{ ses: ses('timeout', `n-${token}@${domain}`) }] }
+  };
+  await inbound.handler({ Records: [{ body: JSON.stringify(record) }] }, null, services);
+  assert.equal(mail.messages.length, 2);
   // An account being deleted refuses the note and removes its staged media.
   store.memory.seed({ ...store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!, mcp_deleting: true });
   const removed = files.calls.filter((c) => c.operation === 'remove').length;
@@ -100,7 +110,9 @@ test('the inbound role grants every request filing a reply makes', async () => {
     'ses:SendRawEmail',
     'dynamodb:ConditionCheckItem',
     'dynamodb:Query',
-    'dynamodb:UpdateItem'
+    'dynamodb:UpdateItem',
+    'sqs:SendMessage',
+    'sqs:ReceiveMessage'
   ])
     assert.ok(actions.has(action), action);
   assert.deepEqual(aws.unused(), [], 'every grant is used');

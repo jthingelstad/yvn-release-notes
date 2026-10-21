@@ -152,16 +152,24 @@ the describer reads it on each run.
   bounce or complaint the events function could not apply (the SNS message,
   address included, so it never goes to the ops queue), an inbound email
   still failing after two retries (the SES event: addresses and subject,
-  never the body, which stays in `raw/`) and a transcribe or describe stream batch
+  never the body, which stays in `raw/`; it reaches here through SQS
+  `yvn-release-notes-inbound-failed`, below) and a transcribe or describe stream batch
   (shard and sequence numbers only). Kept 14 days; alarm
   `yvn-release-notes-failed-queue` fires on anything in it. Apply a stuck
   bounce by hand; replay an inbound event, once its cause is fixed, by
   invoking the inbound function's `live` alias with
   `{"Records": [<the record>]}`. Then delete the message. Do not assume the
-  owner heard: a failure the code caught leaves a `failed` mail row in the activity log and,
-  on the third try, one email, but a timeout or crash, a failure before the
-  address named anyone, a stopped owner or a day's fourth notice leaves no
-  email, and the first two no row.
+  owner heard: an inbound failure leaves a `failed` mail row in the activity
+  log and one email, but a failure before the address named anyone, a
+  stopped owner or a day's fourth notice leaves no email, and the first no
+  row.
+- SQS `yvn-release-notes-inbound-failed` holds inbound's failure records on
+  their way to the failed queue. Inbound reads each, writes its failed row
+  and notice (a timeout or crash has neither until then), and sends it on
+  unchanged; three failed reads send it on unread. Alarm
+  `yvn-release-notes-inbound-failed-queue` fires when one waits a quarter
+  hour, which means inbound is not reading it: check the `live` alias's
+  event source mapping.
 - The describe, transcribe and export functions each run at most two at
   once (reserved concurrency 2, 2026-10-09 audit). Throttled stream batches
   wait and are tried again without using up their retries, and throttled

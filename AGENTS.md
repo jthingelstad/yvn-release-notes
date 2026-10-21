@@ -159,8 +159,9 @@ Where things are (each module's design comment has its contract):
   the web reads nothing under `raw/`. Another address, a failed
   verification, an unreadable email or one still failing after three tries
   emails the owner, never the sender: once per email, 3 a day, never to a
-  stopped subscriber. Only a failure the code catches is logged: a timeout
-  or crash reaches the failed queue with no row and no email.
+  stopped subscriber. A timeout or crash gets its row and email too: Lambda's
+  failure record goes to the inbound failed queue, which inbound reads
+  (`gaveUp`) before handing it on to the failed queue.
   Mail to an address that names nobody is never logged. The mail log's own
   rows (`MAILLOG#`) were never needed: no mail came in between the two
   (checked 2026-10-21), so nothing was moved and readers no longer look.

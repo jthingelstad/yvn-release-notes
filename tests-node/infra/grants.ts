@@ -150,6 +150,8 @@ function ref(name: string): string {
       return resolve(p.Name!);
     case 'AWS::SNS::Topic':
       return `arn:aws:sns:${REGION}:${ACCOUNT}:${resolve(p.TopicName!)}`;
+    case 'AWS::SQS::Queue':
+      return `https://sqs.${REGION}.amazonaws.com/${ACCOUNT}/${resolve(p.QueueName!)}`;
     case 'AWS::Logs::LogGroup':
       return resolve(p.LogGroupName!);
   }
@@ -327,8 +329,8 @@ export class Recorder {
     this.platform(resolve(p.FunctionName!), config);
   }
   /** What Lambda itself does as the role: the function's log stream, its
-   * dead-letter queue, and each event source mapping's stream reads and
-   * failure destination. */
+   * dead-letter queue, and each event source mapping's stream or queue reads
+   * and failure destination. */
   private platform(name: string, config: Record<string, Node>) {
     const logs = (config.LoggingConfig ?? (config.TelemetryConfig as Record<string, Node>)?.LoggingConfig) as
         Record<string, Node> | undefined,
@@ -358,6 +360,11 @@ export class Recorder {
       if (failure) send(`${id} failures`, failure);
       if (type === 'AWS::Lambda::EventInvokeConfig') continue;
       const source = resolve(m.EventSourceArn!);
+      if (source.startsWith('arn:aws:sqs:')) {
+        for (const action of ['ReceiveMessage', 'DeleteMessage', 'GetQueueAttributes'])
+          this.add(id, `sqs:${action}`, source);
+        continue;
+      }
       assert.match(source, /^arn:aws:dynamodb:.*\/stream\//, `${id} reads a table stream`);
       for (const action of ['DescribeStream', 'GetRecords', 'GetShardIterator'])
         this.add(id, `dynamodb:${action}`, source);
@@ -496,5 +503,11 @@ export class Recorder {
     return all;
   }
 }
+/** A queue's ARN from its URL, as SendMessage is authorized. */
+export const queueArn = (url: string) => {
+  const [, region, account, name] =
+    /^https:\/\/sqs\.([^.]+)\.amazonaws\.com\/(\d+)\/([^/]+)$/.exec(url) ?? assert.fail(url);
+  return `arn:aws:sqs:${region}:${account}:${name}`;
+};
 export const functionArn = (name: string) =>
   name.startsWith('arn:') ? name : `arn:aws:lambda:${REGION}:${ACCOUNT}:function:${name}`;

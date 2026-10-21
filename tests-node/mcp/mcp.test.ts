@@ -818,7 +818,17 @@ test('notes_activity reads the activity log by local day and kind, a page at a t
   const all = (await rpc(ctx, a.token, 'notes_activity')).value,
     ids = (v: OAuthRow) => (v.entries as OAuthRow[]).map((e) => e.id);
   assert.deepEqual([all.today, all.tz, all.next_cursor], ['2026-10-13', 'America/Chicago', null]);
-  const [own, ...rest] = all.entries as OAuthRow[];
+  const [added, own, ...rest] = all.entries as OAuthRow[];
+  // Connecting is itself in the log, made on the web.
+  assert.deepEqual(added, {
+    id: `2026-10-13T12:00:00.000Z#connection.added#${String(a.family.id)}`,
+    at: '2026-10-13T12:00:00.000Z',
+    kind: 'connection.added',
+    via: 'web',
+    scopes: 'notes:read',
+    connection: a.family.id,
+    client: a.family.client_name
+  });
   assert.deepEqual(own, {
     id: `2026-10-13T05:00:00.000Z#reads#${String(a.family.id)}`,
     at: '2026-10-13T05:00:00.000Z',
@@ -924,11 +934,42 @@ test('a read that cannot be counted is logged and still answers', async () => {
   ctx.store.mcpCommit = async (changes, uid) =>
     changes.some(([row]) => String(row.sk).startsWith('ACTIVITY#')) ? false : commit(changes, uid);
   const { value } = await rpc(ctx, a.token, 'notes_activity', {}, opts);
-  assert.deepEqual(value.entries, []);
+  assert.deepEqual(
+    (value.entries as OAuthRow[]).map((e) => e.kind),
+    ['connection.added']
+  );
   assert.deepEqual(
     logs.filter((l) => l.event === 'activity-unrecorded'),
     [{ event: 'activity-unrecorded', kind: 'reads', user: 'u' }]
   );
+});
+test("an Upcoming row's title is read now, and only with the upcoming scope", async () => {
+  const ctx = fixture(),
+    date = (id: string, title: string) =>
+      ctx.store.seed({ pk: 'USER#u', sk: `UPCOMING#${id}`, id, kind: 'event', title, date: '2026-11-01', revision: 1 });
+  date('d1', 'Concert');
+  for (const [at, kind, id] of [
+    ['2026-10-12T10:00:00.000Z', 'upcoming.added', 'd1'],
+    ['2026-10-12T11:00:00.000Z', 'upcoming.removed', 'd2']
+  ])
+    ctx.store.seed({ pk: 'USER#u', sk: `ACTIVITY#${at}#${kind}#${id}`, kind, at, via: 'web', upcoming: id });
+  const read = async (upcoming: boolean) =>
+    (
+      (
+        await rpc(ctx, (await connected(ctx, false, false, 'u', upcoming)).token, 'notes_activity', {
+          kinds: ['upcoming']
+        })
+      ).value.entries as OAuthRow[]
+    ).map((e) => [e.upcoming, e.title]);
+  assert.deepEqual(await read(false), [
+    ['d2', undefined],
+    ['d1', undefined]
+  ]);
+  // A removed date's title is gone with it.
+  assert.deepEqual(await read(true), [
+    ['d2', null],
+    ['d1', 'Concert']
+  ]);
 });
 test('a past day of long Unicode notes fits one page with at least one whole preview', async () => {
   const ctx = fixture(),

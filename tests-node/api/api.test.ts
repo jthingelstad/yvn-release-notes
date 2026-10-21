@@ -114,6 +114,28 @@ test('email ownership sign-in burns shared link/code and verifies new addresses 
   assert.equal(s.invocations.calls[0]!.name, 'sender');
   assert.ok(!JSON.stringify(s.logs).includes('bea@example.com'));
   assert.ok(login);
+  // The new account's log starts with joining; signing in to make it is not a
+  // sign-in to an account. Signing in to one that exists is.
+  const bea = String(await s.store.userForEmail('bea@example.com')),
+    kinds = (user: string) =>
+      s.store.memory
+        .all()
+        .filter((i) => i.pk === `USER#${user}` && String(i.sk).startsWith('ACTIVITY#'))
+        .map((i) => [i.kind, i.how ?? i.via]);
+  assert.deepEqual(kinds(bea), [['account.created', 'web']]);
+  await s.store.putLogin(
+    auth.digest('u'.repeat(43)),
+    'ada@example.com',
+    auth.digest('ada@example.com'),
+    auth.digest('654321'),
+    now,
+    900
+  );
+  assert.equal(
+    (await s.call('POST', '/api/auth/verify', { email: 'ada@example.com', code: '654321' }, '')).r.status,
+    200
+  );
+  assert.deepEqual(kinds('u'), [['signin', 'code']]);
 });
 test('notes/readers/tag/search/release share provenance and safe DTOs across routes', async () => {
   const s = await setup(),
@@ -673,6 +695,157 @@ test("activity answers the owner's rows newest first, a page at a time, with no 
   assert.ok(!JSON.stringify(s.logs).includes('Late words'));
 });
 
+test('each change on the web leaves its activity row, never words, titles, addresses or links', async () => {
+  const s = await setup(),
+    step = async (method: string, path: string, value?: unknown, cookie?: string, originHeader?: boolean) => {
+      s.ctx.now += 1;
+      const answer = await s.call(method, path, value, cookie, originHeader);
+      assert.ok(answer.r.status < 300, `${method} ${path}: ${answer.r.status}`);
+      return answer.b as Item;
+    };
+  const note = await step('POST', '/api/days/2026-10-12/notes', { text: 'Private words', tz: 'America/Chicago' }),
+    id = String(note.id);
+  await step('PUT', `/api/days/2026-10-12/notes/${id}`, { text: 'Private words, changed' });
+  await step('DELETE', `/api/days/2026-10-12/notes/${id}`);
+  await step('PUT', '/api/me', { send_time: '07:15', transcribe: true, badges: true });
+  await step('PUT', '/api/pause', { days: 3 });
+  await step('DELETE', '/api/pause');
+  const inboxes = [await step('POST', '/api/me/inbox', {}), await step('POST', '/api/me/inbox', {})];
+  const date = await step('POST', '/api/upcoming', { kind: 'event', title: 'Secret party', date: '2026-11-01' });
+  await step('PUT', `/api/upcoming/${String(date.id)}`, {
+    kind: 'event',
+    title: 'Secret party',
+    date: '2026-11-02',
+    revision: 1
+  });
+  const kept = await step('POST', '/api/upcoming', { kind: 'event', title: 'Kept party', date: '2026-11-03' });
+  await step('DELETE', `/api/upcoming/${String(date.id)}`, { revision: 2 });
+  const calendars = [await step('POST', '/api/calendar'), await step('POST', '/api/calendar')];
+  await step('DELETE', '/api/calendar');
+  await step('GET', '/api/export?format=md');
+  await step('POST', '/api/export/zip', {});
+  const token = 'a'.repeat(24);
+  await s.store.putDay('u', '2026-10-13', '4.5.121', token, '2026-10-13T10:00:00Z');
+  await step('POST', '/api/unsubscribe?t=' + token, {}, '', false);
+  await step('PUT', '/api/me', { status: 'active' });
+
+  const rows = s.store.memory
+      .all()
+      .filter((i) => i.pk === 'USER#u' && String(i.sk).startsWith('ACTIVITY#'))
+      .sort((a, b) => (String(a.sk) < String(b.sk) ? -1 : 1)),
+    by = (kind: string) => rows.filter((r) => r.kind === kind);
+  assert.deepEqual(
+    rows.map((r) => r.kind).filter((k) => k !== 'badge.earned'),
+    [
+      'note.added',
+      'note.edited',
+      'note.deleted',
+      'settings.changed',
+      'pause.set',
+      'pause.ended',
+      'address.created',
+      'address.replaced',
+      'upcoming.added',
+      'upcoming.changed',
+      'upcoming.added',
+      'upcoming.removed',
+      'calendar.created',
+      'calendar.replaced',
+      'calendar.removed',
+      'export.words',
+      'export.zip',
+      'status.stopped',
+      'status.restarted'
+    ]
+  );
+  // The first note's badges, with it, from the web.
+  assert.deepEqual(
+    by('badge.earned').map((r) => [r.badge, r.name, r.via, r.day, r.note]),
+    [
+      ['commit', 'Commit message', 'web', '2026-10-12', id],
+      ['hello', 'Hello, world', 'web', '2026-10-12', id],
+      ['hotfix', 'Hotfix', 'web', '2026-10-12', id],
+      ['web', 'Web release', 'web', '2026-10-12', id]
+    ]
+  );
+  assert.deepEqual(
+    by('note.added').map((r) => [r.via, r.day, r.note, r.files]),
+    [['web', '2026-10-12', id, 0]]
+  );
+  // Only what changed, unchanged badges left out; coordinates never.
+  assert.deepEqual(by('settings.changed')[0]!.changes, [
+    { field: 'send_time', from: '06:00', to: '07:15' },
+    { field: 'transcribe', from: false, to: true }
+  ]);
+  assert.deepEqual(
+    [...by('pause.set'), ...by('pause.ended')].map((r) => [r.from, r.through]),
+    [
+      ['2026-10-13', '2026-10-15'],
+      ['2026-10-13', null]
+    ]
+  );
+  assert.deepEqual(
+    by('upcoming.removed').map((r) => r.upcoming),
+    [date.id]
+  );
+  assert.deepEqual(by('status.restarted')[0]!.reason, 'unsubscribed');
+  assert.deepEqual(by('export.words')[0]!.format, 'md');
+  const kept_ = JSON.stringify(rows);
+  for (const hidden of [
+    'Private words',
+    'Secret party',
+    'Kept party',
+    'ada@example.com',
+    ...inboxes.map((b) => String(b.inbox).split('@')[0]!),
+    ...calendars.map((b) => String(b.calendar).split('/').at(-1)!.replace('.ics', '')),
+    'lat',
+    'lon'
+  ])
+    assert.ok(!kept_.includes(hidden), hidden);
+
+  // The page joins a date's title as it is now; a removed date has none.
+  const shown = ((await s.call('GET', '/api/activity')).b as Item).entries as Item[];
+  assert.deepEqual(
+    shown.filter((e) => String(e.kind).startsWith('upcoming.')).map((e) => [e.kind, e.title]),
+    [
+      ['upcoming.removed', null],
+      ['upcoming.added', 'Kept party'],
+      ['upcoming.changed', null],
+      ['upcoming.added', null]
+    ]
+  );
+  assert.ok(kept.id);
+});
+test('a change whose activity row cannot be written still stands, and is logged without its words', async () => {
+  const s = await setup(),
+    send = s.store.memory.send.bind(s.store.memory);
+  let refusal: Error = Object.assign(new Error('refused'), {
+    name: 'TransactionCanceledException',
+    CancellationReasons: [{ Code: 'ConditionalCheckFailed' }]
+  });
+  s.store.memory.send = async (command) => {
+    const ops = ((command.input as Item).TransactItems ?? []) as Item[];
+    if (ops.some((op) => String(((op.Put as Item | undefined)?.Item as Item | undefined)?.sk).startsWith('ACTIVITY#')))
+      throw refusal;
+    return send(command);
+  };
+  const saved = await s.call('POST', '/api/days/2026-10-12/notes', { text: 'Private words', tz: 'America/Chicago' });
+  assert.equal(saved.r.status, 201);
+  assert.equal((await s.store.allNotes('u')).length, 1);
+  assert.deepEqual(
+    s.logs.filter((l) => l.event === 'activity-unrecorded'),
+    [{ event: 'activity-unrecorded', kind: 'note', user: 'u' }]
+  );
+  refusal = new Error('Private words');
+  assert.equal((await s.call('PUT', '/api/me', { send_time: '07:15' })).r.status, 200);
+  assert.equal((await s.store.profile('u'))!.send_time, '07:15');
+  assert.deepEqual(s.logs.filter((l) => l.event === 'activity-unrecorded').at(-1), {
+    event: 'activity-unrecorded',
+    kind: 'settings',
+    user: 'u'
+  });
+  assert.ok(!JSON.stringify(s.logs).includes('Private words'));
+});
 test('activity pages hold 100 rows and say where the next starts', async () => {
   const s = await setup();
   for (let i = 0; i < 101; i++) {

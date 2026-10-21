@@ -80,19 +80,21 @@ export async function badges(store: BadgeStore, user: string, profile: Item, tod
   return evaluateBadges(await badgeFacts(store, user, profile, today), today);
 }
 
-/** What saving `note` (a NOTE# row, `sk` included) just earned. It is read
- * with the others and then without it, consistently, so a note saved a
- * moment before and the weather just kept are in both. */
+/** What saving `note` (a NOTE# row, `sk` included) just earned: the others
+ * with it, against the others without it, or with `old` (the note before an
+ * edit). Read consistently, so a note saved a moment before and the weather
+ * just kept are in both. */
 export async function unlockedBy(
-  store: Store,
+  store: BadgeStore,
   user: string,
   profile: Item,
   today: Day,
-  note: Item
+  note: Item,
+  old?: Item | null
 ): Promise<Unlocked[]> {
   const facts = await badgeFacts(store, user, profile, today, String(note.sk), true);
   return unlocked(
-    evaluateBadges(facts, today),
+    evaluateBadges(old ? { ...facts, notes: [...facts.notes, badgeNote(old, profile)] } : facts, today),
     evaluateBadges({ ...facts, notes: [...facts.notes, badgeNote(note, profile)] }, today)
   );
 }

@@ -1,14 +1,20 @@
 // The activity log (docs/WEB-APP.md): what happened in this account, newest
-// first, a page at a time. A mail row that wasn't filed keeps its words only
-// when its sender was proven; "Add to" puts them in that day's draft, and
-// nothing is saved until the note is.
+// first, a page at a time, each row one sentence. A mail row that wasn't
+// filed keeps its words only when its sender was proven; "Add to" puts them
+// in that day's draft, and nothing is saved until the note is.
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AppLink, Bar, Failed, Loading, useTitle } from '../components/common.tsx';
-import { count, dayName, thisYearOf, zoneShortDate, zoneTime } from '../lib/format.ts';
+import { clock, count, dayName, listed, thisYearOf, zoneShortDate, zoneTime } from '../lib/format.ts';
 import { activityQuery } from '../lib/queries.ts';
 import { store } from '../lib/storage.ts';
-import type { Activity as ActivityData, ActivityEntry, MailActivity, ReadsActivity } from '../lib/types.ts';
+import type {
+  Activity as ActivityData,
+  ActivityEntry,
+  EventActivity,
+  MailActivity,
+  ReadsActivity
+} from '../lib/types.ts';
 
 export function Activity() {
   useTitle('Activity');
@@ -21,9 +27,10 @@ export function Activity() {
       <Bar current="/settings/" />
       <h1>Activity</h1>
       <p className="lede" id="activity-lede">
-        What happened in your Release Notes, newest first: each email sent to your Release Notes addresses and what
-        became of it, and each day a connected assistant read your notes. When an email isn’t filed because of a
-        problem, you get an email about it too.
+        Everything that happened in your Release Notes, newest first: notes added, changed or deleted, badges earned,
+        Upcoming dates, settings, sign-ins and connected assistants, each email sent to your Release Notes addresses and
+        what became of it, and each day an assistant read your notes. When an email isn’t filed because of a problem,
+        you get an email about it too.
       </p>
       {log.isPending && <Loading />}
       {log.isError && !l && <Failed />}
@@ -58,7 +65,160 @@ export function Activity() {
 }
 
 function Row({ e, l }: { e: ActivityEntry; l: ActivityData }) {
-  return e.kind === 'mail' ? <MailRow e={e} l={l} /> : <ReadsRow e={e} l={l} />;
+  if (e.kind === 'mail') return <MailRow e={e as MailActivity} l={l} />;
+  if (e.kind === 'reads') return <ReadsRow e={e as ReadsActivity} l={l} />;
+  return <EventRow e={e as EventActivity} l={l} />;
+}
+
+const SETTINGS: Record<string, string> = {
+  send_time: 'Send time',
+  tz: 'Time zone',
+  city: 'City',
+  region: 'Region',
+  country: 'Country',
+  transcribe: 'Transcripts',
+  describe: 'Photo descriptions',
+  badges: 'Badges'
+};
+const setting = (field: string, value: unknown) =>
+  value === true
+    ? 'on'
+    : value === false
+      ? 'off'
+      : value == null || value === ''
+        ? 'none'
+        : field === 'send_time'
+          ? clock(String(value))
+          : String(value);
+const SCOPES: Record<string, string> = {
+  'notes:read': 'read notes',
+  'media:read': 'see photos and audio',
+  'notes:write': 'add notes',
+  upcoming: 'Upcoming'
+};
+const scopes = (s: string | undefined) =>
+  listed(
+    (s || '')
+      .split(' ')
+      .filter(Boolean)
+      .map((x) => SCOPES[x] || x)
+  );
+
+// What one row says, and a line under it when there is more to say.
+function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
+  const year = thisYearOf(l.today),
+    day = e.day ? <AppLink href={dayHref(e.day, l.today)}>{dayName(e.day, year)}</AppLink> : null,
+    date = e.title ? `“${e.title}”` : 'a date';
+  switch (e.kind) {
+    case 'note.added':
+      return [<>Added a note to {day}</>, e.files ? `With ${count(e.files, 'file', 'files')}.` : undefined];
+    case 'note.edited':
+      return [<>Changed a note on {day}</>];
+    case 'note.deleted':
+      return [
+        <>Deleted a note from {e.day ? dayName(e.day, year) : 'a day'}</>,
+        e.files ? `It had ${count(e.files, 'file', 'files')}.` : undefined
+      ];
+    case 'note.files':
+      return [
+        <>
+          Added {count(e.added || 0, 'file', 'files')} to a note on {day}
+        </>
+      ];
+    case 'badge.earned':
+      return [
+        <>
+          Earned <AppLink href="/badges/">{e.name}</AppLink>
+        </>,
+        e.day ? `With a note on ${dayName(e.day, year)}.` : undefined
+      ];
+    case 'upcoming.added':
+      return [
+        <>
+          Added {date} to <AppLink href="/upcoming/">Upcoming</AppLink>
+        </>
+      ];
+    case 'upcoming.changed':
+      return [
+        <>
+          Changed {date} in <AppLink href="/upcoming/">Upcoming</AppLink>
+        </>
+      ];
+    case 'upcoming.removed':
+      return [<>Removed {date} from Upcoming</>];
+    case 'reminder':
+      return [<>The daily email reminded you of {date}</>];
+    case 'email.sent':
+      return [<>Sent the daily email</>];
+    case 'settings.changed':
+      return [
+        'Changed settings',
+        (e.changes || [])
+          .map((c) => `${SETTINGS[c.field] || c.field}: ${setting(c.field, c.from)} to ${setting(c.field, c.to)}`)
+          .join('; ') + '.'
+      ];
+    case 'pause.set':
+      return [`Paused the daily email from ${dayName(e.from!, year)} through ${dayName(e.through!, year)}`];
+    case 'pause.ended':
+      return [
+        'Ended a pause',
+        e.through ? `The last paused day was ${dayName(e.through, year)}.` : 'It ended before it began.'
+      ];
+    case 'status.stopped':
+      return ['Stopped the daily email', e.reason === 'unsubscribed' ? 'With the unsubscribe link.' : undefined];
+    case 'status.restarted':
+      return ['Restarted the daily email'];
+    case 'signin':
+      return ['Signed in', e.how === 'code' ? 'With an emailed code.' : 'With an emailed link.'];
+    case 'export.words':
+      return [`Downloaded your notes as ${e.format === 'md' ? 'Markdown' : 'JSON'}`];
+    case 'export.zip':
+      return ['Started a download of everything'];
+    case 'address.created':
+      return ['Made your standing address'];
+    case 'address.replaced':
+      return ['Replaced your standing address', 'The old one no longer takes email.'];
+    case 'calendar.created':
+      return ['Made your calendar link'];
+    case 'calendar.replaced':
+      return ['Replaced your calendar link', 'The old one no longer works.'];
+    case 'calendar.removed':
+      return ['Turned off your calendar link'];
+    case 'connection.added':
+      return [`Connected ${e.client}`, `It may ${scopes(e.scopes)}.`];
+    case 'connection.changed':
+      return [`Changed what ${e.client} may do`, `It may ${scopes(e.to)}.`];
+    case 'connection.removed':
+      return [
+        `Disconnected ${e.client}`,
+        e.reason === 'client'
+          ? `${e.client} ended the connection itself.`
+          : e.reason === 'token-reuse'
+            ? 'A sign-in it had already used came back, so the connection was ended to be safe.'
+            : undefined
+      ];
+    case 'account.created':
+      return ['Joined Release Notes'];
+    default:
+      return [e.kind];
+  }
+}
+
+const VIA: Record<string, string> = { web: 'On the web', email: 'By email', import: 'Import' };
+
+function EventRow({ e, l }: { e: EventActivity; l: ActivityData }) {
+  const [what, more] = said(e, l),
+    via = e.via === 'assistant' ? e.client : e.via ? VIA[e.via] : null;
+  return (
+    <li className={`activity-row event ${e.kind.split('.')[0]}`}>
+      <p className="kicker">
+        {zoneShortDate(e.at, l.tz)} · {zoneTime(e.at, l.tz)}
+        {via ? ` · ${via}` : ''}
+      </p>
+      <p className="activity-what">{what}</p>
+      {more && <p className="hint">{more}</p>}
+    </li>
+  );
 }
 
 function ReadsRow({ e, l }: { e: ReadsActivity; l: ActivityData }) {

@@ -247,3 +247,75 @@ test('an owner widens a live connection with the upcoming scope in place; the ex
   await service.disconnect('u', fid);
   await assert.rejects(service.grant('u', fid, 'upcoming'), (e) => e instanceof OAuthError && e.status === 404);
 });
+test("connections added, changed and ended are in the owner's activity log, never a token", async () => {
+  const ctx = fixture(),
+    log = () =>
+      ctx.store.memory
+        .all()
+        .filter((i) => i.pk === 'USER#u' && String(i.sk).startsWith('ACTIVITY#'))
+        .sort((x, y) => (String(x.sk) < String(y.sk) ? -1 : 1))
+        .map((i) => Object.fromEntries(Object.entries(i).filter(([k]) => !['pk', 'sk', 'at'].includes(k)))),
+    a = await connected({ ...ctx, now: NOW + 1 }, true, false),
+    fid = String(a.family.id);
+  await new OAuthService({ ...ctx, now: NOW + 2 }).grant('u', fid, 'upcoming');
+  await new OAuthService({ ...ctx, now: NOW + 3 }).disconnect('u', fid, true);
+  // A used refresh token coming back ends the connection.
+  const later = new OAuthService({ ...ctx, now: NOW + 4 }),
+    refresh = { grant_type: 'refresh_token', refresh_token: String(a.tokens.refresh_token), client_id: a.cid };
+  await later.exchange({ ...refresh, resource: ORIGIN + '/mcp' });
+  await assert.rejects(
+    new OAuthService({ ...ctx, now: NOW + 5 }).exchange({ ...refresh, resource: ORIGIN + '/mcp' }),
+    OAuthError
+  );
+  const b = await connected({ ...ctx, now: NOW + 6 }, false, false);
+  await new OAuthService({ ...ctx, now: NOW + 7 }).disconnect('u', String(b.family.id));
+  const c = await connected({ ...ctx, now: NOW + 8 }, false, false);
+  const revoked = await publicOAuth(
+    { ...ctx, now: NOW + 9 },
+    new Request(ORIGIN + '/oauth/revoke', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: c.token, client_id: c.cid })
+    }),
+    { viewer: '192.0.2.1:12345' }
+  );
+  assert.equal(revoked.status, 200);
+  const client = a.family.client_name,
+    [bid, cid] = [String(b.family.id), String(c.family.id)];
+  assert.deepEqual(log(), [
+    {
+      kind: 'connection.added',
+      via: 'web',
+      scopes: 'notes:read notes:write',
+      connection: fid,
+      client
+    },
+    {
+      kind: 'connection.changed',
+      via: 'web',
+      from: 'notes:read notes:write',
+      to: 'notes:read notes:write upcoming',
+      connection: fid,
+      client
+    },
+    {
+      kind: 'connection.changed',
+      via: 'web',
+      from: 'notes:read notes:write upcoming',
+      to: 'notes:read upcoming',
+      connection: fid,
+      client
+    },
+    { kind: 'connection.removed', reason: 'token-reuse', connection: fid, client },
+    { kind: 'connection.added', via: 'web', scopes: 'notes:read', connection: bid, client },
+    { kind: 'connection.removed', via: 'web', reason: 'owner', connection: bid, client },
+    { kind: 'connection.added', via: 'web', scopes: 'notes:read', connection: cid, client },
+    { kind: 'connection.removed', reason: 'client', connection: cid, client }
+  ]);
+  const kept = JSON.stringify(ctx.store.memory.all().filter((i) => String(i.sk).startsWith('ACTIVITY#')));
+  for (const token of [a.token, String(a.tokens.refresh_token), b.token, c.token]) assert.ok(!kept.includes(token));
+  // Turning a request down connects nothing, and logs nothing.
+  const { id } = await pending(ctx);
+  await new OAuthService(ctx).authorize('u', { request: id, approve: false });
+  assert.equal(log().length, 8);
+});

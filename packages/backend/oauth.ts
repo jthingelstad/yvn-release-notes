@@ -4,6 +4,9 @@
 import { createHash } from 'node:crypto';
 import { digest, network, newToken, same } from './auth.ts';
 import { codePointLength } from '../domain/unicode.ts';
+import type { ActivityEvent } from '../domain/activity.ts';
+import { recordActivity } from './activity.ts';
+import { safeLog, type Log } from './services.ts';
 export type OAuthRow = Record<string, unknown>;
 export type OAuthChange = [OAuthRow, number | null];
 export interface OAuthStore {
@@ -14,11 +17,13 @@ export interface OAuthStore {
   mcpBlock(uid: string): Promise<void>;
   deleteKeys(keys: { pk: string; sk: string }[]): Promise<void>;
   count(key: string, period: number, span?: number): Promise<number>;
+  putActivity(user: string, rows: readonly OAuthRow[]): Promise<boolean>;
 }
 export interface OAuthContext {
   store: OAuthStore;
   origin: string;
   now: number;
+  log?: Log;
 }
 export const SCOPES = ['media:read', 'notes:read', 'notes:write', 'upcoming'];
 export const ACCESS_SECONDS = 3600,
@@ -98,11 +103,23 @@ export class OAuthService {
     const family = await this.familyFor(item);
     return family && family.version === item.version ? family : null;
   }
-  async revoke(fid: string, uid: string): Promise<void> {
+  /** A connection change in the owner's activity log, after it is made. */
+  private async record(uid: string, kind: string, family: OAuthRow, fields: OAuthRow): Promise<void> {
+    const event: ActivityEvent = {
+      kind,
+      id: String(family.id),
+      fields: { ...fields, connection: family.id, client: family.client_name }
+    };
+    await recordActivity(this.context.store, uid, this.context.now, [event], this.context.log ?? safeLog);
+  }
+  /** Ends a connection: the owner disconnected it, its client revoked its own
+   * token, or a used refresh token came back (token-reuse). */
+  async revoke(fid: string, uid: string, reason: 'owner' | 'client' | 'token-reuse'): Promise<void> {
     for (let attempt = 0; attempt < 5; attempt++) {
       const item = await this.context.store.mcpGet('OAUTHFAMILY#' + fid);
       if (!item || item.user_id !== uid || item.revoked) return;
-      if (await this.context.store.mcpCommit([[{ ...item, revoked: true }, Number(item.revision)]], uid)) return;
+      if (await this.context.store.mcpCommit([[{ ...item, revoked: true }, Number(item.revision)]], uid))
+        return this.record(uid, 'connection.removed', item, { ...(reason === 'owner' ? { via: 'web' } : {}), reason });
     }
     fail('temporarily_unavailable', 503);
   }
@@ -148,7 +165,7 @@ export class OAuthService {
     );
     if (!item || item.client_id !== body.client_id) fail('invalid_grant');
     if (item.used) {
-      if (kind === 'refresh_token') await this.revoke(String(item.family), String(item.user_id));
+      if (kind === 'refresh_token') await this.revoke(String(item.family), String(item.user_id), 'token-reuse');
       fail('invalid_grant');
     }
     const family = await this.familyFor(item);
@@ -163,7 +180,7 @@ export class OAuthService {
       )
         fail('invalid_grant');
     } else if (item.version !== family.version) {
-      await this.revoke(String(item.family), String(item.user_id));
+      await this.revoke(String(item.family), String(item.user_id), 'token-reuse');
       fail('invalid_grant');
     }
     if (body.scope && body.scope !== family.scope) fail('invalid_scope');
@@ -177,7 +194,7 @@ export class OAuthService {
       [index, previous ? Number(previous.revision) : null]
     );
     if (!(await store.mcpCommit(changes, String(item.user_id)))) {
-      if (kind === 'refresh_token') await this.revoke(String(item.family), String(item.user_id));
+      if (kind === 'refresh_token') await this.revoke(String(item.family), String(item.user_id), 'token-reuse');
       fail('invalid_grant');
     }
     return answer;
@@ -236,6 +253,7 @@ export class OAuthService {
         ...[family, tracked(family, uid), codeRow, tracked(codeRow, uid)].map((i) => [i, null] as OAuthChange)
       );
     if (!(await store.mcpCommit(changes, uid))) fail('request_expired');
+    if (body.approve) await this.record(uid, 'connection.added', family, { via: 'web', scopes: scope });
     const params = new URLSearchParams(body.approve ? { code } : { error: 'access_denied' });
     if (item.state) params.set('state', String(item.state));
     return {
@@ -244,30 +262,20 @@ export class OAuthService {
   }
   async disconnect(uid: string, fid: string, writeOnly = false): Promise<{ ok: true }> {
     if (!writeOnly) {
-      await this.revoke(fid, uid);
+      await this.revoke(fid, uid, 'owner');
       return { ok: true };
     }
     for (let attempt = 0; attempt < 5; attempt++) {
       const item = await this.context.store.mcpGet('OAUTHFAMILY#' + fid);
       if (!live(item, this.context.now) || item.user_id !== uid || !scopes(item.scope).includes('notes:write'))
         return { ok: true };
-      if (
-        await this.context.store.mcpCommit(
-          [
-            [
-              {
-                ...item,
-                scope: scopes(item.scope)
-                  .filter((s) => s !== 'notes:write')
-                  .join(' ')
-              },
-              Number(item.revision)
-            ]
-          ],
-          uid
-        )
-      )
+      const to = scopes(item.scope)
+        .filter((s) => s !== 'notes:write')
+        .join(' ');
+      if (await this.context.store.mcpCommit([[{ ...item, scope: to }, Number(item.revision)]], uid)) {
+        await this.record(uid, 'connection.changed', item, { via: 'web', from: item.scope, to });
         return { ok: true };
+      }
     }
     return fail('temporarily_unavailable', 503);
   }
@@ -283,8 +291,10 @@ export class OAuthService {
       const current = scopes(item.scope);
       if (current.includes(scope)) return { ok: true, scope: current.join(' ') };
       const next = [...current, scope];
-      if (await this.context.store.mcpCommit([[{ ...item, scope: next.join(' ') }, Number(item.revision)]], uid))
+      if (await this.context.store.mcpCommit([[{ ...item, scope: next.join(' ') }, Number(item.revision)]], uid)) {
+        await this.record(uid, 'connection.changed', item, { via: 'web', from: item.scope, to: next.join(' ') });
         return { ok: true, scope: next.join(' ') };
+      }
     }
     return fail('temporarily_unavailable', 503);
   }
@@ -514,7 +524,8 @@ export async function publicOAuth(
       if (path === '/oauth/revoke') {
         for (const prefix of ['OAUTHACCESS#', 'OAUTHREFRESH#']) {
           const item = await context.store.mcpGet(prefix + digest(b.token ?? ''));
-          if (item && item.client_id === b.client_id) await service.revoke(String(item.family), String(item.user_id));
+          if (item && item.client_id === b.client_id)
+            await service.revoke(String(item.family), String(item.user_id), 'client');
         }
         return oauthResponse(200, {});
       }

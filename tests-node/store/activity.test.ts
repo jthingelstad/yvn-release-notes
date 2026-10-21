@@ -104,6 +104,67 @@ test('a page leaves out the row at `before`, merges by key and says when more re
   ]);
 });
 
+test('a page reads on past a response DynamoDB cut short at 1 MB', async () => {
+  const s = new FakeStore([profile], 'T');
+  for (const hour of ['10', '09', '08', '07'])
+    s.seed({
+      pk: 'USER#u',
+      sk: `ACTIVITY#2026-10-12T${hour}:00:00.000Z#mail#${hour}`,
+      kind: 'mail',
+      at: `2026-10-12T${hour}:00:00.000Z`
+    });
+  const send = s.memory.send.bind(s.memory);
+  // Large mail rows: one row a response, whatever the limit asked for.
+  s.memory.send = (command) => {
+    const input = command.input as { Limit?: number };
+    if (input.Limit) input.Limit = 1;
+    return send(command);
+  };
+  const page = await s.activity('u', { limit: 2, now: 1000 });
+  assert.deepEqual(
+    [page.rows.map((r) => r.sk), page.more],
+    [['ACTIVITY#2026-10-12T10:00:00.000Z#mail#10', 'ACTIVITY#2026-10-12T09:00:00.000Z#mail#09'], true]
+  );
+  assert.equal(s.memory.calls.filter((c) => c.input.ExpressionAttributeValues?.[':p'] === 'USER#u').length, 4);
+});
+
+test('activity rows go in with the account proof, each only if new, 90 to a transaction', async () => {
+  const s = new FakeStore([profile], 'T'),
+    row = (n: number) => ({
+      pk: 'USER#u',
+      sk: `ACTIVITY#2026-10-13T12:00:00.000Z#upcoming.added#d${String(n).padStart(3, '0')}`,
+      kind: 'upcoming.added',
+      at: '2026-10-13T12:00:00.000Z',
+      via: 'web',
+      upcoming: `d${n}`
+    });
+  s.memory.calls.length = 0;
+  assert.equal(await s.putActivity('u', [row(1)]), true);
+  assert.deepEqual(s.memory.calls, [
+    {
+      name: 'TransactWriteCommand',
+      input: {
+        TransactItems: [
+          proof,
+          { Put: { TableName: 'T', Item: row(1), ConditionExpression: 'attribute_not_exists(pk)' } }
+        ]
+      }
+    }
+  ]);
+  s.memory.calls.length = 0;
+  const many = Array.from({ length: 100 }, (_, i) => row(i + 2));
+  assert.equal(await s.putActivity('u', many), true);
+  assert.deepEqual(
+    s.memory.calls.map((c) => (c.input.TransactItems as unknown[]).length),
+    [91, 11]
+  );
+  // A row already there, or a deleting account, writes nothing.
+  assert.equal(await s.putActivity('u', [row(1)]), false);
+  s.seed({ ...profile, mcp_deleting: true });
+  assert.equal(await s.putActivity('u', [row(500)]), false);
+  assert.equal(await s.mailEntry('u', row(500).sk), null);
+});
+
 test('moving an old mail row puts it in the log without its expiry and deletes it, with the account proof', async () => {
   const s = new FakeStore([profile], 'T');
   s.seed(legacy);

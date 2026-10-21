@@ -109,6 +109,23 @@ nothing there links here yet: that is Jamie's call.
       moved (`tools/move-mail-log.ts`) or expired.
     - **Reads**: each connected assistant's calls on a local day, by tool,
       with the time of the last; never what it asked or read.
+    - **Changes** (`packages/backend/activity.ts`), each written after the
+      change with the account proof, through the web or an assistant (by
+      its client's name): a note added, changed, deleted or given files;
+      each badge a save earned, at that save (none with "Show badges" off,
+      none lost; an assistant's or an edit's are not marked seen, so the
+      email still tells of them); an Upcoming date added, changed or
+      removed, by its id, its title read when shown and gone once it is
+      removed; settings, each field's old and new value (never
+      coordinates); a pause set or ended; stopping by the unsubscribe
+      link and restarting; sign-ins (link or code); exports; the standing
+      address and calendar link made, replaced or turned off (never the
+      address or link); connections added, changed and ended (by the
+      owner, by the client, or for a reused refresh token); and joining.
+      A row that can't be written never undoes the change: it is logged as
+      `activity-unrecorded` and counted (`ActivityUnrecorded`). Notes filed
+      by email, the daily email, reminders, transcripts, descriptions and
+      imports are not in the log yet.
 
 ## Defaults (Jamie can change any)
 
@@ -368,7 +385,7 @@ or new CSP exception.
 | `POST /api/auth/start` `{email, turnstile_token, turnstile_wait_ms, turnstile_reason?}` | 202 and mails a link and code; 429 `limited` past a limit; 403 `turnstile` only in enforce mode, for a missing or failed token (`packages/backend/turnstile.ts`) |
 | `POST /api/auth/verify` `{email, code}` or `{token}` | sets the cookie; says whether the account is new |
 | `POST /api/auth/signout` | |
-| `GET /api/activity?before=` | the owner's activity log, newest first, 100 rows a page: `email`, `tz`, `today`, `entries` and `next` (the `before` of the next page, or null). Each entry has `id`, `at` and `kind`; a mail row adds `message`, `received_at`, `via` reply or address, `day`, `version`, `subject`, `outcome` filed, not-filed or failed, `reason`, `sender` when it was another address, `text` only for a row not filed whose sender was proven, `attempts` and `notified`; a reads row adds `day`, `client`, `connection`, `calls`, `tools`, `errors` and `last_at`. 400 `before` for anything but a row id or time. No table keys |
+| `GET /api/activity?before=` | the owner's activity log, newest first, 100 rows a page: `email`, `tz`, `today`, `entries` and `next` (the `before` of the next page, or null). Each entry has `id`, `at` and `kind`; a mail row adds `message`, `received_at`, `via` reply or address, `day`, `version`, `subject`, `outcome` filed, not-filed or failed, `reason`, `sender` when it was another address, `text` only for a row not filed whose sender was proven, `attempts` and `notified`; a reads row adds `day`, `client`, `connection`, `calls`, `tools`, `errors` and `last_at`; every other row adds the fields its kind keeps (`packages/domain/activity.ts`), and one naming an Upcoming date (`upcoming`) its `title` as it is now, or null once removed. 400 `before` for anything but a row id or time. No table keys |
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |
 | `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address; `badges` is "Show badges"; `admin: true` only for the configured administrator |
 | `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `transcribe`, `describe`, `badges`, `status: "active"` to start again); the birthday cannot change. `badges: true` after `false` counts everything earned meanwhile as seen |

@@ -8,6 +8,7 @@ import { occurrence, upcomingViews, UPCOMING_MAX, type UpcomingEntry } from '../
 import { calendarEvents, ics } from '../../packages/domain/calendar.ts';
 import { iso, localDay } from '../../packages/domain/dates.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
+import { eventId, recordActivity, upcomingEvents } from '../../packages/backend/activity.ts';
 import { body, json } from './requests.ts';
 
 export const CALENDAR_NAME = 'Release Notes';
@@ -53,6 +54,9 @@ export async function upcomingRoutes(
       });
     const outcome = await store.upcomingBatch(uid, changes);
     service.log({ event: 'upcoming', user: uid, action: 'batch', ...count, applied: outcome.applied });
+    await recordActivity(store, uid, ctx.now, upcomingEvents(changes.slice(0, outcome.applied), 'web'), (f) =>
+      service.log(f)
+    );
     if (!outcome.ok) reject(409, 'upcoming-conflict', { applied: outcome.applied });
     return json({ ok: true, ...count });
   }
@@ -72,6 +76,7 @@ export async function upcomingRoutes(
           updated_at: at
         };
   if (!(await store.saveUpcoming(uid, next, previous))) reject(409, 'upcoming-conflict');
+  await recordActivity(store, uid, ctx.now, upcomingEvents([{ previous, next }], 'web'), (f) => service.log(f));
   service.log({ event: 'upcoming', user: uid, action: method === 'DELETE' ? 'remove' : previous ? 'edit' : 'create' });
   return json(next ? { ...next, occurrence: occurrence(next, today) } : { ok: true }, previous ? 200 : 201);
 }
@@ -103,10 +108,25 @@ async function calendarRoutes(service: SessionService, pattern: string, args: st
   if (method === 'DELETE') {
     if (old && !(await ctx.store.dropCalendar(uid, old))) reject(409, 'try-again');
     service.log({ event: 'calendar', user: uid, action: 'remove' });
+    if (old)
+      await recordActivity(
+        ctx.store,
+        uid,
+        ctx.now,
+        [{ kind: 'calendar.removed', id: eventId(), fields: { via: 'web' } }],
+        (f) => service.log(f)
+      );
     return json({ ok: true });
   }
   const token = replyToken();
   if (!(await ctx.store.setCalendar(uid, token, iso(ctx.now), old))) reject(409, 'try-again');
   service.log({ event: 'calendar', user: uid, action: old ? 'replace' : 'create' });
+  await recordActivity(
+    ctx.store,
+    uid,
+    ctx.now,
+    [{ kind: old ? 'calendar.replaced' : 'calendar.created', id: eventId(), fields: { via: 'web' } }],
+    (f) => service.log(f)
+  );
   return json({ calendar: feedUrl(ctx, { calendar: token }) });
 }

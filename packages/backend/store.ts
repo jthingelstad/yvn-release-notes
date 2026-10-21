@@ -1247,19 +1247,27 @@ export class Store {
     const lo = ACTIVITY + (o.from ?? ''),
       hi = o.before ? ACTIVITY + o.before : ACTIVITY_END,
       within = (i: Item) => String(i.sk) >= lo && String(i.sk) < hi,
-      range = async (pk: string) =>
-        (
-          await this.client.send(
+      // One more than a page, and one for the row at `before` itself; a
+      // response stops at 1 MB, so read on until there are that many.
+      range = async (pk: string) => {
+        const items: Item[] = [];
+        let cursor: Key | undefined;
+        do {
+          const result = await this.client.send(
             new QueryCommand({
               TableName: this.tableName,
               KeyConditionExpression: 'pk = :p AND sk BETWEEN :lo AND :hi',
               ExpressionAttributeValues: { ':p': pk, ':lo': lo, ':hi': hi },
               ScanIndexForward: false,
-              // One more than a page, and one for the row at `before` itself.
-              Limit: o.limit + 2
+              Limit: o.limit + 2 - items.length,
+              ...(cursor ? { ExclusiveStartKey: cursor } : {})
             })
-          )
-        ).Items ?? [],
+          );
+          items.push(...(result.Items ?? []));
+          cursor = result.LastEvaluatedKey;
+        } while (cursor && items.length < o.limit + 2);
+        return items;
+      },
       [own, reads, legacy] = await Promise.all([
         range(`USER#${user}`),
         range(`MCPMETA#${user}`),
@@ -1273,6 +1281,21 @@ export class Store {
       if (within(row)) merged.set(String(row.sk), row);
     const rows = [...merged.values()].sort((a, b) => compare(String(b.sk), String(a.sk)));
     return { rows: rows.slice(0, o.limit), more: rows.length > o.limit };
+  }
+  /** Activity rows (packages/backend/activity.ts), each transaction with the
+   * account proof, 90 rows at most: false once one fails. */
+  async putActivity(user: string, rows: readonly Item[]): Promise<boolean> {
+    for (let start = 0; start < rows.length; start += 90)
+      if (
+        !(await this.provedTransaction([
+          this.profileProof(user),
+          ...rows
+            .slice(start, start + 90)
+            .map((row) => this.putOperation(row, { ConditionExpression: 'attribute_not_exists(pk)' }))
+        ]))
+      )
+        return false;
+    return true;
   }
   /** Every activity row from `from` (an ISO time) on, newest first. */
   async activityAll(user: string, now: number, from?: string): Promise<Item[]> {

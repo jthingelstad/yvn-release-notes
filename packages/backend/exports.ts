@@ -4,6 +4,7 @@ import { SessionService, reject } from './sessions.ts';
 import { build, markdown } from './export.ts';
 import { iso } from '../domain/dates.ts';
 import { json } from '../../server/app/requests.ts';
+import { eventId, recordActivity } from './activity.ts';
 export async function exportRoutes(
   service: SessionService,
   pattern: string,
@@ -18,6 +19,9 @@ export async function exportRoutes(
     if (format !== 'json' && format !== 'md') reject(400, 'format');
     const data = build(await store.exportItems(uid), iso(ctx.now)),
       name = `release-notes-${iso(ctx.now).slice(0, 10)}.${format}`;
+    await recordActivity(store, uid, ctx.now, [{ kind: 'export.words', id: eventId(), fields: { format } }], (f) =>
+      service.log(f)
+    );
     return json(format === 'md' ? markdown(data) : JSON.stringify(data, null, 2) + '\n', 200, {
       'content-type': format === 'md' ? 'text/markdown; charset=utf-8' : 'application/json; charset=utf-8',
       'content-disposition': `attachment; filename="${name}"`
@@ -50,6 +54,7 @@ export async function exportRoutes(
       await store.finishExport(uid, id, { status: 'failed', finished_at: ctx.now });
       reject(502, 'export-failed');
     }
+    await recordActivity(store, uid, ctx.now, [{ kind: 'export.zip', id }], (f) => service.log(f));
     return json({ status: 'building' }, 202);
   }
   return json(

@@ -11,7 +11,32 @@
  * assistant's reads are summed into one row a connection a local day, which
  * the MCP reader writes; since it may not write USER# rows, that row lives at
  * MCPMETA#<owner> / ACTIVITY#<the day's first instant>#reads#<connection>,
- * and readers merge the two partitions by key. */
+ * and readers merge the two partitions by key.
+ *
+ * Every other row is written after the change it records, with the account
+ * proof (packages/backend/activity.ts): a failed write never fails the
+ * change, and is logged as activity-unrecorded. The kinds, and the fields
+ * each carries besides `via` (web, email, assistant or import) and `client`
+ * (an assistant's name):
+ *
+ * - note.added, note.edited, note.deleted: `day`, `note` (its id), `files`
+ *   (a count), `version`; note.files: `day`, `note`, `added`.
+ * - badge.earned: `badge`, `key`, `name`, `version`, `day`, `note`.
+ * - upcoming.added, upcoming.changed, upcoming.removed: `upcoming` (its id).
+ *   The title is joined when read, never stored: the web always shows it, an
+ *   assistant only with the upcoming scope.
+ * - settings.changed: `changes`, each `{field, from, to}`.
+ * - pause.set: `from`, `through`; pause.ended: `from`, `through` (the last
+ *   paused day, or null when it ended before it began).
+ * - status.stopped: `reason`; status.restarted: `reason` (why it had stopped).
+ * - signin: `how` (link or code). export.words: `format`; export.zip.
+ * - address.created, address.replaced; calendar.created, calendar.replaced,
+ *   calendar.removed: never the address or link.
+ * - connection.added: `connection`, `client`, `scopes`; connection.changed:
+ *   `connection`, `client`, `from`, `to`; connection.removed: `connection`,
+ *   `client`, `reason` (owner; client, when it revoked its own token; or
+ *   token-reuse, when a used refresh token came back and ended it).
+ * - account.created. */
 import { codePointSlice } from './unicode.ts';
 
 export const ACTIVITY = 'ACTIVITY#';
@@ -46,6 +71,17 @@ export const ACTIVITY_FAMILIES = [
 export const familyOf = (kind: string): string => kind.split('.')[0]!;
 
 type Row = Record<string, unknown>;
+
+/** Something to record: its kind, an id that keeps its key unique, and its
+ * fields (never the words of a note or an Upcoming entry). */
+export interface ActivityEvent {
+  kind: string;
+  id: string;
+  fields?: Row;
+}
+export function activityRow(user: string, at: string, e: ActivityEvent): Row {
+  return { ...e.fields, pk: `USER#${user}`, sk: activityKey(at, e.kind, e.id), kind: e.kind, at };
+}
 
 /** ISO time to the millisecond, as every activity key carries it. */
 export const activityTime = (epochSeconds: number): string => new Date(Math.round(epochSeconds * 1000)).toISOString();
@@ -84,7 +120,15 @@ export function activityView(row: Row): Row {
       notified: Boolean(row.notified_at)
     };
   if (kind === 'reads') return { ...head, ...pick(READS), calls: Number(row.calls ?? 0) };
-  return head;
+  // Every other row holds only what its kind records (above).
+  return { ...head, ...Object.fromEntries(Object.entries(row).filter(([k]) => !INTERNAL.has(k))) };
+}
+const INTERNAL = new Set(['pk', 'sk', 'kind', 'at', 'revision', 'expires_at']);
+
+/** A row naming an Upcoming date (`upcoming`, its id) with the date's
+ * title, joined when read: null once the date is gone. */
+export function titled(view: Row, titles: ReadonlyMap<string, string>): Row {
+  return typeof view.upcoming === 'string' ? { ...view, title: titles.get(view.upcoming) ?? null } : view;
 }
 
 /** What an agent reads: the owner's view, with a mail row's subject cut at

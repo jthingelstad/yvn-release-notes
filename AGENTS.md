@@ -107,9 +107,8 @@ Where things are (each module's design comment has its contract):
   bundle with no cloud credentials, `scripts/release.sh` releases it, and
   `deploy.sh` is the Mac's path to both.
 - `infra/template.yaml` is the stack. `infra/github-deploy-role.yaml` is the
-  `yvn-release-notes-deploy` stack (the deploy role, the CloudFormation
-  service role and, until it is taken out, the receipts bucket of the retired
-  phased release), applied by hand from its header.
+  `yvn-release-notes-deploy` stack (the deploy role and the CloudFormation
+  service role), applied by hand from its header.
 - **Backups** (Jamie, 2026-10-20: "keep the data in monthly copies for as
   long as we want ... We make no promise about backups"): `infra/backup.yaml`
   is the `yvn-release-notes-backup` stack, applied by hand and never from a

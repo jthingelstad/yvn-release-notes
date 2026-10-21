@@ -115,7 +115,7 @@ test('email ownership sign-in burns shared link/code and verifies new addresses 
   assert.ok(!JSON.stringify(s.logs).includes('bea@example.com'));
   assert.ok(login);
 });
-test('notes/readers/tag/search/release share provenance and safe DTOs across native routes', async () => {
+test('notes/readers/tag/search/release share provenance and safe DTOs across routes', async () => {
   const s = await setup(),
     added = await s.call('POST', '/api/days/2026-10-07/notes', {
       text: '  Café #Cabin\r\nA walk.  ',

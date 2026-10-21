@@ -4,7 +4,7 @@
 # scripts/build-release.sh made from a commit on main; the caller has already
 # checked that the commit is main and green. This checks who is deploying,
 # holds the deploy lock (tools/receipt-store.ts) for the whole run, runs the
-# requested native phase, updates the stack through its CloudFormation service
+# requested release phase, updates the stack through its CloudFormation service
 # role, installs origin policies after an HTTP publication and syncs the web app.
 #
 #   scripts/release.sh --bundle DIR --commit SHA --repo DIR [phase] [options]
@@ -15,9 +15,9 @@
 #     --break-glass, --admin-user-id=ID, --turnstile-mode=MODE: the Mac only
 #   scripts/release.sh --check-arguments [phase] [options]   validate, then stop
 #
-# Ordinary deploys omit native parameter overrides, so CloudFormation keeps the
+# Ordinary deploys omit the release parameter overrides, so CloudFormation keeps the
 # current artifact versions, build ids and live/rollback pins. In GitHub Actions
-# the log is public: identifiers are masked, and the stack outputs and native
+# the log is public: identifiers are masked, and the stack outputs and release
 # parameters go only to the private log in the receipts bucket (logs/).
 set -euo pipefail
 export AWS_REGION=us-east-1 AWS_PAGER=""
@@ -144,7 +144,7 @@ trap 'exit 143' TERM
 } >> "$PRIVATE_LOG"
 PRIVATE_LINES=$(wc -l < "$PRIVATE_LOG")
 
-# Every release, CI or Mac, ordinary or native, holds this one lock. A held
+# Every release, CI or Mac, ordinary or phased, holds this one lock. A held
 # lock means another run, or one that died: look before deleting it, never guess.
 RELEASE_LOCK=$("${RELEASE[@]}" lock acquire --commit "$COMMIT")
 export RELEASE_LOCK
@@ -163,7 +163,7 @@ TRANSCRIBE_DONE_ARN=$(rule_arn TranscribeDone)
 
 NATIVE_PARAMETER_FILES=()
 validate_native_parameters() {
-  # Only native keys accepted; an unrelated output cannot override infrastructure.
+  # Only pin, version and artifact keys; an unrelated output cannot override infrastructure.
   node --input-type=module - "${NATIVE_PARAMETER_FILES[@]}" > "$WORK/native-parameters.args" <<'JS'
 import { readFile } from 'node:fs/promises';
 const names = ['Sender', 'Inbound', 'Events', 'Transcribe', 'Describe', 'Export', 'Capture'];
@@ -224,7 +224,7 @@ publish_artifacts() {
   NATIVE_PARAMETER_FILES+=("$WORK/artifacts-$1.json")
 }
 
-# Only explicit publications upload native code, and only activation or
+# Only explicit publications upload code, and only activation or
 # rollback moves what serves. --only-changed (GitHub Actions) leaves out a
 # kind whose packaged content is what the stack already publishes, so a merge
 # that changes no code publishes nothing new.

@@ -39,7 +39,7 @@ response, including errors, carries `Cache-Control: no-store`. Each request
 owns its identity/context; reusable SDK clients carry no subscriber state.
 
 The generated `contracts/mcp-surface.json` is the full interface, exported by
-`node --import tsx tools/export-mcp-contract.ts` from the native contract.
+`node --import tsx tools/export-mcp-contract.ts` from `server/mcp/contract.ts`.
 `packages/backend/oauth.ts`, `server/mcp/` and `workers/capture.ts` implement
 the protocol and preserve existing families, refresh rotation and capture
 receipts. Every tool has a strict input schema, output schema and accurate

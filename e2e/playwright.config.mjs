@@ -10,8 +10,8 @@ export default defineConfig({
   testDir: '.',
   timeout: 30_000,
   // Ada and MCP suites share one fictional inbox: their newest codes replace
-  // each other, so test files must not race that address. Native load tests
-  // separately prove request concurrency without a shared sign-in race.
+  // each other, so test files must not race that address. The HTTP acceptance
+  // tests (tests-node/http/) separately prove request concurrency without a shared sign-in race.
   workers: 1,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

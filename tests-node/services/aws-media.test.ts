@@ -35,7 +35,7 @@ test('upload tags are read from the checked object version, never the current ve
 test('the HTTP execution role permits version tag checks only for staged uploads', async () => {
   const template = await readFile(new URL('../../infra/template.yaml', import.meta.url), 'utf8');
   const role = /^  WebRole:\n([\s\S]*?)(?=^  \w+:)/m.exec(template)?.[1];
-  assert.ok(role, 'WebRole must remain the native HTTP execution role');
+  assert.ok(role, 'WebRole must remain the HTTP execution role');
   assert.ok(template.includes('ExecutionRoleArn: !GetAtt WebRole.Arn'));
   const grants = role.split(/^\s+- Effect: /m).filter((s) => s.includes('s3:GetObjectVersionTagging'));
   assert.equal(grants.length, 1);

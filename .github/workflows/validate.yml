@@ -44,9 +44,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-      # React, native Hono servers, Event workers and tools: format/lint,
+      # React, Hono servers, Event workers and tools: format/lint,
       # types, unit tests and committed builds. No package install scripts run.
       - name: install
         run: npm ci --ignore-scripts
-      - name: native application verification
+      - name: application verification
         run: npm run verify

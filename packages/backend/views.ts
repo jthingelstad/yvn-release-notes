@@ -1,4 +1,4 @@
-/** Owner-facing wire DTOs, shared by native HTTP readers. No stored object key
+/** Owner-facing wire DTOs, shared by the HTTP readers. No stored object key
  * is returned: media links are signed only after checking the subscriber prefix. */
 import type { Item } from './store-types.ts';
 import type { Objects } from './services.ts';

@@ -1,4 +1,4 @@
-/** Stateless native HTTP MCP endpoint. Roles, OAC and routing are infrastructure
+/** Stateless HTTP MCP endpoint. Roles, OAC and routing are infrastructure
  * responsibilities; every authenticated call checks the live OAuth family. */
 import { Hono } from 'hono';
 import { OAuthService, oauthResponse, type OAuthRow } from '../../packages/backend/oauth.ts';

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build a release from a committed tree, with no cloud credentials: install the
 # locked packages (none of their install scripts run), verify, then package the
-# native artifacts and gather everything scripts/release.sh deploys:
+# code artifacts and gather everything scripts/release.sh deploys:
 #   OUT/web            the web app (dist/web)
-#   OUT/artifacts      native ZIPs and manifest.json, their content hashes
+#   OUT/artifacts      the code ZIPs and manifest.json, their content hashes
 #   OUT/release        the bundled release tools (tools/release-cli.ts)
 #   OUT/template.yaml  the stack, and OUT/commit, the commit built
 # deploy.sh runs it on a git archive of HEAD; GitHub Actions runs it in a

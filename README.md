@@ -89,13 +89,13 @@ contracts. Install without package scripts, then verify both sides:
 
 ```sh
 npm ci --ignore-scripts
-npm run verify        # format, lint, types, unit tests, web and native builds
+npm run verify        # format, lint, types, unit tests, web and server builds
 node --import tsx tools/dev-server.ts --fake-places --fake-links
 ```
 
 The local harness serves the built app and real HTTP/MCP routes against
 fictional in-memory stores, objects and mail. It never uses AWS. Browser
-regressions run with `npm run e2e`; the native tests with `npm run test:server`.
+regressions run with `npm run e2e`; the server tests alone with `npm run test:server`.
 CloudFront signs requests to the private Web Function origins using OAC;
 email link/code sign-in still proves ownership before any subscriber write.
 

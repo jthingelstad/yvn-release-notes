@@ -38,7 +38,7 @@ const entry = (id: string, text: string, extras: Item = {}) => ({
   text,
   ...extras
 });
-test('native dev arguments preserve repeated Day One options without importing a running server', () => {
+test('dev server arguments preserve repeated Day One options without importing a running server', () => {
   assert.deepEqual(
     devOptions([
       '--dayone',
@@ -57,7 +57,7 @@ test('native dev arguments preserve repeated Day One options without importing a
   assert.throws(() => devOptions(['--dayone']));
   assert.throws(() => devOptions(['--write']));
 });
-test('multiple fictional ZIPs preview through real importer and native API with local media; repeat stays idempotent', async () => {
+test('multiple fictional ZIPs preview through real importer and API with local media; repeat stays idempotent', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'yvn-dev-preview-'));
   try {
     const a = join(folder, 'one.zip'),

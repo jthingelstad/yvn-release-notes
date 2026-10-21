@@ -386,7 +386,7 @@ async function boundedText(request: Request, maximum: number): Promise<string> {
   }
 }
 
-/** Native HTTP only. Origin authentication is provided by CloudFront OAC;
+/** HTTP only. Origin authentication is provided by CloudFront OAC;
  * viewer comes from trusted edge metadata, never an untrusted forwarded IP. */
 export async function publicOAuth(
   context: OAuthContext,

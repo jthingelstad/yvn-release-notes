@@ -1,7 +1,7 @@
 {
   "name": "yvn-release-notes",
   "private": true,
-  "description": "Release Notes: React web app, native Node HTTP servers and event workers.",
+  "description": "Release Notes: React web app, Node HTTP servers and event workers.",
   "type": "module",
   "engines": {
     "node": ">=24"

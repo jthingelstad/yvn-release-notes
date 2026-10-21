@@ -4,9 +4,9 @@ name: deploy
 # (Jamie, 2026-10-17: a hobby project with one developer). The build runs
 # without credentials (build-release.yml); the deploy job runs only
 # scripts/release.sh, as the Mac's deploy.sh does, sharing its lock and
-# receipts. It publishes the native HTTP and worker code that changed
+# receipts. It publishes the HTTP and worker code that changed
 # (--only-changed), updates the stack and the web app, then activates each
-# kind it published. A merge that changes no native code activates nothing.
+# kind it published. A merge that changes neither activates nothing.
 # Roll back from the Actions tab with the activate workflow.
 #
 # workflow_run runs this file from main with main's secrets. It is safe here

@@ -1,4 +1,4 @@
-/** Native socket-level acceptance. Only fictional in-memory services are used;
+/** Socket-level acceptance. Only fictional in-memory services are used;
  * subprocesses never construct AWS clients or touch live data. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -38,7 +38,7 @@ async function stop(child: ChildProcess) {
   }
 }
 test(
-  'native harness: 128 parallel reads and controlled owner writes retain isolation and content-free logs',
+  'local harness: 128 parallel reads and controlled owner writes retain isolation and content-free logs',
   { timeout: 20000 },
   async (t) => {
     const port = await freePort(),

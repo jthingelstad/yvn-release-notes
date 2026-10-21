@@ -9,7 +9,7 @@ import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects, FakeMail, FakeInvocations } from '../../packages/testing/services.ts';
 import { createApp } from '../../server/app/app.ts';
 import * as auth from '../../packages/backend/auth.ts';
-test('native HTTP upload count and byte ceilings return 429; refused forms consume no counter', async () => {
+test('HTTP upload count and byte ceilings return 429; refused forms consume no counter', async () => {
   const now = Date.parse('2026-10-13T12:00:00Z') / 1000,
     origin = 'https://notes.example.com';
   for (const [size, accepted] of [

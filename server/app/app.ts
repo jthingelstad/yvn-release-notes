@@ -1,4 +1,4 @@
-/** Native HTTP application: centrally protected writes and request-local sessions. */
+/** The HTTP application: centrally protected writes and request-local sessions. */
 import { Hono } from 'hono';
 import { SessionService, ApiError, type ApiContext } from '../../packages/backend/sessions.ts';
 import { OAuthError, publicOAuth } from '../../packages/backend/oauth.ts';

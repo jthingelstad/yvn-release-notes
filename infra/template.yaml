@@ -75,7 +75,7 @@ Parameters:
     Type: String
     MinLength: 1
     AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving native version pin, preserved while a complete candidate is published.
+    Description: Explicit serving version pin, preserved while a complete candidate is published.
   InboundNodeCodeKey:
     Type: String
     MinLength: 1
@@ -93,7 +93,7 @@ Parameters:
     Type: String
     MinLength: 1
     AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving native version pin, preserved while a complete candidate is published.
+    Description: Explicit serving version pin, preserved while a complete candidate is published.
   EventsNodeCodeKey:
     Type: String
     MinLength: 1
@@ -111,7 +111,7 @@ Parameters:
     Type: String
     MinLength: 1
     AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving native version pin, preserved while a complete candidate is published.
+    Description: Explicit serving version pin, preserved while a complete candidate is published.
   TranscribeNodeCodeKey:
     Type: String
     MinLength: 1
@@ -129,7 +129,7 @@ Parameters:
     Type: String
     MinLength: 1
     AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving native version pin, preserved while a complete candidate is published.
+    Description: Explicit serving version pin, preserved while a complete candidate is published.
   DescribeNodeCodeKey:
     Type: String
     MinLength: 1
@@ -147,7 +147,7 @@ Parameters:
     Type: String
     MinLength: 1
     AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving native version pin, preserved while a complete candidate is published.
+    Description: Explicit serving version pin, preserved while a complete candidate is published.
   ExportNodeCodeKey:
     Type: String
     MinLength: 1
@@ -165,7 +165,7 @@ Parameters:
     Type: String
     MinLength: 1
     AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving native version pin, preserved while a complete candidate is published.
+    Description: Explicit serving version pin, preserved while a complete candidate is published.
   CaptureNodeCodeKey:
     Type: String
     MinLength: 1
@@ -183,7 +183,7 @@ Parameters:
     Type: String
     MinLength: 1
     AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving native version pin, preserved while a complete candidate is published.
+    Description: Explicit serving version pin, preserved while a complete candidate is published.
 
   NativeAppCodeKey:
     Type: String
@@ -242,7 +242,7 @@ Conditions:
   HasWebCertificate: !Not [!Equals [!Ref WebCertificateArn, ""]]
 
 Resources:
-  # Native source objects must outlive EVERY active/rollback revision. No
+  # Source objects must outlive EVERY active/rollback revision. No
   # lifecycle expiration here: deleting a source version permanently fails
   # its revision, even if that version is subsequently restored. Retained
   # revisions alone are insufficient: the service cleans up unused revisions;
@@ -325,7 +325,7 @@ Resources:
         SigningProtocol: sigv4
 
   # CloudFront rejects forwarding Authorization with MaxTTL=0. Min/default=0
-  # and a one-second maximum permit forwarding it. EVERY native response,
+  # and a one-second maximum permit forwarding it. EVERY HTTP response,
   # including errors, must set Cache-Control: no-store (central middleware).
   NativeHttpCachePolicy:
     Type: AWS::CloudFront::CachePolicy
@@ -357,7 +357,7 @@ Resources:
           Cookies: [__Host-rn]
         QueryStringsConfig: { QueryStringBehavior: all }
 
-  # Form-encoded scopes arrive with + for spaces. Native OAC signature
+  # Form-encoded scopes arrive with + for spaces. Web Function OAC signature
   # validation rejects that wire form; canonicalize spaces before signing.
   # Only OAuth uses this function; values and repeated parameters are preserved.
   NativeOAuthQueryFunction:
@@ -1054,7 +1054,7 @@ Resources:
       MemorySize: 256
       Timeout: 120
       LoggingConfig:
-        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        # Event stdout JSON/EMF remains unwrapped; HTTP function logs use message.*.
         LogFormat: Text
         LogGroup: !Ref SenderLogs
       Environment:
@@ -1083,7 +1083,7 @@ Resources:
       MemorySize: 512
       Timeout: 60
       LoggingConfig:
-        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        # Event stdout JSON/EMF remains unwrapped; HTTP function logs use message.*.
         LogFormat: Text
         LogGroup: !Ref InboundLogs
       Environment:
@@ -1238,7 +1238,7 @@ Resources:
               Value: "microphone=(self), camera=(), geolocation=(), payment=(), usb=()"
               Override: true
 
-  # Static assets and both private native HTTP origins share one distribution.
+  # Static assets and both private HTTP origins share one distribution.
   WebDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -1288,7 +1288,7 @@ Resources:
             - EventType: viewer-request
               FunctionARN: !GetAtt WebIndexFunction.FunctionMetadata.FunctionARN
         CacheBehaviors:
-          # Every dynamic response is no-store; OAC signs private native origins.
+          # Every dynamic response is no-store; OAC signs the private HTTP origins.
           - PathPattern: /api/*
             TargetOriginId: native-app
             ViewerProtocolPolicy: redirect-to-https
@@ -1338,7 +1338,7 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-web"
       RetentionInDays: 90
 
-  # Native app role; worker invocation is qualified and data access is unchanged.
+  # The web function's role; worker invocation is qualified.
   WebRole:
     Type: AWS::IAM::Role
     Properties:
@@ -1582,7 +1582,7 @@ Resources:
       MemorySize: 1024
       Timeout: 20
       LoggingConfig:
-        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        # Event stdout JSON/EMF remains unwrapped; HTTP function logs use message.*.
         LogFormat: Text
         LogGroup: !Ref CaptureLogs
       Environment:
@@ -1659,7 +1659,7 @@ Resources:
       EphemeralStorage:
         Size: 10240
       LoggingConfig:
-        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        # Event stdout JSON/EMF remains unwrapped; HTTP function logs use message.*.
         LogFormat: Text
         LogGroup: !Ref ExportLogs
       Environment:
@@ -1730,7 +1730,7 @@ Resources:
       DeadLetterConfig:
         TargetArn: !GetAtt FailedQueue.Arn
       LoggingConfig:
-        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        # Event stdout JSON/EMF remains unwrapped; HTTP function logs use message.*.
         LogFormat: Text
         LogGroup: !Ref EventsLogs
       Environment:
@@ -1866,7 +1866,7 @@ Resources:
       # throttled job event is an async event, tried for up to six hours.
       ReservedConcurrentExecutions: 2
       LoggingConfig:
-        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        # Event stdout JSON/EMF remains unwrapped; HTTP function logs use message.*.
         LogFormat: Text
         LogGroup: !Ref TranscribeLogs
       Environment:
@@ -2006,7 +2006,7 @@ Resources:
       # async event, tried for up to six hours, carrying its chain (workers/describe.ts).
       ReservedConcurrentExecutions: 2
       LoggingConfig:
-        # Event stdout JSON/EMF remains unwrapped; native HTTP logs use message.*.
+        # Event stdout JSON/EMF remains unwrapped; HTTP function logs use message.*.
         LogFormat: Text
         LogGroup: !Ref DescribeLogs
       Environment:
@@ -2035,7 +2035,7 @@ Resources:
           - Pattern: '{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"NewImage": {"sk": {"S": [{"prefix": "NOTE#"}]}}}}'
           - Pattern: '{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"NewImage": {"sk": {"S": ["PROFILE"]}, "describe": {"BOOL": [true]}}}}'
 
-  # --- stable worker entry points and retained native candidates -------------
+  # --- stable worker entry points and retained candidates --------------------
 
   SenderAlias:
     Type: AWS::Lambda::Alias

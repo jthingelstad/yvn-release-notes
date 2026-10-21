@@ -949,6 +949,28 @@ test('a read that cannot be counted is logged and still answers', async () => {
     [{ event: 'activity-unrecorded', kind: 'reads', user: 'u' }]
   );
 });
+test('a read that loses the race for its reads row several times waits, rereads and still counts', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx, false, false),
+    logs: OAuthRow[] = [],
+    commit = ctx.store.mcpCommit.bind(ctx.store);
+  // A parallel call commits the same day's row first, four times over.
+  let raced = 0;
+  ctx.store.mcpCommit = async (changes, uid) => {
+    const reads = changes.find(([row]) => row.kind === 'reads');
+    if (reads && raced++ < 4) assert.ok(await commit([reads], uid));
+    return commit(changes, uid);
+  };
+  await rpc(ctx, a.token, 'notes_context', {}, options(ctx, logs));
+  assert.deepEqual(
+    (await ctx.store.activityAll('u')).filter((r) => r.kind === 'reads').map((r) => [r.calls, r.tools]),
+    [[5, { notes_context: 5 }]]
+  );
+  assert.deepEqual(
+    logs.filter((l) => l.event === 'activity-unrecorded'),
+    []
+  );
+});
 test("an Upcoming row's title is read now, and only with the upcoming scope", async () => {
   const ctx = fixture(),
     date = (id: string, title: string) =>

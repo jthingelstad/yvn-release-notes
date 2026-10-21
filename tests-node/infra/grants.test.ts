@@ -9,11 +9,18 @@ test('the harness allows only what a statement allows, conditions included', () 
   const bucket = `arn:aws:s3:::${resolve({ '!Ref': 'MailBucket' })}`,
     table = `arn:aws:dynamodb:us-east-1:123456789012:table/${resolve({ '!Ref': 'Table' })}`,
     allows = (role: string, r: Omit<Request, 'via'>) => statements(role).some((s) => grants(s, { via: 'test', ...r }));
-  assert.ok(allows('WebRole', { action: 's3:ListBucket', resource: bucket, context: { 's3:prefix': 'media/u/' } }));
-  assert.ok(!allows('WebRole', { action: 's3:ListBucket', resource: bucket, context: { 's3:prefix': 'raw/' } }));
-  assert.ok(!allows('WebRole', { action: 's3:ListBucket', resource: bucket }));
+  // Listing with no prefix is how S3 decides a missing file is 404, not 403.
+  assert.ok(allows('WebRole', { action: 's3:ListBucket', resource: bucket }));
   assert.ok(!allows('WebRole', { action: 's3:GetObject', resource: `${bucket}/raw/m` }));
-  assert.ok(!allows('SenderRole', { action: 's3:ListBucket', resource: bucket, context: { 's3:prefix': 'media/u/' } }));
+  assert.ok(!allows('InboundRole', { action: 's3:ListBucket', resource: bucket }));
+  const job = (output?: string) => ({
+    action: 'transcribe:StartTranscriptionJob',
+    resource: '*',
+    ...(output === undefined ? {} : { context: { 'transcribe:OutputBucketName': output } })
+  });
+  assert.ok(allows('TranscribeRole', job(resolve({ '!Ref': 'MailBucket' }))));
+  assert.ok(!allows('TranscribeRole', job('another-bucket')));
+  assert.ok(!allows('TranscribeRole', job()));
   const scan = (attributes: string[]) => ({
     action: 'dynamodb:Scan',
     resource: table,

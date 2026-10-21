@@ -149,6 +149,14 @@ test('the web role grants every request each route and the OAuth endpoints make'
     id = String(first.id);
   const withFile = (await call('POST', `/api/days/${day}/notes`, { text: 'A file', uploads: [await upload()] }, 201)).b;
   await call('POST', `/api/days/${day}/notes/${id}/media`, { uploads: [await upload()] });
+  // An upload that never arrived reads as missing and is refused as one.
+  const unsent = (await call('POST', '/api/uploads', { name: 'a.pdf', type: 'application/pdf', size: pdf.length })).b;
+  await call(
+    'POST',
+    `/api/days/${day}/notes/${id}/media`,
+    { uploads: [{ upload: String(unsent.upload), type: 'application/pdf', name: 'a.pdf' }] },
+    400
+  );
   await call('GET', `/api/days/${day}/notes/${id}/media/1`, undefined, 302);
   await call('PUT', `/api/days/${day}/notes/${id}`, { text: 'Lake day, edited #made' });
   await call('PUT', `/api/days/${day}/place`, { place: city });

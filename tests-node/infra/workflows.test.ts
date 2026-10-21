@@ -1,14 +1,18 @@
 /** The deploy workflows keep their guarantees: credentials only in the
  * production job, never in the build; one release at a time, never
  * cancelled; only a green push to main deploys; workflow inputs reach shells
- * only through the environment. scripts/test-workflows.sh checks pins,
- * default permissions and checkout tokens for every workflow. */
+ * only through the environment. The browser tests run by themselves for
+ * web/ and e2e/ changes and stay out of the merge gate.
+ * scripts/test-workflows.sh checks pins, default permissions and checkout
+ * tokens for every workflow. */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
 const read = (name: string) => readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8');
-const [deploy, activate, build] = await Promise.all(['deploy.yml', 'activate.yml', 'build-release.yml'].map(read));
+const [deploy, activate, build, e2e, validate] = await Promise.all(
+  ['deploy.yml', 'activate.yml', 'build-release.yml', 'e2e.yml', 'validate.yml'].map(read)
+);
 
 /** A job's block, from its two-space key to the next job or the end. */
 function job(workflow: string, name: string) {
@@ -87,11 +91,34 @@ test('a deploy publishes only changed code and activates only what it published'
 });
 
 test('event values and inputs reach shell scripts only through the environment', () => {
-  for (const workflow of [deploy, activate, build]) {
+  for (const workflow of [deploy, activate, build, e2e]) {
     const scripts = [...workflow.matchAll(/\n\s+run: \|\n((?:\s{10,}.*\n)+)|\n\s+run: (.*)\n/g)].map(
       (m) => m[1] ?? m[2]
     );
     assert.ok(scripts.length > 0);
     for (const script of scripts) assert.doesNotMatch(script!, /\$\{\{/);
   }
+});
+
+test('browser tests run for web/ and e2e/ changes, the e2e label or by hand, outside the merge gate', () => {
+  assert.match(
+    e2e,
+    /\non:\n  workflow_dispatch:\n  pull_request:\n    types: \[opened, synchronize, reopened, labeled\]\n/
+  );
+  // A trigger path filter would also stop the label runs on other pull requests.
+  assert.doesNotMatch(e2e, /\n\s+paths(-ignore)?:/);
+  const changes = job(e2e, 'changes');
+  assert.match(changes, /\n    permissions:\n      pull-requests: read\n    outputs:/);
+  assert.match(changes, /grep -qE '\^\(web\|e2e\)\/'/);
+  const browser = job(e2e, 'e2e');
+  assert.match(browser, /\n    permissions:\n      contents: read\n/);
+  for (const condition of [
+    '!cancelled()',
+    "github.event_name == 'workflow_dispatch'",
+    "contains(github.event.pull_request.labels.*.name, 'e2e')",
+    "needs.changes.outputs.web == 'true'"
+  ])
+    assert.ok(browser.includes(condition), condition);
+  assert.doesNotMatch(validate, /npm run e2e|playwright/);
+  assert.doesNotMatch(deploy, /workflows: \[[^\]]*e2e/);
 });

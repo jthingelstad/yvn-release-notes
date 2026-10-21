@@ -18,6 +18,9 @@ import {
   type Unlocked
 } from '../domain/badges.ts';
 
+/** The reads badges take: the full Store, or the MCP reader's narrower one. */
+export type BadgeStore = Pick<Store, 'allNotes' | 'pauses' | 'weatherBetween'>;
+
 export const words = (text: string) => text.split(/\s+/u).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 
 export function badgeNote(item: Item, profile: Item): BadgeNote {
@@ -51,7 +54,7 @@ export function badgeNote(item: Item, profile: Item): BadgeNote {
 /** `except` leaves out one note (its sort key), to see the rest without it;
  * `consistent` reads what was just written (a saved note, its weather). */
 export async function badgeFacts(
-  store: Store,
+  store: BadgeStore,
   user: string,
   profile: Item,
   today: Day,
@@ -73,7 +76,7 @@ export async function badgeFacts(
   };
 }
 
-export async function badges(store: Store, user: string, profile: Item, today: Day): Promise<Badges> {
+export async function badges(store: BadgeStore, user: string, profile: Item, today: Day): Promise<Badges> {
   return evaluateBadges(await badgeFacts(store, user, profile, today), today);
 }
 

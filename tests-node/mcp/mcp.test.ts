@@ -7,7 +7,8 @@ import { ToolError, asciiJson, validate, MAX_MEDIA } from '../../server/mcp/comm
 import { MCP_CONTRACT, TOOLS, TOOL_SCOPES, VERSION, toolsDigest } from '../../server/mcp/contract.ts';
 import { captureNote } from '../../workers/capture.ts';
 import { OAuthService, type OAuthRow } from '../../packages/backend/oauth.ts';
-import { fixture, connected, note, ORIGIN, NOW } from '../oauth/fixtures.ts';
+import { fixture, connected, note, ORIGIN, NOW, PROFILE } from '../oauth/fixtures.ts';
+import { collectedOn } from '../../packages/domain/badges.ts';
 type RpcBody = {
   result: {
     structuredContent: OAuthRow;
@@ -581,6 +582,189 @@ test('Upcoming tools need the upcoming scope; list pages saved dates with occurr
     'scope_required'
   );
   assert.equal((await rpc(ctx, readOnly.token, 'upcoming_list', {}, opts)).value!.total, 1);
+});
+test('the whole account reads under notes:read alone: on this day, releases, badges, mail log and account', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx, false, false);
+  ctx.store.seed({
+    ...PROFILE,
+    send_time: '07:30',
+    city: 'Minneapolis',
+    country: 'US',
+    inbox: 'standing-secret',
+    calendar: 'feed-secret',
+    pause_from: '2026-10-01',
+    pause_through: '2026-10-20'
+  });
+  ctx.store.seed({ pk: 'USER#u', sk: 'PAUSE#2026-10-01', through: '2026-10-20' });
+  note(ctx, 'today', 'Today #cabin', '2026-10-13', { tags: ['cabin'] });
+  note(ctx, 'release-day', 'Birthday', '2026-06-14', { media: [{ n: 1, kind: 'image', type: 'image/jpeg' }] });
+  for (let i = 0; i < 6; i++)
+    note(ctx, 'past-' + i, 'A year ago ' + i, '2025-10-13', { written_at: `2025-10-13T1${i}:00:00Z`, tags: ['lake'] });
+  note(ctx, 'agent', 'Two years ago', '2024-10-13', { author: 'assistant', client: 'Fixture' });
+  const context = (await rpc(ctx, a.token)).value;
+  for (const name of ['notes_on_this_day', 'notes_releases', 'notes_badges', 'notes_mail_log', 'notes_account'])
+    assert.deepEqual(
+      (context.tools as OAuthRow[]).find((t) => t.name === name),
+      { name, scope: 'notes:read', granted: true }
+    );
+
+  // On this day: the same patch of each earlier release, newest first, five previews a day.
+  const past = (await rpc(ctx, a.token, 'notes_on_this_day')).value;
+  assert.equal(past.date, '2026-10-13');
+  assert.equal(past.version, '4.5.121');
+  assert.deepEqual(
+    (past.days as OAuthRow[]).map((d) => [d.date, d.version, d.notes_total, (d.notes as OAuthRow[]).length]),
+    [
+      ['2025-10-13', '4.4.121', 6, 5],
+      ['2024-10-13', '4.3.121', 1, 1]
+    ]
+  );
+  assert.equal(((past.days as OAuthRow[])[0]!.notes as OAuthRow[])[0]!.id, 'past-0');
+  assert.deepEqual(
+    ((await rpc(ctx, a.token, 'notes_on_this_day', { include_assistant: false })).value.days as OAuthRow[]).map(
+      (d) => d.date
+    ),
+    ['2025-10-13']
+  );
+  const paged = (await rpc(ctx, a.token, 'notes_on_this_day', { limit: 1 })).value;
+  assert.equal(paged.total, 2);
+  assert.deepEqual(
+    (
+      (await rpc(ctx, a.token, 'notes_on_this_day', { limit: 1, cursor: paged.next_cursor })).value.days as OAuthRow[]
+    ).map((d) => d.date),
+    ['2024-10-13']
+  );
+  assert.equal((await rpc(ctx, a.token, 'notes_on_this_day', { date: '2026-10-14' })).value.error, 'invalid_date');
+
+  // Releases: those with notes plus the current one, then one release whole.
+  assert.deepEqual(
+    ((await rpc(ctx, a.token, 'notes_releases')).value.releases as OAuthRow[]).map((r) => [
+      r.v,
+      r.days,
+      r.notes,
+      r.current
+    ]),
+    [
+      ['4.5', 2, 2, true],
+      ['4.4', 1, 6, false],
+      ['4.3', 1, 1, false]
+    ]
+  );
+  const release = (await rpc(ctx, a.token, 'notes_releases', { release: '4.5' })).value.release as OAuthRow;
+  assert.equal(release.from, '2026-06-14');
+  assert.equal(release.through, '2027-06-13');
+  assert.equal(release.days_with_notes, 2);
+  assert.equal(release.paused_days, 13);
+  assert.deepEqual(release.tags, [{ tag: 'cabin', notes: 1 }]);
+  assert.deepEqual((release.badges as OAuthRow).collected, [{ id: 'release-day', name: 'Release day', count: 1 }]);
+  for (const args of [{ release: '4.6' }, { release: '999.9' }, { release: '4.5', cursor: 'x' }])
+    assert.ok((await rpc(ctx, a.token, 'notes_releases', args)).value.error);
+
+  // A day says its version, whether it was paused and what it collected.
+  const day = (await rpc(ctx, a.token, 'notes_get_day', { date: '2026-06-14' })).value;
+  assert.equal(day.version, '4.5.0');
+  assert.equal(day.paused, false);
+  assert.deepEqual(day.collected, collectedOn(PROFILE.birthday, '2026-06-14'));
+  assert.equal((await rpc(ctx, a.token, 'notes_get_day', { date: '2026-10-03' })).value.paused, true);
+
+  // Badges, the same facts as the web page.
+  const badges = (await rpc(ctx, a.token, 'notes_badges')).value;
+  assert.equal(badges.show_badges, true);
+  assert.ok((badges.earned as OAuthRow[]).some((e) => e.id === 'hello'));
+  assert.equal(badges.count, (badges.earned as OAuthRow[]).length);
+  assert.equal((badges.release as OAuthRow).v, '4.5');
+
+  // The mail log: the owner's rows from the last 30 days, newest first, words cut short.
+  const row = (sk: string, extra: OAuthRow) =>
+    ctx.store.seed({ pk: 'USER#u', sk, via: 'reply', expires_at: NOW + 86400, ...extra });
+  row('MAILLOG#2026-10-11T10:00:00.000Z#m1', {
+    message: 'm1',
+    received_at: '2026-10-11T10:00:00.000Z',
+    day: '2026-10-11',
+    version: '4.5.119',
+    subject: 'Re: Your release notes',
+    outcome: 'filed'
+  });
+  row('MAILLOG#2026-10-12T10:00:00.000Z#m2', {
+    message: 'm2',
+    received_at: '2026-10-12T10:00:00.000Z',
+    subject: 'Late',
+    outcome: 'not-filed',
+    reason: 'expired',
+    text: 'é'.repeat(2500),
+    attempts: 1,
+    notified_at: '2026-10-12T10:01:00.000Z'
+  });
+  row('MAILLOG#2026-09-01T10:00:00.000Z#old', { message: 'old', outcome: 'filed', expires_at: NOW - 1 });
+  const log = (await rpc(ctx, a.token, 'notes_mail_log')).value,
+    [late, filed] = log.entries as OAuthRow[];
+  assert.deepEqual(
+    (log.entries as OAuthRow[]).map((e) => e.id),
+    ['m2', 'm1']
+  );
+  assert.equal([...String(late!.text)].length, 2000);
+  assert.equal(late!.cut, true);
+  assert.equal(late!.notified, true);
+  assert.equal(late!.reason, 'expired');
+  assert.deepEqual(filed, {
+    id: 'm1',
+    received_at: '2026-10-11T10:00:00.000Z',
+    via: 'reply',
+    day: '2026-10-11',
+    version: '4.5.119',
+    subject: 'Re: Your release notes',
+    outcome: 'filed',
+    reason: null,
+    sender: null,
+    text: null,
+    attempts: 0,
+    notified: false
+  });
+
+  // Account: settings and standing, never the addresses that work as credentials.
+  const account = (await rpc(ctx, a.token, 'notes_account')).value;
+  assert.deepEqual(account.account, {
+    birthday: '1981-06-14',
+    send_time: '07:30',
+    status: 'active',
+    transcribe: false,
+    describe: false,
+    show_badges: true,
+    pause: { from: '2026-10-01', through: '2026-10-20' },
+    city: 'Minneapolis',
+    country: 'US'
+  });
+  assert.deepEqual(account.streak, { current: 1, longest: 1, today: true });
+  assert.deepEqual(account.lifetime, { notes: 9, days: 4, photos: 1 });
+  assert.deepEqual(account.next_release, { version: '4.6.0', date: '2027-06-14' });
+  for (const hidden of ['ada@example.com', 'standing-secret', 'feed-secret'])
+    assert.ok(!JSON.stringify(account).includes(hidden), hidden);
+
+  // Show badges off: badges, a release's badges and a day's collected stay hidden.
+  ctx.store.seed({ ...PROFILE, badges: false });
+  assert.deepEqual(Object.keys((await rpc(ctx, a.token, 'notes_badges')).value).sort(), [
+    'message',
+    'server_version',
+    'show_badges',
+    'today',
+    'version'
+  ]);
+  assert.ok(
+    !Object.hasOwn((await rpc(ctx, a.token, 'notes_releases', { release: '4.5' })).value.release as OAuthRow, 'badges')
+  );
+  assert.ok(!Object.hasOwn((await rpc(ctx, a.token, 'notes_get_day', { date: '2026-06-14' })).value, 'collected'));
+  assert.equal(((await rpc(ctx, a.token, 'notes_account')).value.account as OAuthRow).show_badges, false);
+});
+test('a past day of long Unicode notes fits one page with at least one whole preview', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx, false, false);
+  for (let i = 0; i < 6; i++) note(ctx, 'long-' + i, '💡'.repeat(5000), '2023-10-13');
+  const long = ((await rpc(ctx, a.token, 'notes_on_this_day', { date: '2026-10-13' })).value.days as OAuthRow[]).find(
+    (d) => d.date === '2023-10-13'
+  )!;
+  assert.equal(long.notes_total, 6);
+  assert.ok((long.notes as unknown[]).length >= 1 && (long.notes as unknown[]).length < 5);
 });
 test('every tool change ships as a new server version with a changes entry', async () => {
   assert.deepEqual(Object.keys(TOOL_SCOPES).sort(), TOOLS.map((t) => t.name).sort());

@@ -4,7 +4,18 @@
 import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { get } from './api.ts';
 import { addDays } from './format.ts';
-import type { Badges, DayPage, DaysPage, Me, Note, ReleasePage, Releases, TaggedDays, Today } from './types.ts';
+import type {
+  Badges,
+  DayPage,
+  MailLog,
+  DaysPage,
+  Me,
+  Note,
+  ReleasePage,
+  Releases,
+  TaggedDays,
+  Today
+} from './types.ts';
 import type { UpcomingView } from '../../../packages/domain/upcoming.ts';
 
 export const upcomingQuery = queryOptions({
@@ -53,6 +64,11 @@ export const releaseQuery = (v: string | null) =>
     getNextPageParam: (last) => last.after || undefined,
     enabled: !!v
   });
+
+export const mailLogQuery = queryOptions({
+  queryKey: ['mail-log'],
+  queryFn: () => get<MailLog>('/api/mail-log')
+});
 
 export const badgesQuery = queryOptions({
   queryKey: ['badges'],

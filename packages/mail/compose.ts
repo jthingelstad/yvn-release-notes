@@ -735,3 +735,71 @@ export async function lateMessage(o: {
   if (!Buffer.isBuffer(result.message)) throw new TypeError('Expected buffered MIME message');
   return result.message;
 }
+/** The mail log reasons that earn the owner a notice (workers/inbound.ts). */
+export type NoticeReason = 'from-mismatch' | 'unauthenticated' | 'unparseable' | 'failed';
+export interface NoticeOptions {
+  to: string;
+  fromAddr: string;
+  reason: NoticeReason;
+  received: string;
+  tz: string;
+  kept: boolean;
+}
+export function noticeLines(o: Omit<NoticeOptions, 'fromAddr'>): [string, string] {
+  const when = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: o.tz
+    }).format(new Date(o.received)),
+    why = {
+      'from-mismatch': `it came from another address. Release Notes takes email only from ${o.to}`,
+      unauthenticated: `it couldn't be verified as coming from ${o.to}`,
+      unparseable: "it couldn't be read",
+      failed: "something went wrong while filing it, and three tries didn't fix it. The problem has been reported"
+    }[o.reason],
+    next =
+      o.reason === 'from-mismatch'
+        ? 'If you sent it, send it again from there, or add it on the web.'
+        : o.kept
+          ? 'Its words are kept in your mail log, ready to add on the web.'
+          : 'If you sent it, add it on the web.';
+  return [`An email to your Release Notes address on ${when} wasn't added to your notes, because ${why}.`, next];
+}
+export const noticeText = (o: Omit<NoticeOptions, 'fromAddr'>) =>
+  noticeLines(o).join('\n\n') + `\n\nYour mail log shows what became of each email you send in:\n\n${APP}/mail-log/\n`;
+export function noticeHtml(o: Omit<NoticeOptions, 'fromAddr'>): string {
+  const p = `margin:0 0 18px;font:16px/1.55 ${FONT};color:${INK_2}`,
+    [what, next] = noticeLines(o);
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light"><title>Not added to your notes</title></head>
+<body style="margin:0;padding:0;background:${PAPER}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER}"><tr><td style="padding:32px 20px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto"><tr><td>
+<p style="margin:0 0 24px;font:800 18px/1.3 ${FONT};color:${INK}">Release Notes</p>
+<p style="${p}">${escape(what)}</p>
+<p style="${p}">${escape(next)}</p>
+<p style="margin:0;font:800 22px/1.3 ${FONT};color:${INK}"><a href="${APP}/mail-log/" style="color:${BLUE}">See your mail log</a></p>
+</td></tr></table>
+</td></tr></table>
+</body></html>
+`;
+}
+/** To the owner's own address, never the sender's. */
+export async function noticeMessage(o: NoticeOptions): Promise<Buffer> {
+  const result = await transport.sendMail({
+    from: { name: 'Release Notes', address: o.fromAddr },
+    to: o.to,
+    subject: "An email wasn't added to your notes",
+    messageId: `<${randomUUID()}@${o.fromAddr.split('@')[1]}>`,
+    headers: { 'Auto-Submitted': 'auto-generated', 'X-Auto-Response-Suppress': 'OOF, AutoReply' },
+    text: noticeText(o),
+    html: noticeHtml(o),
+    disableFileAccess: true,
+    disableUrlAccess: true
+  });
+  if (!Buffer.isBuffer(result.message)) throw new TypeError('Expected buffered MIME message');
+  return result.message;
+}

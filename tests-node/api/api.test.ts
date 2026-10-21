@@ -69,7 +69,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 56);
+  assert.equal(ROUTES.length, 57);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -556,4 +556,36 @@ test('badges count stored fields, never answer with note text, and tell a reply 
     assert.ok(!JSON.stringify(b).includes(private_), private_);
   assert.ok(!JSON.stringify(s.logs).includes('Private'));
   assert.equal((await s.call('GET', '/api/badges', undefined, '')).r.status, 401);
+});
+
+test("mail log answers the owner's live rows newest first, with no table keys", async () => {
+  const s = await setup(),
+    row = (at: string, id: string, fields: Item) =>
+      s.store.recordMail('u', `MAILLOG#${at}#${id}`, { message: id, received_at: at, via: 'reply', ...fields });
+  await row('2026-10-12T10:00:00.000Z', 'a', { outcome: 'filed', day: '2026-10-12', expires_at: now + 86400 });
+  await row('2026-10-13T10:00:00.000Z', 'b', {
+    outcome: 'not-filed',
+    reason: 'expired',
+    day: '2026-10-09',
+    text: 'Late words',
+    notified_at: '2026-10-13T10:00:00.000Z',
+    expires_at: now + 86400
+  });
+  await row('2026-09-01T10:00:00.000Z', 'c', { outcome: 'filed', expires_at: now - 1 });
+  const { r, b } = await s.call('GET', '/api/mail-log'),
+    entries = (b as Item).entries as Item[];
+  assert.equal(r.status, 200);
+  assert.deepEqual(
+    entries.map((e) => e.id),
+    ['b', 'a']
+  );
+  assert.deepEqual(
+    [entries[0]!.reason, entries[0]!.text, entries[0]!.notified, entries[1]!.reason, entries[1]!.text],
+    ['expired', 'Late words', true, null, null]
+  );
+  assert.deepEqual([(b as Item).email, (b as Item).today], ['ada@example.com', '2026-10-13']);
+  for (const key of ['MAILLOG#', 'USER#', 'expires_at', 'notified_at'])
+    assert.ok(!JSON.stringify(b).includes(key), key);
+  assert.equal((await s.call('GET', '/api/mail-log', undefined, '')).r.status, 401);
+  assert.ok(!JSON.stringify(s.logs).includes('Late words'));
 });

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { simpleParser } from 'mailparser';
 import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects, FakeMail } from '../../packages/testing/services.ts';
@@ -8,6 +9,7 @@ import * as sender from '../../workers/send.ts';
 import * as inbound from '../../workers/inbound.ts';
 import * as events from '../../workers/events.ts';
 import { parseHeaders } from '../../packages/mail/parse.ts';
+import { noticeText } from '../../packages/mail/compose.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
 const now = Date.parse('2026-10-13T11:00:00Z') / 1000,
   token = 'a'.repeat(24),
@@ -448,8 +450,12 @@ for (const [name, verdict, reason] of [
   test(`inbound rejects ${name}`, async () => {
     const f = await replyFixture();
     assert.equal(await inbound.process(ses({ verdict }), f.services), 'ignored');
-    assert.equal(f.logs.at(-1)?.reason, reason);
-    assert.equal(f.mail.messages.length, 0);
+    assert.equal(f.logs.find((l) => l.event === 'inbound')?.reason, reason);
+    // Only the owner hears of an unverified reply, never the sender; spam is silent.
+    assert.deepEqual(
+      f.mail.messages.map((m) => m.to),
+      reason === 'unauthenticated' ? ['ada@example.com'] : []
+    );
     if (reason === 'spam-or-virus')
       assert.equal(
         f.objects.calls.some((c) => c.operation === 'get'),
@@ -464,8 +470,12 @@ for (const raw of [
   test('inbound raw one-From proof rejects mismatch/duplicates', async () => {
     const f = await replyFixture(raw);
     await inbound.process(ses(), f.services);
-    assert.equal(f.logs.at(-1)?.reason, 'from-mismatch');
-    assert.equal(f.mail.messages.length, 0);
+    assert.equal(f.logs.find((l) => l.event === 'inbound')?.reason, 'from-mismatch');
+    assert.deepEqual(
+      f.mail.messages.map((m) => m.to),
+      ['ada@example.com']
+    );
+    assert.match(String((await mailLog(f))[0]!.sender), /example\.com/);
   });
 for (const header of [
   'Auto-Submitted: auto-replied',
@@ -524,15 +534,20 @@ test('72-hour boundary accepted, later reply sends one threaded account notice a
   assert.ok(!JSON.stringify(g.logs).includes(token));
 });
 test('expired forged or automatic mail never receives backscatter; stopped account gets no notice', async () => {
-  for (const [raw, extra] of [
-    ['From: forged@example.com\r\n\r\nwords', {}],
-    ['From: ada@example.com\r\nAuto-Submitted: auto-replied\r\n\r\nwords', {}],
-    ['From: ada@example.com\r\n\r\nwords', { status: 'stopped' }]
+  for (const [raw, extra, notices] of [
+    // A forged sender is the owner's to know about, never the sender's.
+    ['From: forged@example.com\r\n\r\nwords', {}, ['ada@example.com']],
+    ['From: ada@example.com\r\nAuto-Submitted: auto-replied\r\n\r\nwords', {}, []],
+    ['From: ada@example.com\r\n\r\nwords', { status: 'stopped' }, []]
   ] as const) {
     const f = await replyFixture(raw);
     if (extra.status) await f.store.stop('u', 'bounce', 'now');
     await inbound.process(ses({ date: '2026-10-20T12:00:00Z' }), f.services);
-    assert.equal(f.mail.messages.length, 0);
+    assert.deepEqual(
+      f.mail.messages.map((m) => m.to),
+      notices
+    );
+    for (const m of f.mail.messages) assert.ok(!m.raw.toString().includes('forged@'));
   }
 });
 test('late notice failure is ignored without retrying inbound or exposing error message', async () => {
@@ -603,6 +618,127 @@ test('media storage failure retries before note commit, stable copies produce on
   const n = (await f.store.allNotes('u'))[0]!;
   assert.equal((n.media as Item[])[0]?.key, 'media/u/2026-10-11/synthetic-id/1.mp3');
   assert.equal((await f.store.allNotes('u')).length, 1);
+});
+const mailLog = (f: { store: FakeStore }) => f.store.mailLog('u', now);
+function message(id: string, opts: Parameters<typeof ses>[0] = {}) {
+  const e = ses(opts);
+  return { ...e, mail: { ...e.mail, messageId: id } };
+}
+test('mail log: a filed reply is one row with its day and no words; a retry keeps it one row', async () => {
+  const f = await replyFixture();
+  await inbound.process(ses(), f.services);
+  await inbound.process(ses(), f.services);
+  const rows = await mailLog(f);
+  assert.equal(rows.length, 1);
+  const r = rows[0]!;
+  assert.equal(r.sk, 'MAILLOG#2026-10-13T12:00:00.000Z#synthetic-id');
+  assert.deepEqual(
+    [r.outcome, r.day, r.version, r.via, r.subject],
+    ['filed', '2026-10-11', '5.4.220', 'reply', 'Re: today']
+  );
+  assert.equal(r.expires_at, Date.parse('2026-10-13T12:00:00Z') / 1000 + 30 * 86400);
+  for (const k of ['text', 'reason', 'sender', 'notified_at']) assert.ok(!(k in r), k);
+  assert.equal(f.mail.messages.length, 0);
+});
+test('mail log: another sender shows who, never the words, and the owner hears once', async () => {
+  const f = await replyFixture(),
+    other = ses({ from: 'Someone <someone@example.net>' });
+  await inbound.process(other, f.services);
+  await inbound.process(other, f.services);
+  assert.equal(
+    f.objects.calls.some((c) => c.operation === 'get'),
+    false
+  );
+  const [r] = await mailLog(f);
+  assert.deepEqual([r!.outcome, r!.reason, r!.sender], ['not-filed', 'from-mismatch', 'someone@example.net']);
+  assert.ok(!('text' in r!));
+  assert.ok(r!.notified_at);
+  assert.equal(f.mail.messages.length, 1);
+  assert.equal(f.mail.messages[0]!.to, 'ada@example.com');
+  const parsed = await simpleParser(f.mail.messages[0]!.raw);
+  assert.equal(parsed.subject, "An email wasn't added to your notes");
+  assert.equal(parsed.headers.get('auto-submitted'), 'auto-generated');
+  assert.match(parsed.text!, /takes email only from ada@example\.com/);
+  assert.match(parsed.text!, /https:\/\/notes\.yourversionnumber\.com\/mail-log\//);
+  assert.ok(!f.mail.messages[0]!.raw.toString().includes('someone@'));
+  assert.ok(!JSON.stringify(f.logs).includes('someone@'));
+});
+test('mail notices cap at three a day; a stopped subscriber gets none', async () => {
+  const f = await replyFixture();
+  for (let i = 0; i < 5; i++) {
+    await f.objects.put(`raw/m${i}`, Buffer.from('From: x@example.net\r\n\r\nwords'), { type: 'message/rfc822' });
+    await inbound.process(message(`m${i}`, { from: 'x@example.net' }), f.services);
+  }
+  assert.equal(f.mail.messages.length, 3);
+  assert.equal((await mailLog(f)).length, 5);
+  assert.ok(f.logs.some((l) => l.event === 'mail-notice' && l.why === 'limited'));
+  const g = await replyFixture();
+  await g.store.stop('u', 'bounce', 'now');
+  await inbound.process(ses({ from: 'x@example.net' }), g.services);
+  assert.equal(g.mail.messages.length, 0);
+  assert.equal((await mailLog(g)).length, 1);
+});
+test("mail log keeps a late reply's words for its owner; spam has no words and no notice", async () => {
+  const f = await replyFixture();
+  await inbound.process(ses({ date: '2026-10-20T12:00:00Z' }), f.services);
+  const [late] = await mailLog(f);
+  assert.deepEqual([late!.reason, late!.day, late!.text], ['expired', '2026-10-11', 'I made a little thing. #made']);
+  assert.equal(f.mail.messages.length, 1, 'the late notice alone');
+  const g = await replyFixture();
+  await inbound.process(ses({ verdict: { spamVerdict: { status: 'FAIL' } } }), g.services);
+  const [spam] = await mailLog(g);
+  assert.equal(spam!.reason, 'spam-or-virus');
+  assert.ok(!('text' in spam!));
+  assert.equal(g.mail.messages.length, 0);
+});
+test('a reply that keeps failing is a failed row; the last try tells the owner once; a later success files it', async () => {
+  const f = await replyFixture(),
+    put = f.store.putInboundNote.bind(f.store);
+  f.store.putInboundNote = async () => {
+    throw new Error('table unavailable');
+  };
+  for (let i = 0; i < inbound.ATTEMPTS; i++)
+    await assert.rejects(() => inbound.process(ses(), f.services), /table unavailable/);
+  let [r] = await mailLog(f);
+  assert.deepEqual(
+    [r!.outcome, r!.reason, r!.attempts, r!.text],
+    ['failed', 'failed', 3, 'I made a little thing. #made']
+  );
+  assert.equal(f.mail.messages.length, 1);
+  assert.match((await simpleParser(f.mail.messages[0]!.raw)).text!, /three tries.*\n\nIts words are kept/s);
+  await assert.rejects(() => inbound.process(ses(), f.services));
+  assert.equal(f.mail.messages.length, 1);
+  f.store.putInboundNote = put;
+  assert.equal(await inbound.process(ses(), f.services), 'note');
+  [r] = await mailLog(f);
+  assert.equal(r!.outcome, 'filed');
+  for (const k of ['reason', 'text']) assert.ok(!(k in r!), k);
+  assert.ok(!JSON.stringify(f.logs).includes('little thing'));
+});
+test('a mail log row needs a live account and a MAILLOG key', async () => {
+  const f = setup();
+  await f.store.deleteKeys([{ pk: 'USER#u', sk: 'PROFILE' }]);
+  assert.equal(await f.store.recordMail('u', 'MAILLOG#x', { outcome: 'filed' }), false);
+  assert.equal(await f.store.mailEntry('u', 'MAILLOG#x'), null);
+  await assert.rejects(() => f.store.recordMail('u', 'NOTE#x', {}), RangeError);
+});
+test('notices say when and why; ATTEMPTS is the inbound alias retries plus one, ending in the failed queue', async () => {
+  for (const reason of ['from-mismatch', 'unauthenticated', 'unparseable', 'failed'] as const) {
+    const text = noticeText({
+      to: 'ada@example.com',
+      reason,
+      received: '2026-10-13T19:05:00Z',
+      tz: 'America/Chicago',
+      kept: false
+    });
+    assert.match(text, /^An email to your Release Notes address on Tuesday, October 13 at 2:05/);
+    assert.match(text, /\/mail-log\/\n$/);
+  }
+  const template = await readFile(new URL('../../infra/template.yaml', import.meta.url), 'utf8'),
+    config = /\n {2}InboundAliasInvokeConfig:\n([\s\S]*?)\n\n/.exec(template)![1]!;
+  assert.match(config, /FunctionName: !Ref InboundFunction\n\s+Qualifier: live/);
+  assert.equal(Number(/MaximumRetryAttempts: (\d)/.exec(config)![1]) + 1, inbound.ATTEMPTS);
+  assert.match(config, /OnFailure:\n\s+Destination: !GetAtt FailedQueue\.Arn/);
 });
 test('body and subject truncate by Unicode code point without splitting emoji', async () => {
   const f = await replyFixture(

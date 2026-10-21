@@ -172,6 +172,29 @@ export interface ZipStatus {
   files?: number;
 }
 
+// GET /api/mail-log: what became of each email to this account in the last
+// 30 days, newest first. `text` only on a row not filed whose sender was proven.
+export interface MailEntry {
+  id: string;
+  received_at: string;
+  via: 'reply' | 'address';
+  day: string;
+  version: string;
+  subject: string;
+  outcome: 'filed' | 'not-filed' | 'failed';
+  reason: string | null;
+  sender: string | null;
+  text: string | null;
+  attempts: number;
+  notified: boolean;
+}
+export interface MailLog {
+  email: string;
+  tz: string;
+  today: string;
+  entries: MailEntry[];
+}
+
 // GET /api/badges: everything earned, newest first, the tracks, this
 // release's album and what is still to find, as of the subscriber's today.
 export type Badges = Shelf & { today: string; tz: string; version: string };

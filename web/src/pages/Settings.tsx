@@ -297,6 +297,14 @@ function Account({ p }: { p: Me }) {
           </button>
           <ErrorLine line={emailsProblem.line} />
         </section>
+        <section className="section">
+          <p className="hint">
+            <AppLink href="/mail-log/" id="mail-log-link">
+              Mail log
+            </AppLink>
+            : what became of each email you sent in, the last 30 days.
+          </p>
+        </section>
       </SettingsGroup>
       <SettingsGroup
         id="writing-settings"

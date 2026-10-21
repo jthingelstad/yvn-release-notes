@@ -153,8 +153,9 @@ export async function quota(context: OAuthContext, uid: string): Promise<void> {
 }
 /** A call's content-free LOG# row and its connection's USE#, committed
  * together; a read (`tz` given) also counts in the connection's reads row for
- * the subscriber's local day, the activity log's daily summary. False when
- * three tries could not commit. */
+ * the subscriber's local day, the activity log's daily summary. Parallel
+ * calls race on those rows, so a lost race waits a random, growing moment and
+ * reads again; false when eight tries could not commit. */
 export async function record(
   context: OAuthContext,
   family: OAuthRow,
@@ -176,7 +177,8 @@ export async function record(
       connection: fid,
       expires_at: context.now + 14 * 86400
     };
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    if (attempt) await new Promise((resolve) => setTimeout(resolve, Math.random() * Math.min(200, 10 * 2 ** attempt)));
     const [old, reads] = await Promise.all([
         context.store.mcpGet(`MCPMETA#${uid}`, 'USE#' + fid),
         readsKey ? context.store.mcpGet(`MCPMETA#${uid}`, readsKey) : null

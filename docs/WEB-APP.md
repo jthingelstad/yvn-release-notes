@@ -90,7 +90,9 @@ nothing there links here yet: that is Jamie's call.
     `USER#<owner>/ACTIVITY#<time>#<kind>#<id>`, kept for the life of the
     account, deleted with it and in the JSON export, oldest first. An
     assistant's reads are one row a connection a local day under
-    `MCPMETA#`, which the MCP reader writes. `/mail-log/` redirects here.
+    `MCPMETA#`, which the MCP reader writes; parallel calls that race for
+    it wait a random, growing moment and read again, up to eight tries.
+    `/mail-log/` redirects here.
     - **Mail**: inbound (`workers/inbound.ts`) writes one row per message
       once the address names a subscriber, with the account proof, and
       never for an address that names no one. Filed (with a link to its

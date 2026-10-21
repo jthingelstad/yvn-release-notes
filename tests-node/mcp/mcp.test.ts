@@ -9,6 +9,7 @@ import { captureNote } from '../../workers/capture.ts';
 import { OAuthService, type OAuthRow } from '../../packages/backend/oauth.ts';
 import { fixture, connected, note, ORIGIN, NOW, PROFILE } from '../oauth/fixtures.ts';
 import { collectedOn } from '../../packages/domain/badges.ts';
+import type { UpcomingEntry } from '../../packages/domain/upcoming.ts';
 type RpcBody = {
   result: {
     structuredContent: OAuthRow;
@@ -158,6 +159,23 @@ test('list/search/day/note/context/tags share writing order, Unicode folding, pr
   assert.ok(day.weather_credit);
   const full = (await rpc(ctx, a.token, 'notes_get_note', { date: '2026-10-07', id: 'a' })).value.note as OAuthRow;
   assert.equal(full.client, 'Fixture');
+  // The connection that wrote it, never the account's own id; parts only with a link or tag.
+  assert.equal(full.connection, 'other');
+  assert.ok(!('on_behalf_of' in full));
+  assert.deepEqual(full.parts, [
+    'Later ',
+    { tag: 'maine-2016', text: '#maine-2016' },
+    ' ',
+    { tag: 'cabin', text: '#Cabin' }
+  ]);
+  note(ctx, 'url', 'See https://pier.example/', '2026-10-08', {
+    links: [{ url: 'https://pier.example/', title: 'Pier' }]
+  });
+  const linked = (await rpc(ctx, a.token, 'notes_get_note', { date: '2026-10-08', id: 'url' })).value.note as OAuthRow;
+  assert.deepEqual(linked.parts, ['See ', { url: 'https://pier.example/', label: 'Pier', site: '' }]);
+  const plain = (await rpc(ctx, a.token, 'notes_get_note', { date: '2026-10-13', id: 'latest' })).value
+    .note as OAuthRow;
+  assert.deepEqual([plain.text, 'parts' in plain], ['Today', false]);
   assert.ok(!JSON.stringify(full).includes('media/u/secret'));
   assert.ok(!JSON.stringify(full).includes('Voice words'));
   assert.deepEqual((await rpc(ctx, a.token, 'notes_tags')).value.tags, [
@@ -430,7 +448,8 @@ test('Upcoming tools need the upcoming scope; list pages saved dates with occurr
     total: 0,
     today: '2026-10-13',
     tz: 'America/Chicago',
-    limit: 200,
+    max_entries: 200,
+    past_left_out: 0,
     server_version: VERSION
   });
   // A dry run resolves the destination and writes nothing.
@@ -469,18 +488,44 @@ test('Upcoming tools need the upcoming scope; list pages saved dates with occurr
       .error,
     'duplicate_idempotency_key'
   );
-  // The list orders by next occurrence and pages.
+  // The list orders by next occurrence and pages; a trip under way stays, and
+  // a trip or event already over is left out, only counted.
+  const dated = (id: string, kind: 'trip' | 'event', date: string, end_date: string | null): UpcomingEntry => ({
+      id,
+      kind,
+      tag: null,
+      title: id,
+      date,
+      year: null,
+      end_date,
+      place: null,
+      email: true,
+      reminders: [0],
+      revision: 1,
+      created_at: '2026-09-01T12:00:00Z',
+      updated_at: '2026-09-01T12:00:00Z'
+    }),
+    others = [
+      dated('Away', 'trip', '2026-10-10', '2026-10-15'),
+      dated('Old trip', 'trip', '2026-09-01', '2026-09-05'),
+      dated('Old event', 'event', '2026-10-12', null)
+    ];
+  for (const e of others) assert.ok(await ctx.store.saveUpcoming('u', e, null));
   const list = await rpc(ctx, a.token, 'upcoming_list', { limit: 2 }, opts);
   assert.deepEqual(
-    (list.value!.entries as OAuthRow[]).map((e) => e.title),
-    ['Alex', 'Concert']
+    (list.value!.entries as OAuthRow[]).map((e) => [e.title, e.status]),
+    [
+      ['Away', 'ongoing'],
+      ['Alex', 'upcoming']
+    ]
   );
-  assert.equal(list.value!.total, 3);
+  assert.deepEqual([list.value!.total, list.value!.past_left_out, list.value!.max_entries], [4, 2, 200]);
   const rest = await rpc(ctx, a.token, 'upcoming_list', { limit: 2, cursor: list.value!.next_cursor }, opts);
   assert.deepEqual(
     (rest.value!.entries as OAuthRow[]).map((e) => e.title),
-    ['Holiday']
+    ['Concert', 'Holiday']
   );
+  for (const e of others) assert.ok(await ctx.store.saveUpcoming('u', null, e));
   // A change needs the current revision; a problem names the entry and nothing is written.
   const alex = shown[0]!;
   for (const [rows, error, hint] of [

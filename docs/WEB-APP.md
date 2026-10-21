@@ -105,8 +105,6 @@ nothing there links here yet: that is Jamie's call.
       sender, a failed verification, an unreadable message, and a final
       failure: once per message and at most three a UTC day, none while
       the emails are stopped. A late reply keeps its own late notice.
-      Rows from the mail log (`MAILLOG#`, 30 days) read as mail rows until
-      moved (`tools/move-mail-log.ts`) or expired.
     - **Reads**: each connected assistant's calls on a local day, by tool,
       with the time of the last; never what it asked or read.
     - **Changes** (`packages/backend/activity.ts`), each written after the

@@ -98,7 +98,7 @@ Where things are (each module's design comment has its contract):
   (2026-10-14): named imports only, icon-only actions named for assistive
   technology, with hover titles, visible focus and 44px targets. Brand marks
   stay their own artwork.
-- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline,move-mail-log}.ts`
+- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline}.ts`
   are operator tools (shared setup in `tools/operator.ts`);
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current.
 - `tools/{build-server,package-native,native-artifacts,web-platform,release-probe}.ts`
@@ -161,10 +161,9 @@ Where things are (each module's design comment has its contract):
   emails the owner, never the sender: once per email, 3 a day, never to a
   stopped subscriber. Only a failure the code catches is logged: a timeout
   or crash reaches the failed queue with no row and no email.
-  Mail to an address that names nobody is never logged. Rows from before
-  the log (`MAILLOG#`, 30 days) read as mail rows until
-  `tools/move-mail-log.ts` moves them or they expire (by 2026-11-20); then
-  the merge goes.
+  Mail to an address that names nobody is never logged. The mail log's own
+  rows (`MAILLOG#`) were never needed: no mail came in between the two
+  (checked 2026-10-21), so nothing was moved and readers no longer look.
 - **An assistant's reads** are one row a connection a local day (calls and
   tools, never arguments or results), written by the MCP reader under
   `MCPMETA#` since it may not write `USER#` rows.
@@ -193,9 +192,9 @@ Where things are (each module's design comment has its contract):
   city; the morning forecast is always the subscriber's city. The original
   photo is never changed. Coordinates and place names are never logged
   (CloudWatch). The activity log is the owner's own record: a home-city
-  change keeps the old and new city by name, as settings keep old and new
-  values, never coordinates; a day's own place is recorded by its day
-  alone.
+  change keeps the old and new city by name (Jamie, 2026-10-21: "Yes keep
+  the city names"), as settings keep old and new values, never
+  coordinates; a day's own place is recorded by its day alone.
 - **Raw mail is the source of truth.** Every filed reply stays whole in S3
   (`raw/`, `outcome=note`, kept indefinitely); never expire those. Ignored
   mail (`outcome=ignored`) expires in 30 days.
@@ -545,7 +544,7 @@ us-east-1, and Node 24 (`/opt/homebrew/opt/node@24/bin` first on PATH here).
   still once per local day; never fake the clock with `now` to do it.
 - **Every live write by an operator tool needs Jamie's go**: an import, a
   fill-in script's `--write`, the real `thumbs_all` run, the badges
-  baseline's `--write` and moving the mail log (`--write`). Run the dry run first.
+  baseline's `--write`. Run the dry run first.
 - `tools/read-notes.ts` prints note text: run it only for the subscriber's
   own notes; agents do not run it to check things. `tools/subscribers.ts`
   prints addresses, so its output stays on this Mac.

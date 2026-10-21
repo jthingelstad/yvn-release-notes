@@ -36,9 +36,9 @@ export interface ReaderStore extends OAuthStore {
   pauses(uid: string, consistent?: boolean): Promise<[string, string][]>;
   activity(
     uid: string,
-    o: { before?: string; from?: string; limit: number; now: number }
+    o: { before?: string; from?: string; limit: number }
   ): Promise<{ rows: OAuthRow[]; more: boolean }>;
-  activityAll(uid: string, now: number, from?: string): Promise<OAuthRow[]>;
+  activityAll(uid: string, from?: string): Promise<OAuthRow[]>;
   dayPlace(uid: string, day: string, consistent?: boolean): Promise<OAuthRow | null>;
   weatherBetween(uid: string, first: string, last: string, consistent?: boolean): Promise<Record<string, OAuthRow>>;
 }
@@ -388,8 +388,7 @@ export class Reader {
       const page = await this.context.store.activity(this.uid, {
         before,
         from: lower,
-        limit: 200,
-        now: this.context.now
+        limit: 200
       });
       for (const row of page.rows) {
         if (!kinds || kinds.has(familyOf(String(row.kind)))) {
@@ -675,9 +674,7 @@ export class Reader {
     }
     if (name === 'notes_mail_log') {
       const from = activityTime(localStart(addDays(this.today, -29), String(this.profile.tz))),
-        mail = (await this.context.store.activityAll(this.uid, this.context.now, from)).filter(
-          (r) => r.kind === 'mail'
-        );
+        mail = (await this.context.store.activityAll(this.uid, from)).filter((r) => r.kind === 'mail');
       return [{ ...this.page(mail.map(agentMailView), a, 'entries'), today: this.today, tz: this.profile.tz }, content];
     }
     if (name === 'notes_activity') return [await this.activity(a), content];

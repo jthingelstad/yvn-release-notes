@@ -36,9 +36,6 @@
  * MCPMETA#<owner> / ACTIVITY#<local day's first instant>#reads#<connection>
  * sums one assistant's reads that day, written by the MCP reader with the
  * account proof and a revision, deleted with the account's MCP rows.
- * USER#<owner> / MAILLOG#<received ISO>#<SES message id> are the mail rows
- * from before the activity log, kept 30 days (expires_at); readers show them
- * as mail rows until `tools/move-mail-log.ts` moves them or they expire.
  */
 import {
   BatchWriteCommand,
@@ -59,7 +56,7 @@ import type {
 import { Subscriber } from './store-types.ts';
 import type { ProductUpdate } from '../domain/product-updates.ts';
 import { upcomingEntry, UPCOMING_MAX, type UpcomingEntry } from '../domain/upcoming.ts';
-import { ACTIVITY, ACTIVITY_END, LEGACY_MAIL, activityKey, legacyMail } from '../domain/activity.ts';
+import { ACTIVITY, ACTIVITY_END } from '../domain/activity.ts';
 import type { UpcomingChange } from './upcoming.ts';
 import type { DocumentSender, Item, Key, MailCounter, Purpose, SessionInput } from './store-types.ts';
 export { Subscriber } from './store-types.ts';
@@ -1238,11 +1235,11 @@ export class Store {
   }
   /** One page of the activity log, newest first: the rows below `before` (a
    * row's id, or an ISO time) and from `from` (an ISO time) on, merged from
-   * the account's rows, its assistants' daily reads and the mail rows from
-   * before the log (until moved, or expired). `more` says older rows remain. */
+   * the account's rows and its assistants' daily reads. `more` says older
+   * rows remain. */
   async activity(
     user: string,
-    o: { before?: string; from?: string; limit: number; now: number }
+    o: { before?: string; from?: string; limit: number }
   ): Promise<{ rows: Item[]; more: boolean }> {
     const lo = ACTIVITY + (o.from ?? ''),
       hi = o.before ? ACTIVITY + o.before : ACTIVITY_END,
@@ -1268,17 +1265,9 @@ export class Store {
         } while (cursor && items.length < o.limit + 2);
         return items;
       },
-      [own, reads, legacy] = await Promise.all([
-        range(`USER#${user}`),
-        range(`MCPMETA#${user}`),
-        this.rows({
-          KeyConditionExpression: 'pk = :u AND begins_with(sk, :m)',
-          ExpressionAttributeValues: { ':u': `USER#${user}`, ':m': LEGACY_MAIL }
-        })
-      ]),
+      [own, reads] = await Promise.all([range(`USER#${user}`), range(`MCPMETA#${user}`)]),
       merged = new Map<string, Item>();
-    for (const row of [...legacy.filter((i) => Number(i.expires_at ?? 0) > o.now).map(legacyMail), ...reads, ...own])
-      if (within(row)) merged.set(String(row.sk), row);
+    for (const row of [...reads, ...own]) if (within(row)) merged.set(String(row.sk), row);
     const rows = [...merged.values()].sort((a, b) => compare(String(b.sk), String(a.sk)));
     return { rows: rows.slice(0, o.limit), more: rows.length > o.limit };
   }
@@ -1298,35 +1287,14 @@ export class Store {
     return true;
   }
   /** Every activity row from `from` (an ISO time) on, newest first. */
-  async activityAll(user: string, now: number, from?: string): Promise<Item[]> {
+  async activityAll(user: string, from?: string): Promise<Item[]> {
     const all: Item[] = [];
     for (let before: string | undefined; ;) {
-      const page = await this.activity(user, { before, from, limit: 500, now });
+      const page = await this.activity(user, { before, from, limit: 500 });
       all.push(...page.rows);
       if (!page.more) return all;
       before = String(page.rows.at(-1)!.sk).slice(ACTIVITY.length);
     }
-  }
-  /** Moves one mail row from before the activity log into it, without its
-   * expiry, with the account proof: 'moved', 'kept' when a newer try had
-   * already written its activity row (the old one goes), or 'gone'. */
-  async moveMail(user: string, old: Item): Promise<'moved' | 'kept' | 'gone'> {
-    const fields = Object.fromEntries(Object.entries(old).filter(([k]) => !['pk', 'sk', 'expires_at'].includes(k))),
-      at = String(old.received_at),
-      sk = activityKey(at, 'mail', String(old.message)),
-      drop = { Delete: { TableName: this.tableName, Key: key(user, String(old.sk)) } };
-    if (await this.mailEntry(user, sk))
-      return (await this.provedTransaction([this.profileProof(user), drop])) ? 'kept' : 'gone';
-    const moved = await this.provedTransaction([
-      this.profileProof(user),
-      this.putOperation(
-        { ...fields, ...key(user, sk), kind: 'mail', at },
-        { ConditionExpression: 'attribute_not_exists(pk)' }
-      ),
-      drop
-    ]);
-    if (moved) return 'moved';
-    return (await this.mailEntry(user, sk)) ? this.moveMail(user, old) : 'gone';
   }
   /** As reserveLateNotice: one notice per log row and three a UTC day,
    * committed together; a stopped/deleting/missing account consumes neither. */

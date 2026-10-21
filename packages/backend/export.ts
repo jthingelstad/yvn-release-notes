@@ -13,7 +13,7 @@ import { object } from './places.ts';
 import type { Item } from './store.ts';
 import { upcomingEntry, type UpcomingEntry } from '../domain/upcoming.ts';
 import { badgesOf } from './badges.ts';
-import { ACTIVITY, LEGACY_MAIL, activityView, legacyMail } from '../domain/activity.ts';
+import { ACTIVITY, activityView } from '../domain/activity.ts';
 export const PROFILE_FIELDS = [
   'email',
   'birthday',
@@ -107,7 +107,6 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
     spots: Item[] = [],
     upcoming: UpcomingEntry[] = [],
     activity: Item[] = [];
-  const exported = Date.parse(exportedAt) / 1000;
   for (const item of items) {
     const sk = String(item.sk);
     if (sk === 'PROFILE')
@@ -149,7 +148,6 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
     } else if (sk.startsWith('PAUSE#')) pauses.push({ from: sk.slice(6), through: item.through ?? null });
     else if (sk.startsWith('UPCOMING#')) upcoming.push(upcomingEntry(item));
     else if (sk.startsWith(ACTIVITY)) activity.push(item);
-    else if (sk.startsWith(LEGACY_MAIL) && Number(item.expires_at ?? 0) > exported) activity.push(legacyMail(item));
     else if (sk.startsWith('WEATHER#')) skies.push({ date: sk.slice(8), ...weather.plain(item as weather.Reading) });
     else if (sk.startsWith('PLACE#'))
       spots.push({

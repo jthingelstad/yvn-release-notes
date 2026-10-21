@@ -187,7 +187,7 @@ export async function accountRoutes(
       before = query.get('before') ?? undefined;
     if (before !== undefined && (before.length > 300 || !/^\d{4}-\d{2}-\d{2}T[\d:.]+Z(#|$)/.test(before)))
       reject(400, 'before');
-    const page = await store.activity(uid, { before, limit: ACTIVITY_SHOWN, now: ctx.now }),
+    const page = await store.activity(uid, { before, limit: ACTIVITY_SHOWN }),
       // An Upcoming date's title, read now: the log never keeps it.
       titles = new Map(
         page.rows.some((r) => r.upcoming)

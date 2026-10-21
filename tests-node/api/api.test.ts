@@ -621,26 +621,7 @@ test("activity answers the owner's rows newest first, a page at a time, with no 
     text: 'Late words',
     notified_at: '2026-10-13T10:00:00.000Z'
   });
-  // A mail log row from before the log reads as a mail row while it lives;
-  // an expired one is gone.
-  s.store.seed({
-    pk: 'USER#u',
-    sk: 'MAILLOG#2026-10-11T10:00:00.000Z#c',
-    message: 'c',
-    received_at: '2026-10-11T10:00:00.000Z',
-    via: 'address',
-    outcome: 'filed',
-    day: '2026-10-11',
-    expires_at: now + 86400
-  });
-  s.store.seed({
-    pk: 'USER#u',
-    sk: 'MAILLOG#2026-09-01T10:00:00.000Z#old',
-    message: 'old',
-    received_at: '2026-09-01T10:00:00.000Z',
-    outcome: 'filed',
-    expires_at: now - 1
-  });
+  await row('2026-10-11T10:00:00.000Z', 'c', { via: 'address', outcome: 'filed', day: '2026-10-11' });
   // An assistant's reads, which only the MCP reader writes.
   s.store.seed({
     pk: 'MCPMETA#u',
@@ -677,7 +658,7 @@ test("activity answers the owner's rows newest first, a page at a time, with no 
     ['Claude', 3, { notes_get_day: 3 }, undefined]
   );
   assert.deepEqual([(b as Item).email, (b as Item).today, (b as Item).next], ['ada@example.com', '2026-10-13', null]);
-  for (const key of ['MAILLOG#', 'MCPMETA#', 'USER#', 'expires_at', 'notified_at', 'f9'])
+  for (const key of ['MCPMETA#', 'USER#', 'expires_at', 'notified_at', 'f9'])
     assert.ok(!JSON.stringify(b).includes(key), key);
   // Older rows start below a row's id.
   const older = await s.call('GET', '/api/activity?before=' + encodeURIComponent('2026-10-12T10:00:00.000Z#mail#a'));

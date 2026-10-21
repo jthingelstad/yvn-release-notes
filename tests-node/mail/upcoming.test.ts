@@ -81,14 +81,13 @@ test('sender selects each owner local day, sends once, keeps reminders out of no
   assert.doesNotMatch(JSON.stringify(f.logs), /Concert|Private west title/);
 });
 test('the activity log has the email and each reminder due, those folded into "N more" too, never a title', async () => {
-  const f = fixture(),
-    now = Date.parse('2026-10-13T12:00:00Z') / 1000;
+  const f = fixture();
   for (const id of ['b', 'c', 'd', 'e'])
     f.store.seed({ pk: 'USER#west', sk: 'UPCOMING#' + id, ...entry, id, title: 'Private ' + id });
   f.store.seed({ pk: 'USER#west', sk: 'UPCOMING#later', ...entry, id: 'later', date: '2026-10-30' });
   await handler({ send_now: 'west' }, null, f.services);
   assert.match((await simpleParser(f.mail.messages[0]!.raw)).text!, /\(2 more today\)/);
-  const rows = await f.store.activityAll('west', now);
+  const rows = await f.store.activityAll('west');
   assert.deepEqual(rows.map((r) => [r.kind, r.upcoming ?? null, r.when ?? null, r.day, r.via]).sort(), [
     ['email.sent', null, null, '2026-10-13', 'email'],
     ...['b', 'c', 'concert', 'd', 'e'].map((id) => ['reminder', id, 'Tomorrow', '2026-10-13', 'email'])
@@ -108,7 +107,7 @@ test('the activity log has the email and each reminder due, those folded into "N
   assert.doesNotMatch(JSON.stringify(rows), /Private|Concert/);
   // Sent once: a repeat writes nothing more.
   await handler({ send_now: 'west' }, null, f.services);
-  assert.equal((await f.store.activityAll('west', now)).length, 6);
+  assert.equal((await f.store.activityAll('west')).length, 6);
 });
 test('a send whose activity rows cannot be written still goes, and is counted', async () => {
   const f = fixture(),
@@ -144,7 +143,7 @@ test('dry run reads only and reports counts; optional failure still sends; pause
   assert.doesNotMatch(JSON.stringify(f.logs), /@|Private west/);
   // Reminders that never reached the email are not in the log.
   assert.deepEqual(
-    (await f.store.activityAll('east', Date.parse('2026-10-13T12:00:00Z') / 1000)).map((r) => r.kind),
+    (await f.store.activityAll('east')).map((r) => r.kind),
     ['email.sent']
   );
   const paused = fixture();
@@ -154,8 +153,7 @@ test('dry run reads only and reports counts; optional failure still sends; pause
   assert.equal((skipped.results as Item[])[0]!.outcome, 'paused');
   await assert.rejects(handler({ send_now: 'west' }, null, paused.services), /no active subscriber/);
   assert.equal(paused.mail.messages.length, 0);
-  for (const uid of ['east', 'west'])
-    assert.deepEqual(await paused.store.activityAll(uid, Date.parse('2026-10-13T12:00:00Z') / 1000), []);
+  for (const uid of ['east', 'west']) assert.deepEqual(await paused.store.activityAll(uid), []);
 });
 test('JSON/Markdown exports retain dates and destination, with no internal keys or fabricated journal days', () => {
   const data = build(

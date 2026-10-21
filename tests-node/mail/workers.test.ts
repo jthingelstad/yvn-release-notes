@@ -636,8 +636,7 @@ test('media storage failure retries before note commit, stable copies produce on
   assert.equal((n.media as Item[])[0]?.key, 'media/u/2026-10-11/synthetic-id/1.mp3');
   assert.equal((await f.store.allNotes('u')).length, 1);
 });
-const mailLog = async (f: { store: FakeStore }) =>
-  (await f.store.activityAll('u', now)).filter((r) => r.kind === 'mail');
+const mailLog = async (f: { store: FakeStore }) => (await f.store.activityAll('u')).filter((r) => r.kind === 'mail');
 function message(id: string, opts: Parameters<typeof ses>[0] = {}) {
   const e = ses(opts);
   return { ...e, mail: { ...e.mail, messageId: id } };
@@ -662,7 +661,7 @@ test('activity: a filed reply adds a row for each badge it earned, once, never w
   const f = await replyFixture();
   await inbound.process(ses(), f.services);
   await inbound.process(ses(), f.services);
-  const rows = (await f.store.activityAll('u', now)).filter((r) => r.kind === 'badge.earned');
+  const rows = (await f.store.activityAll('u')).filter((r) => r.kind === 'badge.earned');
   // The first note, a reply, a hashtag, and a note for a day already past.
   assert.deepEqual(
     rows.map((r) => r.key),
@@ -676,7 +675,7 @@ test('activity: a filed reply adds a row for each badge it earned, once, never w
   await off.store.updateProfile('u', { badges: false });
   await inbound.process(ses(), off.services);
   assert.deepEqual(
-    (await off.store.activityAll('u', now)).map((r) => r.kind),
+    (await off.store.activityAll('u')).map((r) => r.kind),
     ['mail']
   );
   // A failed badge read files the note all the same.
@@ -690,7 +689,7 @@ test('activity: a filed reply adds a row for each badge it earned, once, never w
     [{ event: 'badges-error', user: 'u', date: '2026-10-11', error: 'ProvisionedThroughputExceededException' }]
   );
   assert.deepEqual(
-    (await failed.store.activityAll('u', now)).map((r) => r.kind),
+    (await failed.store.activityAll('u')).map((r) => r.kind),
     ['mail']
   );
 });
@@ -698,7 +697,7 @@ test('activity: a reply whose file fails to tag once filed keeps its badges thro
   const audio = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(1200)]).toString('base64'),
     raw = `From: ada@example.com\r\nContent-Type: audio/mpeg\r\nContent-Disposition: attachment; filename=memo.mp3\r\nContent-Transfer-Encoding: base64\r\n\r\n${audio}`,
     earned = async (f: { store: FakeStore }) =>
-      (await f.store.activityAll('u', now)).filter((r) => r.kind === 'badge.earned').map((r) => r.key);
+      (await f.store.activityAll('u')).filter((r) => r.kind === 'badge.earned').map((r) => r.key);
   const clean = await replyFixture(raw);
   await inbound.process(ses(), clean.services);
   const want = await earned(clean);
@@ -862,7 +861,7 @@ test('SNS concurrent duplicate hard bounce stops/tallies once, retained receipt 
   await events.handler(sns(bounce()), null, s);
   assert.equal((await f.store.profile('u'))?.status, 'active');
   // One activity row for the stop, by its reason; nothing of the notification.
-  const stops = await f.store.activityAll('u', now);
+  const stops = await f.store.activityAll('u');
   assert.deepEqual(
     stops.map((r) => [r.kind, r.via, r.reason]),
     [['status.stopped', 'email', 'bounce']]
@@ -892,7 +891,7 @@ test('complaints stop; transient bounce and routine delay do not; unknown mail y
   assert.equal((await f.store.profile('u'))?.stopped_reason, 'complaint');
   assert.equal(f.store.memory.read({ pk: 'TALLY#2026-10', sk: 'TALLY' })?.complaints, 1);
   assert.deepEqual(
-    (await f.store.activityAll('u', now)).map((r) => [r.kind, r.reason]),
+    (await f.store.activityAll('u')).map((r) => [r.kind, r.reason]),
     [['status.stopped', 'complaint']]
   );
   assert.deepEqual(events.notice({ eventType: 'Reject', reject: { reason: 'ada@example.com subject secret' } }, []), {

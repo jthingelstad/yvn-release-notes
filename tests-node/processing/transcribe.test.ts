@@ -117,7 +117,7 @@ test('completed lease and legacy Python job write text, preserve fields and clea
     assert.deepEqual(s.removed, [t.jobName('u', day, id, 0)]);
     assert.equal((await s.objects.list('transcripts/')).length, 0);
     // One activity row for the recording, never its words.
-    const rows = await s.store.activityAll('u', now);
+    const rows = await s.store.activityAll('u');
     assert.deepEqual(
       rows.map((r) => [r.kind, r.day, r.note, r.file, r.empty]),
       [['transcript.added', day, id, 0, false]]
@@ -142,7 +142,7 @@ test('failed/missing result becomes empty transcript; foreign/in-progress events
     assert.equal(((await s.store.note('u', day, id))!.media as Item[])[0]?.transcript, '');
     assert.equal(JSON.stringify(s.logs).includes('Never log'), false);
     assert.deepEqual(
-      (await s.store.activityAll('u', now)).map((r) => [r.kind, r.empty]),
+      (await s.store.activityAll('u')).map((r) => [r.kind, r.empty]),
       [['transcript.added', true]]
     );
   }
@@ -181,7 +181,7 @@ test('completion after opt-out/deletion/media replacement stores no text but cle
     assert.equal(((await s.store.note('u', day, id))?.media as Item[] | undefined)?.[0]?.transcript, undefined);
     assert.equal(s.removed.length, 1);
     assert.equal(JSON.stringify(s.logs).includes('private fixture'), false);
-    assert.deepEqual(await s.store.activityAll('u', now), []);
+    assert.deepEqual(await s.store.activityAll('u'), []);
   }
 });
 test('malformed result retries without cleanup; unicode truncation counts characters', async () => {

@@ -97,11 +97,6 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
   has already earned and is not yet `seen`; `--write` adds it, so nobody's
   first email with the badge line lists everything at once. Counts only,
   never a name or address.
-- Moving the mail log (once, after the activity log shipped):
-  `node --import tsx tools/move-mail-log.ts` counts the `MAILLOG#` rows
-  still to move; `--write` moves each into the activity log with the
-  account proof, without its expiry, so a repeat is harmless. Expired rows
-  are left for the table. Counts only.
 - One row per subscriber (address, state, sign-up day, send time, last
   email, last note, notes, 30-day reply rate):
   `node --import tsx tools/subscribers.ts`. Reads keys and a few fields,

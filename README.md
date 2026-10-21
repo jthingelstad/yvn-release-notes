@@ -102,8 +102,8 @@ email link/code sign-in still proves ownership before any subscriber write.
 `infra/template.yaml` is the whole stack (CloudFormation). Merging to main
 deploys it: the `deploy` workflow runs the release (`scripts/release.sh`) from
 GitHub Actions, and `activate` rolls back by hand. `deploy.sh` runs the same
-release from the Mac. `AGENTS.md` has the design rules and the operating notes, and
-`docs/WEB-APP.md` the web app's design.
+release from the Mac. `AGENTS.md` has the design rules, `docs/OPERATING.md` the
+operating notes, and `docs/WEB-APP.md` the web app's design.
 
 ## License
 

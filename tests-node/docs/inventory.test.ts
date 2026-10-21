@@ -8,6 +8,13 @@ import { MCP_CONTRACT, TOOLS } from '../../server/mcp/contract.ts';
 const read = (path: string) => readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
 const web = await read('docs/WEB-APP.md'),
   mcp = await read('docs/MCP.md');
+/** The agent guide is the rules (AGENTS.md) plus the runbook it links
+ * (docs/OPERATING.md); a tool or query may be named in either. */
+const guide = async () => {
+  const [rules, operating] = await Promise.all([read('AGENTS.md'), read('docs/OPERATING.md')]);
+  assert.ok(rules.includes('docs/OPERATING.md'), 'AGENTS.md must link docs/OPERATING.md');
+  return `${rules}\n${operating}`;
+};
 test('API table documents every method/path and has no stale route', () => {
   const rows: string[] = [];
   for (const match of web.matchAll(/^\| `([A-Z/]+) (\/api\/[^`?\s]*)/gm))
@@ -34,15 +41,15 @@ test('MCP documentation and generated JSON match the complete tool contract', as
   );
 });
 test('agent guide names every operator/build tool and retained script', async () => {
-  const guide = await read('AGENTS.md'),
+  const text = await guide(),
     listed = new Set<string>();
-  for (const match of guide.matchAll(/`(tools|scripts)\/\{([^}]+)\}\.(ts|mjs)`/g))
+  for (const match of text.matchAll(/`(tools|scripts)\/\{([^}]+)\}\.(ts|mjs)`/g))
     for (const name of match[2]!.split(',')) listed.add(`${match[1]}/${name.trim()}.${match[3]}`);
   for (const directory of ['tools', 'scripts']) {
     const files = await readdir(new URL(`../../${directory}/`, import.meta.url));
     for (const file of files.filter((name) => /\.(ts|mjs|sh)$/.test(name))) {
       const path = `${directory}/${file}`;
-      assert.ok(guide.includes(path) || listed.has(path), `operator/script missing from guide: ${path}`);
+      assert.ok(text.includes(path) || listed.has(path), `operator/script missing from guide: ${path}`);
     }
   }
 });
@@ -73,7 +80,7 @@ test('version golden and generator use the canonical fixture path', async () => 
     new URL(reference[2]!, new URL('../../tests-node/domain/domain.test.ts', import.meta.url)).href,
     new URL('../../' + path, import.meta.url).href
   );
-  assert.ok(!(await read('AGENTS.md')).includes('tests/fixtures/versions.json'));
+  assert.ok(!(await guide()).includes('tests/fixtures/versions.json'));
 });
 test('GitHub verification uses the Node 24 application and the fictional browser harness', async () => {
   const validate = await read('.github/workflows/validate.yml'),
@@ -90,8 +97,7 @@ test('GitHub verification uses the Node 24 application and the fictional browser
   assert.match(await read('e2e/playwright.config.mjs'), /reuseExistingServer: false/);
 });
 test('Logs Insights queries in the agent guide read the structured fields under message', async () => {
-  const guide = await read('AGENTS.md'),
-    queries = Array.from(guide.matchAll(/`([^`\n]*\bfilter [^`\n]*)`/g), (match) => match[1]!);
+  const queries = Array.from((await guide()).matchAll(/`([^`\n]*\bfilter [^`\n]*)`/g), (match) => match[1]!);
   assert.ok(queries.some((query) => query.includes('message.event = "turnstile"')));
   for (const query of queries)
     for (const field of query.matchAll(/(?:filter|by|,)\s+([A-Za-z_@][\w.@]*)/g))

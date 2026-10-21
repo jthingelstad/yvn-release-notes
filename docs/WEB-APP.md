@@ -512,8 +512,8 @@ deleted account's token goes with its profile.
 Upcoming entries are included in JSON, Markdown and ZIP exports, in a separate
 `upcoming` collection/section (omitted when there are none for legacy export
 compatibility), and removed by purpose-verified account deletion with every
-other USER row. Existing MCP scopes grant access to journal notes only;
-Upcoming is not added to the agent tool surface.
+other USER row. Note scopes never reach Upcoming; only the separate
+`upcoming` scope does (`docs/MCP.md`).
 
 ## Product updates
 

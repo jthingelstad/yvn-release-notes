@@ -58,7 +58,11 @@ GitHub's releases (`production-deploy`, never cancelled). The web sync and
 the probe come after the stack update, so the Mac's `deploy.sh` refuses
 while a GitHub release is queued or running and again if main moved while it
 built, and every release stops before its web sync (and again after it) if
-another release has since replaced the stack's `BuildId`. A release that dies mid-update leaves CloudFormation to finish or
+another release is updating the stack or has since replaced its `BuildId`.
+The newer release syncs its own web app once its stack update is done, so two
+syncs overlap only if a whole stack update fits inside one sync's seconds.
+There is no lock across runs: GitHub's role has no lock to take, and the
+overlap needs a break-glass release racing a merge. A release that dies mid-update leaves CloudFormation to finish or
 roll back on its own; once the stack is idle, release main again ("Run
 workflow" on `deploy`, or re-run the failed run).
 

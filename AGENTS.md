@@ -130,6 +130,17 @@ Where things are (each module's design comment has its contract):
 - **A late reply gets a short email back** (Jamie, 2026-10-09: "Yes this
   should not fail silently"), only when every other check passes, never to a
   stopped subscriber, at most one per reply address and 3 a subscriber a day.
+- **The mail log** (Jamie, 2026-10-20: "a per account holder log that can be
+  seen by the user in the web interface and we email the user if there is a
+  problem in the log"): `/mail-log/` shows the owner what became of each
+  email to their addresses, 30 days (`MAILLOG#`), never exported and gone
+  with the account. It keeps an email's words only once its sender is
+  proven; mail from another address or that fails verification shows sender
+  and subject alone, since inbound opens no MIME before proof and the web
+  reads nothing under `raw/`. Another address, a failed verification, an
+  unreadable email or one still failing after three tries emails the owner,
+  never the sender: once per email, 3 a day, never to a stopped subscriber.
+  Mail to an address that names nobody is never logged.
 - **Reply as often as you like.** Each reply is its own note
   (`NOTE#<day>#<messageId>`); oldest first, together they are the day's
   release notes (Jamie, 2026-10-08: "keep them in the database as separate

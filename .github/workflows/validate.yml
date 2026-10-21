@@ -40,7 +40,7 @@ jobs:
       # Dependabot's github-actions run cannot see a pipx spec: bump it by hand (the latest on PyPI,
       # run locally first) when a new resource or property needs it.
       - name: lint templates
-        run: pipx run --spec cfn-lint==1.57.2 cfn-lint infra/template.yaml infra/github-deploy-role.yaml
+        run: pipx run --spec cfn-lint==1.57.2 cfn-lint infra/template.yaml infra/github-deploy-role.yaml infra/backup.yaml
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"

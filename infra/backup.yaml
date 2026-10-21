@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Release Notes backups - a monthly AWS Backup recovery point of the yvn-release-notes table, kept until removed by hand
+
+# A separate small stack (yvn-release-notes-backup), never the application
+# stack, and never deployed from a workflow: the GitHub deploy role and the
+# CloudFormation service role have no AWS Backup permissions and cannot edit
+# this role, whose name does not start with yvn-release-notes-. Applied by
+# hand with the cloud-engineer profile:
+#
+#   aws cloudformation deploy --stack-name yvn-release-notes-backup \
+#     --template-file infra/backup.yaml --capabilities CAPABILITY_NAMED_IAM \
+#     --tags Application=YourVersionNumber Project=yvn-release-notes ManagedBy=cloudformation
+#
+# The table keeps its own 35-day point-in-time recovery. This adds one copy a
+# month, on the 1st, kept for as long as Jamie wants (Jamie, 2026-10-20: "keep
+# the data in monthly copies for as long as we want, not limited to a year"),
+# so a recovery point never expires on its own. They are the operator's, not a
+# promise to subscribers: deleting an account deletes it from the live system,
+# and older monthly copies age out only when removed by hand (Jamie: "We make
+# no promise about backups"). The account manages DynamoDB backups in AWS
+# Backup ("advanced" DynamoDB backups, on since before 2026-10-20), so each
+# recovery point is encrypted by the vault and survives the table.
+#
+# A restore goes to a new table, never over the live one (projects-sysadmin
+# docs/RESTORE.md has the rehearsal: compare metadata and counts, read no rows,
+# delete only the rehearsal table).
+
+Parameters:
+  TableName:
+    Type: String
+    Default: yvn-release-notes
+    AllowedValues: [yvn-release-notes]
+
+Resources:
+  Vault:
+    Type: AWS::Backup::BackupVault
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BackupVaultName: yvn-rn-backups
+
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ReleaseNotesBackup
+      Description: AWS Backup makes and restores the Release Notes table's monthly recovery points
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: backup.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+
+  Plan:
+    Type: AWS::Backup::BackupPlan
+    Properties:
+      BackupPlan:
+        BackupPlanName: yvn-release-notes-monthly
+        BackupPlanRule:
+          # No Lifecycle: a recovery point is kept until someone deletes it.
+          - RuleName: monthly
+            TargetBackupVault: !Ref Vault
+            ScheduleExpression: cron(0 4 1 * ? *)
+            ScheduleExpressionTimezone: America/Chicago
+            StartWindowMinutes: 60
+            CompletionWindowMinutes: 720
+            RecoveryPointTags:
+              Application: YourVersionNumber
+              Project: yvn-release-notes
+
+  TableSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupPlanId: !Ref Plan
+      BackupSelection:
+        SelectionName: table
+        IamRoleArn: !GetAtt BackupRole.Arn
+        Resources:
+          - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+
+Outputs:
+  VaultName:
+    Value: !Ref Vault
+  PlanId:
+    Value: !Ref Plan
+  BackupRoleArn:
+    Value: !GetAtt BackupRole.Arn

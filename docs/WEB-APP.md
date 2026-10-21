@@ -139,8 +139,15 @@ nothing there links here yet: that is Jamie's call.
       `activity-unrecorded` and counted (`ActivityUnrecorded`, by a metric
       filter on the web's log and an embedded metric in the workers'). A
       change that comes twice to one thing within a second (two appends to
-      a note) keeps both rows: its key adds a short random tail. A timeout
-      or crash in the inbound worker is not in the log yet.
+      a note) keeps both rows: its key adds a short random tail.
+    - An email inbound gave up on after a timeout or crash is logged from
+      Lambda's failure record: it goes to SQS
+      `yvn-release-notes-inbound-failed`, which inbound reads one at a time
+      (`gaveUp` in `workers/inbound.ts`). It finds the owner from the
+      address as inbound's first step does; the row says failed after the
+      tries Lambda made, keeps any words an earlier try kept, and the owner
+      gets the usual notice. A row already filed or not filed stays as it is.
+      Then the record goes on to the failed queue unchanged.
 
 ## Defaults (Jamie can change any)
 

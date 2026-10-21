@@ -6,7 +6,8 @@
  * not filed and why, or failed), with its words only once the sender is proven;
  * a few reasons, and a final failure, email the subscriber a notice. A note
  * filed for the first time adds a row for each badge it earned, as soon as it
- * is stored. */
+ * is stored. A message given up on after a timeout or crash comes back through
+ * the inbound failed queue (gaveUp) for its failed row and notice. */
 import type { Store, Subscriber, Item } from '../packages/backend/store.ts';
 import * as media from '../packages/backend/media.ts';
 import type { Objects, Mail, Log } from '../packages/backend/services.ts';
@@ -68,6 +69,8 @@ export interface InboundServices {
   inboundDomain: string;
   titleFetch?: TitleFetcher;
   log?: Log;
+  /** Hands a given-up message on to the failed queue, as it came. */
+  forward?: (body: string) => Promise<void>;
 }
 export function automatic(head: MailHeaders): boolean {
   return (
@@ -217,26 +220,17 @@ async function words(raw: Buffer): Promise<string> {
     return '';
   }
 }
-export async function file(
-  mail: SesMail,
-  receipt: SesReceipt,
-  s: InboundServices,
-  seen: Seen = {}
-): Promise<[string, Item]> {
-  const spam =
-    receipt.spamVerdict?.status === 'FAIL' ||
-    ['FAIL', 'PROCESSING_FAILED'].includes(receipt.virusVerdict?.status ?? '');
+/** The subscriber a message's address names, from SES's event alone, with
+ * what its activity row says of it (`seen`); why it is ignored when the
+ * address names no one. */
+async function addressee(mail: SesMail, receipt: SesReceipt, s: InboundServices, seen: Seen, spam: boolean) {
   const pair = (receipt.recipients ?? []).map((r) => tokenFrom(r, s.inboundDomain)).find(Boolean);
-  if (!pair) return ['ignored', { reason: spam ? 'spam-or-virus' : 'no-token' }];
+  if (!pair) return { reason: spam ? 'spam-or-virus' : 'no-token' };
   const [token, standing] = pair;
   const tok = standing ? await s.store.getInbox(token, true) : await s.store.getToken(token);
-  if (!tok) return ['ignored', { reason: spam ? 'spam-or-virus' : 'unknown-token' }];
+  if (!tok) return { reason: spam ? 'spam-or-virus' : 'unknown-token' };
   const sub = await s.store.getSubscriber(String(tok.user_id), standing);
-  if (!sub) return ['ignored', { reason: spam ? 'spam-or-virus' : 'unknown-user' }];
-  const ignored = (reason: string, extra: Item = {}): [string, Item] => [
-    'ignored',
-    { reason, user: sub.user_id, ...extra }
-  ];
+  if (!sub) return { reason: spam ? 'spam-or-virus' : 'unknown-user' };
   const froms = await addresses(mail.commonHeaders?.from ?? []),
     from = froms.length === 1 ? froms[0] : '';
   Object.assign(seen, {
@@ -246,6 +240,24 @@ export async function file(
     ...(from === sub.email.toLowerCase() ? {} : { sender: codePointSlice(froms.join(', ') || '(no sender)', 0, 300) })
   });
   seen.version = standing ? String(computeVersion(sub.birthday, seen.day!)) : String(tok.version);
+  return { token, standing, tok, sub, from };
+}
+export async function file(
+  mail: SesMail,
+  receipt: SesReceipt,
+  s: InboundServices,
+  seen: Seen = {}
+): Promise<[string, Item]> {
+  const spam =
+    receipt.spamVerdict?.status === 'FAIL' ||
+    ['FAIL', 'PROCESSING_FAILED'].includes(receipt.virusVerdict?.status ?? '');
+  const to = await addressee(mail, receipt, s, seen, spam);
+  if ('reason' in to) return ['ignored', to];
+  const { token, standing, tok, sub, from } = to;
+  const ignored = (reason: string, extra: Item = {}): [string, Item] => [
+    'ignored',
+    { reason, user: sub.user_id, ...extra }
+  ];
   if (spam) return ignored('spam-or-virus');
   if (standing && sub.inbox !== token) return ignored('replaced');
   if (standing && sub.status !== 'active') return ignored('stopped');
@@ -429,22 +441,58 @@ async function notice(s: InboundServices, mail: SesMail, seen: Seen, sk: string,
   done('sent');
 }
 /** A failure leaves a failed row (counting attempts) for the owner; the last
- * attempt also sends the notice. Best effort: the error itself is rethrown. */
-async function failure(s: InboundServices, mail: SesMail, seen: Seen): Promise<void> {
+ * attempt also sends the notice. Best effort: the error itself is rethrown.
+ * Given up on (`tries`, after a timeout or crash), the row takes the tries
+ * Lambda made unless it has counted more, and keeps any words it has; a row
+ * already filed or not filed stays as it is. */
+async function failure(s: InboundServices, mail: SesMail, seen: Seen, tries?: number): Promise<void> {
   if (!seen.sub) return;
   try {
     const [sk, row] = logRow(mail, seen),
-      kept = await s.store.recordMail(
-        seen.sub.user_id,
-        sk,
-        { ...row, outcome: 'failed', reason: 'failed', ...(seen.text ? { text: seen.text } : {}) },
-        { failed: true }
-      );
-    if (kept && Number((await s.store.mailEntry(seen.sub.user_id, sk))?.attempts ?? 0) >= ATTEMPTS)
+      before = tries ? await s.store.mailEntry(seen.sub.user_id, sk) : null;
+    if (before && before.outcome !== 'failed') return;
+    if (typeof before?.text === 'string') seen.text = before.text;
+    const kept = await s.store.recordMail(
+      seen.sub.user_id,
+      sk,
+      {
+        ...row,
+        outcome: 'failed',
+        reason: 'failed',
+        ...(seen.text ? { text: seen.text } : {}),
+        ...(tries ? { attempts: Math.max(tries, Number(before?.attempts ?? 0)) } : {})
+      },
+      { failed: !tries }
+    );
+    if (kept && (tries || Number((await s.store.mailEntry(seen.sub.user_id, sk))?.attempts ?? 0) >= ATTEMPTS))
       await notice(s, mail, seen, sk, 'failed');
   } catch (e) {
     s.log?.({ event: 'mail-log', user: seen.sub.user_id, outcome: 'failed', error: errorName(e) });
   }
+}
+/** A message inbound gave up on, as Lambda's failure record names it
+ * (InboundAliasInvokeConfig, through InboundFailedQueue): a timeout or crash
+ * that left no row gets its failed row and the owner's notice now, as a
+ * failure the code caught does, and once logged it goes on to the failed queue
+ * for the operator. A throw leaves it on the inbound failed queue, whose last
+ * try hands it on unread. */
+export async function gaveUp(body: string, s: InboundServices): Promise<void> {
+  if (!s.forward) throw new Error('No failed queue to hand on to');
+  let record: { requestContext?: { approximateInvokeCount?: unknown }; requestPayload?: unknown } = {};
+  try {
+    record = JSON.parse(body) as typeof record;
+  } catch {
+    // Not a failure record: handed on as it came.
+  }
+  const tries = Math.max(1, Number(record.requestContext?.approximateInvokeCount) || ATTEMPTS),
+    payload = (record.requestPayload ?? {}) as Parameters<typeof handler>[0];
+  for (const r of payload.Records ?? [])
+    if ('ses' in r && r.ses?.mail?.messageId) {
+      const seen: Seen = {};
+      await addressee(r.ses.mail, r.ses.receipt, s, seen, false);
+      await failure(s, r.ses.mail, seen, tries);
+    }
+  await s.forward(body);
 }
 export async function process(ses: { mail: SesMail; receipt: SesReceipt }, services: InboundServices): Promise<string> {
   const seen: Seen = {};
@@ -483,10 +531,13 @@ export async function process(ses: { mail: SesMail; receipt: SesReceipt }, servi
   }
   return filed;
 }
+/** SES's event, or a batch from the inbound failed queue (`body`). */
 export async function handler(
-  event: { Records?: { ses: { mail: SesMail; receipt: SesReceipt } }[] },
+  event: { Records?: ({ ses: { mail: SesMail; receipt: SesReceipt } } | { body: string })[] },
   _context: unknown,
   services: InboundServices
 ): Promise<void> {
-  for (const record of event.Records ?? []) await process(record.ses, services);
+  for (const record of event.Records ?? [])
+    if ('body' in record) await gaveUp(record.body, services);
+    else await process(record.ses, services);
 }

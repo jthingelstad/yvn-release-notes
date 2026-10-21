@@ -798,6 +798,89 @@ test('a mail row needs a live account and a mail activity key', async () => {
   for (const wrong of ['NOTE#x', 'MAILLOG#x', 'ACTIVITY#2026-10-13T12:00:00.000Z#note.added#x'])
     await assert.rejects(() => f.store.recordMail('u', wrong, {}), RangeError);
 });
+/** Lambda's failure record for an SES event inbound gave up on, as the
+ * inbound failed queue holds it. */
+function gaveUpRecord(event = ses(), tries = 3) {
+  return JSON.stringify({
+    version: '1.0',
+    timestamp: '2026-10-13T12:05:00.000Z',
+    requestContext: {
+      requestId: 'r',
+      functionArn: 'f:live',
+      condition: 'RetriesExhausted',
+      approximateInvokeCount: tries
+    },
+    requestPayload: { Records: [{ eventSource: 'aws:ses', eventVersion: '1.0', ses: event }] },
+    responseContext: { statusCode: 200, executedVersion: '7', functionError: 'Unhandled' },
+    responsePayload: { errorType: 'Sandbox.Timedout', errorMessage: 'Task timed out after 60.00 seconds' }
+  });
+}
+function forwarding(f: Awaited<ReturnType<typeof replyFixture>>) {
+  const forwarded: string[] = [];
+  return { forwarded, services: { ...f.services, forward: async (body: string) => void forwarded.push(body) } };
+}
+test('a reply that timed out on every try gets its failed row and one notice from the failure record, then goes on', async () => {
+  const f = await replyFixture(),
+    { forwarded, services } = forwarding(f),
+    body = gaveUpRecord();
+  await inbound.handler({ Records: [{ body }] }, null, services);
+  const [r] = await mailLog(f);
+  assert.deepEqual(
+    [r!.outcome, r!.reason, r!.attempts, r!.day, r!.via, r!.subject],
+    ['failed', 'failed', 3, '2026-10-11', 'reply', 'Re: today']
+  );
+  assert.ok(!('text' in r!));
+  assert.equal(f.mail.messages.length, 1);
+  const text = (await simpleParser(f.mail.messages[0]!.raw)).text!;
+  assert.match(text, /three tries/);
+  assert.doesNotMatch(text, /Its words are kept/);
+  assert.deepEqual(forwarded, [body]);
+  // Read twice from the queue: still one row, one notice, handed on again.
+  await inbound.handler({ Records: [{ body }] }, null, services);
+  assert.equal((await mailLog(f)).length, 1);
+  assert.equal(f.mail.messages.length, 1);
+  assert.deepEqual(forwarded, [body, body]);
+  assert.ok(!JSON.stringify(f.logs).match(/ada@|Re: today|little thing/));
+});
+test('a failure record after caught failures, or for a message since filed, changes nothing and sends nothing more', async () => {
+  const f = await replyFixture(),
+    { forwarded, services } = forwarding(f),
+    put = f.store.putInboundNote.bind(f.store);
+  f.store.putInboundNote = async () => {
+    throw new Error('table unavailable');
+  };
+  for (let i = 0; i < inbound.ATTEMPTS; i++)
+    await assert.rejects(() => inbound.process(ses(), services), /table unavailable/);
+  const [caught] = await mailLog(f);
+  await inbound.handler({ Records: [{ body: gaveUpRecord() }] }, null, services);
+  assert.deepEqual(await mailLog(f), [caught]);
+  assert.equal(caught!.text, 'I made a little thing. #made');
+  assert.equal(f.mail.messages.length, 1);
+  // Filed on a replay: a late record leaves it filed.
+  f.store.putInboundNote = put;
+  assert.equal(await inbound.process(ses(), services), 'note');
+  await inbound.handler({ Records: [{ body: gaveUpRecord() }] }, null, services);
+  assert.equal((await mailLog(f))[0]!.outcome, 'filed');
+  assert.equal(f.mail.messages.length, 1);
+  assert.equal(forwarded.length, 2);
+});
+test('a failure record for no one, a stopped owner or no record at all is still handed on; without a queue it stays', async () => {
+  const f = await replyFixture(),
+    { forwarded, services } = forwarding(f),
+    stranger = gaveUpRecord(ses({ recipient: `n-${'c'.repeat(24)}@in.example.com` }));
+  await inbound.handler({ Records: [{ body: stranger }, { body: 'not json' }] }, null, services);
+  assert.deepEqual(forwarded, [stranger, 'not json']);
+  assert.deepEqual(await mailLog(f), []);
+  await f.store.stop('u', 'bounce', 'now');
+  await inbound.handler({ Records: [{ body: gaveUpRecord(ses(), 5) }] }, null, services);
+  const [r] = await mailLog(f);
+  assert.deepEqual([r!.outcome, r!.attempts], ['failed', 5]);
+  assert.equal(f.mail.messages.length, 0);
+  await assert.rejects(
+    () => inbound.handler({ Records: [{ body: gaveUpRecord() }] }, null, f.services),
+    /failed queue/
+  );
+});
 test('notices say when and why; ATTEMPTS is the inbound alias retries plus one, ending in the failed queue', async () => {
   for (const reason of ['from-mismatch', 'unauthenticated', 'unparseable', 'failed'] as const) {
     const text = noticeText({
@@ -814,7 +897,13 @@ test('notices say when and why; ATTEMPTS is the inbound alias retries plus one, 
     config = /\n {2}InboundAliasInvokeConfig:\n([\s\S]*?)\n\n/.exec(template)![1]!;
   assert.match(config, /FunctionName: !Ref InboundFunction\n\s+Qualifier: live/);
   assert.equal(Number(/MaximumRetryAttempts: (\d)/.exec(config)![1]) + 1, inbound.ATTEMPTS);
-  assert.match(config, /OnFailure:\n\s+Destination: !GetAtt FailedQueue\.Arn/);
+  assert.match(config, /OnFailure:\n\s+Destination: !GetAtt InboundFailedQueue\.Arn/);
+  // Inbound reads that queue itself, then on to the failed queue, or there unread.
+  const source = /\n {2}InboundFailedSource:\n([\s\S]*?)\n\n/.exec(template)![1]!,
+    queue = /\n {2}InboundFailedQueue:\n([\s\S]*?)\n\n/.exec(template)![1]!;
+  assert.match(source, /FunctionName: !Ref InboundAlias\n\s+EventSourceArn: !GetAtt InboundFailedQueue\.Arn/);
+  assert.match(queue, /deadLetterTargetArn: !GetAtt FailedQueue\.Arn/);
+  assert.match(template, /FAILED_QUEUE: !Ref FailedQueue/);
 });
 test('body and subject truncate by Unicode code point without splitting emoji', async () => {
   const f = await replyFixture(

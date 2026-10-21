@@ -53,11 +53,13 @@ else if (args[1] === 'describe-stacks') {
   if (joined.includes('WebBucketName')) console.log('fictional-web-bucket');
   else if (joined.includes('WebDistributionId')) console.log('FICTIONALDIST');
   else if (joined.includes('BuildId')) {
-    // FIXTURE_REPLACED: another release updates the stack after N reads.
+    // FIXTURE_REPLACED: another release has updated the stack after N reads;
+    // FIXTURE_UPDATING: another release is updating it, BuildId still ours.
     const seen = Number(process.env.FIXTURE_REPLACED_AFTER ?? 'NaN'),
+      busy = Number(process.env.FIXTURE_UPDATING_AFTER ?? 'NaN'),
       file = process.env.FIXTURE_LOG + '.builds', reads = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
     fs.writeFileSync(file, String(reads + 1));
-    console.log(reads >= seen ? '${'b'.repeat(40)}' : '${commit}');
+    console.log((reads >= busy ? 'UPDATE_IN_PROGRESS' : 'UPDATE_COMPLETE') + '\t' + (reads >= seen ? '${'b'.repeat(40)}' : '${commit}'));
   }
 }
 else if (args[1] === 'head-bucket') process.exit(process.env.FIXTURE_NO_CODE_BUCKET ? 1 : 0);
@@ -217,7 +219,30 @@ test('a release another one replaced stops before its web sync, or after it, and
 
     ({ result, events } = await f.release([], { env: { FIXTURE_REPLACED_AFTER: '1' } }));
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /after the web sync; re-run the newer release/);
+    assert.match(
+      result.stderr,
+      /after the web sync: the stack now runs b{40}, released by another run; re-run the newer release/
+    );
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation']);
+  });
+});
+
+test('a release stops before its web sync while another one is updating the stack, even before BuildId moves', async () => {
+  await withFixture(async (f) => {
+    let { result, events } = await f.release([], { env: { FIXTURE_UPDATING_AFTER: '0' } });
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /refusing: before the web sync: another release is updating the stack \(UPDATE_IN_PROGRESS\)/
+    );
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies']);
+
+    ({ result, events } = await f.release([], { env: { FIXTURE_UPDATING_AFTER: '1' } }));
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /refusing: after the web sync: another release is updating the stack \(UPDATE_IN_PROGRESS\) and syncs its own/
+    );
     assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation']);
   });
 });

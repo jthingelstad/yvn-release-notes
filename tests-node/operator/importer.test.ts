@@ -103,6 +103,36 @@ test('fictional legacy import writes files/originals/note links/weather with nat
     [['import.notes', '2026-10-09T12:00:00.000Z', 'import', 'dayone', 2, 2]]
   );
 });
+test('a run that stops partway records the notes it committed, and its retry the rest', async () => {
+  const { s, store } = setup(),
+    rows = async () =>
+      (await store.activityAll('u1', Date.parse(s.at) / 1000)).map((r) => [r.kind, r.at, r.notes, r.files]);
+  // The second note's file cannot be read: the first note stays imported.
+  await assert.rejects(
+    () =>
+      importer.write(
+        [
+          [
+            plan(),
+            (name) => {
+              if (name === 'pdfs/f1.pdf') throw new Error('unreadable');
+              return files[name]!;
+            }
+          ]
+        ],
+        'u1',
+        s
+      ),
+    /Import write failed/
+  );
+  assert.deepEqual(await rows(), [['import.notes', '2026-10-09T12:00:00.000Z', 1, 1]]);
+  const counts = await run({ ...s, at: '2026-10-09T12:05:00Z' });
+  assert.deepEqual([counts.notes, counts.already_imported], [1, 1]);
+  assert.deepEqual(await rows(), [
+    ['import.notes', '2026-10-09T12:05:00.000Z', 1, 1],
+    ['import.notes', '2026-10-09T12:00:00.000Z', 1, 1]
+  ]);
+});
 test('repeat skips every upload; deleted note stays deleted even across journals or changed entry zone', async () => {
   const { s, store, objects } = setup();
   await run(s);

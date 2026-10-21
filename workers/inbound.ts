@@ -5,7 +5,8 @@
  * Every message that reaches a subscriber goes in their activity log (filed,
  * not filed and why, or failed), with its words only once the sender is proven;
  * a few reasons, and a final failure, email the subscriber a notice. A note
- * filed for the first time adds a row for each badge it earned. */
+ * filed for the first time adds a row for each badge it earned, as soon as it
+ * is stored. */
 import type { Store, Subscriber, Item } from '../packages/backend/store.ts';
 import * as media from '../packages/backend/media.ts';
 import type { Objects, Mail, Log } from '../packages/backend/services.ts';
@@ -330,6 +331,10 @@ export async function file(
     }
     return ignored('account-changed');
   }
+  // Before its files are tagged: a tag that fails retries as a duplicate,
+  // which records none.
+  if (stored === 'stored')
+    await earned(s, sub, { pk: `USER#${sub.user_id}`, sk: `NOTE#${day}#${mail.messageId}`, ...note }, received(mail));
   // A retry may meet an owner-edited/deleted note. Keep only media still named
   // by the existing note; no duplicate retry can attach or retain new files.
   const existing = stored === 'duplicate' ? await s.store.note(sub.user_id, day, mail.messageId) : null,
@@ -338,8 +343,6 @@ export async function file(
     if (stored === 'duplicate' && !retained?.has(m.key)) await s.objects.remove(m.key);
     else await s.objects.tag(m.key, { outcome: 'note' });
   }
-  if (stored === 'stored')
-    await earned(s, sub, { pk: `USER#${sub.user_id}`, sk: `NOTE#${day}#${mail.messageId}`, ...note }, received(mail));
   return [
     'note',
     {

@@ -27,8 +27,8 @@
  *   `photos` (how many that pass described). Never the words.
  * - badge.earned: `badge`, `key`, `name`, `version`, `day`, `note`, from a
  *   save on the web, by an assistant or by email.
- * - import.notes (one a run that imported anything): `app` (dayone),
- *   `notes`, `files`.
+ * - import.notes (one a run that imported anything, even one that stopped
+ *   partway): `app` (dayone), `notes`, `files` (of those notes).
  * - email.sent: `day`, `version`; reminder (one per reminder due that
  *   morning, those past the email's three included): `upcoming`, `when`
  *   (as the email said it), `day`.

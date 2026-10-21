@@ -53,6 +53,37 @@ export async function write(plans: readonly Input[], user: string, s: Services):
       'weather_no_answer'
     ].map((k) => [k, 0])
   );
+  // Files of the notes this run committed, for its activity row.
+  let filed = 0;
+  try {
+    await importAll(plans, user, s, counts, (n) => (filed += n));
+  } finally {
+    // What this run committed, even when it stops partway: a retry skips
+    // those notes, so it could never record them.
+    if (counts.notes)
+      await recordActivity(
+        s.store,
+        user,
+        Date.parse(s.at) / 1000,
+        [
+          {
+            kind: 'import.notes',
+            id: eventId(),
+            fields: { via: 'import', app: dayone.APP, notes: counts.notes, files: filed }
+          }
+        ],
+        s.log
+      );
+  }
+  return counts;
+}
+async function importAll(
+  plans: readonly Input[],
+  user: string,
+  s: Services,
+  counts: Record<string, number>,
+  committedFiles: (n: number) => void
+): Promise<void> {
   const taken = await s.store.noteIds(user),
     imported = await s.store.importedIds(user);
   for (const [plan, read] of plans) {
@@ -112,6 +143,7 @@ export async function write(plans: readonly Input[], user: string, s: Services):
         committed = await s.store.putImportedNote(user, n.date, n.id, item, book, uuid, s.at);
         if (committed) {
           counts.notes!++;
+          committedFiles(files.length);
           done.add(uuid);
           imported.add(uuid);
           taken.add(n.id);
@@ -169,19 +201,4 @@ export async function write(plans: readonly Input[], user: string, s: Services):
       }
     }
   }
-  if (counts.notes)
-    await recordActivity(
-      s.store,
-      user,
-      Date.parse(s.at) / 1000,
-      [
-        {
-          kind: 'import.notes',
-          id: eventId(),
-          fields: { via: 'import', app: dayone.APP, notes: counts.notes, files: counts.files }
-        }
-      ],
-      s.log
-    );
-  return counts;
 }

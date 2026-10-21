@@ -16,7 +16,7 @@
 #   scripts/release.sh --check-arguments [phase] [options]   validate, then stop
 #
 # Ordinary deploys omit native parameter overrides, so CloudFormation keeps the
-# current flags, artifact versions and live/rollback pins. In GitHub Actions
+# current artifact versions, build ids and live/rollback pins. In GitHub Actions
 # the log is public: identifiers are masked, and the stack outputs and native
 # parameters go only to the private log in the receipts bucket (logs/).
 set -euo pipefail
@@ -167,8 +167,7 @@ validate_native_parameters() {
   node --input-type=module - "${NATIVE_PARAMETER_FILES[@]}" > "$WORK/native-parameters.args" <<'JS'
 import { readFile } from 'node:fs/promises';
 const names = ['Sender', 'Inbound', 'Events', 'Transcribe', 'Describe', 'Export', 'Capture'];
-const allowed = new Set(['NativeWebFunctionsEnabled', 'NativeHttpRouting', 'NativeOriginPoliciesReady', 'NativeWorkersEnabled',
-  'NativeWorkerAliasesReady', 'NativeWorkerBuildId', ...['App', 'Mcp'].flatMap(name => ['CodeKey', 'CodeVersion', 'BuildId', 'LiveRevisionId', 'RollbackRevisionId'].map(field => `Native${name}${field}`)),
+const allowed = new Set(['NativeWorkerBuildId', ...['App', 'Mcp'].flatMap(name => ['CodeKey', 'CodeVersion', 'BuildId', 'LiveRevisionId', 'RollbackRevisionId'].map(field => `Native${name}${field}`)),
   ...names.flatMap(name => ['NodeCodeKey', 'NodeCodeVersion', 'NodeCodeSha256', 'NativeLiveVersion'].map(field => name + field))]);
 const parameters = new Map();
 for (const file of process.argv.slice(2)) {

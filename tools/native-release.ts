@@ -67,6 +67,11 @@ export async function main(args: string[], deps: { store: ReceiptStore; platform
     return value;
   };
   const platform: Platform = deps.platform ?? ((phase) => runPlatform(phase, store));
+  // A phase's parameters are pins and versions only. Intents recorded by the
+  // tooling before 2026-10-20 also carry stack flags since retired, which a
+  // comparison leaves out.
+  const pinned = (target: Record<string, string>) =>
+    Object.fromEntries(Object.entries(target).filter(([key]) => /(RevisionId|NativeLiveVersion)$/.test(key)));
   const same = (left: Record<string, string>, right: Record<string, string>) =>
     Object.keys(left).length === Object.keys(right).length &&
     Object.entries(left).every(([key, value]) => right[key] === value);
@@ -234,7 +239,6 @@ export async function main(args: string[], deps: { store: ReceiptStore; platform
     if (existingPromotion) throw new Error('Promotion intent already exists; resume promotion or rollback');
     const { pins } = await platform('prepare');
     if (
-      parameters.NativeHttpRouting === 'native' &&
       parameters.NativeAppBuildId === build &&
       parameters.NativeMcpBuildId === build &&
       ['App', 'Mcp'].every(
@@ -245,22 +249,16 @@ export async function main(args: string[], deps: { store: ReceiptStore; platform
     if (existingPreparation) {
       if (!existingPreparation.pins || !same(pins, existingPreparation.pins))
         throw new Error('HTTP endpoints changed since preparation');
-      result = { ...existingPreparation.pins, NativeHttpRouting: parameters.NativeHttpRouting ?? 'legacy' };
+      result = { ...existingPreparation.pins };
     } else {
       base.pins = pins;
       await save(preparedName, base);
-      result = { ...pins, NativeHttpRouting: parameters.NativeHttpRouting ?? 'legacy' };
+      result = { ...pins };
     }
   } else if (command === 'prepare-workers') {
     if (existingPromotion) throw new Error('Promotion intent already exists; resume promotion or rollback');
-    if (
-      parameters.NativeWorkerAliasesReady !== 'true' &&
-      (parameters.WorkerAliasesReady !== 'true' || parameters.EventsAliasesReady !== 'true')
-    )
-      throw new Error('Complete Python aliases must be active first');
     const current = await aliases();
     if (
-      parameters.NativeWorkerAliasesReady === 'true' &&
       parameters.NativeWorkerBuildId === build &&
       names.every((name) => current[name]!.version === outputs[`${name}NativeCandidateVersion`])
     )
@@ -271,41 +269,36 @@ export async function main(args: string[], deps: { store: ReceiptStore; platform
       base.aliases = existingPreparation.aliases;
     } else {
       base.aliases = current;
-      if (parameters.NativeWorkerAliasesReady === 'true')
-        for (const name of names) {
-          const live = current[name]!;
-          const config = await lambda.send(
-            new GetFunctionConfigurationCommand({ FunctionName: live.functionName, Qualifier: live.version })
-          );
-          const liveBuild = config.Environment?.Variables?.APP_VERSION;
-          if (config.Runtime !== 'nodejs24.x' || !liveBuild || !/^[a-f0-9]{40}$/.test(liveBuild) || !config.CodeSha256)
-            throw new Error(`Incomplete prior native release metadata ${name}`);
-          live.build = liveBuild;
-          live.sha = config.CodeSha256;
-        }
+      // The serving versions' own build and code hash, so a rollback can
+      // verify exactly what it restores.
+      for (const name of names) {
+        const live = current[name]!;
+        const config = await lambda.send(
+          new GetFunctionConfigurationCommand({ FunctionName: live.functionName, Qualifier: live.version })
+        );
+        const liveBuild = config.Environment?.Variables?.APP_VERSION;
+        if (config.Runtime !== 'nodejs24.x' || !liveBuild || !/^[a-f0-9]{40}$/.test(liveBuild) || !config.CodeSha256)
+          throw new Error(`Incomplete prior release metadata ${name}`);
+        live.build = liveBuild;
+        live.sha = config.CodeSha256;
+      }
       await unchanged(current);
       await save(preparedName, base);
     }
     for (const name of names) result[`${name}NativeLiveVersion`] = base.aliases[name]!.version;
-    if ((existingPreparation ?? base).parameters.NativeWorkerAliasesReady !== 'true')
-      result.NativeWorkerAliasesReady = 'false';
   } else if (command === 'promote-workers') {
     const prepared = await load(preparedName);
-    if (!prepared.aliases || parameters.NativeWorkersEnabled !== 'true' || parameters.NativeWorkerBuildId !== build)
+    if (!prepared.aliases || parameters.NativeWorkerBuildId !== build)
       throw new Error('Prepare and publish this exact worker build first');
     for (const name of names) result[`${name}NativeLiveVersion`] = required(outputs, `${name}NativeCandidateVersion`);
-    result.NativeWorkerAliasesReady = 'true';
-    result.NativeWorkersEnabled = 'true';
-    if (existingPromotion && (!existingPromotion.target || !same(result, existingPromotion.target)))
+    if (existingPromotion && (!existingPromotion.target || !same(result, pinned(existingPromotion.target))))
       throw new Error('Published candidates differ from immutable promotion intent');
     const current = await aliases();
-    const completed =
-      parameters.NativeWorkerAliasesReady === 'true' &&
-      names.every(
-        (name) =>
-          current[name]!.version === result[`${name}NativeLiveVersion`] &&
-          current[name]!.functionName === prepared.aliases![name]!.functionName
-      );
+    const completed = names.every(
+      (name) =>
+        current[name]!.version === result[`${name}NativeLiveVersion`] &&
+        current[name]!.functionName === prepared.aliases![name]!.functionName
+    );
     if (!completed) await unchanged(prepared.aliases);
     else if (!existingPromotion) throw new Error('Candidate already serves without this release intent');
     for (const name of names)
@@ -325,31 +318,20 @@ export async function main(args: string[], deps: { store: ReceiptStore; platform
     }
   } else if (command === 'promote-http') {
     const prepared = await load(preparedName);
-    if (
-      !prepared.pins ||
-      parameters.NativeWebFunctionsEnabled !== 'true' ||
-      ['App', 'Mcp'].some((name) => parameters[`Native${name}BuildId`] !== build)
-    )
+    if (!prepared.pins || ['App', 'Mcp'].some((name) => parameters[`Native${name}BuildId`] !== build))
       throw new Error('Prepare and publish this exact HTTP build first');
     if ((await platform('policy-verify')).confirmed !== true)
       throw new Error('HTTP origin policy verification was not confirmed');
     const now = (await platform('prepare')).pins;
     for (const name of ['App', 'Mcp'] as const) {
       result[`Native${name}LiveRevisionId`] = required(outputs, `Native${name}CandidateRevisionId`);
-      result[`Native${name}RollbackRevisionId`] =
-        prepared.pins[`Native${name}LiveRevisionId`] ??
-        existingPromotion?.target?.[`Native${name}RollbackRevisionId`] ??
-        required(now, `Native${name}LiveRevisionId`);
+      result[`Native${name}RollbackRevisionId`] = required(prepared.pins, `Native${name}LiveRevisionId`);
       await httpCandidate(name, result[`Native${name}LiveRevisionId`]!);
     }
-    result.NativeHttpRouting = 'native';
-    result.NativeOriginPoliciesReady = 'true';
-    if (existingPromotion && (!existingPromotion.target || !same(result, existingPromotion.target)))
+    if (existingPromotion && (!existingPromotion.target || !same(result, pinned(existingPromotion.target))))
       throw new Error('Published candidates differ from immutable promotion intent');
-    const targetPins = Object.fromEntries(Object.entries(result).filter(([key]) => /RevisionId$/.test(key)));
-    const completed = parameters.NativeHttpRouting === 'native' && same(now, targetPins);
-    if (!completed && Object.keys(prepared.pins).length && !same(now, prepared.pins))
-      throw new Error('HTTP endpoints changed since preparation');
+    const completed = same(now, result);
+    if (!completed && !same(now, prepared.pins)) throw new Error('HTTP endpoints changed since preparation');
     if (completed && !existingPromotion) throw new Error('Candidate already serves without this release intent');
     if (!same(now, (await platform('prepare')).pins)) throw new Error('HTTP endpoints changed during verification');
     if (!existingPromotion) {
@@ -363,76 +345,48 @@ export async function main(args: string[], deps: { store: ReceiptStore; platform
       rollback = await optional(rollbackName);
     if (!previous || previous.build !== build || !promotion.target)
       throw new Error('No recorded prior release for this build');
-    // The drain parameter marks retired legacy code, even while old grants
-    // still drain. Once removed, absent legacy alias flags plus enabled/ready
-    // native workers identify the permanent native-only stack.
-    // Initial adoption receipts can still point at Python/HTTP API baselines;
-    // refuse those before writing rollback intent or emitting CFN overrides.
-    const legacyRetired =
-      Object.hasOwn(parameters, 'NativeLegacyDrainPending') ||
-      (!Object.hasOwn(parameters, 'WorkerAliasesReady') &&
-        !Object.hasOwn(parameters, 'EventsAliasesReady') &&
-        parameters.NativeWorkersEnabled === 'true' &&
-        parameters.NativeWorkerAliasesReady === 'true');
-    if (
-      legacyRetired &&
-      (kind === 'http'
-        ? previous.parameters.NativeHttpRouting !== 'native'
-        : previous.parameters.NativeWorkerAliasesReady !== 'true')
-    )
-      throw new Error('Legacy rollback is unavailable after native-only retirement; use a recorded native baseline');
     if (kind === 'http') {
       if (['App', 'Mcp'].some((name) => parameters[`Native${name}BuildId`] !== build))
         throw new Error('Current HTTP build differs from rollback intent');
-      result =
-        previous.parameters.NativeHttpRouting !== 'native'
-          ? { NativeHttpRouting: 'legacy' }
-          : { ...previous.pins, NativeHttpRouting: 'native', NativeOriginPoliciesReady: 'true' };
+      if (!['App', 'Mcp'].every((name) => previous.pins?.[`Native${name}LiveRevisionId`]))
+        throw new Error('The recorded baseline has no serving revisions to restore');
+      result = { ...previous.pins! };
       const current = (await platform('prepare')).pins;
-      const targetPins = Object.fromEntries(
-        Object.entries(promotion.target).filter(([key]) => /RevisionId$/.test(key))
-      );
-      const restoredPins = previous.parameters.NativeHttpRouting === 'native' ? previous.pins! : targetPins;
       const recovered =
-        Object.entries(result).every(([key, value]) => parameters[key] === value) && same(current, restoredPins);
-      if (!recovered && (parameters.NativeHttpRouting !== 'native' || !same(current, targetPins)))
+        Object.entries(result).every(([key, value]) => parameters[key] === value) && same(current, result);
+      if (!recovered && !same(current, pinned(promotion.target)))
         throw new Error('HTTP routing changed since this promotion; refusing rollback');
-      if (previous.parameters.NativeHttpRouting === 'native' && (await platform('policy-verify')).confirmed !== true)
+      if ((await platform('policy-verify')).confirmed !== true)
         throw new Error('HTTP origin policy verification was not confirmed');
     } else {
       if (!previous.aliases || parameters.NativeWorkerBuildId !== build)
         throw new Error('Current worker build differs from rollback intent');
       for (const name of names) result[`${name}NativeLiveVersion`] = previous.aliases[name]!.version;
-      result.NativeWorkerAliasesReady = previous.parameters.NativeWorkerAliasesReady === 'true' ? 'true' : 'false';
       const current = await aliases();
-      const recovered =
-        parameters.NativeWorkerAliasesReady === result.NativeWorkerAliasesReady &&
-        names.every(
-          (name) =>
-            current[name]!.version === result[`${name}NativeLiveVersion`] &&
-            current[name]!.functionName === previous.aliases![name]!.functionName
-        );
+      const recovered = names.every(
+        (name) =>
+          current[name]!.version === result[`${name}NativeLiveVersion`] &&
+          current[name]!.functionName === previous.aliases![name]!.functionName
+      );
       if (
         !recovered &&
-        (parameters.NativeWorkerAliasesReady !== 'true' ||
-          names.some(
-            (name) =>
-              current[name]!.version !== promotion.target![`${name}NativeLiveVersion`] ||
-              current[name]!.functionName !== previous.aliases![name]!.functionName
-          ))
+        names.some(
+          (name) =>
+            current[name]!.version !== promotion.target![`${name}NativeLiveVersion`] ||
+            current[name]!.functionName !== previous.aliases![name]!.functionName
+        )
       )
         throw new Error('Worker aliases changed since this promotion; refusing rollback');
-      if (previous.parameters.NativeWorkerAliasesReady === 'true')
-        for (const name of names)
-          await candidate(
-            name,
-            previous.aliases[name]!.version,
-            previous.aliases[name]!.functionName,
-            required({ build: previous.aliases[name]!.build ?? '' }, 'build'),
-            required({ sha: previous.aliases[name]!.sha ?? '' }, 'sha')
-          );
+      for (const name of names)
+        await candidate(
+          name,
+          previous.aliases[name]!.version,
+          previous.aliases[name]!.functionName,
+          required({ build: previous.aliases[name]!.build ?? '' }, 'build'),
+          required({ sha: previous.aliases[name]!.sha ?? '' }, 'sha')
+        );
     }
-    if (rollback && (!rollback.target || !same(rollback.target, result)))
+    if (rollback && (!rollback.target || !same(pinned(rollback.target), result)))
       throw new Error('Rollback differs from immutable prior intent');
     if (!rollback) {
       base.previous = promotion;

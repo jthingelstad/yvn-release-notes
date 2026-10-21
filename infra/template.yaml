@@ -53,16 +53,6 @@ Parameters:
     AllowedPattern: ^arn:[^:]+:events:[^:]+:[0-9]{12}:rule/.+$
     Description: Existing transcription-completion rule ARN, read from control-plane metadata; the rule itself keeps its physical name.
 
-  NativeWorkersEnabled:
-    Type: String
-    Default: "true"
-    AllowedValues: ["true"]
-    Description: Native Node 24 worker runtime is permanent; publication uses protected artifacts and explicit live version pins.
-  NativeWorkerAliasesReady:
-    Type: String
-    Default: "true"
-    AllowedValues: ["true"]
-    Description: Native live aliases are permanent; use explicit last-good native version pins for rollback.
   NativeWorkerBuildId:
     Type: String
     MinLength: 1
@@ -195,21 +185,6 @@ Parameters:
     AllowedPattern: '^[1-9][0-9]*$'
     Description: Explicit serving native version pin, preserved while a complete candidate is published.
 
-  NativeWebFunctionsEnabled:
-    Type: String
-    Default: "true"
-    AllowedValues: ["true"]
-    Description: Private native HTTP compute is permanent; retain immutable source versions for every referenced revision.
-  NativeHttpRouting:
-    Type: String
-    Default: native
-    AllowedValues: [native]
-    Description: Change only after tools/web-platform.ts has installed and verified both complete CloudFront endpoint policies.
-  NativeOriginPoliciesReady:
-    Type: String
-    Default: "true"
-    AllowedValues: ["true"]
-    Description: Explicit release receipt gate; CloudFormation cannot own Web Function policies with the current registry schema.
   NativeAppCodeKey:
     Type: String
     MinLength: 1
@@ -260,20 +235,6 @@ Parameters:
     MinValue: 1
     MaxValue: 64
     Description: Upper bound per environment, not a guaranteed admission capacity.
-
-Rules:
-  NativeRoutingRequiresVerifiedPolicies:
-    Assertions:
-      - Assert: !Equals [!Ref NativeWorkersEnabled, "true"]
-        AssertDescription: Native worker code remains enabled after legacy source retirement.
-      - Assert: !Equals [!Ref NativeWorkerAliasesReady, "true"]
-        AssertDescription: Stable worker aliases must retain explicit native version targets.
-      - Assert: !Equals [!Ref NativeWebFunctionsEnabled, "true"]
-        AssertDescription: Native private HTTP compute remains enabled after API Gateway retirement.
-      - Assert: !Equals [!Ref NativeHttpRouting, native]
-        AssertDescription: CloudFront must use its private native origins after API Gateway retirement.
-      - Assert: !Equals [!Ref NativeOriginPoliciesReady, "true"]
-        AssertDescription: Install and read back both endpoint resource policies before moving CloudFront origins.
 
 Conditions:
   HasAdmin: !Not [!Equals [!Ref AdminUserId, ""]]
@@ -427,16 +388,12 @@ Resources:
           return request;
         }
 
-  # Cleanup is applied only after native HTTP/worker parity, verified explicit
-  # last-good native pins, both stream UUID read-backs and accepted-request drain.
-  # NativeLegacyDrainPending keeps only old grants/configs, never old code. Retire
-  # it after documented source retry + Lambda queue windows, or proven empty
-  # count-only delivery evidence. Retained Python versions stay physical snapshots
-  # for a separately reviewed retirement; they are no longer CF-managed resources.
   # Resource policies have one owner: tools/web-platform.ts. The current
   # AWS::Lambda::ResourcePolicy registry schema excludes web-function ARNs.
-  # The release installs exact distribution/live-endpoint permissions, reads
-  # them back, and records its CAS revision before NativeHttpRouting=native.
+  # An HTTP publication installs the exact distribution/live-endpoint
+  # permissions and reads them back, recording their CAS revision, before any
+  # activation moves the live endpoint. Old Python function versions may remain
+  # as retained snapshots outside the stack; they are never rollback targets.
   NativeAppFunction:
     Type: AWS::Lambda::WebFunction
     Properties:

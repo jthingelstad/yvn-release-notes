@@ -1,22 +1,10 @@
-/** The receipts bucket, deploy lock, migration and release identity against a
- * fictional S3; no AWS calls, credentials or real receipts. */
+/** The receipts bucket, deploy lock and release identity against a fictional
+ * S3; no AWS calls, credentials or real receipts. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { STSClient } from '@aws-sdk/client-sts';
-import {
-  MIGRATION_MARKER,
-  MemoryReceiptStore,
-  S3DeployLock,
-  S3ReceiptStore,
-  createReceipt,
-  readReceipt,
-  writeReceipt
-} from '../../tools/receipt-store.ts';
-import { checkMigration, migrateReceipts } from '../../tools/migrate-receipts.ts';
+import { S3DeployLock, S3ReceiptStore, createReceipt, readReceipt, writeReceipt } from '../../tools/receipt-store.ts';
 import { allowedCaller } from '../../tools/release-identity.ts';
 import { main } from '../../tools/release-cli.ts';
 
@@ -103,51 +91,6 @@ test('the deploy lock is taken only when free, never stolen, and released only b
   await assert.rejects(lock.release(runId), /does not hold/);
   const next = await other.acquire('GitHub Actions run 7', 'b'.repeat(40));
   assert.notEqual(next, runId);
-});
-
-test('migration copies only receipt files byte for byte, repeats safely, and the check proves it', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'yvn-migrate-test-'));
-  try {
-    const receipts = {
-      [`${'a'.repeat(40)}-http-prepared.json`]: '{\n  "schema": 1\n}\n',
-      'app-policy.json': '{"state":"installed"}\n',
-      'artifacts-fictional.json': '{}\n'
-    };
-    for (const [name, body] of Object.entries(receipts)) await writeFile(join(dir, name), body);
-    await mkdir(join(dir, 'deploy.lock'));
-    await writeFile(join(dir, '.fictional.tmp'), 'partial');
-    await writeFile(join(dir, 'notes.txt'), 'not a receipt');
-    const store = new MemoryReceiptStore(),
-      marker = new MemoryReceiptStore();
-    assert.equal((await checkMigration(dir, store, marker)).marker, 'missing');
-    assert.deepEqual(await migrateReceipts(dir, store, marker), {
-      receipts: 3,
-      copied: 3,
-      alreadyPresent: 0,
-      skipped: 3
-    });
-    for (const [name, body] of Object.entries(receipts)) assert.equal(store.objects.get(name)?.toString(), body);
-    assert.ok(marker.objects.has(MIGRATION_MARKER));
-    assert.deepEqual(await checkMigration(dir, store, marker), {
-      ok: true,
-      receipts: 3,
-      matching: 3,
-      missing: 0,
-      different: 0,
-      skipped: 3,
-      marker: 'ok'
-    });
-    assert.equal((await migrateReceipts(dir, store, marker)).alreadyPresent, 3);
-    store.objects.set('app-policy.json', Buffer.from('{"state":"deleted"}\n'));
-    const changed = await checkMigration(dir, store, marker);
-    assert.equal(changed.ok, false);
-    assert.equal(changed.different, 1);
-    await assert.rejects(migrateReceipts(dir, store, marker), /differs from the local copy/);
-    await writeFile(join(dir, 'artifacts-later.json'), '{}\n');
-    assert.equal((await checkMigration(dir, store, marker)).marker, 'stale');
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
 });
 
 test('the GitHub deploy role releases only inside GitHub Actions; nothing else does', () => {

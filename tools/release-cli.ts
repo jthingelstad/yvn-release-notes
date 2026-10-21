@@ -8,8 +8,7 @@
  *   lock acquire --commit SHA | lock release RUN_ID
  *   native-release PHASE --commit SHA                  tools/native-release.ts
  *   artifacts --kind http|workers --artifacts O --commit SHA
- *   platform prepare|policy-install|policy-verify|policy-remove
- *   migrate-receipts --from DIR [--check]              once, on the Mac
+ *   platform prepare|policy-install|policy-verify
  *
  * Commands that write receipts need the deploy lock: the run id in
  * RELEASE_LOCK (scripts/release.sh holds it for the whole run), or, alone, a
@@ -23,16 +22,14 @@ import { packageRelease } from './package-native.ts';
 import { artifactsChanged, uploadArtifacts } from './native-artifacts.ts';
 import { main as nativeRelease } from './native-release.ts';
 import { platformCommands, runPlatform, type PlatformCommand } from './web-platform.ts';
-import { checkMigration, migrateReceipts } from './migrate-receipts.ts';
-import { MIGRATION_MARKER, S3DeployLock, S3ReceiptStore, receiptsBucket } from './receipt-store.ts';
+import { S3DeployLock, S3ReceiptStore, receiptsBucket } from './receipt-store.ts';
 import { releaseIdentity, region, stackName } from './release-identity.ts';
 
-function options(args: string[], allowed: string[], flags: string[] = []) {
+function options(args: string[], allowed: string[]) {
   const values: Record<string, string> = {};
   for (let i = 0; i < args.length; i++) {
     const key = args[i]!;
-    if (flags.includes(key) && !(key in values)) values[key] = 'true';
-    else if (allowed.includes(key) && args[i + 1] && !(key in values)) values[key] = args[++i]!;
+    if (allowed.includes(key) && args[i + 1] && !(key in values)) values[key] = args[++i]!;
     else throw new Error('Invalid release option');
   }
   return values;
@@ -58,16 +55,13 @@ async function cloud() {
     bucket = receiptsBucket(account);
   return {
     store: new S3ReceiptStore(s3, bucket, account),
-    marker: new S3ReceiptStore(s3, bucket, account, 'migration/'),
     lock: new S3DeployLock(s3, bucket, account)
   };
 }
 
-/** Receipt-writing commands: the migration must be done, and the lock held. */
+/** Receipt-writing commands hold the deploy lock. */
 async function locked<T>(commit: string, run: (store: S3ReceiptStore) => Promise<T>) {
-  const { store, marker, lock } = await cloud();
-  if (!(await marker.readRaw(MIGRATION_MARKER)))
-    throw new Error('The release receipts are not in the receipts bucket yet; run migrate-receipts first');
+  const { store, lock } = await cloud();
   const held = process.env.RELEASE_LOCK;
   if (held) {
     await lock.assertHeld(held);
@@ -133,23 +127,6 @@ export async function main(argv: string[]): Promise<string> {
     if (!platformCommands.includes(step as PlatformCommand) || rest.length) throw new Error('Invalid platform step');
     const result = await locked('0'.repeat(40), (store) => runPlatform(step as PlatformCommand, store));
     return JSON.stringify(step === 'prepare' ? { pins: result.pins } : { confirmed: result.confirmed });
-  }
-  if (command === 'migrate-receipts') {
-    if (process.env.GITHUB_ACTIONS === 'true') throw new Error('The receipt migration runs on the Mac');
-    const o = options(args, ['--from'], ['--check']);
-    const from = absolute(o['--from']);
-    const { store, marker, lock } = await cloud();
-    if (o['--check']) {
-      const result = await checkMigration(from, store, marker);
-      if (!result.ok) process.exitCode = 1;
-      return JSON.stringify(result);
-    }
-    const runId = await lock.acquire(owner(), '0'.repeat(40));
-    try {
-      return JSON.stringify(await migrateReceipts(from, store, marker));
-    } finally {
-      await lock.release(runId);
-    }
   }
   throw new Error('Unknown release command');
 }

@@ -16,7 +16,6 @@ import {
 import { randomUUID } from 'node:crypto';
 
 export const receiptsBucket = (account: string) => `yvn-rn-deploy-receipts-${account}`;
-export const MIGRATION_MARKER = 'complete.json';
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,200}\.json$/;
 
 export interface ReceiptStore {
@@ -83,9 +82,9 @@ export class S3ReceiptStore implements ReceiptStore {
   constructor(
     private readonly s3: Send,
     private readonly bucket: string,
-    private readonly account: string,
-    private readonly prefix = 'receipts/'
+    private readonly account: string
   ) {}
+  private readonly prefix = 'receipts/';
   async readRaw(name: string) {
     return (await getObject(this.s3, this.bucket, this.account, this.prefix + checkName(name)))?.body;
   }

@@ -34,7 +34,8 @@ async function sendLink(page, email) {
   await page.getByRole('button', { name: 'Send me a link' }).click();
   expect((await sent).postDataJSON(), 'the sign-in email request carries the Turnstile token').toEqual({
     email,
-    turnstile_token: STUB_TOKEN
+    turnstile_token: STUB_TOKEN,
+    turnstile_wait_ms: expect.any(Number)
   });
   await expect(page.locator('#check')).toBeVisible();
 }

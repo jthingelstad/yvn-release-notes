@@ -1478,6 +1478,15 @@ Resources:
                 Action: s3:DeleteObject
                 Resource: !Sub "${MailBucket.Arn}/exports/*"
               - Effect: Allow
+                # Deleting the account lists what is left under the owner's
+                # media/ and exports/ prefixes, to delete it too
+                # (accounts.ts deleteAccount). Only those prefixes.
+                Action: s3:ListBucket
+                Resource: !GetAtt MailBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix: ["media/*", "exports/*"]
+              - Effect: Allow
                 # Only the stable qualified worker entry point.
                 Action: lambda:InvokeFunction
                 Resource: !Ref ExportAlias

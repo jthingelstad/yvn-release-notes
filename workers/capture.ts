@@ -26,8 +26,12 @@ import { ApiError } from '../packages/backend/sessions.ts';
 import { search, type City } from '../packages/backend/places.ts';
 import { prepareUpcomingBatch, type UpcomingBatch, type UpcomingChange } from '../packages/backend/upcoming.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
+import { badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
+import { unlockedBy } from '../packages/backend/badges.ts';
+import type { Unlocked } from '../packages/domain/badges.ts';
 import type { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import {
+  activityLog,
   failure,
   fingerprint,
   object,
@@ -42,6 +46,7 @@ export interface CaptureStore extends ReaderStore {
   agentProof(family: OAuthRow, now: number, scope: string): Ops;
   familyProof(family: OAuthRow, now: number, scope: string): Ops;
   agentReceipts(receipt: OAuthRow, audit: OAuthRow, rate: OAuthRow, previous: OAuthRow | null, now: number): Ops;
+  putActivity(user: string, rows: readonly OAuthRow[]): Promise<boolean>;
   captureCommit(
     note: OAuthRow,
     old: OAuthRow | null,
@@ -191,8 +196,10 @@ export async function writeCapture(
         note_id: String(note.sk).split('#').slice(2).join('#'),
         expires_at: context.now + 14 * 86400
       };
-    if (await context.store.captureCommit(note, old, newReceipt, audit, rate, previous, family, context.now))
+    if (await context.store.captureCommit(note, old, newReceipt, audit, rate, previous, family, context.now)) {
+      await recordNote(context, family, note, old, day, reader.profile, reader.today, options.log);
       return { note: shown, replayed: false };
+    }
     const current = await context.store.mcpGet('OAUTHFAMILY#' + fid),
       profile = await context.store.mcpProfile(uid);
     if (
@@ -205,6 +212,42 @@ export async function writeCapture(
       throw new ToolError('scope_required', 'This connection changed or was disconnected; reconnect before writing.');
   }
   throw new ToolError('busy', 'Try again shortly with exactly the same idempotency_key and arguments.');
+}
+/** A saved note and the badges it earned, in the owner's activity log; the
+ * badges are not marked seen, so the email still tells of them. */
+async function recordNote(
+  context: CaptureContext,
+  family: OAuthRow,
+  note: OAuthRow,
+  old: OAuthRow | null,
+  day: string,
+  profile: OAuthRow,
+  today: string,
+  log?: SafeLog
+): Promise<void> {
+  const uid = String(family.user_id),
+    id = String(note.sk).split('#').slice(2).join('#');
+  let unlocked: Unlocked[] = [];
+  if (profile.badges !== false)
+    try {
+      unlocked = await unlockedBy(context.store, uid, profile, today, note, old);
+    } catch {
+      (log ?? ((f) => console.log(JSON.stringify(f))))({ event: 'badges-error', user: uid, date: day });
+    }
+  await recordActivity(
+    context.store,
+    uid,
+    context.now,
+    [
+      {
+        kind: old ? 'note.edited' : 'note.added',
+        id,
+        fields: { via: 'assistant', client: family.client_name, day, note: id, version: note.version }
+      },
+      ...badgeEvents(unlocked, 'assistant', day, id, family.client_name)
+    ],
+    activityLog(context.now, log)
+  );
 }
 /** What each refusal means to an agent, by the API's own error codes. */
 const HINTS: Record<string, string> = {
@@ -228,7 +271,8 @@ export async function writeUpcoming(
   context: CaptureContext,
   family: OAuthRow,
   name: string,
-  args: Arguments
+  args: Arguments,
+  options: CaptureOptions = {}
 ): Promise<OAuthRow> {
   if (!String(family.scope).split(/\s+/).includes('upcoming'))
     throw new ToolError(
@@ -330,7 +374,16 @@ export async function writeUpcoming(
       ...context.store.familyProof(family, context.now, 'upcoming'),
       ...context.store.agentReceipts(newReceipt, audit, rate, previous, context.now)
     ]);
-    if (outcome.ok) return { ...shown, ...flag, replayed: false };
+    if (outcome.ok) {
+      await recordActivity(
+        context.store,
+        uid,
+        context.now,
+        upcomingEvents(changes, 'assistant', family.client_name),
+        activityLog(context.now, options.log)
+      );
+      return { ...shown, ...flag, replayed: false };
+    }
     const current = await context.store.mcpGet('OAUTHFAMILY#' + fid),
       profile = await context.store.mcpProfile(uid);
     if (
@@ -364,7 +417,7 @@ export async function captureNote(
       throw new ToolError('unknown_tool', 'Only the write tools are supported here.');
     validate(args, TOOLS.find((t) => t.name === name)!.inputSchema);
     return await (UPCOMING_TOOLS.has(name)
-      ? writeUpcoming(context, family, name, args)
+      ? writeUpcoming(context, family, name, args, options)
       : writeCapture(context, family, name, args, options));
   } catch (error) {
     if (error instanceof ToolError) return { error: error.code, next_step: error.nextStep };

@@ -10,6 +10,21 @@ import { validCode, digest, clearCookie } from './auth.ts';
 import { keys, thumbKeys } from './media.ts';
 import { OAuthService } from './oauth.ts';
 import { badges } from './badges.ts';
+import { eventId, recordActivity } from './activity.ts';
+import type { ActivityEvent } from '../domain/activity.ts';
+/** The settings a change records, each with what it reads as when unset. */
+const SETTINGS: Record<string, unknown> = {
+  send_time: null,
+  tz: null,
+  city: null,
+  region: null,
+  country: null,
+  transcribe: false,
+  describe: false,
+  badges: true
+};
+const record = (service: SessionService, user: string, events: ActivityEvent[]) =>
+  recordActivity(service.context.store, user, service.context.now, events, (f) => service.log(f));
 export function replyToken(): string {
   const alphabet = 'abcdefghijklmnopqrstuvwxyz234567',
     bytes = randomBytes(15);
@@ -71,6 +86,7 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
         service.log({ event: 'first-email-failed', user: uid });
       }
       await service.tally('signups');
+      await record(service, uid, [{ kind: 'account.created', id: uid, fields: { via: 'web' } }]);
     }
     if (!(await store.claimVerifiedSession(String(s.hash), uid, email, ctx.now, Number(s.expires_at))))
       reject(401, 'signed-out');
@@ -120,6 +136,16 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
   const remove = fields.status ? ['stopped_reason', 'stopped_at'] : [];
   await ctx.store.updateProfile(uid, fields, remove);
   service.log({ event: 'settings', user: uid });
+  const changes = Object.entries(SETTINGS)
+    .filter(([k]) => Object.hasOwn(fields, k))
+    .map(([field, unset]) => ({ field, from: p[field] ?? unset, to: fields[field] ?? unset }))
+    .filter((c) => c.from !== c.to);
+  await record(service, uid, [
+    ...(changes.length ? [{ kind: 'settings.changed', id: eventId(), fields: { via: 'web', changes } }] : []),
+    ...(fields.status && p.status === 'stopped'
+      ? [{ kind: 'status.restarted', id: eventId(), fields: { via: 'web', reason: p.stopped_reason ?? null } }]
+      : [])
+  ]);
   return profileView(
     Object.fromEntries(Object.entries({ ...p, ...fields }).filter(([k]) => !remove.includes(k))),
     ctx.now,
@@ -136,6 +162,9 @@ export async function changePause(service: SessionService, b: Item | null): Prom
     if (start && through >= today) {
       const ended = addDays(today, -1);
       await ctx.store.endPause(uid, start, start <= ended ? ended : null);
+      await record(service, uid, [
+        { kind: 'pause.ended', id: start, fields: { via: 'web', from: start, through: start <= ended ? ended : null } }
+      ]);
     }
     delete p.pause_from;
     delete p.pause_through;
@@ -157,6 +186,7 @@ export async function changePause(service: SessionService, b: Item | null): Prom
   if (current && current !== start) await ctx.store.endPause(uid, current, null);
   await ctx.store.putPause(uid, start, through, iso(ctx.now));
   service.log({ event: 'pause', user: uid, days: daysBetween(start, through) + 1 });
+  await record(service, uid, [{ kind: 'pause.set', id: start, fields: { via: 'web', from: start, through } }]);
   return profileView({ ...p, pause_from: start, pause_through: through }, ctx.now, ctx.inboundDomain);
 }
 const sessionsOf = (items: Item[]): Key[] =>

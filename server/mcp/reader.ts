@@ -5,7 +5,14 @@ import { newToken } from '../../packages/backend/auth.ts';
 import { type OAuthContext, type OAuthRow, type OAuthStore } from '../../packages/backend/oauth.ts';
 import { segments, type Link } from '../../packages/backend/links.ts';
 import { localDay, localStart, validDay, validTimezone, parseDay, addDays } from '../../packages/domain/dates.ts';
-import { ACTIVITY, activityKey, activityTime, agentActivityView, familyOf } from '../../packages/domain/activity.ts';
+import {
+  ACTIVITY,
+  activityKey,
+  activityTime,
+  agentActivityView,
+  familyOf,
+  titled
+} from '../../packages/domain/activity.ts';
 import { computeVersion, releaseAge, releaseName, releaseSpan, sameDayBefore } from '../../packages/domain/version.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { collectedOn, evaluateBadges, releaseBadges } from '../../packages/domain/badges.ts';
@@ -370,7 +377,10 @@ export class Reader {
       }
     }
     const entries: OAuthRow[] = [],
-      lower = from ? activityTime(localStart(from, tz)) : undefined;
+      lower = from ? activityTime(localStart(from, tz)) : undefined,
+      // An Upcoming date's title only with the upcoming scope, read now.
+      upcoming = String(this.family.scope).split(/\s+/).includes('upcoming');
+    let titles: Map<string, string> | undefined;
     let size = 0,
       read = 0,
       more = false;
@@ -383,7 +393,9 @@ export class Reader {
       });
       for (const row of page.rows) {
         if (!kinds || kinds.has(familyOf(String(row.kind)))) {
-          const view = agentActivityView(row),
+          if (upcoming && row.upcoming && !titles)
+            titles = new Map((await this.context.store.upcomingEntries(this.uid)).map((e) => [e.id, e.title]));
+          const view = upcoming ? titled(agentActivityView(row), titles ?? new Map()) : agentActivityView(row),
             cost = asciiJson(view).length;
           if (entries.length >= limit || size + cost > 43_000) {
             more = true;

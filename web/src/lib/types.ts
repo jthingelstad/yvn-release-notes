@@ -205,7 +205,31 @@ export interface ReadsActivity extends ActivityHead {
   errors?: number;
   last_at: string;
 }
-export type ActivityEntry = MailActivity | ReadsActivity;
+// Every other row: its kind (note.added, badge.earned, upcoming.changed …)
+// and the fields that kind keeps (packages/domain/activity.ts). An Upcoming
+// row's title is read now: null once the date is gone.
+export interface EventActivity extends ActivityHead {
+  kind: string;
+  via?: 'web' | 'email' | 'assistant' | 'import';
+  client?: string;
+  day?: string;
+  note?: string;
+  version?: string;
+  files?: number;
+  added?: number;
+  name?: string;
+  upcoming?: string;
+  title?: string | null;
+  changes?: { field: string; from: unknown; to: unknown }[];
+  from?: string | null;
+  through?: string | null;
+  to?: string;
+  reason?: string | null;
+  how?: string;
+  format?: string;
+  scopes?: string;
+}
+export type ActivityEntry = MailActivity | ReadsActivity | EventActivity;
 export interface Activity {
   email: string;
   tz: string;

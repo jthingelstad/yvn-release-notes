@@ -402,6 +402,18 @@ Resources:
           MetricName: McpFailures
           MetricValue: "1"
 
+  # A change on the web whose activity row was not written; the change still
+  # stood. Counts only. (The capture worker counts its own in the same metric.)
+  NativeAppActivityUnrecordedMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref NativeAppLogs
+      FilterPattern: '{ $.message.event = "activity-unrecorded" }'
+      MetricTransformations:
+        - MetricNamespace: ReleaseNotes
+          MetricName: ActivityUnrecorded
+          MetricValue: "1"
+
   # An assistant's reads that never reached the activity log; the call still
   # answered. Counts only.
   NativeMcpActivityUnrecordedMetric:

@@ -12,7 +12,20 @@ import { keepDay, placeOf } from '../../packages/backend/weather.ts';
 import { localDay, iso, validTimezone } from '../../packages/domain/dates.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
 import { found } from '../../packages/domain/tags.ts';
+import { badgeEvents, recordActivity } from '../../packages/backend/activity.ts';
+import type { ActivityEvent } from '../../packages/domain/activity.ts';
 import { json, body, dayFrom, textFrom } from './requests.ts';
+/** What an edit or new files earned, for the activity log only: nothing is
+ * marked seen, so the email still tells of it. Nothing with badges off. */
+async function earned(service: SessionService, uid: string, p: Item, saved: Item, old: Item): Promise<Unlocked[]> {
+  if (p.badges === false) return [];
+  try {
+    return await unlockedBy(service.context.store, uid, p, localDay(service.context.now, String(p.tz)), saved, old);
+  } catch {
+    service.log({ event: 'badges-error', user: uid, date: String(saved.sk).split('#')[1]! });
+    return [];
+  }
+}
 async function keepWeather(service: SessionService, uid: string, p: Item, day: string, changed = false): Promise<void> {
   try {
     await keepDay(
@@ -39,7 +52,9 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
     method = service.request.method,
     day = dayFrom(p, args[0], ctx.now),
     id = args[1],
-    links = mediaLinks(ctx.objects, uid);
+    links = mediaLinks(ctx.objects, uid),
+    // The activity log (packages/domain/activity.ts), once a change is saved.
+    record = (events: ActivityEvent[]) => recordActivity(store, uid, ctx.now, events, (f) => service.log(f));
   if (pattern.endsWith('/place')) {
     if (method === 'PUT') {
       const place = chosenPlace((await body(service.request)).place);
@@ -94,6 +109,14 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
       } catch {
         service.log({ event: 'badges-error', user: uid, date: day });
       }
+    await record([
+      {
+        kind: 'note.added',
+        id: noteId,
+        fields: { via: 'web', day, note: noteId, version: item.version, files: files.length }
+      },
+      ...badgeEvents(unlocked ?? [], 'web', day, noteId)
+    ]);
     return json(unlocked ? { ...view, unlocked } : view, 201);
   }
   const old = id ? await store.note(uid, day, id, true) : null;
@@ -121,7 +144,13 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
             had.length,
             iso(ctx.now)
           );
-        if (item) return json(await noteView(item, String(p.tz), Boolean(p.transcribe), links));
+        if (item) {
+          await record([
+            { kind: 'note.files', id: id!, fields: { via: 'web', day, note: id!, added: files.length } },
+            ...badgeEvents(await earned(service, uid, p, item, old), 'web', day, id!)
+          ]);
+          return json(await noteView(item, String(p.tz), Boolean(p.transcribe), links));
+        }
         const current = await store.note(uid, day, id!, true);
         if (!current) reject(404, 'note');
         had = (current.media as Item[]) ?? [];
@@ -145,6 +174,10 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
         found(text)
       );
     if (!item) reject(404, 'note');
+    await record([
+      { kind: 'note.edited', id: id!, fields: { via: 'web', day, note: id! } },
+      ...badgeEvents(await earned(service, uid, p, item, old), 'web', day, id!)
+    ]);
     return json(await noteView(item, String(p.tz), Boolean(p.transcribe), links));
   }
   for (const key of [
@@ -153,6 +186,13 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
   ])
     await ctx.objects.remove(key);
   await store.deleteNote(uid, day, id!);
+  await record([
+    {
+      kind: 'note.deleted',
+      id: id!,
+      fields: { via: 'web', day, note: id!, files: ((old.media as Item[] | undefined) ?? []).length }
+    }
+  ]);
   if (old.place) await keepWeather(service, uid, p, day, true);
   for (const key of media.thumbKeys(old)) await ctx.objects.remove(key);
   return json({ ok: true });

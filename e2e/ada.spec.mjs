@@ -14,7 +14,8 @@
 // Releases: the Timeline's index, and a release's page, oldest first.
 // Badges: reached from Today, the release's album, the tracks and the shelf;
 // a save's unlock line, and what a day and a release collected.
-// Activity: reached from settings, and from the mail log's old address.
+// Activity: what the steps above did, reached from settings, and from the
+// mail log's old address.
 import { test, expect } from '@playwright/test';
 
 // A real 1 x 1 PNG, so the browser draws it, and a small PDF.
@@ -439,7 +440,13 @@ test('the activity log opens from settings, and the mail log address lands on it
   await page.locator('#activity-link').click();
   await expect(page).toHaveURL(/\/activity\/$/);
   await expect(page.locator('h1')).toHaveText('Activity');
-  await expect(page.locator('#activity, #activity-empty')).toBeVisible();
+  // What the steps above did, each one sentence, from the web.
+  const log = page.locator('#activity');
+  await expect(log).toBeVisible();
+  for (const what of [/^Signed in$/, /^Added a note to /, /^Earned /, /^Changed settings$/, /^Replaced your standing address$/])
+    await expect(log.locator('.activity-what', { hasText: what }).first()).toBeVisible();
+  await expect(log.locator('.event.settings .hint').first()).toHaveText(/ to /);
+  await expect(log.locator('.event .kicker', { hasText: 'On the web' }).first()).toBeVisible();
   await page.goto('/mail-log/');
   await expect(page).toHaveURL(/\/activity\/$/);
   await expect(page.locator('h1')).toHaveText('Activity');

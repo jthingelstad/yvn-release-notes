@@ -272,7 +272,8 @@ test('an Upcoming batch commits entries, count, receipt, audit, daily count and 
   };
   const first = await captureNote(event, { ...ctx, geocode: async () => [] });
   assert.equal(first.replayed, false);
-  const items = (sent.at(-1)!.TransactItems as OAuthRow[]).map(
+  const [batch, logged] = sent.slice(-2) as [OAuthRow, OAuthRow];
+  const items = (batch.TransactItems as OAuthRow[]).map(
     (op) =>
       Object.keys(op)[0] +
       ':' +
@@ -291,8 +292,17 @@ test('an Upcoming batch commits entries, count, receipt, audit, daily count and 
     'Put:LOG',
     'Put:WRITERATE'
   ]);
-  const family = (sent.at(-1)!.TransactItems as OAuthRow[])[3]!.ConditionCheck as OAuthRow;
+  const family = (batch.TransactItems as OAuthRow[])[3]!.ConditionCheck as OAuthRow;
   assert.equal((family.ExpressionAttributeValues as OAuthRow)[':write'], 'upcoming');
+  // Then one activity row a date, after the batch and apart from it: the
+  // date's id and the assistant's name, never its title.
+  const rows = (logged.TransactItems as OAuthRow[]).slice(1).map((op) => (op.Put as OAuthRow).Item as OAuthRow),
+    saved = await ctx.store.upcomingEntries('u');
+  assert.deepEqual(
+    rows.map((r) => [r.kind, r.via, r.client, r.upcoming]).sort(),
+    saved.map((e) => ['upcoming.added', 'assistant', a.family.client_name, e.id]).sort()
+  );
+  assert.doesNotMatch(JSON.stringify(rows), /Alex|Concert/);
   assert.equal((await ctx.store.mcpProfile('u'))!.upcoming_count, 2);
   const rate = ctx.store.memory.all().find((i) => String(i.sk).startsWith('WRITERATE#upcoming#'));
   assert.equal(rate!.n, 1);
@@ -313,4 +323,72 @@ test('an Upcoming batch commits entries, count, receipt, audit, daily count and 
   );
   assert.equal(refused.error, 'scope_required');
   assert.equal((await ctx.store.upcomingEntries('u')).length, 2);
+});
+test("an assistant's notes and the badges they earn are in the activity log once, never its words", async () => {
+  const ctx = fixture(),
+    a = await connected(ctx),
+    logged = () =>
+      ctx.store.memory
+        .all()
+        .filter((i) => i.pk === 'USER#u' && String(i.sk).startsWith('ACTIVITY#') && i.kind !== 'connection.added'),
+    event = {
+      token: a.token,
+      tool: 'notes_create',
+      arguments: { date: '2026-10-13', text: 'Dinner by the lake', idempotency_key: 'first' }
+    };
+  const shown = (await captureNote(event, ctx, { fetchTitle: noFetch })).note as OAuthRow;
+  await captureNote(event, ctx, { fetchTitle: noFetch });
+  const append = {
+    token: a.token,
+    tool: 'notes_append',
+    arguments: { date: shown.date, id: shown.id, text: 'A walk', idempotency_key: 'append' }
+  };
+  await captureNote(append, ctx, { fetchTitle: noFetch });
+  await captureNote(append, ctx, { fetchTitle: noFetch });
+  const rows = logged(),
+    notes = rows.filter((r) => String(r.kind).startsWith('note.')),
+    badges = rows.filter((r) => r.kind === 'badge.earned');
+  assert.deepEqual(
+    notes.map((r) => [r.kind, r.via, r.client, r.day, r.note, r.version]),
+    [
+      ['note.added', 'assistant', a.family.client_name, '2026-10-13', shown.id, '4.5.121'],
+      ['note.edited', 'assistant', a.family.client_name, '2026-10-13', shown.id, '4.5.121']
+    ]
+  );
+  assert.ok(badges.length > 0);
+  for (const b of badges)
+    assert.deepEqual([b.via, b.client, b.day, b.note], ['assistant', a.family.client_name, '2026-10-13', shown.id]);
+  assert.equal(new Set(badges.map((b) => b.key)).size, badges.length);
+  // Not marked seen: the email still tells of them.
+  assert.deepEqual(await ctx.store.seenBadges('u'), new Set());
+  assert.doesNotMatch(JSON.stringify(rows), /Dinner|walk|lake/);
+
+  // With "Show badges" off, the note is logged and no badge is.
+  const quiet = fixture();
+  quiet.store.seed({ ...(await quiet.store.mcpProfile('u'))!, badges: false });
+  const b = await connected(quiet);
+  await captureNote({ ...event, token: b.token }, quiet, { fetchTitle: noFetch });
+  assert.deepEqual(
+    quiet.store.memory
+      .all()
+      .filter((i) => String(i.sk).startsWith('ACTIVITY#'))
+      .map((i) => i.kind),
+    ['connection.added', 'note.added']
+  );
+});
+test('a note whose activity row cannot be written is still saved, and counted', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx),
+    logs: OAuthRow[] = [];
+  ctx.store.putActivity = async () => false;
+  const result = await captureNote(
+    { token: a.token, tool: 'notes_create', arguments: { text: 'Kept anyway', idempotency_key: 'k' } },
+    ctx,
+    { fetchTitle: noFetch, log: (f) => logs.push(f) }
+  );
+  assert.equal(result.replayed, false);
+  assert.equal((await ctx.store.allNotes('u')).length, 1);
+  assert.deepEqual(logs[0], { event: 'activity-unrecorded', kind: 'note', user: 'u' });
+  assert.equal(logs[1]!.ActivityUnrecorded, 1);
+  assert.ok(!JSON.stringify(logs).includes('Kept anyway'));
 });

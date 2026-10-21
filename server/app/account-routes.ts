@@ -10,7 +10,8 @@ import { pythonTrim, codePointLength } from '../../packages/domain/unicode.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { signinMessage, deleteMessage } from '../../packages/mail/auth.ts';
 import { checkTurnstile, turnstileClient, turnstileToken } from '../../packages/backend/turnstile.ts';
-import { activityId, activityView } from '../../packages/domain/activity.ts';
+import { activityId, activityView, titled } from '../../packages/domain/activity.ts';
+import { eventId, recordActivity } from '../../packages/backend/activity.ts';
 import { json, body } from './requests.ts';
 const ACTIVITY_SHOWN = 100;
 export async function accountRoutes(
@@ -118,6 +119,10 @@ export async function accountRoutes(
       reject(403, 'no-account');
     if (service.token) await store.deleteSession(auth.digest(service.token));
     service.log({ event: 'signin', how, user: uid ?? 'new' });
+    if (uid)
+      await recordActivity(store, uid, ctx.now, [{ kind: 'signin', id: eventId(), fields: { how } }], (f) =>
+        service.log(f)
+      );
     return json({ new: uid === null }, 200, { 'set-cookie': auth.sessionCookie(token) });
   }
   if (pattern === '/api/auth/signout') {
@@ -132,8 +137,16 @@ export async function accountRoutes(
       p = found ? await store.profile(String(found.user_id)) : null;
     if (!found || !p) reject(404, 'token');
     if (p.status !== 'stopped') {
-      await store.stop(String(found.user_id), 'unsubscribed', iso(ctx.now));
+      const user = String(found.user_id);
+      await store.stop(user, 'unsubscribed', iso(ctx.now));
       await service.tally('unsubscribes');
+      await recordActivity(
+        store,
+        user,
+        ctx.now,
+        [{ kind: 'status.stopped', id: eventId(), fields: { via: 'web', reason: 'unsubscribed' } }],
+        (f) => service.log(f)
+      );
     }
     return json({ ok: true });
   }
@@ -174,12 +187,18 @@ export async function accountRoutes(
       before = query.get('before') ?? undefined;
     if (before !== undefined && (before.length > 300 || !/^\d{4}-\d{2}-\d{2}T[\d:.]+Z(#|$)/.test(before)))
       reject(400, 'before');
-    const page = await store.activity(uid, { before, limit: ACTIVITY_SHOWN, now: ctx.now });
+    const page = await store.activity(uid, { before, limit: ACTIVITY_SHOWN, now: ctx.now }),
+      // An Upcoming date's title, read now: the log never keeps it.
+      titles = new Map(
+        page.rows.some((r) => r.upcoming)
+          ? (await store.upcomingEntries(uid)).map((e) => [e.id, e.title] as [string, string])
+          : []
+      );
     return json({
       email: p.email,
       tz: p.tz,
       today: localDay(ctx.now, String(p.tz)),
-      entries: page.rows.map(activityView),
+      entries: page.rows.map((r) => titled(activityView(r), titles)),
       next: page.more ? activityId(String(page.rows.at(-1)!.sk)) : null
     });
   }
@@ -198,6 +217,13 @@ export async function accountRoutes(
       token = replyToken();
     if (!(await ctx.store.setInbox(uid, token, iso(ctx.now), p.inbox ? String(p.inbox) : null)))
       reject(409, 'try-again');
+    await recordActivity(
+      ctx.store,
+      uid,
+      ctx.now,
+      [{ kind: p.inbox ? 'address.replaced' : 'address.created', id: eventId(), fields: { via: 'web' } }],
+      (f) => service.log(f)
+    );
     return json({ inbox: token + '@' + ctx.inboundDomain });
   }
   if (pattern.startsWith('/api/mcp/')) {

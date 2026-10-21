@@ -140,7 +140,11 @@ Where things are (each module's design comment has its contract):
   of a note or an Upcoming entry. A failed log write never fails the change
   it records, and is counted (`activity-unrecorded`). It started on
   2026-10-21 from the mail log, with no backfill from note history.
-  `/mail-log/` redirects to it.
+  `/mail-log/` redirects to it. Badge rows (Jamie, 2026-10-21: "achieving
+  a badge should be in the log so Claude knows you got a badge") come one
+  per badge at the save that earns it. An Upcoming row keeps the date's id;
+  its title is read when shown, and an assistant sees it only with the
+  upcoming scope.
 - **Mail in the activity log** (Jamie, 2026-10-20: "a per account holder
   log that can be seen by the user in the web interface and we email the
   user if there is a problem in the log"): one row per email to the

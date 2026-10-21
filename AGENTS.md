@@ -134,7 +134,13 @@ Where things are (each module's design comment explains its contract):
   `infra/template.yaml` is the stack. `infra/github-deploy-role.yaml` is the
   separate `yvn-release-notes-deploy` stack: the GitHub Actions deploy role,
   the CloudFormation service role and the private release receipts bucket,
-  applied by hand (its header has the command).
+  applied by hand (its header has the command). `infra/backup.yaml` is the
+  separate `yvn-release-notes-backup` stack, also applied by hand and never
+  from a workflow: AWS Backup copies the table on the 1st of each month into
+  vault `yvn-rn-backups`, kept until deleted by hand (Jamie, 2026-10-20:
+  "keep the data in monthly copies for as long as we want ... We make no
+  promise about backups"). A restore goes to a new table, never over the
+  live one.
   `scripts/build-release.sh` builds a release bundle from a committed tree
   with no cloud credentials; `scripts/release.sh` releases a bundle: the lock,
   the requested native phase, the stack update through the service role, the
@@ -595,7 +601,7 @@ named native regressions and explicit obsolete implementation assumptions.
 - Tests and builds: `npm ci --ignore-scripts`, then `npm run verify`
   (format, lint, browser/native types and unit tests, both builds).
   `npm run test:server` runs Node's native test suite alone. Pinned
-  `pipx run --spec cfn-lint==1.57.2 cfn-lint infra/template.yaml infra/github-deploy-role.yaml`
+  `pipx run --spec cfn-lint==1.57.2 cfn-lint infra/template.yaml infra/github-deploy-role.yaml infra/backup.yaml`
   checks CloudFormation; Python is a dependency of this infrastructure linter,
   not an application runtime.
 - Locally: `npm run build`, then `node --import tsx tools/dev-server.ts

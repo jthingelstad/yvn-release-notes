@@ -1,7 +1,7 @@
 // Browser tests for sign-up, against tools/dev-server.ts and its
 // in-memory fakes: no AWS, no real mail, nothing live. Optional, unlike
-// `validate`: run them with `npm run e2e` (AGENTS.md, "Operating")
-// or the `e2e` workflow.
+// `validate`: run them with `npm run e2e` (docs/OPERATING.md) or the `e2e`
+// workflow, which runs by itself on web/ and e2e/ changes (AGENTS.md, Testing).
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.YVN_E2E_PORT ?? 8790);

@@ -127,10 +127,13 @@ nothing there links here yet: that is Jamie's call.
       version) and one row for every Upcoming reminder due that morning,
       those past the email's three included (the date's id, how near, as
       the email said it, and the email's day; none while paused or
-      stopped); the badges a note filed by email earned; a stop for a
+      stopped); the badges a note filed by email earned, written as soon
+      as the note is stored so a retry loses none; a stop for a
       bounce or complaint; each recording written out (or nothing made
       out) and each pass that described a note's photos, never the words;
-      and each Day One import that brought anything in, by its counts.
+      and each Day One import that brought anything in, by its counts
+      (a run that stops partway records what it committed; its retry
+      records the rest).
       A note filed by email is its mail row.
     - A row that can't be written never undoes the change: it is logged as
       `activity-unrecorded` and counted (`ActivityUnrecorded`, by a metric

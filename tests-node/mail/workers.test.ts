@@ -694,6 +694,27 @@ test('activity: a filed reply adds a row for each badge it earned, once, never w
     ['mail']
   );
 });
+test('activity: a reply whose file fails to tag once filed keeps its badges through the retry', async () => {
+  const audio = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(1200)]).toString('base64'),
+    raw = `From: ada@example.com\r\nContent-Type: audio/mpeg\r\nContent-Disposition: attachment; filename=memo.mp3\r\nContent-Transfer-Encoding: base64\r\n\r\n${audio}`,
+    earned = async (f: { store: FakeStore }) =>
+      (await f.store.activityAll('u', now)).filter((r) => r.kind === 'badge.earned').map((r) => r.key);
+  const clean = await replyFixture(raw);
+  await inbound.process(ses(), clean.services);
+  const want = await earned(clean);
+  assert.ok(want.includes('hello'));
+  const f = await replyFixture(raw),
+    tag = f.objects.tag.bind(f.objects);
+  f.objects.tag = async (key, tags) => {
+    if (key.startsWith('media/')) throw new Error('tag failed');
+    return tag(key, tags);
+  };
+  await assert.rejects(() => inbound.process(ses(), f.services), /tag failed/);
+  assert.equal((await f.store.allNotes('u')).length, 1);
+  f.objects.tag = tag;
+  await inbound.process(ses(), f.services);
+  assert.deepEqual(await earned(f), want);
+});
 test('mail log: another sender shows who, never the words, and the owner hears once', async () => {
   const f = await replyFixture(),
     other = ses({ from: 'Someone <someone@example.net>' });

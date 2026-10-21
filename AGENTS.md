@@ -294,7 +294,8 @@ Where things are (each module's design comment has its contract):
   previewed by a dry run and saved all or nothing. The separate MCP scope
   `upcoming` (Jamie: "here's a bunch of information, go add it to my
   upcoming") lists, saves and deletes dates, at most 50 per call, 50 calls
-  a day.
+  a day. Its list leaves out a trip or event already over, counting it only
+  (Jamie, 2026-10-21: "One time trips in the past should be left out").
 - **Grouping dates** (2026-10-14): one optional tag per entry, normalized
   like note hashtags, with a text search (Jamie, 2026-10-17: "a general
   string search") whose words stay in the page's fragment, never a request.

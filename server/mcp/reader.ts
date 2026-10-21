@@ -265,7 +265,8 @@ export class Reader {
     const media = (item.media ?? []) as OAuthRow[];
     for (;;) {
       const words = codePointSlice(text, offset, offset + Math.max(length, 0)),
-        tz = validTimezone(item.tz) ? String(item.tz) : String(this.profile.tz);
+        tz = validTimezone(item.tz) ? String(item.tz) : String(this.profile.tz),
+        parts = split(segments(words, item.links as Link[] | undefined));
       shown = {
         id: String(item.sk).split('#').slice(2).join('#'),
         source: item.source ?? 'email',
@@ -274,9 +275,10 @@ export class Reader {
         tz,
         author: item.author ?? 'user',
         client: item.client ?? null,
-        parts: split(segments(words, item.links as Link[] | undefined))
+        // Without a link or tag, parts would only repeat the text.
+        ...(parts.some((p) => typeof p !== 'string') ? { parts } : {})
       };
-      if (item.connection) Object.assign(shown, { connection: item.connection, on_behalf_of: item.on_behalf_of });
+      if (item.connection) shown.connection = item.connection;
       if (item.tags) shown.tags = item.tags;
       if (item.place && placeLabel(item.place as PlaceRecord)) shown.place = placeLabel(item.place as PlaceRecord);
       if (item.origin) shown.from = (item.origin as OAuthRow).app === 'dayone' ? 'Day One' : 'an import';
@@ -712,15 +714,20 @@ export class Reader {
       return [{ note: this.view(await this.note(a), true, Number(a.offset ?? 0)) }, content];
     if (name === 'upcoming_list') {
       this.allowedUpcoming();
-      const views = upcomingViews(await this.context.store.upcomingEntries(this.uid), this.today)
-        .toSorted((x, y) => x.occurrence.date.localeCompare(y.occurrence.date) || x.title.localeCompare(y.title))
-        .map(agentUpcomingView);
+      // A one-time date already over is left out, only counted: it still
+      // takes one of the account's max_entries.
+      const all = upcomingViews(await this.context.store.upcomingEntries(this.uid), this.today),
+        views = all
+          .filter((v) => v.occurrence.status !== 'past')
+          .toSorted((x, y) => x.occurrence.date.localeCompare(y.occurrence.date) || x.title.localeCompare(y.title))
+          .map(agentUpcomingView);
       return [
         {
           ...this.page(views, { ...a, limit: a.limit ?? 50 }, 'entries'),
           today: this.today,
           tz: this.profile.tz,
-          limit: UPCOMING_MAX
+          max_entries: UPCOMING_MAX,
+          past_left_out: all.length - views.length
         },
         content
       ];

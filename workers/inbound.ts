@@ -1,7 +1,10 @@
 /** Header-only proof precedes MIME. Reply tokens name the original day and
  * expire for writing after 72 hours; standing tokens name the subscriber's
  * received local day. Raw objects are tagged note/ignored, never rewritten.
- * Files use stable keys before the conditional note write, so retries converge. */
+ * Files use stable keys before the conditional note write, so retries converge.
+ * Every message that reaches a subscriber goes in their mail log (filed, not
+ * filed and why, or failed), with its words only once the sender is proven;
+ * a few reasons, and a final failure, email the subscriber a notice. */
 import type { Store, Subscriber, Item } from '../packages/backend/store.ts';
 import * as media from '../packages/backend/media.ts';
 import type { Objects, Mail, Log } from '../packages/backend/services.ts';
@@ -22,10 +25,25 @@ import {
   type MailHeaders,
   leaves
 } from '../packages/mail/parse.ts';
-import { lateMessage, messageId } from '../packages/mail/compose.ts';
+import { lateMessage, messageId, noticeMessage, type NoticeReason } from '../packages/mail/compose.ts';
 export const PARSER_VERSION = 3,
   REPLY_WINDOW = 72 * 3600,
-  LATE_NOTICES_A_DAY = 3;
+  LATE_NOTICES_A_DAY = 3,
+  NOTICES_A_DAY = 3,
+  // The first try and InboundAliasInvokeConfig's two retries; after the last
+  // the event goes to the failed queue.
+  ATTEMPTS = 3,
+  MAIL_LOG_DAYS = 30;
+const NOTICED = new Set<string>(['from-mismatch', 'unauthenticated', 'unparseable']);
+/** What file() learned before it returned or threw, for the mail log. */
+export interface Seen {
+  sub?: Subscriber;
+  standing?: boolean;
+  day?: string;
+  version?: string;
+  sender?: string;
+  text?: string;
+}
 export interface SesMail {
   messageId: string;
   timestamp: string;
@@ -188,27 +206,45 @@ export async function lateNotice(
 function errorName(error: unknown): string {
   return error instanceof Error ? error.name : 'Error';
 }
-export async function file(mail: SesMail, receipt: SesReceipt, s: InboundServices): Promise<[string, Item]> {
-  if (
+async function words(raw: Buffer): Promise<string> {
+  try {
+    return codePointSlice(noteText(await parseMessage(raw)), 0, MAX_NOTE);
+  } catch {
+    return '';
+  }
+}
+export async function file(
+  mail: SesMail,
+  receipt: SesReceipt,
+  s: InboundServices,
+  seen: Seen = {}
+): Promise<[string, Item]> {
+  const spam =
     receipt.spamVerdict?.status === 'FAIL' ||
-    ['FAIL', 'PROCESSING_FAILED'].includes(receipt.virusVerdict?.status ?? '')
-  )
-    return ['ignored', { reason: 'spam-or-virus' }];
+    ['FAIL', 'PROCESSING_FAILED'].includes(receipt.virusVerdict?.status ?? '');
   const pair = (receipt.recipients ?? []).map((r) => tokenFrom(r, s.inboundDomain)).find(Boolean);
-  if (!pair) return ['ignored', { reason: 'no-token' }];
+  if (!pair) return ['ignored', { reason: spam ? 'spam-or-virus' : 'no-token' }];
   const [token, standing] = pair;
   const tok = standing ? await s.store.getInbox(token, true) : await s.store.getToken(token);
-  if (!tok) return ['ignored', { reason: 'unknown-token' }];
+  if (!tok) return ['ignored', { reason: spam ? 'spam-or-virus' : 'unknown-token' }];
   const sub = await s.store.getSubscriber(String(tok.user_id), standing);
-  if (!sub) return ['ignored', { reason: 'unknown-user' }];
+  if (!sub) return ['ignored', { reason: spam ? 'spam-or-virus' : 'unknown-user' }];
   const ignored = (reason: string, extra: Item = {}): [string, Item] => [
     'ignored',
     { reason, user: sub.user_id, ...extra }
   ];
-  if (standing && sub.inbox !== token) return ignored('replaced');
-  if (standing && sub.status !== 'active') return ignored('stopped');
   const froms = await addresses(mail.commonHeaders?.from ?? []),
     from = froms.length === 1 ? froms[0] : '';
+  Object.assign(seen, {
+    sub,
+    standing,
+    day: standing ? localDay(received(mail), sub.tz) : String(tok.date),
+    ...(from === sub.email.toLowerCase() ? {} : { sender: codePointSlice(froms.join(', ') || '(no sender)', 0, 300) })
+  });
+  seen.version = standing ? String(computeVersion(sub.birthday, seen.day!)) : String(tok.version);
+  if (spam) return ignored('spam-or-virus');
+  if (standing && sub.inbox !== token) return ignored('replaced');
+  if (standing && sub.status !== 'active') return ignored('stopped');
   if (from !== sub.email.toLowerCase()) return ignored('from-mismatch');
   const raw = (await s.objects.get(`raw/${mail.messageId}`, { maxBytes: MAX_RAW_BYTES })).body;
   let head: MailHeaders;
@@ -217,11 +253,15 @@ export async function file(mail: SesMail, receipt: SesReceipt, s: InboundService
   } catch (e) {
     return ignored('unparseable', { error: errorName(e) });
   }
-  if (soleFrom(head) !== from) return ignored('from-mismatch');
+  if (soleFrom(head) !== from) {
+    seen.sender = codePointSlice(head.all('From').join(', ') || '(no sender)', 0, 300);
+    return ignored('from-mismatch');
+  }
   if (!authenticated(receipt, head, from)) return ignored('unauthenticated');
   if (automatic(head)) return ignored('auto-reply');
   if (!standing && received(mail) > deadline(tok)) {
     await lateNotice(s, sub, token, tok, head, received(mail));
+    seen.text = await words(raw);
     return ignored('expired');
   }
   let text: string,
@@ -230,7 +270,7 @@ export async function file(mail: SesMail, receipt: SesReceipt, s: InboundService
     photos: ReturnType<typeof media.found>;
   try {
     const msg = await parseMessage(raw);
-    text = codePointSlice(noteText(msg), 0, MAX_NOTE);
+    text = seen.text = codePointSlice(noteText(msg), 0, MAX_NOTE);
     files = attachments(msg);
     named = text ? anchors(msg) : {};
     const refused: number[] = [];
@@ -245,8 +285,8 @@ export async function file(mail: SesMail, receipt: SesReceipt, s: InboundService
     return ignored('unparseable', { error: errorName(e) });
   }
   if (!text && !files.length) return ignored('empty');
-  const day = standing ? localDay(received(mail), sub.tz) : String(tok.date),
-    version = standing ? String(computeVersion(sub.birthday, day)) : String(tok.version),
+  const day = seen.day!,
+    version = seen.version!,
     found = text ? await collect(text, { named, fetch: s.titleFetch }) : [],
     kept = await media.storeFiles(
       {
@@ -314,9 +354,81 @@ export async function file(mail: SesMail, receipt: SesReceipt, s: InboundService
     }
   ];
 }
+function logRow(mail: SesMail, seen: Seen): [string, Item] {
+  const at = new Date(received(mail) * 1000).toISOString();
+  return [
+    `MAILLOG#${at}#${mail.messageId}`,
+    {
+      message: mail.messageId,
+      received_at: at,
+      via: seen.standing ? 'address' : 'reply',
+      day: seen.day,
+      version: seen.version,
+      subject: codePointSlice(mail.commonHeaders?.subject ?? '', 0, 300),
+      expires_at: Math.floor(received(mail)) + MAIL_LOG_DAYS * 86400,
+      ...(seen.sender ? { sender: seen.sender } : {})
+    }
+  ];
+}
+/** At most one per message and NOTICES_A_DAY a day, to the subscriber's own
+ * address; a stopped subscriber gets none. Never a reason to retry. */
+async function notice(s: InboundServices, mail: SesMail, seen: Seen, sk: string, reason: NoticeReason) {
+  const sub = seen.sub!,
+    done = (outcome: string, extra: Record<string, string> = {}) =>
+      s.log?.({ event: 'mail-notice', user: sub.user_id, reason, outcome, ...extra });
+  if (sub.status !== 'active') return done('skipped', { why: 'stopped' });
+  try {
+    const now = Math.floor(received(mail)),
+      reserved = await s.store.reserveMailNotice(
+        sub.user_id,
+        sk,
+        new Date(now * 1000).toISOString(),
+        now,
+        NOTICES_A_DAY
+      );
+    if (reserved !== 'reserved') return done('skipped', { why: reserved });
+    const raw = await noticeMessage({
+      to: sub.email,
+      fromAddr: s.fromAddress,
+      reason,
+      received: mail.timestamp,
+      tz: sub.tz,
+      kept: Boolean(seen.text)
+    });
+    await s.mail.send(raw, sub.email);
+  } catch (e) {
+    return done('failed', { error: errorName(e) });
+  }
+  done('sent');
+}
+/** A failure leaves a failed row (counting attempts) for the owner; the last
+ * attempt also sends the notice. Best effort: the error itself is rethrown. */
+async function failure(s: InboundServices, mail: SesMail, seen: Seen): Promise<void> {
+  if (!seen.sub) return;
+  try {
+    const [sk, row] = logRow(mail, seen),
+      kept = await s.store.recordMail(
+        seen.sub.user_id,
+        sk,
+        { ...row, outcome: 'failed', reason: 'failed', ...(seen.text ? { text: seen.text } : {}) },
+        { failed: true }
+      );
+    if (kept && Number((await s.store.mailEntry(seen.sub.user_id, sk))?.attempts ?? 0) >= ATTEMPTS)
+      await notice(s, mail, seen, sk, 'failed');
+  } catch (e) {
+    s.log?.({ event: 'mail-log', user: seen.sub.user_id, outcome: 'failed', error: errorName(e) });
+  }
+}
 export async function process(ses: { mail: SesMail; receipt: SesReceipt }, services: InboundServices): Promise<string> {
-  const [filed, detail] = await file(ses.mail, ses.receipt, services),
-    key = `raw/${ses.mail.messageId}`,
+  const seen: Seen = {};
+  let filed: string, detail: Item;
+  try {
+    [filed, detail] = await file(ses.mail, ses.receipt, services, seen);
+  } catch (e) {
+    await failure(services, ses.mail, seen);
+    throw e;
+  }
+  const key = `raw/${ses.mail.messageId}`,
     prior = await services.objects.tags(key),
     outcome = prior.outcome === 'note' ? 'note' : filed;
   await services.objects.tag(key, { outcome });
@@ -327,6 +439,21 @@ export async function process(ses: { mail: SesMail; receipt: SesReceipt }, servi
       )
     ) as Record<string, string | number | boolean>
   );
+  if (seen.sub) {
+    // A throw here retries the message, which files as a duplicate and logs again.
+    const [sk, row] = logRow(ses.mail, seen),
+      note = filed === 'note',
+      reason = note ? '' : String(detail.reason);
+    const kept = await services.store.recordMail(
+      seen.sub.user_id,
+      sk,
+      note
+        ? { ...row, outcome: 'filed', day: detail.date }
+        : { ...row, outcome: 'not-filed', reason, ...(seen.text ? { text: seen.text } : {}) },
+      { drop: note ? ['reason', 'text'] : seen.text ? [] : ['text'] }
+    );
+    if (kept && NOTICED.has(reason)) await notice(services, ses.mail, seen, sk, reason as NoticeReason);
+  }
   return filed;
 }
 export async function handler(

@@ -1072,6 +1072,11 @@ Resources:
                       - !Ref FromAddress
                       - !Sub "*<${FromAddress}>"
               - Effect: Allow
+                # A message still failing after its retries goes to the
+                # failed queue (InboundAliasInvokeConfig).
+                Action: sqs:SendMessage
+                Resource: !GetAtt FailedQueue.Arn
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt InboundLogs.Arn
 
@@ -2142,6 +2147,21 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !Ref TranscribeDoneArn
 
+  # Three tries (workers/inbound.ts ATTEMPTS), then the SES event goes to the
+  # failed queue. The owner's mail log already shows it as failed, with a notice.
+  InboundAliasInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    # Lambda checks the role may send to the queue when the destination is set.
+    DependsOn: [InboundAlias, InboundRole]
+    Properties:
+      FunctionName: !Ref InboundFunction
+      Qualifier: live
+      MaximumRetryAttempts: 2
+      MaximumEventAgeInSeconds: 21600
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt FailedQueue.Arn
+
   ExportAliasInvokeConfig:
     Type: AWS::Lambda::EventInvokeConfig
     DependsOn: ExportAlias
@@ -2261,10 +2281,13 @@ Resources:
 
   # What would otherwise be dropped after its retries: a bounce or complaint
   # event the events function could not apply (the SNS message, which names
-  # the address, so it stays here and never goes to the ops queue), and a
-  # stream batch the transcriber or describer gave up on (the shard and
-  # sequence numbers only, no note text). Kept 14 days. Read it, fix the
-  # cause, and apply or replay by hand.
+  # the address, so it stays here and never goes to the ops queue), an
+  # inbound email inbound gave up on (the SES event: addresses and subject,
+  # never the body, which stays in raw/), and a stream batch the transcriber
+  # or describer gave up on (the shard and sequence numbers only, no note
+  # text). Kept 14 days. Read it, fix the cause, and apply or replay by hand:
+  # an inbound event replays by invoking the inbound function's live alias
+  # with {"Records": [<the record>]}.
   FailedQueue:
     Type: AWS::SQS::Queue
     Properties:

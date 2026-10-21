@@ -11,6 +11,7 @@ import type { Item } from '../../packages/backend/store-types.ts';
 import { signinMessage, deleteMessage } from '../../packages/mail/auth.ts';
 import { checkTurnstile, turnstileClient, turnstileToken } from '../../packages/backend/turnstile.ts';
 import { json, body } from './requests.ts';
+const MAIL_LOG_SHOWN = 200;
 export async function accountRoutes(
   service: SessionService,
   pattern: string,
@@ -162,6 +163,31 @@ export async function accountRoutes(
     }
     service.log({ event: 'delete-code-sent', user: uid });
     return json({ ok: true }, 202);
+  }
+  if (pattern === '/api/mail-log') {
+    // The owner's own rows (docs/WEB-APP.md, Mail log), newest first. Words
+    // appear only on a row whose sender was proven and that was not filed.
+    const { uid, profile: p } = await service.account(),
+      rows = (await store.mailLog(uid, ctx.now)).slice(0, MAIL_LOG_SHOWN);
+    return json({
+      email: p.email,
+      tz: p.tz,
+      today: localDay(ctx.now, String(p.tz)),
+      entries: rows.map((r) => ({
+        id: r.message,
+        received_at: r.received_at,
+        via: r.via,
+        day: r.day,
+        version: r.version,
+        subject: r.subject ?? '',
+        outcome: r.outcome,
+        reason: r.reason ?? null,
+        sender: r.sender ?? null,
+        text: r.text ?? null,
+        attempts: Number(r.attempts ?? 0),
+        notified: Boolean(r.notified_at)
+      }))
+    });
   }
   if (pattern === '/api/places') {
     await service.signedIn();

@@ -24,6 +24,12 @@
  * `id:tier`) already celebrated, so the email names each once
  * (docs/BADGES.md). Only ever ADDed to, with the account proof; deleted
  * with the account and never exported.
+ * USER#<owner> / MAILLOG#<received ISO>#<SES message id> is the mail log
+ * (docs/WEB-APP.md): what became of each email that reached the owner's
+ * address (outcome, reason, sender, subject, and the text only for a sender
+ * already proven), kept 30 days (expires_at), shown only to its owner,
+ * deleted with the account and never exported. notified_at marks the one
+ * problem notice; RATE#mailnotice:<owner>#<UTC day> caps them at three a day.
  */
 import {
   BatchWriteCommand,
@@ -1181,6 +1187,116 @@ export class Store {
       }
     }
     throw new Error('Late notice transaction retries exhausted');
+  }
+  /** One mail log row, with the account proof (false once it is gone). SET
+   * leaves notified_at in place, so a retry never notifies twice; `failed`
+   * also ADDs one to attempts. */
+  async recordMail(
+    user: string,
+    sk: string,
+    fields: Item,
+    o: { drop?: readonly string[]; failed?: boolean } = {}
+  ): Promise<boolean> {
+    if (!sk.startsWith('MAILLOG#')) throw new RangeError('Not a mail log row');
+    const entries = Object.entries(fields),
+      drop = o.drop ?? [];
+    return this.provedTransaction([
+      this.profileProof(user),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, sk),
+          UpdateExpression:
+            'SET ' +
+            entries.map((_, i) => `#f${i} = :v${i}`).join(', ') +
+            (o.failed ? ' ADD attempts :one' : '') +
+            (drop.length ? ' REMOVE ' + drop.map((_, i) => `#d${i}`).join(', ') : ''),
+          ExpressionAttributeNames: {
+            ...Object.fromEntries(entries.map(([k], i) => [`#f${i}`, k])),
+            ...Object.fromEntries(drop.map((k, i) => [`#d${i}`, k]))
+          },
+          ExpressionAttributeValues: {
+            ...Object.fromEntries(entries.map(([, v], i) => [`:v${i}`, v])),
+            ...(o.failed ? { ':one': 1 } : {})
+          }
+        }
+      }
+    ]);
+  }
+  async mailEntry(user: string, sk: string): Promise<Item | null> {
+    return this.get(key(user, sk), { ConsistentRead: true });
+  }
+  /** The last 30 days of the mail log, newest first. */
+  async mailLog(user: string, now: number): Promise<Item[]> {
+    return (
+      await this.rows({
+        KeyConditionExpression: 'pk = :u AND begins_with(sk, :m)',
+        ExpressionAttributeValues: { ':u': `USER#${user}`, ':m': 'MAILLOG#' },
+        ScanIndexForward: false
+      })
+    ).filter((i) => Number(i.expires_at ?? 0) > now);
+  }
+  /** As reserveLateNotice: one notice per log row and three a UTC day,
+   * committed together; a stopped/deleting/missing account consumes neither. */
+  async reserveMailNotice(
+    user: string,
+    sk: string,
+    at: string,
+    now: number,
+    limit = 3
+  ): Promise<'reserved' | 'limited' | 'already-sent' | 'stopped'> {
+    const period = Math.floor(now / 86400);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await this.client.send(
+          new TransactWriteCommand({
+            TransactItems: [
+              {
+                ConditionCheck: {
+                  TableName: this.tableName,
+                  Key: key(user, 'PROFILE'),
+                  ConditionExpression: 'attribute_exists(pk) AND #s = :s AND attribute_not_exists(mcp_deleting)',
+                  ExpressionAttributeNames: { '#s': 'status' },
+                  ExpressionAttributeValues: { ':s': 'active' }
+                }
+              },
+              {
+                Update: {
+                  TableName: this.tableName,
+                  Key: key(user, sk),
+                  UpdateExpression: 'SET notified_at = :at',
+                  ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(notified_at)',
+                  ExpressionAttributeValues: { ':at': at }
+                }
+              },
+              {
+                Update: {
+                  TableName: this.tableName,
+                  Key: { pk: `RATE#mailnotice:${user}#${period}`, sk: 'RATE' },
+                  UpdateExpression: 'SET expires_at = :expiry ADD #n :one',
+                  ConditionExpression: 'attribute_not_exists(#n) OR #n < :limit',
+                  ExpressionAttributeNames: { '#n': 'n' },
+                  ExpressionAttributeValues: { ':one': 1, ':limit': limit, ':expiry': (period + 2) * 86400 }
+                }
+              }
+            ]
+          })
+        );
+        return 'reserved';
+      } catch (e) {
+        if ((e as { name?: string })?.name !== 'TransactionCanceledException') throw e;
+        const failure = reasons(e);
+        if (failure[0]?.Code === 'ConditionalCheckFailed') return 'stopped';
+        if (failure[1]?.Code === 'ConditionalCheckFailed') return 'already-sent';
+        if (failure[2]?.Code === 'ConditionalCheckFailed') return 'limited';
+        if (failure.some((r) => r.Code === 'TransactionConflict') && attempt < 4) {
+          await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error('Mail notice transaction retries exhausted');
   }
   async pauses(user: string): Promise<[string, string][]> {
     return (

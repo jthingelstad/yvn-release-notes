@@ -147,7 +147,9 @@ nothing there links here yet: that is Jamie's call.
       address as inbound's first step does; the row says failed after the
       tries Lambda made, keeps any words an earlier try kept, and the owner
       gets the usual notice. A row already filed or not filed stays as it is.
-      Then the record goes on to the failed queue unchanged.
+      Then the record goes on to the failed queue unchanged. A row that cannot
+      be written leaves the record to be read again; the third failed read
+      sends it on unread.
 
 ## Defaults (Jamie can change any)
 

@@ -864,6 +864,28 @@ test('a failure record after caught failures, or for a message since filed, chan
   assert.equal(f.mail.messages.length, 1);
   assert.equal(forwarded.length, 2);
 });
+test('a failure record whose row cannot be written stays on the queue, and the next read logs it', async () => {
+  const f = await replyFixture(),
+    { forwarded, services } = forwarding(f),
+    record = f.store.recordMail.bind(f.store),
+    body = gaveUpRecord();
+  f.store.recordMail = async () => {
+    throw Object.assign(new Error('private'), { name: 'ProvisionedThroughputExceededException' });
+  };
+  await assert.rejects(() => inbound.handler({ Records: [{ body }] }, null, services));
+  assert.deepEqual(forwarded, []);
+  assert.deepEqual(await mailLog(f), []);
+  assert.equal(f.mail.messages.length, 0);
+  assert.ok(f.logs.some((l) => l.event === 'mail-log' && l.error === 'ProvisionedThroughputExceededException'));
+  f.store.recordMail = record;
+  await inbound.handler({ Records: [{ body }] }, null, services);
+  assert.deepEqual(
+    (await mailLog(f)).map((r) => [r.outcome, r.attempts]),
+    [['failed', 3]]
+  );
+  assert.equal(f.mail.messages.length, 1);
+  assert.deepEqual(forwarded, [body]);
+});
 test('a failure record for no one, a stopped owner or no record at all is still handed on; without a queue it stays', async () => {
   const f = await replyFixture(),
     { forwarded, services } = forwarding(f),

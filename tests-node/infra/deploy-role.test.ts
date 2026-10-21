@@ -1,8 +1,8 @@
 /** The deploy identity stack (infra/github-deploy-role.yaml) keeps its posture:
  * only the production environment assumes the deploy role, change sets run as
- * the service role, live aliases are never invoked, the one delete is a lock
- * named by its ETag, and the receipts bucket stays private. The names agree
- * with the release scripts and tools that use them. */
+ * the service role, live aliases are never invoked and the one delete is the
+ * web app sync's. The names agree with the release scripts and tools that use
+ * them. */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
@@ -65,25 +65,11 @@ test('the deploy role can tell a new native artifact from a forbidden one', () =
   assert.doesNotMatch(statement('NativeArtifactsList'), /Condition/);
 });
 
-test('the deploy role deletes nothing but its own lock, named by ETag', () => {
+test('the deploy role deletes nothing but web app files, and keeps no bucket of its own', () => {
   const role = template.slice(template.indexOf('  DeployRole:'), template.indexOf('\nOutputs:'));
-  assert.deepEqual(role.match(/\b[a-z0-9]+:Delete\w*/g), ['s3:DeleteObject', 's3:DeleteObject']);
+  assert.deepEqual(role.match(/\b[a-z0-9]+:Delete\w*/g), ['s3:DeleteObject']);
   assert.match(statement('WebBucketObjects'), /s3:DeleteObject[\s\S]*-web-\$\{AWS::AccountId\}\/\*"/);
-  const lock = statement('ReleaseOwnLock');
-  assert.match(lock, /Action: s3:DeleteObject/);
-  assert.match(lock, /\$\{ReceiptsBucket\.Arn\}\/locks\/\*"/);
-  assert.match(lock, /"Null": \{ "s3:if-match": "false" \}/);
-});
-
-test('the receipts bucket is versioned, encrypted, private and TLS-only, and outlives the stack', () => {
-  const bucket = template.slice(template.indexOf('  ReceiptsBucket:'), template.indexOf('  ReceiptsBucketPolicy:'));
-  assert.match(bucket, /DeletionPolicy: Retain/);
-  assert.match(bucket, /VersioningConfiguration: \{ Status: Enabled \}/);
-  for (const setting of ['BlockPublicAcls', 'BlockPublicPolicy', 'IgnorePublicAcls', 'RestrictPublicBuckets'])
-    assert.match(bucket, new RegExp(`${setting}: true`));
-  assert.match(bucket, /ObjectOwnership: BucketOwnerEnforced/);
-  assert.match(bucket, /SSEAlgorithm: AES256/);
-  assert.match(statement('DenyInsecureTransport'), /aws:SecureTransport": "false"/);
+  assert.doesNotMatch(template, /AWS::S3::Bucket|Receipts|locks\//);
 });
 
 test('role names agree with the release scripts and tools', async () => {

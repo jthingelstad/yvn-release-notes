@@ -1,14 +1,14 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Release Notes deploy identity - the GitHub Actions deploy role, the CloudFormation service role and the private release receipts bucket
+Description: Release Notes deploy identity - the GitHub Actions deploy role and the CloudFormation service role
 
 # A separate small stack (yvn-release-notes-deploy), never the application
-# stack: it holds who may deploy, and the receipts that make deploys safe to
-# retry and roll back. Applied by hand with the cloud-engineer profile:
+# stack: it holds who may deploy. Applied by hand with the cloud-engineer
+# profile:
 #
 #   aws cloudformation deploy --stack-name yvn-release-notes-deploy \
 #     --template-file infra/github-deploy-role.yaml --capabilities CAPABILITY_NAMED_IAM
 #
-# Three resources that matter:
+# Two resources that matter:
 # - ReleaseNotesGitHubDeploy: assumed only by this repository's `production`
 #   GitHub environment through the account's OIDC provider. It may call
 #   exactly what the release steps (scripts/release.sh and the release tool
@@ -18,12 +18,13 @@ Description: Release Notes deploy identity - the GitHub Actions deploy role, the
 #   application stack, scoped to the resource names that template makes.
 #   Once a stack update names it, the stack keeps it; scripts/release.sh
 #   names it on every run, from CI and from the Mac's deploy.sh alike.
-# - The receipts bucket: release receipts, policy journals and the one deploy
-#   lock, shared by CI and the Mac.
 #
-# Neither role name starts with yvn-release-notes-, and nor does the bucket,
-# so the service role, which manages yvn-release-notes-* roles and buckets,
-# cannot edit them.
+# Neither role name starts with yvn-release-notes-, so the service role,
+# which manages yvn-release-notes-* roles, cannot edit them.
+#
+# The receipts bucket of the retired phased release left this stack on
+# 2026-10-20 (Jamie: "remove the receipts bucket and its grants"); a release
+# is now one stack update, rolled back by reverting the merge.
 
 Parameters:
   ApplicationStackName:
@@ -46,56 +47,6 @@ Resources:
     Properties:
       Url: https://token.actions.githubusercontent.com
       ClientIdList: [sts.amazonaws.com]
-
-  ReceiptsBucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      BucketName: !Sub "yvn-rn-deploy-receipts-${AWS::AccountId}"
-      VersioningConfiguration: { Status: Enabled }
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      OwnershipControls:
-        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
-            BucketKeyEnabled: true
-      # Receipts are kept for good: a rollback reads the receipt of the build
-      # it undoes. Overwritten journals and released locks leave old versions,
-      # kept a year as history; deploy logs are kept a year.
-      LifecycleConfiguration:
-        Rules:
-          - Id: expire-old-versions
-            Status: Enabled
-            NoncurrentVersionExpiration: { NoncurrentDays: 365 }
-            ExpiredObjectDeleteMarker: true
-          - Id: expire-deploy-logs
-            Status: Enabled
-            Prefix: logs/
-            ExpirationInDays: 365
-      Tags:
-        - { Key: Application, Value: YourVersionNumber }
-        - { Key: Project, Value: yvn-release-notes }
-
-  ReceiptsBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref ReceiptsBucket
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: DenyInsecureTransport
-            Effect: Deny
-            Principal: "*"
-            Action: s3:*
-            Resource: [!GetAtt ReceiptsBucket.Arn, !Sub "${ReceiptsBucket.Arn}/*"]
-            Condition:
-              Bool: { "aws:SecureTransport": "false" }
 
   CloudFormationRole:
     Type: AWS::IAM::Role
@@ -284,8 +235,8 @@ Resources:
             Version: "2012-10-17"
             Statement:
               # aws cloudformation deploy (DescribeStacks, GetTemplateSummary,
-              # change sets), the release's stack reads and the failure detail
-              # it keeps in the receipts bucket (DescribeStackEvents).
+              # change sets), the release's stack reads and, when an update
+              # fails, the failed events it prints (DescribeStackEvents).
               - Sid: ReadApplicationStack
                 Effect: Allow
                 Action:
@@ -365,8 +316,8 @@ Resources:
                 Effect: Allow
                 Action: events:DescribeRule
                 Resource: !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ApplicationStackName}-*"
-              # native-release.ts: alias and version metadata, and the one
-              # content-free {"self_test":true} probe on a published version.
+              # release-probe.ts: alias metadata, and the one content-free
+              # {"self_test":true} probe on a published version.
               - Sid: WorkerMetadata
                 Effect: Allow
                 Action: [lambda:GetAlias, lambda:GetFunctionConfiguration]
@@ -386,9 +337,9 @@ Resources:
                 Resource:
                   - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*:live"
                   - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*:$LATEST"
-              # web-platform.ts and native-release.ts: endpoint pins, candidate
-              # revisions and the CloudFront-only endpoint policy. Never
-              # DeleteResourcePolicy: no release step removes these grants.
+              # web-platform.ts and release-probe.ts: the live endpoint, the
+              # revision it serves and the CloudFront-only endpoint policy.
+              # Never DeleteResourcePolicy: no release step removes these grants.
               - Sid: WebFunctionReads
                 Effect: Allow
                 Action: [lambda:GetWebFunctionEndpoint, lambda:GetWebFunctionRevision]
@@ -399,28 +350,9 @@ Resources:
                 Effect: Allow
                 Action: [lambda:GetResourcePolicy, lambda:PutResourcePolicy]
                 Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:web-function/${ApplicationStackName}-*-native"
-              # Receipts and policy journals are written, never deleted (an
-              # overwritten journal keeps its old version). The one delete is
-              # a run releasing its own lock, named by its ETag (If-Match).
-              - Sid: ReceiptsList
-                Effect: Allow
-                Action: s3:ListBucket
-                Resource: !GetAtt ReceiptsBucket.Arn
-              - Sid: ReceiptsReadWrite
-                Effect: Allow
-                Action: [s3:GetObject, s3:PutObject]
-                Resource: !Sub "${ReceiptsBucket.Arn}/*"
-              - Sid: ReleaseOwnLock
-                Effect: Allow
-                Action: s3:DeleteObject
-                Resource: !Sub "${ReceiptsBucket.Arn}/locks/*"
-                Condition:
-                  "Null": { "s3:if-match": "false" }
 
 Outputs:
   DeployRoleArn:
     Value: !GetAtt DeployRole.Arn
   CloudFormationRoleArn:
     Value: !GetAtt CloudFormationRole.Arn
-  ReceiptsBucketName:
-    Value: !Ref ReceiptsBucket

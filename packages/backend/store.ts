@@ -572,8 +572,8 @@ export class Store {
       })
     ).sort((a, b) => compare(written(a), written(b)) || compare(String(a.sk), String(b.sk)));
   }
-  async allNotes(user: string) {
-    return this.notesBetween(user, '0000-00-00', '9999-99-99');
+  async allNotes(user: string, consistent = false) {
+    return this.notesBetween(user, '0000-00-00', '9999-99-99', consistent ? { ConsistentRead: true } : {});
   }
   async noteTags(user: string) {
     return this.notesBetween(user, '0000-00-00', '9999-99-99', {
@@ -1298,11 +1298,12 @@ export class Store {
     }
     throw new Error('Mail notice transaction retries exhausted');
   }
-  async pauses(user: string): Promise<[string, string][]> {
+  async pauses(user: string, consistent = false): Promise<[string, string][]> {
     return (
       await this.rows({
         KeyConditionExpression: 'pk = :u AND begins_with(sk, :n)',
-        ExpressionAttributeValues: { ':u': `USER#${user}`, ':n': 'PAUSE#' }
+        ExpressionAttributeValues: { ':u': `USER#${user}`, ':n': 'PAUSE#' },
+        ...(consistent ? { ConsistentRead: true } : {})
       })
     ).map((i) => [String(i.sk).slice(6), String(i.through)]);
   }

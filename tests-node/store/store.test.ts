@@ -498,6 +498,17 @@ test('sessions are indexed for deletion and touch/claim cannot recreate deleted 
   await assert.rejects(s.touchSession('signup', 20, 300, 'u'));
   await assert.rejects(s.claimSession('signup', 'u', 300));
 });
+test('the reads behind a saved note’s badges are consistent when asked, and only then', async () => {
+  const s = setup();
+  await s.allNotes('u', true);
+  await s.pauses('u', true);
+  await s.allNotes('u');
+  await s.pauses('u');
+  assert.deepEqual(
+    s.memory.calls.filter((c) => c.name === 'QueryCommand').map((c) => (c.input as Item).ConsistentRead),
+    [true, true, undefined, undefined]
+  );
+});
 test('MCP reads are strong, compare-and-swap and deletion barrier are atomic', async () => {
   const s = setup(1);
   const row = { pk: 'OAUTHFAMILY#f', sk: 'STATE', expires_at: 100 };

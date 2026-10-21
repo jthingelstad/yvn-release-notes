@@ -36,7 +36,8 @@ Every write proves the writer owns the subscriber's address:
   only in their settings and email footers, with every check a reply has but
   the 72 hours. It files to their day when SES received it and never
   expires; "New address" replaces it and the old one files nothing more. A
-  stopped subscriber's address files nothing. It is never logged.
+  stopped subscriber's address files nothing. The address itself is never
+  logged; mail to it shows in the mail log like any reply.
 
 Each subscriber's data is their own. Do not add an endpoint that writes
 without these ownership proofs.
@@ -139,6 +140,8 @@ Where things are (each module's design comment has its contract):
   reads nothing under `raw/`. Another address, a failed verification, an
   unreadable email or one still failing after three tries emails the owner,
   never the sender: once per email, 3 a day, never to a stopped subscriber.
+  Only a failure the code catches is logged: a timeout or crash reaches the
+  failed queue with no row and no email.
   Mail to an address that names nobody is never logged.
 - **Reply as often as you like.** Each reply is its own note
   (`NOTE#<day>#<messageId>`); oldest first, together they are the day's

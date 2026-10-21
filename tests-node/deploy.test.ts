@@ -52,6 +52,13 @@ else if (args[1] === 'describe-stack-events') console.log('2026-01-01T00:00:00Z\
 else if (args[1] === 'describe-stacks') {
   if (joined.includes('WebBucketName')) console.log('fictional-web-bucket');
   else if (joined.includes('WebDistributionId')) console.log('FICTIONALDIST');
+  else if (joined.includes('BuildId')) {
+    // FIXTURE_REPLACED: another release updates the stack after N reads.
+    const seen = Number(process.env.FIXTURE_REPLACED_AFTER ?? 'NaN'),
+      file = process.env.FIXTURE_LOG + '.builds', reads = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+    fs.writeFileSync(file, String(reads + 1));
+    console.log(reads >= seen ? '${'b'.repeat(40)}' : '${commit}');
+  }
 }
 else if (args[1] === 'head-bucket') process.exit(process.env.FIXTURE_NO_CODE_BUCKET ? 1 : 0);
 else if (args[1] === 'get-bucket-policy') console.log(process.env.FIXTURE_INSECURE ? '{}' : '{"Statement":[{"Sid":"DenyInsecureTransport"}]}');
@@ -59,9 +66,15 @@ else if (args[0] === 'acm') console.log('arn:aws:acm:us-east-1:' + account + ':c
 else if (args[1] === 'describe-active-receipt-rule-set') console.log(process.env.FIXTURE_NO_RULE_SET ? 'None' : 'yvn-release-notes');
 else if (args[0] === 'cloudfront') console.log('fixture-invalidation');`,
   git: `if (args[0] === 'archive') process.stdout.write(fs.readFileSync(process.env.FIXTURE_ARCHIVE));
-else if (args[0] === 'rev-parse') console.log('${commit}');
+else if (args[0] === 'rev-parse') {
+  // FIXTURE_MAIN_MOVES: origin/main is this commit at first, another later.
+  const marker = process.env.FIXTURE_LOG + '.main', moved = process.env.FIXTURE_MAIN_MOVES && fs.existsSync(marker);
+  if (args[1] === 'origin/main') fs.writeFileSync(marker, '');
+  console.log(args[1] === 'origin/main' && moved ? '${'b'.repeat(40)}' : '${commit}');
+}
 else if (args[0] === 'status' || args[0] === 'fetch') record('git');`,
-  gh: `record('gh'); console.log(process.env.FIXTURE_RED ? '0' : '1');`,
+  gh: `record('gh'); if (args[0] === 'run') console.log(process.env.FIXTURE_RUNNING ? '1' : '0');
+else console.log(process.env.FIXTURE_RED ? '0' : '1');`,
   npm: `record('npm'); if (process.env.FIXTURE_FAILURE === 'verify' && args.includes('verify')) process.exit(18);
 if (args.includes('--os=linux')) for (const name of ['sharp', '@img/colour', '@img/sharp-linux-arm64', '@img/sharp-libvips-linux-arm64', 'detect-libc', 'semver', 'unrelated']) {
   fs.mkdirSync(path.join('node_modules', name), { recursive: true }); fs.writeFileSync(path.join('node_modules', name, 'package.json'), '{}'); }
@@ -111,6 +124,7 @@ async function fixture() {
       .map((line) => JSON.parse(line) as Event);
   const spawn = async (command: string[], options: Options) => {
     await writeFile(log, '');
+    for (const extra of ['.builds', '.main']) await rm(log + extra, { force: true });
     const result = spawnSync('bash', command, { env: environment(options), encoding: 'utf8', timeout: 30000 });
     return { result, events: await events() };
   };
@@ -191,6 +205,20 @@ test('a release uploads the code, updates the stack once, then confirms grants, 
     assert.equal(aws(events, 'put-bucket-policy').length, 1);
     assert.deepEqual(aws(events, 'put-object'), []);
     assert.match(result.stdout, new RegExp(`released ${commit}`));
+  });
+});
+
+test('a release another one replaced stops before its web sync, or after it, and never probes', async () => {
+  await withFixture(async (f) => {
+    let { result, events } = await f.release([], { env: { FIXTURE_REPLACED_AFTER: '0' } });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /refusing: before the web sync: the stack now runs b{40}/);
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies']);
+
+    ({ result, events } = await f.release([], { env: { FIXTURE_REPLACED_AFTER: '1' } }));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /after the web sync; re-run the newer release/);
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation']);
   });
 });
 
@@ -428,6 +456,17 @@ test('deploy.sh builds the committed tree with build-release.sh, then hands it t
 
     ({ result, events } = await deploy([], { env: { FIXTURE_RED: '1' } }));
     assert.match(result.stderr, /validate is not green/);
+    assert.deepEqual(cloudWrites(events), []);
+
+    // GitHub's queue cannot see the Mac, so the Mac waits for it.
+    ({ result, events } = await deploy([], { env: { FIXTURE_RUNNING: '1' } }));
+    assert.match(result.stderr, /a GitHub release is running/);
+    assert.deepEqual(cloudWrites(events), []);
+    assert.ok(!events.some((e) => e.program === 'npm'));
+
+    ({ result, events } = await deploy([], { env: { FIXTURE_MAIN_MOVES: '1' } }));
+    assert.match(result.stderr, /main moved while this built/);
+    assert.ok(events.some((e) => e.program === 'npm' && e.args[0] === 'build'));
     assert.deepEqual(cloudWrites(events), []);
 
     for (const [flags, options] of [

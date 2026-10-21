@@ -88,7 +88,8 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
       fields[k] = b[k];
     }
   // Badges back on show what was earned meanwhile without announcing it
-  // (docs/BADGES.md): it all counts as seen. Never a reason to fail settings.
+  // (docs/BADGES.md): it all counts as seen first. If that fails, badges stay
+  // off and the save fails, or the next email would announce the backlog.
   if (fields.badges === true && p.badges === false)
     try {
       const earned = await badges(ctx.store, uid, p, localDay(ctx.now, String(p.tz)));
@@ -99,6 +100,7 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
       );
     } catch {
       service.log({ event: 'badges-error', user: uid });
+      reject(503, 'badges-failed');
     }
   if (Object.hasOwn(b, 'status')) {
     if (b.status !== 'active') reject(400, 'status');

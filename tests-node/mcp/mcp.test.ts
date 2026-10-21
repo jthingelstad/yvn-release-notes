@@ -603,7 +603,14 @@ test('the whole account reads under notes:read alone: on this day, releases, bad
     note(ctx, 'past-' + i, 'A year ago ' + i, '2025-10-13', { written_at: `2025-10-13T1${i}:00:00Z`, tags: ['lake'] });
   note(ctx, 'agent', 'Two years ago', '2024-10-13', { author: 'assistant', client: 'Fixture' });
   const context = (await rpc(ctx, a.token)).value;
-  for (const name of ['notes_on_this_day', 'notes_releases', 'notes_badges', 'notes_mail_log', 'notes_account'])
+  for (const name of [
+    'notes_on_this_day',
+    'notes_releases',
+    'notes_badges',
+    'notes_mail_log',
+    'notes_activity',
+    'notes_account'
+  ])
     assert.deepEqual(
       (context.tools as OAuthRow[]).find((t) => t.name === name),
       { name, scope: 'notes:read', granted: true }
@@ -755,6 +762,173 @@ test('the whole account reads under notes:read alone: on this day, releases, bad
   );
   assert.ok(!Object.hasOwn((await rpc(ctx, a.token, 'notes_get_day', { date: '2026-06-14' })).value, 'collected'));
   assert.equal(((await rpc(ctx, a.token, 'notes_account')).value.account as OAuthRow).show_badges, false);
+});
+test('notes_activity reads the activity log by local day and kind, a page at a time, and counts its own reads', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx, false, false),
+    mail = (at: string, id: string, extra: OAuthRow = {}) =>
+      ctx.store.seed({
+        pk: 'USER#u',
+        sk: `ACTIVITY#${at}#mail#${id}`,
+        kind: 'mail',
+        at,
+        message: id,
+        received_at: at,
+        via: 'reply',
+        outcome: 'filed',
+        ...extra
+      });
+  // Chicago days: 10-11 starts at 05:00Z, 10-12 at 05:00Z, 10-13 at 05:00Z.
+  mail('2026-10-11T04:59:00.000Z', 'm0');
+  mail('2026-10-11T10:00:00.000Z', 'm1', { day: '2026-10-11' });
+  mail('2026-10-12T10:00:00.000Z', 'm2', { outcome: 'not-filed', reason: 'expired', text: 'é'.repeat(2500) });
+  ctx.store.seed({
+    pk: 'USER#u',
+    sk: 'ACTIVITY#2026-10-12T11:00:00.000Z#note.added#n1',
+    kind: 'note.added',
+    at: '2026-10-12T11:00:00.000Z'
+  });
+  ctx.store.seed({
+    pk: 'MCPMETA#u',
+    sk: 'ACTIVITY#2026-10-12T05:00:00.000Z#reads#f0',
+    kind: 'reads',
+    at: '2026-10-12T05:00:00.000Z',
+    day: '2026-10-12',
+    client: 'Earlier',
+    connection: 'f0',
+    calls: 2,
+    tools: { notes_list: 2 },
+    last_at: '2026-10-12T20:00:00.000Z',
+    revision: 2
+  });
+  // A mail log row from before the log reads as mail until it expires.
+  ctx.store.seed({
+    pk: 'USER#u',
+    sk: 'MAILLOG#2026-10-10T10:00:00.000Z#legacy',
+    message: 'legacy',
+    received_at: '2026-10-10T10:00:00.000Z',
+    via: 'address',
+    outcome: 'filed',
+    expires_at: NOW + 86400
+  });
+  ctx.store.seed({ pk: 'USER#other', sk: 'ACTIVITY#2026-10-12T10:00:00.000Z#mail#theirs', kind: 'mail' });
+
+  // Each call counts once it has answered: one row a connection a local day.
+  await rpc(ctx, a.token, 'notes_context');
+  const all = (await rpc(ctx, a.token, 'notes_activity')).value,
+    ids = (v: OAuthRow) => (v.entries as OAuthRow[]).map((e) => e.id);
+  assert.deepEqual([all.today, all.tz, all.next_cursor], ['2026-10-13', 'America/Chicago', null]);
+  const [own, ...rest] = all.entries as OAuthRow[];
+  assert.deepEqual(own, {
+    id: `2026-10-13T05:00:00.000Z#reads#${String(a.family.id)}`,
+    at: '2026-10-13T05:00:00.000Z',
+    kind: 'reads',
+    day: '2026-10-13',
+    client: a.family.client_name,
+    connection: a.family.id,
+    calls: 1,
+    tools: { notes_context: 1 },
+    last_at: new Date(NOW * 1000).toISOString()
+  });
+  assert.deepEqual(
+    rest.map((e) => e.id),
+    [
+      '2026-10-12T11:00:00.000Z#note.added#n1',
+      '2026-10-12T10:00:00.000Z#mail#m2',
+      '2026-10-12T05:00:00.000Z#reads#f0',
+      '2026-10-11T10:00:00.000Z#mail#m1',
+      '2026-10-11T04:59:00.000Z#mail#m0',
+      '2026-10-10T10:00:00.000Z#mail#legacy'
+    ]
+  );
+  const late = rest[1]!;
+  assert.equal([...String(late.text)].length, 2000);
+  assert.equal(late.cut, true);
+  assert.ok(!JSON.stringify(all).includes('theirs'));
+  for (const hidden of ['USER#', 'MCPMETA#', 'expires_at', 'revision', 'ada@example.com'])
+    assert.ok(!JSON.stringify(all).includes(hidden), hidden);
+
+  // Settings' last use still comes from the use rows, not the ISO reads rows.
+  assert.deepEqual(
+    ((await new OAuthService(ctx).connections('u')).connections as OAuthRow[]).map((c) => c.last_used),
+    [NOW]
+  );
+  // Later calls add to the same row.
+  const counted = (await rpc(ctx, a.token, 'notes_activity', { kinds: ['reads'] })).value.entries as OAuthRow[];
+  assert.deepEqual(
+    counted.map((e) => [e.client, e.calls, e.tools]),
+    [
+      [a.family.client_name, 2, { notes_activity: 1, notes_context: 1 }],
+      ['Earlier', 2, { notes_list: 2 }]
+    ]
+  );
+
+  // Local days, both ends kept; kinds by family.
+  assert.deepEqual(
+    ids((await rpc(ctx, a.token, 'notes_activity', { from: '2026-10-11', through: '2026-10-11' })).value),
+    ['2026-10-11T10:00:00.000Z#mail#m1']
+  );
+  assert.deepEqual(
+    ids((await rpc(ctx, a.token, 'notes_activity', { through: '2026-10-12', kinds: ['note', 'mail'] })).value),
+    [
+      '2026-10-12T11:00:00.000Z#note.added#n1',
+      '2026-10-12T10:00:00.000Z#mail#m2',
+      '2026-10-11T10:00:00.000Z#mail#m1',
+      '2026-10-11T04:59:00.000Z#mail#m0',
+      '2026-10-10T10:00:00.000Z#mail#legacy'
+    ]
+  );
+
+  // A page at a time, with a cursor bound to the same filters.
+  const seen: unknown[] = [];
+  let cursor: unknown = undefined;
+  do {
+    const page = (
+      await rpc(ctx, a.token, 'notes_activity', { kinds: ['mail'], limit: 2, ...(cursor ? { cursor } : {}) })
+    ).value;
+    assert.ok((page.entries as OAuthRow[]).length <= 2);
+    seen.push(...ids(page));
+    cursor = page.next_cursor;
+  } while (cursor);
+  assert.deepEqual(seen, [
+    '2026-10-12T10:00:00.000Z#mail#m2',
+    '2026-10-11T10:00:00.000Z#mail#m1',
+    '2026-10-11T04:59:00.000Z#mail#m0',
+    '2026-10-10T10:00:00.000Z#mail#legacy'
+  ]);
+  const first = (await rpc(ctx, a.token, 'notes_activity', { kinds: ['mail'], limit: 1 })).value;
+  for (const args of [
+    { kinds: ['note'], cursor: first.next_cursor },
+    { kinds: ['mail'], from: '2026-10-11', cursor: first.next_cursor },
+    { kinds: ['mail'], cursor: 'not-a-cursor' }
+  ])
+    assert.equal((await rpc(ctx, a.token, 'notes_activity', args)).value.error, 'invalid_cursor');
+  for (const args of [
+    { from: '2026-10-12', through: '2026-10-11' },
+    { through: '2026-10-14' },
+    { kinds: ['notes'] },
+    { kinds: ['mail', 'mail'] },
+    { kinds: [1] },
+    { kinds: [] },
+    { limit: 101 }
+  ])
+    assert.ok((await rpc(ctx, a.token, 'notes_activity', args)).value.error, JSON.stringify(args));
+});
+test('a read that cannot be counted is logged and still answers', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx, false, false),
+    logs: OAuthRow[] = [],
+    opts = options(ctx, logs);
+  // Only the reads row fails; the read quota still commits.
+  const commit = ctx.store.mcpCommit.bind(ctx.store);
+  ctx.store.mcpCommit = async (changes, uid) =>
+    changes.some(([row]) => String(row.sk).startsWith('ACTIVITY#')) ? false : commit(changes, uid);
+  const { value } = await rpc(ctx, a.token, 'notes_activity', {}, opts);
+  assert.deepEqual(value.entries, []);
+  assert.deepEqual(
+    logs.filter((l) => l.event === 'activity-unrecorded'),
+    [{ event: 'activity-unrecorded', kind: 'reads', user: 'u' }]
+  );
 });
 test('a past day of long Unicode notes fits one page with at least one whole preview', async () => {
   const ctx = fixture(),

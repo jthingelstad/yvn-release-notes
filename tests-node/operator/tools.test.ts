@@ -15,6 +15,7 @@ import { fill as fillLinks } from '../../tools/fill-link-titles.ts';
 import { fill as fillWeather } from '../../tools/fill-weather.ts';
 import { extract } from '../../tools/extract-media.ts';
 import { baseline } from '../../tools/badges-baseline.ts';
+import { move as moveMailLog } from '../../tools/move-mail-log.ts';
 import { privatePlanDirectory, savePlans, report, sampleWeather } from '../../tools/import-dayone.ts';
 import { plan } from '../../packages/backend/dayone.ts';
 const p = {
@@ -199,6 +200,35 @@ test('badges baseline counts only, writes only with --write, repeats harmlessly 
   assert.deepEqual([again.already_seen, again.to_add, again.written], [3, 0, 0]);
   store.seed({ ...p, mcp_deleting: true });
   assert.equal((await baseline(store, false, now)).skipped, 1);
+});
+test('moving the mail log counts only, moves only with --write, repeats harmlessly and leaves expired rows', async () => {
+  const store = new FakeStore([p, { ...p, pk: 'USER#v', email: 'grace@example.com', mcp_deleting: true }]),
+    old = (user: string, id: string, expires: number) => ({
+      pk: `USER#${user}`,
+      sk: `MAILLOG#2026-10-11T10:00:00.000Z#${id}`,
+      message: id,
+      received_at: '2026-10-11T10:00:00.000Z',
+      via: 'reply',
+      subject: 'Re: A fictional subject',
+      outcome: 'filed',
+      expires_at: expires
+    });
+  store.seed(old('u', 'a', now + 86400));
+  store.seed(old('u', 'b', now - 1));
+  store.seed(old('v', 'c', now + 86400));
+  store.memory.calls.length = 0;
+  const dry = await moveMailLog(store, false, now);
+  assert.deepEqual(dry, { dry_run: true, rows: 3, subscribers: 2, expired: 1, to_move: 2, moved: 0, kept: 0, gone: 0 });
+  assert.equal(hasWrites(store), false);
+  assert.ok(!JSON.stringify(dry).includes('fictional'));
+  const moved = await moveMailLog(store, true, now);
+  assert.deepEqual([moved.moved, moved.kept, moved.gone], [1, 0, 1]);
+  const row = await store.mailEntry('u', 'ACTIVITY#2026-10-11T10:00:00.000Z#mail#a');
+  assert.deepEqual([row?.kind, row?.subject, row?.expires_at], ['mail', 'Re: A fictional subject', undefined]);
+  assert.equal(await store.mailEntry('u', 'MAILLOG#2026-10-11T10:00:00.000Z#a'), null);
+  assert.ok(await store.mailEntry('v', 'MAILLOG#2026-10-11T10:00:00.000Z#c'));
+  const again = await moveMailLog(store, true, now);
+  assert.deepEqual([again.rows, again.to_move, again.moved], [2, 1, 0]);
 });
 test('media backfill dry run leaves raw untouched; deletion guard cleans staged files only', async () => {
   const store = new FakeStore([p, { ...note(), raw_key: 'raw/m1', attachments: [{ filename: 'voice.wav' }] }]),

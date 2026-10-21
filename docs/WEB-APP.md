@@ -81,27 +81,34 @@ nothing there links here yet: that is Jamie's call.
     head its coverage and special days, and both exports list the
     badges, oldest first. "Show badges" off in Settings hides the links,
     the unlock and those lines; the page and the exports stay.
-11. **Mail log** (`/mail-log/`, linked from Settings, Daily email, and
-    from each notice; 2026-10-20): what became of each email that reached
-    the account in the last 30 days, newest first. Filed (with a link to
-    its day), not filed and why, or failed (still being retried, or given
-    up on after three tries). Jamie, 2026-10-20: "a per account holder log
-    that can be seen by the user in the web interface and we email the
-    user if there is a problem in the log". Inbound
-    (`workers/inbound.ts`) writes one row per message once the address
-    names a subscriber (`MAILLOG#`, `packages/backend/store.ts`), with the
-    account proof, and never for an address that names no one. A row keeps
-    the sender only when it differs from the subscriber's address, and the
-    words only once the sender is proven (a late reply, a final failure):
-    inbound opens no MIME before that proof, and the web role reads
-    nothing under `raw/`. "Add to <day>" appends those words to that day's
-    draft in this tab and opens it; nothing is saved until the note is.
-    A notice goes to the subscriber's own address, never the sender's, for
-    another sender, a failed verification, an unreadable message, and a
-    final failure: once per message and at most three a UTC day, none
-    while the emails are stopped. A late reply keeps its own late notice.
-    Rows expire after 30 days, are deleted with the account and are never
-    exported.
+11. **Activity** (`/activity/`, linked from Settings, Daily email, and
+    from each mail notice; 2026-10-21, from the mail log of 2026-10-20):
+    what happened in the account, newest first, 100 rows a page with
+    "Older". Jamie, 2026-10-20: "a full log of any activity happening in
+    release notes ... a super powerful tool for Claude to see via MCP".
+    Rows (`packages/domain/activity.ts`) live at
+    `USER#<owner>/ACTIVITY#<time>#<kind>#<id>`, kept for the life of the
+    account, deleted with it and in the JSON export, oldest first. An
+    assistant's reads are one row a connection a local day under
+    `MCPMETA#`, which the MCP reader writes. `/mail-log/` redirects here.
+    - **Mail**: inbound (`workers/inbound.ts`) writes one row per message
+      once the address names a subscriber, with the account proof, and
+      never for an address that names no one. Filed (with a link to its
+      day), not filed and why, or failed (still being retried, or given
+      up on after three tries). A row keeps the sender only when it
+      differs from the subscriber's address, and the words only once the
+      sender is proven (a late reply, a final failure): inbound opens no
+      MIME before that proof, and the web role reads nothing under `raw/`.
+      "Add to <day>" appends those words to that day's draft in this tab
+      and opens it; nothing is saved until the note is. A notice goes to
+      the subscriber's own address, never the sender's, for another
+      sender, a failed verification, an unreadable message, and a final
+      failure: once per message and at most three a UTC day, none while
+      the emails are stopped. A late reply keeps its own late notice.
+      Rows from the mail log (`MAILLOG#`, 30 days) read as mail rows until
+      moved (`tools/move-mail-log.ts`) or expired.
+    - **Reads**: each connected assistant's calls on a local day, by tool,
+      with the time of the last; never what it asked or read.
 
 ## Defaults (Jamie can change any)
 
@@ -213,7 +220,7 @@ notes.yourversionnumber.com
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/badges/`, `/search/`,
-  `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/settings/`, `/mail-log/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
+  `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/settings/`, `/activity/` (`/mail-log/` redirects there), `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
   `/connect/` approves an external agent request whose opaque id stays in the fragment.
   `/admin/` manages product updates; `/admin-users/` shows subscriber metadata. Administration is visible in settings only to the configured administrator.
 
@@ -361,7 +368,7 @@ or new CSP exception.
 | `POST /api/auth/start` `{email, turnstile_token, turnstile_wait_ms, turnstile_reason?}` | 202 and mails a link and code; 429 `limited` past a limit; 403 `turnstile` only in enforce mode, for a missing or failed token (`packages/backend/turnstile.ts`) |
 | `POST /api/auth/verify` `{email, code}` or `{token}` | sets the cookie; says whether the account is new |
 | `POST /api/auth/signout` | |
-| `GET /api/mail-log` | the owner's mail log, newest first, up to 200 rows from 30 days: `email`, `tz`, `today`, and `entries` (`id`, `received_at`, `via` reply or address, `day`, `version`, `subject`, `outcome` filed, not-filed or failed, `reason`, `sender` when it was another address, `text` only for a row not filed whose sender was proven, `attempts`, `notified`). No table keys |
+| `GET /api/activity?before=` | the owner's activity log, newest first, 100 rows a page: `email`, `tz`, `today`, `entries` and `next` (the `before` of the next page, or null). Each entry has `id`, `at` and `kind`; a mail row adds `message`, `received_at`, `via` reply or address, `day`, `version`, `subject`, `outcome` filed, not-filed or failed, `reason`, `sender` when it was another address, `text` only for a row not filed whose sender was proven, `attempts` and `notified`; a reads row adds `day`, `client`, `connection`, `calls`, `tools`, `errors` and `last_at`. 400 `before` for anything but a row id or time. No table keys |
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |
 | `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address; `badges` is "Show badges"; `admin: true` only for the configured administrator |
 | `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `transcribe`, `describe`, `badges`, `status: "active"` to start again); the birthday cannot change. `badges: true` after `false` counts everything earned meanwhile as seen |

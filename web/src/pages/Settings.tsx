@@ -299,10 +299,10 @@ function Account({ p }: { p: Me }) {
         </section>
         <section className="section">
           <p className="hint">
-            <AppLink href="/mail-log/" id="mail-log-link">
-              Mail log
+            <AppLink href="/activity/" id="activity-link">
+              Activity
             </AppLink>
-            : what became of each email you sent in, the last 30 days.
+            : what happened in your account, including what became of each email you sent in.
           </p>
         </section>
       </SettingsGroup>

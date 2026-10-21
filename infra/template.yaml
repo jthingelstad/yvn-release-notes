@@ -402,6 +402,18 @@ Resources:
           MetricName: McpFailures
           MetricValue: "1"
 
+  # An assistant's reads that never reached the activity log; the call still
+  # answered. Counts only.
+  NativeMcpActivityUnrecordedMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref NativeMcpLogs
+      FilterPattern: '{ $.message.event = "activity-unrecorded" }'
+      MetricTransformations:
+        - MetricNamespace: ReleaseNotes
+          MetricName: ActivityUnrecorded
+          MetricValue: "1"
+
   NativeAppErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:

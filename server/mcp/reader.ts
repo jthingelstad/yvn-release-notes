@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 import { newToken } from '../../packages/backend/auth.ts';
 import { type OAuthContext, type OAuthRow, type OAuthStore } from '../../packages/backend/oauth.ts';
 import { segments, type Link } from '../../packages/backend/links.ts';
-import { localDay, validDay, validTimezone, parseDay, addDays } from '../../packages/domain/dates.ts';
+import { localDay, localStart, validDay, validTimezone, parseDay, addDays } from '../../packages/domain/dates.ts';
+import { ACTIVITY, activityKey, activityTime, agentActivityView, familyOf } from '../../packages/domain/activity.ts';
 import { computeVersion, releaseAge, releaseName, releaseSpan, sameDayBefore } from '../../packages/domain/version.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { collectedOn, evaluateBadges, releaseBadges } from '../../packages/domain/badges.ts';
@@ -26,7 +27,11 @@ export interface ReaderStore extends OAuthStore {
   noteIndex(uid: string): Promise<[string, number][]>;
   noteTags(uid: string): Promise<OAuthRow[]>;
   pauses(uid: string, consistent?: boolean): Promise<[string, string][]>;
-  mailLog(uid: string, now: number): Promise<OAuthRow[]>;
+  activity(
+    uid: string,
+    o: { before?: string; from?: string; limit: number; now: number }
+  ): Promise<{ rows: OAuthRow[]; more: boolean }>;
+  activityAll(uid: string, now: number, from?: string): Promise<OAuthRow[]>;
   dayPlace(uid: string, day: string, consistent?: boolean): Promise<OAuthRow | null>;
   weatherBetween(uid: string, first: string, last: string, consistent?: boolean): Promise<Record<string, OAuthRow>>;
 }
@@ -139,9 +144,22 @@ export async function quota(context: OAuthContext, uid: string): Promise<void> {
     if (!committed) throw new ToolError('busy', 'Try again shortly.');
   }
 }
-export async function record(context: OAuthContext, family: OAuthRow, name: string, outcome: string): Promise<void> {
+/** A call's content-free LOG# row and its connection's USE#, committed
+ * together; a read (`tz` given) also counts in the connection's reads row for
+ * the subscriber's local day, the activity log's daily summary. False when
+ * three tries could not commit. */
+export async function record(
+  context: OAuthContext,
+  family: OAuthRow,
+  name: string,
+  outcome: string,
+  tz?: string
+): Promise<boolean> {
   const uid = String(family.user_id),
     fid = String(family.id),
+    day = tz ? localDay(context.now, tz) : null,
+    start = day ? activityTime(localStart(day, tz!)) : null,
+    readsKey = start ? activityKey(start, 'reads', fid) : null,
     entry = {
       pk: `MCPMETA#${uid}`,
       sk: `LOG#${String(context.now).padStart(12, '0')}#${newToken()}`,
@@ -152,21 +170,43 @@ export async function record(context: OAuthContext, family: OAuthRow, name: stri
       expires_at: context.now + 14 * 86400
     };
   for (let attempt = 0; attempt < 3; attempt++) {
-    const old = await context.store.mcpGet(`MCPMETA#${uid}`, 'USE#' + fid);
-    if (
-      await context.store.mcpCommit(
+    const [old, reads] = await Promise.all([
+        context.store.mcpGet(`MCPMETA#${uid}`, 'USE#' + fid),
+        readsKey ? context.store.mcpGet(`MCPMETA#${uid}`, readsKey) : null
+      ]),
+      changes: [OAuthRow, number | null][] = [
+        [entry, null],
         [
-          [entry, null],
-          [
-            { pk: `MCPMETA#${uid}`, sk: 'USE#' + fid, at: context.now, expires_at: context.now + 14 * 86400 },
-            revision(old)
-          ]
-        ],
-        uid
-      )
-    )
-      return;
+          { pk: `MCPMETA#${uid}`, sk: 'USE#' + fid, at: context.now, expires_at: context.now + 14 * 86400 },
+          revision(old)
+        ]
+      ];
+    if (readsKey) {
+      const tools: Record<string, number> = {
+          ...(object(reads?.tools) ? (reads.tools as Record<string, number>) : {})
+        },
+        errors = Number(reads?.errors ?? 0) + (outcome === 'ok' ? 0 : 1);
+      tools[name] = Number(tools[name] ?? 0) + 1;
+      changes.push([
+        {
+          pk: `MCPMETA#${uid}`,
+          sk: readsKey,
+          kind: 'reads',
+          at: start,
+          day,
+          client: family.client_name,
+          connection: fid,
+          calls: Number(reads?.calls ?? 0) + 1,
+          tools,
+          ...(errors ? { errors } : {}),
+          last_at: activityTime(context.now)
+        },
+        revision(reads)
+      ]);
+    }
+    if (await context.store.mcpCommit(changes, uid)) return true;
   }
+  return false;
 }
 export class Reader {
   readonly uid: string;
@@ -304,6 +344,67 @@ export class Reader {
       [field]: chosen,
       next_cursor: end < rows.length ? Buffer.from(asciiJson({ bound, start: end })).toString('base64url') : null,
       total: rows.length
+    };
+  }
+  /** The activity log by key, newest first: a page stops at `limit` rows or
+   * the size budget, and after 2,000 rows read when `kinds` matches few. The
+   * cursor is the last row's id, bound to the filters. */
+  async activity(a: Arguments): Promise<OAuthRow> {
+    const tz = String(this.profile.tz),
+      from = a.from == null ? null : this.day(a.from),
+      through = a.through == null ? this.today : this.day(a.through),
+      kinds = Array.isArray(a.kinds) ? new Set(a.kinds.map(String)) : null,
+      limit = Number(a.limit ?? 50);
+    if (from && from > through) throw new ToolError('invalid_arguments', 'Choose from on or before through.');
+    const bound = createHash('sha256')
+      .update(asciiJson({ uid: this.uid, field: 'activity', from, through, kinds: kinds ? [...kinds].sort() : null }))
+      .digest('hex');
+    let before = through === this.today ? undefined : activityTime(localStart(addDays(through, 1), tz));
+    if (a.cursor) {
+      try {
+        const cursor: unknown = JSON.parse(Buffer.from(String(a.cursor), 'base64url').toString('utf8'));
+        if (!object(cursor) || cursor.bound !== bound || typeof cursor.before !== 'string') throw new Error('cursor');
+        before = cursor.before;
+      } catch {
+        throw new ToolError('invalid_cursor', 'Restart this query with the same filters and no cursor.');
+      }
+    }
+    const entries: OAuthRow[] = [],
+      lower = from ? activityTime(localStart(from, tz)) : undefined;
+    let size = 0,
+      read = 0,
+      more = false;
+    scan: for (;;) {
+      const page = await this.context.store.activity(this.uid, {
+        before,
+        from: lower,
+        limit: 200,
+        now: this.context.now
+      });
+      for (const row of page.rows) {
+        if (!kinds || kinds.has(familyOf(String(row.kind)))) {
+          const view = agentActivityView(row),
+            cost = asciiJson(view).length;
+          if (entries.length >= limit || size + cost > 43_000) {
+            more = true;
+            break scan;
+          }
+          entries.push(view);
+          size += cost;
+        }
+        before = String(row.sk).slice(ACTIVITY.length);
+        if (++read >= 2000) {
+          more = page.more || row !== page.rows.at(-1);
+          break scan;
+        }
+      }
+      if (!page.more) break;
+    }
+    return {
+      entries,
+      next_cursor: more ? Buffer.from(asciiJson({ bound, before })).toString('base64url') : null,
+      today: this.today,
+      tz
     };
   }
   async media(a: Arguments, kind: string): Promise<OAuthRow> {
@@ -560,15 +661,14 @@ export class Reader {
       const facts = await badgeFacts(this.context.store, this.uid, this.profile, this.today, undefined, true);
       return [{ ...head, ...evaluateBadges(facts, this.today) }, content];
     }
-    if (name === 'notes_mail_log')
-      return [
-        {
-          ...this.page((await this.context.store.mailLog(this.uid, this.context.now)).map(agentMailView), a, 'entries'),
-          today: this.today,
-          tz: this.profile.tz
-        },
-        content
-      ];
+    if (name === 'notes_mail_log') {
+      const from = activityTime(localStart(addDays(this.today, -29), String(this.profile.tz))),
+        mail = (await this.context.store.activityAll(this.uid, this.context.now, from)).filter(
+          (r) => r.kind === 'mail'
+        );
+      return [{ ...this.page(mail.map(agentMailView), a, 'entries'), today: this.today, tz: this.profile.tz }, content];
+    }
+    if (name === 'notes_activity') return [await this.activity(a), content];
     if (name === 'notes_account') {
       const v = computeVersion(this.birthday, this.today),
         [index, pauses] = await Promise.all([

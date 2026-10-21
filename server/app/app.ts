@@ -26,7 +26,7 @@ export const ROUTES: [string, string][] = [
   ['POST', '/api/me/delete-code'],
   ['POST', '/api/me/inbox'],
   ['GET', '/api/places'],
-  ['GET', '/api/mail-log'],
+  ['GET', '/api/activity'],
   ['GET', '/api/export'],
   ['GET', '/api/export/zip'],
   ['POST', '/api/export/zip'],

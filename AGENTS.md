@@ -37,7 +37,7 @@ Every write proves the writer owns the subscriber's address:
   the 72 hours. It files to their day when SES received it and never
   expires; "New address" replaces it and the old one files nothing more. A
   stopped subscriber's address files nothing. The address itself is never
-  logged; mail to it shows in the mail log like any reply.
+  logged; mail to it shows in the activity log like any reply.
 
 Each subscriber's data is their own. Do not add an endpoint that writes
 without these ownership proofs.
@@ -98,7 +98,7 @@ Where things are (each module's design comment has its contract):
   (2026-10-14): named imports only, icon-only actions named for assistive
   technology, with hover titles, visible focus and 44px targets. Brand marks
   stay their own artwork.
-- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline}.ts`
+- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline,move-mail-log}.ts`
   are operator tools (shared setup in `tools/operator.ts`);
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current.
 - `tools/{build-server,package-native,native-artifacts,web-platform,release-probe}.ts`
@@ -130,19 +130,35 @@ Where things are (each module's design comment has its contract):
 - **A late reply gets a short email back** (Jamie, 2026-10-09: "Yes this
   should not fail silently"), only when every other check passes, never to a
   stopped subscriber, at most one per reply address and 3 a subscriber a day.
-- **The mail log** (Jamie, 2026-10-20: "a per account holder log that can be
-  seen by the user in the web interface and we email the user if there is a
-  problem in the log"): `/mail-log/` shows the owner what became of each
-  email to their addresses, 30 days (`MAILLOG#`), never exported and gone
-  with the account. Connected agents read it too (`notes_mail_log`). It keeps an email's words only once its sender is
-  proven; mail from another address or that fails verification shows sender
-  and subject alone, since inbound opens no MIME before proof and the web
-  reads nothing under `raw/`. Another address, a failed verification, an
-  unreadable email or one still failing after three tries emails the owner,
-  never the sender: once per email, 3 a day, never to a stopped subscriber.
-  Only a failure the code catches is logged: a timeout or crash reaches the
-  failed queue with no row and no email.
-  Mail to an address that names nobody is never logged.
+- **The activity log** (Jamie, 2026-10-20: "a full log of any activity
+  happening in release notes ... knowing exactly what was added, changes,
+  removed at any time"; approved 2026-10-21): `/activity/` shows the owner
+  one row per thing that happened, newest first (`ACTIVITY#`), kept for the
+  life of the account, in the export and gone with it. Connected agents
+  read it too (`notes_activity`). A row says when, through what, what
+  happened and the day, note or date it touched; it never copies the words
+  of a note or an Upcoming entry. A failed log write never fails the change
+  it records, and is counted (`activity-unrecorded`). It started on
+  2026-10-21 from the mail log, with no backfill from note history.
+  `/mail-log/` redirects to it.
+- **Mail in the activity log** (Jamie, 2026-10-20: "a per account holder
+  log that can be seen by the user in the web interface and we email the
+  user if there is a problem in the log"): one row per email to the
+  owner's addresses. It keeps an email's words only once its sender is
+  proven; mail from another address or that fails verification shows
+  sender and subject alone, since inbound opens no MIME before proof and
+  the web reads nothing under `raw/`. Another address, a failed
+  verification, an unreadable email or one still failing after three tries
+  emails the owner, never the sender: once per email, 3 a day, never to a
+  stopped subscriber. Only a failure the code catches is logged: a timeout
+  or crash reaches the failed queue with no row and no email.
+  Mail to an address that names nobody is never logged. Rows from before
+  the log (`MAILLOG#`, 30 days) read as mail rows until
+  `tools/move-mail-log.ts` moves them or they expire (by 2026-11-20); then
+  the merge goes.
+- **An assistant's reads** are one row a connection a local day (calls and
+  tools, never arguments or results), written by the MCP reader under
+  `MCPMETA#` since it may not write `USER#` rows.
 - **Reply as often as you like.** Each reply is its own note
   (`NOTE#<day>#<messageId>`); oldest first, together they are the day's
   release notes (Jamie, 2026-10-08: "keep them in the database as separate
@@ -425,7 +441,8 @@ Where things are (each module's design comment has its contract):
   email-verified web session. `notes:read` shares the archive with its
   transcripts and descriptions, and (Jamie, 2026-10-20: "read-only MCP
   tools ... for badges, the mail log, releases, on this day and account
-  settings under notes:read") the rest of the account, read-only: never
+  settings under notes:read", and 2026-10-21 the activity log) the rest
+  of the account, read-only: never
   the email address, the standing address or the calendar feed, which work
   as credentials, and badges only while "Show badges" is on; `media:read`
   adds file bytes and ten-minute links. Consent lets the agent process what it reads; it never turns on the
@@ -514,8 +531,8 @@ us-east-1, and Node 24 (`/opt/homebrew/opt/node@24/bin` first on PATH here).
 - **Send someone today's email now** only through the sender's `send_now`,
   still once per local day; never fake the clock with `now` to do it.
 - **Every live write by an operator tool needs Jamie's go**: an import, a
-  fill-in script's `--write`, the real `thumbs_all` run and the badges
-  baseline's `--write`. Run the dry run first.
+  fill-in script's `--write`, the real `thumbs_all` run, the badges
+  baseline's `--write` and moving the mail log (`--write`). Run the dry run first.
 - `tools/read-notes.ts` prints note text: run it only for the subscriber's
   own notes; agents do not run it to check things. `tools/subscribers.ts`
   prints addresses, so its output stays on this Mac.

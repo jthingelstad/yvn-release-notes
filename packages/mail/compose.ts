@@ -764,12 +764,13 @@ export function noticeLines(o: Omit<NoticeOptions, 'fromAddr'>): [string, string
       o.reason === 'from-mismatch'
         ? 'If you sent it, send it again from there, or add it on the web.'
         : o.kept
-          ? 'Its words are kept in your mail log, ready to add on the web.'
+          ? 'Its words are kept in your activity log, ready to add on the web.'
           : 'If you sent it, add it on the web.';
   return [`An email to your Release Notes address on ${when} wasn't added to your notes, because ${why}.`, next];
 }
 export const noticeText = (o: Omit<NoticeOptions, 'fromAddr'>) =>
-  noticeLines(o).join('\n\n') + `\n\nYour mail log shows what became of each email you send in:\n\n${APP}/mail-log/\n`;
+  noticeLines(o).join('\n\n') +
+  `\n\nYour activity log shows what became of each email you send in:\n\n${APP}/activity/\n`;
 export function noticeHtml(o: Omit<NoticeOptions, 'fromAddr'>): string {
   const p = `margin:0 0 18px;font:16px/1.55 ${FONT};color:${INK_2}`,
     [what, next] = noticeLines(o);
@@ -781,7 +782,7 @@ export function noticeHtml(o: Omit<NoticeOptions, 'fromAddr'>): string {
 <p style="margin:0 0 24px;font:800 18px/1.3 ${FONT};color:${INK}">Release Notes</p>
 <p style="${p}">${escape(what)}</p>
 <p style="${p}">${escape(next)}</p>
-<p style="margin:0;font:800 22px/1.3 ${FONT};color:${INK}"><a href="${APP}/mail-log/" style="color:${BLUE}">See your mail log</a></p>
+<p style="margin:0;font:800 22px/1.3 ${FONT};color:${INK}"><a href="${APP}/activity/" style="color:${BLUE}">See your activity log</a></p>
 </td></tr></table>
 </td></tr></table>
 </body></html>

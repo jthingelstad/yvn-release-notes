@@ -172,10 +172,16 @@ export interface ZipStatus {
   files?: number;
 }
 
-// GET /api/mail-log: what became of each email to this account in the last
-// 30 days, newest first. `text` only on a row not filed whose sender was proven.
-export interface MailEntry {
+// GET /api/activity: the account's activity log, newest first, a page at a
+// time; `next` is the `before` of the page after, or null. A mail row keeps
+// `text` only when it wasn't filed and its sender was proven.
+interface ActivityHead {
   id: string;
+  at: string;
+}
+export interface MailActivity extends ActivityHead {
+  kind: 'mail';
+  message: string;
   received_at: string;
   via: 'reply' | 'address';
   day: string;
@@ -188,11 +194,24 @@ export interface MailEntry {
   attempts: number;
   notified: boolean;
 }
-export interface MailLog {
+// One connected assistant's reads on one local day.
+export interface ReadsActivity extends ActivityHead {
+  kind: 'reads';
+  day: string;
+  client: string;
+  connection: string;
+  calls: number;
+  tools: Record<string, number>;
+  errors?: number;
+  last_at: string;
+}
+export type ActivityEntry = MailActivity | ReadsActivity;
+export interface Activity {
   email: string;
   tz: string;
   today: string;
-  entries: MailEntry[];
+  entries: ActivityEntry[];
+  next: string | null;
 }
 
 // GET /api/badges: everything earned, newest first, the tracks, this

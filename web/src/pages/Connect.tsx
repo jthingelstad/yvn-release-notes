@@ -58,8 +58,8 @@ export function Connect() {
           <p>Connected as {me.data?.email}. The client supplied this name; connect only if you started this request.</p>
           <p>
             This shares your whole archive: note text, tags, places, weather, and any existing transcripts and photo
-            descriptions, plus your badges, releases, settings and the last 30 days of your mail log. It never shares
-            your email address or private addresses. The agent can search and discuss them with you.
+            descriptions, plus your badges, releases, settings and your activity log. It never shares your email address
+            or private addresses. The agent can search and discuss them with you.
           </p>
           {info.data.scope.includes('media:read') && (
             <label className="check">

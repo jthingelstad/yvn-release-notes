@@ -5,9 +5,9 @@ import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { get } from './api.ts';
 import { addDays } from './format.ts';
 import type {
+  Activity,
   Badges,
   DayPage,
-  MailLog,
   DaysPage,
   Me,
   Note,
@@ -65,9 +65,12 @@ export const releaseQuery = (v: string | null) =>
     enabled: !!v
   });
 
-export const mailLogQuery = queryOptions({
-  queryKey: ['mail-log'],
-  queryFn: () => get<MailLog>('/api/mail-log')
+export const activityQuery = infiniteQueryOptions({
+  queryKey: ['activity'],
+  queryFn: ({ pageParam }) =>
+    get<Activity>('/api/activity' + (pageParam ? `?before=${encodeURIComponent(pageParam)}` : '')),
+  initialPageParam: '',
+  getNextPageParam: (last) => last.next || undefined
 });
 
 export const badgesQuery = queryOptions({

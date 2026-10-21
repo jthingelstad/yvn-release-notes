@@ -2,8 +2,8 @@
  * expire for writing after 72 hours; standing tokens name the subscriber's
  * received local day. Raw objects are tagged note/ignored, never rewritten.
  * Files use stable keys before the conditional note write, so retries converge.
- * Every message that reaches a subscriber goes in their mail log (filed, not
- * filed and why, or failed), with its words only once the sender is proven;
+ * Every message that reaches a subscriber goes in their activity log (filed,
+ * not filed and why, or failed), with its words only once the sender is proven;
  * a few reasons, and a final failure, email the subscriber a notice. */
 import type { Store, Subscriber, Item } from '../packages/backend/store.ts';
 import * as media from '../packages/backend/media.ts';
@@ -14,6 +14,7 @@ import { MAX_NOTE } from '../packages/domain/notes.ts';
 import { localDay, addDays } from '../packages/domain/dates.ts';
 import { computeVersion } from '../packages/domain/version.ts';
 import { codePointSlice, codePointLength, pythonTrim } from '../packages/domain/unicode.ts';
+import { activityKey, activityTime } from '../packages/domain/activity.ts';
 import {
   parseHeaders,
   parseMessage,
@@ -32,10 +33,9 @@ export const PARSER_VERSION = 3,
   NOTICES_A_DAY = 3,
   // The first try and InboundAliasInvokeConfig's two retries; after the last
   // the event goes to the failed queue.
-  ATTEMPTS = 3,
-  MAIL_LOG_DAYS = 30;
+  ATTEMPTS = 3;
 const NOTICED = new Set<string>(['from-mismatch', 'unauthenticated', 'unparseable']);
-/** What file() learned before it returned or threw, for the mail log. */
+/** What file() learned before it returned or threw, for the activity log. */
 export interface Seen {
   sub?: Subscriber;
   standing?: boolean;
@@ -354,18 +354,20 @@ export async function file(
     }
   ];
 }
+/** The email's activity row, kept for the life of the account. */
 function logRow(mail: SesMail, seen: Seen): [string, Item] {
-  const at = new Date(received(mail) * 1000).toISOString();
+  const at = activityTime(received(mail));
   return [
-    `MAILLOG#${at}#${mail.messageId}`,
+    activityKey(at, 'mail', mail.messageId),
     {
+      kind: 'mail',
+      at,
       message: mail.messageId,
       received_at: at,
       via: seen.standing ? 'address' : 'reply',
       day: seen.day,
       version: seen.version,
       subject: codePointSlice(mail.commonHeaders?.subject ?? '', 0, 300),
-      expires_at: Math.floor(received(mail)) + MAIL_LOG_DAYS * 86400,
       ...(seen.sender ? { sender: seen.sender } : {})
     }
   ];

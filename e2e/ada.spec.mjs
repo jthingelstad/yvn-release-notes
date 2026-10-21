@@ -14,6 +14,7 @@
 // Releases: the Timeline's index, and a release's page, oldest first.
 // Badges: reached from Today, the release's album, the tracks and the shelf;
 // a save's unlock line, and what a day and a release collected.
+// Activity: reached from settings, and from the mail log's old address.
 import { test, expect } from '@playwright/test';
 
 // A real 1 x 1 PNG, so the browser draws it, and a small PDF.
@@ -431,4 +432,15 @@ test('"Show badges" off hides their links and lines, and on brings them back', a
   await expect(page.locator('#badges-link')).toHaveText(/^\d+ badges?$/);
   await page.goto(`/day/?d=${first}`);
   await expect(page.locator('#collected-here')).toHaveText('Collected here: Release day.');
+});
+
+test('the activity log opens from settings, and the mail log address lands on it', async ({ page }) => {
+  await page.goto('/settings/');
+  await page.locator('#activity-link').click();
+  await expect(page).toHaveURL(/\/activity\/$/);
+  await expect(page.locator('h1')).toHaveText('Activity');
+  await expect(page.locator('#activity, #activity-empty')).toBeVisible();
+  await page.goto('/mail-log/');
+  await expect(page).toHaveURL(/\/activity\/$/);
+  await expect(page.locator('h1')).toHaveText('Activity');
 });

@@ -197,7 +197,7 @@ function lockedAndReleased(events: Event[]) {
   assert.equal(locks[1]!.args[2], runId);
 }
 
-test('an ordinary release holds the lock, keeps native parameters and deploys through the service role', async () => {
+test('an ordinary release holds the lock, keeps the release parameters and deploys through the service role', async () => {
   await withFixture(async (f) => {
     const { result, events } = await f.release();
     assert.equal(result.status, 0, result.stderr);
@@ -224,7 +224,7 @@ test('an ordinary release holds the lock, keeps native parameters and deploys th
   });
 });
 
-test('all six native phases use structured parameters, and publication alone uploads artifacts', async () => {
+test('all six release phases use structured parameters, and publication alone uploads artifacts', async () => {
   await withFixture(async (f) => {
     for (const kind of ['http', 'worker'])
       for (const phase of ['publish', 'activate', 'rollback']) {

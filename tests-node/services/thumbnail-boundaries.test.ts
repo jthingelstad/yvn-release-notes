@@ -1,10 +1,10 @@
-/** Real native codec properties replace the retired Pillow-only assertions. */
+/** Real Sharp codec properties, not mocked image behavior. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import { crc32 } from 'node:zlib';
 import { make, TARGET, LONGEST, MAX_PIXELS } from '../../packages/backend/thumbs.ts';
-test('native thumbnails flatten transparency onto paper, bound high-entropy bytes and refuse oversized decoded images', async () => {
+test('thumbnails flatten transparency onto paper, bound high-entropy bytes and refuse oversized decoded images', async () => {
   const transparent = await sharp({ create: { width: 800, height: 400, channels: 4, background: '#00000000' } })
     .png()
     .toBuffer();

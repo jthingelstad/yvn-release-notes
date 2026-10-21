@@ -1,4 +1,4 @@
-/** Fictional in-memory accounts; native HTTP and SDK-shaped transactions only. */
+/** Fictional in-memory accounts; HTTP and SDK-shaped transactions only. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { FakeStore } from '../../packages/testing/store.ts';

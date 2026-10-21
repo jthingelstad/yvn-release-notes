@@ -7,7 +7,7 @@
 #               [--native-worker-phase=publish|activate|rollback]
 #               [--break-glass] [--admin-user-id=ID] [--turnstile-mode=MODE]
 # Ordinary deploys verify the committed tree and update infrastructure and the
-# web app while keeping native artifact versions and live pins. scripts/release.sh
+# web app while keeping the published artifact versions and live pins. scripts/release.sh
 # has the rest: the deploy lock and receipts it shares with CI, the phases.
 set -euo pipefail
 export AWS_PROFILE="${AWS_PROFILE:-cloud-engineer}"

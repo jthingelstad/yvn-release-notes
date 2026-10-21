@@ -7,10 +7,9 @@ transcripts, descriptions, imports), and `packages/backend/store.ts` the
 table's full key layout.
 
 The application and workers use TypeScript on Node 24 (2026-10-13), with
-native Hono HTTP servers on Lambda Web Functions and a redesigned React UI.
-The API, persisted account/note contracts, email ownership proof and existing
-sessions/grants remain compatible. `docs/TYPESCRIPT-REBUILD.md` records the
-staged execution and rollback gates.
+Hono HTTP servers on Lambda Web Functions and a redesigned React UI. The API,
+persisted account/note contracts, email ownership proof and existing
+sessions/grants carried over from the Python version unchanged.
 
 Release Notes has a standalone web app at `notes.yourversionnumber.com`. The
 birthday and work sites at `yourversionnumber.com` stay as they are, and
@@ -146,7 +145,7 @@ notes.yourversionnumber.com
   supplied by `AWS_LAMBDA_HTTP_ENDPOINT`, without an event-handler adapter.
   Shared `packages/domain/` holds the site's version arithmetic, calendar,
   notes, tags, streaks and Unicode search behavior. `packages/backend/`
-  supplies asynchronous stores/services. Mail and processing use native
+  supplies asynchronous stores/services. Mail and processing use
   Event Function workers. Only the describe worker carries Sharp's native
   Linux Arm64 image libraries.
 - **Request isolation:** each HTTP request creates its own session/context;
@@ -155,7 +154,7 @@ notes.yourversionnumber.com
   revoked-session and deleting-account races. Existing email links, codes,
   sessions and accounts keep their wire/storage formats.
 - **Every HTTP response is private:** `Cache-Control: no-store` also applies
-  to redirects and errors. Native listener shutdown stops accepting requests
+  to redirects and errors. Listener shutdown stops accepting requests
   and drains active requests within a bounded deadline.
 - **Security headers** on every response: a CSP of `'self'` (no inline
   script or style), HSTS, `DENY` framing, and a Permissions-Policy that
@@ -203,8 +202,8 @@ notes.yourversionnumber.com
   no distribution grant and zero request allowance. No origin-secret header
   is needed. `CloudFront-Viewer-Address` is trusted only behind this boundary.
   On `/oauth/*`, a viewer-request function changes form-encoded query spaces
-  (`+`) to `%20` before OAC signs the origin request. This avoids the native
-  endpoint's signature rejection of that encoding; decoded values and repeated
+  (`+`) to `%20` before OAC signs the origin request. This avoids the Web
+  Function endpoint's signature rejection of that encoding; decoded values and repeated
   parameters stay the same. It never logs the query or alters consent/scopes.
 - **Session**: an `__Host-` cookie, Secure, HttpOnly, SameSite=Lax. Every
   write must carry `Origin: https://notes.yourversionnumber.com`. The API
@@ -346,7 +345,7 @@ or new CSP exception.
   without the embed script: the page's address without its query string,
   and on a visit's first page the referring site's origin only. No
   cookies, nothing that names a person.
-- `npm run verify` (format, lint, browser/native types and unit tests, both builds) is part of
+- `npm run verify` (format, lint, browser/server types and unit tests, both builds) is part of
   `validate`. `deploy.sh` builds from HEAD and syncs `dist/web`.
 
 ## API
@@ -520,7 +519,7 @@ Upcoming is not added to the agent tool surface.
 
 The administrator signs in through the same email link/code as everyone else.
 `AdminUserId` is a CloudFormation parameter, default empty (access disabled),
-passed only to the native app as `ADMIN_USER_ID`. Set it to the existing
+passed only to the web function as `ADMIN_USER_ID`. Set it to the existing
 subscriber id for the operator's verified address, outside this public repo.
 The staged publication accepts `./deploy.sh --native-http-phase=publish
 --admin-user-id=ID`; activate that candidate through the normal HTTP phase.
@@ -529,7 +528,7 @@ it in the newly published candidate. Never write the operator's id into source.
 Account recreation gives a new id and requires a new assignment. The API
 checks the configured id on every request; the same write transaction proves
 the live session, current account/address, draft revision and date-slot ownership.
-Native HTTP activation also verifies the configured administrator id.
+HTTP activation also verifies the configured administrator id.
 
 Settings links to **Administration** for that account. `/admin/` supports
 creating/editing/deleting drafts, a text preview, scheduling a saved draft, and
@@ -552,9 +551,9 @@ These records stay outside personal notes, counts, streaks, search and exports.
 
 ## Release and verification
 
-Use the green PR/validate gate and the explicit native publication,
-activation and recorded rollback phases in `AGENTS.md`. Unit, browser and
-load tests use the native local harness and fictional subscribers. Never
+Use the green PR/validate gate and the publication, activation and recorded
+rollback phases in `infra/NATIVE-WEB.md`. Unit, browser and load tests use the
+local harness and fictional subscribers. Never
 sign in against production or write live data to verify a release. Read-only
 live checks may inspect public health/discovery and unauthenticated origin
 protection; worker candidate probes use only `{"self_test":true}`.

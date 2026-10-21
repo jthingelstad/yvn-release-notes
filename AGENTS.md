@@ -146,7 +146,7 @@ Where things are (each module's design comment explains its contract):
   the requested native phase, the stack update through the service role, the
   origin policies and the web app. `deploy.sh` is the Mac's path to both: it
   requires a clean green `origin/main` and builds from a `git archive` of it.
-  `docs/TYPESCRIPT-REBUILD.md` records the migration gates.
+  `infra/NATIVE-WEB.md` is the release runbook.
 - `tsconfig.server.json` and `tests-node/` check servers, workers and tools;
   `npm run verify` checks the complete application. Shared `package-lock.json`
   pins runtime/build dependencies; installs do not run package scripts.
@@ -483,15 +483,23 @@ ZIP...` prints what an import would do, as counts (`--plan-out` to a
 
 ### Testing
 
-`docs/NATIVE-COMPATIBILITY.md` maps the retired Python test inventory to
-named native regressions and explicit obsolete implementation assumptions.
-
 - **Never verify with a write against live data.** The sender takes
   `{"dry_run": true, "now": "<ISO UTC>"}` and writes nothing; `now` is
   refused on a real send. Never sign in on live to check something.
 - Tests never fetch real services: inject fake title/weather/place fetchers,
   mail, objects, store and invocation services into the HTTP app and workers.
-  The native harness and all fixtures use fictional subscribers only.
+  The harness and all fixtures use fictional subscribers only.
+- **The golden fixtures are regression data.** They were captured from the
+  Python implementation before it retired (2026-10-13) and pin formats that
+  stored data and old emails still depend on: `tests-node/mail/fixtures/`
+  (the email and MIME parsing), `tests-node/export/fixtures/legacy.json`,
+  `tests-node/api/fixtures/python-readers.json`,
+  `tests-node/domain/legacy-golden.json` (Unicode folding),
+  `tests-node/operator/legacy-dayone.json` and
+  `tests-node/services/fixtures/metadata.json` (JPEG metadata).
+  `tests-node/fixtures/versions.json` comes from the site's `computeVersion`.
+  Never regenerate one from the TypeScript code to make a test pass; a
+  changed golden is a changed format or email and needs its own reason.
 
 ## Landing changes
 

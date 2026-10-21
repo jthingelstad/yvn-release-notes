@@ -50,7 +50,7 @@ async function rpc(
   }
   return { response, body, value: body.result?.structuredContent };
 }
-test('native Hono protocol negotiation, auth challenge, methods/origin, notifications and schemas', async () => {
+test('Hono protocol negotiation, auth challenge, methods/origin, notifications and schemas', async () => {
   const ctx = fixture(),
     a = await connected(ctx),
     app = createMcpApp(options(ctx));

@@ -144,7 +144,7 @@ test('restart unsuppresses bounce/complaint only; SES failure retains stopped st
   assert.ok(s.logs.some((l) => l.event === 'first-email-failed'));
   assert.ok(!JSON.stringify(s.logs).includes('private-provider-error'));
 });
-test('native HTTP admission rejects bad bodies, empty or out-of-calendar notes and unsafe upload forms before media moves', async () => {
+test('HTTP admission rejects bad bodies, empty or out-of-calendar notes and unsafe upload forms before media moves', async () => {
   const s = await setup(),
     cookie = await s.session();
   for (const [path, value] of [

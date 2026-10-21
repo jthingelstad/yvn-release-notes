@@ -3,7 +3,7 @@ name: build-release
 # The release bundle, built where no cloud credential exists: this job has no
 # token permissions, no environment and no AWS role. scripts/build-release.sh
 # installs the locked packages without their install scripts, runs
-# `npm run verify`, stages Sharp's Linux Arm64 runtime and packages the native
+# `npm run verify`, stages Sharp's Linux Arm64 runtime and packages the code
 # artifacts. The deploy and activate workflows call it, then release the
 # bundle in a separate job that holds the credentials and runs no npm install.
 on:

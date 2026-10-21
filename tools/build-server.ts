@@ -1,4 +1,4 @@
-/** Bundle native HTTP/worker entrypoints and the release tools (dist/release,
+/** Bundle the HTTP/worker entrypoints and the release tools (dist/release,
  * run by scripts/release.sh) from the committed tree; no runtime TS loader. */
 import { build } from 'esbuild';
 import { mkdir } from 'node:fs/promises';

@@ -1,4 +1,4 @@
-/** Local native HTTP harness. Fictional accounts, in-memory SDK/object/mail
+/** Local HTTP harness. Fictional accounts, in-memory SDK/object/mail
  * fakes and optional fixture processing only; it never creates AWS clients.
  * Repeated --dayone ZIP previews use the real bounded planner/importer with
  * Ada's fake account. Importing this module starts no server or timers. */

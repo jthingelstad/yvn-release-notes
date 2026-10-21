@@ -444,7 +444,8 @@ async function notice(s: InboundServices, mail: SesMail, seen: Seen, sk: string,
  * attempt also sends the notice. Best effort: the error itself is rethrown.
  * Given up on (`tries`, after a timeout or crash), the row takes the tries
  * Lambda made unless it has counted more, and keeps any words it has; a row
- * already filed or not filed stays as it is. */
+ * already filed or not filed stays as it is. There a failure to log throws, so
+ * the inbound failed queue tries again before handing the record on. */
 async function failure(s: InboundServices, mail: SesMail, seen: Seen, tries?: number): Promise<void> {
   if (!seen.sub) return;
   try {
@@ -468,6 +469,7 @@ async function failure(s: InboundServices, mail: SesMail, seen: Seen, tries?: nu
       await notice(s, mail, seen, sk, 'failed');
   } catch (e) {
     s.log?.({ event: 'mail-log', user: seen.sub.user_id, outcome: 'failed', error: errorName(e) });
+    if (tries) throw e;
   }
 }
 /** A message inbound gave up on, as Lambda's failure record names it

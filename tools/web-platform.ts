@@ -1,10 +1,10 @@
-/** Sole owner of the HTTP endpoint policies and release pin receipts.
- * Runs through tools/release-cli.ts, under the deploy lock, with its policy
- * journals and receipts in the private receipts bucket (tools/receipt-store.ts).
- * No data-plane reads, credential retrieval, source deletion or CloudFront edits.
- * Publish flow: prepare -> CF pinned candidate -> policy-install -> policy-verify;
- * activation (tools/native-release.ts) moves the pins. Nothing here removes a
- * policy: CloudFront reaches the API only through these grants.
+/** Sole owner of the Web Function resource policies, which CloudFormation
+ * cannot hold (the AWS::Lambda::ResourcePolicy schema refuses web-function
+ * ARNs). Each grants CloudFront, from this distribution only, the live
+ * endpoint only. Every release installs a missing policy and checks that an
+ * existing one is exactly that grant. Nothing here removes or rewrites a
+ * policy: CloudFront reaches the API only through these grants, so a policy
+ * that differs is refused for a person to look at.
  */
 import {
   LambdaWebClient,
@@ -14,39 +14,19 @@ import {
   type GetWebFunctionEndpointResponse
 } from '@aws-sdk/client-lambda-web';
 import { CloudFormationClient, DescribeStacksCommand } from '@aws-sdk/client-cloudformation';
-import { createHash, randomUUID } from 'node:crypto';
-import { createReceipt, readReceipt, writeReceipt, type ReceiptStore } from './receipt-store.ts';
-import { releaseIdentity } from './release-identity.ts';
+import { releaseIdentity, region, stackName } from './release-identity.ts';
 
 type Kind = 'App' | 'Mcp';
-type Artifact = { key: string; versionId: string; buildId: string };
-type Policy = ReturnType<typeof endpointPolicy>;
-type Journal = {
-  schema: 1;
-  owner: 'yvn-web-platform-v1';
-  stackId: string;
-  functionArn: string;
-  endpointArn: string;
-  policy: Policy;
-  policyHash: string;
-  revisionId?: string;
-  previousRevisionId?: string;
-  // 'removing' and 'deleted' appear only in journals written while a release
-  // could still remove a policy (retired 2026-10-20).
-  state: 'pending' | 'installed' | 'removing' | 'deleted';
-  artifact: Artifact;
-  savedAt: string;
-};
 export type Context = {
-  stackId: string;
+  account: string;
   stackName: string;
   distributionArn: string;
   outputs: Record<string, string>;
   parameters: Record<string, string>;
-  web: LambdaWebClient;
+  web: Pick<LambdaWebClient, 'send'>;
 };
 
-/** Exact endpoint-only grant; never permits public invocation or rollback use. */
+/** Exact endpoint-only grant; never permits public invocation. */
 export function endpointPolicy(endpointArn: string, distributionArn: string) {
   return {
     Version: '2012-10-17',
@@ -63,6 +43,7 @@ export function endpointPolicy(endpointArn: string, distributionArn: string) {
   };
 }
 
+/** JSON with sorted keys, so two policies compare by content. */
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value !== null && typeof value === 'object') {
@@ -77,11 +58,8 @@ export function canonical(value: unknown): string {
   return encoded;
 }
 
-export function policyHash(policy: unknown): string {
-  return createHash('sha256').update(canonical(policy)).digest('hex');
-}
-
-export function pinnedRevision(endpoint: GetWebFunctionEndpointResponse): string {
+/** The one revision a private, regional live endpoint serves. */
+export function servedRevision(endpoint: GetWebFunctionEndpointResponse): string {
   const weights = endpoint.revisionWeights;
   if (
     endpoint.authType !== 'IamAuth' ||
@@ -89,217 +67,93 @@ export function pinnedRevision(endpoint: GetWebFunctionEndpointResponse): string
     endpoint.autoDeploymentMode !== 'Disabled' ||
     endpoint.state !== 'Active' ||
     (endpoint.updateStatus !== undefined && endpoint.updateStatus !== 'Successful') ||
+    endpoint.throttleConfig?.rateLimit !== 100 ||
     weights?.length !== 1 ||
     weights[0]?.weight !== 100 ||
     !weights[0].revisionId
-  ) {
-    throw new Error('Endpoint must be active, private, regional and pinned to one 100% revision');
-  }
+  )
+    throw new Error('Endpoint must be active, private, regional and serve one revision');
   return weights[0].revisionId;
 }
 
-export function assertOwnedPolicy(journal: Journal, policy: string, revisionId: string): void {
-  if (
-    journal.owner !== 'yvn-web-platform-v1' ||
-    journal.schema !== 1 ||
-    journal.policyHash !== policyHash(journal.policy) ||
-    journal.policyHash !== policyHash(JSON.parse(policy)) ||
-    (journal.state !== 'pending' && journal.revisionId !== revisionId)
-  ) {
-    throw new Error('Resource policy ownership or CAS revision changed; refusing to overwrite it');
-  }
-}
-
-function required(fields: Record<string, string>, key: string): string {
+export function required(fields: Record<string, string>, key: string): string {
   const value = fields[key];
   if (!value) throw new Error(`Missing stack metadata ${key}`);
   return value;
 }
 
-async function context(region: string, stackName: string): Promise<Context> {
-  if (stackName !== 'yvn-release-notes') throw new Error('This release tool is scoped to yvn-release-notes');
-  const identity = { Account: (await releaseIdentity()).account };
-  const response = await new CloudFormationClient({ region }).send(new DescribeStacksCommand({ StackName: stackName }));
-  const stack = response.Stacks?.[0];
+export async function context(): Promise<Context> {
+  const { account } = await releaseIdentity();
+  const stack = (await new CloudFormationClient({ region }).send(new DescribeStacksCommand({ StackName: stackName })))
+    .Stacks?.[0];
   if (
-    !stack?.StackId ||
-    !['CREATE_COMPLETE', 'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'].includes(stack.StackStatus ?? '')
-  ) {
-    throw new Error('Stack must be idle with a complete status');
-  }
-  const arn = stack.StackId.split(':');
-  if (arn[3] !== region || arn[4] !== identity.Account) throw new Error('Stack identity/region mismatch');
+    !stack?.StackId?.startsWith(`arn:aws:cloudformation:${region}:${account}:stack/${stackName}/`) ||
+    !['CREATE_COMPLETE', 'UPDATE_COMPLETE'].includes(stack.StackStatus ?? '')
+  )
+    throw new Error('The stack must be idle after a completed update');
   const outputs = Object.fromEntries((stack.Outputs ?? []).map((entry) => [entry.OutputKey!, entry.OutputValue!]));
   const parameters = Object.fromEntries(
     (stack.Parameters ?? []).map((entry) => [entry.ParameterKey!, entry.ParameterValue!])
   );
   return {
-    stackId: stack.StackId,
+    account,
     stackName,
-    distributionArn: `arn:${arn[1]}:cloudfront::${identity.Account}:distribution/${required(outputs, 'WebDistributionId')}`,
+    distributionArn: `arn:aws:cloudfront::${account}:distribution/${required(outputs, 'WebDistributionId')}`,
     outputs,
     parameters,
-    // A CAS mutation must never be blindly retried after an unknown response.
+    // A write must never be blindly retried after an unknown response.
     web: new LambdaWebClient({ region, maxAttempts: 1 })
   };
 }
 
-async function endpoint(ctx: Context, kind: Kind, target: 'live' | 'rollback') {
+/** The live endpoint, checked against the stack's own outputs. */
+export async function liveEndpoint(ctx: Context, kind: Kind) {
   const functionName = required(ctx.outputs, `Native${kind}FunctionName`);
-  if (functionName !== `${ctx.stackName}-${kind === 'App' ? 'web' : 'mcp'}-native`) {
+  if (functionName !== `${ctx.stackName}-${kind === 'App' ? 'web' : 'mcp'}-native`)
     throw new Error('Unexpected web function identity');
-  }
-  const response = await ctx.web.send(new GetWebFunctionEndpointCommand({ functionName, endpointName: target }));
-  pinnedRevision(response);
+  const endpoint = await ctx.web.send(new GetWebFunctionEndpointCommand({ functionName, endpointName: 'live' }));
+  const revision = servedRevision(endpoint);
   if (
-    response.functionArn !== required(ctx.outputs, `Native${kind}FunctionArn`) ||
-    (target === 'live' &&
-      (response.endpointArn !== required(ctx.outputs, `Native${kind}LiveEndpointArn`) ||
-        response.domainName !== required(ctx.outputs, `Native${kind}LiveEndpointDomain`))) ||
-    response.endpointName !== target ||
-    response.throttleConfig?.rateLimit !== (target === 'live' ? 100 : 0)
-  ) {
-    throw new Error('Endpoint identity or rate configuration differs from the reviewed stack');
-  }
-  return response;
+    endpoint.functionArn !== required(ctx.outputs, `Native${kind}FunctionArn`) ||
+    endpoint.endpointArn !== required(ctx.outputs, `Native${kind}LiveEndpointArn`) ||
+    endpoint.domainName !== required(ctx.outputs, `Native${kind}LiveEndpointDomain`) ||
+    endpoint.endpointName !== 'live'
+  )
+    throw new Error('Endpoint identity differs from the stack');
+  return { functionName, functionArn: endpoint.functionArn, endpointArn: endpoint.endpointArn, revision };
 }
 
 async function currentPolicy(ctx: Context, functionArn: string) {
   try {
     const response = await ctx.web.send(new GetResourcePolicyCommand({ resourceArn: functionArn }));
-    if (!response.policy || !response.revisionId) throw new Error('Incomplete resource policy response');
-    return { policy: response.policy, revisionId: response.revisionId };
+    if (!response.policy) throw new Error('Incomplete resource policy response');
+    return response.policy;
   } catch (error) {
     if (error instanceof Error && error.name === 'ResourceNotFoundException') return undefined;
     throw error;
   }
 }
 
-function artifact(ctx: Context, kind: Kind): Artifact {
-  return {
-    key: required(ctx.parameters, `Native${kind}CodeKey`),
-    versionId: required(ctx.parameters, `Native${kind}CodeVersion`),
-    buildId: required(ctx.parameters, `Native${kind}BuildId`)
-  };
-}
-
-const journalName = (kind: Kind) => `${kind.toLowerCase()}-policy.json`;
-
-async function journalAt(store: ReceiptStore, kind: Kind): Promise<Journal | undefined> {
-  const journal = await readReceipt<Journal>(store, journalName(kind));
-  if (journal && (journal.schema !== 1 || journal.owner !== 'yvn-web-platform-v1')) {
-    throw new Error('Unrecognized policy journal');
-  }
-  return journal;
-}
-
-function checkJournal(ctx: Context, functionArn: string, endpointArn: string, journal: Journal): void {
-  if (journal.stackId !== ctx.stackId || journal.functionArn !== functionArn || journal.endpointArn !== endpointArn) {
-    throw new Error('Journal belongs to different stack or resources');
-  }
-}
-
-export async function installPolicy(ctx: Context, kind: Kind, store: ReceiptStore): Promise<void> {
-  const live = await endpoint(ctx, kind, 'live');
-  const functionArn = live.functionArn!;
-  const endpointArn = live.endpointArn!;
-  const save = (value: Journal) => writeReceipt(store, journalName(kind), value);
-  let journal = await journalAt(store, kind);
+/** Install the grant where there is none; confirm it where there is one. */
+export async function ensurePolicy(ctx: Context, kind: Kind): Promise<'installed' | 'confirmed'> {
+  const { functionArn, endpointArn } = await liveEndpoint(ctx, kind);
+  const desired = canonical(endpointPolicy(endpointArn, ctx.distributionArn));
   const actual = await currentPolicy(ctx, functionArn);
-  const desired = endpointPolicy(endpointArn, ctx.distributionArn);
-  if (journal) checkJournal(ctx, functionArn, endpointArn, journal);
-  if (actual) {
-    if (!journal || journal.state === 'deleted') throw new Error('Existing policy has no active owner journal');
-    assertOwnedPolicy(journal, actual.policy, actual.revisionId);
-    // Recover a prior unknown Put outcome only if its full desired policy matches.
-    if (policyHash(desired) === policyHash(JSON.parse(actual.policy))) {
-      journal = { ...journal, revisionId: actual.revisionId, state: 'installed', savedAt: new Date().toISOString() };
-      await save(journal);
-      return;
-    }
-  } else if (journal && !['pending', 'deleted'].includes(journal.state)) {
-    throw new Error('Owned policy disappeared unexpectedly');
+  if (actual !== undefined) {
+    if (canonical(JSON.parse(actual)) !== desired)
+      throw new Error(`The ${kind} endpoint policy differs from the live-endpoint grant; look at it by hand`);
+    return 'confirmed';
   }
-  journal = {
-    schema: 1,
-    owner: 'yvn-web-platform-v1',
-    stackId: ctx.stackId,
-    functionArn,
-    endpointArn,
-    policy: desired,
-    policyHash: policyHash(desired),
-    previousRevisionId: actual?.revisionId,
-    state: 'pending',
-    artifact: artifact(ctx, kind),
-    savedAt: new Date().toISOString()
-  };
-  // Persist intent before API submission. The initial empty policy has no CAS
-  // token in this API; the sole owner, fresh private endpoint and deploy lock
-  // bound that first write. Every subsequent mutation uses its returned token.
-  await save(journal);
-  await ctx.web.send(
-    new PutResourcePolicyCommand({
-      resourceArn: functionArn,
-      policy: JSON.stringify(desired),
-      ...(actual ? { revisionId: actual.revisionId } : {})
-    })
-  );
+  await ctx.web.send(new PutResourcePolicyCommand({ resourceArn: functionArn, policy: desired }));
   const installed = await currentPolicy(ctx, functionArn);
-  if (!installed) throw new Error('Policy installation was not confirmed');
-  assertOwnedPolicy(journal, installed.policy, installed.revisionId);
-  await save({ ...journal, state: 'installed', revisionId: installed.revisionId });
+  if (installed === undefined || canonical(JSON.parse(installed)) !== desired)
+    throw new Error('Policy installation was not confirmed');
+  return 'installed';
 }
 
-export async function verifyPolicy(ctx: Context, kind: Kind, store: ReceiptStore): Promise<void> {
-  const live = await endpoint(ctx, kind, 'live');
-  await endpoint(ctx, kind, 'rollback');
-  const journal = await journalAt(store, kind);
-  if (!journal || journal.state !== 'installed') throw new Error('No installed owner journal');
-  checkJournal(ctx, live.functionArn!, live.endpointArn!, journal);
-  const actual = await currentPolicy(ctx, live.functionArn!);
-  if (!actual) throw new Error('Endpoint resource policy is missing');
-  assertOwnedPolicy(journal, actual.policy, actual.revisionId);
-  if (policyHash(journal.policy) !== policyHash(endpointPolicy(live.endpointArn!, ctx.distributionArn))) {
-    throw new Error('Policy differs from the exact distribution/live-endpoint grant');
-  }
-}
-
-async function prepare(ctx: Context, store: ReceiptStore) {
-  const pins: Record<string, string> = {};
-  const receipt: Record<string, unknown> = { stackId: ctx.stackId, savedAt: new Date().toISOString() };
-  for (const kind of ['App', 'Mcp'] as const) {
-    const live = await endpoint(ctx, kind, 'live');
-    const rollback = await endpoint(ctx, kind, 'rollback');
-    pins[`Native${kind}LiveRevisionId`] = pinnedRevision(live);
-    pins[`Native${kind}RollbackRevisionId`] = pinnedRevision(rollback);
-    receipt[kind] = {
-      liveRevisionId: pinnedRevision(live),
-      rollbackRevisionId: pinnedRevision(rollback),
-      candidateRevisionId: required(ctx.outputs, `Native${kind}CandidateRevisionId`),
-      artifact: artifact(ctx, kind)
-    };
-  }
-  required(ctx.outputs, 'NativeSourceBucketName');
-  await createReceipt(store, `release-${randomUUID()}.json`, { ...receipt, pins });
-  return pins;
-}
-
-export type PlatformCommand = 'prepare' | 'policy-install' | 'policy-verify';
-export const platformCommands: readonly PlatformCommand[] = ['prepare', 'policy-install', 'policy-verify'];
-
-/** One platform step against the live stack; the caller holds the deploy lock. */
-export async function runPlatform(
-  command: PlatformCommand,
-  store: ReceiptStore
-): Promise<{ pins: Record<string, string>; confirmed?: boolean }> {
-  const ctx = await context('us-east-1', 'yvn-release-notes');
-  if (command === 'prepare') return { pins: await prepare(ctx, store) };
-  for (const kind of ['App', 'Mcp'] as const) {
-    if (command === 'policy-install') await installPolicy(ctx, kind, store);
-    else await verifyPolicy(ctx, kind, store);
-  }
-  if (command === 'policy-install') {
-    for (const kind of ['App', 'Mcp'] as const) await verifyPolicy(ctx, kind, store);
-  }
-  return { pins: {}, confirmed: true };
+export async function ensurePolicies(ctx?: Context) {
+  const live = ctx ?? (await context());
+  const result: Record<string, string> = {};
+  for (const kind of ['App', 'Mcp'] as const) result[kind] = await ensurePolicy(live, kind);
+  return result;
 }

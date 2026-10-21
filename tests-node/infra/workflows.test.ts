@@ -1,18 +1,17 @@
-/** The deploy workflows keep their guarantees: credentials only in the
+/** The deploy workflow keeps its guarantees: credentials only in the
  * production job, never in the build; one release at a time, never
- * cancelled; only a green push to main deploys; workflow inputs reach shells
- * only through the environment. The browser tests run by themselves for
- * web/ and e2e/ changes and stay out of the merge gate.
- * scripts/test-workflows.sh checks pins, default permissions and checkout
- * tokens for every workflow. */
+ * cancelled; only a green push to main (or main's green tip, by hand)
+ * releases; workflow inputs reach shells only through the environment. The
+ * browser tests run by themselves for web/ and e2e/ changes and stay out of
+ * the merge gate. scripts/test-workflows.sh checks pins, default permissions
+ * and checkout tokens for every workflow. */
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { test } from 'node:test';
 
-const read = (name: string) => readFile(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8');
-const [deploy, activate, build, e2e, validate] = await Promise.all(
-  ['deploy.yml', 'activate.yml', 'build-release.yml', 'e2e.yml', 'validate.yml'].map(read)
-);
+const directory = new URL('../../.github/workflows/', import.meta.url);
+const read = (name: string) => readFile(new URL(name, directory), 'utf8');
+const [deploy, e2e, validate] = await Promise.all(['deploy.yml', 'e2e.yml', 'validate.yml'].map(read));
 
 /** A job's block, from its two-space key to the next job or the end. */
 function job(workflow: string, name: string) {
@@ -21,36 +20,34 @@ function job(workflow: string, name: string) {
   return found[1]!;
 }
 
+test('one workflow releases', async () => {
+  assert.deepEqual((await readdir(directory)).sort(), ['deploy.yml', 'e2e.yml', 'validate.yml']);
+});
+
 test('only the production job assumes the AWS role; the build has no token permissions', () => {
-  for (const [workflow, releaser] of [
-    [deploy, 'deploy'],
-    [activate, 'activate']
-  ] as const) {
-    const release = job(workflow, releaser);
-    assert.match(release, /\n    environment: production\n/);
-    assert.match(release, /id-token: write/);
-    assert.match(release, /role-to-assume: \$\{\{ secrets\.RELEASE_DEPLOY_ROLE_ARN \}\}/);
-    assert.match(release, /mask-aws-account-id: true/);
-    assert.match(release, /needs: \[gate, build\]/);
-    assert.equal(workflow.match(/id-token: write/g)?.length, 1);
-    assert.equal(workflow.match(/configure-aws-credentials@/g)?.length, 1);
-    assert.doesNotMatch(release, /npm (ci|install)|build-release\.sh/);
-    assert.match(job(workflow, 'build'), /permissions: \{\}\n    uses: \.\/\.github\/workflows\/build-release\.yml\n/);
-  }
-  assert.match(job(build, 'build'), /\n    permissions: \{\}\n/);
+  const release = job(deploy, 'deploy');
+  assert.match(release, /\n    environment: production\n/);
+  assert.match(release, /\n    permissions:\n      contents: read\n      id-token: write\n    steps:/);
+  assert.match(release, /role-to-assume: \$\{\{ secrets\.RELEASE_DEPLOY_ROLE_ARN \}\}/);
+  assert.match(release, /mask-aws-account-id: true/);
+  assert.match(release, /needs: \[gate, build\]/);
+  assert.equal(deploy.match(/id-token: write/g)?.length, 1);
+  assert.equal(deploy.match(/configure-aws-credentials@/g)?.length, 1);
+  assert.doesNotMatch(release, /npm (ci|install)|build-release\.sh/);
+  const build = job(deploy, 'build');
+  assert.match(build, /\n    permissions: \{\}\n/);
   assert.doesNotMatch(build, /environment:|id-token|secrets\.|configure-aws-credentials/);
   assert.match(build, /scripts\/build-release\.sh/);
 });
 
 test('releases share one concurrency group and are never cancelled', () => {
-  for (const workflow of [deploy, activate])
-    assert.match(workflow, /\nconcurrency:\n  group: production-deploy\n  cancel-in-progress: false\n/);
+  assert.match(deploy, /\nconcurrency:\n  group: production-deploy\n  cancel-in-progress: false\n/);
 });
 
-test('only a green push to main in this repository deploys, and only while it is main', () => {
+test('only a green push to main in this repository releases, and only while it is main', () => {
   assert.match(
     deploy,
-    /workflow_run:[^\n]*\n    workflows: \[validate\]\n    types: \[completed\]\n    branches: \[main\]/
+    /workflow_run:[^\n]*\n    workflows: \[validate\]\n    types: \[completed\]\n    branches: \[main\]\n  workflow_dispatch:\n\n/
   );
   const gate = job(deploy, 'gate');
   for (const condition of [
@@ -60,38 +57,24 @@ test('only a green push to main in this repository deploys, and only while it is
     'github.event.workflow_run.head_repository.full_name == github.repository'
   ])
     assert.ok(gate.includes(condition), condition);
-  for (const [workflow, releaser] of [
-    [deploy, 'deploy'],
-    [activate, 'activate']
-  ] as const) {
-    const release = job(workflow, releaser);
-    assert.match(release, /ref: main\n\s+fetch-depth: 0\n/);
-    assert.match(release, /\[\[ "\$\(git rev-parse HEAD\)" == "\$COMMIT" \]\]/);
-  }
-  assert.match(job(activate, 'gate'), /refs\/heads\/main/);
-  assert.match(job(activate, 'gate'), /check_name=validate/);
+  // By hand: main only, and only a commit whose own validate run passed.
+  assert.match(gate, /\[\[ "\$REF" == refs\/heads\/main \]\]/);
+  assert.match(gate, /check_name=validate/);
+  assert.match(gate, /\.app\.slug == "github-actions"/);
+  const release = job(deploy, 'deploy');
+  assert.match(release, /ref: main\n/);
+  assert.match(release, /\[\[ "\$\(git rev-parse HEAD\)" == "\$COMMIT" \]\]/);
 });
 
-test('a deploy publishes only changed code and activates only what it published', () => {
+test("a release is one run of scripts/release.sh, with none of the Mac's settings", () => {
   const release = job(deploy, 'deploy');
-  assert.match(release, /--native-http-phase=publish --native-worker-phase=publish --only-changed/);
-  assert.match(
-    release,
-    /if: steps\.publish\.outputs\.published-http == 'true'\n(?:.*\n){5}.*--native-http-phase=activate\n/
-  );
-  assert.match(
-    release,
-    /if: steps\.publish\.outputs\.published-workers == 'true'\n(?:.*\n){5}.*--native-worker-phase=activate\n/
-  );
-  assert.ok(release.indexOf('--native-http-phase=activate') < release.indexOf('--native-worker-phase=activate'));
-  const phases = [...activate.matchAll(/^          - ([a-z]+-[a-z]+)$/gm)].map((m) => m[1]);
-  assert.deepEqual(phases, ['http-activate', 'workers-activate', 'http-rollback', 'workers-rollback']);
-  for (const workflow of [deploy, activate])
-    assert.doesNotMatch(workflow, /--break-glass|--admin-user-id|--turnstile-mode/);
+  assert.equal(release.match(/scripts\/release\.sh/g)?.length, 1);
+  assert.match(release, /run: scripts\/release\.sh --bundle "\$RUNNER_TEMP\/bundle" --commit "\$COMMIT"\n/);
+  assert.doesNotMatch(deploy, /--break-glass|--admin-user-id|--turnstile-mode/);
 });
 
 test('event values and inputs reach shell scripts only through the environment', () => {
-  for (const workflow of [deploy, activate, build, e2e]) {
+  for (const workflow of [deploy, e2e]) {
     const scripts = [...workflow.matchAll(/\n\s+run: \|\n((?:\s{10,}.*\n)+)|\n\s+run: (.*)\n/g)].map(
       (m) => m[1] ?? m[2]
     );

@@ -228,7 +228,7 @@ replay, revocation, deletion, account isolation, media scopes, strict schemas,
 pagination and budgets, storage request shapes and infrastructure permissions.
 Browser tests cover consent after sign-in, approval/denial and Settings
 revocation. Never sign in against production or read real notes to verify.
-Deploy through the usual green PR and `deploy.sh`; read-only live probes
+Deploy through the usual green PR; read-only live probes
 check discovery, unauthenticated 401, web health and origin protection only.
 
 References: [MCP authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization),

@@ -7,7 +7,7 @@
 #   OUT/release        the bundled release tools (tools/release-cli.ts)
 #   OUT/template.yaml  the stack, and OUT/commit, the commit built
 # deploy.sh runs it on a git archive of HEAD; GitHub Actions runs it in a
-# build job that holds no credentials (.github/workflows/build-release.yml).
+# build job that holds no credentials (.github/workflows/deploy.yml).
 #   scripts/build-release.sh SOURCE_DIR OUT_DIR COMMIT
 set -euo pipefail
 [[ $# -eq 3 ]] || { echo "usage: $0 SOURCE_DIR OUT_DIR COMMIT" >&2; exit 2; }

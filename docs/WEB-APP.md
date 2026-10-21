@@ -198,8 +198,7 @@ notes.yourversionnumber.com
   CloudFront through IAM-authenticated Web Function endpoints. CloudFront
   OAC always signs origin requests with SigV4 (`amz-auth`), and the endpoint
   resource policy allows only this distribution to invoke its live endpoint.
-  Direct origin calls are denied by the platform; the rollback endpoint has
-  no distribution grant and zero request allowance. No origin-secret header
+  Direct origin calls are denied by the platform. No origin-secret header
   is needed. `CloudFront-Viewer-Address` is trusted only behind this boundary.
   On `/oauth/*`, a viewer-request function changes form-encoded query spaces
   (`+`) to `%20` before OAC signs the origin request. This avoids the Web
@@ -521,14 +520,12 @@ The administrator signs in through the same email link/code as everyone else.
 `AdminUserId` is a CloudFormation parameter, default empty (access disabled),
 passed only to the web function as `ADMIN_USER_ID`. Set it to the existing
 subscriber id for the operator's verified address, outside this public repo.
-The staged publication accepts `./deploy.sh --native-http-phase=publish
---admin-user-id=ID`; activate that candidate through the normal HTTP phase.
-Omitting the option preserves the assignment; an explicit empty value disables
-it in the newly published candidate. Never write the operator's id into source.
+Set it with `./deploy.sh --admin-user-id=ID` from the Mac. Omitting the
+option preserves the assignment; an explicit empty value disables it. Never
+write the operator's id into source.
 Account recreation gives a new id and requires a new assignment. The API
 checks the configured id on every request; the same write transaction proves
 the live session, current account/address, draft revision and date-slot ownership.
-HTTP activation also verifies the configured administrator id.
 
 Settings links to **Administration** for that account. `/admin/` supports
 creating/editing/deleting drafts, a text preview, scheduling a saved draft, and
@@ -551,12 +548,12 @@ These records stay outside personal notes, counts, streaks, search and exports.
 
 ## Release and verification
 
-Use the green PR/validate gate and the publication, activation and recorded
-rollback phases in `infra/NATIVE-WEB.md`. Unit, browser and load tests use the
+Use the green PR/validate gate; a merge releases and a revert rolls back
+(`infra/NATIVE-WEB.md`). Unit, browser and load tests use the
 local harness and fictional subscribers. Never
 sign in against production or write live data to verify a release. Read-only
 live checks may inspect public health/discovery and unauthenticated origin
-protection; worker candidate probes use only `{"self_test":true}`.
+protection; the release probe invokes workers only with `{"self_test":true}`.
 
 ## DNS (Namecheap, by Jamie)
 

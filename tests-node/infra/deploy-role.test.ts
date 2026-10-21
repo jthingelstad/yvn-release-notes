@@ -86,14 +86,10 @@ test('the receipts bucket is versioned, encrypted, private and TLS-only, and out
   assert.match(statement('DenyInsecureTransport'), /aws:SecureTransport": "false"/);
 });
 
-test('role and bucket names agree with the release scripts and tools', async () => {
-  const bucket = /BucketName: !Sub "(yvn-rn-deploy-receipts-)\$\{AWS::AccountId\}"/.exec(template)?.[1];
-  assert.equal(bucket, 'yvn-rn-deploy-receipts-');
+test('role names agree with the release scripts and tools', async () => {
   const release = await read('scripts/release.sh');
-  assert.match(release, /RECEIPTS_BUCKET="yvn-rn-deploy-receipts-\$ACCOUNT"/);
   assert.match(release, /role\/ReleaseNotesCloudFormation"/);
   assert.match(release, /assumed-role\/ReleaseNotesGitHubDeploy\//);
-  assert.match(await read('tools/receipt-store.ts'), /`yvn-rn-deploy-receipts-\$\{account\}`/);
   assert.match(await read('tools/release-identity.ts'), /ReleaseNotesGitHubDeploy/);
   assert.match(template, /RoleName: ReleaseNotesGitHubDeploy\n/);
   assert.match(template, /RoleName: ReleaseNotesCloudFormation\n/);

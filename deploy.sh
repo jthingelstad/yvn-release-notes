@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 # Release from the Mac: clean, validated origin/main, built from a git archive
 # of HEAD and released by scripts/release.sh, the steps GitHub Actions runs
-# too (.github/workflows/deploy.yml). This is the break-glass path once CI
-# deploys, and the one place for Jamie's own settings:
-#   ./deploy.sh [--native-http-phase=publish|activate|rollback]
-#               [--native-worker-phase=publish|activate|rollback]
-#               [--break-glass] [--admin-user-id=ID] [--turnstile-mode=MODE]
-# Ordinary deploys verify the committed tree and update infrastructure and the
-# web app while keeping the published artifact versions and live pins. scripts/release.sh
-# has the rest: the deploy lock and receipts it shares with CI, the phases.
+# too (.github/workflows/deploy.yml). This is the path for GitHub being down,
+# and the one place for Jamie's own settings:
+#   ./deploy.sh [--break-glass] [--admin-user-id=ID] [--turnstile-mode=MODE]
 set -euo pipefail
 export AWS_PROFILE="${AWS_PROFILE:-cloud-engineer}"
 export AWS_REGION=us-east-1 AWS_PAGER=""
@@ -54,4 +49,4 @@ mkdir "$BUILD/repo"
 git archive HEAD | tar -x -f - -C "$BUILD/repo"
 "$BUILD/repo/scripts/build-release.sh" "$BUILD/repo" "$BUILD/bundle" "$HEAD_SHA" >/dev/null \
   || { echo "archived build or verification failed; not deploying" >&2; exit 1; }
-scripts/release.sh --bundle "$BUILD/bundle" --commit "$HEAD_SHA" --repo "$PWD" "$@"
+scripts/release.sh --bundle "$BUILD/bundle" --commit "$HEAD_SHA" "$@"

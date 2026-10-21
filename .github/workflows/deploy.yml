@@ -1,13 +1,11 @@
 name: deploy
 
-# Takes main live once its `validate` run is green, with no approval step
-# (Jamie, 2026-10-17: a hobby project with one developer). The build runs
-# without credentials (build-release.yml); the deploy job runs only
-# scripts/release.sh, as the Mac's deploy.sh does, sharing its lock and
-# receipts. It publishes the HTTP and worker code that changed
-# (--only-changed), updates the stack and the web app, then activates each
-# kind it published. A merge that changes neither activates nothing.
-# Roll back from the Actions tab with the activate workflow.
+# Releases main once its `validate` run is green, with no approval step
+# (Jamie, 2026-10-17: a hobby project with one developer). The build job runs
+# without credentials; the deploy job runs only scripts/release.sh, as the
+# Mac's deploy.sh does: one stack update takes every function and endpoint to
+# this commit, then the probe checks it. Roll back by reverting the merge.
+# Running this from the Actions tab releases main's tip again.
 #
 # workflow_run runs this file from main with main's secrets. It is safe here
 # because nothing from the triggering run is executed: the gate admits only a
@@ -19,9 +17,10 @@ on:
     workflows: [validate]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
 
-# One release at a time with activate.yml and never cancelled mid-run. A newer
-# run waiting behind this one replaces an older waiting one, as GitHub does.
+# One release at a time, never cancelled mid-run. A newer run waiting behind
+# this one replaces an older waiting one, as GitHub does.
 concurrency:
   group: production-deploy
   cancel-in-progress: false
@@ -29,61 +28,99 @@ concurrency:
 permissions: {}
 
 jobs:
-  # Only a green push to main in this repository, never a pull request's run.
+  # Only a green push to main in this repository, or main's tip by hand once
+  # its own validate run passed; never a pull request's run.
   gate:
     name: gate
     if: >-
+      github.event_name == 'workflow_dispatch' || (
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions: {}
+    permissions:
+      checks: read
     outputs:
       commit: ${{ steps.commit.outputs.commit }}
     steps:
       - id: commit
         env:
-          COMMIT: ${{ github.event.workflow_run.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          VALIDATED: ${{ github.event.workflow_run.head_sha }}
         run: |
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            [[ "$REF" == refs/heads/main ]] || { echo "refusing: releases run from main" >&2; exit 1; }
+            COMMIT=$SHA
+            green=$(gh api "repos/$GITHUB_REPOSITORY/commits/$COMMIT/check-runs?check_name=validate" \
+              --jq '[.check_runs[] | select(.conclusion == "success" and .app.slug == "github-actions")] | length')
+            [[ "$green" -gt 0 ]] || { echo "refusing: validate is not green on main" >&2; exit 1; }
+          else
+            COMMIT=$VALIDATED
+          fi
           [[ "$COMMIT" =~ ^[a-f0-9]{40}$ ]] || { echo "refusing: no commit" >&2; exit 1; }
           echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
 
+  # The release bundle, built where no cloud credential exists: no token
+  # permissions, no environment and no AWS role. scripts/build-release.sh
+  # installs the locked packages without their install scripts, runs `npm run
+  # verify`, stages Sharp's Linux Arm64 runtime and packages the code.
   build:
     name: build
     needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions: {}
-    uses: ./.github/workflows/build-release.yml
-    with:
-      commit: ${{ needs.gate.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: build the release bundle
+        env:
+          COMMIT: ${{ needs.gate.outputs.commit }}
+        run: |
+          [[ "$COMMIT" =~ ^[a-f0-9]{40}$ && "$(git rev-parse HEAD)" == "$COMMIT" ]] \
+            || { echo "refusing: not the requested commit" >&2; exit 1; }
+          scripts/build-release.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/bundle" "$COMMIT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-bundle
+          path: ${{ runner.temp }}/bundle
+          if-no-files-found: error
+          retention-days: 3
 
   deploy:
     name: deploy
     needs: [gate, build]
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     # The environment has no reviewers; it admits only main, and the AWS role
     # trusts only its OIDC subject.
     environment: production
     permissions:
       contents: read
-      checks: read
       id-token: write
     steps:
-      # Full history, so release.sh can check the commit is in main's history.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
-          fetch-depth: 0
           persist-credentials: false
-      # Deploy only main's tip; a later merge has its own run.
+      # Release only main's tip; a later merge has its own run.
       - name: still main
         env:
           COMMIT: ${{ needs.gate.outputs.commit }}
         run: |
           [[ "$(git rev-parse HEAD)" == "$COMMIT" ]] \
-            || { echo "refusing: main has moved on since this commit; its own run deploys it" >&2; exit 1; }
+            || { echo "refusing: main has moved on since this commit; its own run releases it" >&2; exit 1; }
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -99,27 +136,7 @@ jobs:
           role-session-name: release-notes-deploy-${{ github.run_id }}
           aws-region: us-east-1
           mask-aws-account-id: true
-      - name: publish
-        id: publish
+      - name: release
         env:
           COMMIT: ${{ needs.gate.outputs.commit }}
-        run: |
-          scripts/release.sh --bundle "$RUNNER_TEMP/bundle" --commit "$COMMIT" --repo "$GITHUB_WORKSPACE" \
-            --native-http-phase=publish --native-worker-phase=publish --only-changed
-      # GH_TOKEN: release.sh checks the candidate's validate run.
-      - name: activate HTTP
-        if: steps.publish.outputs.published-http == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          COMMIT: ${{ needs.gate.outputs.commit }}
-        run: |
-          scripts/release.sh --bundle "$RUNNER_TEMP/bundle" --commit "$COMMIT" --repo "$GITHUB_WORKSPACE" \
-            --native-http-phase=activate
-      - name: activate workers
-        if: steps.publish.outputs.published-workers == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          COMMIT: ${{ needs.gate.outputs.commit }}
-        run: |
-          scripts/release.sh --bundle "$RUNNER_TEMP/bundle" --commit "$COMMIT" --repo "$GITHUB_WORKSPACE" \
-            --native-worker-phase=activate
+        run: scripts/release.sh --bundle "$RUNNER_TEMP/bundle" --commit "$COMMIT"

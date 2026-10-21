@@ -142,9 +142,14 @@ Where things are (each module's design comment has its contract):
   2026-10-21 from the mail log, with no backfill from note history.
   `/mail-log/` redirects to it. Badge rows (Jamie, 2026-10-21: "achieving
   a badge should be in the log so Claude knows you got a badge") come one
-  per badge at the save that earns it. An Upcoming row keeps the date's id;
-  its title is read when shown, and an assistant sees it only with the
-  upcoming scope.
+  per badge at the save that earns it, from any channel. Reminder rows
+  (Jamie, 2026-10-21: "an upcoming event reminder should reflect in the
+  log, like it does showing up in the email") come one per reminder due in
+  the morning's email, those folded into "N more" too, none while paused
+  or stopped. An Upcoming or reminder row keeps the date's id; its title
+  is read when shown, and an assistant sees it only with the upcoming
+  scope. The workers add the daily email, stops for a bounce or
+  complaint, transcripts, descriptions and imports (never their words).
 - **Mail in the activity log** (Jamie, 2026-10-20: "a per account holder
   log that can be seen by the user in the web interface and we email the
   user if there is a problem in the log"): one row per email to the
@@ -186,7 +191,11 @@ Where things are (each module's design comment has its contract):
   convention. A day can have its own place (`PLACE#<day>`), which comes
   first. A past day's weather follows the day's place, else the subscriber's
   city; the morning forecast is always the subscriber's city. The original
-  photo is never changed. Coordinates and place names are never logged.
+  photo is never changed. Coordinates and place names are never logged
+  (CloudWatch). The activity log is the owner's own record: a home-city
+  change keeps the old and new city by name, as settings keep old and new
+  values, never coordinates; a day's own place is recorded by its day
+  alone.
 - **Raw mail is the source of truth.** Every filed reply stays whole in S3
   (`raw/`, `outcome=note`, kept indefinitely); never expire those. Ignored
   mail (`outcome=ignored`) expires in 30 days.

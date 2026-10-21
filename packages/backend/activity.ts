@@ -1,7 +1,8 @@
 /** Records what happened in an account (packages/domain/activity.ts) after
  * the change itself is saved: a failed write never fails that change, and
- * is logged as activity-unrecorded (counted by a metric filter) with the
- * user id and the kind, nothing else. */
+ * is logged as activity-unrecorded with the user id and the kind, nothing
+ * else, and counted: by a metric filter on the web's log, by an embedded
+ * metric (activityLog) where no filter reads the log as JSON. */
 import { randomUUID } from 'node:crypto';
 import { activityRow, activityTime, familyOf, type ActivityEvent } from '../domain/activity.ts';
 import type { Unlocked } from '../domain/badges.ts';
@@ -13,6 +14,11 @@ type Log = (fields: { event: string; kind: string; user: string }) => void;
 
 /** An id for an event that names no note, date or connection. */
 export const eventId = (): string => randomUUID().replace(/-/g, '').slice(0, 16);
+/** The id for a change that can come to the same thing again within the
+ * second a key's time is read to (two appends to one note, two saves of one
+ * date): the thing's id and a short random tail, so the second row is not
+ * refused as the first. The row's own fields name the thing. */
+export const again = (id: string): string => `${id}.${eventId().slice(0, 8)}`;
 
 export async function recordActivity(
   store: ActivityStore,
@@ -38,11 +44,32 @@ export async function recordActivity(
   return false;
 }
 
+/** The log for a worker: the line, then an embedded ActivityUnrecorded count,
+ * each a bare JSON line on stdout as the census writes its own (console.log
+ * would prefix it, and CloudWatch reads a metric only from a whole JSON line). */
+export const activityLog =
+  (
+    now: number,
+    log: (fields: Record<string, unknown>) => void = (fields) => process.stdout.write(`${JSON.stringify(fields)}\n`)
+  ) =>
+  (fields: { event: string; kind: string; user: string }): void => {
+    log(fields);
+    log({
+      _aws: {
+        Timestamp: now * 1000,
+        CloudWatchMetrics: [
+          { Namespace: 'ReleaseNotes', Dimensions: [[]], Metrics: [{ Name: 'ActivityUnrecorded', Unit: 'Count' }] }
+        ]
+      },
+      ActivityUnrecorded: 1
+    });
+  };
+
 /** One activity row per Upcoming date a save changed; never its title. */
 export const upcomingEvents = (changes: readonly UpcomingChange[], via: string, client?: unknown) =>
   changes.map(({ previous, next }) => ({
     kind: !previous ? 'upcoming.added' : next ? 'upcoming.changed' : 'upcoming.removed',
-    id: (next ?? previous)!.id,
+    id: previous && next ? again(next.id) : (next ?? previous)!.id,
     fields: { via, ...(client ? { client } : {}), upcoming: (next ?? previous)!.id }
   }));
 /** One row per badge a save earned (packages/domain/activity.ts), never the

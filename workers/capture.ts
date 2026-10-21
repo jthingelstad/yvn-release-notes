@@ -26,12 +26,11 @@ import { ApiError } from '../packages/backend/sessions.ts';
 import { search, type City } from '../packages/backend/places.ts';
 import { prepareUpcomingBatch, type UpcomingBatch, type UpcomingChange } from '../packages/backend/upcoming.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
-import { badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
+import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
 import { unlockedBy } from '../packages/backend/badges.ts';
 import type { Unlocked } from '../packages/domain/badges.ts';
 import type { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import {
-  activityLog,
   failure,
   fingerprint,
   object,
@@ -241,7 +240,7 @@ async function recordNote(
     [
       {
         kind: old ? 'note.edited' : 'note.added',
-        id,
+        id: old ? again(id) : id,
         fields: { via: 'assistant', client: family.client_name, day, note: id, version: note.version }
       },
       ...badgeEvents(unlocked, 'assistant', day, id, family.client_name)

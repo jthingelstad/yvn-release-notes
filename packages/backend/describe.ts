@@ -1,12 +1,14 @@
 /** Explicitly opted-in photo descriptions. Thumbnail/EXIF work is separate and
  * never requires model consent. The model sees only the photo and fixed prompt;
- * words enter the archive only with live consent and matching immutable media. */
+ * words enter the archive only with live consent and matching immutable media.
+ * A note's photos described in one pass get one activity row, without words. */
 import { randomUUID } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import type { NoteRecord } from '../domain/notes.ts';
 import type { Store, Item } from './store.ts';
 import { imageSize } from './media.ts';
 import { missing, type Objects, type Log } from './services.ts';
+import { activityLog, again, recordActivity } from './activity.ts';
 export const MODEL = 'claude-haiku-5-5',
   EFFORT = 'low',
   MAX_TOKENS = 2000,
@@ -190,44 +192,58 @@ export async function describe(note: NoteRecord, user: string, s: Services, chai
   const [, day, id] = String(note.sk).split('#');
   if (!day || !id) return 0;
   let done = 0;
-  for (const m of waiting(note)) {
-    const n = Number(m.n),
-      key = String(m.key),
-      type = String(m.type),
-      owner = randomUUID();
-    if (!key.startsWith(`media/${user}/`)) continue;
-    const now = Math.floor((s.clock ?? (() => Date.now() / 1000))());
-    if (!(await s.store.claimProcessing('describe', user, day, id, n, key, type, owner, now))) {
-      const lease = await s.store.processing(user, 'describe', day, id, n);
-      const current = await s.store.note(user, day, id, true);
-      const pending = waiting(current ?? {}).some((entry) => Number(entry.n) === n && entry.key === key);
-      if (pending && lease?.source === key && Number(lease.expires_at) > now && (await wanted(s.store, user))) {
-        // A live describe_all run holds this photo and finishes it; if it dies,
-        // its own invocation fails (alarmed) and both leases lapse together,
-        // after which any trigger claims the photo. A stream run's skip is not
-        // an error and does not send its batch to the failed queue.
-        if (!chain && (await s.store.describeChainLive(user, now))) {
-          s.log?.({ event: 'describe', outcome: 'lease-busy', user });
-          continue;
+  // In a finally: a later photo's busy lease throws, and the ones done stay done.
+  try {
+    for (const m of waiting(note)) {
+      const n = Number(m.n),
+        key = String(m.key),
+        type = String(m.type),
+        owner = randomUUID();
+      if (!key.startsWith(`media/${user}/`)) continue;
+      const now = Math.floor((s.clock ?? (() => Date.now() / 1000))());
+      if (!(await s.store.claimProcessing('describe', user, day, id, n, key, type, owner, now))) {
+        const lease = await s.store.processing(user, 'describe', day, id, n);
+        const current = await s.store.note(user, day, id, true);
+        const pending = waiting(current ?? {}).some((entry) => Number(entry.n) === n && entry.key === key);
+        if (pending && lease?.source === key && Number(lease.expires_at) > now && (await wanted(s.store, user))) {
+          // A live describe_all run holds this photo and finishes it; if it dies,
+          // its own invocation fails (alarmed) and both leases lapse together,
+          // after which any trigger claims the photo. A stream run's skip is not
+          // an error and does not send its batch to the failed queue.
+          if (!chain && (await s.store.describeChainLive(user, now))) {
+            s.log?.({ event: 'describe', outcome: 'lease-busy', user });
+            continue;
+          }
+          // Otherwise an interrupted invocation keeps its lease until expiry. A
+          // retry must stay retryable/alarmed, never acknowledge unfinished work.
+          throw new Error('Description processing lease busy');
         }
-        // Otherwise an interrupted invocation keeps its lease until expiry. A
-        // retry must stay retryable/alarmed, never acknowledge unfinished work.
-        throw new Error('Description processing lease busy');
+        continue;
       }
-      continue;
-    }
-    try {
-      let data: Buffer | null = null;
       try {
-        data = (await s.objects.get(key, { maxBytes: MAX_BYTES })).body;
-      } catch (error) {
-        if (!missing(error) && !(error instanceof RangeError)) throw error;
+        let data: Buffer | null = null;
+        try {
+          data = (await s.objects.get(key, { maxBytes: MAX_BYTES })).body;
+        } catch (error) {
+          if (!missing(error) && !(error instanceof RangeError)) throw error;
+        }
+        if (!(await wanted(s.store, user))) continue;
+        const text = data ? await wordsFor(data, type, await s.model()) : '';
+        if (await s.store.finishProcessing('describe', user, day, id, n, key, type, text, owner)) done++;
+      } finally {
+        await s.store.releaseProcessing(user, 'describe', day, id, n, owner);
       }
-      if (!(await wanted(s.store, user))) continue;
-      const text = data ? await wordsFor(data, type, await s.model()) : '';
-      if (await s.store.finishProcessing('describe', user, day, id, n, key, type, text, owner)) done++;
-    } finally {
-      await s.store.releaseProcessing(user, 'describe', day, id, n, owner);
+    }
+  } finally {
+    if (done) {
+      const at = (s.clock ?? (() => Date.now() / 1000))();
+      await recordActivity(
+        s.store,
+        user,
+        at,
+        [{ kind: 'description.added', id: again(id), fields: { day, note: id, photos: done } }],
+        s.log && activityLog(at, (fields) => s.log!(fields as Parameters<Log>[0]))
+      );
     }
   }
   return done;

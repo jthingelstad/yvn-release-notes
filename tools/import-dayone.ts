@@ -277,6 +277,7 @@ export async function main(args: string[]) {
           fetchTitle,
           fetchWeather: fetchJson,
           pause: 0.2,
+          log: (fields) => console.log(JSON.stringify(fields)),
           progress: (c) => {
             if (c.notes! > 0 && c.notes! % 50 === 0)
               console.log(

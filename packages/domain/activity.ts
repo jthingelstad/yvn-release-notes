@@ -20,15 +20,27 @@
  * (an assistant's name):
  *
  * - note.added, note.edited, note.deleted: `day`, `note` (its id), `files`
- *   (a count), `version`; note.files: `day`, `note`, `added`.
- * - badge.earned: `badge`, `key`, `name`, `version`, `day`, `note`.
+ *   (a count), `version`; note.files: `day`, `note`, `added`. A note filed
+ *   by email is its mail row.
+ * - transcript.added: `day`, `note`, `file` (its place in the note),
+ *   `empty` (nothing could be made out); description.added: `day`, `note`,
+ *   `photos` (how many that pass described). Never the words.
+ * - badge.earned: `badge`, `key`, `name`, `version`, `day`, `note`, from a
+ *   save on the web, by an assistant or by email.
+ * - import.notes (one a run that imported anything): `app` (dayone),
+ *   `notes`, `files`.
+ * - email.sent: `day`, `version`; reminder (one per reminder due that
+ *   morning, those past the email's three included): `upcoming`, `when`
+ *   (as the email said it), `day`.
+ * - place.set, place.removed (a day's own place): `day`, never the place.
  * - upcoming.added, upcoming.changed, upcoming.removed: `upcoming` (its id).
  *   The title is joined when read, never stored: the web always shows it, an
  *   assistant only with the upcoming scope.
  * - settings.changed: `changes`, each `{field, from, to}`.
  * - pause.set: `from`, `through`; pause.ended: `from`, `through` (the last
  *   paused day, or null when it ended before it began).
- * - status.stopped: `reason`; status.restarted: `reason` (why it had stopped).
+ * - status.stopped: `reason` (unsubscribed, or bounce or complaint from the
+ *   mail service); status.restarted: `reason` (why it had stopped).
  * - signin: `how` (link or code). export.words: `format`; export.zip.
  * - address.created, address.replaced; calendar.created, calendar.replaced,
  *   calendar.removed: never the address or link.
@@ -57,6 +69,7 @@ export const ACTIVITY_FAMILIES = [
   'badge',
   'email',
   'reminder',
+  'place',
   'upcoming',
   'settings',
   'pause',

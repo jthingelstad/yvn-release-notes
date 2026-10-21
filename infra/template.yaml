@@ -878,6 +878,14 @@ Resources:
                   ForAllValues:StringLike:
                     dynamodb:LeadingKeys: ["USER#*"]
               - Effect: Allow
+                # The owner's notes, pauses and weather, read for the badges a
+                # filed note earned (its activity rows).
+                Action: dynamodb:Query
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["USER#*"]
+              - Effect: Allow
                 # The late-reply notice, as raw MIME through SESv2 (see SenderRole).
                 Action: [ses:SendEmail, ses:SendRawEmail]
                 Resource:
@@ -1555,8 +1563,9 @@ Resources:
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem]
                 Resource: !GetAtt Table.Arn
               - Effect: Allow
-                # Content-free SNS idempotency receipt, owned/deleted with the account.
-                Action: dynamodb:PutItem
+                # Content-free SNS idempotency receipt and the stop's activity
+                # row with its live-profile proof, owned/deleted with the account.
+                Action: [dynamodb:PutItem, dynamodb:ConditionCheckItem]
                 Resource: !GetAtt Table.Arn
                 Condition:
                   ForAllValues:StringLike:

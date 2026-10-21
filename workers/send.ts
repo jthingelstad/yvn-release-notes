@@ -1,6 +1,7 @@
 /** Quarter-hour daily sender. Optional history/weather/photo/product-news/badge reads happen
  * before claiming a local day. Badges announced go into `seen` only once the
- * email has gone (docs/BADGES.md). The DynamoDB claim prevents competing runs;
+ * email has gone (docs/BADGES.md), and the activity log gets a row for the
+ * email and one for each reminder due, those folded into "and N more" too. The DynamoDB claim prevents competing runs;
  * failed sends restore it conditionally. SES acceptance followed by transport
  * failure remains an unavoidable ambiguous send, as in the original worker.
  * dry_run (including alternate now) reads only and never sends or writes. */
@@ -22,7 +23,8 @@ import {
 import { found as tags } from '../packages/domain/tags.ts';
 import { addDays } from '../packages/domain/dates.ts';
 import type { ProductUpdate } from '../packages/domain/product-updates.ts';
-import { remindersFor, type UpcomingSection } from '../packages/domain/upcoming.ts';
+import { remindersFor, type UpcomingDue } from '../packages/domain/upcoming.ts';
+import { activityLog, recordActivity } from '../packages/backend/activity.ts';
 import { computeStreak, pauseDays, type Streak } from '../packages/domain/streak.ts';
 import { computeVersion, releaseName, releaseSpan, sameDayBefore, type Version } from '../packages/domain/version.ts';
 import { releaseBadges } from '../packages/domain/badges.ts';
@@ -550,9 +552,25 @@ export async function sendOne(
       s.log?.({ event: 'badges-seen-error', user: sub.user_id, date: day, error: errorName(e) });
     }
   s.log?.({ event: 'sent', user: sub.user_id, date: day, version: String(v) });
+  const at = (s.clock ?? (() => Date.now() / 1000))();
+  await recordActivity(
+    s.store,
+    sub.user_id,
+    at,
+    [
+      { kind: 'email.sent', id: day, fields: { via: 'email', day, version: String(v) } },
+      ...(upcoming?.due ?? []).map((r) => ({
+        kind: 'reminder',
+        id: r.id,
+        // The date's id and how near it was, as the email said; its title is read when shown.
+        fields: { via: 'email', upcoming: r.id, when: r.when, day }
+      }))
+    ],
+    s.log && activityLog(at, (fields) => s.log!(fields as Parameters<Log>[0]))
+  );
   return { user: sub.user_id, date: day, version: String(v), outcome: 'sent' };
 }
-export async function readUpcoming(s: SenderServices, user: string, day: string): Promise<UpcomingSection | null> {
+export async function readUpcoming(s: SenderServices, user: string, day: string): Promise<UpcomingDue | null> {
   try {
     return remindersFor(await s.store.upcomingEntries(user), day);
   } catch (error) {

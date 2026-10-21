@@ -3,7 +3,8 @@
  * Each attempt stages at unique object keys, so a losing concurrent import
  * cannot overwrite the bytes already referenced by the winning note. Repeat
  * skips the ledger even if its owner deleted a note. Console/reporting counts
- * contain no text, tags, coordinates, addresses, filenames or object keys. */
+ * contain no text, tags, coordinates, addresses, filenames or object keys.
+ * A run that imported anything leaves one activity row with its counts. */
 import { randomUUID } from 'node:crypto';
 import type { Store, Item } from './store.ts';
 import type { Objects } from './services.ts';
@@ -13,6 +14,7 @@ import * as tags from '../domain/tags.ts';
 import * as links from './links.ts';
 import * as weather from './weather.ts';
 import type { JsonFetch } from './places.ts';
+import { eventId, recordActivity } from './activity.ts';
 export const ledger = (plan: dayone.Plan) =>
   `IMPORT#${(plan.notes[0]?.item.origin as Item | undefined)?.app ?? 'import'}#${tags.slug(plan.journal) || 'journal'}`;
 export interface Services {
@@ -24,6 +26,7 @@ export interface Services {
   fetchWeather?: JsonFetch;
   pause?: number;
   progress?: (counts: Record<string, number>) => void;
+  log?: (fields: { event: string; kind: string; user: string }) => void;
 }
 export type Input = readonly [plan: dayone.Plan, read: (name: string) => Promise<Buffer> | Buffer];
 function keys(note: Item): Set<string> {
@@ -166,5 +169,19 @@ export async function write(plans: readonly Input[], user: string, s: Services):
       }
     }
   }
+  if (counts.notes)
+    await recordActivity(
+      s.store,
+      user,
+      Date.parse(s.at) / 1000,
+      [
+        {
+          kind: 'import.notes',
+          id: eventId(),
+          fields: { via: 'import', app: dayone.APP, notes: counts.notes, files: counts.files }
+        }
+      ],
+      s.log
+    );
   return counts;
 }

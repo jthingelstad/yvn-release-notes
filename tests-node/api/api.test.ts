@@ -816,6 +816,40 @@ test('each change on the web leaves its activity row, never words, titles, addre
   );
   assert.ok(kept.id);
 });
+test("a day's own place and repeats in one second each leave a row, the day alone", async () => {
+  const s = await setup(),
+    call = async (method: string, path: string, value?: unknown) => {
+      const answer = await s.call(method, path, value);
+      assert.ok(answer.r.status < 300, `${method} ${path}: ${answer.r.status}`);
+      return answer.b as Item;
+    },
+    city = { name: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 };
+  // All in the same second, as a quick hand or an assistant may.
+  const id = String(
+    (await call('POST', '/api/days/2026-10-12/notes', { text: 'Private words', tz: 'America/Chicago' })).id
+  );
+  await call('PUT', `/api/days/2026-10-12/notes/${id}`, { text: 'Changed once' });
+  await call('PUT', `/api/days/2026-10-12/notes/${id}`, { text: 'Changed twice' });
+  await call('PUT', '/api/days/2026-10-12/place', { place: city });
+  await call('DELETE', '/api/days/2026-10-12/place');
+  await call('PUT', '/api/days/2026-10-12/place', { place: city });
+
+  const rows = s.store.memory
+    .all()
+    .filter((i) => i.pk === 'USER#u' && String(i.sk).startsWith('ACTIVITY#') && i.kind !== 'badge.earned')
+    .sort((a, b) => (String(a.sk) < String(b.sk) ? -1 : 1));
+  assert.deepEqual(
+    rows.map((r) => r.kind),
+    ['note.added', 'note.edited', 'note.edited', 'place.removed', 'place.set', 'place.set']
+  );
+  for (const row of rows.filter((r) => String(r.kind).startsWith('place.'))) {
+    assert.deepEqual(Object.keys(row).sort(), ['at', 'day', 'kind', 'pk', 'sk', 'via']);
+    assert.deepEqual([row.via, row.day], ['web', '2026-10-12']);
+  }
+  const kept = JSON.stringify(rows);
+  for (const hidden of ['Paris', 'France', '48.85', '2.35', 'Private words', 'Changed'])
+    assert.ok(!kept.includes(hidden), hidden);
+});
 test('a change whose activity row cannot be written still stands, and is logged without its words', async () => {
   const s = await setup(),
     send = s.store.memory.send.bind(s.store.memory);

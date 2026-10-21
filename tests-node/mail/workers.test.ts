@@ -658,6 +658,42 @@ test('activity: a filed reply is one mail row with its day and no words, kept fo
   for (const k of ['text', 'reason', 'sender', 'notified_at', 'expires_at']) assert.ok(!(k in r), k);
   assert.equal(f.mail.messages.length, 0);
 });
+test('activity: a filed reply adds a row for each badge it earned, once, never with "Show badges" off', async () => {
+  const f = await replyFixture();
+  await inbound.process(ses(), f.services);
+  await inbound.process(ses(), f.services);
+  const rows = (await f.store.activityAll('u', now)).filter((r) => r.kind === 'badge.earned');
+  // The first note, a reply, a hashtag, and a note for a day already past.
+  assert.deepEqual(
+    rows.map((r) => r.key),
+    ['tag', 'hotfix', 'hello', 'commit', 'ack']
+  );
+  for (const r of rows)
+    assert.deepEqual([r.via, r.day, r.note, r.at], ['email', '2026-10-11', 'synthetic-id', '2026-10-13T12:00:00.000Z']);
+  // Not marked seen: the next email tells of it.
+  assert.deepEqual(await f.store.seenBadges('u'), new Set());
+  const off = await replyFixture();
+  await off.store.updateProfile('u', { badges: false });
+  await inbound.process(ses(), off.services);
+  assert.deepEqual(
+    (await off.store.activityAll('u', now)).map((r) => r.kind),
+    ['mail']
+  );
+  // A failed badge read files the note all the same.
+  const failed = await replyFixture();
+  failed.store.pauses = async () => {
+    throw Object.assign(new Error('private'), { name: 'ProvisionedThroughputExceededException' });
+  };
+  assert.equal(await inbound.process(ses(), failed.services), 'note');
+  assert.deepEqual(
+    failed.logs.filter((l) => l.event === 'badges-error'),
+    [{ event: 'badges-error', user: 'u', date: '2026-10-11', error: 'ProvisionedThroughputExceededException' }]
+  );
+  assert.deepEqual(
+    (await failed.store.activityAll('u', now)).map((r) => r.kind),
+    ['mail']
+  );
+});
 test('mail log: another sender shows who, never the words, and the owner hears once', async () => {
   const f = await replyFixture(),
     other = ses({ from: 'Someone <someone@example.net>' });
@@ -804,6 +840,13 @@ test('SNS concurrent duplicate hard bounce stops/tallies once, retained receipt 
   await f.store.updateProfile('u', { status: 'active' });
   await events.handler(sns(bounce()), null, s);
   assert.equal((await f.store.profile('u'))?.status, 'active');
+  // One activity row for the stop, by its reason; nothing of the notification.
+  const stops = await f.store.activityAll('u', now);
+  assert.deepEqual(
+    stops.map((r) => [r.kind, r.via, r.reason]),
+    [['status.stopped', 'email', 'bounce']]
+  );
+  assert.deepEqual(Object.keys(stops[0]!).sort(), ['at', 'kind', 'pk', 'reason', 'sk', 'via']);
   const receipt = f.store.memory.all().find((i) => String(i.sk).startsWith('MAILEVENT#'))!;
   assert.equal(receipt.pk, 'USER#u');
   assert.equal(receipt.expires_at, now + 30 * 86400);
@@ -827,6 +870,10 @@ test('complaints stop; transient bounce and routine delay do not; unknown mail y
   await events.handler(sns(bounce('Complaint'), 'complaint'), null, s);
   assert.equal((await f.store.profile('u'))?.stopped_reason, 'complaint');
   assert.equal(f.store.memory.read({ pk: 'TALLY#2026-10', sk: 'TALLY' })?.complaints, 1);
+  assert.deepEqual(
+    (await f.store.activityAll('u', now)).map((r) => [r.kind, r.reason]),
+    [['status.stopped', 'complaint']]
+  );
   assert.deepEqual(events.notice({ eventType: 'Reject', reject: { reason: 'ada@example.com subject secret' } }, []), {
     source: 'yvn-release-notes',
     event: 'Reject',

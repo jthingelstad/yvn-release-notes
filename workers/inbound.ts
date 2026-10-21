@@ -4,7 +4,8 @@
  * Files use stable keys before the conditional note write, so retries converge.
  * Every message that reaches a subscriber goes in their activity log (filed,
  * not filed and why, or failed), with its words only once the sender is proven;
- * a few reasons, and a final failure, email the subscriber a notice. */
+ * a few reasons, and a final failure, email the subscriber a notice. A note
+ * filed for the first time adds a row for each badge it earned. */
 import type { Store, Subscriber, Item } from '../packages/backend/store.ts';
 import * as media from '../packages/backend/media.ts';
 import type { Objects, Mail, Log } from '../packages/backend/services.ts';
@@ -15,6 +16,8 @@ import { localDay, addDays } from '../packages/domain/dates.ts';
 import { computeVersion } from '../packages/domain/version.ts';
 import { codePointSlice, codePointLength, pythonTrim } from '../packages/domain/unicode.ts';
 import { activityKey, activityTime } from '../packages/domain/activity.ts';
+import { activityLog, badgeEvents, recordActivity } from '../packages/backend/activity.ts';
+import { unlockedBy } from '../packages/backend/badges.ts';
 import {
   parseHeaders,
   parseMessage,
@@ -298,12 +301,8 @@ export async function file(
       mail.messageId,
       photos
     ),
-    tagged = tags(text);
-  const stored = await s.store.putInboundNote(
-    sub.user_id,
-    day,
-    mail.messageId,
-    {
+    tagged = tags(text),
+    note: Item = {
       version,
       text,
       source: 'email',
@@ -316,9 +315,8 @@ export async function file(
       ...(found.length ? { links: found } : {}),
       ...(tagged.length ? { tags: tagged } : {}),
       ...(kept.length ? { media: kept } : {})
-    },
-    standing ? token : null
-  );
+    };
+  const stored = await s.store.putInboundNote(sub.user_id, day, mail.messageId, note, standing ? token : null);
   if (stored === 'refused') {
     const existing = await s.store.note(sub.user_id, day, mail.messageId),
       retained = new Set(existing ? media.keys(existing) : []);
@@ -340,6 +338,8 @@ export async function file(
     if (stored === 'duplicate' && !retained?.has(m.key)) await s.objects.remove(m.key);
     else await s.objects.tag(m.key, { outcome: 'note' });
   }
+  if (stored === 'stored')
+    await earned(s, sub, { pk: `USER#${sub.user_id}`, sk: `NOTE#${day}#${mail.messageId}`, ...note }, received(mail));
   return [
     'note',
     {
@@ -353,6 +353,28 @@ export async function file(
       ...(standing ? { via: 'address' } : {})
     }
   ];
+}
+/** The badges a newly filed note earned, in the activity log at the time the
+ * mail came in (none with "Show badges" off). Not marked seen, so the next
+ * email tells of them. A failure here never fails or retries the filing. */
+async function earned(s: InboundServices, sub: Subscriber, note: Item, at: number): Promise<void> {
+  const [, day, ...id] = String(note.sk).split('#');
+  let found: Awaited<ReturnType<typeof unlockedBy>>;
+  try {
+    const profile = sub.badges ? await s.store.profile(sub.user_id, true) : null;
+    if (!profile || profile.badges === false) return;
+    found = await unlockedBy(s.store, sub.user_id, profile, localDay(at, sub.tz), note);
+  } catch (e) {
+    s.log?.({ event: 'badges-error', user: sub.user_id, date: day!, error: errorName(e) });
+    return;
+  }
+  await recordActivity(
+    s.store,
+    sub.user_id,
+    at,
+    badgeEvents(found, 'email', day!, id.join('#')),
+    s.log && activityLog(at, (fields) => s.log!(fields as Parameters<Log>[0]))
+  );
 }
 /** The email's activity row, kept for the life of the account. */
 function logRow(mail: SesMail, seen: Seen): [string, Item] {

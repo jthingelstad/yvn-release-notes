@@ -1,8 +1,8 @@
 /** The inbound function's role grants what filing a reply requests: the raw
  * mail read and its outcome tags, media staged with pending tags then tagged
  * or removed (a duplicate the owner trimmed, a refused account), the late
- * notice with its reservation, and the standing address
- * (tests-node/infra/grants.ts). */
+ * notice with its reservation, the standing address, and the badges a filed
+ * note earned (tests-node/infra/grants.ts). */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FakeStore } from '../../packages/testing/store.ts';
@@ -99,6 +99,7 @@ test('the inbound role grants every request filing a reply makes', async () => {
     's3:DeleteObject',
     'ses:SendRawEmail',
     'dynamodb:ConditionCheckItem',
+    'dynamodb:Query',
     'dynamodb:UpdateItem'
   ])
     assert.ok(actions.has(action), action);

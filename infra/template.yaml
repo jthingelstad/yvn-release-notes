@@ -53,176 +53,51 @@ Parameters:
     AllowedPattern: ^arn:[^:]+:events:[^:]+:[0-9]{12}:rule/.+$
     Description: Existing transcription-completion rule ARN, read from control-plane metadata; the rule itself keeps its physical name.
 
-  NativeWorkerBuildId:
+  # A release is one commit on main (scripts/release.sh). BuildId is in every
+  # function's configuration and every revision and version, so each release
+  # publishes all of them and moves `live` to them in one stack update; a
+  # rollback is a revert, released like any other commit. Each code key is
+  # its zip's SHA-256, written once and never changed or expired.
+  BuildId:
     Type: String
-    MinLength: 1
-    AllowedPattern: '^[a-f0-9]{40,64}$'
-    Description: Immutable source/configuration release token; changed deliberately when publishing a complete worker configuration.
-  SenderNodeCodeKey:
+    AllowedPattern: '^[a-f0-9]{40}$'
+    Description: The commit on main this release was built from.
+  AppCode:
     Type: String
-    MinLength: 1
-    AllowedPattern: '^native/workers/sender/[a-f0-9]{64}\.zip$'
-  SenderNodeCodeVersion:
+    AllowedPattern: '^[a-f0-9]{64}$'
+    Description: SHA-256 of the API zip, native/app/<hash>.zip in the source bucket.
+  McpCode:
     Type: String
-    MinLength: 1
-    Description: Exact retained S3 object version of the immutable worker zip.
-  SenderNodeCodeSha256:
+    AllowedPattern: '^[a-f0-9]{64}$'
+    Description: SHA-256 of the MCP zip, native/mcp/<hash>.zip in the source bucket.
+  SenderCode:
     Type: String
-    MinLength: 1
-    AllowedPattern: '^[A-Za-z0-9+/]{43}=$'
-    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
-  SenderNativeLiveVersion:
+    AllowedPattern: '^[a-f0-9]{64}$'
+    Description: SHA-256 of the sender zip, native/workers/sender/<hash>.zip in the source bucket.
+  InboundCode:
     Type: String
-    MinLength: 1
-    AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving version pin, preserved while a complete candidate is published.
-  InboundNodeCodeKey:
+    AllowedPattern: '^[a-f0-9]{64}$'
+    Description: SHA-256 of the inbound zip, native/workers/inbound/<hash>.zip in the source bucket.
+  EventsCode:
     Type: String
-    MinLength: 1
-    AllowedPattern: '^native/workers/inbound/[a-f0-9]{64}\.zip$'
-  InboundNodeCodeVersion:
+    AllowedPattern: '^[a-f0-9]{64}$'
+    Description: SHA-256 of the events zip, native/workers/events/<hash>.zip in the source bucket.
+  TranscribeCode:
     Type: String
-    MinLength: 1
-    Description: Exact retained S3 object version of the immutable worker zip.
-  InboundNodeCodeSha256:
+    AllowedPattern: '^[a-f0-9]{64}$'
+    Description: SHA-256 of the transcribe zip, native/workers/transcribe/<hash>.zip in the source bucket.
+  DescribeCode:
     Type: String
-    MinLength: 1
-    AllowedPattern: '^[A-Za-z0-9+/]{43}=$'
-    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
-  InboundNativeLiveVersion:
+    AllowedPattern: '^[a-f0-9]{64}$'
+    Description: SHA-256 of the describe zip, native/workers/describe/<hash>.zip in the source bucket.
+  ExportCode:
     Type: String
-    MinLength: 1
-    AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving version pin, preserved while a complete candidate is published.
-  EventsNodeCodeKey:
+    AllowedPattern: '^[a-f0-9]{64}$'
+    Description: SHA-256 of the export zip, native/workers/export/<hash>.zip in the source bucket.
+  CaptureCode:
     Type: String
-    MinLength: 1
-    AllowedPattern: '^native/workers/events/[a-f0-9]{64}\.zip$'
-  EventsNodeCodeVersion:
-    Type: String
-    MinLength: 1
-    Description: Exact retained S3 object version of the immutable worker zip.
-  EventsNodeCodeSha256:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[A-Za-z0-9+/]{43}=$'
-    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
-  EventsNativeLiveVersion:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving version pin, preserved while a complete candidate is published.
-  TranscribeNodeCodeKey:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^native/workers/transcribe/[a-f0-9]{64}\.zip$'
-  TranscribeNodeCodeVersion:
-    Type: String
-    MinLength: 1
-    Description: Exact retained S3 object version of the immutable worker zip.
-  TranscribeNodeCodeSha256:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[A-Za-z0-9+/]{43}=$'
-    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
-  TranscribeNativeLiveVersion:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving version pin, preserved while a complete candidate is published.
-  DescribeNodeCodeKey:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^native/workers/describe/[a-f0-9]{64}\.zip$'
-  DescribeNodeCodeVersion:
-    Type: String
-    MinLength: 1
-    Description: Exact retained S3 object version of the immutable worker zip.
-  DescribeNodeCodeSha256:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[A-Za-z0-9+/]{43}=$'
-    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
-  DescribeNativeLiveVersion:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving version pin, preserved while a complete candidate is published.
-  ExportNodeCodeKey:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^native/workers/export/[a-f0-9]{64}\.zip$'
-  ExportNodeCodeVersion:
-    Type: String
-    MinLength: 1
-    Description: Exact retained S3 object version of the immutable worker zip.
-  ExportNodeCodeSha256:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[A-Za-z0-9+/]{43}=$'
-    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
-  ExportNativeLiveVersion:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving version pin, preserved while a complete candidate is published.
-  CaptureNodeCodeKey:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^native/workers/capture/[a-f0-9]{64}\.zip$'
-  CaptureNodeCodeVersion:
-    Type: String
-    MinLength: 1
-    Description: Exact retained S3 object version of the immutable worker zip.
-  CaptureNodeCodeSha256:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[A-Za-z0-9+/]{43}=$'
-    Description: Base64 SHA-256 of the exact zip; PublishVersion refuses mismatched $LATEST code.
-  CaptureNativeLiveVersion:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[1-9][0-9]*$'
-    Description: Explicit serving version pin, preserved while a complete candidate is published.
-
-  NativeAppCodeKey:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^native/app/[a-f0-9]{64}\.zip$'
-  NativeAppCodeVersion:
-    Type: String
-    MinLength: 1
-  NativeAppBuildId:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[a-f0-9]{40,64}$'
-  NativeMcpCodeKey:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^native/mcp/[a-f0-9]{64}\.zip$'
-  NativeMcpCodeVersion:
-    Type: String
-    MinLength: 1
-  NativeMcpBuildId:
-    Type: String
-    MinLength: 1
-    AllowedPattern: '^[a-f0-9]{40,64}$'
-  NativeAppLiveRevisionId:
-    Type: String
-    MinLength: 1
-    Description: Explicit serving revision pin, preserved while a candidate is published.
-  NativeAppRollbackRevisionId:
-    Type: String
-    MinLength: 1
-    Description: Protected last-good revision reference; the zero-rate endpoint prevents service cleanup of this revision.
-  NativeMcpLiveRevisionId:
-    Type: String
-    MinLength: 1
-    Description: Explicit serving revision pin, preserved while a candidate is published.
-  NativeMcpRollbackRevisionId:
-    Type: String
-    MinLength: 1
-    Description: Protected last-good revision reference; the zero-rate endpoint prevents service cleanup of this revision.
+    AllowedPattern: '^[a-f0-9]{64}$'
+    Description: SHA-256 of the capture zip, native/workers/capture/<hash>.zip in the source bucket.
   NativeMaxEnvironments:
     Type: Number
     Default: 8
@@ -242,11 +117,9 @@ Conditions:
   HasWebCertificate: !Not [!Equals [!Ref WebCertificateArn, ""]]
 
 Resources:
-  # Source objects must outlive EVERY active/rollback revision. No
-  # lifecycle expiration here: deleting a source version permanently fails
-  # its revision, even if that version is subsequently restored. Retained
-  # revisions alone are insufficient: the service cleans up unused revisions;
-  # the separate zero-rate rollback endpoints below keep last-good references.
+  # The code zips, named by content and never overwritten. No lifecycle
+  # expiration: deleting a source version permanently fails a revision built
+  # from it, and a revert releases old code from the keys it had.
   NativeSourceBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -390,10 +263,8 @@ Resources:
 
   # Resource policies have one owner: tools/web-platform.ts. The current
   # AWS::Lambda::ResourcePolicy registry schema excludes web-function ARNs.
-  # An HTTP publication installs the exact distribution/live-endpoint
-  # permissions and reads them back, recording their CAS revision, before any
-  # activation moves the live endpoint. Old Python function versions may remain
-  # as retained snapshots outside the stack; they are never rollback targets.
+  # Each release installs a missing one and checks an existing one is exactly
+  # the distribution/live-endpoint grant; no release removes or rewrites one.
   NativeAppFunction:
     Type: AWS::Lambda::WebFunction
     Properties:
@@ -401,21 +272,20 @@ Resources:
 
   NativeAppRevision:
     Type: AWS::Lambda::WebFunctionRevision
-    # Mandatory artifact parameters bind an immutable source object version.
+    # Every release builds a new one (its Description is the build) and the
+    # live endpoint moves to it in the same update; once that succeeds the
+    # one it replaced is deleted.
     DependsOn: [NativeAppFunction, NativeSourcePolicy]
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       # The provider normalizes ARN inputs to names; using an ARN breaks its
       # later read/rollback. Depend on the function, pass its bare name.
       FunctionName: !Sub "${AWS::StackName}-web-native"
-      Description: !Ref NativeAppBuildId
+      Description: !Ref BuildId
       BuildConfig:
         CodeConfig:
           S3Object:
             Bucket: !Ref NativeSourceBucket
-            Key: !Ref NativeAppCodeKey
-            VersionId: !Ref NativeAppCodeVersion
+            Key: !Sub "native/app/${AppCode}.zip"
         RuntimeConfig: { Runtime: nodejs24.x }
       ServiceConfig:
         ExecutionRoleArn: !GetAtt WebRole.Arn
@@ -425,7 +295,7 @@ Resources:
           TABLE: !Ref Table
           MAIL_BUCKET: !Ref MailBucket
           WEB_ORIGIN: !Sub "https://${WebDomain}"
-          APP_VERSION: !Ref NativeAppBuildId
+          APP_VERSION: !Ref BuildId
           FROM_ADDRESS: !Ref FromAddress
           CONFIG_SET: !Ref ConfigurationSet
           INBOUND_DOMAIN: !Ref InboundDomain
@@ -448,33 +318,14 @@ Resources:
       EndpointName: live
       EndpointType: HomeRegion
       AuthType: IamAuth
-      # Explicit weights imply Disabled auto-deployment (verified on AWS).
-      # Pin both IDs before another artifact/revision is published; otherwise
-      # an empty initial parameter follows the newly created revision.
+      # Explicit weights imply Disabled auto-deployment (verified on AWS): the
+      # endpoint serves the revision this stack names, never a newer one.
       RevisionWeights:
-        - RevisionId: !Ref NativeAppLiveRevisionId
+        - RevisionId: !GetAtt NativeAppRevision.RevisionId
           Weight: 100
       ScalingConfig:
         MaxEnvironments: !Ref NativeMaxEnvironments
       ThrottleConfig: { RateLimit: 100 }
-
-  NativeAppRollbackEndpoint:
-    Type: AWS::Lambda::WebFunctionEndpoint
-    DependsOn: NativeAppFunction
-    Properties:
-      FunctionName: !Sub "${AWS::StackName}-web-native"
-      EndpointName: rollback
-      EndpointType: HomeRegion
-      AuthType: IamAuth
-      # Explicit weights imply Disabled auto-deployment (verified on AWS).
-      # Pin both IDs before another artifact/revision is published; otherwise
-      # an empty initial parameter follows the newly created revision.
-      RevisionWeights:
-        - RevisionId: !Ref NativeAppRollbackRevisionId
-          Weight: 100
-      ScalingConfig:
-        MaxEnvironments: 2
-      ThrottleConfig: { RateLimit: 0 }
 
   NativeMcpFunction:
     Type: AWS::Lambda::WebFunction
@@ -483,21 +334,20 @@ Resources:
 
   NativeMcpRevision:
     Type: AWS::Lambda::WebFunctionRevision
-    # Mandatory artifact parameters bind an immutable source object version.
+    # Every release builds a new one (its Description is the build) and the
+    # live endpoint moves to it in the same update; once that succeeds the
+    # one it replaced is deleted.
     DependsOn: [NativeMcpFunction, NativeSourcePolicy]
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       # The provider normalizes ARN inputs to names; using an ARN breaks its
       # later read/rollback. Depend on the function, pass its bare name.
       FunctionName: !Sub "${AWS::StackName}-mcp-native"
-      Description: !Ref NativeMcpBuildId
+      Description: !Ref BuildId
       BuildConfig:
         CodeConfig:
           S3Object:
             Bucket: !Ref NativeSourceBucket
-            Key: !Ref NativeMcpCodeKey
-            VersionId: !Ref NativeMcpCodeVersion
+            Key: !Sub "native/mcp/${McpCode}.zip"
         RuntimeConfig: { Runtime: nodejs24.x }
       ServiceConfig:
         ExecutionRoleArn: !GetAtt McpRole.Arn
@@ -507,7 +357,7 @@ Resources:
           TABLE: !Ref Table
           MAIL_BUCKET: !Ref MailBucket
           WEB_ORIGIN: !Sub "https://${WebDomain}"
-          APP_VERSION: !Ref NativeMcpBuildId
+          APP_VERSION: !Ref BuildId
           CAPTURE_FUNCTION: !Ref CaptureAlias
         TelemetryConfig:
           LoggingConfig:
@@ -523,33 +373,14 @@ Resources:
       EndpointName: live
       EndpointType: HomeRegion
       AuthType: IamAuth
-      # Explicit weights imply Disabled auto-deployment (verified on AWS).
-      # Pin both IDs before another artifact/revision is published; otherwise
-      # an empty initial parameter follows the newly created revision.
+      # Explicit weights imply Disabled auto-deployment (verified on AWS): the
+      # endpoint serves the revision this stack names, never a newer one.
       RevisionWeights:
-        - RevisionId: !Ref NativeMcpLiveRevisionId
+        - RevisionId: !GetAtt NativeMcpRevision.RevisionId
           Weight: 100
       ScalingConfig:
         MaxEnvironments: !Ref NativeMaxEnvironments
       ThrottleConfig: { RateLimit: 100 }
-
-  NativeMcpRollbackEndpoint:
-    Type: AWS::Lambda::WebFunctionEndpoint
-    DependsOn: NativeMcpFunction
-    Properties:
-      FunctionName: !Sub "${AWS::StackName}-mcp-native"
-      EndpointName: rollback
-      EndpointType: HomeRegion
-      AuthType: IamAuth
-      # Explicit weights imply Disabled auto-deployment (verified on AWS).
-      # Pin both IDs before another artifact/revision is published; otherwise
-      # an empty initial parameter follows the newly created revision.
-      RevisionWeights:
-        - RevisionId: !Ref NativeMcpRollbackRevisionId
-          Weight: 100
-      ScalingConfig:
-        MaxEnvironments: 2
-      ThrottleConfig: { RateLimit: 0 }
 
   NativeSignInTotalMetric:
     Type: AWS::Logs::MetricFilter
@@ -1054,8 +885,7 @@ Resources:
       Handler: index.handler
       Code:
         S3Bucket: !Ref NativeSourceBucket
-        S3Key: !Ref SenderNodeCodeKey
-        S3ObjectVersion: !Ref SenderNodeCodeVersion
+        S3Key: !Sub "native/workers/sender/${SenderCode}.zip"
       Role: !GetAtt SenderRole.Arn
       MemorySize: 256
       Timeout: 120
@@ -1065,7 +895,7 @@ Resources:
         LogGroup: !Ref SenderLogs
       Environment:
         Variables:
-          APP_VERSION: !Ref NativeWorkerBuildId
+          APP_VERSION: !Ref BuildId
           TABLE: !Ref Table
           FROM_ADDRESS: !Ref FromAddress
           INBOUND_DOMAIN: !Ref InboundDomain
@@ -1083,8 +913,7 @@ Resources:
       Handler: index.handler
       Code:
         S3Bucket: !Ref NativeSourceBucket
-        S3Key: !Ref InboundNodeCodeKey
-        S3ObjectVersion: !Ref InboundNodeCodeVersion
+        S3Key: !Sub "native/workers/inbound/${InboundCode}.zip"
       Role: !GetAtt InboundRole.Arn
       MemorySize: 512
       Timeout: 60
@@ -1094,7 +923,7 @@ Resources:
         LogGroup: !Ref InboundLogs
       Environment:
         Variables:
-          APP_VERSION: !Ref NativeWorkerBuildId
+          APP_VERSION: !Ref BuildId
           TABLE: !Ref Table
           BUCKET: !Ref MailBucket
           INBOUND_DOMAIN: !Ref InboundDomain
@@ -1582,8 +1411,7 @@ Resources:
       Handler: index.handler
       Code:
         S3Bucket: !Ref NativeSourceBucket
-        S3Key: !Ref CaptureNodeCodeKey
-        S3ObjectVersion: !Ref CaptureNodeCodeVersion
+        S3Key: !Sub "native/workers/capture/${CaptureCode}.zip"
       Role: !GetAtt CaptureRole.Arn
       MemorySize: 1024
       Timeout: 20
@@ -1593,7 +1421,7 @@ Resources:
         LogGroup: !Ref CaptureLogs
       Environment:
         Variables:
-          APP_VERSION: !Ref NativeWorkerBuildId
+          APP_VERSION: !Ref BuildId
           TABLE: !Ref Table
           WEB_ORIGIN: !Sub "https://${WebDomain}"
 
@@ -1657,8 +1485,7 @@ Resources:
       Handler: index.handler
       Code:
         S3Bucket: !Ref NativeSourceBucket
-        S3Key: !Ref ExportNodeCodeKey
-        S3ObjectVersion: !Ref ExportNodeCodeVersion
+        S3Key: !Sub "native/workers/export/${ExportCode}.zip"
       Role: !GetAtt ExportRole.Arn
       MemorySize: 1024
       Timeout: 900
@@ -1676,7 +1503,7 @@ Resources:
         LogGroup: !Ref ExportLogs
       Environment:
         Variables:
-          APP_VERSION: !Ref NativeWorkerBuildId
+          APP_VERSION: !Ref BuildId
           TABLE: !Ref Table
           MAIL_BUCKET: !Ref MailBucket
 
@@ -1732,8 +1559,7 @@ Resources:
       Handler: index.handler
       Code:
         S3Bucket: !Ref NativeSourceBucket
-        S3Key: !Ref EventsNodeCodeKey
-        S3ObjectVersion: !Ref EventsNodeCodeVersion
+        S3Key: !Sub "native/workers/events/${EventsCode}.zip"
       Role: !GetAtt EventsRole.Arn
       MemorySize: 128
       Timeout: 30
@@ -1747,7 +1573,7 @@ Resources:
         LogGroup: !Ref EventsLogs
       Environment:
         Variables:
-          APP_VERSION: !Ref NativeWorkerBuildId
+          APP_VERSION: !Ref BuildId
           TABLE: !Ref Table
           ALARM_TOPIC: !Ref AlarmTopic
 
@@ -1764,7 +1590,7 @@ Resources:
     Properties:
       Name: live
       FunctionName: !Ref EventsFunction
-      FunctionVersion: !Ref EventsNativeLiveVersion
+      FunctionVersion: !GetAtt EventsNodeVersion.Version
 
   EventsAliasInvokePermission:
     Type: AWS::Lambda::Permission
@@ -1874,8 +1700,7 @@ Resources:
       Handler: index.handler
       Code:
         S3Bucket: !Ref NativeSourceBucket
-        S3Key: !Ref TranscribeNodeCodeKey
-        S3ObjectVersion: !Ref TranscribeNodeCodeVersion
+        S3Key: !Sub "native/workers/transcribe/${TranscribeCode}.zip"
       Role: !GetAtt TranscribeRole.Arn
       MemorySize: 256
       Timeout: 120
@@ -1889,7 +1714,7 @@ Resources:
         LogGroup: !Ref TranscribeLogs
       Environment:
         Variables:
-          APP_VERSION: !Ref NativeWorkerBuildId
+          APP_VERSION: !Ref BuildId
           TABLE: !Ref Table
           BUCKET: !Ref MailBucket
 
@@ -2018,8 +1843,7 @@ Resources:
       Handler: index.handler
       Code:
         S3Bucket: !Ref NativeSourceBucket
-        S3Key: !Ref DescribeNodeCodeKey
-        S3ObjectVersion: !Ref DescribeNodeCodeVersion
+        S3Key: !Sub "native/workers/describe/${DescribeCode}.zip"
       Role: !GetAtt DescribeRole.Arn
       # Decoding a phone's photo for its thumbnail; more memory is more CPU too.
       MemorySize: 1024
@@ -2035,7 +1859,7 @@ Resources:
         LogGroup: !Ref DescribeLogs
       Environment:
         Variables:
-          APP_VERSION: !Ref NativeWorkerBuildId
+          APP_VERSION: !Ref BuildId
           TABLE: !Ref Table
           BUCKET: !Ref MailBucket
           SELF: !Sub "${AWS::StackName}-describe:live"
@@ -2059,49 +1883,49 @@ Resources:
           - Pattern: '{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"NewImage": {"sk": {"S": [{"prefix": "NOTE#"}]}}}}'
           - Pattern: '{"eventName": ["INSERT", "MODIFY"], "dynamodb": {"NewImage": {"sk": {"S": ["PROFILE"]}, "describe": {"BOOL": [true]}}}}'
 
-  # --- stable worker entry points and retained candidates --------------------
+  # --- stable worker entry points: `live` serves the release ----------------
 
   SenderAlias:
     Type: AWS::Lambda::Alias
     Properties:
       Name: live
       FunctionName: !Ref SenderFunction
-      FunctionVersion: !Ref SenderNativeLiveVersion
+      FunctionVersion: !GetAtt SenderNodeVersion.Version
 
   InboundAlias:
     Type: AWS::Lambda::Alias
     Properties:
       Name: live
       FunctionName: !Ref InboundFunction
-      FunctionVersion: !Ref InboundNativeLiveVersion
+      FunctionVersion: !GetAtt InboundNodeVersion.Version
 
   TranscribeAlias:
     Type: AWS::Lambda::Alias
     Properties:
       Name: live
       FunctionName: !Ref TranscribeFunction
-      FunctionVersion: !Ref TranscribeNativeLiveVersion
+      FunctionVersion: !GetAtt TranscribeNodeVersion.Version
 
   DescribeAlias:
     Type: AWS::Lambda::Alias
     Properties:
       Name: live
       FunctionName: !Ref DescribeFunction
-      FunctionVersion: !Ref DescribeNativeLiveVersion
+      FunctionVersion: !GetAtt DescribeNodeVersion.Version
 
   ExportAlias:
     Type: AWS::Lambda::Alias
     Properties:
       Name: live
       FunctionName: !Ref ExportFunction
-      FunctionVersion: !Ref ExportNativeLiveVersion
+      FunctionVersion: !GetAtt ExportNodeVersion.Version
 
   CaptureAlias:
     Type: AWS::Lambda::Alias
     Properties:
       Name: live
       FunctionName: !Ref CaptureFunction
-      FunctionVersion: !Ref CaptureNativeLiveVersion
+      FunctionVersion: !GetAtt CaptureNodeVersion.Version
 
   InboundAliasInvokePermission:
     Type: AWS::Lambda::Permission
@@ -2159,75 +1983,51 @@ Resources:
       Qualifier: live
       MaximumRetryAttempts: 2
 
+  # Each release publishes a new version of every worker (its Description is
+  # the build) after the function's update, which the FunctionName Ref
+  # orders, so `live` serves the release's code and configuration together.
+  # The version it replaced is deleted once the update succeeds.
   SenderNodeVersion:
     Type: AWS::Lambda::Version
-    # FunctionName Ref orders publication after the complete function update.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       FunctionName: !Ref SenderFunction
-      CodeSha256: !Ref SenderNodeCodeSha256
-      Description: !Sub "${NativeWorkerBuildId}: complete native sender configuration"
+      Description: !Ref BuildId
 
   InboundNodeVersion:
     Type: AWS::Lambda::Version
-    # FunctionName Ref orders publication after the complete function update.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       FunctionName: !Ref InboundFunction
-      CodeSha256: !Ref InboundNodeCodeSha256
-      Description: !Sub "${NativeWorkerBuildId}: complete native inbound configuration"
+      Description: !Ref BuildId
 
   EventsNodeVersion:
     Type: AWS::Lambda::Version
-    # FunctionName Ref orders publication after the complete function update.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       FunctionName: !Ref EventsFunction
-      CodeSha256: !Ref EventsNodeCodeSha256
-      Description: !Sub "${NativeWorkerBuildId}: complete native events configuration"
+      Description: !Ref BuildId
 
   TranscribeNodeVersion:
     Type: AWS::Lambda::Version
-    # FunctionName Ref orders publication after the complete function update.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       FunctionName: !Ref TranscribeFunction
-      CodeSha256: !Ref TranscribeNodeCodeSha256
-      Description: !Sub "${NativeWorkerBuildId}: complete native transcribe configuration"
+      Description: !Ref BuildId
 
   DescribeNodeVersion:
     Type: AWS::Lambda::Version
-    # FunctionName Ref orders publication after the complete function update.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       FunctionName: !Ref DescribeFunction
-      CodeSha256: !Ref DescribeNodeCodeSha256
-      Description: !Sub "${NativeWorkerBuildId}: complete native describe configuration"
+      Description: !Ref BuildId
 
   ExportNodeVersion:
     Type: AWS::Lambda::Version
-    # FunctionName Ref orders publication after the complete function update.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       FunctionName: !Ref ExportFunction
-      CodeSha256: !Ref ExportNodeCodeSha256
-      Description: !Sub "${NativeWorkerBuildId}: complete native export configuration"
+      Description: !Ref BuildId
 
   CaptureNodeVersion:
     Type: AWS::Lambda::Version
-    # FunctionName Ref orders publication after the complete function update.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       FunctionName: !Ref CaptureFunction
-      CodeSha256: !Ref CaptureNodeCodeSha256
-      Description: !Sub "${NativeWorkerBuildId}: complete native capture configuration"
+      Description: !Ref BuildId
 
   # --- alarms -----------------------------------------------------------------
 
@@ -2563,19 +2363,19 @@ Resources:
         }
 
 Outputs:
-  SenderNativeCandidateVersion:
+  SenderLiveVersion:
     Value: !GetAtt SenderNodeVersion.Version
-  InboundNativeCandidateVersion:
+  InboundLiveVersion:
     Value: !GetAtt InboundNodeVersion.Version
-  EventsNativeCandidateVersion:
+  EventsLiveVersion:
     Value: !GetAtt EventsNodeVersion.Version
-  TranscribeNativeCandidateVersion:
+  TranscribeLiveVersion:
     Value: !GetAtt TranscribeNodeVersion.Version
-  DescribeNativeCandidateVersion:
+  DescribeLiveVersion:
     Value: !GetAtt DescribeNodeVersion.Version
-  ExportNativeCandidateVersion:
+  ExportLiveVersion:
     Value: !GetAtt ExportNodeVersion.Version
-  CaptureNativeCandidateVersion:
+  CaptureLiveVersion:
     Value: !GetAtt CaptureNodeVersion.Version
   EventsWorkerAlias:
     Value: !Ref EventsAlias
@@ -2587,7 +2387,7 @@ Outputs:
     Value: !GetAtt NativeAppLiveEndpoint.EndpointArn
   NativeAppLiveEndpointDomain:
     Value: !GetAtt NativeAppLiveEndpoint.DomainName
-  NativeAppCandidateRevisionId:
+  NativeAppLiveRevisionId:
     Value: !GetAtt NativeAppRevision.RevisionId
   NativeAppFunctionName:
     Value: !Sub "${AWS::StackName}-web-native"
@@ -2597,7 +2397,7 @@ Outputs:
     Value: !GetAtt NativeMcpLiveEndpoint.EndpointArn
   NativeMcpLiveEndpointDomain:
     Value: !GetAtt NativeMcpLiveEndpoint.DomainName
-  NativeMcpCandidateRevisionId:
+  NativeMcpLiveRevisionId:
     Value: !GetAtt NativeMcpRevision.RevisionId
   NativeMcpFunctionName:
     Value: !Sub "${AWS::StackName}-mcp-native"

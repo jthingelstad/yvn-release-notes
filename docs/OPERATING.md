@@ -2,27 +2,28 @@
 
 How to run the product day to day. `AGENTS.md` has the rules these steps
 follow; where a step needs Jamie's go, that rule is there too.
-`infra/NATIVE-WEB.md` is the release runbook (publish, activate, roll back).
+`infra/NATIVE-WEB.md` is how a release works and how to roll one back.
 
 ## Deploying
 
 - **From GitHub** (the normal path): merging to main deploys it. `deploy`
   (`.github/workflows/deploy.yml`) follows each green `validate` push run on
   main. It builds the bundle in a job with no credentials or token
-  permissions (`build-release.yml`, the same `scripts/build-release.sh`), then
-  runs `scripts/release.sh` as `ReleaseNotesGitHubDeploy` through OIDC: the
-  stack, the web app and a publication of only the HTTP and worker code that
-  changed (`--only-changed`), then activates each kind it published, HTTP
-  first. A merge that changes neither activates nothing.
-- `activate` (`.github/workflows/activate.yml`, the Actions tab, on main)
-  rolls the HTTP or worker release back, or activates a candidate a failed
-  run left. Both workflows refuse unless main is still the commit they built,
-  share the `production-deploy` concurrency group (never cancelled; a newer
-  waiting run replaces an older waiting one) and use the same lock and
-  receipts as the Mac. The `production` environment has no reviewers but
-  admits only main, and the deploy role trusts only its OIDC subject. The
-  role ARN is the environment secret `RELEASE_DEPLOY_ROLE_ARN` (the deploy
-  stack's `DeployRoleArn` output), so the public log masks it.
+  permissions (`scripts/build-release.sh`), then runs `scripts/release.sh` as
+  `ReleaseNotesGitHubDeploy` through OIDC: the code uploaded, one stack
+  update that takes every function and endpoint to the commit, the endpoint
+  grants confirmed, the web app synced, then the probe. Every merge releases
+  everything, in about five minutes. "Run workflow" on main releases main's
+  tip again. Runs share the `production-deploy` concurrency group (never
+  cancelled; a newer waiting run replaces an older waiting one) and refuse
+  unless main is still the commit they built. The `production` environment
+  has no reviewers but admits only main, and the deploy role trusts only its
+  OIDC subject. The role ARN is the environment secret
+  `RELEASE_DEPLOY_ROLE_ARN` (the deploy stack's `DeployRoleArn` output), so
+  the public log masks it.
+- **Rolling back** is reverting the merge (`infra/NATIVE-WEB.md`). A failed
+  stack update rolls itself back; a failed probe leaves the release live and
+  the run red, so read it and revert.
 - **From the Mac**: `./deploy.sh` (cloud-engineer profile, us-east-1) is for
   the admin id, the Turnstile mode, the code bucket's and receipt rule set's
   first setup, and GitHub being down. It runs from a clean checkout of
@@ -31,39 +32,15 @@ follow; where a step needs Jamie's go, that rule is there too.
   it skips only the fetch and the check lookups, so HEAD must still be a clean
   checkout of `origin/main` as last fetched. It builds a bundle from a
   `git archive` of HEAD with `scripts/build-release.sh` (`npm run verify`
-  again, the web app, the code artifacts), so nothing git ignores goes in and
-  a failed build stops the deploy, then hands it to `scripts/release.sh`.
-  Their comments have the rest (the code bucket, cache lifetimes, the
+  again, the web app, the code zips), so nothing git ignores goes in and a
+  failed build stops the deploy, then hands it to `scripts/release.sh`. Their
+  comments have the rest (the code bucket, cache lifetimes, the
   invalidation). A Mac build zips the same files with different bytes than
-  the Linux runner, so a `deploy.sh` publication after a CI one (or the
-  reverse) republishes unchanged code once; that is harmless.
-- **Phases**: publication and activation are separate:
-  `./deploy.sh --native-http-phase=publish`, then
-  `--native-http-phase=activate`; `--native-worker-phase=publish`, then
-  `--native-worker-phase=activate`. Both publications may run in one
-  deploy; activation and rollback are one kind at a time
-  (`--native-http-phase=rollback`, `--native-worker-phase=rollback`).
-  Ordinary deploys keep the published artifact versions and live pins. One
-  deploy lock, exact source/build identity, immutable per-build receipts and
-  fresh metadata checks protect retries; an uncertain CloudFormation update
-  must finish before another phase runs. Candidate worker probes use only
-  `{"self_test":true}` on published immutable versions, never subscriber
-  data. Rollback restores the recorded serving pins; no release step removes
-  an endpoint policy, and old Python versions are never rollback targets
-  (`infra/NATIVE-WEB.md`).
-- **The admin id** (`AdminUserId`, product updates) rides an HTTP
-  publication: `./deploy.sh --native-http-phase=publish --admin-user-id=ID`
-  (an explicit empty id disables `/admin/`), then
-  `--native-http-phase=activate`. The Turnstile mode works the same way
-  (Turnstile, below).
-- **Receipts and the lock** live in the private receipts bucket
-  (`yvn-rn-deploy-receipts-<account>`, the deploy stack): `receipts/` written
-  once each (policy journals rewritten, the bucket keeps every version),
-  `locks/deploy.lock` created only when absent, and each release's private
-  log under `logs/` (the stack outputs and release parameters, kept a year).
-  Every release holds the lock for its whole run, the Mac's and CI's alike.
-  A held lock means a run is going or one died: find out which before
-  deleting it by hand; nothing ever takes it over.
+  the Linux runner, so its zips are new keys; that is harmless.
+- **The admin id** (`AdminUserId`, product updates):
+  `./deploy.sh --admin-user-id=ID` (an explicit empty id disables `/admin/`).
+  The Turnstile mode works the same way (Turnstile, below). Every other
+  release keeps both as they are.
 
 ## Node, tests and the local harness
 
@@ -133,10 +110,8 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
 
 ## Turnstile
 
-- The mode rides an HTTP publication, as the admin id does:
-  `./deploy.sh --native-http-phase=publish --turnstile-mode=enforce` (or
-  `observe`, `off`, `default` to clear it back to the code's default), then
-  `--native-http-phase=activate`.
+- Set it from the Mac, as the admin id is: `./deploy.sh --turnstile-mode=enforce`
+  (or `observe`, `off`, `default` to clear it back to the code's default).
 - Read the observe numbers in Logs Insights on the web function's log group:
   `filter message.event = "turnstile" | stats count() by message.result, message.mode, message.codes`
   (add `| filter message.result != "pass"` to see what enforce would refuse).

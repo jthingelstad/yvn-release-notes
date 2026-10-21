@@ -100,16 +100,16 @@ Where things are (each module's design comment has its contract):
 - `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline}.ts`
   are operator tools (shared setup in `tools/operator.ts`);
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current.
-- `tools/{build-server,package-native,native-artifacts,native-release,web-platform}.ts`
-  build the code artifacts and run the release phases and endpoint
-  policies; `tools/{receipt-store,release-identity,release-cli}.ts` are the
-  receipts bucket and lock, who may release, and the bundled release tool.
-  `scripts/build-release.sh` builds a bundle with no cloud credentials,
-  `scripts/release.sh` releases it, and `deploy.sh` is the Mac's path to
-  both.
+- `tools/{build-server,package-native,native-artifacts,web-platform,release-probe}.ts`
+  build and upload the code zips, keep the endpoint grants and probe a
+  finished release; `tools/{release-identity,release-cli}.ts` are who may
+  release and the bundled release tool. `scripts/build-release.sh` builds a
+  bundle with no cloud credentials, `scripts/release.sh` releases it, and
+  `deploy.sh` is the Mac's path to both.
 - `infra/template.yaml` is the stack. `infra/github-deploy-role.yaml` is the
   `yvn-release-notes-deploy` stack (the deploy role, the CloudFormation
-  service role and the receipts bucket), applied by hand from its header.
+  service role and, until it is taken out, the receipts bucket of the retired
+  phased release), applied by hand from its header.
 - **Backups** (Jamie, 2026-10-20: "keep the data in monthly copies for as
   long as we want ... We make no promise about backups"): `infra/backup.yaml`
   is the `yvn-release-notes-backup` stack, applied by hand and never from a
@@ -333,9 +333,8 @@ Where things are (each module's design comment has its contract):
   schedules them at `/admin/`, one per local email date, shown as "Release
   Notes about Release Notes". `AdminUserId` names an existing
   email-verified subscriber; it is configured privately, never committed,
-  and set only through
-  `./deploy.sh --native-http-phase=publish --admin-user-id=ID` (empty
-  disables it). No admin privilege can be self-assigned by the web.
+  and set only through `./deploy.sh --admin-user-id=ID` (empty disables
+  it). No admin privilege can be self-assigned by the web.
   Scheduling is explicit and separate from saving; cancelling cannot
   retract a sent email. No extra sends or catch-up; updates are never
   personal notes.
@@ -368,8 +367,7 @@ Where things are (each module's design comment has its contract):
   numbers. The sign-in rate limits and their alarm stay as they are.
 - **The API answers only CloudFront.** Each Lambda Web Function endpoint uses
   IAM authentication and CloudFront OAC signs every origin request; the
-  policy lets only this distribution invoke the live endpoint, and the
-  rollback endpoint has no distribution grant and zero request allowance.
+  policy lets only this distribution invoke the live endpoint.
   `CloudFront-Viewer-Address` is trusted only behind that boundary; the
   client `Origin` is still checked before every cookie-authenticated write.
 - **SES events never reach the ops queue as is**: they carry the address,
@@ -472,8 +470,10 @@ Where things are (each module's design comment has its contract):
 - **Merging to main deploys it**, with no approval step (Jamie, 2026-10-17:
   "I don't want the hand/manual approval. This is a hobby project. I'm the
   only dev."). `deploy` follows each green `validate` run on main and
-  releases only the code that changed; `activate` (the Actions tab) rolls
-  back. `docs/OPERATING.md`, Deploying, has the flow.
+  releases everything at that commit in one stack update, then probes it.
+  **Roll back by reverting the merge** (Jamie, 2026-10-20, approving
+  "rollback by revert"); there is no other rollback path.
+  `infra/NATIVE-WEB.md` has the flow.
 - Dependabot's two grouped PRs a month (action pins, npm packages) are
   reviewed like any other and never auto-merge: a merged action runs with
   the repository's token and a package runs in the build. It skips
@@ -499,12 +499,12 @@ us-east-1, and Node 24 (`/opt/homebrew/opt/node@24/bin` first on PATH here).
   never from a workflow. It runs only from a clean checkout of `origin/main`
   with a green `validate`; `--break-glass` is for GitHub being down, never a
   red check.
-- **Rollback moves only the recorded serving pins and worker aliases.** No
-  release step removes an endpoint policy, and the retired Python versions
-  are never rollback targets.
-- **Never commit or print receipts, release logs or their cloud
-  identifiers.** A held deploy lock means a run is going or one died: find
-  out which before deleting it by hand; nothing ever takes it over.
+- **No release step removes an endpoint grant**, and a grant that differs
+  from the live-endpoint grant stops the release for a person to look at.
+  Never delete a code zip under `native/` in the source bucket: its revision
+  fails for good, and a revert needs it.
+- **Never commit or print a release's cloud identifiers** (the account,
+  bucket and distribution names, ARNs); the workflow masks them.
 - **Send someone today's email now** only through the sender's `send_now`,
   still once per local day; never fake the clock with `now` to do it.
 - **Every live write by an operator tool needs Jamie's go**: an import, a

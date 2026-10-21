@@ -8,61 +8,38 @@ import { cp, mkdtemp, mkdir, writeFile, readFile, readdir, rm, access } from 'no
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { workerNames } from '../tools/package-native.ts';
+import { codeParameter } from '../tools/native-artifacts.ts';
 
 const releaseScript = resolve('scripts/release.sh');
 const commit = 'a'.repeat(40);
-const runId = '11111111-2222-3333-4444-555555555555';
 const account = /ACCOUNT" == (\d+)/.exec(await readFile(releaseScript, 'utf8'))?.[1] ?? '';
 assert.ok(account);
-type Event = { program: string; args: string[]; lock?: string; closure?: string[] };
+type Event = { program: string; args: string[]; closure?: string[] };
 
 const header = `import fs from 'node:fs'; import path from 'node:path';
 const args = process.argv.slice(2);
 const record = (program, extra = {}) => fs.appendFileSync(process.env.FIXTURE_LOG, JSON.stringify({ program, args, ...extra }) + '\\n');
 `;
 
-/** The bundled release tool: lock, phases and uploads answered from fixtures. */
+/** The zips a release uploads, by the names the template gives their code. */
+const codeNames = ['app', 'mcp', ...workerNames].map((name) => codeParameter({ name }));
+
+/** The bundled release tool: uploads, grants and the probe, from fixtures. */
 const releaseTool = `
-const [command, ...rest] = args;
-record('cli', { lock: process.env.RELEASE_LOCK ?? '' });
+const [command] = args;
+record('cli');
 const failure = process.env.FIXTURE_FAILURE;
-if (command === 'lock') {
-  if (rest[0] === 'acquire') {
-    if (process.env.FIXTURE_LOCK_HELD) { console.error('Another deployment holds the deploy lock'); process.exit(1); }
-    console.log('${runId}');
-  } else if (rest[1] !== '${runId}') process.exit(3);
-  else console.log('{"released":true}');
-  process.exit(0);
-}
-if (command === 'changed') {
-  const kind = rest[rest.indexOf('--kind') + 1];
-  console.log(JSON.stringify({ changed: !(process.env.FIXTURE_UNCHANGED ?? '').split(',').includes(kind) }));
-  process.exit(0);
-}
-// Receipt writers run only under the lock the shell holds.
-if (process.env.RELEASE_LOCK !== '${runId}') process.exit(4);
-if (command === 'native-release') {
-  const phase = rest[0];
-  if (failure === phase) process.exit(19);
-  if (failure === 'unsafe-parameters') { console.log(JSON.stringify({ parameters: { CodeBucket: 'unowned' } })); process.exit(0); }
-  if (failure === 'newline-parameters') { console.log(JSON.stringify({ parameters: { NativeAppLiveRevisionId: 'x\\nCodeBucket=unowned' } })); process.exit(0); }
-  if (failure?.startsWith('retired:')) { console.log(JSON.stringify({ parameters: { [failure.slice(8)]: 'true' } })); process.exit(0); }
-  const parameters = phase === 'prepare-http' ? { NativeAppLiveRevisionId: 'baseline-app', NativeMcpLiveRevisionId: 'baseline-mcp' }
-    : phase === 'promote-http' ? { NativeAppLiveRevisionId: 'candidate-app', NativeAppRollbackRevisionId: 'baseline-app' }
-    : phase === 'rollback-http' ? { NativeAppLiveRevisionId: 'baseline-app', NativeAppRollbackRevisionId: 'older-app' }
-    : phase === 'prepare-workers' ? { SenderNativeLiveVersion: '1' }
-    : phase === 'promote-workers' ? { SenderNativeLiveVersion: '3' }
-    : { SenderNativeLiveVersion: '2' };
-  console.log(JSON.stringify({ parameters }));
-} else if (command === 'artifacts') {
-  const kind = rest[rest.indexOf('--kind') + 1];
-  console.log(JSON.stringify({ parameters: kind === 'http'
-    ? { NativeAppCodeKey: 'native/app/fictional.zip', NativeAppCodeVersion: 'version with space=one' }
-    : { NativeWorkerBuildId: rest[rest.indexOf('--commit') + 1], SenderNodeCodeKey: 'native/workers/sender/fictional.zip' } }));
-} else if (command === 'platform') {
-  if (failure === rest[0]) process.exit(20);
-  console.log('{"confirmed":true}');
-} else process.exit(5);
+if (failure === command) process.exit(19);
+if (command === 'upload') {
+  const names = ${JSON.stringify(codeNames)};
+  const words = names.map((name, i) => name + '=' + String(i).repeat(64));
+  if (failure === 'extra-parameter') words.push('CodeBucket=unowned');
+  if (failure === 'missing-parameter') words.pop();
+  console.log(words.join(' '));
+} else if (command === 'policies') console.log('{"App":"confirmed","Mcp":"confirmed"}');
+else if (command === 'probe') console.log('{"workers":7,"endpoints":2,"health":"ok"}');
+else process.exit(5);
 `;
 
 const programs: Record<string, string> = {
@@ -70,24 +47,20 @@ const programs: Record<string, string> = {
 if (args[0] === 'sts') console.log(account + '\\t' + (process.env.FIXTURE_ARN || 'arn:aws:sts::' + account + ':assumed-role/ProjectsCloudEngineer/fixture'));
 else if (args[1] === 'describe-stack-resource') console.log(args[args.indexOf('--logical-resource-id') + 1]);
 else if (args[0] === 'events') console.log('arn:aws:events:us-east-1:' + account + ':rule/' + args[args.indexOf('--name') + 1]);
+else if (args[1] === 'deploy') { if (process.env.FIXTURE_FAILURE === 'deploy') process.exit(255); }
+else if (args[1] === 'describe-stack-events') console.log('2026-01-01T00:00:00Z\\tNativeAppRevision\\tfictional reason');
 else if (args[1] === 'describe-stacks') {
-  if (joined.includes('BuildId')) console.log(process.env.FIXTURE_CANDIDATE_BUILD);
-  else if (joined.includes('WebBucketName')) console.log('fictional-web-bucket');
+  if (joined.includes('WebBucketName')) console.log('fictional-web-bucket');
   else if (joined.includes('WebDistributionId')) console.log('FICTIONALDIST');
-  else console.log('WebBucketName\\tfictional-web-bucket\\nStackSecretOutput\\tfictional-output-' + account);
 }
 else if (args[1] === 'head-bucket') process.exit(process.env.FIXTURE_NO_CODE_BUCKET ? 1 : 0);
 else if (args[1] === 'get-bucket-policy') console.log(process.env.FIXTURE_INSECURE ? '{}' : '{"Statement":[{"Sid":"DenyInsecureTransport"}]}');
-else if (args[1] === 'put-object') fs.copyFileSync(args[args.indexOf('--body') + 1], process.env.FIXTURE_UPLOADED);
-else if (args[0] === 'acm') console.log('None');
+else if (args[0] === 'acm') console.log('arn:aws:acm:us-east-1:' + account + ':certificate/fictional');
 else if (args[1] === 'describe-active-receipt-rule-set') console.log(process.env.FIXTURE_NO_RULE_SET ? 'None' : 'yvn-release-notes');
 else if (args[0] === 'cloudfront') console.log('fixture-invalidation');`,
-  git: `const rest = args[0] === '-C' ? args.slice(2) : args;
-if (rest[0] === 'archive') process.stdout.write(fs.readFileSync(process.env.FIXTURE_ARCHIVE));
-else if (rest[0] === 'rev-parse') console.log('${commit}');
-else if (rest[0] === 'cat-file') process.exit(process.env.FIXTURE_UNKNOWN_COMMIT ? 1 : 0);
-else if (rest[0] === 'merge-base') { record('ancestry', { args: rest }); if (process.env.FIXTURE_NON_ANCESTOR) process.exit(1); }
-else if (rest[0] === 'status' || rest[0] === 'fetch') record('git');`,
+  git: `if (args[0] === 'archive') process.stdout.write(fs.readFileSync(process.env.FIXTURE_ARCHIVE));
+else if (args[0] === 'rev-parse') console.log('${commit}');
+else if (args[0] === 'status' || args[0] === 'fetch') record('git');`,
   gh: `record('gh'); console.log(process.env.FIXTURE_RED ? '0' : '1');`,
   npm: `record('npm'); if (process.env.FIXTURE_FAILURE === 'verify' && args.includes('verify')) process.exit(18);
 if (args.includes('--os=linux')) for (const name of ['sharp', '@img/colour', '@img/sharp-linux-arm64', '@img/sharp-libvips-linux-arm64', 'detect-libc', 'semver', 'unrelated']) {
@@ -99,7 +72,6 @@ if (args.includes('verify')) { fs.mkdirSync('dist/web/assets', { recursive: true
 type Options = {
   actions?: boolean;
   failure?: string;
-  candidate?: string;
   env?: Record<string, string>;
 };
 
@@ -108,8 +80,7 @@ async function fixture() {
   const bin = join(folder, 'bin'),
     bundle = join(folder, 'bundle'),
     repo = join(folder, 'repo'),
-    log = join(folder, 'calls.jsonl'),
-    uploaded = join(folder, 'uploaded.log');
+    log = join(folder, 'calls.jsonl');
   for (const dir of [bin, repo, join(bundle, 'release'), join(bundle, 'web/assets'), join(bundle, 'artifacts')])
     await mkdir(dir, { recursive: true });
   for (const [name, code] of Object.entries(programs))
@@ -127,13 +98,9 @@ async function fixture() {
     // The suite itself may run in GitHub Actions; each case says where it runs.
     GITHUB_ACTIONS: options.actions ? 'true' : '',
     GITHUB_RUN_ID: options.actions ? '4242' : '',
-    GITHUB_OUTPUT: '',
-    RELEASE_LOCK: '',
     FIXTURE_LOG: log,
-    FIXTURE_UPLOADED: uploaded,
     FIXTURE_ACCOUNT: account,
     FIXTURE_FAILURE: options.failure ?? '',
-    FIXTURE_CANDIDATE_BUILD: options.candidate ?? commit,
     ...options.env
   });
   const events = async () =>
@@ -144,7 +111,6 @@ async function fixture() {
       .map((line) => JSON.parse(line) as Event);
   const spawn = async (command: string[], options: Options) => {
     await writeFile(log, '');
-    await rm(uploaded, { force: true });
     const result = spawnSync('bash', command, { env: environment(options), encoding: 'utf8', timeout: 30000 });
     return { result, events: await events() };
   };
@@ -153,11 +119,10 @@ async function fixture() {
     bin,
     bundle,
     repo,
-    uploaded,
     environment,
     spawn,
     release: (flags: string[] = [], options: Options = {}) =>
-      spawn([releaseScript, '--bundle', bundle, '--commit', commit, '--repo', repo, ...flags], options)
+      spawn([releaseScript, '--bundle', bundle, '--commit', commit, ...flags], options)
   };
 }
 
@@ -173,191 +138,121 @@ async function withFixture(run: (f: Awaited<ReturnType<typeof fixture>>) => Prom
 const cli = (events: Event[], command: string) => events.filter((e) => e.program === 'cli' && e.args[0] === command);
 const aws = (events: Event[], operation: string) =>
   events.filter((e) => e.program === 'aws' && e.args[1] === operation);
+const steps = (events: Event[]) =>
+  events
+    .filter(
+      (e) =>
+        e.program === 'cli' || (e.program === 'aws' && ['deploy', 'sync', 'create-invalidation'].includes(e.args[1]!))
+    )
+    .map((e) => (e.program === 'cli' ? e.args[0]! : e.args[1]!))
+    .filter((step, i, all) => step !== all[i - 1]);
 function cloudWrites(events: Event[]) {
   return events.filter(
     (e) =>
-      (e.program === 'cli' && ['artifacts', 'platform'].includes(e.args[0]!)) ||
+      (e.program === 'cli' && ['upload', 'policies'].includes(e.args[0]!)) ||
       (e.program === 'aws' &&
         [
           'deploy',
           'create-bucket',
           'put-bucket-policy',
+          'put-object',
           'sync',
           'create-invalidation',
           'set-active-receipt-rule-set'
         ].includes(e.args[1]!))
   );
 }
-function lockedAndReleased(events: Event[]) {
-  const locks = cli(events, 'lock');
-  assert.deepEqual(
-    locks.map((e) => e.args[1]),
-    ['acquire', 'release']
-  );
-  assert.equal(locks[1]!.args[2], runId);
-}
+const overrides = (deploy: Event) =>
+  deploy.args.slice(deploy.args.indexOf('--parameter-overrides') + 1, deploy.args.indexOf('--tags'));
 
-test('an ordinary release holds the lock, keeps the release parameters and deploys through the service role', async () => {
+test('a release uploads the code, updates the stack once, then confirms grants, syncs the web app and probes', async () => {
   await withFixture(async (f) => {
     const { result, events } = await f.release();
     assert.equal(result.status, 0, result.stderr);
-    lockedAndReleased(events);
-    assert.deepEqual(cli(events, 'native-release'), []);
-    assert.deepEqual(cli(events, 'artifacts'), []);
-    assert.deepEqual(cli(events, 'platform'), []);
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    const upload = cli(events, 'upload')[0]!;
+    assert.equal(upload.args[upload.args.indexOf('--commit') + 1], commit);
     const deploy = aws(events, 'deploy')[0]!;
-    assert.ok(!deploy.args.some((a) => /^(Native|SenderNode|SenderNative)/.test(a)));
+    const given = overrides(deploy);
+    assert.equal(given[0], `BuildId=${commit}`);
+    for (const name of codeNames)
+      assert.ok(
+        given.some((word) => new RegExp(`^${name}=[0-9]{64}$`).test(word)),
+        name
+      );
+    // Jamie's settings keep their values unless the Mac sets them.
+    assert.ok(!given.some((word) => /^(AdminUserId|TurnstileMode)=/.test(word)));
     assert.equal(
       deploy.args[deploy.args.indexOf('--role-arn') + 1],
       `arn:aws:iam::${account}:role/ReleaseNotesCloudFormation`
     );
     assert.ok(deploy.args.includes('Repository=jthingelstad/yvn-release-notes'));
-    // The Mac keeps the code bucket's TLS policy and shows the outputs.
+    // The Mac keeps the code bucket's TLS policy; nothing else is written to S3.
     assert.equal(aws(events, 'put-bucket-policy').length, 1);
-    assert.match(result.stdout, /StackSecretOutput/);
-    const upload = aws(events, 'put-object')[0]!;
-    assert.match(upload.args[upload.args.indexOf('--key') + 1]!, /^logs\/\d{8}T\d{6}Z-aaaaaaaaaaaa-mac\.log$/);
-    assert.equal(upload.args[upload.args.indexOf('--expected-bucket-owner') + 1], account);
-    assert.match(await readFile(f.uploaded, 'utf8'), /StackSecretOutput/);
-    const sync = events.findIndex((e) => e.program === 'aws' && e.args[1] === 'sync');
-    assert.ok(sync > events.indexOf(deploy));
+    assert.deepEqual(aws(events, 'put-object'), []);
+    assert.match(result.stdout, new RegExp(`released ${commit}`));
   });
 });
 
-test('all six release phases use structured parameters, and publication alone uploads artifacts', async () => {
-  await withFixture(async (f) => {
-    for (const kind of ['http', 'worker'])
-      for (const phase of ['publish', 'activate', 'rollback']) {
-        const { result, events } = await f.release([`--native-${kind}-phase=${phase}`]);
-        assert.equal(result.status, 0, result.stderr);
-        const command = `${phase === 'publish' ? 'prepare' : phase === 'activate' ? 'promote' : 'rollback'}-${kind === 'worker' ? 'workers' : kind}`;
-        assert.deepEqual(
-          cli(events, 'native-release').map((e) => e.args[1]),
-          [command]
-        );
-        assert.equal(cli(events, 'artifacts').length, phase === 'publish' ? 1 : 0);
-        const deploy = aws(events, 'deploy')[0]!;
-        if (kind === 'http' && phase === 'publish') {
-          assert.ok(deploy.args.includes('NativeAppCodeVersion=version with space=one'));
-          assert.deepEqual(
-            cli(events, 'platform').map((e) => e.args[1]),
-            ['policy-install', 'policy-verify']
-          );
-          assert.ok(events.indexOf(cli(events, 'platform')[0]!) > events.indexOf(deploy));
-        } else assert.deepEqual(cli(events, 'platform'), []);
-        if (phase !== 'publish')
-          assert.ok(deploy.args.some((a) => /^(NativeAppLiveRevisionId|SenderNativeLiveVersion)=/.test(a)));
-        lockedAndReleased(events);
-      }
+test('every parameter a release overrides is one the template declares, and the release parameters are all given', async () => {
+  const template = await readFile(resolve('infra/template.yaml'), 'utf8');
+  const block = template.slice(template.indexOf('\nParameters:\n'), template.indexOf('\nConditions:\n'));
+  const declared = [...block.matchAll(/^ {2}([A-Za-z0-9]+):$/gm)].map((m) => m[1]!);
+  const script = await readFile(releaseScript, 'utf8');
+  const named = [...script.matchAll(/(?:PARAMETER_OVERRIDES\+?=\(|\s)"([A-Za-z]+)=\$/g)].map((m) => m[1]!);
+  assert.deepEqual(named.sort(), [
+    'AdminUserId',
+    'BuildId',
+    'SenderScheduleArn',
+    'TranscribeDoneArn',
+    'TurnstileMode',
+    'WebCertificateArn',
+    'WebDomain'
+  ]);
+  for (const name of [...named, ...codeNames])
+    assert.ok(declared.includes(name), `${name} is not a template parameter`);
+  // Every parameter without a default is one a release gives.
+  const required = declared.filter((name) => {
+    const body = block.slice(block.indexOf(`\n  ${name}:`) + 1).split(/\n  [A-Za-z]/)[0]!;
+    return !/Default:/.test(body);
   });
+  for (const name of required) assert.ok([...named, ...codeNames].includes(name), `${name} has no value`);
 });
 
-test('both publications combine in one update; --only-changed leaves out unchanged code', async () => {
-  await withFixture(async (f) => {
-    const both = ['--native-http-phase=publish', '--native-worker-phase=publish'];
-    let { result, events } = await f.release(both);
-    assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(
-      cli(events, 'native-release').map((e) => e.args[1]),
-      ['prepare-http', 'prepare-workers']
-    );
-    assert.equal(aws(events, 'deploy').length, 1);
-    ({ result, events } = await f.release([...both, '--only-changed'], { env: { FIXTURE_UNCHANGED: 'http' } }));
-    assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(
-      cli(events, 'native-release').map((e) => e.args[1]),
-      ['prepare-workers']
-    );
-    assert.deepEqual(
-      cli(events, 'artifacts').map((e) => e.args[e.args.indexOf('--kind') + 1]),
-      ['workers']
-    );
-    assert.deepEqual(cli(events, 'platform'), []);
-    assert.match(result.stdout, /HTTP artifacts unchanged/);
-    ({ result, events } = await f.release([...both, '--only-changed'], { env: { FIXTURE_UNCHANGED: 'http,workers' } }));
-    assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(cli(events, 'native-release'), []);
-    assert.ok(!aws(events, 'deploy')[0]!.args.some((a) => a.startsWith('Native')));
-  });
-});
-
-test('in GitHub Actions a release tells the workflow which kinds it published', async () => {
-  await withFixture(async (f) => {
-    const output = join(await mkdtemp(join(tmpdir(), 'yvn-release-output-')), 'output');
-    const env = {
-      FIXTURE_ARN: `arn:aws:sts::${account}:assumed-role/ReleaseNotesGitHubDeploy/run`,
-      FIXTURE_NO_RULE_SET: '1',
-      FIXTURE_UNCHANGED: 'http',
-      GITHUB_OUTPUT: output
-    };
-    const both = ['--native-http-phase=publish', '--native-worker-phase=publish', '--only-changed'];
-    const { result } = await f.release(both, { actions: true, env });
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(await readFile(output, 'utf8'), 'published-http=\npublished-workers=true\n');
-    await rm(dirname(output), { recursive: true });
-  });
-});
-
-test('preparation and malformed parameter failures stop before cloud writes and release the lock', async () => {
-  await withFixture(async (f) => {
-    for (const failure of ['prepare-http', 'unsafe-parameters', 'newline-parameters']) {
-      const { result, events } = await f.release(['--native-http-phase=publish'], { failure });
-      assert.notEqual(result.status, 0);
-      assert.deepEqual(cloudWrites(events), []);
-      lockedAndReleased(events);
-    }
-  });
-});
-
-/** Stack flags the migration needed and 2026-10-20 retired. CloudFormation
- * fails a deploy that overrides a parameter the template does not declare. */
+/** Stack flags the migration needed (retired 2026-10-20) and the parameters
+ * of the phased release (retired with it). CloudFormation fails a deploy that
+ * overrides a parameter the template does not declare. */
 const retired = [
   'NativeWorkersEnabled',
   'NativeWorkerAliasesReady',
   'NativeWebFunctionsEnabled',
   'NativeHttpRouting',
-  'NativeOriginPoliciesReady'
+  'NativeOriginPoliciesReady',
+  'NativeWorkerBuildId',
+  'NativeAppBuildId',
+  'NativeMcpBuildId',
+  'NativeAppCodeKey',
+  'NativeMcpCodeKey',
+  'NativeAppCodeVersion',
+  'NativeMcpCodeVersion',
+  'NativeAppRollbackRevisionId',
+  'NativeMcpRollbackRevisionId',
+  'NativeAppRollbackEndpoint',
+  'NodeCodeKey',
+  'NodeCodeVersion',
+  'NodeCodeSha256',
+  'NativeLiveVersion',
+  'RECEIPTS_BUCKET',
+  'RELEASE_LOCK',
+  'native-release',
+  'receipt-store',
+  '--only-changed',
+  '--native-http-phase',
+  '--native-worker-phase'
 ];
 
-test('a retired stack flag from a release phase is refused before cloud writes', async () => {
-  await withFixture(async (f) => {
-    for (const name of retired) {
-      const { result, events } = await f.release(['--native-http-phase=activate'], { failure: `retired:${name}` });
-      assert.notEqual(result.status, 0);
-      assert.deepEqual(aws(events, 'deploy'), []);
-      assert.deepEqual(cloudWrites(events), []);
-      lockedAndReleased(events);
-    }
-  });
-});
-
-test('every parameter a release may override is one the template declares', async () => {
-  const template = await readFile(resolve('infra/template.yaml'), 'utf8');
-  const block = template.slice(template.indexOf('\nParameters:\n'), template.indexOf('\nConditions:\n'));
-  const declared = new Set([...block.matchAll(/^ {2}([A-Za-z0-9]+):$/gm)].map((m) => m[1]!));
-  assert.ok(declared.has('NativeWorkerBuildId') && declared.has('TurnstileMode'));
-  // The validator's own allow-list, run as release.sh runs it.
-  const script = await readFile(releaseScript, 'utf8');
-  const validator = /<<'JS'\n([\s\S]*?)\nconst parameters = new Map\(\);/.exec(script)?.[1];
-  assert.ok(validator);
-  const run = spawnSync('node', ['--input-type=module', '-'], {
-    input: `${validator}\nprocess.stdout.write(JSON.stringify([...allowed]));`,
-    encoding: 'utf8'
-  });
-  assert.equal(run.status, 0, run.stderr);
-  const allowed = JSON.parse(run.stdout) as string[];
-  assert.ok(allowed.length > 30);
-  for (const name of allowed) assert.ok(declared.has(name), `${name} is not a template parameter`);
-  for (const [, name] of script.matchAll(/PARAMETER_OVERRIDES\+?=\("([A-Za-z]+)=/g))
-    assert.ok(declared.has(name!), `${name} is not a template parameter`);
-  for (const name of retired) {
-    assert.ok(!declared.has(name));
-    assert.ok(!allowed.includes(name));
-  }
-});
-
-test('the retired stack flags appear nowhere in the template, tooling or workflows', async () => {
-  const sources = ['infra/template.yaml', 'infra/github-deploy-role.yaml', 'deploy.sh'];
+test('the retired flags, release parameters and phases appear nowhere in the template, tooling or workflows', async () => {
+  const sources = ['infra/template.yaml', 'deploy.sh'];
   for (const dir of ['scripts', 'tools', '.github/workflows'])
     for (const name of await readdir(resolve(dir))) sources.push(join(dir, name));
   for (const source of sources) {
@@ -366,43 +261,74 @@ test('the retired stack flags appear nowhere in the template, tooling or workflo
   }
 });
 
-test('a held lock is refused, never stolen, before any release action', async () => {
+test('an upload that fails or gives other parameters stops before the stack update', async () => {
   await withFixture(async (f) => {
-    const { result, events } = await f.release(['--native-http-phase=publish'], { env: { FIXTURE_LOCK_HELD: '1' } });
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /holds the deploy lock/);
-    assert.deepEqual(
-      cli(events, 'lock').map((e) => e.args[1]),
-      ['acquire']
-    );
-    assert.deepEqual(cli(events, 'native-release'), []);
-    assert.deepEqual(cloudWrites(events), []);
+    for (const failure of ['upload', 'extra-parameter', 'missing-parameter']) {
+      const { result, events } = await f.release([], { failure });
+      assert.notEqual(result.status, 0, failure);
+      assert.deepEqual(aws(events, 'deploy'), [], failure);
+      assert.deepEqual(steps(events), ['upload'], failure);
+    }
   });
 });
 
-test('malformed, ambiguous or Mac-only arguments are refused before any AWS call', async () => {
+test('a failed stack update says what failed and stops: nothing was released', async () => {
+  await withFixture(async (f) => {
+    const { result, events } = await f.release([], { failure: 'deploy' });
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(steps(events), ['upload', 'deploy']);
+    assert.equal(aws(events, 'describe-stack-events').length, 1);
+    assert.match(result.stderr, /NativeAppRevision\tfictional reason/);
+    assert.match(result.stderr, /rolled back; nothing was released/);
+  });
+});
+
+test('a grant that cannot be confirmed stops before the web app and the probe', async () => {
+  await withFixture(async (f) => {
+    const { result, events } = await f.release([], { failure: 'policies' });
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies']);
+  });
+});
+
+test('a failed probe fails the release and says to revert', async () => {
+  await withFixture(async (f) => {
+    const { result, events } = await f.release([], { failure: 'probe' });
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.match(result.stderr, /live but failed its probe; revert the merge/);
+  });
+});
+
+test('the Mac alone sets the administrator and the Turnstile mode, on any release', async () => {
+  await withFixture(async (f) => {
+    const { result, events } = await f.release(['--admin-user-id=fictional-id', '--turnstile-mode=default']);
+    assert.equal(result.status, 0, result.stderr);
+    const given = overrides(aws(events, 'deploy')[0]!);
+    assert.ok(given.includes('AdminUserId=fictional-id'));
+    assert.ok(given.includes('TurnstileMode='));
+  });
+});
+
+test('malformed, retired or Mac-only arguments are refused before any AWS call', async () => {
   await withFixture(async (f) => {
     for (const [flags, actions] of [
-      [['--native-http-phase=publish', '--native-worker-phase=activate'], false],
-      [['--native-http-phase=activate', '--native-worker-phase=activate'], false],
-      [['--native-http-phase=publish', '--native-http-phase=activate'], false],
-      [['--native-http-phase=publish', '--events-alias-phase=activate'], false],
+      [['--native-http-phase=publish'], false],
+      [['--native-worker-phase=activate'], false],
       [['--only-changed'], false],
-      [['--native-http-phase=activate', '--only-changed'], false],
-      [['--admin-user-id=fictional'], false],
-      [['--native-http-phase=publish', '--turnstile-mode=sometimes'], false],
+      [['--repo', f.repo], false],
+      [['--admin-user-id=not valid!'], false],
+      [['--admin-user-id=a', '--admin-user-id=b'], false],
+      [['--turnstile-mode=sometimes'], false],
       [['--break-glass'], true],
-      [['--native-http-phase=publish', '--admin-user-id=fictional'], true],
-      [['--native-http-phase=publish', '--turnstile-mode=enforce'], true]
+      [['--admin-user-id=fictional'], true],
+      [['--turnstile-mode=enforce'], true]
     ] as const) {
       const { result, events } = await f.release([...flags], { actions });
       assert.notEqual(result.status, 0, flags.join(' '));
       assert.deepEqual(events, [], flags.join(' '));
     }
-    const { result, events } = await f.spawn(
-      [releaseScript, '--check-arguments', '--native-http-phase=publish', '--admin-user-id='],
-      {}
-    );
+    const { result, events } = await f.spawn([releaseScript, '--check-arguments', '--admin-user-id='], {});
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(events, []);
     await writeFile(join(f.bundle, 'commit'), `${'c'.repeat(40)}\n`);
@@ -412,55 +338,7 @@ test('malformed, ambiguous or Mac-only arguments are refused before any AWS call
   });
 });
 
-test('a policy installation failure stops before the web app or any activation', async () => {
-  await withFixture(async (f) => {
-    const { result, events } = await f.release(['--native-http-phase=publish'], { failure: 'policy-install' });
-    assert.notEqual(result.status, 0);
-    assert.equal(aws(events, 'deploy').length, 1);
-    assert.deepEqual(
-      cli(events, 'platform').map((e) => e.args[1]),
-      ['policy-install']
-    );
-    assert.deepEqual([...aws(events, 'sync'), ...aws(events, 'create-invalidation')], []);
-    lockedAndReleased(events);
-  });
-});
-
-test('activation selects the validated published candidate even when main has advanced', async () => {
-  await withFixture(async (f) => {
-    const candidate = 'b'.repeat(40);
-    const { result, events } = await f.release(['--native-http-phase=activate'], { candidate });
-    assert.equal(result.status, 0, result.stderr);
-    const phase = cli(events, 'native-release')[0]!;
-    assert.equal(phase.args[phase.args.indexOf('--commit') + 1], candidate);
-    assert.deepEqual(events.find((e) => e.program === 'ancestry')?.args, [
-      'merge-base',
-      '--is-ancestor',
-      candidate,
-      commit
-    ]);
-    assert.ok(events.some((e) => e.program === 'gh'));
-    assert.deepEqual(cli(events, 'artifacts'), []);
-  });
-});
-
-test('uncommitted, unrelated or unvalidated candidates are refused before release actions', async () => {
-  await withFixture(async (f) => {
-    for (const [candidate, env] of [
-      ['not-a-commit', {}],
-      ['b'.repeat(40), { FIXTURE_NON_ANCESTOR: '1' }],
-      ['b'.repeat(40), { FIXTURE_RED: '1' }]
-    ] as const) {
-      const { result, events } = await f.release(['--native-worker-phase=activate'], { candidate, env });
-      assert.notEqual(result.status, 0);
-      assert.deepEqual(cli(events, 'native-release'), []);
-      assert.deepEqual(cloudWrites(events), []);
-      lockedAndReleased(events);
-    }
-  });
-});
-
-test('in GitHub Actions the deploy role releases, identifiers are masked and details stay private', async () => {
+test('in GitHub Actions the deploy role releases and identifiers are masked', async () => {
   await withFixture(async (f) => {
     const actions = {
       actions: true,
@@ -469,23 +347,18 @@ test('in GitHub Actions the deploy role releases, identifiers are masked and det
         FIXTURE_NO_RULE_SET: '1'
       }
     };
-    const { result, events } = await f.release(['--native-http-phase=publish'], actions);
+    const { result, events } = await f.release([], actions);
     assert.equal(result.status, 0, result.stderr);
     const lines = result.stdout.split('\n');
     assert.ok(lines.includes(`::add-mask::${account}`));
-    for (const line of lines.filter((l) => !l.startsWith('::add-mask::')))
-      assert.ok(!line.includes(account) && !line.includes('baseline-app') && !line.includes('StackSecretOutput'), line);
+    for (const line of lines.filter((l) => !l.startsWith('::add-mask::'))) assert.ok(!line.includes(account), line);
     assert.ok(lines.includes('::add-mask::fictional-web-bucket') && lines.includes('::add-mask::FICTIONALDIST'));
+    assert.ok(lines.some((line) => line.startsWith('::add-mask::arn:aws:acm:')));
     // It can use the code bucket but never creates or reconfigures it, nor SES.
     assert.deepEqual([...aws(events, 'create-bucket'), ...aws(events, 'put-bucket-policy')], []);
     assert.deepEqual(aws(events, 'set-active-receipt-rule-set'), []);
     assert.match(result.stdout, /::warning::No SES receipt rule set/);
-    const upload = aws(events, 'put-object')[0]!;
-    assert.match(upload.args[upload.args.indexOf('--key') + 1]!, /-4242\.log$/);
-    const kept = await readFile(f.uploaded, 'utf8');
-    assert.match(kept, /native parameter NativeAppLiveRevisionId=baseline-app/);
-    assert.match(kept, /StackSecretOutput/);
-    lockedAndReleased(events);
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
 
     for (const env of [{ FIXTURE_NO_CODE_BUCKET: '1' }, { FIXTURE_INSECURE: '1' }] as Record<string, string>[]) {
       const refused = await f.release([], { ...actions, env: { ...actions.env, ...env } });
@@ -539,22 +412,18 @@ test('deploy.sh builds the committed tree with build-release.sh, then hands it t
         env: { FIXTURE_ARCHIVE: tar, ...options.env }
       });
 
-    let { result, events } = await deploy(['--native-worker-phase=publish']);
+    let { result, events } = await deploy(['--turnstile-mode=observe']);
     assert.equal(result.status, 0, result.stderr);
     const build = events.find((e) => e.program === 'npm' && e.args[0] === 'build')!;
     assert.equal(build.args[3], commit);
     assert.ok(events.some((e) => e.program === 'git'));
     assert.ok(events.some((e) => e.program === 'gh'));
-    assert.ok(events.indexOf(build) < events.indexOf(cli(events, 'lock')[0]!));
-    assert.deepEqual(
-      cli(events, 'native-release').map((e) => e.args[1]),
-      ['prepare-workers']
-    );
-    lockedAndReleased(events);
+    assert.ok(events.indexOf(build) < events.indexOf(cli(events, 'upload')[0]!));
+    assert.ok(overrides(aws(events, 'deploy')[0]!).includes('TurnstileMode=observe'));
+    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
 
     ({ result, events } = await deploy([], { env: { FIXTURE_BUILD_FAILS: '1' } }));
     assert.notEqual(result.status, 0);
-    assert.deepEqual(cli(events, 'lock'), []);
     assert.deepEqual(cloudWrites(events), []);
 
     ({ result, events } = await deploy([], { env: { FIXTURE_RED: '1' } }));
@@ -562,7 +431,7 @@ test('deploy.sh builds the committed tree with build-release.sh, then hands it t
     assert.deepEqual(cloudWrites(events), []);
 
     for (const [flags, options] of [
-      [['--native-http-phase=publish', '--native-worker-phase=rollback'], {}],
+      [['--native-http-phase=publish'], {}],
       [[], { actions: true }]
     ] as const) {
       ({ result, events } = await deploy([...flags], options));

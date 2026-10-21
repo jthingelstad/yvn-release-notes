@@ -175,10 +175,15 @@ the describer reads it on each run.
   topic.
 - SQS `yvn-release-notes-failed` holds what gave up after its retries: a
   bounce or complaint the events function could not apply (the SNS message,
-  address included, so it never goes to the ops queue) and a transcribe or
-  describe stream batch (shard and sequence numbers only). Kept 14 days;
-  alarm `yvn-release-notes-failed-queue` fires on anything in it. Apply a
-  stuck bounce by hand, then delete the message.
+  address included, so it never goes to the ops queue), an inbound email
+  still failing after two retries (the SES event: addresses and subject,
+  never the body, which stays in `raw/`; its owner already has a mail log
+  row and an email about it) and a transcribe or describe stream batch
+  (shard and sequence numbers only). Kept 14 days; alarm
+  `yvn-release-notes-failed-queue` fires on anything in it. Apply a stuck
+  bounce by hand; replay an inbound event, once its cause is fixed, by
+  invoking the inbound function's `live` alias with
+  `{"Records": [<the record>]}`. Then delete the message.
 - The describe, transcribe and export functions each run at most two at
   once (reserved concurrency 2, 2026-10-09 audit). Throttled stream batches
   wait and are tried again without using up their retries, and throttled

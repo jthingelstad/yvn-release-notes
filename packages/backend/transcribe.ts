@@ -1,11 +1,13 @@
 /** Opt-in audio transcription. Fixed job names, USER-owned atomic leases and a
  * capped UTC-day counter bound repeated stream deliveries to 30 starts/day.
  * Results require live consent and the same media; provider jobs/results are
- * cleaned even when consent was withdrawn or the note/account was removed. */
+ * cleaned even when consent was withdrawn or the note/account was removed.
+ * A kept transcript gets an activity row, without its words. */
 import { randomUUID } from 'node:crypto';
 import type { NoteRecord } from '../domain/notes.ts';
 import { missing, type Objects, type Log } from './services.ts';
 import type { Store, Item } from './store.ts';
+import { activityLog, again, recordActivity } from './activity.ts';
 export const PREFIX = 'release-notes',
   LANGUAGE = 'en-US',
   MAX_TRANSCRIPT = 50_000,
@@ -147,5 +149,16 @@ export async function finished(detail: Item, s: Services): Promise<string> {
   if (lease) await s.store.releaseProcessing(user, 'transcribe', day, id, n, String(lease.owner));
   const outcome = kept ? 'kept' : 'note-gone';
   s.log?.({ event: 'transcribe-done', user, status, outcome, chars: Array.from(text).length });
+  if (kept) {
+    const now = (s.clock ?? (() => Date.now() / 1000))();
+    // The recording's place in the note and whether anything was made out; never the words.
+    await recordActivity(
+      s.store,
+      user,
+      now,
+      [{ kind: 'transcript.added', id: again(id), fields: { day, note: id, file: n, empty: !text } }],
+      s.log && activityLog(now, (fields) => s.log!(fields as Parameters<Log>[0]))
+    );
+  }
   return outcome;
 }

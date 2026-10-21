@@ -1,7 +1,7 @@
 /** The events function's role grants what a bounce, a complaint, a duplicate
  * delivery, an unknown address and a delay make it request: the account
- * lookup, the stop with its receipt and tally, and the scrubbed alarm line
- * (tests-node/infra/grants.ts). */
+ * lookup, the stop with its receipt and tally, its activity row, and the
+ * scrubbed alarm line (tests-node/infra/grants.ts). */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FakeStore } from '../../packages/testing/store.ts';
@@ -59,6 +59,7 @@ test('the events role grants every request a mail event makes', async () => {
 
   const made = aws.granted();
   assert.deepEqual([...new Set(made.map((r) => r.action))].sort(), [
+    'dynamodb:ConditionCheckItem',
     'dynamodb:GetItem',
     'dynamodb:PutItem',
     'dynamodb:UpdateItem',

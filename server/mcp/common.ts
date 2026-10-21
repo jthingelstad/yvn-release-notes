@@ -72,23 +72,6 @@ export function validate(arguments_: unknown, schema: JsonSchema): asserts argum
   }
 }
 export type SafeLog = (fields: Record<string, unknown>) => void;
-/** An activity row that was not written (packages/backend/activity.ts),
- * logged and counted as ActivityUnrecorded where no metric filter reads the
- * log as JSON. */
-export const activityLog =
-  (now: number, log: SafeLog = (fields) => console.log(JSON.stringify(fields))) =>
-  (fields: { event: string; kind: string; user: string }): void => {
-    log(fields);
-    log({
-      _aws: {
-        Timestamp: now * 1000,
-        CloudWatchMetrics: [
-          { Namespace: 'ReleaseNotes', Dimensions: [[]], Metrics: [{ Name: 'ActivityUnrecorded', Unit: 'Count' }] }
-        ]
-      },
-      ActivityUnrecorded: 1
-    });
-  };
 /** An unexpected failure: the user id and the error's class name (an SDK
  * error's, such as AccessDeniedException), never its message. */
 export function failure(

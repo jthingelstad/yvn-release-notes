@@ -56,6 +56,11 @@ export interface UpcomingSection {
   shown: UpcomingReminder[];
   more: number;
 }
+/** The email's section, and every reminder due that morning, those folded
+ * into "and N more" included: the activity log has a row for each. */
+export interface UpcomingDue extends UpcomingSection {
+  due: UpcomingReminder[];
+}
 export const annual = (kind: UpcomingKind) => kind === 'birthday' || kind === 'anniversary';
 export const defaultReminders = (kind: UpcomingKind) => (kind === 'trip' ? [14, 1, 0] : [7, 1, 0]);
 /** The version a birthday with a known year turns on one of its dates, by the site's arithmetic. */
@@ -112,7 +117,7 @@ export function upcomingViews(entries: readonly UpcomingEntry[], today: string):
         a.id.localeCompare(b.id)
     );
 }
-export function remindersFor(entries: readonly UpcomingEntry[], today: string): UpcomingSection {
+export function remindersFor(entries: readonly UpcomingEntry[], today: string): UpcomingDue {
   const due: UpcomingReminder[] = [];
   for (const entry of entries) {
     if (!entry.email) continue;
@@ -134,7 +139,7 @@ export function remindersFor(entries: readonly UpcomingEntry[], today: string): 
     });
   }
   due.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  return { shown: due.slice(0, UPCOMING_SHOWN), more: Math.max(0, due.length - UPCOMING_SHOWN) };
+  return { shown: due.slice(0, UPCOMING_SHOWN), more: Math.max(0, due.length - UPCOMING_SHOWN), due };
 }
 /** What the page's search reads, folded like note search: the title, tag, kind,
  * destination and the occurrence line (so "5.0.0" or "major" find a birthday). */

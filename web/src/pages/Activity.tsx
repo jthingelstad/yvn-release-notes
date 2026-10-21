@@ -27,7 +27,8 @@ export function Activity() {
       <Bar current="/settings/" />
       <h1>Activity</h1>
       <p className="lede" id="activity-lede">
-        Everything that happened in your Release Notes, newest first: notes added, changed or deleted, badges earned,
+        Everything that happened in your Release Notes, newest first: notes added, changed or deleted, recordings
+        written out and photos described, badges earned, each daily email and the Upcoming reminders it carried,
         Upcoming dates, settings, sign-ins and connected assistants, each email sent to your Release Notes addresses and
         what became of it, and each day an assistant read your notes. When an email isn’t filed because of a problem,
         you get an email about it too.
@@ -147,9 +148,26 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
     case 'upcoming.removed':
       return [<>Removed {date} from Upcoming</>];
     case 'reminder':
-      return [<>The daily email reminded you of {date}</>];
+      return [<>The daily email reminded you of {date}</>, e.when ? `${e.when}.` : undefined];
     case 'email.sent':
-      return [<>Sent the daily email</>];
+      return [<>Sent the daily email for {day}</>, e.version ? `Version ${e.version}.` : undefined];
+    case 'transcript.added':
+      return [<>Wrote out a recording on {day}</>, e.empty ? 'Nothing in it could be made out.' : undefined];
+    case 'description.added':
+      return [
+        <>
+          Described {count(e.photos || 0, 'photo', 'photos')} on {day}
+        </>
+      ];
+    case 'import.notes':
+      return [
+        `Imported ${count(e.notes || 0, 'note', 'notes')}${e.app === 'dayone' ? ' from Day One' : ''}`,
+        e.files ? `With ${count(e.files, 'file', 'files')}.` : undefined
+      ];
+    case 'place.set':
+      return [<>Set where you were on {day}</>];
+    case 'place.removed':
+      return [<>Cleared where you were on {day}</>];
     case 'settings.changed':
       return [
         'Changed settings',
@@ -165,7 +183,14 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
         e.through ? `The last paused day was ${dayName(e.through, year)}.` : 'It ended before it began.'
       ];
     case 'status.stopped':
-      return ['Stopped the daily email', e.reason === 'unsubscribed' ? 'With the unsubscribe link.' : undefined];
+      return e.reason === 'bounce' || e.reason === 'complaint'
+        ? [
+            'The daily email stopped',
+            e.reason === 'bounce'
+              ? 'Your address turned it away as undeliverable. You can restart it in Settings.'
+              : 'It was reported as spam. You can restart it in Settings.'
+          ]
+        : ['Stopped the daily email', e.reason === 'unsubscribed' ? 'With the unsubscribe link.' : undefined];
     case 'status.restarted':
       return ['Restarted the daily email'];
     case 'signin':

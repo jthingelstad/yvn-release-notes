@@ -121,11 +121,23 @@ nothing there links here yet: that is Jamie's call.
       link and restarting; sign-ins (link or code); exports; the standing
       address and calendar link made, replaced or turned off (never the
       address or link); connections added, changed and ended (by the
-      owner, by the client, or for a reused refresh token); and joining.
-      A row that can't be written never undoes the change: it is logged as
-      `activity-unrecorded` and counted (`ActivityUnrecorded`). Notes filed
-      by email, the daily email, reminders, transcripts, descriptions and
-      imports are not in the log yet.
+      owner, by the client, or for a reused refresh token); a day's own
+      place set or cleared (the day alone); and joining.
+    - **What the product did**: each daily email sent (its day and
+      version) and one row for every Upcoming reminder due that morning,
+      those past the email's three included (the date's id, how near, as
+      the email said it, and the email's day; none while paused or
+      stopped); the badges a note filed by email earned; a stop for a
+      bounce or complaint; each recording written out (or nothing made
+      out) and each pass that described a note's photos, never the words;
+      and each Day One import that brought anything in, by its counts.
+      A note filed by email is its mail row.
+    - A row that can't be written never undoes the change: it is logged as
+      `activity-unrecorded` and counted (`ActivityUnrecorded`, by a metric
+      filter on the web's log and an embedded metric in the workers'). A
+      change that comes twice to one thing within a second (two appends to
+      a note) keeps both rows: its key adds a short random tail. A timeout
+      or crash in the inbound worker is not in the log yet.
 
 ## Defaults (Jamie can change any)
 

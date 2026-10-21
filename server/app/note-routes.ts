@@ -12,7 +12,7 @@ import { keepDay, placeOf } from '../../packages/backend/weather.ts';
 import { localDay, iso, validTimezone } from '../../packages/domain/dates.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
 import { found } from '../../packages/domain/tags.ts';
-import { badgeEvents, recordActivity } from '../../packages/backend/activity.ts';
+import { again, badgeEvents, recordActivity } from '../../packages/backend/activity.ts';
 import type { ActivityEvent } from '../../packages/domain/activity.ts';
 import { json, body, dayFrom, textFrom } from './requests.ts';
 /** What an edit or new files earned, for the activity log only: nothing is
@@ -61,6 +61,10 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
       delete place.from;
       await store.setDayPlace(uid, day, place);
     } else await store.clearDayPlace(uid, day);
+    // The day alone: where shows on the day itself.
+    await record([
+      { kind: method === 'PUT' ? 'place.set' : 'place.removed', id: again(day), fields: { via: 'web', day } }
+    ]);
     await keepWeather(service, uid, p, day, true);
     const own = await store.dayPlace(uid, day, true),
       sky = (await store.weatherBetween(uid, day, day, true))[day],
@@ -146,7 +150,7 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
           );
         if (item) {
           await record([
-            { kind: 'note.files', id: id!, fields: { via: 'web', day, note: id!, added: files.length } },
+            { kind: 'note.files', id: again(id!), fields: { via: 'web', day, note: id!, added: files.length } },
             ...badgeEvents(await earned(service, uid, p, item, old), 'web', day, id!)
           ]);
           return json(await noteView(item, String(p.tz), Boolean(p.transcribe), links));
@@ -175,7 +179,7 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
       );
     if (!item) reject(404, 'note');
     await record([
-      { kind: 'note.edited', id: id!, fields: { via: 'web', day, note: id! } },
+      { kind: 'note.edited', id: again(id!), fields: { via: 'web', day, note: id! } },
       ...badgeEvents(await earned(service, uid, p, item, old), 'web', day, id!)
     ]);
     return json(await noteView(item, String(p.tz), Boolean(p.transcribe), links));

@@ -1,10 +1,13 @@
 /** SES notifications are private. Only event kinds/mail kinds/user IDs leave
  * this worker. SNS retries and overlapping subscriptions share a bounded,
- * account-owned transactional receipt. Ops publishing remains at-least-once. */
+ * account-owned transactional receipt. Ops publishing remains at-least-once.
+ * A stop goes in the owner's activity log, with its reason and nothing of
+ * the notification. */
 import { createHash } from 'node:crypto';
 import { normalEmail } from '../packages/backend/auth.ts';
 import type { Store, Item } from '../packages/backend/store.ts';
 import type { Log } from '../packages/backend/services.ts';
+import { activityLog, recordActivity } from '../packages/backend/activity.ts';
 import { addresses } from '../packages/mail/parse.ts';
 export interface EventServices {
   store: Store;
@@ -120,6 +123,14 @@ export async function handler(
       const hash = createHash('sha256').update(snsId).digest('hex'),
         outcome = await services.store.applyMailEvent(user, hash, reason!, at, now);
       log({ event: 'mail-event', reason, outcome: outcome === 'applied' ? 'stopped' : outcome, user });
+      if (outcome === 'applied')
+        await recordActivity(
+          services.store,
+          user,
+          now,
+          [{ kind: 'status.stopped', id: hash.slice(0, 16), fields: { via: 'email', reason } }],
+          services.log && activityLog(now, (fields) => services.log!(fields as Parameters<Log>[0]))
+        );
     }
     const line = notice(msg, users);
     if (!line) {

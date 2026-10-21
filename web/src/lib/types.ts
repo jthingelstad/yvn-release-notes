@@ -228,6 +228,12 @@ export interface EventActivity extends ActivityHead {
   how?: string;
   format?: string;
   scopes?: string;
+  when?: string;
+  file?: number;
+  empty?: boolean;
+  photos?: number;
+  app?: string;
+  notes?: number;
 }
 export type ActivityEntry = MailActivity | ReadsActivity | EventActivity;
 export interface Activity {

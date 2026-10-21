@@ -80,6 +80,52 @@ test('sender selects each owner local day, sends once, keeps reminders out of no
   assert.equal((await f.store.allNotes('east')).length, 0);
   assert.doesNotMatch(JSON.stringify(f.logs), /Concert|Private west title/);
 });
+test('the activity log has the email and each reminder due, those folded into "N more" too, never a title', async () => {
+  const f = fixture(),
+    now = Date.parse('2026-10-13T12:00:00Z') / 1000;
+  for (const id of ['b', 'c', 'd', 'e'])
+    f.store.seed({ pk: 'USER#west', sk: 'UPCOMING#' + id, ...entry, id, title: 'Private ' + id });
+  f.store.seed({ pk: 'USER#west', sk: 'UPCOMING#later', ...entry, id: 'later', date: '2026-10-30' });
+  await handler({ send_now: 'west' }, null, f.services);
+  assert.match((await simpleParser(f.mail.messages[0]!.raw)).text!, /\(2 more today\)/);
+  const rows = await f.store.activityAll('west', now);
+  assert.deepEqual(rows.map((r) => [r.kind, r.upcoming ?? null, r.when ?? null, r.day, r.via]).sort(), [
+    ['email.sent', null, null, '2026-10-13', 'email'],
+    ...['b', 'c', 'concert', 'd', 'e'].map((id) => ['reminder', id, 'Tomorrow', '2026-10-13', 'email'])
+  ]);
+  // The date's id, how near, and the email's day: nothing of the entry itself.
+  assert.deepEqual(Object.keys(rows.find((r) => r.upcoming === 'b')!).sort(), [
+    'at',
+    'day',
+    'kind',
+    'pk',
+    'sk',
+    'upcoming',
+    'via',
+    'when'
+  ]);
+  assert.equal(rows.find((r) => r.kind === 'email.sent')!.version, String(computeVersion('1981-06-14', '2026-10-13')));
+  assert.doesNotMatch(JSON.stringify(rows), /Private|Concert/);
+  // Sent once: a repeat writes nothing more.
+  await handler({ send_now: 'west' }, null, f.services);
+  assert.equal((await f.store.activityAll('west', now)).length, 6);
+});
+test('a send whose activity rows cannot be written still goes, and is counted', async () => {
+  const f = fixture(),
+    send = f.store.memory.send.bind(f.store.memory);
+  f.store.memory.send = (command) => {
+    const items = (command.input as { TransactItems?: { Put?: { Item: Item } }[] }).TransactItems;
+    if (items?.some((i) => String(i.Put?.Item.sk).startsWith('ACTIVITY#')))
+      throw Object.assign(new Error('private'), { name: 'TransactionCanceledException' });
+    return send(command);
+  };
+  const result = await handler({ send_now: 'west' }, null, f.services);
+  assert.equal((result.results as Item[])[0]!.outcome, 'sent');
+  assert.equal(f.mail.messages.length, 1);
+  const unrecorded = f.logs.findIndex((l) => l.event === 'activity-unrecorded');
+  assert.deepEqual(f.logs[unrecorded], { event: 'activity-unrecorded', kind: 'email', user: 'west' });
+  assert.equal(f.logs[unrecorded + 1]!.ActivityUnrecorded, 1);
+});
 test('dry run reads only and reports counts; optional failure still sends; paused/stopped never get reminders', async () => {
   const f = fixture(),
     before = f.store.memory.all();
@@ -96,6 +142,11 @@ test('dry run reads only and reports counts; optional failure still sends; pause
   assert.doesNotMatch((await simpleParser(f.mail.messages[0]!.raw)).text!, /Upcoming/);
   assert.ok(f.logs.some((f) => f.event === 'upcoming-error'));
   assert.doesNotMatch(JSON.stringify(f.logs), /@|Private west/);
+  // Reminders that never reached the email are not in the log.
+  assert.deepEqual(
+    (await f.store.activityAll('east', Date.parse('2026-10-13T12:00:00Z') / 1000)).map((r) => r.kind),
+    ['email.sent']
+  );
   const paused = fixture();
   await paused.store.updateProfile('east', { pause_from: '2026-10-14', pause_through: '2026-10-15' });
   await paused.store.updateProfile('west', { status: 'stopped' });
@@ -103,6 +154,8 @@ test('dry run reads only and reports counts; optional failure still sends; pause
   assert.equal((skipped.results as Item[])[0]!.outcome, 'paused');
   await assert.rejects(handler({ send_now: 'west' }, null, paused.services), /no active subscriber/);
   assert.equal(paused.mail.messages.length, 0);
+  for (const uid of ['east', 'west'])
+    assert.deepEqual(await paused.store.activityAll(uid, Date.parse('2026-10-13T12:00:00Z') / 1000), []);
 });
 test('JSON/Markdown exports retain dates and destination, with no internal keys or fabricated journal days', () => {
   const data = build(

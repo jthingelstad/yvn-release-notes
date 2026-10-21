@@ -10,7 +10,7 @@ import { validCode, digest, clearCookie } from './auth.ts';
 import { keys, thumbKeys } from './media.ts';
 import { OAuthService } from './oauth.ts';
 import { badges } from './badges.ts';
-import { eventId, recordActivity } from './activity.ts';
+import { again, eventId, recordActivity } from './activity.ts';
 import type { ActivityEvent } from '../domain/activity.ts';
 /** The settings a change records, each with what it reads as when unset. */
 const SETTINGS: Record<string, unknown> = {
@@ -163,7 +163,11 @@ export async function changePause(service: SessionService, b: Item | null): Prom
       const ended = addDays(today, -1);
       await ctx.store.endPause(uid, start, start <= ended ? ended : null);
       await record(service, uid, [
-        { kind: 'pause.ended', id: start, fields: { via: 'web', from: start, through: start <= ended ? ended : null } }
+        {
+          kind: 'pause.ended',
+          id: again(start),
+          fields: { via: 'web', from: start, through: start <= ended ? ended : null }
+        }
       ]);
     }
     delete p.pause_from;
@@ -186,7 +190,7 @@ export async function changePause(service: SessionService, b: Item | null): Prom
   if (current && current !== start) await ctx.store.endPause(uid, current, null);
   await ctx.store.putPause(uid, start, through, iso(ctx.now));
   service.log({ event: 'pause', user: uid, days: daysBetween(start, through) + 1 });
-  await record(service, uid, [{ kind: 'pause.set', id: start, fields: { via: 'web', from: start, through } }]);
+  await record(service, uid, [{ kind: 'pause.set', id: again(start), fields: { via: 'web', from: start, through } }]);
   return profileView({ ...p, pause_from: start, pause_through: through }, ctx.now, ctx.inboundDomain);
 }
 const sessionsOf = (items: Item[]): Key[] =>

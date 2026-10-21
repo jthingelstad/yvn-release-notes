@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { digest, network, newToken, same } from './auth.ts';
 import { codePointLength } from '../domain/unicode.ts';
 import type { ActivityEvent } from '../domain/activity.ts';
-import { recordActivity } from './activity.ts';
+import { again, recordActivity } from './activity.ts';
 import { safeLog, type Log } from './services.ts';
 export type OAuthRow = Record<string, unknown>;
 export type OAuthChange = [OAuthRow, number | null];
@@ -107,7 +107,8 @@ export class OAuthService {
   private async record(uid: string, kind: string, family: OAuthRow, fields: OAuthRow): Promise<void> {
     const event: ActivityEvent = {
       kind,
-      id: String(family.id),
+      // A connection is added and ended once, and changed any number of times.
+      id: kind === 'connection.changed' ? again(String(family.id)) : String(family.id),
       fields: { ...fields, connection: family.id, client: family.client_name }
     };
     await recordActivity(this.context.store, uid, this.context.now, [event], this.context.log ?? safeLog);

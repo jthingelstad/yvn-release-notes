@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { FakeStore } from '../../packages/testing/store.ts';
-import type { Invocations, Mail, Objects } from '../../packages/backend/services.ts';
+import { missing, type Invocations, type Mail, type Objects } from '../../packages/backend/services.ts';
 import { fromHeader } from '../../packages/mail/compose.ts';
 
 export const REGION = 'us-east-1',
@@ -387,13 +387,24 @@ export class Recorder {
     const bucket = `arn:aws:s3:::${this.env.BUCKET ?? this.env.MAIL_BUCKET ?? assert.fail('no bucket')}`,
       s3 = (via: string, key: string, ...actions: string[]) =>
         actions.forEach((a) => this.add(`objects.${via}`, `s3:${a}`, `${bucket}/${key}`)),
-      tagged = (tags?: Record<string, string>) => (tags && Object.keys(tags).length ? ['PutObjectTagging'] : []);
+      tagged = (tags?: Record<string, string>) => (tags && Object.keys(tags).length ? ['PutObjectTagging'] : []),
+      // S3 answers a read of a missing key 404 only to a caller that may list
+      // the bucket, and a read carries no s3:prefix; to anyone else it is 403,
+      // which the code takes for a failure, not a missing file.
+      read = <T>(via: string, reading: Promise<T>) =>
+        reading.catch((error: unknown) => {
+          if (missing(error)) this.add(`objects.${via} (missing)`, 's3:ListBucket', bucket);
+          throw error;
+        });
     return {
       get: (key, options = {}) => (
         s3('get', key, options.version ? 'GetObjectVersion' : 'GetObject'),
-        inner.get(key, options)
+        read('get', inner.get(key, options))
       ),
-      head: (key, version) => (s3('head', key, version ? 'GetObjectVersion' : 'GetObject'), inner.head(key, version)),
+      head: (key, version) => (
+        s3('head', key, version ? 'GetObjectVersion' : 'GetObject'),
+        read('head', inner.head(key, version))
+      ),
       put: (key, body, options) => (
         s3('put', key, 'PutObject', ...tagged(options.tags)),
         inner.put(key, body, options)

@@ -1,6 +1,6 @@
 /** The describe function's role grants what its stream, describe_all and
  * thumbs_all runs request: thumbnails staged, tagged, or removed when the note
- * went away; the photo's place named and its weather kept; the key read from
+ * went away, a missing file skipped; the photo's place named and its weather kept; the key read from
  * the runtime secret; descriptions leased and kept; and each hand-on to itself
  * (tests-node/infra/grants.ts). */
 import assert from 'node:assert/strict';
@@ -44,7 +44,14 @@ test('the describe role grants every request a stream record, describe_all and t
       lat: 44,
       lon: -93
     },
-    store = new FakeStore([{ ...profile, describe: true }, note('a'), note('b'), note('c'), note('gone')]),
+    store = new FakeStore([
+      { ...profile, describe: true },
+      note('a'),
+      note('b'),
+      note('c'),
+      note('gone'),
+      note('lost')
+    ]),
     files = new FakeObjects(),
     // The real secret and geocoding adapters, over clients that record each
     // command as IAM authorizes it. The secret is a made-up string.
@@ -93,6 +100,8 @@ test('the describe role grants every request a stream record, describe_all and t
   assert.equal((shown!.thumb as Item).key, `media/u/${day}/a/0.thumb.jpg`);
   assert.equal((a.place as Item).city, 'Example');
   assert.ok(store.memory.read({ pk: 'USER#u', sk: `WEATHER#${day}` }));
+  // A photo whose file is missing reads as 404 and is skipped.
+  await worker.runEvent({ Records: [stream(note('lost'))] }, {}, services);
   gone.pending = true;
   await worker.runEvent({ Records: [stream(note('gone'))] }, {}, services);
   gone.pending = false;

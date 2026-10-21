@@ -972,6 +972,12 @@ Resources:
                 Action: s3:GetObject
                 Resource: !Sub "${MailBucket.Arn}/media/*.thumb.jpg"
               - Effect: Allow
+                # S3 answers a read of a missing file 404 only to a role that
+                # may list the bucket, and 403 to any other; a thumbnail gone
+                # missing is skipped on 404 and fails the photos on 403.
+                Action: s3:ListBucket
+                Resource: !GetAtt MailBucket.Arn
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt SenderLogs.Arn
 
@@ -1442,12 +1448,12 @@ Resources:
               - Effect: Allow
                 # Deleting the account lists what is left under the owner's
                 # media/ and exports/ prefixes, to delete it too
-                # (accounts.ts deleteAccount). Only those prefixes.
+                # (accounts.ts deleteAccount). No prefix condition: S3
+                # answers a read of a missing file 404 only to a role that
+                # may list the bucket, and a read carries no prefix, so a
+                # condition turned an upload that never arrived into 403.
                 Action: s3:ListBucket
                 Resource: !GetAtt MailBucket.Arn
-                Condition:
-                  StringLike:
-                    s3:prefix: ["media/*", "exports/*"]
               - Effect: Allow
                 # Only the stable qualified worker entry point.
                 Action: lambda:InvokeFunction
@@ -1625,6 +1631,12 @@ Resources:
                 # The photos and recordings that go in. Nothing under raw/.
                 Action: s3:GetObject
                 Resource: !Sub "${MailBucket.Arn}/media/*"
+              - Effect: Allow
+                # S3 answers a read of a missing file 404 only to a role that
+                # may list the bucket, and 403 to any other; a file gone
+                # missing is left out on 404 and fails the export on 403.
+                Action: s3:ListBucket
+                Resource: !GetAtt MailBucket.Arn
               - Effect: Allow
                 # The zip, uploaded in parts when large; a replaced build
                 # deletes its own.
@@ -1830,6 +1842,12 @@ Resources:
                 Action: s3:GetObject
                 Resource: !Sub "${MailBucket.Arn}/media/*"
               - Effect: Allow
+                # S3 answers a read of a missing file 404 only to a role that
+                # may list the bucket, and 403 to any other; a result gone
+                # missing finishes empty on 404 and fails the job on 403.
+                Action: s3:ListBucket
+                Resource: !GetAtt MailBucket.Arn
+              - Effect: Allow
                 Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
                 Resource: !Sub "${MailBucket.Arn}/transcripts/*"
               - Effect: Allow
@@ -1953,6 +1971,12 @@ Resources:
               - Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub "${MailBucket.Arn}/media/*"
+              - Effect: Allow
+                # S3 answers a read of a missing file 404 only to a role that
+                # may list the bucket, and 403 to any other; a photo gone
+                # missing is skipped on 404 and fails the batch on 403.
+                Action: s3:ListBucket
+                Resource: !GetAtt MailBucket.Arn
               - Effect: Allow
                 # Each photo's thumbnail, beside it, and taking one back
                 # when its note went meanwhile (packages/backend/thumbs.ts).

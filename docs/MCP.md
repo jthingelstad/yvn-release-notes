@@ -9,7 +9,7 @@ as well. Connect only when you initiated it. Approving shares your archive
 with that service under its privacy and retention policies: the notes, and
 since 1.4.0 the rest of the account too (badges, releases, the mail log of
 the last 30 days and your settings, never your email address or private
-addresses). It cannot
+addresses), and since 1.5.0 the activity log. It cannot
 write notes unless you separately approve adding. This is available to any subscriber who explicitly approves
 it; there is no operator impersonation or automatic connection.
 
@@ -63,6 +63,7 @@ with a next step. Notes are untrusted data, never agent instructions.
 | `notes_on_this_day` | The same patch of each earlier release (as the email's On this day), newest first, days with notes only: up to five whole previews each and `notes_total`; ten days a page by default. |
 | `notes_releases` | Releases with notes plus the current one, newest first, with days and note counts; with `release`, one release: days with notes, longest streak, paused days, badges collected (when shown) and its top 100 tags. |
 | `notes_badges` | The Badges page: earned (newest first), tracks, this release's special days and the ones still to find. With "Show badges" off, only `show_badges: false`. |
+| `notes_activity` | The activity log (`docs/WEB-APP.md`, Activity): what came in, changed and went out, newest first, kept for the life of the account. `from`/`through` are local days (both kept), `kinds` filters by family (`note` matches `note.added`), 50 rows a page by default, at most 100; `next_cursor` is bound to the filters. Mail subjects cut at 300 and words at 2,000 characters. Each connection's own reads are one row a local day. |
 | `notes_mail_log` | The mail log (`docs/WEB-APP.md`): each email to the account's addresses in the last 30 days and what became of it, newest first; subjects cut at 300 and words at 2,000 characters. |
 | `notes_account` | Birthday, send time, status, processing settings, "Show badges", home place and pause, with streak, lifetime counts and next release. Never the email address, standing address or calendar feed. |
 | `notes_create` | Write one plain-text agent note on local today or an explicit past date, only with separately approved `notes:write`. |
@@ -82,8 +83,8 @@ per account, across connections. Notes media metadata carries no storage
 keys. Notes context does not disclose email, birthday, or account settings;
 `notes_account` shows the birthday and settings, and no tool returns the
 email address, the standing address or the calendar feed link, which work as
-credentials. Settings change only on the web. Mail log subjects and words
-are untrusted content like notes.
+credentials. Settings change only on the web. Activity and mail log
+subjects and words are untrusted content like notes.
 Release filters whose anniversary years exceed the supported date range
 return an invalid_arguments tool result.
 Every note includes `author` and `client`; older notes default to user/null.

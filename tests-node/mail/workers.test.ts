@@ -636,25 +636,26 @@ test('media storage failure retries before note commit, stable copies produce on
   assert.equal((n.media as Item[])[0]?.key, 'media/u/2026-10-11/synthetic-id/1.mp3');
   assert.equal((await f.store.allNotes('u')).length, 1);
 });
-const mailLog = (f: { store: FakeStore }) => f.store.mailLog('u', now);
+const mailLog = async (f: { store: FakeStore }) =>
+  (await f.store.activityAll('u', now)).filter((r) => r.kind === 'mail');
 function message(id: string, opts: Parameters<typeof ses>[0] = {}) {
   const e = ses(opts);
   return { ...e, mail: { ...e.mail, messageId: id } };
 }
-test('mail log: a filed reply is one row with its day and no words; a retry keeps it one row', async () => {
+test('activity: a filed reply is one mail row with its day and no words, kept for good; a retry keeps it one row', async () => {
   const f = await replyFixture();
   await inbound.process(ses(), f.services);
   await inbound.process(ses(), f.services);
   const rows = await mailLog(f);
   assert.equal(rows.length, 1);
   const r = rows[0]!;
-  assert.equal(r.sk, 'MAILLOG#2026-10-13T12:00:00.000Z#synthetic-id');
+  assert.equal(r.sk, 'ACTIVITY#2026-10-13T12:00:00.000Z#mail#synthetic-id');
+  assert.deepEqual([r.kind, r.at, r.message], ['mail', '2026-10-13T12:00:00.000Z', 'synthetic-id']);
   assert.deepEqual(
     [r.outcome, r.day, r.version, r.via, r.subject],
     ['filed', '2026-10-11', '5.4.220', 'reply', 'Re: today']
   );
-  assert.equal(r.expires_at, Date.parse('2026-10-13T12:00:00Z') / 1000 + 30 * 86400);
-  for (const k of ['text', 'reason', 'sender', 'notified_at']) assert.ok(!(k in r), k);
+  for (const k of ['text', 'reason', 'sender', 'notified_at', 'expires_at']) assert.ok(!(k in r), k);
   assert.equal(f.mail.messages.length, 0);
 });
 test('mail log: another sender shows who, never the words, and the owner hears once', async () => {
@@ -676,7 +677,7 @@ test('mail log: another sender shows who, never the words, and the owner hears o
   assert.equal(parsed.subject, "An email wasn't added to your notes");
   assert.equal(parsed.headers.get('auto-submitted'), 'auto-generated');
   assert.match(parsed.text!, /takes email only from ada@example\.com/);
-  assert.match(parsed.text!, /https:\/\/notes\.yourversionnumber\.com\/mail-log\//);
+  assert.match(parsed.text!, /https:\/\/notes\.yourversionnumber\.com\/activity\//);
   assert.ok(!f.mail.messages[0]!.raw.toString().includes('someone@'));
   assert.ok(!JSON.stringify(f.logs).includes('someone@'));
 });
@@ -732,12 +733,14 @@ test('a reply that keeps failing is a failed row; the last try tells the owner o
   for (const k of ['reason', 'text']) assert.ok(!(k in r!), k);
   assert.ok(!JSON.stringify(f.logs).includes('little thing'));
 });
-test('a mail log row needs a live account and a MAILLOG key', async () => {
-  const f = setup();
+test('a mail row needs a live account and a mail activity key', async () => {
+  const f = setup(),
+    sk = 'ACTIVITY#2026-10-13T12:00:00.000Z#mail#x';
   await f.store.deleteKeys([{ pk: 'USER#u', sk: 'PROFILE' }]);
-  assert.equal(await f.store.recordMail('u', 'MAILLOG#x', { outcome: 'filed' }), false);
-  assert.equal(await f.store.mailEntry('u', 'MAILLOG#x'), null);
-  await assert.rejects(() => f.store.recordMail('u', 'NOTE#x', {}), RangeError);
+  assert.equal(await f.store.recordMail('u', sk, { outcome: 'filed' }), false);
+  assert.equal(await f.store.mailEntry('u', sk), null);
+  for (const wrong of ['NOTE#x', 'MAILLOG#x', 'ACTIVITY#2026-10-13T12:00:00.000Z#note.added#x'])
+    await assert.rejects(() => f.store.recordMail('u', wrong, {}), RangeError);
 });
 test('notices say when and why; ATTEMPTS is the inbound alias retries plus one, ending in the failed queue', async () => {
   for (const reason of ['from-mismatch', 'unauthenticated', 'unparseable', 'failed'] as const) {
@@ -749,7 +752,7 @@ test('notices say when and why; ATTEMPTS is the inbound alias retries plus one, 
       kept: false
     });
     assert.match(text, /^An email to your Release Notes address on Tuesday, October 13 at 2:05/);
-    assert.match(text, /\/mail-log\/\n$/);
+    assert.match(text, /\/activity\/\n$/);
   }
   const template = await readFile(new URL('../../infra/template.yaml', import.meta.url), 'utf8'),
     config = /\n {2}InboundAliasInvokeConfig:\n([\s\S]*?)\n\n/.exec(template)![1]!;

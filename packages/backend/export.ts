@@ -1,7 +1,8 @@
 /** Owner exports retain note provenance, files, places and weather while
  * leaving out reply addresses, raw keys, session tokens and SDK bookkeeping.
  * Markdown groups days under their birthday-to-birthday release. Badges are
- * worked out at export time from the same rows, oldest first. */
+ * worked out at export time from the same rows, oldest first. The JSON holds
+ * the activity log, oldest first, as its owner sees it on the web. */
 import { localDay, parseDay, validDay, validTimezone } from '../domain/dates.ts';
 import { combine, placeLabel, writtenAt, type NoteRecord, type PlaceRecord } from '../domain/notes.ts';
 import { computeVersion, releaseName } from '../domain/version.ts';
@@ -12,6 +13,7 @@ import { object } from './places.ts';
 import type { Item } from './store.ts';
 import { upcomingEntry, type UpcomingEntry } from '../domain/upcoming.ts';
 import { badgesOf } from './badges.ts';
+import { ACTIVITY, LEGACY_MAIL, activityView, legacyMail } from '../domain/activity.ts';
 export const PROFILE_FIELDS = [
   'email',
   'birthday',
@@ -62,6 +64,7 @@ export interface ExportData {
   places: Item[];
   upcoming?: UpcomingEntry[];
   badges?: ExportBadge[];
+  activity?: Item[];
 }
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const sortBy = (rows: Item[], key: string) => rows.sort((a, b) => cmp(String(a[key]), String(b[key])));
@@ -102,7 +105,9 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
     pauses: Item[] = [],
     skies: Item[] = [],
     spots: Item[] = [],
-    upcoming: UpcomingEntry[] = [];
+    upcoming: UpcomingEntry[] = [],
+    activity: Item[] = [];
+  const exported = Date.parse(exportedAt) / 1000;
   for (const item of items) {
     const sk = String(item.sk);
     if (sk === 'PROFILE')
@@ -143,6 +148,8 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
       notes.push(note);
     } else if (sk.startsWith('PAUSE#')) pauses.push({ from: sk.slice(6), through: item.through ?? null });
     else if (sk.startsWith('UPCOMING#')) upcoming.push(upcomingEntry(item));
+    else if (sk.startsWith(ACTIVITY)) activity.push(item);
+    else if (sk.startsWith(LEGACY_MAIL) && Number(item.expires_at ?? 0) > exported) activity.push(legacyMail(item));
     else if (sk.startsWith('WEATHER#')) skies.push({ date: sk.slice(8), ...weather.plain(item as weather.Reading) });
     else if (sk.startsWith('PLACE#'))
       spots.push({
@@ -194,7 +201,14 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
     weather: sortBy(skies, 'date'),
     places: sortBy(spots, 'date'),
     ...(upcoming.length ? { upcoming: upcoming.sort((a, b) => cmp(a.id, b.id)) } : {}),
-    ...(badges.length ? { badges } : {})
+    ...(badges.length ? { badges } : {}),
+    ...(activity.length
+      ? {
+          activity: [...new Map(activity.map((r) => [String(r.sk), r])).values()]
+            .sort((a, b) => cmp(String(a.sk), String(b.sk)))
+            .map(activityView)
+        }
+      : {})
   };
 }
 export function longDate(day: string): string {

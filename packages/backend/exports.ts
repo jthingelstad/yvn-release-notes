@@ -16,7 +16,7 @@ export async function exportRoutes(
   if (pattern === '/api/export') {
     const format = query.get('format') ?? 'json';
     if (format !== 'json' && format !== 'md') reject(400, 'format');
-    const data = build(await store.userItems(uid), iso(ctx.now)),
+    const data = build(await store.exportItems(uid), iso(ctx.now)),
       name = `release-notes-${iso(ctx.now).slice(0, 10)}.${format}`;
     return json(format === 'md' ? markdown(data) : JSON.stringify(data, null, 2) + '\n', 200, {
       'content-type': format === 'md' ? 'text/markdown; charset=utf-8' : 'application/json; charset=utf-8',

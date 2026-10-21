@@ -151,6 +151,73 @@ test('both exports carry badges, oldest first, worked out from the rows at expor
     undefined
   );
 });
+test('the JSON carries the activity log oldest first, with the reads and live old mail rows, never table keys', async () => {
+  const context = await setup(),
+    at = (t: string) => `2026-10-${t}:00:00.000Z`;
+  await context.store.recordMail('u1', `ACTIVITY#${at('12T15')}#mail#m2`, {
+    kind: 'mail',
+    at: at('12T15'),
+    message: 'm2',
+    received_at: at('12T15'),
+    via: 'reply',
+    outcome: 'not-filed',
+    reason: 'expired',
+    text: 'Late words',
+    notified_at: at('12T15')
+  });
+  context.store.seed({
+    pk: 'MCPMETA#u1',
+    sk: `ACTIVITY#${at('12T05')}#reads#f`,
+    kind: 'reads',
+    at: at('12T05'),
+    day: '2026-10-12',
+    client: 'Claude',
+    connection: 'f',
+    calls: 4,
+    tools: { notes_list: 4 },
+    last_at: at('12T21'),
+    revision: 4
+  });
+  context.store.seed({ pk: 'MCPMETA#u1', sk: 'USE#f', at: 1 });
+  const old = { pk: 'USER#u1', message: 'm1', received_at: at('11T10'), via: 'address', outcome: 'filed' };
+  context.store.seed({ ...old, sk: `MAILLOG#${at('11T10')}#m1`, expires_at: context.now + 86400 });
+  context.store.seed({ ...old, sk: `MAILLOG#${at('01T10')}#m0`, message: 'm0', expires_at: context.now - 1 });
+  assert.equal(await run(context, 'u1', 'build-a'), 'ready');
+  const row = await context.store.export('u1'),
+    zip = await unzip((await context.objects.get(String(row?.export_key))).body),
+    prefix = 'release-notes-2026-10-13/',
+    data = JSON.parse(zip.get(prefix + 'release-notes.json')!.toString()) as ExportData,
+    md = zip.get(prefix + 'release-notes.md')!.toString();
+  assert.deepEqual(
+    data.activity?.map((e) => e.id),
+    [`${at('11T10')}#mail#m1`, `${at('12T05')}#reads#f`, `${at('12T15')}#mail#m2`]
+  );
+  assert.deepEqual(data.activity?.[1], {
+    id: `${at('12T05')}#reads#f`,
+    at: at('12T05'),
+    kind: 'reads',
+    day: '2026-10-12',
+    client: 'Claude',
+    connection: 'f',
+    calls: 4,
+    tools: { notes_list: 4 },
+    last_at: at('12T21')
+  });
+  assert.deepEqual(
+    [data.activity?.[2]?.text, data.activity?.[2]?.notified, data.activity?.[0]?.kind],
+    ['Late words', true, 'mail']
+  );
+  for (const hidden of ['MAILLOG#', 'MCPMETA#', 'USE#', 'expires_at', 'revision'])
+    assert.ok(!JSON.stringify(data.activity).includes(hidden), hidden);
+  assert.ok(!md.includes('Late words'));
+  // The words alone come straight from the API with the same log.
+  const words = build(await context.store.exportItems('u1'), '2026-10-13T07:00:00Z');
+  assert.deepEqual(words.activity, data.activity);
+  assert.equal(
+    build([{ sk: 'PROFILE', birthday: '1981-06-14', tz: 'America/Chicago' }], '2026-10-13T07:00:00Z').activity,
+    undefined
+  );
+});
 test('ZIP carries Upcoming separately in both exports without adding journal notes', async () => {
   const context = await setup();
   const entry = {

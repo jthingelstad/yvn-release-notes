@@ -18,7 +18,7 @@ export const READY_FOR = 24 * 3600,
   BUILDING_FOR = 16 * 60;
 export const zipKey = (user: string, id: string) => `exports/${user}/${id}.zip`;
 export interface ExportContext {
-  store: Pick<Store, 'export' | 'userItems' | 'finishExportGuarded' | 'profile'>;
+  store: Pick<Store, 'export' | 'exportItems' | 'finishExportGuarded' | 'profile'>;
   objects: Objects;
   now: number;
   clock?: () => number;
@@ -108,7 +108,7 @@ export async function run(context: ExportContext, user: string, id: string): Pro
   let counts: { files: number; missing: number }, size: number;
   try {
     const path = join(temp, 'export.zip');
-    counts = await writeZip(path, await store.userItems(user), objects, now, user);
+    counts = await writeZip(path, await store.exportItems(user), objects, now, user);
     size = (await stat(path)).size;
     const current = await store.profile(user, true),
       build = await store.export(user);

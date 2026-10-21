@@ -142,7 +142,7 @@ test('the web role grants every request each route and the OAuth endpoints make'
   assert.equal(aws.requests.filter((r) => r.action === 'ses:DeleteSuppressedDestination').length, 1);
   await call('POST', '/api/me/inbox', {});
   await call('GET', '/api/places?q=Paris');
-  await call('GET', '/api/mail-log');
+  await call('GET', '/api/activity');
 
   // Notes, files and places.
   const first = (await call('POST', `/api/days/${day}/notes`, { text: 'Lake day #made', place: city }, 201)).b,

@@ -580,34 +580,117 @@ test('badges count stored fields, never answer with note text, and tell a reply 
   assert.equal((await s.call('GET', '/api/badges', undefined, '')).r.status, 401);
 });
 
-test("mail log answers the owner's live rows newest first, with no table keys", async () => {
+test("activity answers the owner's rows newest first, a page at a time, with no table keys", async () => {
   const s = await setup(),
     row = (at: string, id: string, fields: Item) =>
-      s.store.recordMail('u', `MAILLOG#${at}#${id}`, { message: id, received_at: at, via: 'reply', ...fields });
-  await row('2026-10-12T10:00:00.000Z', 'a', { outcome: 'filed', day: '2026-10-12', expires_at: now + 86400 });
+      s.store.recordMail('u', `ACTIVITY#${at}#mail#${id}`, {
+        kind: 'mail',
+        at,
+        message: id,
+        received_at: at,
+        via: 'reply',
+        ...fields
+      });
+  await row('2026-10-12T10:00:00.000Z', 'a', { outcome: 'filed', day: '2026-10-12' });
   await row('2026-10-13T10:00:00.000Z', 'b', {
     outcome: 'not-filed',
     reason: 'expired',
     day: '2026-10-09',
     text: 'Late words',
-    notified_at: '2026-10-13T10:00:00.000Z',
+    notified_at: '2026-10-13T10:00:00.000Z'
+  });
+  // A mail log row from before the log reads as a mail row while it lives;
+  // an expired one is gone.
+  s.store.seed({
+    pk: 'USER#u',
+    sk: 'MAILLOG#2026-10-11T10:00:00.000Z#c',
+    message: 'c',
+    received_at: '2026-10-11T10:00:00.000Z',
+    via: 'address',
+    outcome: 'filed',
+    day: '2026-10-11',
     expires_at: now + 86400
   });
-  await row('2026-09-01T10:00:00.000Z', 'c', { outcome: 'filed', expires_at: now - 1 });
-  const { r, b } = await s.call('GET', '/api/mail-log'),
+  s.store.seed({
+    pk: 'USER#u',
+    sk: 'MAILLOG#2026-09-01T10:00:00.000Z#old',
+    message: 'old',
+    received_at: '2026-09-01T10:00:00.000Z',
+    outcome: 'filed',
+    expires_at: now - 1
+  });
+  // An assistant's reads, which only the MCP reader writes.
+  s.store.seed({
+    pk: 'MCPMETA#u',
+    sk: 'ACTIVITY#2026-10-12T05:00:00.000Z#reads#f1',
+    kind: 'reads',
+    at: '2026-10-12T05:00:00.000Z',
+    day: '2026-10-12',
+    client: 'Claude',
+    connection: 'f1',
+    calls: 3,
+    tools: { notes_get_day: 3 },
+    last_at: '2026-10-12T18:00:00.000Z',
+    revision: 3
+  });
+  s.store.seed({ pk: 'MCPMETA#other', sk: 'ACTIVITY#2026-10-12T05:00:00.000Z#reads#f9', kind: 'reads' });
+  const { r, b } = await s.call('GET', '/api/activity'),
     entries = (b as Item).entries as Item[];
   assert.equal(r.status, 200);
   assert.deepEqual(
-    entries.map((e) => e.id),
-    ['b', 'a']
+    entries.map((e) => [e.kind, e.id]),
+    [
+      ['mail', '2026-10-13T10:00:00.000Z#mail#b'],
+      ['mail', '2026-10-12T10:00:00.000Z#mail#a'],
+      ['reads', '2026-10-12T05:00:00.000Z#reads#f1'],
+      ['mail', '2026-10-11T10:00:00.000Z#mail#c']
+    ]
   );
   assert.deepEqual(
     [entries[0]!.reason, entries[0]!.text, entries[0]!.notified, entries[1]!.reason, entries[1]!.text],
     ['expired', 'Late words', true, null, null]
   );
-  assert.deepEqual([(b as Item).email, (b as Item).today], ['ada@example.com', '2026-10-13']);
-  for (const key of ['MAILLOG#', 'USER#', 'expires_at', 'notified_at'])
+  assert.deepEqual(
+    [entries[2]!.client, entries[2]!.calls, entries[2]!.tools, entries[2]!.revision],
+    ['Claude', 3, { notes_get_day: 3 }, undefined]
+  );
+  assert.deepEqual([(b as Item).email, (b as Item).today, (b as Item).next], ['ada@example.com', '2026-10-13', null]);
+  for (const key of ['MAILLOG#', 'MCPMETA#', 'USER#', 'expires_at', 'notified_at', 'f9'])
     assert.ok(!JSON.stringify(b).includes(key), key);
-  assert.equal((await s.call('GET', '/api/mail-log', undefined, '')).r.status, 401);
+  // Older rows start below a row's id.
+  const older = await s.call('GET', '/api/activity?before=' + encodeURIComponent('2026-10-12T10:00:00.000Z#mail#a'));
+  assert.deepEqual(
+    ((older.b as Item).entries as Item[]).map((e) => e.id),
+    ['2026-10-12T05:00:00.000Z#reads#f1', '2026-10-11T10:00:00.000Z#mail#c']
+  );
+  for (const bad of ['yesterday', 'NOTE#2026-10-12', '2026-10-12T10:00:00.000Z' + '#x'.repeat(200)])
+    assert.equal(
+      (await s.call('GET', '/api/activity?before=' + encodeURIComponent(bad))).r.status,
+      400,
+      bad.slice(0, 20)
+    );
+  assert.equal((await s.call('GET', '/api/activity', undefined, '')).r.status, 401);
   assert.ok(!JSON.stringify(s.logs).includes('Late words'));
+});
+
+test('activity pages hold 100 rows and say where the next starts', async () => {
+  const s = await setup();
+  for (let i = 0; i < 101; i++) {
+    const at = new Date(Date.UTC(2026, 9, 1) + i * 60_000).toISOString();
+    s.store.seed({
+      pk: 'USER#u',
+      sk: `ACTIVITY#${at}#mail#m${i}`,
+      kind: 'mail',
+      at,
+      message: `m${i}`,
+      received_at: at
+    });
+  }
+  const first = (await s.call('GET', '/api/activity')).b as Item,
+    rows = first.entries as Item[];
+  assert.equal(rows.length, 100);
+  assert.equal(rows[0]!.message, 'm100');
+  assert.equal(first.next, rows[99]!.id);
+  const last = (await s.call('GET', '/api/activity?before=' + encodeURIComponent(String(first.next)))).b as Item;
+  assert.deepEqual([(last.entries as Item[]).map((e) => e.message), last.next], [['m0'], null]);
 });

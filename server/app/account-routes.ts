@@ -10,8 +10,9 @@ import { pythonTrim, codePointLength } from '../../packages/domain/unicode.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { signinMessage, deleteMessage } from '../../packages/mail/auth.ts';
 import { checkTurnstile, turnstileClient, turnstileToken } from '../../packages/backend/turnstile.ts';
+import { activityId, activityView } from '../../packages/domain/activity.ts';
 import { json, body } from './requests.ts';
-const MAIL_LOG_SHOWN = 200;
+const ACTIVITY_SHOWN = 100;
 export async function accountRoutes(
   service: SessionService,
   pattern: string,
@@ -164,29 +165,22 @@ export async function accountRoutes(
     service.log({ event: 'delete-code-sent', user: uid });
     return json({ ok: true }, 202);
   }
-  if (pattern === '/api/mail-log') {
-    // The owner's own rows (docs/WEB-APP.md, Mail log), newest first. Words
-    // appear only on a row whose sender was proven and that was not filed.
+  if (pattern === '/api/activity') {
+    // The owner's activity log (docs/WEB-APP.md, Activity), newest first, a
+    // page at a time: `before` is the last row's id on the page before. A
+    // mail row's words appear only when its sender was proven and it was not
+    // filed.
     const { uid, profile: p } = await service.account(),
-      rows = (await store.mailLog(uid, ctx.now)).slice(0, MAIL_LOG_SHOWN);
+      before = query.get('before') ?? undefined;
+    if (before !== undefined && (before.length > 300 || !/^\d{4}-\d{2}-\d{2}T[\d:.]+Z(#|$)/.test(before)))
+      reject(400, 'before');
+    const page = await store.activity(uid, { before, limit: ACTIVITY_SHOWN, now: ctx.now });
     return json({
       email: p.email,
       tz: p.tz,
       today: localDay(ctx.now, String(p.tz)),
-      entries: rows.map((r) => ({
-        id: r.message,
-        received_at: r.received_at,
-        via: r.via,
-        day: r.day,
-        version: r.version,
-        subject: r.subject ?? '',
-        outcome: r.outcome,
-        reason: r.reason ?? null,
-        sender: r.sender ?? null,
-        text: r.text ?? null,
-        attempts: Number(r.attempts ?? 0),
-        notified: Boolean(r.notified_at)
-      }))
+      entries: page.rows.map(activityView),
+      next: page.more ? activityId(String(page.rows.at(-1)!.sk)) : null
     });
   }
   if (pattern === '/api/places') {

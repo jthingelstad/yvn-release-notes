@@ -296,6 +296,8 @@ export class OAuthService {
     );
     const usage = new Map<string, number>();
     for (const item of await store.mcpRows('MCPMETA#' + uid)) {
+      // Last use comes from USE# and LOG#; the daily reads rows keep ISO times.
+      if (!/^(USE|LOG)#/.test(String(item.sk))) continue;
       const connection = String(item.sk).startsWith('USE#') ? String(item.sk).slice(4) : String(item.connection ?? '');
       if (connection && live(item, now)) usage.set(connection, Math.max(usage.get(connection) ?? 0, Number(item.at)));
     }

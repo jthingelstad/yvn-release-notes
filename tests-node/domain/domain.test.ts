@@ -2,7 +2,16 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { addDays, daysBetween, iso, localDay, parseDay, validDay, validTimezone } from '../../packages/domain/dates.ts';
+import {
+  addDays,
+  daysBetween,
+  iso,
+  localDay,
+  localStart,
+  parseDay,
+  validDay,
+  validTimezone
+} from '../../packages/domain/dates.ts';
 import { computeVersion, releaseAge, releaseName, releaseSpan, sameDayBefore } from '../../packages/domain/version.ts';
 import { combine, dayLinks, mapUrl, placeLabel, writtenAt } from '../../packages/domain/notes.ts';
 import { codePointLength, codePointSlice, fold, pythonTrim } from '../../packages/domain/unicode.ts';
@@ -188,4 +197,27 @@ test('search covers text, place, titles and existing processing results', () => 
   for (const word of ['dinner', 'cafe', 'pier', 'a walk', 'strasse']) assert.ok(text.includes(word));
   assert.deepEqual(searchTerms('Café "a walk"'), ['cafe', 'a walk']);
   assert.equal(searchTerms(Array.from({ length: 20 }, (_, n) => `t${n}`).join(' ')).length, 10);
+});
+
+test("a local day's first instant, across offsets, DST and days that start at 1am", () => {
+  const at = (day: string, tz: string) => new Date(localStart(day, tz) * 1000).toISOString();
+  assert.equal(at('2026-10-13', 'America/Chicago'), '2026-10-13T05:00:00.000Z');
+  assert.equal(at('2026-03-08', 'America/Chicago'), '2026-03-08T06:00:00.000Z');
+  assert.equal(at('2026-03-09', 'America/Chicago'), '2026-03-09T05:00:00.000Z');
+  assert.equal(at('2026-11-01', 'America/Chicago'), '2026-11-01T05:00:00.000Z');
+  assert.equal(at('2026-11-02', 'America/Chicago'), '2026-11-02T06:00:00.000Z');
+  assert.equal(at('2026-10-13', 'UTC'), '2026-10-13T00:00:00.000Z');
+  assert.equal(at('2026-10-13', 'Asia/Kolkata'), '2026-10-12T18:30:00.000Z');
+  assert.equal(at('2026-10-13', 'Pacific/Chatham'), '2026-10-12T10:15:00.000Z');
+  // Midnight never happens: the day starts when the clocks jump.
+  assert.equal(at('2026-09-06', 'America/Santiago'), '2026-09-06T04:00:00.000Z');
+  assert.equal(at('2026-03-29', 'Asia/Beirut'), '2026-03-28T22:00:00.000Z');
+  for (const [day, tz] of [
+    ['2026-03-08', 'America/Chicago'],
+    ['2026-09-06', 'America/Santiago'],
+    ['2026-10-13', 'Pacific/Chatham']
+  ] as const) {
+    assert.equal(localDay(localStart(day, tz), tz), day);
+    assert.equal(localDay(localStart(day, tz) - 1, tz), addDays(day, -1));
+  }
 });

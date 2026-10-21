@@ -97,6 +97,11 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
   has already earned and is not yet `seen`; `--write` adds it, so nobody's
   first email with the badge line lists everything at once. Counts only,
   never a name or address.
+- Moving the mail log (once, after the activity log shipped):
+  `node --import tsx tools/move-mail-log.ts` counts the `MAILLOG#` rows
+  still to move; `--write` moves each into the activity log with the
+  account proof, without its expiry, so a repeat is harmless. Expired rows
+  are left for the table. Counts only.
 - One row per subscriber (address, state, sign-up day, send time, last
   email, last note, notes, 30-day reply rate):
   `node --import tsx tools/subscribers.ts`. Reads keys and a few fields,
@@ -158,7 +163,7 @@ the describer reads it on each run.
   bounce by hand; replay an inbound event, once its cause is fixed, by
   invoking the inbound function's `live` alias with
   `{"Records": [<the record>]}`. Then delete the message. Do not assume the
-  owner heard: a failure the code caught leaves a `failed` mail log row and,
+  owner heard: a failure the code caught leaves a `failed` mail row in the activity log and,
   on the third try, one email, but a timeout or crash, a failure before the
   address named anyone, a stopped owner or a day's fourth notice leaves no
   email, and the first two no row.

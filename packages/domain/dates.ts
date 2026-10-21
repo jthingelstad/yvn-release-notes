@@ -85,6 +85,36 @@ export function localDay(epochSeconds: number, timezone: string): Day {
   return formatDay(Number(get('year')), Number(get('month')), Number(get('day')));
 }
 
+/** The first instant (epoch seconds) of a subscriber-local day: its local
+ * midnight, or where a zone skips midnight, the first local moment after it. */
+export function localStart(value: Day, timezone: string): number {
+  const { year, month, day } = parseDay(value);
+  if (!validTimezone(timezone)) throw new RangeError('Invalid timezone');
+  const wall = utc(year, month, day).getTime() / 1000,
+    format = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }),
+    offset = (epoch: number) => {
+      const parts = format.formatToParts(new Date(epoch * 1000)),
+        get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+      const shown = utc(get('year'), get('month'), get('day')).getTime() / 1000;
+      return shown + get('hour') * 3600 + get('minute') * 60 + get('second') - epoch;
+    };
+  let start = wall - offset(wall);
+  start = wall - offset(start);
+  // Midnight fell in a gap: step back to the day's first quarter hour.
+  while (localDay(start - 900, timezone) === value) start -= 900;
+  while (localDay(start, timezone) < value) start += 900;
+  return start;
+}
+
 export function iso(epochSeconds: number): string {
   if (!Number.isFinite(epochSeconds)) throw new RangeError('Invalid timestamp');
   const value = new Date(Math.floor(epochSeconds) * 1000);

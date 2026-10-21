@@ -60,6 +60,15 @@ export function validate(arguments_: unknown, schema: JsonSchema): asserts argum
       (!Array.isArray(value) || value.length < (spec.minItems ?? 0) || value.length > (spec.maxItems ?? 1000))
     )
       throw new ToolError('invalid_arguments', "Use a list within the tool's limits.");
+    // A list of names: each one of the schema's, once.
+    const names = spec.items?.enum;
+    if (
+      names &&
+      Array.isArray(value) &&
+      (value.some((v) => typeof v !== 'string' || !names.includes(v)) ||
+        (spec.uniqueItems === true && new Set(value).size !== value.length))
+    )
+      throw new ToolError('invalid_arguments', "Use only the values in this tool's schema, each once.");
   }
 }
 export type SafeLog = (fields: Record<string, unknown>) => void;

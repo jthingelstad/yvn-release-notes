@@ -186,7 +186,7 @@ const behind = [
   ...[
     page('/connect', () => import('./pages/Connect.tsx'), 'Connect'),
     page('/settings', () => import('./pages/Settings.tsx'), 'Settings'),
-    page('/mail-log', () => import('./pages/MailLog.tsx'), 'MailLog'),
+    page('/activity', () => import('./pages/Activity.tsx'), 'Activity'),
     page('/admin', () => import('./pages/Admin.tsx'), 'Admin'),
     page('/admin-users', () => import('./pages/AdminUsers.tsx'), 'AdminUsers'),
     page('/pause', () => import('./pages/Pause.tsx'), 'Pause'),
@@ -194,7 +194,17 @@ const behind = [
   ].map((p) => createRoute({ getParentRoute: () => signedInRoute, ...p }))
 ];
 
-const routeTree = rootRoute.addChildren([frontRoute, ...open, signedInRoute.addChildren(behind)]);
+// The mail log became the activity log (2026-10-21); its notices and
+// bookmarks still point here.
+const moved = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/mail-log',
+  beforeLoad: () => {
+    throw redirect({ to: '/activity/', replace: true });
+  }
+});
+
+const routeTree = rootRoute.addChildren([frontRoute, ...open, moved, signedInRoute.addChildren(behind)]);
 
 // Every address keeps its trailing slash (/today/), as the emails and
 // bookmarks have it. The ?query is plain strings: the default reads JSON,

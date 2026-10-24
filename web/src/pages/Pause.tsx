@@ -166,7 +166,9 @@ function PauseForm({ p }: { p: Me }) {
             <button className="go" type="submit" disabled={busy}>
               Pause emails
             </button>
-            <AppLink href="/settings/">Not now</AppLink>
+            <AppLink className="quiet" href="/settings/">
+              Not now
+            </AppLink>
           </div>
           <ErrorLine line={problem.line || (typedWrong ? SAY.through : null)} />
         </div>

@@ -335,11 +335,13 @@ test("Here names where the browser is, and a saved note's place changes after", 
 test('"Add where I am" asks only as a note is saved, and "Not there" leaves it off', async ({ page, context }) => {
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 48.856613, longitude: 2.352222, accuracy: 10 });
-  // Every time the page asks the browser where it is.
+  // Every time the page asks the browser where it is, answered after
+  // `window.slow` milliseconds.
   await page.addInitScript(() => {
     const ask = navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
     window.asked = 0;
-    navigator.geolocation.getCurrentPosition = (...args) => (window.asked++, ask(...args));
+    window.slow = 0;
+    navigator.geolocation.getCurrentPosition = (...args) => (window.asked++, setTimeout(() => ask(...args), window.slow));
   });
   const asked = () => page.evaluate(() => window.asked);
   // On unless turned off, so nothing to set. Opening Today asks nothing.
@@ -350,14 +352,22 @@ test('"Add where I am" asks only as a note is saved, and "Not there" leaves it o
   await expect(form.locator('#note-where')).toBeHidden();
   expect(await asked()).toBe(0);
 
-  // Saving asks, and the note keeps where it was written.
+  // Saving asks, and the note keeps where it was written. While the
+  // browser looks, the draft being saved can't be changed.
   const there = `Somewhere at ${Date.now()}`;
   await form.locator('textarea').fill(there);
+  await page.evaluate(() => (window.slow = 1500));
   await form.getByRole('button', { name: 'Save note' }).click();
+  await expect(form.getByText('Finding where you are…')).toBeVisible();
+  await expect(form.locator('textarea')).toHaveAttribute('readonly', '');
+  await expect(form.locator('input[type=file]')).toBeDisabled();
+  await page.evaluate(() => (window.slow = 0));
   await expect(
     page.locator('article.note', { hasText: there }).getByRole('link', { name: 'Old Town, Paris' })
   ).toBeVisible();
   expect(await asked()).toBe(1);
+  await expect(form.locator('textarea')).toHaveValue('');
+  await expect(form.locator('textarea')).not.toHaveAttribute('readonly');
 
   // "Not there" after a Here: saved with no place, and not asked again.
   await form.getByRole('button', { name: 'Here', exact: true }).click();

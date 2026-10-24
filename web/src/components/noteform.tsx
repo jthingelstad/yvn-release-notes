@@ -56,6 +56,10 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
   // "Not there" on this note: it is saved with no place.
   const [notThere, setNotThere] = useState(false);
   const [locating, setLocating] = useState(false);
+  // From Save until the form empties (the location, the files), the draft
+  // is what is being saved, so it can't be changed: an edit then would be
+  // emptied with it, unsaved.
+  const [held, setHeld] = useState(false);
   // Each new note starts its "Where" over, Here's "Not there" included.
   const [round, setRound] = useState(0);
   const [won, setWon] = useState<Unlocked[]>([]);
@@ -88,51 +92,61 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
       setWon([]);
       const files = [...(pick.current?.files || []), ...(await rec.files())];
       if (!text.trim() && !files.length) return problem.show({ error: 'text' }, area.current);
-      // "Add where I am" asks the browser now, as the note is saved, never
-      // as the page opens (Jamie, 2026-10-24: "Do it when we know that we
-      // need the location"). The note is saved without it when the browser
-      // can't or won't say, and its Where can add one after.
-      let at = place;
-      if (!at && here && !notThere && canLocate()) {
-        setLocating(true);
-        const found = await whereAmI({ timeout: 10_000, cap: 20_000 }).finally(() => setLocating(false));
-        if ('place' in found) at = found.place;
+      setHeld(true);
+      try {
+        await save(files);
+      } finally {
+        setHeld(false);
       }
-      // The zone it is being written in, so its time reads as it did here.
-      const body: { text: string; tz: string; uploads?: unknown; place?: Place } = { text, tz: browserZone() };
-      if (at) body.place = kept(at);
-      if (files.length) {
-        const out = await sendFiles(files, setChosen);
-        showChosen();
-        if (out.problem) {
-          store.set(key, text);
-          return problem.show({ ...out.problem, draft: 'kept' }, pick.current);
-        }
-        body.uploads = out.sent;
-      }
-      const pending = await addPending(client, day, text);
-      store.drop(key);
-      setText('');
-      if (pick.current) pick.current.value = '';
-      showChosen();
-      rec.clear();
-      setPlace(null);
-      setNotThere(false);
-      setRound((n) => n + 1);
-      const r = await api<{ unlocked?: Unlocked[] }>('POST', `/api/days/${day}/notes`, body);
-      if (!r.ok) {
-        await dropNote(client, day, pending);
-        setText(text);
-        store.set(key, text);
-        putBack(pick.current, files);
-        showChosen();
-        setPlace(at);
-        setNotThere(notThere);
-        return problem.show({ ...r.data, draft: 'kept' }, area.current);
-      }
-      setWon(r.data.unlocked || []);
-      await refresh();
     });
+  };
+  const save = async (files: File[]) => {
+    // "Add where I am" asks the browser now, as the note is saved, never
+    // as the page opens (Jamie, 2026-10-24: "Do it when we know that we
+    // need the location"). The note is saved without it when the browser
+    // can't or won't say, and its Where can add one after.
+    let at = place;
+    if (!at && here && !notThere && canLocate()) {
+      setLocating(true);
+      const found = await whereAmI({ timeout: 10_000, cap: 20_000 }).finally(() => setLocating(false));
+      if ('place' in found) at = found.place;
+    }
+    // The zone it is being written in, so its time reads as it did here.
+    const body: { text: string; tz: string; uploads?: unknown; place?: Place } = { text, tz: browserZone() };
+    if (at) body.place = kept(at);
+    if (files.length) {
+      const out = await sendFiles(files, setChosen);
+      showChosen();
+      if (out.problem) {
+        store.set(key, text);
+        return problem.show({ ...out.problem, draft: 'kept' }, pick.current);
+      }
+      body.uploads = out.sent;
+    }
+    const pending = await addPending(client, day, text);
+    store.drop(key);
+    setText('');
+    if (pick.current) pick.current.value = '';
+    showChosen();
+    rec.clear();
+    setPlace(null);
+    setNotThere(false);
+    setRound((n) => n + 1);
+    // Empty: the next note can be written while this one is sent.
+    setHeld(false);
+    const r = await api<{ unlocked?: Unlocked[] }>('POST', `/api/days/${day}/notes`, body);
+    if (!r.ok) {
+      await dropNote(client, day, pending);
+      setText(text);
+      store.set(key, text);
+      putBack(pick.current, files);
+      showChosen();
+      setPlace(at);
+      setNotThere(notThere);
+      return problem.show({ ...r.data, draft: 'kept' }, area.current);
+    }
+    setWon(r.data.unlocked || []);
+    await refresh();
   };
 
   return (
@@ -146,6 +160,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
             rows={3}
             placeholder={placeholder}
             value={text}
+            readOnly={held}
             onChange={(e) => {
               problem.clear();
               setText(e.target.value);
@@ -176,6 +191,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
               name="files"
               multiple
               accept={FILES}
+              disabled={held}
               onChange={() => {
                 problem.clear();
                 showChosen();
@@ -188,6 +204,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
             type="button"
             aria-pressed={rec.seconds !== null}
             hidden={!canRecord()}
+            disabled={held}
             onClick={() => {
               problem.clear();
               rec.toggle();
@@ -201,6 +218,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
             onPick={setPlace}
             onProblem={show}
             onNotThere={() => setNotThere(true)}
+            disabled={held}
           />
           <button className="go" type="submit" disabled={busy}>
             {submit}

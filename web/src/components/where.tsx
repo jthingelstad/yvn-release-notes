@@ -50,17 +50,19 @@ function Nearby({ place, onPick, busy }: { place: Place; onPick: (p: Place) => v
 // without one ("Add where I am" looks only as a note is saved:
 // noteform.tsx). Problems go to the form's line, focused on Here. A lookup
 // still out when a place is picked or taken off is dropped, so a slow
-// answer never overrides a choice.
+// answer never overrides a choice. `disabled` while the note is saved.
 export function NoteWhere({
   place,
   onPick,
   onProblem,
-  onNotThere
+  onNotThere,
+  disabled = false
 }: {
   place: Place | null;
   onPick: (p: Place | null) => void;
   onProblem: (p: ApiData, field?: HTMLElement | null) => void;
   onNotThere?: () => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [finding, setFinding] = useState(false);
@@ -94,6 +96,7 @@ export function NoteWhere({
             className="quiet"
             type="button"
             id="note-where-clear"
+            disabled={disabled}
             onClick={() => {
               onNotThere?.();
               choose(null);
@@ -103,7 +106,7 @@ export function NoteWhere({
             Not there
           </button>
         </p>
-        <Nearby place={place} onPick={choose} />
+        <Nearby place={place} onPick={choose} busy={disabled} />
       </>
     );
   return (
@@ -115,7 +118,7 @@ export function NoteWhere({
           type="button"
           id="note-where-here"
           hidden={open}
-          disabled={finding}
+          disabled={finding || disabled}
           onClick={locate}
         >
           <Icon name="here" /> {finding ? 'Finding…' : 'Here'}
@@ -127,6 +130,7 @@ export function NoteWhere({
         type="button"
         id="note-where-open"
         hidden={open}
+        disabled={disabled}
         onClick={() => {
           setOpen(true);
           focusLater(() => input.current);

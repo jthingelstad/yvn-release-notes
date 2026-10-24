@@ -151,6 +151,19 @@ nothing there links here yet: that is Jamie's call.
       Then the record goes on to the failed queue unchanged. A row that cannot
       be written leaves the record to be read again; the third failed read
       sends it on unread.
+12. **Map** (`/map/`, linked from the Archive, 2026-10-24; Jamie: "a Map
+    view for my notes"): every note with a place of its own and
+    coordinates, as pins that gather into numbered groups as the map zooms
+    out. A note showing its day's or home's city has no spot of its own
+    and is left off, as is one cleared with "No place". Choosing a pin, or a
+    group that will not part (notes in the same city), lists its notes
+    under the map, newest first, each linked to its day. The base map is
+    Amazon Location's Standard style, light or dark as the system is, and
+    comes through `/api/map/*` under the web role: the browser holds no key
+    and asks no other host, and only a signed-in owner gets it. Tiles,
+    glyphs and sprites are kept by the browser for a day (`private`);
+    everything else stays `no-store`. MapLibre GL runs its worker from this
+    origin, so the CSP is unchanged. Tiles cost $0.04 a thousand.
 
 ## Defaults (Jamie can change any)
 
@@ -211,7 +224,8 @@ notes.yourversionnumber.com
   for the page count, the mail bucket's host for signed file links and
   uploads, and Cloudflare's challenge host (script and frame) for the
   sign-in Turnstile. Everything else goes through `/api`: the city search asks
-  Open-Meteo's geocoder (no key, CC BY 4.0) from there.
+  Open-Meteo's geocoder (no key, CC BY 4.0) from there, and the Map page's
+  base map comes from Amazon Location the same way.
 - **New items in the table.** `expires_at` (epoch seconds) is the table's
   TTL. The web app's first items were these; the design comment at the top of
   `packages/backend/store.ts` is the full, current layout.
@@ -261,7 +275,7 @@ notes.yourversionnumber.com
   then the email; `/#sign-in` the email alone), `/signin/` (the link lands
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
-  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/badges/`, `/search/`,
+  `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/badges/`, `/map/`, `/search/`,
   `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/settings/`, `/activity/` (`/mail-log/` redirects there), `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
   `/connect/` approves an external agent request whose opaque id stays in the fragment.
   `/admin/` manages product updates; `/admin-users/` shows subscriber metadata. Administration is visible in settings only to the configured administrator.
@@ -445,6 +459,11 @@ or new CSP exception.
 | `GET /api/releases` | the releases index: each release with notes, and the current one (`current`), newest first, with `from`, `through`, `days` (with notes) and `notes`; from the notes' keys alone |
 | `GET /api/releases/{v}?after=&limit=` | one release (`4.5`): its head (`from`, `through`, `current`, `days_with_notes`, `notes`, `longest`, `badges` (not with badges off) with its coverage tier and special days `collected` by kind with a `count`, `tags` by count) and its days with notes, oldest first, 30 a page; `after` in the answer is the next page's cursor. 404 `release` for one not begun |
 | `GET /api/badges` | the subscriber's badges as of their `today` (with `tz` and today's `version`): `count`; `earned`, newest first, each with `key` (`id`, or `id:level` for a track tier), `name`, `line`, `shelf`, `earned` (the day it came true), and the `day` and `version` it is stamped with (a collectible's special day); `tracks` (`tier` 0-5, `level`, `best`, `now`, `since`, `next`); `release`, this release's `days`, `percent`, coverage `level`, `next` only while it can still be reached, `following` (the next release and its date), its `collected` special days and the next three `ahead` (never a secret one); `missing`, what is still to find, a secret one as its `hint` alone. Read from the notes' stored fields, never their text |
+| `GET /api/map/notes` | the Map page's pins: each note with a place of its own and coordinates, as `date`, `id`, `lat`, `lon`, `place` (its label), `exact` (a device or photo spot, not a chosen city) and `text` (its first 140 characters); `notes`, how many notes there are in all |
+| `GET /api/map/style/{scheme}` | Amazon Location's Standard style, `Light` or `Dark`, with its tiles, glyphs and sprite pointed at the routes below; any other source is dropped. Kept by the browser for a day |
+| `GET /api/map/tiles/{z}/{x}/{y}` | one vector tile of the base map, kept by the browser for a day; 404 outside the zoom's grid |
+| `GET /api/map/glyphs/{fonts}/{range}` | the style's font glyphs for one 256-character range (`0-255.pbf`), kept by the browser for a day |
+| `GET /api/map/sprites/{scheme}/{sprite}` | the style's sprite sheet, `sprites.json`, `sprites.png` or their `@2x`, kept by the browser for a day |
 | `GET /api/days/{date}` | one day: version, notes (each note's `parts` is its text split into strings and links by name; a note with no place of its own has the day's city or home's as `place` with `place_from` `day` or `home`, and no `map`), `weather`, the day's recorded weather as a line, when kept, `where`, the day's own place by name, when set, and `collected`, the special days (by name) a day with notes collected (not with badges off) |
 | `POST /api/days/{date}/notes` | write for today or a past day; `uploads` attaches files, and a note with files may have no text; `place` (a city from `/api/places`, or a spot from `/api/places/here`) says where. Answers with the note and `unlocked`, what it just earned in the order it came true (`key`, `id`, `name`, `version`; `album` for this release's special day collected again), left out with badges off or when that could not be read; the badges in it become `seen` |
 | `PUT/DELETE /api/days/{date}/place` | set the day's own place (a city from `/api/places`) or clear it; answers `{date, where, weather}`, the past day's weather fetched again for it |

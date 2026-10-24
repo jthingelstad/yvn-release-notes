@@ -9,6 +9,7 @@ import type {
   Badges,
   DayPage,
   DaysPage,
+  MapNotes,
   Me,
   Note,
   ReleasePage,
@@ -105,3 +106,9 @@ export function pickDay(asked: string | null | undefined, p: Me): string {
   const yesterday = addDays(p.today, -1);
   return yesterday < p.birthday ? p.birthday : yesterday;
 }
+
+// The Map page's pins: every note with a place of its own.
+export const mapQuery = queryOptions({
+  queryKey: ['map'],
+  queryFn: () => get<MapNotes>('/api/map/notes')
+});

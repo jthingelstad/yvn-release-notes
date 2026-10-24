@@ -6,6 +6,7 @@ import type { Objects, Mail, Invocations, Log } from './services.ts';
 import { safeLog } from './services.ts';
 import type { TitleFetcher } from './links.ts';
 import { GeoPlacesClient } from '@aws-sdk/client-geo-places';
+import { geoMaps, type Maps } from './maps.ts';
 import { search, nameSpot, fetchJson, type JsonFetch, type City, type Spot, type SpotNames } from './places.ts';
 import * as auth from './auth.ts';
 import { withWebProof } from './guarded-store.ts';
@@ -23,7 +24,7 @@ export function reject(status: number, error: string, extra: Item = {}): never {
   throw new ApiError(status, error, extra);
 }
 /** One Amazon Location client for the process, made on first use. */
-let geo: GeoPlacesClient | undefined;
+let geo: GeoPlacesClient | undefined, basemap: Maps | undefined;
 export interface ApiContext {
   store: Store;
   now: number;
@@ -38,6 +39,7 @@ export interface ApiContext {
   adminUserId?: string;
   geocode?: (q: string) => Promise<City[]>;
   nameSpot?: (spot: Spot) => Promise<SpotNames | null>;
+  maps?: Maps;
   weatherFetch?: JsonFetch;
   fetchTitle?: TitleFetcher;
   turnstile?: TurnstileConfig;
@@ -169,6 +171,10 @@ export class SessionService {
   /** Names a device's spot ("Here"): city, neighbourhood, what is near. */
   nameSpot(spot: Spot): Promise<SpotNames | null> {
     return this.context.nameSpot ? this.context.nameSpot(spot) : nameSpot(spot, (geo ??= new GeoPlacesClient({})));
+  }
+  /** The Map page's base map, from Amazon Location. */
+  maps(): Maps {
+    return this.context.maps ?? (basemap ??= geoMaps());
   }
   get weatherFetch(): JsonFetch {
     return this.context.weatherFetch ?? fetchJson;

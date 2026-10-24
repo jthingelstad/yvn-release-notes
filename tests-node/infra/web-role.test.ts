@@ -2,7 +2,7 @@
  * request: sign-in mail with the Turnstile secret and verdicts, sign-up and
  * its first-email invoke, settings with a restart's unsuppress, notes with
  * uploads signed, checked and copied, media links, places (a device's spot
- * named) and weather,
+ * named) and weather, the Map page's base map,
  * Upcoming and the calendar feed, pauses, exports (the zip invoke, its link and
  * a replaced build's delete), MCP connections, the admin scan and product
  * updates, and both account-deletion cascades (tests-node/infra/grants.ts). */
@@ -19,6 +19,7 @@ import * as auth from '../../packages/backend/auth.ts';
 import * as media from '../../packages/backend/media.ts';
 import { zipKey } from '../../workers/export.ts';
 import { nameSpot } from '../../packages/backend/places.ts';
+import { geoMaps } from '../../packages/backend/maps.ts';
 import { REDIRECT, VERIFIER } from '../oauth/fixtures.ts';
 import { createHash } from 'node:crypto';
 import { Recorder, REGION, ACCOUNT, STACK } from './grants.ts';
@@ -103,6 +104,18 @@ test('the web role grants every request each route and the OAuth endpoints make'
             };
           }
         } as never),
+      // The Map page's base map, the real adapter as IAM authorizes it.
+      maps: geoMaps({
+        async send(command: { constructor: { name: string } }) {
+          const name = command.constructor.name.replace(/Command$/, '');
+          aws.add('maps.geoMaps', `geo-maps:${name}`, `arn:aws:geo-maps:${REGION}::provider/default`);
+          return {
+            Blob: new TextEncoder().encode(
+              name === 'GetStyleDescriptor' ? JSON.stringify({ version: 8, sources: {}, layers: [] }) : 'synthetic'
+            )
+          };
+        }
+      } as never),
       fetchTitle: () => null,
       weatherFetch: async () => forecast,
       turnstile: {
@@ -192,7 +205,12 @@ test('the web role grants every request each route and the OAuth endpoints make'
     '/api/releases/4.5',
     '/api/badges',
     '/api/tags',
-    '/api/tags/made'
+    '/api/tags/made',
+    '/api/map/notes',
+    '/api/map/style/Light',
+    '/api/map/tiles/3/2/2',
+    '/api/map/glyphs/Amazon%20Ember%20Regular,Noto%20Sans%20Regular/0-255.pbf',
+    '/api/map/sprites/Dark/sprites@2x.png'
   ])
     await call('GET', path);
   await call('POST', '/api/search', { q: 'lake' });
@@ -346,7 +364,8 @@ test('the web role grants every request each route and the OAuth endpoints make'
     's3:ListBucket',
     'dynamodb:Scan',
     'dynamodb:BatchWriteItem',
-    'geo-places:ReverseGeocode'
+    'geo-places:ReverseGeocode',
+    'geo-maps:GetTile'
   ])
     assert.ok(actions.has(action), action);
   // Attachment checks read the tags of the exact version uploaded, so plain

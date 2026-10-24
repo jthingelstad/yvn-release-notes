@@ -243,6 +243,30 @@ export async function main(args = process.argv.slice(2)) {
         ]
       };
     },
+    // The Map page draws on a plain sheet, with no tiles, glyphs or sprites:
+    // never Amazon Location.
+    maps: {
+      style: async (scheme) => ({
+        body: new TextEncoder().encode(
+          JSON.stringify({
+            version: 8,
+            sources: {},
+            glyphs: 'https://maps.geo.us-east-1.amazonaws.com/v2/glyphs/{fontstack}/{range}.pbf',
+            layers: [
+              {
+                id: 'sheet',
+                type: 'background',
+                paint: { 'background-color': scheme === 'Dark' ? '#23264f' : '#ece6d6' }
+              }
+            ]
+          })
+        ),
+        type: 'application/json'
+      }),
+      tile: async () => null,
+      glyphs: async () => null,
+      sprites: async () => null
+    },
     fetchTitle: (url) => ({ title: 'A page at ' + new URL(url).hostname, site: new URL(url).hostname }),
     weatherFetch: async (url) => {
       const q = new URL(url).searchParams,

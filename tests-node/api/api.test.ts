@@ -69,7 +69,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 60);
+  assert.equal(ROUTES.length, 65);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -1084,6 +1084,131 @@ test('search and tag pages show the inherited city the whole day does, not their
     await matched(s.call('GET', '/api/tags/walks'))
   ])
     assert.deepEqual([found.place, found.place_from], ['Paris, Ile-de-France', 'day']);
+});
+test('the map pins notes with a place of their own and passes the base map through, kept by the browser alone', async () => {
+  const s = await setup(),
+    asked: string[] = [];
+  s.ctx.weatherFetch = async () => ({
+    daily: { time: [], temperature_2m_max: [], temperature_2m_min: [], weather_code: [] }
+  });
+  const file = (body: string, type: string) => ({ body: new TextEncoder().encode(body), type });
+  s.ctx.maps = {
+    async style(scheme) {
+      asked.push('style ' + scheme);
+      return file(
+        JSON.stringify({
+          version: 8,
+          sources: {
+            aws: {
+              type: 'vector',
+              tiles: ['https://maps.geo.us-east-1.amazonaws.com/v2/tiles/vector.basemap/{z}/{x}/{y}']
+            },
+            other: { type: 'raster', tiles: ['https://elsewhere.example/{z}/{x}/{y}.png'] }
+          },
+          glyphs: 'https://maps.geo.us-east-1.amazonaws.com/v2/glyphs/{fontstack}/{range}.pbf',
+          sprite: 'https://maps.geo.us-east-1.amazonaws.com/v2/styles/x/Standard/Dark/Default/sprites/sprites',
+          layers: [
+            { id: 'bg', type: 'background' },
+            { id: 'roads', source: 'aws' },
+            { id: 'pics', source: 'other' }
+          ]
+        }),
+        'application/json'
+      );
+    },
+    tile: async (z, x, y) => (
+      asked.push(`tile ${z}/${x}/${y}`),
+      z === 9 ? null : file('pbf', 'application/x-protobuf')
+    ),
+    glyphs: async (fonts, range) => (asked.push(`glyphs ${fonts} ${range}`), file('pbf', 'application/x-protobuf')),
+    sprites: async (scheme, name) => (asked.push(`sprites ${scheme} ${name}`), file('{}', 'application/json'))
+  };
+  const add = async (text: string, place?: Item) =>
+    String(((await s.call('POST', '/api/days/2026-10-06/notes', { text, ...(place ? { place } : {}) })).b as Item).id);
+  const inParis = await add('Croissants and a long walk along the river', city),
+    here = await add('On the bench'),
+    inherited = await add('An emailed thought'),
+    cleared = await add('Nowhere in particular', city);
+  await s.call('PUT', `/api/days/2026-10-06/notes/${here}/place`, {
+    place: {
+      name: 'Paris',
+      region: 'Ile-de-France',
+      country: 'France',
+      district: 'Le Marais',
+      lat: 48.856613,
+      lon: 2.352222,
+      from: 'device'
+    }
+  });
+  await s.call('DELETE', `/api/days/2026-10-06/notes/${cleared}/place`);
+  const pins = await s.call('GET', '/api/map/notes');
+  assert.equal(pins.r.headers.get('cache-control'), 'no-store');
+  assert.equal((pins.b as Item).notes, 4);
+  const shown = ((pins.b as Item).pins as Item[]).sort((a, b) => String(a.text).localeCompare(String(b.text)));
+  assert.deepEqual(shown, [
+    {
+      date: '2026-10-06',
+      id: inParis,
+      lat: 48.85,
+      lon: 2.35,
+      place: 'Paris, Ile-de-France',
+      exact: false,
+      text: 'Croissants and a long walk along the river'
+    },
+    {
+      date: '2026-10-06',
+      id: here,
+      lat: 48.856613,
+      lon: 2.352222,
+      place: 'Le Marais, Paris',
+      exact: true,
+      text: 'On the bench'
+    }
+  ]);
+  assert.ok(!shown.some((p) => p.id === inherited || p.id === cleared));
+
+  // The style points every Amazon address back here and drops other sources.
+  const style = await s.call('GET', '/api/map/style/Dark'),
+    drawn = style.b as Item;
+  assert.equal(style.r.headers.get('cache-control'), 'private, max-age=86400');
+  assert.deepEqual(drawn.sources, { aws: { type: 'vector', tiles: [`${origin}/api/map/tiles/{z}/{x}/{y}`] } });
+  assert.deepEqual(
+    (drawn.layers as Item[]).map((l) => l.id),
+    ['bg', 'roads']
+  );
+  assert.equal(drawn.glyphs, `${origin}/api/map/glyphs/{fontstack}/{range}.pbf`);
+  assert.equal(drawn.sprite, `${origin}/api/map/sprites/Dark/sprites`);
+  const tile = await s.call('GET', '/api/map/tiles/3/2/2');
+  assert.equal(tile.r.status, 200);
+  assert.equal(tile.r.headers.get('content-type'), 'application/x-protobuf');
+  assert.equal(tile.r.headers.get('cache-control'), 'private, max-age=86400');
+  assert.equal((await s.call('GET', '/api/map/tiles/9/1/1')).r.headers.get('cache-control'), 'no-store');
+  await s.call('GET', '/api/map/glyphs/Amazon%20Ember%20Bold,Noto%20Sans%20Bold/256-511.pbf');
+  await s.call('GET', '/api/map/sprites/Light/sprites@2x.json');
+  assert.deepEqual(asked, [
+    'style Dark',
+    'tile 3/2/2',
+    'tile 9/1/1',
+    'glyphs Amazon Ember Bold,Noto Sans Bold 256-511',
+    'sprites Light sprites@2x.json'
+  ]);
+  // Refused before Amazon Location is asked: signed out, no such tile, scheme,
+  // glyph range or sprite file.
+  for (const [path, status] of [
+    ['/api/map/notes', 401],
+    ['/api/map/tiles/3/2/2', 401]
+  ] as const)
+    assert.equal((await s.call('GET', path, undefined, '')).r.status, status, path);
+  for (const path of [
+    '/api/map/tiles/3/8/0',
+    '/api/map/tiles/23/0/0',
+    '/api/map/style/Sepia',
+    '/api/map/glyphs/Amazon%20Ember%20Bold/1-256.pbf',
+    '/api/map/glyphs/..%2Fetc/0-255.pbf',
+    '/api/map/sprites/Light/other.png'
+  ])
+    assert.equal((await s.call('GET', path)).r.status, 404, path);
+  assert.equal(asked.length, 5);
 });
 test('"Add where I am" is a setting, off until turned on, and recorded as a change', async () => {
   const s = await setup();

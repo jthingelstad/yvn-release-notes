@@ -50,7 +50,8 @@ export function Timeline() {
       <h1>Your archive.</h1>
       <p className="lede">Every day, a little more of your story.</p>
       <p className="hint spaced">
-        <AppLink href="/day/">Add notes for another day</AppLink> · <AppLink href="/tag/">Tags</AppLink>
+        <AppLink href="/day/">Add notes for another day</AppLink> · <AppLink href="/tag/">Tags</AppLink> ·{' '}
+        <AppLink href="/map/">Map</AppLink>
         {shown && (
           <>
             {' '}

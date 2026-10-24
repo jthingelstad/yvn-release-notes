@@ -273,3 +273,19 @@ export type Badges = Shelf & { today: string; tz: string; version: string };
 
 // A saved note's answer: what it just earned (none when that couldn't be read).
 export type { Unlocked };
+
+// The Map page (GET /api/map/notes): each note with a place of its own and
+// coordinates; `exact` is a spot (Here or a photo), not a chosen city.
+export interface Pin {
+  date: string;
+  id: string;
+  lat: number;
+  lon: number;
+  place: string;
+  exact: boolean;
+  text: string;
+}
+export interface MapNotes {
+  pins: Pin[];
+  notes: number;
+}

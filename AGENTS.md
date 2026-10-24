@@ -402,7 +402,9 @@ Where things are (each module's design comment has its contract):
   string (sign-in and unsubscribe tokens live there), no cookies, nothing
   that names a person. No other analytics.
 - **The CSP is `'self'`**: no inline script or style, nothing remote;
-  anything another service answers goes through `/api`. Add one of its few
+  anything another service answers goes through `/api` (the Map page's base
+  map too: Amazon Location under the web role, `packages/backend/maps.ts`,
+  for the signed-in owner alone). Add one of its few
   named exceptions (`docs/WEB-APP.md`, Front end) only when there is no way
   through `/api`.
 - **Turnstile on the sign-in email** (2026-10-14, after subscription bombing

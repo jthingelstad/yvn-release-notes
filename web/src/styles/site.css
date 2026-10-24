@@ -637,3 +637,12 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
 .mail-row.failed .mail-outcome, .mail-row.not-filed .mail-outcome { color: var(--orange-ink); }
 .mail-text { margin-top: 12px; color: var(--ink-2); }
 .mail-row .row { margin-top: 4px; }
+
+/* The Map page: the base map runs the page's width; the notes of a chosen
+   pin sit under it, spaced like the days. */
+.map { height: min(68vh, 560px); margin: 28px -24px 0; }
+.map:focus-visible, .map .maplibregl-canvas:focus-visible { outline: 3px solid var(--blue); outline-offset: -3px; }
+.map-picked { margin-top: 32px; }
+.map-picked h2:focus { outline: none; }
+.map-notes { list-style: none; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
+.map-notes div { margin-top: 4px; color: var(--ink-2); }

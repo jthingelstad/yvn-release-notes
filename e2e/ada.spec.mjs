@@ -537,3 +537,47 @@ test('the activity log opens from settings, and the mail log address lands on it
   await expect(page).toHaveURL(/\/activity\/$/);
   await expect(page.locator('h1')).toHaveText('Activity');
 });
+
+test('the map pins notes with a place of their own, and a pin lists its notes', async ({ page }) => {
+  const refused = [];
+  page.on('console', (m) => /Content Security Policy|Refused to/.test(m.text()) && refused.push(m.text()));
+  // One pin, so the map centres on it whatever other tests have saved.
+  await page.route('**/api/map/notes', (route) =>
+    route.fulfill({
+      json: {
+        notes: 3,
+        pins: [
+          {
+            date: '2026-10-06',
+            id: 'w-map',
+            lat: 48.856613,
+            lon: 2.352222,
+            place: 'Le Marais, Paris',
+            exact: true,
+            text: 'Croissants on the bench'
+          }
+        ]
+      }
+    })
+  );
+  await page.goto('/timeline/');
+  await page.getByRole('link', { name: 'Map', exact: true }).click();
+  await expect(page).toHaveURL(/\/map\/$/);
+  await expect(page.locator('h1')).toHaveText('Map');
+  await expect(page.locator('.lede')).toHaveText('1 note with a place of its own.');
+  const map = page.getByRole('region', { name: 'Map of your notes' });
+  await expect(map.locator('canvas')).toBeVisible();
+  await expect(page.getByText('Choose a pin to see its notes.')).toBeVisible();
+  // The pin is drawn at the centre once the map has settled.
+  const box = await map.boundingBox();
+  await expect(async () => {
+    await page.mouse.click(box.x + box.width / 2 + 14, box.y + box.height / 2 + 10);
+    await expect(page.getByRole('heading', { name: 'Le Marais, Paris' })).toBeFocused({ timeout: 1000 });
+  }).toPass({ timeout: 15000 });
+  const picked = page.locator('.map-notes li');
+  await expect(picked).toHaveCount(1);
+  await expect(picked).toContainText('Croissants on the bench');
+  await expect(picked.getByRole('link')).toHaveAttribute('href', '/day/?d=2026-10-06');
+  expect(refused).toEqual([]);
+  await page.unrouteAll({ behavior: 'wait' });
+});

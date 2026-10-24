@@ -7,6 +7,7 @@ import { archiveRoutes } from './archive-routes.ts';
 import { noteRoutes } from './note-routes.ts';
 import { adminRoutes } from './admin-routes.ts';
 import { upcomingRoutes } from './upcoming-routes.ts';
+import { mapRoutes } from './map-routes.ts';
 import { exportRoutes } from '../../packages/backend/exports.ts';
 import { errorFields } from '../../packages/backend/services.ts';
 import { json, trustedViewer } from './requests.ts';
@@ -46,6 +47,11 @@ export const ROUTES: [string, string][] = [
   ['GET', '/api/releases'],
   ['GET', '/api/releases/{v}'],
   ['GET', '/api/badges'],
+  ['GET', '/api/map/notes'],
+  ['GET', '/api/map/style/{scheme}'],
+  ['GET', '/api/map/tiles/{z}/{x}/{y}'],
+  ['GET', '/api/map/glyphs/{fonts}/{range}'],
+  ['GET', '/api/map/sprites/{scheme}/{sprite}'],
   ['POST', '/api/days/{date}/notes'],
   ['PUT', '/api/days/{date}/notes/{id}'],
   ['DELETE', '/api/days/{date}/notes/{id}'],
@@ -87,7 +93,15 @@ const compiled = ROUTES.map(([method, path]) => ({
         .replace('{n}', '([1-9][0-9]?)')
         .replace('{v}', '([0-9]{1,3}\\.[0-9])')
         .replace('{tag}', '([a-z0-9]{1,50}(?:-[a-z0-9]{1,49})*)')
-        .replace('{token}.ics', '([a-z2-7]{24})\\.ics') +
+        .replace('{token}.ics', '([a-z2-7]{24})\\.ics')
+        .replace('{scheme}', '(Light|Dark)')
+        .replace('{z}', '([0-9]{1,2})')
+        .replace('{x}', '([0-9]{1,7})')
+        .replace('{y}', '([0-9]{1,7})')
+        // A font stack is names joined by commas, as the style gives them.
+        .replace('{fonts}', '((?:[A-Za-z0-9 ]|%20|%2C|,){1,200})')
+        .replace('{range}', '([0-9]{1,5}-[0-9]{1,5})\\.pbf')
+        .replace('{sprite}', '(sprites(?:@2x)?\\.(?:json|png))') +
       '$'
   )
 }));
@@ -124,6 +138,7 @@ export function createApp(options: AppOptions = {}): Hono {
             (await noteRoutes(service, matched.path, args)) ??
             (await adminRoutes(service, matched.path, args)) ??
             (await upcomingRoutes(service, matched.path, args)) ??
+            (await mapRoutes(service, matched.path, args)) ??
             (await exportRoutes(service, matched.path, url.searchParams)) ??
             json({ error: 'not-found' }, 404);
         }
@@ -138,7 +153,9 @@ export function createApp(options: AppOptions = {}): Hono {
     }
     if (service?.renewedCookie && !response.headers.has('set-cookie'))
       response.headers.append('set-cookie', service.renewedCookie);
-    response.headers.set('cache-control', 'no-store');
+    // Only the base map may be kept, and only by the browser (map-routes.ts).
+    if (!(matched?.path.startsWith('/api/map/') && matched.path !== '/api/map/notes' && response.ok))
+      response.headers.set('cache-control', 'no-store');
     service?.log({
       event: 'web',
       method: c.req.raw.method,

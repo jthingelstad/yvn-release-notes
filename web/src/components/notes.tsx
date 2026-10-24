@@ -92,9 +92,15 @@ function sourceName(n: Note): string {
   return 'by email';
 }
 
+// A note's own spot on the Map page, which opens on it (Jamie, 2026-10-24:
+// place links go to our map, not Apple's). The day and id ride in the #, so
+// no server sees which note.
+export const mapHref = (day: string, id: string) => `/map/#${new URLSearchParams({ d: day, n: id }).toString()}`;
+
 // The time reads in the zone the note was written in (n.tz), named when it
-// isn't the subscriber's own.
-export function NoteMeta({ n, tz, cls }: { n: Note; tz: string; cls: string }) {
+// isn't the subscriber's own. A place with a spot of its own (n.map) links to
+// the Map page.
+export function NoteMeta({ n, day, tz, cls }: { n: Note; day: string; tz: string; cls: string }) {
   const zone = n.tz || tz;
   let when = '';
   if (n.at) {
@@ -107,9 +113,9 @@ export function NoteMeta({ n, tz, cls }: { n: Note; tz: string; cls: string }) {
   const parts: ReactNode[] = [
     when,
     n.place && n.map ? (
-      <OutLink key="place" href={n.map}>
+      <AppLink key="place" href={mapHref(day, n.id)}>
         {n.place}
-      </OutLink>
+      </AppLink>
     ) : n.place && n.place_from ? (
       <span key="place" className="inherited" title={n.place_from === 'day' ? "The day's place" : 'Home'}>
         {n.place}

@@ -2,9 +2,9 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Note } from '../lib/types.ts';
-import { placeOf } from './common.tsx';
+import { placeOf, splitHref } from './common.tsx';
 import { StreakLine } from './days.tsx';
-import { Marked, NoteBody, NoteMeta, noteText } from './notes.tsx';
+import { mapHref, Marked, NoteBody, NoteMeta, noteText } from './notes.tsx';
 import { answered } from './where.tsx';
 
 afterEach(cleanup);
@@ -14,11 +14,20 @@ describe('NoteMeta agent provenance', () => {
     const { container } = render(
       <NoteMeta
         n={{ id: 'a-1', source: 'agent', author: 'assistant', client, text: '' }}
+        day="2026-10-06"
         tz="America/Chicago"
         cls="meta"
       />
     );
     expect(container.textContent).toBe(`added by ${client}`);
+  });
+});
+
+describe('mapHref', () => {
+  it('opens our map on the note, the day and id in the #', () => {
+    const href = mapHref('2026-10-06', 'w-a&b');
+    expect(href).toBe('/map/#d=2026-10-06&n=w-a%26b');
+    expect(splitHref(href)).toEqual({ to: '/map/', search: {}, hash: 'd=2026-10-06&n=w-a%26b' });
   });
 });
 

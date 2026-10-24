@@ -156,7 +156,13 @@ nothing there links here yet: that is Jamie's call.
     out. A note showing its day's or home's city has no spot of its own
     and is left off, as is one cleared with "No place". Choosing a pin, or a
     group that will not part (notes in the same city), lists its notes
-    under the map, newest first, each linked to its day. The base map is
+    under the map, newest first, each linked to its day. A note's place, on
+    any page, links here (Jamie, 2026-10-24: "the links to locations now go
+    to OUR map"): `/map/#d=<day>&n=<id>` opens on its spot (close in on a
+    device or photo spot, the city for a chosen city) with the notes there
+    already listed. The day and id ride in the `#`, so no server sees which
+    note. The email and the exports still link Apple Maps (`notes.mapUrl`).
+    The base map is
     Amazon Location's Standard style, light or dark as the system is, drawn
     flat and north up (Amazon's style asks for a globe; Jamie wanted "a
     two-dimensional map"), and comes through `/api/map/*` under the web role: the browser holds no key

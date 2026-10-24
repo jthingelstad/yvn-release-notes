@@ -105,7 +105,7 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
   const shown = mode.is === 'saving' ? { ...n, text: mode.text, parts: undefined } : n;
   return (
     <article className="note" ref={article} hidden={mode.is === 'deleting'}>
-      <NoteMeta n={n} tz={tz} cls="meta" />
+      <NoteMeta n={n} day={day} tz={tz} cls="meta" />
       {mode.is === 'edit' ? (
         <EditForm
           n={n}

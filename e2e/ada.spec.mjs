@@ -276,7 +276,8 @@ test('a note says where it was, by name, linking to the map', async ({ page }) =
 
   const note = page.locator('article.note', { hasText: words });
   const place = note.getByRole('link', { name: 'Paris, Ile-de-France' });
-  await expect(place).toHaveAttribute('href', /^https:\/\/maps\.apple\.com\/\?ll=48\.85,2\.35/);
+  // Our own map, opened on this note; the day and id ride in the #.
+  await expect(place).toHaveAttribute('href', /^\/map\/#d=\d{4}-\d{2}-\d{2}&n=[^&]+$/);
   // The form starts over without a place.
   await expect(form.locator('#note-where')).toBeHidden();
   await expect(form.getByRole('button', { name: 'Where' })).toBeVisible();
@@ -309,10 +310,7 @@ test("Here names where the browser is, and a saved note's place changes after", 
 
   // The spot itself, not the city's middle, on the map.
   const note = page.locator('article.note', { hasText: words });
-  await expect(note.getByRole('link', { name: 'Corner Café, Paris' })).toHaveAttribute(
-    'href',
-    /^https:\/\/maps\.apple\.com\/\?ll=48\.856613,2\.352222/
-  );
+  await expect(note.getByRole('link', { name: 'Corner Café, Paris' })).toHaveAttribute('href', /^\/map\/#d=.+&n=/);
 
   // Here again on the saved note: saved at the neighbourhood, then named
   // by what was near until Done.
@@ -330,7 +328,7 @@ test("Here names where the browser is, and a saved note's place changes after", 
   await note.getByRole('button', { name: 'Where', exact: true }).click();
   await note.getByLabel('Where this note was').fill('Minn');
   await note.getByRole('option', { name: /Minneapolis.*Minnesota/ }).click();
-  await expect(note.getByRole('link', { name: 'Minneapolis, Minnesota' })).toHaveAttribute('href', /ll=44\.98,-93\.26/);
+  await expect(note.getByRole('link', { name: 'Minneapolis, Minnesota' })).toHaveAttribute('href', /^\/map\/#d=.+&n=/);
   await expect(note.getByRole('button', { name: 'Where', exact: true })).toBeFocused();
 });
 
@@ -596,6 +594,13 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
   await expect(picked).toHaveCount(1);
   await expect(picked).toContainText('Croissants on the bench');
   await expect(picked.getByRole('link')).toHaveAttribute('href', '/day/?d=2026-10-06');
+
+  // A note's place link opens the map on its spot, its notes already listed.
+  await page.goto('/today/');
+  await page.goto('/map/#d=2026-10-06&n=w-map');
+  await expect(page.getByRole('heading', { name: 'Le Marais, Paris' })).toBeVisible();
+  await expect(page.locator('.map-notes li')).toContainText('Croissants on the bench');
+  await expect(map.locator('canvas')).toBeVisible();
   expect(refused).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
 });

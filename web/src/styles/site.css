@@ -154,7 +154,7 @@ select { appearance: none; -webkit-appearance: none; cursor: pointer; }
 .notes-head { margin-top: 44px; }
 .notes { margin-top: 16px; display: flex; flex-direction: column; gap: 18px; }
 .notes:empty { display: none; }
-.note { display: flex; flex-direction: column; gap: 4px; }
+.note { display: flex; flex-direction: column; gap: 6px; }
 /* written a moment ago, still saving */
 .note.pending { opacity: 0.6; }
 .meta, .count { margin: 0; font-size: 13px; font-weight: 400; color: var(--ink-3); }
@@ -217,7 +217,7 @@ textarea { font-size: 17px; line-height: 1.5; resize: vertical; }
 .weather { margin: 10px 0 0; font-size: 14px; color: var(--ink-2); }
 .tday .weather { margin: 0; }
 #earlier { margin-top: 36px; }
-.pick-day { margin-top: 48px; }
+.pick-day { margin-top: 12px; max-width: 280px; }
 #day #none { margin-top: 20px; font-size: 16px; }
 .hint.empty-day { margin-top: 16px; }
 .nearby { margin-top: 32px; }
@@ -307,12 +307,26 @@ main:has(.bar--app) h1:not(.vnum) { margin-top: 0; font-size: 42px; }
 .you-places .hint { font-weight: 400; }
 .you-signout { display: none; }
 #day .dateline { margin-top: 0; text-transform: uppercase; letter-spacing: .1em; font-family: var(--mono); font-size: 13px; }
-#day .vnum.huge { font-family: var(--font); color: var(--ink); font-size: clamp(64px, 8vw, 116px); font-weight: 800; letter-spacing: -.025em; font-variant-numeric: tabular-nums; margin-top: 14px; }
+#day .vnum.huge { font-family: var(--font); color: var(--ink); font-size: clamp(64px, 8vw, 112px); font-weight: 800; letter-spacing: -.025em; font-variant-numeric: tabular-nums; margin-top: 14px; }
 #day .vnum.huge .dot { color: inherit; padding: 0 .025em; letter-spacing: 0; }
 #day .dots { gap: 8px; margin: 20px 0 16px; flex-wrap: nowrap; }
 #day .dots span { width: 9px; height: 9px; }
 #day .dots span.on { background: var(--orange); }
-.writing { margin-top: 48px; }
+.writing { margin-top: 56px; }
+/* Under the dots: what ships next and the run so far, one line; then the day's place. */
+.day-facts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 .4em; margin-top: 4px; }
+.day-facts > p { margin: 0; font-size: 15px; }
+.day-where > .hint { display: flex; align-items: center; flex-wrap: wrap; gap: 0 8px; margin-top: 4px; }
+.day-where > .hint .icon { width: 18px; height: 18px; color: var(--ink-3); }
+.day-where > .hint .quiet { font-size: 15px; }
+#day .weather { margin-top: 14px; font-size: 15px; }
+/* A day's date between the days either side, and the calendar. */
+.day-nav { display: flex; align-items: center; gap: 4px; margin-left: -12px; flex-wrap: wrap; }
+.day-nav .icon-gap { width: 44px; flex: none; }
+.day-nav .pick-toggle { margin-left: 8px; }
+#day .day-nav .dateline { margin: 0; }
+.another-day { margin-top: 40px; }
+.notes-head .vnum.inline { font-size: .8em; }
 .writing .notes-head { margin: 0; }
 .writing .note-form { margin-top: 20px; }
 .writing .write-label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -327,13 +341,15 @@ main:has(.bar--app) h1:not(.vnum) { margin-top: 0; font-size: 42px; }
 .note-tools .nearby { flex-basis: 100%; order: 2; }
 .nearby .quiet, .note-tools .nearby .quiet { font-size: 15px; font-weight: 500; text-decoration: underline; }
 .nearby .quiet[aria-pressed="true"] { color: var(--ink); font-weight: 700; text-decoration: none; }
-.saved-notes { margin-top: 44px; }
+.saved-notes { margin-top: 56px; }
 .saved-notes .notes-head { margin: 0; }
 .saved-notes .notes { gap: 28px; margin-top: 22px; }
-.saved-notes .text { order: -1; font-size: 18px; line-height: 1.65; }
+.saved-notes .text { font-size: 18px; line-height: 1.6; }
+/* The icon buttons' glyphs line up with the words above them. */
+.note .actions > .icon-button:first-child { margin-left: -12px; }
 .saved-notes .note .actions { gap: 6px; }
 .saved-notes .empty-day { max-width: 60ch; }
-#day .streak { margin-top: 36px; font-size: 15px; font-weight: 400; }
+#day .streak { margin: 0; font-size: 15px; font-weight: 400; }
 .days { gap: 36px; }
 .tday-head .vnum { font-family: var(--font); font-size: 26px; letter-spacing: -.015em; }
 .tday .text { max-width: 65ch; font-size: 17px; }
@@ -368,7 +384,7 @@ main:has(.bar--app) h1:not(.vnum) { margin-top: 0; font-size: 42px; }
   .lede { font-size: 18px; }
   h2.big { font-size: 24px; }
   #day .dateline { font-size: 11px; letter-spacing: .06em; }
-  #day .vnum.huge { font-size: clamp(56px, 18vw, 92px); }
+  #day .vnum.huge { font-size: clamp(56px, 18vw, 84px); }
   #day .dots { justify-content: space-between; gap: 0; }
   #day .dots span { width: 6px; height: 6px; }
   .writing { margin-top: 36px; }
@@ -377,7 +393,7 @@ main:has(.bar--app) h1:not(.vnum) { margin-top: 0; font-size: 42px; }
   .note-tools .quiet { font-size: 14px; gap: 5px; }
   .note-tools .icon { width: 20px; height: 20px; }
   .note-tools .go { flex-basis: 100%; width: 100%; margin: 12px 0 0; order: 3; text-align: center; }
-  .saved-notes { margin-top: 36px; }
+  .saved-notes { margin-top: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }

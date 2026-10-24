@@ -52,6 +52,8 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
   });
   const [chosen, setChosen] = useState<string>('');
   const [place, setPlace] = useState<Place | null>(null);
+  // Each new note starts its "Where" over, Here's "Not there" included.
+  const [round, setRound] = useState(0);
   const [won, setWon] = useState<Unlocked[]>([]);
   const [busy, run] = useBusy();
   const problem = useProblem();
@@ -101,6 +103,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
       showChosen();
       rec.clear();
       setPlace(null);
+      setRound((n) => n + 1);
       const r = await api<{ unlocked?: Unlocked[] }>('POST', `/api/days/${day}/notes`, body);
       if (!r.ok) {
         await dropNote(client, day, pending);
@@ -176,7 +179,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
           >
             <Icon name="record" /> {rec.seconds === null ? 'Record' : `Stop · ${recordClock(rec.seconds)}`}
           </button>
-          <NoteWhere place={place} onPick={setPlace} onProblem={show} auto={here} />
+          <NoteWhere key={round} place={place} onPick={setPlace} onProblem={show} auto={here} />
           <button className="go" type="submit" disabled={busy}>
             {submit}
           </button>

@@ -922,7 +922,9 @@ export class Store {
           TableName: this.tableName,
           Key: key(user, `NOTE#${day}#${id}`),
           UpdateExpression: 'SET #p = :p',
-          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#p)' + sourceCondition,
+          ConditionExpression:
+            'attribute_exists(pk) AND attribute_not_exists(#p) AND attribute_not_exists(place_cleared)' +
+            sourceCondition,
           ExpressionAttributeNames: { '#p': 'place', ...(source ? { '#k': 'key' } : {}) },
           ExpressionAttributeValues: {
             ':p': place,
@@ -1531,16 +1533,17 @@ export class Store {
       })
     );
   }
-  /** The owner's own change to where a note was (null clears it). */
+  /** The owner's own change to where a note was. Clearing it (null) marks
+   * `place_cleared`, so a photo's spot never fills it in again. */
   async changeNotePlace(user: string, day: string, id: string, place: Item | null) {
     try {
       return (
         (
           await this.update(key(user, `NOTE#${day}#${id}`), {
-            UpdateExpression: place ? 'SET #p = :p' : 'REMOVE #p',
+            UpdateExpression: place ? 'SET #p = :p REMOVE place_cleared' : 'SET place_cleared = :p REMOVE #p',
             ConditionExpression: 'attribute_exists(pk)',
             ExpressionAttributeNames: { '#p': 'place' },
-            ...(place ? { ExpressionAttributeValues: { ':p': place } } : {}),
+            ExpressionAttributeValues: { ':p': place ?? true },
             ReturnValues: 'ALL_NEW'
           })
         ).Attributes ?? null

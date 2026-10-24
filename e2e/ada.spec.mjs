@@ -20,7 +20,10 @@
 import { test, expect } from '@playwright/test';
 
 // A real 1 x 1 PNG, so the browser draws it, and a small PDF.
-const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64'
+);
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n');
 
 // One sign-in as Ada, shared: a second code would replace the first, and
@@ -72,35 +75,37 @@ test('a photo goes with a new note, and a PDF joins it later', async ({ page }) 
   await expect(note.locator('.media a.file')).toHaveAttribute('href', /^\/dev-media\/media\/.*\.pdf$/);
 });
 
-test('note glyph actions support keyboard editing and explicit delete confirmation', async ({page}) => {
+test('note glyph actions support keyboard editing and explicit delete confirmation', async ({ page }) => {
   const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
-  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
   await page.goto('/today/');
-  await page.getByRole('textbox',{name:'Add to today',exact:true}).fill('A note for glyph controls.');
-  await page.getByRole('button',{name:'Save note',exact:true}).click();
-  const note = page.locator('article.note',{hasText:'A note for glyph controls.'});
+  await page.getByRole('textbox', { name: 'Add to today', exact: true }).fill('A note for glyph controls.');
+  await page.getByRole('button', { name: 'Save note', exact: true }).click();
+  const note = page.locator('article.note', { hasText: 'A note for glyph controls.' });
   await expect(note).toBeVisible();
-  for (const action of ['Edit','Where','Add files','Delete']) {
-    const button = note.getByRole('button',{name:action,exact:true});
-    await expect(button).toHaveAttribute('title',action);
+  for (const action of ['Edit', 'Where', 'Add files', 'Delete']) {
+    const button = note.getByRole('button', { name: action, exact: true });
+    await expect(button).toHaveAttribute('title', action);
     const bounds = await button.boundingBox();
     expect(bounds.width).toBeGreaterThanOrEqual(44);
     expect(bounds.height).toBeGreaterThanOrEqual(44);
   }
-  await note.getByRole('button',{name:'Edit',exact:true}).focus();
+  await note.getByRole('button', { name: 'Edit', exact: true }).focus();
   await page.keyboard.press('Enter');
-  await expect(note.getByRole('textbox',{name:'Edit this note',exact:true})).toBeFocused();
-  await note.getByRole('textbox',{name:'Edit this note',exact:true}).fill('A note for glyph controls. Edited.');
-  await note.getByRole('button',{name:'Save',exact:true}).click();
+  await expect(note.getByRole('textbox', { name: 'Edit this note', exact: true })).toBeFocused();
+  await note.getByRole('textbox', { name: 'Edit this note', exact: true }).fill('A note for glyph controls. Edited.');
+  await note.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(note.locator('.text')).toContainText('Edited.');
-  await page.screenshot({path:'/tmp/yvn-lucide-note-actions.png',fullPage:true});
-  await note.getByRole('button',{name:'Delete',exact:true}).click();
-  await expect(note.getByText('Delete this note?',{exact:true})).toBeVisible();
-  await note.getByRole('button',{name:'Keep it',exact:true}).click();
-  await expect(note.getByRole('button',{name:'Edit',exact:true})).toBeVisible();
-  await note.getByRole('button',{name:'Delete',exact:true}).click();
-  await note.getByRole('button',{name:'Delete',exact:true}).click();
+  await page.screenshot({ path: '/tmp/yvn-lucide-note-actions.png', fullPage: true });
+  await note.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(note.getByText('Delete this note?', { exact: true })).toBeVisible();
+  await note.getByRole('button', { name: 'Keep it', exact: true }).click();
+  await expect(note.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
+  await note.getByRole('button', { name: 'Delete', exact: true }).click();
+  await note.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(note).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -134,7 +139,9 @@ test('a file that is not a photo, recording or PDF is refused by name, and nothi
   const form = page.locator('#note-form');
   const words = `Not a page ${Date.now()}`;
   await form.locator('textarea').fill(words);
-  await form.locator('input[type=file]').setInputFiles({ name: 'page.html', mimeType: 'text/html', buffer: Buffer.from('<p>hi</p>') });
+  await form
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'page.html', mimeType: 'text/html', buffer: Buffer.from('<p>hi</p>') });
   await form.getByRole('button', { name: /Add note|Save note/ }).click();
   await expect(form.locator('.error')).toHaveText('page.html isn’t a photo, recording or PDF, so it can’t be added.');
   await expect(page.locator('article.note', { hasText: words })).toHaveCount(0);
@@ -146,8 +153,10 @@ test('search lists every tag, finds words, marks them, and the box clears back t
   const tags = page.locator('#every-tag-list');
   await expect(tags.locator('a.tag').first()).toBeVisible();
   const words = `Lighthouse ${Date.now()}`;
-  await page.request.post('/api/days/' + (await (await page.request.get('/api/today')).json()).date + '/notes',
-    { data: { text: `${words} by the café. #maine` }, headers: { Origin: new URL(page.url()).origin } });
+  await page.request.post('/api/days/' + (await (await page.request.get('/api/today')).json()).date + '/notes', {
+    data: { text: `${words} by the café. #maine` },
+    headers: { Origin: new URL(page.url()).origin }
+  });
 
   const box = page.locator('#search-form input[type=search]');
   await box.fill(words.toLowerCase());
@@ -298,13 +307,33 @@ test("Here names where the browser is, and a saved note's place changes after", 
   await expect(note.getByRole('button', { name: 'Where', exact: true })).toBeFocused();
 });
 
+test('"Add where I am" looks for each new note, even after "Not there" on the last', async ({ page, context }) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 48.856613, longitude: 2.352222, accuracy: 10 });
+  // The setting on for this page only, so other tests' Today stays as it was.
+  await page.route('**/api/me', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const res = await route.fetch();
+    await route.fulfill({ response: res, json: { ...(await res.json()), here: true } });
+  });
+  await page.goto('/today/');
+  const form = page.locator('#note-form');
+  await expect(form.locator('#note-where')).toHaveText(/At Paris, Ile-de-France\./);
+  await form.getByRole('button', { name: 'Not there' }).click();
+  await form.locator('textarea').fill(`Nowhere at ${Date.now()}`);
+  await form.getByRole('button', { name: 'Save note' }).click();
+  await expect(form.locator('#note-where')).toHaveText(/At Paris, Ile-de-France\./);
+});
+
 test('a past day can have a place of its own, and its weather follows', async ({ page }) => {
   const day = new Date(Date.now() - 20 * 86400_000).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
   await page.goto(`/day/?d=${day}`);
   const where = page.locator('#day-where');
   await where.getByRole('button', { name: 'Where was this day?' }).click();
   await where.getByLabel('Where this day was').fill('Par');
-  const answered = page.waitForResponse((r) => r.url().endsWith(`/api/days/${day}/place`) && r.request().method() === 'PUT');
+  const answered = page.waitForResponse(
+    (r) => r.url().endsWith(`/api/days/${day}/place`) && r.request().method() === 'PUT'
+  );
   await where.getByRole('option', { name: /Paris/ }).click();
   const body = await (await answered).json();
   expect(body.where).toBe('Paris, Ile-de-France');
@@ -378,7 +407,9 @@ test('badges open from Today, with this release, the tracks and the shelf', asyn
   await link.click();
   await expect(page).toHaveURL(/\/badges\/$/);
   await expect(page.locator('h1')).toHaveText('Badges');
-  await expect(page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Archive', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(
+    page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Archive', exact: true })
+  ).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('#badges-lede')).toContainText('Latest:');
   await expect(page.locator('#coverage')).toContainText('with notes in 4.5 so far');
   await expect(page.locator('#tracks .track')).toHaveCount(4);
@@ -405,7 +436,9 @@ test('a note that earns a badge says so under the form, and the count goes up', 
   const unlock = page.locator('#unlock');
   await expect(unlock).toBeHidden();
   // More than 1,000 words in a day earns RFC.
-  await page.getByRole('textbox', { name: 'Add to today' }).fill(Array.from({ length: 1001 }, (_, i) => `word${i}`).join(' '));
+  await page
+    .getByRole('textbox', { name: 'Add to today' })
+    .fill(Array.from({ length: 1001 }, (_, i) => `word${i}`).join(' '));
   await page.getByRole('button', { name: 'Save note', exact: true }).click();
   await expect(unlock).toHaveText(/^Unlocked: RFC, \d+\.\d+\.\d+\. See your badges$/);
   await expect(unlock.locator('svg')).toBeVisible();
@@ -473,7 +506,13 @@ test('the activity log opens from settings, and the mail log address lands on it
   // What the steps above did, each one sentence, from the web.
   const log = page.locator('#activity');
   await expect(log).toBeVisible();
-  for (const what of [/^Signed in$/, /^Added a note to /, /^Earned /, /^Changed settings$/, /^Replaced your standing address$/])
+  for (const what of [
+    /^Signed in$/,
+    /^Added a note to /,
+    /^Earned /,
+    /^Changed settings$/,
+    /^Replaced your standing address$/
+  ])
     await expect(log.locator('.activity-what', { hasText: what }).first()).toBeVisible();
   await expect(log.locator('.event.settings .hint').first()).toHaveText(/ to /);
   await expect(log.locator('.event .kicker', { hasText: 'On the web' }).first()).toBeVisible();

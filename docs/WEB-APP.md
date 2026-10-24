@@ -65,8 +65,11 @@ nothing there links here yet: that is Jamie's call.
    as Markdown and JSON; since phase 3, a zip with those and every photo
    and recording, built in the background (`workers/export.ts`). It arrives with sign-in, before anything else, so
    deleting an account never means losing what was in it.
-7. **Settings**: four keyboard-accessible disclosure groups—Daily email
-   (open initially), Writing & search, Connected agents and Your account.
+7. **Settings**: the address and "Changes save as you go." as the lede,
+   then four keyboard-accessible disclosure groups between rules, each a
+   title, a one-line summary and a chevron: Daily email (open initially),
+   Writing and search, Connected agents and Your account, with
+   Administration as a last row for the configured administrator.
    Changes save as they are made; opening a group changes no preference.
    Connector setup and recent activity are secondary disclosures. Contains
    send time and location, the standing address (a note any
@@ -88,11 +91,19 @@ nothing there links here yet: that is Jamie's call.
     special day collected ("Collected here: Palindrome."), a release's
     head its coverage and special days, and both exports list the
     badges, oldest first. "Show badges" off in Settings hides the links,
-    the unlock and those lines; the page and the exports stay.
-11. **Activity** (`/activity/`, linked from You, from Settings, Daily email, and
-    from each mail notice; 2026-10-21, from the mail log of 2026-10-20):
+    the unlock and those lines; the page and the exports stay. Earned
+    badges sit on a filled disc, what is still to find on an outline;
+    the release's days ahead and collected are small cards of version,
+    date and name.
+    **You** (`/you/`) leads with one status line (today's version, when
+    the email comes or that it is paused or stopped, the city), then
+    Badges, Activity and Settings as ruled rows with a chevron.
+11. **Activity** (`/activity/`, linked from You and from each mail
+    notice; 2026-10-21, from the mail log of 2026-10-20):
     what happened in the account, newest first, 100 rows a page with
-    "Older". Jamie, 2026-10-20: "a full log of any activity happening in
+    "Older", under a one-line lede and a "What’s kept here" disclosure.
+    Rows sit under the local day they happened, each its time, a glyph
+    for its kind, what happened and the channel. Jamie, 2026-10-20: "a full log of any activity happening in
     release notes ... a super powerful tool for Claude to see via MCP".
     Rows (`packages/domain/activity.ts`) live at
     `USER#<owner>/ACTIVITY#<time>#<kind>#<id>`, kept for the life of the

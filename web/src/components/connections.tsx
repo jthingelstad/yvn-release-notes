@@ -67,7 +67,7 @@ export function Connections() {
         list.data
           ? list.data.connections.length
             ? `${list.data.connections.length} ${list.data.connections.length === 1 ? 'connection' : 'connections'}`
-            : 'No agents connected'
+            : 'None yet. Connect one from its app.'
           : 'Manage access to your notes'
       }
     >

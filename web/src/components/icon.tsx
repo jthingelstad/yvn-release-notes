@@ -18,6 +18,7 @@ import {
   CircleHelp,
   CircleUserRound,
   CloudSunRain,
+  Download,
   Crown,
   Earth,
   FileText,
@@ -35,6 +36,7 @@ import {
   LocateFixed,
   Lock,
   LogOut,
+  Mail,
   Map as MapIcon,
   MapPin,
   Mic,
@@ -93,7 +95,10 @@ const icons = {
   birthday: Cake,
   anniversary: PartyPopper,
   trip: Plane,
-  event: CalendarDays
+  event: CalendarDays,
+  mail: Mail,
+  assistant: Bot,
+  download: Download
 };
 export type IconName = keyof typeof icons;
 

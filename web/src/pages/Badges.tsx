@@ -5,9 +5,9 @@
 // count out of a total, no tier that can no longer be reached.
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { AppLink, Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx';
+import { Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx';
 import { BadgeIcon } from '../components/icon.tsx';
-import { count, dayName, thisYearOf } from '../lib/format.ts';
+import { count, dayName, shortDay, thisYearOf } from '../lib/format.ts';
 import { badgesQuery } from '../lib/queries.ts';
 import type { Badges as BadgesData } from '../lib/types.ts';
 import type { AlbumDay, Track } from '../../../packages/domain/badges.ts';
@@ -68,7 +68,7 @@ function Shelf({ b }: { b: BadgesData }) {
         {r.collected.length > 0 && (
           <Album days={r.collected} thisYear={thisYear} label={`Collected in ${r.v}`} id="album" stamped />
         )}
-        <p className="hint spaced">Some special days are secret. You find them by writing on them.</p>
+        <p className="meta spaced">Some special days are secret. You find them by writing on them.</p>
       </section>
 
       <section className="b-section" aria-labelledby="tracks-head">
@@ -90,7 +90,7 @@ function Shelf({ b }: { b: BadgesData }) {
           <ul className="badges" id="collected">
             {shown.map((e) => (
               <li className="badge" key={e.key}>
-                <BadgeIcon id={e.id} />
+                <Glyph id={e.id} />
                 <span className="name">
                   {e.name} <Stamp v={e.version} />
                 </span>
@@ -111,7 +111,7 @@ function Shelf({ b }: { b: BadgesData }) {
           <ul className="badges" id="missing">
             {b.missing.map((m, i) => (
               <li className="badge locked" key={m.id || `secret-${i}`}>
-                <BadgeIcon id={m.id} />
+                <Glyph id={m.id} locked />
                 <span className="name">{m.name || 'Secret'}</span>
                 <p>{m.hint}</p>
               </li>
@@ -119,10 +119,16 @@ function Shelf({ b }: { b: BadgesData }) {
           </ul>
         </section>
       )}
-      <p className="hint spaced">
-        <AppLink href="/timeline/">Your archive</AppLink> · <AppLink href="/today/">Today</AppLink>
-      </p>
     </>
+  );
+}
+
+// A badge's glyph on a disc: filled once earned, an outline until then.
+function Glyph({ id, locked = false }: { id?: string; locked?: boolean }) {
+  return (
+    <span className={locked ? 'glyph locked' : 'glyph'}>
+      <BadgeIcon id={id} />
+    </span>
   );
 }
 
@@ -151,9 +157,9 @@ function Album({
       </h3>
       <ul className="ahead" id={id} aria-labelledby={`${id}-head`}>
         {days.map((d) => (
-          <li key={d.day}>
-            {stamped ? <Stamp v={d.version} /> : <span className="vnum">{d.version}</span>}
-            <span className="when">{dayName(d.day, thisYear)}</span>
+          <li key={d.day} className={stamped ? 'on' : undefined}>
+            <span className="v">{d.version}</span>
+            <span className="when">{shortDay(d.day, thisYear)}</span>
             <span className="what">{d.names.join(', ')}</span>
           </li>
         ))}
@@ -216,7 +222,7 @@ function TrackRow({ t }: { t: Track }) {
   }
   return (
     <div className="track" id={`track-${t.id}`}>
-      <BadgeIcon id={t.id} />
+      <Glyph id={t.id} locked={!t.tier} />
       <p className="track-head">
         <span className="track-name">{t.name}</span>
         <span className="tiers" role="img" aria-label={`${t.tier} of 5 tiers`}>

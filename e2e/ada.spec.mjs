@@ -562,16 +562,13 @@ test('"Show badges" off hides their links and lines, and on brings them back', a
   await expect(page.locator('#collected-here')).toHaveText('Collected here: Release day.');
 });
 
-test('the activity log opens from You and settings, and the mail log address lands on it', async ({ page }) => {
+test('the activity log opens from You, and the mail log address lands on it', async ({ page }) => {
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await page.goto('/today/');
   await nav.getByRole('link', { name: 'You', exact: true }).click();
   await page.locator('#you-activity').click();
   await expect(page).toHaveURL(/\/activity\/$/);
   await expect(nav.getByRole('link', { name: 'You', exact: true })).toHaveAttribute('aria-current', 'page');
-  await page.goto('/settings/');
-  await page.locator('#activity-link').click();
-  await expect(page).toHaveURL(/\/activity\/$/);
   await expect(page.locator('h1')).toHaveText('Activity');
   // What the steps above did, each one sentence, from the web.
   const log = page.locator('#activity');
@@ -585,7 +582,8 @@ test('the activity log opens from You and settings, and the mail log address lan
   ])
     await expect(log.locator('.activity-what', { hasText: what }).first()).toBeVisible();
   await expect(log.locator('.event.settings .hint').first()).toHaveText(/ to /);
-  await expect(log.locator('.event .kicker', { hasText: 'On the web' }).first()).toBeVisible();
+  await expect(log.locator('.event .activity-via', { hasText: 'on the web' }).first()).toBeVisible();
+  await expect(log.locator('h2.activity-day').first()).toHaveText(/^Today · /);
   await page.goto('/mail-log/');
   await expect(page).toHaveURL(/\/activity\/$/);
   await expect(page.locator('h1')).toHaveText('Activity');

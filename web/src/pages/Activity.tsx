@@ -3,9 +3,10 @@
 // filed keeps its words only when its sender was proven; "Add to" puts them
 // in that day's draft, and nothing is saved until the note is.
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { Fragment, type ReactNode, useState } from 'react';
 import { AppLink, Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx';
-import { clock, count, dayName, listed, thisYearOf, zoneShortDate, zoneTime } from '../lib/format.ts';
+import { Icon, type IconName } from '../components/icon.tsx';
+import { clock, count, dayName, listed, thisYearOf, zoneTime } from '../lib/format.ts';
 import { activityQuery } from '../lib/queries.ts';
 import { store } from '../lib/storage.ts';
 import type {
@@ -28,21 +29,39 @@ export function Activity() {
       <Crumb href="/you/">You</Crumb>
       <h1>Activity</h1>
       <p className="lede" id="activity-lede">
-        Everything that happened in your Release Notes, newest first: notes added, changed or deleted, recordings
-        written out and photos described, badges earned, each daily email and the Upcoming reminders it carried,
-        Upcoming dates, settings, sign-ins and connected assistants, each email sent to your Release Notes addresses and
-        what became of it, and each day an assistant read your notes. When an email isn’t filed because of a problem,
-        you get an email about it too.
+        Everything that happened in your Release Notes, newest first.
       </p>
+      <details className="activity-kept" id="activity-kept">
+        <summary>What’s kept here</summary>
+        <ul>
+          <li>Notes added, changed or deleted, and recordings written out and photos described</li>
+          <li>Badges earned</li>
+          <li>Each daily email and the Upcoming reminders it carried</li>
+          <li>Upcoming dates, settings, sign-ins and connected assistants</li>
+          <li>Each email sent to your Release Notes addresses, and what became of it</li>
+          <li>Each day an assistant read your notes</li>
+        </ul>
+        <p className="hint">
+          When an email isn’t filed because of a problem, you get an email about it too. A row never copies the words of
+          a note.
+        </p>
+      </details>
       {log.isPending && <Loading />}
       {log.isError && !l && <Failed />}
       {l &&
         (entries.length ? (
-          <ol className="activity" id="activity">
-            {entries.map((e) => (
-              <Row key={e.id} e={e} l={l} />
+          <div className="activity" id="activity">
+            {byDay(entries, l).map(([day, rows]) => (
+              <Fragment key={day}>
+                <h2 className="kicker activity-day">{dayHead(day, l)}</h2>
+                <ol>
+                  {rows.map((e) => (
+                    <Row key={e.id} e={e} l={l} />
+                  ))}
+                </ol>
+              </Fragment>
             ))}
-          </ol>
+          </div>
         ) : (
           <p className="hint spaced" id="activity-empty">
             Nothing yet.
@@ -59,12 +78,79 @@ export function Activity() {
       >
         Older
       </button>
-      <p className="hint spaced">
-        <AppLink href="/settings/">Settings</AppLink>
-      </p>
     </>
   );
 }
+
+const at = (e: ActivityEntry) =>
+  e.kind === 'mail' ? (e as MailActivity).received_at : e.kind === 'reads' ? (e as ReadsActivity).last_at : e.at;
+// The subscriber's own calendar day for an instant, as an ISO date.
+const localDay = (iso: string, tz: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: tz });
+
+// Rows under the day they happened, in the order the log gives them.
+function byDay(entries: ActivityEntry[], l: ActivityData): [string, ActivityEntry[]][] {
+  const days: [string, ActivityEntry[]][] = [];
+  for (const e of entries) {
+    const day = localDay(at(e), l.tz);
+    if (days.at(-1)?.[0] === day) days.at(-1)![1].push(e);
+    else days.push([day, [e]]);
+  }
+  return days;
+}
+
+const dayHead = (day: string, l: ActivityData) =>
+  day === l.today ? `Today · ${dayName(day, thisYearOf(l.today))}` : dayName(day, thisYearOf(l.today));
+
+// One row: the time, a glyph for what kind of thing it was, then what
+// happened, more about it, and the channel it came through.
+function Line({
+  e,
+  l,
+  icon,
+  what,
+  via,
+  children
+}: {
+  e: ActivityEntry;
+  l: ActivityData;
+  icon: IconName;
+  what: ReactNode;
+  via?: string | null;
+  children?: ReactNode;
+}) {
+  return (
+    <>
+      <span className="activity-time">{zoneTime(at(e), l.tz)}</span>
+      <Icon name={icon} />
+      <div>
+        <p className="activity-what">{what}</p>
+        {children}
+        {via && <p className="meta activity-via">{via}</p>}
+      </div>
+    </>
+  );
+}
+
+const GLYPHS: Record<string, IconName> = {
+  note: 'today',
+  badge: 'badges',
+  upcoming: 'upcoming',
+  reminder: 'upcoming',
+  email: 'mail',
+  transcript: 'record',
+  description: 'files',
+  import: 'archive',
+  place: 'where',
+  settings: 'settings',
+  pause: 'settings',
+  status: 'mail',
+  signin: 'you',
+  account: 'you',
+  export: 'download',
+  address: 'mail',
+  calendar: 'calendar',
+  connection: 'assistant'
+};
 
 function Row({ e, l }: { e: ActivityEntry; l: ActivityData }) {
   if (e.kind === 'mail') return <MailRow e={e as MailActivity} l={l} />;
@@ -233,19 +319,16 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
   }
 }
 
-const VIA: Record<string, string> = { web: 'On the web', email: 'By email', import: 'Import' };
+const VIA: Record<string, string> = { web: 'on the web', email: 'by email', import: 'imported' };
 
 function EventRow({ e, l }: { e: EventActivity; l: ActivityData }) {
   const [what, more] = said(e, l),
     via = e.via === 'assistant' ? e.client : e.via ? VIA[e.via] : null;
   return (
     <li className={`activity-row event ${e.kind.split('.')[0]}`}>
-      <p className="kicker">
-        {zoneShortDate(e.at, l.tz)} · {zoneTime(e.at, l.tz)}
-        {via ? ` · ${via}` : ''}
-      </p>
-      <p className="activity-what">{what}</p>
-      {more && <p className="hint">{more}</p>}
+      <Line e={e} l={l} icon={GLYPHS[e.kind.split('.')[0]] || 'activity'} what={what} via={via}>
+        {more && <p className="hint">{more}</p>}
+      </Line>
     </li>
   );
 }
@@ -253,14 +336,9 @@ function EventRow({ e, l }: { e: EventActivity; l: ActivityData }) {
 function ReadsRow({ e, l }: { e: ReadsActivity; l: ActivityData }) {
   return (
     <li className="activity-row reads">
-      <p className="kicker">
-        {zoneShortDate(e.last_at, l.tz)} · {e.client}
-      </p>
-      <p className="activity-what">Read your notes {count(e.calls, 'time', 'times')}</p>
-      <p className="hint">
-        Last at {zoneTime(e.last_at, l.tz)}
-        {e.errors ? `; ${count(e.errors, 'request was', 'requests were')} turned down` : ''}.
-      </p>
+      <Line e={e} l={l} icon="assistant" what={`Read your notes ${count(e.calls, 'time', 'times')}`} via={e.client}>
+        {!!e.errors && <p className="hint">{count(e.errors, 'request was', 'requests were')} turned down.</p>}
+      </Line>
     </li>
   );
 }
@@ -312,52 +390,55 @@ function MailRow({ e, l }: { e: MailActivity; l: ActivityData }) {
     day = dayName(e.day, year);
   return (
     <li className={`activity-row mail-row ${e.outcome}`}>
-      <p className="kicker">
-        {zoneShortDate(e.received_at, l.tz)} · {zoneTime(e.received_at, l.tz)} ·{' '}
-        {e.via === 'address' ? 'Standing address' : `Reply to ${e.version}`}
-      </p>
-      <p className="activity-what mail-outcome">
-        {e.outcome === 'filed' ? (
-          <>
-            Filed to <AppLink href={dayHref(e.day, l.today)}>{day}</AppLink>
-          </>
-        ) : e.outcome === 'failed' ? (
-          'Not filed yet'
-        ) : (
-          'Not filed'
-        )}
-      </p>
-      {(e.subject || e.sender) && (
-        <p className="hint">
-          {e.sender && <>From {e.sender}. </>}
-          {e.subject && <>“{e.subject}”</>}
-        </p>
-      )}
-      {e.reason && <p className="hint">{why(e, l.email)}</p>}
-      {e.text && (
-        <>
-          <p className="text mail-text">{e.text}</p>
-          <p className="row">
-            <AppLink className="quiet" href={dayHref(e.day, l.today)} onClick={() => draft(e.day, e.text!)}>
-              Add to {day}
-            </AppLink>{' '}
-            <button
-              className="quiet"
-              type="button"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(e.text!);
-                  setCopied(true);
-                } catch {
-                  setCopied(false);
-                }
-              }}
-            >
-              {copied ? 'Copied' : 'Copy'}
-            </button>
+      <Line
+        e={e}
+        l={l}
+        icon="mail"
+        what={
+          e.outcome === 'filed' ? (
+            <>
+              Filed your email to <AppLink href={dayHref(e.day, l.today)}>{day}</AppLink>
+            </>
+          ) : e.outcome === 'failed' ? (
+            'Your email isn’t filed yet'
+          ) : (
+            'Your email wasn’t filed'
+          )
+        }
+        via={e.via === 'address' ? 'to your standing address' : `a reply to ${e.version}`}
+      >
+        {(e.subject || e.sender) && (
+          <p className="hint">
+            {e.sender && <>From {e.sender}. </>}
+            {e.subject && <>“{e.subject}”</>}
           </p>
-        </>
-      )}
+        )}
+        {e.reason && <p className="hint">{why(e, l.email)}</p>}
+        {e.text && (
+          <>
+            <p className="text mail-text">{e.text}</p>
+            <p className="row">
+              <AppLink className="quiet" href={dayHref(e.day, l.today)} onClick={() => draft(e.day, e.text!)}>
+                Add to {day}
+              </AppLink>{' '}
+              <button
+                className="quiet"
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(e.text!);
+                    setCopied(true);
+                  } catch {
+                    setCopied(false);
+                  }
+                }}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </p>
+          </>
+        )}
+      </Line>
     </li>
   );
 }

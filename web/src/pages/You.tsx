@@ -3,20 +3,23 @@
 // button is not.
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { AppLink, Bar, RailSignOut, useTitle } from '../components/common.tsx';
+import { AppLink, Bar, Digits, RailSignOut, useTitle } from '../components/common.tsx';
 import { Icon, type IconName } from '../components/icon.tsx';
-import { count } from '../lib/format.ts';
+import { clock, count } from '../lib/format.ts';
 import { badgesQuery, meQuery } from '../lib/queries.ts';
+import type { Me } from '../lib/types.ts';
 
 export function You() {
   useTitle('You');
   // The gate has the profile already; "Show badges" off drops the row.
-  const shown = useQuery(meQuery).data?.badges !== false;
+  const me = useQuery(meQuery).data;
+  const shown = me?.badges !== false;
   return (
     <>
       <Bar />
       <h1>You</h1>
       <p className="lede">What you’ve earned, what happened, and how it’s set up.</p>
+      {me && !me.new && <Status p={me} />}
       <ul className="you-places">
         {shown && <BadgesRow />}
         <Row href="/activity/" id="you-activity" icon="activity" name="Activity">
@@ -52,8 +55,30 @@ function Row({
           <span className="you-name">{name}</span>
           <span className="hint">{children}</span>
         </span>
+        <Icon name="next" />
       </AppLink>
     </li>
+  );
+}
+
+// Where things stand, in one line: today's version, when the email comes
+// (or that it is paused or stopped), and the city it is set for.
+function Status({ p }: { p: Me }) {
+  const email =
+    p.status === 'stopped'
+      ? 'emails stopped'
+      : p.pause && p.pause.from <= p.today
+        ? 'emails paused'
+        : `email at ${clock(p.send_time)}`;
+  return (
+    <p className="you-status" id="you-status">
+      Version{' '}
+      <b>
+        <Digits v={p.version} />
+      </b>{' '}
+      today · {email}
+      {p.city && ` · ${p.city}`}
+    </p>
   );
 }
 

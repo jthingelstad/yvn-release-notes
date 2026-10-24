@@ -104,11 +104,13 @@ test('the web role grants every request each route and the OAuth endpoints make'
             };
           }
         } as never),
-      // The Map page's base map, the real adapter as IAM authorizes it.
+      // The Map page's base map, the real adapter as IAM authorizes it: only
+      // GetTile is an IAM action; the style, glyphs and sprites need none.
       maps: geoMaps({
         async send(command: { constructor: { name: string } }) {
           const name = command.constructor.name.replace(/Command$/, '');
-          aws.add('maps.geoMaps', `geo-maps:${name}`, `arn:aws:geo-maps:${REGION}::provider/default`);
+          if (name === 'GetTile')
+            aws.add('maps.geoMaps', 'geo-maps:GetTile', `arn:aws:geo-maps:${REGION}::provider/default`);
           return {
             Blob: new TextEncoder().encode(
               name === 'GetStyleDescriptor' ? JSON.stringify({ version: 8, sources: {}, layers: [] }) : 'synthetic'

@@ -284,6 +284,7 @@ export interface Pin {
   place: string;
   exact: boolean;
   text: string;
+  parts: Part[];
 }
 export interface MapNotes {
   pins: Pin[];

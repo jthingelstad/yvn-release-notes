@@ -1125,8 +1125,13 @@ test('the map pins notes with a place of their own and passes the base map throu
   };
   const add = async (text: string, place?: Item) =>
     String(((await s.call('POST', '/api/days/2026-10-06/notes', { text, ...(place ? { place } : {}) })).b as Item).id);
-  const inParis = await add('Croissants and a long walk along the river', city),
+  // Links show by name in the preview, as everywhere (links.segments), and
+  // a long address counts by its name, not its length.
+  s.ctx.fetchTitle = () => ({ title: 'The river walk', site: 'example.com' });
+  const long = 'https://example.com/' + 'a'.repeat(200),
+    inParis = await add(`Croissants and a long walk along the river ${long} #paris`, city),
     here = await add('On the bench'),
+    rambling = await add('Then ' + 'more and '.repeat(30) + 'done', city),
     inherited = await add('An emailed thought'),
     cleared = await add('Nowhere in particular', city);
   await s.call('PUT', `/api/days/2026-10-06/notes/${here}/place`, {
@@ -1143,7 +1148,7 @@ test('the map pins notes with a place of their own and passes the base map throu
   await s.call('DELETE', `/api/days/2026-10-06/notes/${cleared}/place`);
   const pins = await s.call('GET', '/api/map/notes');
   assert.equal(pins.r.headers.get('cache-control'), 'no-store');
-  assert.equal((pins.b as Item).notes, 4);
+  assert.equal((pins.b as Item).notes, 5);
   const shown = ((pins.b as Item).pins as Item[]).sort((a, b) => String(a.text).localeCompare(String(b.text)));
   assert.deepEqual(shown, [
     {
@@ -1153,7 +1158,13 @@ test('the map pins notes with a place of their own and passes the base map throu
       lon: 2.35,
       place: 'Paris, Ile-de-France',
       exact: false,
-      text: 'Croissants and a long walk along the river'
+      text: 'Croissants and a long walk along the river The river walk #paris',
+      parts: [
+        'Croissants and a long walk along the river ',
+        { url: long, label: 'The river walk', site: 'example.com' },
+        ' ',
+        { tag: 'paris', text: '#paris' }
+      ]
     },
     {
       date: '2026-10-06',
@@ -1162,7 +1173,18 @@ test('the map pins notes with a place of their own and passes the base map throu
       lon: 2.352222,
       place: 'Le Marais, Paris',
       exact: true,
-      text: 'On the bench'
+      text: 'On the bench',
+      parts: ['On the bench']
+    },
+    {
+      date: '2026-10-06',
+      id: rambling,
+      lat: 48.85,
+      lon: 2.35,
+      place: 'Paris, Ile-de-France',
+      exact: false,
+      text: ('Then ' + 'more and '.repeat(30)).slice(0, 139) + '…',
+      parts: [('Then ' + 'more and '.repeat(30)).slice(0, 139), '…']
     }
   ]);
   assert.ok(!shown.some((p) => p.id === inherited || p.id === cleared));

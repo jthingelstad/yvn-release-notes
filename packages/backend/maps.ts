@@ -11,7 +11,9 @@ import {
 } from '@aws-sdk/client-geo-maps';
 import type { NoteRecord } from '../domain/notes.ts';
 import { placeLabel } from '../domain/notes.ts';
+import { split, type TagPart } from '../domain/tags.ts';
 import { codePointSlice, pythonTrim } from '../domain/unicode.ts';
+import { segments, type Link, type LinkPart } from './links.ts';
 
 export type Scheme = 'Light' | 'Dark';
 export const STYLE = 'Standard',
@@ -96,9 +98,36 @@ export interface Pin {
   lon: number;
   place: string;
   exact: boolean;
+  /** The preview as plain words, and as the web shows it (`parts`, the
+   * same links by name and tags as every note: links.segments). */
   text: string;
+  parts: Part[];
 }
+type Part = string | LinkPart | TagPart;
 const PREVIEW = 140;
+const shown = (part: Part) => (typeof part === 'string' ? part : 'tag' in part ? part.text : part.label);
+/** The first PREVIEW characters as read, so a link counts by its name and
+ * a long address cannot fill the preview. A link or tag is kept whole or
+ * left for the ellipsis. */
+function preview(note: NoteRecord): { text: string; parts: Part[] } {
+  const words = pythonTrim(String(note.text ?? '').replace(/\s+/g, ' ')),
+    all: Part[] = split(segments(words, note.links as Link[] | undefined)),
+    size = (part: Part) => Array.from(shown(part)).length;
+  if (all.reduce((n, part) => n + size(part), 0) <= PREVIEW) return { text: all.map(shown).join(''), parts: all };
+  const parts: Part[] = [];
+  let left = PREVIEW - 1;
+  for (const part of all) {
+    if (size(part) <= left) {
+      parts.push(part);
+      left -= size(part);
+      continue;
+    }
+    if (typeof part === 'string') parts.push(codePointSlice(part, 0, left));
+    parts.push('…');
+    break;
+  }
+  return { text: parts.map(shown).join(''), parts };
+}
 export function pins(notes: readonly NoteRecord[]): Pin[] {
   const out: Pin[] = [];
   for (const note of notes) {
@@ -108,8 +137,7 @@ export function pins(notes: readonly NoteRecord[]): Pin[] {
       lon = Number(place.lon ?? NaN);
     if (place.lat == null || place.lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
     if (Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
-    const [, date = '', ...rest] = String(note.sk).split('#'),
-      text = pythonTrim(String(note.text ?? '').replace(/\s+/g, ' '));
+    const [, date = '', ...rest] = String(note.sk).split('#');
     out.push({
       date,
       id: rest.join('#'),
@@ -118,7 +146,7 @@ export function pins(notes: readonly NoteRecord[]): Pin[] {
       place: placeLabel(place),
       // A city chosen from the search stands for the city, not a spot in it.
       exact: place.from !== 'chosen',
-      text: text.length > PREVIEW ? codePointSlice(text, 0, PREVIEW - 1) + '…' : text
+      ...preview(note)
     });
   }
   return out;

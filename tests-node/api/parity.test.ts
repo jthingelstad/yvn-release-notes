@@ -62,5 +62,19 @@ for (const sample of fixture.cases)
           assert.ok(key in body, key);
           delete body[key];
         }
+    // A note with no place now shows the day's or home's, derived and
+    // marked (place_from); the Python views had none.
+    const inherited = (v: unknown): void => {
+      if (Array.isArray(v)) return v.forEach(inherited);
+      if (!v || typeof v !== 'object') return;
+      const row = v as Record<string, unknown>;
+      if ('place_from' in row) {
+        assert.ok(['day', 'home'].includes(String(row.place_from)) && typeof row.place === 'string');
+        delete row.place;
+        delete row.place_from;
+      }
+      Object.values(row).forEach(inherited);
+    };
+    inherited(body);
     assert.deepEqual(body, sample.response);
   });

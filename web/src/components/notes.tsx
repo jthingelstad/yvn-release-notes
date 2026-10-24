@@ -110,6 +110,10 @@ export function NoteMeta({ n, tz, cls }: { n: Note; tz: string; cls: string }) {
       <OutLink key="place" href={n.map}>
         {n.place}
       </OutLink>
+    ) : n.place && n.place_from ? (
+      <span key="place" className="inherited" title={n.place_from === 'day' ? "The day's place" : 'Home'}>
+        {n.place}
+      </span>
     ) : (
       n.place
     ),

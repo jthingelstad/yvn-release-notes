@@ -184,9 +184,10 @@ Where things are (each module's design comment has its contract):
 - **A note is the same record from every channel**
   (`packages/domain/notes.ts`). Its `place` shows by name, never coordinates,
   linked to a map unless it is only the subscriber's city
-  (`notes.mapUrl`, Jamie 2026-10-09): on the web our own Map page, opened
-  on the note (Jamie, 2026-10-24: "go to OUR map"), in the email and
-  exports Apple Maps.
+  (`notes.mapUrl`, Jamie 2026-10-09): our own Map page, opened on the
+  note, on the web and in the email (Jamie, 2026-10-24: "go to OUR map").
+  The API's `map` field keeps the Apple Maps link the golden fixtures pin;
+  the web reads it only as "this place has a spot".
 - **Where a note was** (Jamie, 2026-10-12): the web form's optional "Where",
   the device's own spot (Jamie, 2026-10-24: "Here", by a tap, or on each new
   note on Today with "Add where I am" on; `places.devicePlace`, named through

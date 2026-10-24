@@ -45,7 +45,8 @@ import {
   type Closed,
   type NewBadge,
   type Inline,
-  type Thumbnail
+  type Thumbnail,
+  mapLink
 } from '../packages/mail/compose.ts';
 export const WINDOW = 3 * 3600,
   RESERVE_MS = 20000,
@@ -123,24 +124,27 @@ export async function readStreak(s: SenderServices, sub: Subscriber, day: string
     return null;
   }
 }
-export function placesOf(notes: NoteRecord[], own: PlaceRecord | null = null): [string, string | null][] {
+// Each place once, linked to our map where it has a spot (mapUrl says
+// which): a note's on that note, the day's own on the day. The first note
+// at a spot stands for the rest; the map lists them all.
+export function placesOf(notes: NoteRecord[], own: PlaceRecord | null = null, day = ''): [string, string | null][] {
   const out: [string, string | null][] = [],
     seen = new Set<string>();
-  const add = (p: PlaceRecord) => {
+  const add = (p: PlaceRecord, link: () => string) => {
     const name = placeLabel(p);
     if (!name) return;
-    const url = mapUrl(p),
-      key = JSON.stringify([name, url]);
+    const spot = mapUrl(p),
+      key = JSON.stringify([name, spot]);
     if (!seen.has(key)) {
       seen.add(key);
-      out.push([name, url]);
+      out.push([name, spot && link()]);
     }
   };
-  if (own) add(own);
+  if (own) add(own, () => mapLink(day));
   for (const note of [...notes].sort((a, b) =>
     writtenAt(a) < writtenAt(b) ? -1 : writtenAt(a) > writtenAt(b) ? 1 : 0
   ))
-    if (note.place) add(note.place);
+    if (note.place) add(note.place, () => mapLink(day, String(note.sk).split('#').slice(2).join('#')));
   return out;
 }
 export function thumbsOf(sub: Subscriber, notes: NoteRecord[]): Thumbnail[] {
@@ -179,7 +183,7 @@ export async function readYesterday(
         files: media.counts(notes),
         tags: tags(notes.map((n) => n.text ?? '').join('\n\n')),
         others: notes.reduce((n, note) => n + media.others(note), 0),
-        places: placesOf(notes, own),
+        places: placesOf(notes, own, then),
         thumbs: thumbsOf(sub, notes),
         photos: []
       },

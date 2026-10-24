@@ -5,7 +5,8 @@
 // zoom out; choosing one, or a group that will not part (notes in the same
 // city), lists its notes under the map, each linked to its day. A note's
 // place links here as #d=<day>&n=<id>: the map opens on its spot with the
-// notes there listed.
+// notes there listed. The email links a day's own place as #d=<day>: the
+// map opens on that day's notes.
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GeoJSONSource, Map as MapLibre } from 'maplibre-gl';
@@ -23,14 +24,16 @@ export function MapPage() {
   const d = found.data;
   const day = useHashParam('d'),
     id = useHashParam('n');
-  const focus = useMemo(() => d?.pins.find((p) => p.date === day && p.id === id), [d, day, id]);
-  const here = focus ? `${focus.date}#${focus.id}` : '';
-  // A note's link lists the notes at its spot, and the map stays in view
-  // rather than the list taking focus; a pin chosen after replaces them.
-  const linked = useMemo(
-    () => (focus && d ? d.pins.filter((p) => p.lat === focus.lat && p.lon === focus.lon) : null),
-    [focus, d]
-  );
+  // A note's link lists the notes at its spot, a day's (the email's link
+  // for the day's own place) that day's; the map stays in view rather than
+  // the list taking focus, and a pin chosen after replaces them.
+  const linked = useMemo(() => {
+    const ofDay = d && day ? d.pins.filter((p) => p.date === day) : [],
+      focus = id ? ofDay.find((p) => p.id === id) : null;
+    if (focus) return d!.pins.filter((p) => p.lat === focus.lat && p.lon === focus.lon);
+    return !id && ofDay.length ? ofDay : null;
+  }, [d, day, id]);
+  const here = linked ? `${day}#${id ?? ''}` : '';
   const [chosen, setChosen] = useState<{ pins: Pin[]; under: string } | null>(null);
   const pick = useCallback((pins: Pin[] | null) => setChosen(pins && { pins, under: here }), [here]);
   const picked = chosen && chosen.under === here ? chosen.pins : linked;
@@ -49,7 +52,7 @@ export function MapPage() {
       )}
       {d && d.pins.length > 0 && (
         <>
-          <Basemap pins={d.pins} focus={focus} pick={pick} />
+          <Basemap pins={d.pins} focus={linked} pick={pick} />
           <Picked pins={picked} linked={picked === linked} />
         </>
       )}
@@ -88,7 +91,7 @@ function Picked({ pins, linked }: { pins: Pin[] | null; linked?: boolean }) {
 // Colours from the page's own tokens, so the pins follow light and dark.
 const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-function Basemap({ pins, focus, pick }: { pins: Pin[]; focus?: Pin; pick: (p: Pin[] | null) => void }) {
+function Basemap({ pins, focus, pick }: { pins: Pin[]; focus: Pin[] | null; pick: (p: Pin[] | null) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const [broken, setBroken] = useState(false);
   useEffect(() => {
@@ -103,18 +106,21 @@ function Basemap({ pins, focus, pick }: { pins: Pin[]; focus?: Pin; pick: (p: Pi
       if (gone || !box.current) return;
       maplibre.setWorkerUrl(worker);
       const dark = matchMedia('(prefers-color-scheme: dark)').matches,
+        frame = focus ?? pins,
+        [first] = frame,
+        one = !!focus && frame.every((p) => p.lat === first!.lat && p.lon === first!.lon),
         bounds = new maplibre.LngLatBounds();
-      for (const p of pins) bounds.extend([p.lon, p.lat]);
+      for (const p of frame) bounds.extend([p.lon, p.lat]);
       let m: MapLibre;
       try {
         m = map = new maplibre.Map({
           container: box.current,
           style: `${location.origin}/api/map/style/${dark ? 'Dark' : 'Light'}`,
-          // Every pin, or the one a note's place link asked for: close in
-          // on a spot, the city for a chosen city.
-          ...(focus
-            ? { center: [focus.lon, focus.lat] as [number, number], zoom: focus.exact ? 15 : 11 }
-            : { bounds, fitBoundsOptions: { padding: 48, maxZoom: 11 } }),
+          // Every pin, or what a place link asked for: close in on a spot,
+          // the city for a chosen city.
+          ...(one
+            ? { center: [first!.lon, first!.lat] as [number, number], zoom: first!.exact ? 15 : 11 }
+            : { bounds, fitBoundsOptions: { padding: 48, maxZoom: focus ? 15 : 11 } }),
           attributionControl: { compact: true },
           cooperativeGestures: true,
           // A flat map that stays north up: no tilting, no turning.

@@ -255,12 +255,48 @@ h1[tabindex="-1"]:focus, main[tabindex="-1"]:focus { outline: none; }
 .tags { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 20px; }
 .tags li { font-size: 17px; }
 mark { background: none; color: var(--orange-ink); font-weight: 700; }
-#every-tag-list { margin-top: 48px; }
-.releases ul { list-style: none; margin: 24px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 22px; }
-.releases a { text-decoration: none; }
-.releases a[aria-current] .vnum { text-decoration: underline; text-decoration-color: var(--orange); text-underline-offset: 5px; }
-.release-head { margin-top: 12px; }
-.release-counts { margin: 8px 0 0; font-size: 17px; }
+#every-tag-list { margin-top: 56px; }
+.page-actions { gap: 0 28px; }
+.lede + .page-actions { margin-top: 8px; }
+/* The Archive's releases: a kicker, then each release in a row. */
+.releases { margin-top: 28px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px 28px; }
+.releases ul { list-style: none; margin: 0; padding: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px 28px; }
+.releases li .hint { font-size: 14px; }
+.releases a { text-decoration: none; color: var(--ink); }
+.release-v { font-size: 22px; font-weight: 800; }
+.release-v .dot { color: var(--orange); }
+.releases a[aria-current] .release-v { text-decoration: underline; text-decoration-color: var(--orange); text-decoration-thickness: 3px; text-underline-offset: 6px; }
+/* Days in a row with nothing in them, as one line. */
+.quiet-run { margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 15px; color: var(--ink-2); }
+.quiet-run a { font-weight: 600; }
+.run-versions { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--ink-3); }
+/* A release's head and a tag's: a kicker over the title. */
+main:has(.bar--app) .kicker + h1 { margin-top: 8px; }
+.crumb + .kicker { margin-top: 12px; }
+#release-title .dot { color: var(--orange); }
+.release-head .lede { margin-top: 12px; }
+.figures { list-style: none; margin: 28px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 20px 48px; }
+.fig { display: flex; flex-direction: column; gap: 2px; }
+.fig b { font-size: 34px; font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; }
+.fig span { font-size: 14px; color: var(--ink-2); }
+.release-counts { margin: 20px 0 0; font-size: 17px; }
+.release-badges { margin-top: 12px; }
+.tag-row { margin-top: 28px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 22px; }
+.tag-row .tags { margin: 0; gap: 8px 22px; }
+.tag-row .tags li { font-size: 16px; }
+.tags a.tag { font-weight: 600; }
+.tags .hint { font-size: 14px; }
+.other-releases { margin-top: 56px; gap: 0 28px; }
+/* Search: the box and its button on one line. */
+form.search-form { margin-top: 28px; gap: 6px; }
+.search-form label { color: var(--ink-2); }
+.search-row { display: flex; align-items: center; gap: 16px; }
+.search-row input { flex: 1; min-width: 0; }
+.search-row .go { flex: none; }
+.search-lede { margin: 32px 0 0; font-size: 15px; color: var(--ink-2); }
+.search-lede + .days { margin-top: 16px; }
+#every-tag-list { display: flex; flex-direction: column; gap: 12px; }
+#every-tag-list .tags { margin-top: 6px; gap: 10px 24px; }
 a.tag { white-space: nowrap; }
 
 /* Agent names and connector addresses are unbroken external strings. */

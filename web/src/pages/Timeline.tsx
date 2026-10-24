@@ -4,8 +4,9 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { AppLink, Bar, Digits, Failed, Loading, useTitle } from '../components/common.tsx';
 import { dayHref } from '../components/days.tsx';
+import { Icon } from '../components/icon.tsx';
 import { NoteBody, NoteMedia } from '../components/notes.tsx';
-import { addDays, count, dayName } from '../lib/format.ts';
+import { addDays, count, dateRange, dayName } from '../lib/format.ts';
 import { daysQuery, releasesQuery } from '../lib/queries.ts';
 import type { Day, ReleaseSummary } from '../lib/types.ts';
 
@@ -21,7 +22,7 @@ export function Timeline() {
   const pages = days.data?.pages || [];
   const today = pages[0]?.today || '';
   const thisYear = Number(today.slice(0, 4));
-  const rows = groupPaused(pages.flatMap((p) => p.days));
+  const rows = groupQuiet(pages.flatMap((p) => p.days));
 
   // Clicking disabled the button, which dropped focus. Give it back, or,
   // when the last page took the button away, move on to the first day that
@@ -45,11 +46,18 @@ export function Timeline() {
   return (
     <>
       <Bar />
-      <h1>Your archive.</h1>
+      <h1>Archive</h1>
       <p className="lede">Every day, a little more of your story.</p>
-      <p className="hint spaced">
-        <AppLink href="/day/">Add notes for another day</AppLink> · <AppLink href="/tag/">Tags</AppLink>
-      </p>
+      <div className="row page-actions">
+        <AppLink className="quiet" href="/day/">
+          <Icon name="calendar" />
+          Add notes for another day
+        </AppLink>
+        <AppLink className="quiet" href="/tag/">
+          <Icon name="tags" />
+          Tags
+        </AppLink>
+      </div>
       <Releases />
 
       {days.isPending && <Loading />}
@@ -57,7 +65,7 @@ export function Timeline() {
       <div className="days" id="days" ref={list}>
         {rows.map((row) =>
           'run' in row ? (
-            <PausedRun key={row.run[0].date} run={row.run} thisYear={thisYear} />
+            <QuietRun key={row.run[0].date} run={row.run} paused={row.paused} today={today} thisYear={thisYear} />
           ) : (
             <DayRow key={row.day.date} d={row.day} today={today} thisYear={thisYear} />
           )
@@ -78,24 +86,27 @@ export function Timeline() {
       >
         Earlier releases
       </button>
-      <p className="foot" id="weather-credit" hidden={!rows.some((r) => 'day' in r && r.day.weather)}>
+      <p className="foot meta" id="weather-credit" hidden={!rows.some((r) => 'day' in r && r.day.weather)}>
         Weather from <a href="https://open-meteo.com/">Open-Meteo</a>.
       </p>
     </>
   );
 }
 
-type Row = { day: Day } | { run: Day[] };
+type Row = { day: Day } | { run: Day[]; paused: boolean };
 
-// Paused days with no notes read as one row, across pages too. A run is
-// newest first.
-export function groupPaused(days: Day[]): Row[] {
+// Days in a row with no notes (and no place of their own) read as one quiet
+// line, across pages too: paused ones apart from the rest. A run is newest
+// first.
+export function groupQuiet(days: Day[]): Row[] {
   const rows: Row[] = [];
   for (const d of days) {
     const last = rows[rows.length - 1];
-    if (d.paused && !d.notes.length && !d.where) {
-      if (last && 'run' in last && addDays(d.date, 1) === last.run[last.run.length - 1].date) last.run.push(d);
-      else rows.push({ run: [d] });
+    if (!d.notes.length && !d.where) {
+      const paused = !!d.paused;
+      if (last && 'run' in last && last.paused === paused && addDays(d.date, 1) === last.run[last.run.length - 1].date)
+        last.run.push(d);
+      else rows.push({ run: [d], paused });
       continue;
     }
     rows.push({ day: d });
@@ -113,14 +124,12 @@ function DayRow({ d, today, thisYear }: { d: Day; today: string; thisYear: numbe
       </p>
     );
   } else {
-    let count = d.notes.length === 1 ? '1 note' : `${d.notes.length} notes`;
-    if (d.notes.every((n) => n.late)) count += ', added later';
     body = (
       <>
         {d.notes.map((n) => (
           <NoteParts key={n.id} d={d} n={n} />
         ))}
-        <p className="count">{count}</p>
+        {d.notes.every((n) => n.late) && <p className="count">Added later</p>}
       </>
     );
   }
@@ -132,8 +141,8 @@ function DayRow({ d, today, thisYear }: { d: Day; today: string; thisYear: numbe
         </span>
         <span className="when">{(d.date === today ? 'Today, ' : '') + dayName(d.date, thisYear)}</span>
       </AppLink>
-      {d.weather && <p className="weather">{d.weather}</p>}
-      {d.where && <p className="hint">Where: {d.where}</p>}
+      {d.weather && <p className="meta">{d.weather}</p>}
+      {d.where && <p className="meta">Where: {d.where}</p>}
       {body}
     </section>
   );
@@ -148,32 +157,37 @@ function NoteParts({ d, n }: { d: Day; n: Day['notes'][number] }) {
   );
 }
 
-function PausedRun({ run, thisYear }: { run: Day[]; thisYear: number }) {
+// A quiet line for days in a row with nothing in them: their versions,
+// their dates, and a way to fill them in, or that the emails were paused.
+function QuietRun({ run, paused, today, thisYear }: { run: Day[]; paused: boolean; today: string; thisYear: number }) {
   const newest = run[0];
   const oldest = run[run.length - 1];
   const days = run.length;
-  const when =
-    days > 1
-      ? `${dayName(oldest.date, thisYear)} to ${dayName(newest.date, thisYear)}`
-      : dayName(oldest.date, thisYear);
+  const when = days > 1 ? dateRange(oldest.date, newest.date, thisYear) : dayName(oldest.date, thisYear);
   return (
-    <section className="tday">
-      <p className="tday-head">
-        <span className="vnum small">
-          <Digits v={oldest.version} named />
-        </span>
+    <p className="quiet-run">
+      <span className="run-versions">
+        <Digits v={oldest.version} named />
         {days > 1 && (
           <>
-            <span className="when">to</span>
-            <span className="vnum small">
-              <Digits v={newest.version} named />
-            </span>
+            {' – '}
+            <Digits v={newest.version} named />
           </>
         )}
-      </p>
-      <p className="hint">{when}</p>
-      <p className="hint">Paused, {days === 1 ? '1 day' : days + ' days'}. Your streak waited.</p>
-    </section>
+      </span>
+      {paused ? (
+        <span>
+          {when} · Paused, {days === 1 ? '1 day' : days + ' days'}. Your streak waited.
+        </span>
+      ) : (
+        <>
+          <span>
+            {when} · {days === 1 ? 'no notes' : `${days} days without notes`} ·
+          </span>
+          <AppLink href={dayHref(oldest.date, today)}>Add some</AppLink>
+        </>
+      )}
+    </p>
   );
 }
 
@@ -186,6 +200,7 @@ function Releases() {
   if (!list.length) return null;
   return (
     <nav aria-label="Releases" className="releases" id="releases">
+      <p className="kicker">Releases</p>
       <ul>
         {list.map((r) => (
           <ReleaseLink key={r.v} r={r} />
@@ -199,13 +214,13 @@ function ReleaseLink({ r }: { r: ReleaseSummary }) {
   return (
     <li>
       <AppLink href={`/release/?v=${r.v}`} aria-current={r.current ? 'true' : undefined}>
-        <span className="vnum small">
+        <span className="release-v">
           <Digits v={r.v} named />
         </span>
       </AppLink>
       <span className="hint">
         {' '}
-        {[r.current && 'now', r.days && count(r.days, 'day', 'days')].filter(Boolean).join(', ')}
+        {[r.current && 'now', r.days && count(r.days, 'day', 'days')].filter(Boolean).join(' · ')}
       </span>
     </li>
   );

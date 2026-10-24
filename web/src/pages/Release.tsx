@@ -1,14 +1,16 @@
 // One release (?v=4.5), a year of life from birthday to birthday: its days
 // with notes, oldest first, in the Timeline's rows, a page at a time, under
-// a head that sums up all of it. The Timeline lists every release.
-import { useInfiniteQuery } from '@tanstack/react-query';
+// a head that sums up all of it, and the releases either side. The Timeline
+// lists every release.
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { AppLink, Bar, Crumb, Digits, Failed, Loading, useTitle } from '../components/common.tsx';
 import { DayList } from '../components/days.tsx';
+import { Icon } from '../components/icon.tsx';
 import { ApiError } from '../lib/api.ts';
 import { count, listed, longDate } from '../lib/format.ts';
 import { useGo, useQueryParam } from '../lib/nav.ts';
-import { releaseQuery } from '../lib/queries.ts';
+import { releaseQuery, releasesQuery } from '../lib/queries.ts';
 import type { ReleasePage } from '../lib/types.ts';
 
 export function Release() {
@@ -44,42 +46,48 @@ export function Release() {
     <>
       <Bar />
       <Crumb href="/timeline/">Archive</Crumb>
+      <p className="kicker">{head?.current ? 'Release · now' : 'Release'}</p>
       <h1 id="release-title">
-        Release{' '}
-        <span className="vnum inline">
-          <Digits v={v || ''} />
-        </span>
+        <span className="vh">Release </span>
+        <Digits v={v || ''} />
       </h1>
       {head && (
         <div className="release-head" id="release-head">
-          <p className="hint">
+          <p className="lede">
             {longDate(head.from)} to {longDate(head.through)}
-            {head.current && ', and still going'}
+            {head.current ? ', and still going.' : '.'}
           </p>
-          <p className="release-counts" id="release-counts">
-            {head.days_with_notes
-              ? `${count(head.days_with_notes, 'day', 'days')} with notes, ${count(head.notes, 'note', 'notes')}.`
-              : 'No notes in this release.'}
-            {head.longest > 1 && ` Longest streak: ${count(head.longest, 'day', 'days')}.`}
-          </p>
+          {head.days_with_notes ? (
+            <ul className="figures" id="release-counts">
+              <Figure n={head.days_with_notes} one="day with notes" many="days with notes" />
+              <Figure n={head.notes} one="note" many="notes" />
+              {head.longest > 1 && <Figure n={head.longest} one="day, longest streak" many="days, longest streak" />}
+            </ul>
+          ) : (
+            <p className="release-counts" id="release-counts">
+              No notes in this release.
+            </p>
+          )}
           <ReleaseBadges b={head.badges} current={head.current} />
           {head.tags.length > 0 && (
-            <ul className="tags" id="release-tags">
-              {head.tags.map((t) => (
-                <li key={t.tag}>
-                  <AppLink className="tag" href={`/tag/?t=${encodeURIComponent(t.tag)}`}>
-                    #{t.tag}
-                  </AppLink>
-                  <span className="hint"> {count(t.notes, 'note', 'notes')}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="tag-row">
+              <p className="kicker" id="release-tags-k">
+                Tags
+              </p>
+              <ul className="tags" id="release-tags" aria-labelledby="release-tags-k">
+                {head.tags.map((t) => (
+                  <li key={t.tag}>
+                    <AppLink className="tag" href={`/tag/?t=${encodeURIComponent(t.tag)}`}>
+                      #{t.tag}
+                    </AppLink>
+                    <span className="hint"> {count(t.notes, 'note', 'notes')}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}
-      <p className="hint spaced">
-        <AppLink href="/timeline/">Every release</AppLink>
-      </p>
 
       {v && release.isPending && <Loading />}
       {release.isError && !gone && !pages.length && <Failed />}
@@ -105,7 +113,48 @@ export function Release() {
       >
         Later days
       </button>
+      {head && !release.hasNextPage && <OtherReleases v={head.v} />}
     </>
+  );
+}
+
+function Figure({ n, one, many }: { n: number; one: string; many: string }) {
+  return (
+    <li className="fig">
+      <b>{n.toLocaleString('en-US')}</b> <span>{n === 1 ? one : many}</span>
+    </li>
+  );
+}
+
+// The release before this one and the one after, from the Timeline's list
+// (newest first), where there are such.
+function OtherReleases({ v }: { v: string }) {
+  const releases = useQuery(releasesQuery);
+  const list = releases.data?.releases || [];
+  const at = list.findIndex((r) => r.v === v);
+  if (at < 0) return null;
+  const before = list[at + 1];
+  const after = list[at - 1];
+  if (!before && !after) return null;
+  return (
+    <nav aria-label="Other releases" className="row other-releases">
+      {before && (
+        <AppLink className="quiet" href={`/release/?v=${before.v}`} rel="prev">
+          <Icon name="prev" />
+          <span>
+            Release <Digits v={before.v} />
+          </span>
+        </AppLink>
+      )}
+      {after && (
+        <AppLink className="quiet" href={`/release/?v=${after.v}`} rel="next">
+          <span>
+            Release <Digits v={after.v} />
+          </span>
+          <Icon name="next" />
+        </AppLink>
+      )}
+    </nav>
   );
 }
 
@@ -114,8 +163,8 @@ export function Release() {
 function ReleaseBadges({ b, current }: { b: ReleasePage['badges']; current: boolean }) {
   if (!b || (!b.coverage && !b.collected.length)) return null;
   return (
-    <p className="release-counts" id="release-badges">
-      {b.coverage && `Coverage: ${b.coverage}${current ? ' so far' : ''}. `}
+    <p className="meta release-badges" id="release-badges">
+      {b.coverage && `Coverage${current ? ' so far' : ''}: ${b.coverage}. `}
       {b.collected.length > 0 && (
         <>
           Collected:{' '}

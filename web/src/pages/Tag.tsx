@@ -2,12 +2,13 @@
 // tag is on Search.
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { AppLink, Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx';
+import { Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx';
 import { DayList } from '../components/days.tsx';
 import { ApiError } from '../lib/api.ts';
-import { count } from '../lib/format.ts';
+import { count, dateRange } from '../lib/format.ts';
 import { useGo, useQueryParam } from '../lib/nav.ts';
 import { tagQuery } from '../lib/queries.ts';
+import type { Day } from '../lib/types.ts';
 
 export function Tag() {
   const go = useGo();
@@ -25,12 +26,10 @@ export function Tag() {
     <>
       <Bar />
       <Crumb href="/search/">Search</Crumb>
+      <p className="kicker">Tag</p>
       <h1 id="tag-title">{d ? `#${d.tag}` : 'Tags'}</h1>
-      <p className="hint spaced" id="tag-lede">
-        {d && (d.days.length ? count(d.days.length, 'day', 'days') : 'No notes have this tag now.')}
-      </p>
-      <p className="hint spaced" id="every-tag" hidden={!d}>
-        <AppLink href="/search/">Every tag, and search</AppLink>
+      <p className="lede" id="tag-lede">
+        {d && (d.days.length ? tagLede(d.days, d.today) : 'No notes have this tag now.')}
       </p>
 
       {tag && tagged.isPending && <Loading />}
@@ -38,4 +37,11 @@ export function Tag() {
       {d ? <DayList data={d} id="tagged" /> : <div className="days" id="tagged" />}
     </>
   );
+}
+
+// "2 notes on 2 days, October 21 to 24, 2026." The days come newest first.
+function tagLede(days: Day[], today: string) {
+  const notes = days.reduce((n, d) => n + d.notes.length, 0);
+  const span = dateRange(days[days.length - 1].date, days[0].date, Number(today.slice(0, 4)));
+  return `${count(notes, 'note', 'notes')} on ${count(days.length, 'day', 'days')}, ${span}.`;
 }

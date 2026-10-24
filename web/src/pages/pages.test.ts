@@ -1,17 +1,17 @@
-// The timeline's paused runs, the pages' polling and the Map's filters.
+// The timeline's quiet runs, the pages' polling and the Map's filters.
 import { describe, expect, it, vi } from 'vitest';
 import type { Day, Pin } from '../lib/types.ts';
 import { POLL, pollWhileWriting } from '../lib/queries.ts';
-import { groupPaused } from './Timeline.tsx';
+import { groupQuiet } from './Timeline.tsx';
 import { moved, sift, type Live } from './Map.tsx';
 
 const day = (date: string, more: Partial<Day> = {}): Day => ({ date, version: '1.2.3', notes: [], ...more });
 const note = { id: 'w-1', source: 'web' as const, text: 'hi' };
 
-describe('groupPaused', () => {
+describe('groupQuiet', () => {
   it('joins paused days in a row with no notes, newest first', () => {
-    const rows = groupPaused([
-      day('2026-10-09'),
+    const rows = groupQuiet([
+      day('2026-10-09', { notes: [note] }),
       day('2026-10-08', { paused: true }),
       day('2026-10-07', { paused: true }),
       day('2026-10-06', { paused: true, notes: [note] }),
@@ -27,8 +27,26 @@ describe('groupPaused', () => {
     ]);
   });
 
+  it('joins empty days in a row apart from paused ones', () => {
+    const rows = groupQuiet([
+      day('2026-10-09'),
+      day('2026-10-08'),
+      day('2026-10-07', { paused: true }),
+      day('2026-10-06'),
+      day('2026-10-05', { notes: [note] }),
+      day('2026-10-04')
+    ]);
+    expect(rows.map((r) => ('run' in r ? [r.paused, r.run.map((d) => d.date)] : r.day.date))).toEqual([
+      [false, ['2026-10-09', '2026-10-08']],
+      [true, ['2026-10-07']],
+      [false, ['2026-10-06']],
+      '2026-10-05',
+      [false, ['2026-10-04']]
+    ]);
+  });
+
   it('keeps a paused day with a place of its own as its own row', () => {
-    const rows = groupPaused([
+    const rows = groupQuiet([
       day('2026-10-08', { paused: true }),
       day('2026-10-07', { paused: true, where: 'Duluth, Minnesota' }),
       day('2026-10-06', { paused: true })

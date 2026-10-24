@@ -1,7 +1,7 @@
 // The plain helpers: what the pages say, dates, and the birthday fields.
 import { describe, expect, it } from 'vitest';
 import { emptyMdy, mdyOf, mdyValue } from '../components/fields.tsx';
-import { addDays, clock, count, megabytes, pauseLine, SEND_TIMES } from './format.ts';
+import { addDays, clock, count, dateRange, megabytes, pauseLine, SEND_TIMES } from './format.ts';
 import { sayFor, SAY } from './say.ts';
 
 describe('sayFor', () => {
@@ -35,6 +35,14 @@ describe('format', () => {
     expect(clock('06:15')).toBe('6:15 AM');
     expect(clock('12:00')).toBe('12:00 PM');
     expect(clock('23:45')).toBe('11:45 PM');
+  });
+
+  it('says a run of days once, with the year only when it is not this one', () => {
+    expect(dateRange('2026-10-17', '2026-10-20', 2026)).toBe('October 17 to 20');
+    expect(dateRange('2026-09-30', '2026-10-02', 2026)).toBe('September 30 to October 2');
+    expect(dateRange('2026-10-24', '2026-10-24', 2026)).toBe('October 24');
+    expect(dateRange('2026-10-21', '2026-10-24')).toBe('October 21 to 24, 2026');
+    expect(dateRange('2025-12-30', '2026-01-02', 2026)).toBe('December 30, 2025 to January 2, 2026');
   });
 
   it('offers every quarter hour', () => {

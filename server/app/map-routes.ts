@@ -3,10 +3,18 @@
 import { SessionService, reject } from '../../packages/backend/sessions.ts';
 import { ownStyle, pins, type MapFile, type Scheme } from '../../packages/backend/maps.ts';
 import type { NoteRecord } from '../../packages/domain/notes.ts';
-import { json } from './requests.ts';
+import { searchedText } from '../../packages/domain/search.ts';
+import { body, json, searchFrom } from './requests.ts';
 
-// A day: the map changes rarely, and the browser alone keeps it.
+// A day: the map changes rarely, and the browser alone keeps it. The
+// owner's notes are never kept (app.ts), only these.
 const KEEP = 'private, max-age=86400';
+export const BASE_MAP = new Set([
+  '/api/map/style/{scheme}',
+  '/api/map/tiles/{z}/{x}/{y}',
+  '/api/map/glyphs/{fonts}/{range}',
+  '/api/map/sprites/{scheme}/{sprite}'
+]);
 const served = (found: MapFile | null) =>
   found
     ? new Response(Buffer.from(found.body), { headers: { 'content-type': found.type, 'cache-control': KEEP } })
@@ -20,6 +28,15 @@ export async function mapRoutes(service: SessionService, pattern: string, args: 
     const notes = (await ctx.store.allNotes(uid)) as NoteRecord[],
       found = pins(notes);
     return json({ pins: found, notes: notes.length });
+  }
+  // The Map's search: which pins have every word, as the Search page finds
+  // them (transcripts, descriptions and link names too). The words come in
+  // the body and the answer names notes by day and id alone.
+  if (pattern === '/api/map/search') {
+    const terms = searchFrom(await body(service.request)),
+      notes = (await ctx.store.allNotes(uid)) as NoteRecord[],
+      found = pins(notes.filter((n) => terms.every((t) => searchedText(n).includes(t))));
+    return json({ terms, found: found.map(({ date, id }) => ({ date, id })) });
   }
   const maps = service.maps();
   if (pattern === '/api/map/style/{scheme}') {

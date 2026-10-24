@@ -102,6 +102,8 @@ export interface Pin {
   lon: number;
   place: string;
   exact: boolean;
+  /** Its hashtags, every one, as stored with it: the Map's tag filter. */
+  tags: string[];
   /** The preview as plain words, and as the web shows it (`parts`, the
    * same links by name and tags as every note: links.segments). */
   text: string;
@@ -150,6 +152,7 @@ export function pins(notes: readonly NoteRecord[]): Pin[] {
       place: placeLabel(place),
       // A city chosen from the search stands for the city, not a spot in it.
       exact: place.from !== 'chosen',
+      tags: Array.isArray(note.tags) ? note.tags.map(String) : [],
       ...preview(note)
     });
   }

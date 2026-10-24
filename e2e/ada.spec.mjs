@@ -568,6 +568,7 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
             lon: 2.352222,
             place: 'Le Marais, Paris',
             exact: true,
+            tags: [],
             text: 'Croissants on the bench'
           }
         ]
@@ -583,7 +584,7 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
   await expect(page.locator('.lede')).toHaveText('1 note with a place of its own.');
   const map = page.getByRole('region', { name: 'Map of your notes' });
   await expect(map.locator('canvas')).toBeVisible();
-  await expect(page.getByText('Choose a pin to see its notes.')).toBeVisible();
+  await expect(page.getByText('Choose a pin or a group to see its notes.')).toBeVisible();
   // The pin is drawn at the centre once the map has settled.
   const box = await map.boundingBox();
   await expect(async () => {
@@ -609,7 +610,81 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
   await page.goto('/today/');
   await page.goto('/map/#d=2026-10-07&ll=44.98%2C-93.26');
   await expect(map.locator('canvas')).toBeVisible();
-  await expect(page.getByText('Choose a pin to see its notes.')).toBeVisible();
+  await expect(page.getByText('Choose a pin or a group to see its notes.')).toBeVisible();
+  expect(refused).toEqual([]);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('the map narrows by words, tag and year, and a group lists every note in it', async ({ page }) => {
+  const refused = [],
+    asked = [];
+  page.on('console', (m) => /Content Security Policy|Refused to/.test(m.text()) && refused.push(m.text()));
+  // Two notes 800 m apart in Paris, one group at the zoom the map fits them
+  // to (11) but 32px either side of it, too far for one tap to reach both
+  // pins, and one in Minneapolis two years before.
+  const pin = (date, id, lat, lon, place, tags, text) => ({ date, id, lat, lon, place, exact: true, tags, text });
+  await page.route('**/api/map/notes', (route) =>
+    route.fulfill({
+      json: {
+        notes: 3,
+        pins: [
+          pin('2026-10-06', 'w-a', 48.8566, 2.3522, 'Le Marais, Paris', ['bakery'], 'Croissants on the bench'),
+          pin('2026-10-05', 'w-b', 48.8566, 2.3631, 'Le Marais, Paris', [], 'Rain on the Seine'),
+          pin('2024-01-12', 'w-c', 44.9778, -93.265, 'Minneapolis', ['lake'], 'First snow on the lake')
+        ]
+      }
+    })
+  );
+  await page.route('**/api/map/search', (route) => {
+    asked.push(route.request().postDataJSON());
+    return route.fulfill({ json: { terms: ['snow'], found: [{ date: '2024-01-12', id: 'w-c' }] } });
+  });
+  await page.goto('/map/');
+  const lede = page.locator('.lede'),
+    years = page.getByLabel('Filter by year'),
+    tags = page.getByLabel('Filter by tag'),
+    map = page.getByRole('region', { name: 'Map of your notes' });
+  await expect(lede).toHaveText('3 notes with a place of their own.');
+  await expect(years.locator('option')).toHaveText(['All years', '2026 (2)', '2024 (1)']);
+  await expect(tags.locator('option')).toHaveText(['All tags', '#bakery (1)', '#lake (1)']);
+
+  // A year keeps its pins, and the tags menu offers what that year has.
+  await years.selectOption('2026');
+  await expect(page).toHaveURL(/\/map\/#year=2026$/);
+  await expect(lede).toHaveText('2 of 3 notes with a place of their own.');
+  await expect(tags.locator('option')).toHaveText(['All tags', '#bakery (1)']);
+
+  // The map fits the two, which stay one group at its middle: choosing it
+  // lists both, newest first. (Opened on the year, so no move is under way:
+  // a tap stops one where it is.)
+  await page.reload();
+  await expect(lede).toHaveText('2 of 3 notes with a place of their own.');
+  await expect(map.locator('canvas')).toBeVisible();
+  const box = await map.boundingBox();
+  await expect(async () => {
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(page.getByRole('heading', { name: 'Le Marais, Paris' })).toBeFocused({ timeout: 1000 });
+  }).toPass({ timeout: 15000 });
+  await expect(page.getByText('2 notes, newest first.')).toBeVisible();
+  await expect(page.locator('.map-notes li')).toHaveText([/Croissants on the bench/, /Rain on the Seine/]);
+
+  // A tag, then the words: found by POST, and kept in the # alone.
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(lede).toHaveText('3 notes with a place of their own.');
+  await expect(page.getByText('Choose a pin or a group to see its notes.')).toBeVisible();
+  await tags.selectOption('lake');
+  await expect(lede).toHaveText('1 of 3 notes with a place of their own.');
+  await expect(years).toBeVisible();
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await years.selectOption('2026');
+  await page.getByLabel('Search notes').fill('snow');
+  await expect(lede).toHaveText('None of your 3 notes with a place of their own match.');
+  await expect(page).toHaveURL(/\/map\/#q=snow&year=2026$/);
+  expect(asked).toEqual([{ q: 'snow' }]);
+  // The year that keeps nothing stays to be undone.
+  await expect(years.locator('option')).toHaveText(['All years', '2026 (0)', '2024 (1)']);
+  await years.selectOption('');
+  await expect(lede).toHaveText('1 of 3 notes with a place of their own.');
   expect(refused).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
 });

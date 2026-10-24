@@ -154,9 +154,17 @@ nothing there links here yet: that is Jamie's call.
     view for my notes"): every note with a place of its own and
     coordinates, as pins that gather into numbered groups as the map zooms
     out. A note showing its day's or home's city has no spot of its own
-    and is left off, as is one cleared with "No place". Choosing a pin, or a
-    group that will not part (notes in the same city), lists its notes
-    under the map, newest first, each linked to its day. A note's place, on
+    and is left off, as is one cleared with "No place". Choosing a pin or a
+    numbered group lists its notes under the map, newest first, each linked
+    to its day (Jamie, 2026-10-24: "it should work for groups of notes
+    too"); + and − or a double tap zoom in. Words, a tag and a year narrow
+    the pins (Jamie, 2026-10-24: "filter the pins on the map: by search
+    param, tag, year"), as `#q=`, `#tag=` and `#year=` (the calendar year):
+    the words are found by `POST /api/map/search` as the Search page finds
+    them, so they never go in a URL a server sees, and the tag and year
+    come from the pins. Each menu offers what the other filters leave, the
+    map moves to fit what is kept, and a filter replaces the note a place
+    link opened on. A note's place, on
     any page, links here (Jamie, 2026-10-24: "the links to locations now go
     to OUR map"): `/map/#d=<day>&n=<id>` opens on its spot (close in on a
     device or photo spot, the city for a chosen city) with the notes there
@@ -483,7 +491,8 @@ or new CSP exception.
 | `GET /api/releases` | the releases index: each release with notes, and the current one (`current`), newest first, with `from`, `through`, `days` (with notes) and `notes`; from the notes' keys alone |
 | `GET /api/releases/{v}?after=&limit=` | one release (`4.5`): its head (`from`, `through`, `current`, `days_with_notes`, `notes`, `longest`, `badges` (not with badges off) with its coverage tier and special days `collected` by kind with a `count`, `tags` by count) and its days with notes, oldest first, 30 a page; `after` in the answer is the next page's cursor. 404 `release` for one not begun |
 | `GET /api/badges` | the subscriber's badges as of their `today` (with `tz` and today's `version`): `count`; `earned`, newest first, each with `key` (`id`, or `id:level` for a track tier), `name`, `line`, `shelf`, `earned` (the day it came true), and the `day` and `version` it is stamped with (a collectible's special day); `tracks` (`tier` 0-5, `level`, `best`, `now`, `since`, `next`); `release`, this release's `days`, `percent`, coverage `level`, `next` only while it can still be reached, `following` (the next release and its date), its `collected` special days and the next three `ahead` (never a secret one); `missing`, what is still to find, a secret one as its `hint` alone. Read from the notes' stored fields, never their text |
-| `GET /api/map/notes` | the Map page's pins: each note with a place of its own and coordinates, as `date`, `id`, `lat`, `lon`, `place` (its label), `exact` (a device or photo spot, not a chosen city) and `text` (its first 140 characters); `notes`, how many notes there are in all |
+| `GET /api/map/notes` | the Map page's pins: each note with a place of its own and coordinates, as `date`, `id`, `lat`, `lon`, `place` (its label), `exact` (a device or photo spot, not a chosen city), `tags` (its hashtags) and `text` (its first 140 characters); `notes`, how many notes there are in all |
+| `POST /api/map/search` `{q}` | which pins have every word or "quoted phrase", matched as `POST /api/search` matches, as `found` (`date` and `id` alone) with the `terms`; the words never go in a URL |
 | `GET /api/map/style/{scheme}` | Amazon Location's Standard style, `Light` or `Dark`, with its tiles, glyphs and sprite pointed at the routes below; any other source is dropped. Kept by the browser for a day |
 | `GET /api/map/tiles/{z}/{x}/{y}` | one vector tile of the base map, kept by the browser for a day; 404 outside the zoom's grid |
 | `GET /api/map/glyphs/{fonts}/{range}` | the style's font glyphs for one 256-character range (`0-255.pbf`), kept by the browser for a day |

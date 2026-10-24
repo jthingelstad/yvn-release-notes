@@ -5,12 +5,11 @@ import type { Item } from '../../packages/backend/store-types.ts';
 import { localDay, addDays } from '../../packages/domain/dates.ts';
 import { computeVersion, releaseAge, releaseName, releaseSpan } from '../../packages/domain/version.ts';
 import { pauseDays, computeStreak } from '../../packages/domain/streak.ts';
-import { searchTerms, searchedText } from '../../packages/domain/search.ts';
-import { pythonTrim, codePointLength } from '../../packages/domain/unicode.ts';
+import { searchedText } from '../../packages/domain/search.ts';
 import { rounded } from '../../packages/backend/places.ts';
 import { badges } from '../../packages/backend/badges.ts';
 import { collectedOn, releaseBadges } from '../../packages/domain/badges.ts';
-import { json, body, dayFrom, dateOf, pageLimit } from './requests.ts';
+import { json, body, dayFrom, dateOf, pageLimit, searchFrom } from './requests.ts';
 export async function renderedDays(
   service: SessionService,
   uid: string,
@@ -190,11 +189,7 @@ export async function archiveRoutes(
   let terms: string[] = [],
     every: Item[] | null = null;
   if (pattern === '/api/search') {
-    const q = (await body(service.request)).q;
-    if (typeof q !== 'string' || !pythonTrim(q)) reject(400, 'query');
-    if (codePointLength(q) > 200) reject(400, 'query-too-long');
-    terms = searchTerms(q);
-    if (!terms.length) reject(400, 'query');
+    terms = searchFrom(await body(service.request));
     every = await store.allNotes(uid);
     for (const n of every) if (terms.every((t) => searchedText(n).includes(t))) (by[dateOf(n)] ??= []).push(n);
   } else

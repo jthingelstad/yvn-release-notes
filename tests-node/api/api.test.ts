@@ -69,7 +69,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 65);
+  assert.equal(ROUTES.length, 66);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -1160,6 +1160,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       lon: 2.35,
       place: 'Paris, Ile-de-France',
       exact: false,
+      tags: ['paris'],
       text: 'Croissants and a long walk along the river The river walk #paris',
       parts: [
         'Croissants and a long walk along the river ',
@@ -1175,6 +1176,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       lon: 2.352222,
       place: 'Le Marais, Paris',
       exact: true,
+      tags: [],
       text: 'On the bench',
       parts: ['On the bench']
     },
@@ -1185,11 +1187,36 @@ test('the map pins notes with a place of their own and passes the base map throu
       lon: 2.35,
       place: 'Paris, Ile-de-France',
       exact: false,
+      tags: [],
       text: ('Then ' + 'more and '.repeat(30)).slice(0, 139) + '…',
       parts: [('Then ' + 'more and '.repeat(30)).slice(0, 139), '…']
     }
   ]);
   assert.ok(!shown.some((p) => p.id === inherited || p.id === cleared));
+
+  // The Map's search finds pins as the Search page finds notes (a link by
+  // its name, a place by its name), and never a note with no spot of its own.
+  const ids = async (q: string) =>
+    (((await s.call('POST', '/api/map/search', { q })).b as Item).found as Item[]).map((f) => String(f.id)).sort();
+  assert.deepEqual(await ids('croissants'), [inParis]);
+  assert.deepEqual(await ids('"river walk"'), [inParis]);
+  assert.deepEqual(await ids('marais bench'), [here]);
+  assert.deepEqual(await ids('PARIS'), [inParis, here, rambling].sort());
+  assert.deepEqual(await ids('emailed'), []);
+  assert.deepEqual(await ids('nowhere'), []);
+  const searched = await s.call('POST', '/api/map/search', { q: 'Croissants' });
+  assert.equal(searched.r.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(searched.b, { terms: ['croissants'], found: [{ date: '2026-10-06', id: inParis }] });
+  for (const [q, error] of [
+    ['', 'query'],
+    ['""', 'query'],
+    ['x'.repeat(201), 'query-too-long']
+  ]) {
+    const refused = await s.call('POST', '/api/map/search', { q });
+    assert.deepEqual([refused.r.status, (refused.b as Item).error], [400, error], q);
+  }
+  assert.equal((await s.call('POST', '/api/map/search', { q: 'paris' }, '')).r.status, 401);
+  assert.equal((await s.call('POST', '/api/map/search', { q: 'paris' }, undefined, false)).r.status, 403);
 
   // The style points every Amazon address back here and drops other sources.
   const style = await s.call('GET', '/api/map/style/Dark'),

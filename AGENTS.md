@@ -233,7 +233,7 @@ Where things are (each module's design comment has its contract):
   word or "quoted phrase" in text, place, link names, transcripts and photo
   descriptions, without case or accents, newest 100 days shown. The words
   travel in a POST body and the page's `#q=`, never a URL a server sees, and
-  are never logged.
+  are never logged. The Map's words (`POST /api/map/search`) go the same way.
 - **Links show by name, never raw, and there is no Markdown** (Jamie,
   2026-10-08). A title is fetched once, when the note is written, through
   the guarded fetch in `packages/backend/links.ts` (the address is whatever

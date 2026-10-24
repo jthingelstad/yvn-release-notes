@@ -216,6 +216,7 @@ test('the web role grants every request each route and the OAuth endpoints make'
   ])
     await call('GET', path);
   await call('POST', '/api/search', { q: 'lake' });
+  await call('POST', '/api/map/search', { q: 'lake' });
 
   // Upcoming and its calendar feed.
   const birthday = { kind: 'birthday', title: 'Alex', date: '10-20', year: 1976 },

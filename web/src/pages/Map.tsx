@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { GeoJSONSource, Map as MapLibre } from 'maplibre-gl';
 import { AppLink, Bar, Failed, Loading, useTitle } from '../components/common.tsx';
 import { dayHref } from '../components/days.tsx';
+import { NoteBody } from '../components/notes.tsx';
 import { count, dayName } from '../lib/format.ts';
 import { mapQuery } from '../lib/queries.ts';
 import type { Pin } from '../lib/types.ts';
@@ -61,7 +62,7 @@ function Picked({ pins }: { pins: Pin[] | null }) {
           <li key={p.date + p.id}>
             <AppLink href={dayHref(p.date, '')}>{dayName(p.date, THIS_YEAR)}</AppLink>
             {places.length > 1 && <span className="hint"> · {p.place}</span>}
-            <div>{p.text}</div>
+            <NoteBody n={{ id: p.id, source: 'web', text: p.text, parts: p.parts }} cls="map-text" />
           </li>
         ))}
       </ul>

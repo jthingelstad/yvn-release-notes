@@ -1346,8 +1346,10 @@ Resources:
                 Resource: !Sub "arn:${AWS::Partition}:geo-places:${AWS::Region}::provider/default"
               - Effect: Allow
                 # The Map page's base map, passed through to the signed-in
-                # owner from this origin (/api/map/*, maps.geoMaps).
-                Action: [geo-maps:GetStyleDescriptor, geo-maps:GetTile, geo-maps:GetGlyphs, geo-maps:GetSprites]
+                # owner from this origin (/api/map/*, maps.geoMaps). GetTile is
+                # the only Maps IAM action: the style, glyphs and sprites
+                # calls need no permission.
+                Action: geo-maps:GetTile
                 Resource: !Sub "arn:${AWS::Partition}:geo-maps:${AWS::Region}::provider/default"
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]

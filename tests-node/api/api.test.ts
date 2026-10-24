@@ -1016,6 +1016,55 @@ test("a saved note's place can be set, changed and cleared, from any channel, an
   const kept = JSON.stringify(rows);
   for (const hidden of ['Paris', 'Lyon', '48.85', '2.35', 'By email']) assert.ok(!kept.includes(hidden), hidden);
 });
+test("a note without a place shows the day's city or home, marked inherited, unless it was cleared", async () => {
+  const s = await setup(),
+    day = async (d: string) => ((await s.call('GET', `/api/days/${d}`)).b as Item).notes as Item[];
+  s.ctx.weatherFetch = async () => ({
+    daily: { time: ['2026-10-07'], temperature_2m_max: [20], temperature_2m_min: [10], weather_code: [2] }
+  });
+  for (const [id, extra] of [
+    ['m-1', {}],
+    ['m-2', { place_cleared: true }],
+    [
+      'w-3',
+      {
+        place: {
+          venue: 'Café de Flore',
+          city: 'Paris',
+          region: 'Ile-de-France',
+          lat: 48.854,
+          lon: 2.3325,
+          from: 'device'
+        }
+      }
+    ]
+  ] as const)
+    await s.store.putNote('u', '2026-10-06', id, {
+      text: id,
+      source: id.startsWith('m') ? 'email' : 'web',
+      written_at: `2026-10-06T1${id.at(-1)}:00:00Z`,
+      ...extra
+    });
+  await s.store.putNote('u', '2026-10-05', 'm-4', { text: 'm-4', source: 'email', written_at: '2026-10-05T15:00:00Z' });
+  // A day with a placed note: its city, never the business or the spot.
+  const [first, cleared, own] = await day('2026-10-06');
+  assert.deepEqual([first!.place, first!.place_from, first!.map], ['Paris, Ile-de-France', 'day', undefined]);
+  assert.ok(!Object.hasOwn(cleared!, 'place'));
+  assert.deepEqual([own!.place, own!.place_from], ['Café de Flore, Paris', undefined]);
+  // A day with nothing placed: home.
+  const [lone] = await day('2026-10-05');
+  assert.deepEqual([lone!.place, lone!.place_from, lone!.map], ['Minneapolis, United States', 'home', undefined]);
+  // The day's own place, once set, is what it inherits; the note is unchanged.
+  assert.equal((await s.call('PUT', '/api/days/2026-10-05/place', { place: city })).r.status, 200);
+  const [moved] = await day('2026-10-05');
+  assert.deepEqual([moved!.place, moved!.place_from], ['Paris, Ile-de-France', 'day']);
+  assert.ok(
+    !Object.hasOwn(
+      s.store.memory.all().find((i) => i.sk === 'NOTE#2026-10-05#m-4')!,
+      'place'
+    )
+  );
+});
 test('"Add where I am" is a setting, off until turned on, and recorded as a change', async () => {
   const s = await setup();
   assert.equal(((await s.call('GET', '/api/me')).b as Item).here, false);

@@ -33,6 +33,9 @@ export interface Note {
   tz?: string;
   tags?: string[];
   place?: string;
+  // Set when the note has no place of its own and shows the day's city or
+  // home's instead; never mapped.
+  place_from?: 'day' | 'home';
   map?: string;
   from?: string;
   edited_at?: string;

@@ -200,7 +200,12 @@ Where things are (each module's design comment has its contract):
   city"): a device or photo spot is kept to six places with its city's name,
   and its map link goes to the spot; a day's place, home and weather stay
   at the city. A day can have its own place (`PLACE#<day>`), which comes
-  first. A past day's weather follows the day's place, else the subscriber's
+  first. A note with no place of its own (an email reply, say) shows the
+  day's city, as the weather finds it, or else home, as `place_from` `day`
+  or `home`, never mapped (Jamie, 2026-10-24: "inherit the users location
+  for that account or day unless they override it"); `views.dayView`
+  derives it on read and nothing is stored, and a note cleared with "No
+  place" (`place_cleared`) shows none. A past day's weather follows the day's place, else the subscriber's
   city; the morning forecast is always the subscriber's city. The original
   photo is never changed. Coordinates and place names are never logged
   (CloudWatch). The activity log is the owner's own record: a home-city

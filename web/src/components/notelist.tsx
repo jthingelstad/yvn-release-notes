@@ -121,7 +121,7 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
       {mode.is === 'where' && (
         <SavedNoteWhere
           path={path}
-          has={!!n.place}
+          has={!!n.place && !n.place_from}
           onDone={() => {
             setMode({ is: 'view' });
             focusLater(() => article.current?.querySelector<HTMLElement>('.actions button[aria-label="Where"]'));

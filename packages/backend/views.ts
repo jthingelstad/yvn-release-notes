@@ -8,7 +8,7 @@ import { split } from '../domain/tags.ts';
 import { writtenAt, placeLabel, mapUrl, type NoteRecord, type PlaceRecord } from '../domain/notes.ts';
 import { localDay, addDays, validTimezone } from '../domain/dates.ts';
 import { computeVersion } from '../domain/version.ts';
-import { dayLine, fahrenheit, placeOf, type Reading } from './weather.ts';
+import { dayLine, dayPlace, fahrenheit, placeOf, type Reading } from './weather.ts';
 export const pauseStart = (p: Item, today: string): string =>
   String(p.last_sent_date ?? '') >= today ? addDays(today, 1) : today;
 export function profileView(p: Item, now: number, inboundDomain: string): Item {
@@ -115,6 +115,19 @@ export async function dayView(
     version: computeVersion(String(p.birthday), day).toString(),
     notes: await Promise.all(notes.map((n) => noteView(n, String(p.tz), Boolean(p.transcribe), link)))
   };
+  // A note that came without a place (an email reply, say) shows the day's
+  // city, as the weather finds it, or else home, marked as inherited and
+  // never mapped (Jamie, 2026-10-24: "inherit the users location for that
+  // account or day unless they override it"). Derived here, never stored,
+  // so it follows the day; a note's own place, or its "No place", wins.
+  const shared = dayPlace(own as PlaceRecord | null, notes as NoteRecord[], String(p.tz)),
+    around = shared ?? placeOf(p),
+    label = around && placeLabel({ city: around.city, region: around.region, country: around.country });
+  if (label)
+    notes.forEach((n, i) => {
+      if (n.place || n.place_cleared) return;
+      Object.assign((view.notes as Item[])[i]!, { place: label, place_from: shared ? 'day' : 'home' });
+    });
   if (own && placeLabel(own as PlaceRecord)) view.where = placeLabel(own as PlaceRecord);
   if (sky) view.weather = dayLine(sky as Reading, fahrenheit(placeOf(p) ?? (sky as PlaceRecord)));
   return view;

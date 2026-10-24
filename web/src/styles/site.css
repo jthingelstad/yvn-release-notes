@@ -286,6 +286,7 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
 .note-tools .quiet { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; text-decoration: none; font-weight: 500; font-size: 16px; }
 .note-tools .go { margin-left: auto; }
 .note-tools .place-picker { flex-basis: 100%; order: 2; }
+.inherited { font-style: italic; }
 .nearby { gap: 0 18px; }
 .note-tools .nearby { flex-basis: 100%; order: 2; }
 .nearby .quiet, .note-tools .nearby .quiet { font-size: 15px; font-weight: 500; text-decoration: underline; }

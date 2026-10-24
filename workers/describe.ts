@@ -245,7 +245,7 @@ function production(): Services {
       invocations: createInvocations(),
       self,
       maker: thumbs.make,
-      geocode: (lat, lon) => places.reverse(lat, lon, geo),
+      geocode: (lat, lon) => places.namePhoto(lat, lon, geo),
       weatherFetch: places.fetchJson,
       log: safeLog,
       model: async () => describe.claudeWith(await describe.keyFrom(secrets, secret))

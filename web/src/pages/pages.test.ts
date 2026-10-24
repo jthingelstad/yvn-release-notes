@@ -58,7 +58,7 @@ describe('pollWhileWriting', () => {
 });
 
 describe('sift', () => {
-  const pin = (date: string, id: string, tags: string[] = []): Pin => ({
+  const pin = (date: string, id: string, release: string, tags: string[] = []): Pin => ({
     date,
     id,
     lat: 44.98,
@@ -66,48 +66,61 @@ describe('sift', () => {
     place: 'Minneapolis',
     exact: true,
     tags,
+    release,
     text: '',
     parts: []
   });
   const pins = [
-    pin('2026-10-06', 'a', ['cabin', 'lake']),
-    pin('2026-07-04', 'b', ['lake']),
-    pin('2025-08-01', 'c', ['cabin']),
-    pin('2025-01-02', 'd')
+    pin('2026-10-06', 'a', '5.4', ['cabin', 'lake']),
+    pin('2026-07-04', 'b', '5.4', ['lake']),
+    pin('2025-08-01', 'c', '5.3', ['cabin']),
+    pin('2025-01-02', 'd', '5.3')
   ];
   const ids = (p: Pin[]) => p.map((x) => x.id);
 
-  it('keeps every pin, and offers every tag and year, with no filter', () => {
-    const all = sift(pins, { tag: '', year: '', found: null });
+  it('keeps every pin, and offers every tag and release, with no filter', () => {
+    const all = sift(pins, { tag: '', release: '', found: null });
     expect(ids(all.shown)).toEqual(['a', 'b', 'c', 'd']);
     expect(all.tags).toEqual([
       { tag: 'cabin', notes: 2 },
       { tag: 'lake', notes: 2 }
     ]);
-    expect(all.years).toEqual([
-      { year: '2026', notes: 2 },
-      { year: '2025', notes: 2 }
+    expect(all.releases).toEqual([
+      { release: '5.4', notes: 2 },
+      { release: '5.3', notes: 2 }
     ]);
   });
 
   it('keeps the pins every filter keeps, and each menu offers what the others leave', () => {
-    const lake = sift(pins, { tag: 'lake', year: '', found: null });
+    const lake = sift(pins, { tag: 'lake', release: '', found: null });
     expect(ids(lake.shown)).toEqual(['a', 'b']);
-    expect(lake.years).toEqual([{ year: '2026', notes: 2 }]);
+    expect(lake.releases).toEqual([{ release: '5.4', notes: 2 }]);
     expect(lake.tags.map((t) => t.tag)).toEqual(['cabin', 'lake']);
-    const then = sift(pins, { tag: '', year: '2025', found: null });
+    const then = sift(pins, { tag: '', release: '5.3', found: null });
     expect(ids(then.shown)).toEqual(['c', 'd']);
     expect(then.tags).toEqual([{ tag: 'cabin', notes: 1 }]);
-    const words = sift(pins, { tag: 'cabin', year: '', found: new Set(['2025-08-01#c', '2025-01-02#d']) });
+    const words = sift(pins, { tag: 'cabin', release: '', found: new Set(['2025-08-01#c', '2025-01-02#d']) });
     expect(ids(words.shown)).toEqual(['c']);
-    expect(words.years).toEqual([{ year: '2025', notes: 1 }]);
+    expect(words.releases).toEqual([{ release: '5.3', notes: 1 }]);
   });
 
   it('keeps a choice that keeps nothing on its menu', () => {
-    const none = sift(pins, { tag: 'lake', year: '2025', found: null });
+    const none = sift(pins, { tag: 'lake', release: '5.3', found: null });
     expect(none.shown).toEqual([]);
     expect(none.tags).toContainEqual({ tag: 'lake', notes: 0 });
-    expect(none.years).toContainEqual({ year: '2025', notes: 0 });
+    expect(none.releases).toContainEqual({ release: '5.3', notes: 0 });
+  });
+
+  it('lists releases newest first by age, 10.0 before 9.9', () => {
+    const decades = sift(
+      [pin('2026-01-01', 'x', '9.9'), pin('2026-01-02', 'y', '4.4'), pin('2026-01-03', 'z', '10.0')],
+      {
+        tag: '',
+        release: '',
+        found: null
+      }
+    );
+    expect(decades.releases.map((r) => r.release)).toEqual(['10.0', '9.9', '4.4']);
   });
 });
 
@@ -120,6 +133,7 @@ describe('moved', () => {
     place: 'Paris',
     exact: true,
     tags: [],
+    release: '5.4',
     text: '',
     parts: []
   });

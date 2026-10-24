@@ -1151,6 +1151,8 @@ test('the map pins notes with a place of their own and passes the base map throu
   const pins = await s.call('GET', '/api/map/notes');
   assert.equal(pins.r.headers.get('cache-control'), 'no-store');
   assert.equal((pins.b as Item).notes, 5);
+  // A pin's release is the year of life its day falls in (born 1981-06-14),
+  // not its calendar year.
   const shown = ((pins.b as Item).pins as Item[]).sort((a, b) => String(a.text).localeCompare(String(b.text)));
   assert.deepEqual(shown, [
     {
@@ -1161,6 +1163,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       place: 'Paris, Ile-de-France',
       exact: false,
       tags: ['paris'],
+      release: '4.5',
       text: 'Croissants and a long walk along the river The river walk #paris',
       parts: [
         'Croissants and a long walk along the river ',
@@ -1177,6 +1180,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       place: 'Le Marais, Paris',
       exact: true,
       tags: [],
+      release: '4.5',
       text: 'On the bench',
       parts: ['On the bench']
     },
@@ -1188,6 +1192,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       place: 'Paris, Ile-de-France',
       exact: false,
       tags: [],
+      release: '4.5',
       text: ('Then ' + 'more and '.repeat(30)).slice(0, 139) + '…',
       parts: [('Then ' + 'more and '.repeat(30)).slice(0, 139), '…']
     }

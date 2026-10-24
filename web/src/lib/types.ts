@@ -284,6 +284,8 @@ export interface Pin {
   place: string;
   exact: boolean;
   tags: string[];
+  /** The release its day falls in, as "5.4". */
+  release: string;
   text: string;
   parts: Part[];
 }

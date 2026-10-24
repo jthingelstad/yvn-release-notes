@@ -22,11 +22,12 @@ const served = (found: MapFile | null) =>
 
 export async function mapRoutes(service: SessionService, pattern: string, args: string[]): Promise<Response | null> {
   if (!pattern.startsWith('/api/map/')) return null;
-  const { uid } = await service.account(),
-    ctx = service.context;
+  const { uid, profile } = await service.account(),
+    ctx = service.context,
+    born = String(profile.birthday);
   if (pattern === '/api/map/notes') {
     const notes = (await ctx.store.allNotes(uid)) as NoteRecord[],
-      found = pins(notes);
+      found = pins(notes, born);
     return json({ pins: found, notes: notes.length });
   }
   // The Map's search: which pins have every word, as the Search page finds
@@ -35,7 +36,10 @@ export async function mapRoutes(service: SessionService, pattern: string, args: 
   if (pattern === '/api/map/search') {
     const terms = searchFrom(await body(service.request)),
       notes = (await ctx.store.allNotes(uid)) as NoteRecord[],
-      found = pins(notes.filter((n) => terms.every((t) => searchedText(n).includes(t))));
+      found = pins(
+        notes.filter((n) => terms.every((t) => searchedText(n).includes(t))),
+        born
+      );
     return json({ terms, found: found.map(({ date, id }) => ({ date, id })) });
   }
   const maps = service.maps();

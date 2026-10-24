@@ -70,7 +70,9 @@ export function geoMaps(client = new GeoMapsClient({})): Maps {
 
 /** The style with every Amazon Location address turned into this origin's
  * own, so tiles, glyphs and sprites come back through the routes below. A
- * source of any other kind is dropped, with the layers drawn from it. */
+ * source of any other kind is dropped, with the layers drawn from it. The
+ * map is flat (Jamie, 2026-10-24: "a two-dimensional map"): Amazon's style
+ * asks for a globe and a sky, and both go. */
 export function ownStyle(raw: Uint8Array | string, scheme: Scheme, origin: string): Record<string, unknown> {
   const style = JSON.parse(typeof raw === 'string' ? raw : new TextDecoder().decode(raw)) as Record<string, unknown>,
     sources = (style.sources ?? {}) as Record<string, Record<string, unknown>>,
@@ -86,6 +88,8 @@ export function ownStyle(raw: Uint8Array | string, scheme: Scheme, origin: strin
   );
   if (style.glyphs) style.glyphs = `${origin}/api/map/glyphs/{fontstack}/{range}.pbf`;
   if (style.sprite) style.sprite = `${origin}/api/map/sprites/${scheme}/sprites`;
+  style.projection = { type: 'mercator' };
+  delete style.sky;
   return style;
 }
 

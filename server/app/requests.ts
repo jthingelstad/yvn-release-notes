@@ -4,6 +4,7 @@ import type { Item } from '../../packages/backend/store-types.ts';
 import { validDay, localDay } from '../../packages/domain/dates.ts';
 import { codePointLength, pythonTrim } from '../../packages/domain/unicode.ts';
 import { MAX_NOTE } from '../../packages/domain/notes.ts';
+import { MAX_QUERY, searchTerms } from '../../packages/domain/search.ts';
 export const json = (value: unknown, status = 200, headers: HeadersInit = {}) => oauthResponse(status, value, headers);
 /** Largest JSON body a valid request can need. Note text is limited to MAX_NOTE code points after
  * trimming, and JSON.stringify spends at most 6 bytes on one code point (a \u00XX control escape;
@@ -38,6 +39,15 @@ export async function body(request: Request): Promise<Item> {
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) reject(400, 'bad-json');
   return parsed as Item;
+}
+/** A search's words ({q}, from a POST body, never a URL), as its terms. */
+export function searchFrom(b: Item): string[] {
+  const q = b.q;
+  if (typeof q !== 'string' || !pythonTrim(q)) reject(400, 'query');
+  if (codePointLength(q) > MAX_QUERY) reject(400, 'query-too-long');
+  const terms = searchTerms(q);
+  if (!terms.length) reject(400, 'query');
+  return terms;
 }
 export function trustedViewer(request: Request): string {
   const raw = request.headers.get('cloudfront-viewer-address') ?? '';

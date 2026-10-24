@@ -283,10 +283,16 @@ export interface Pin {
   lon: number;
   place: string;
   exact: boolean;
+  tags: string[];
   text: string;
   parts: Part[];
 }
 export interface MapNotes {
   pins: Pin[];
   notes: number;
+}
+// POST /api/map/search: the pins with every word, by day and id.
+export interface MapSearch {
+  terms: string[];
+  found: { date: string; id: string }[];
 }

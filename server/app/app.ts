@@ -7,7 +7,7 @@ import { archiveRoutes } from './archive-routes.ts';
 import { noteRoutes } from './note-routes.ts';
 import { adminRoutes } from './admin-routes.ts';
 import { upcomingRoutes } from './upcoming-routes.ts';
-import { mapRoutes } from './map-routes.ts';
+import { BASE_MAP, mapRoutes } from './map-routes.ts';
 import { exportRoutes } from '../../packages/backend/exports.ts';
 import { errorFields } from '../../packages/backend/services.ts';
 import { json, trustedViewer } from './requests.ts';
@@ -48,6 +48,7 @@ export const ROUTES: [string, string][] = [
   ['GET', '/api/releases/{v}'],
   ['GET', '/api/badges'],
   ['GET', '/api/map/notes'],
+  ['POST', '/api/map/search'],
   ['GET', '/api/map/style/{scheme}'],
   ['GET', '/api/map/tiles/{z}/{x}/{y}'],
   ['GET', '/api/map/glyphs/{fonts}/{range}'],
@@ -154,8 +155,7 @@ export function createApp(options: AppOptions = {}): Hono {
     if (service?.renewedCookie && !response.headers.has('set-cookie'))
       response.headers.append('set-cookie', service.renewedCookie);
     // Only the base map may be kept, and only by the browser (map-routes.ts).
-    if (!(matched?.path.startsWith('/api/map/') && matched.path !== '/api/map/notes' && response.ok))
-      response.headers.set('cache-control', 'no-store');
+    if (!(matched && BASE_MAP.has(matched.path) && response.ok)) response.headers.set('cache-control', 'no-store');
     service?.log({
       event: 'web',
       method: c.req.raw.method,

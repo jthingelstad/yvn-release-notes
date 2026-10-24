@@ -1106,6 +1106,8 @@ test('the map pins notes with a place of their own and passes the base map throu
             other: { type: 'raster', tiles: ['https://elsewhere.example/{z}/{x}/{y}.png'] }
           },
           glyphs: 'https://maps.geo.us-east-1.amazonaws.com/v2/glyphs/{fontstack}/{range}.pbf',
+          projection: { type: 'globe' },
+          sky: { 'sky-color': 'hsl(208, 90%, 72%)' },
           sprite: 'https://maps.geo.us-east-1.amazonaws.com/v2/styles/x/Standard/Dark/Default/sprites/sprites',
           layers: [
             { id: 'bg', type: 'background' },
@@ -1200,6 +1202,9 @@ test('the map pins notes with a place of their own and passes the base map throu
   );
   assert.equal(drawn.glyphs, `${origin}/api/map/glyphs/{fontstack}/{range}.pbf`);
   assert.equal(drawn.sprite, `${origin}/api/map/sprites/Dark/sprites`);
+  // Flat, not Amazon's globe.
+  assert.deepEqual(drawn.projection, { type: 'mercator' });
+  assert.ok(!('sky' in drawn));
   const tile = await s.call('GET', '/api/map/tiles/3/2/2');
   assert.equal(tile.r.status, 200);
   assert.equal(tile.r.headers.get('content-type'), 'application/x-protobuf');

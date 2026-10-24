@@ -98,11 +98,18 @@ function Basemap({ pins, pick }: { pins: Pin[]; pick: (p: Pin[] | null) => void 
           bounds,
           fitBoundsOptions: { padding: 48, maxZoom: 11 },
           attributionControl: { compact: true },
-          cooperativeGestures: true
+          cooperativeGestures: true,
+          // A flat map that stays north up: no tilting, no turning.
+          maxPitch: 0,
+          dragRotate: false,
+          pitchWithRotate: false,
+          touchPitch: false
         });
       } catch {
         return setBroken(true);
       }
+      m.touchZoomRotate.disableRotation();
+      m.keyboard.disableRotation();
       m.addControl(new maplibre.NavigationControl({ showCompass: false }));
       const byKey = new Map(pins.map((p) => [p.date + '#' + p.id, p]));
       const pinsOf = (features: { properties?: Record<string, unknown> | null }[]) =>

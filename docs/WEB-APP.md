@@ -158,8 +158,9 @@ nothing there links here yet: that is Jamie's call.
     and is left off, as is one cleared with "No place". Choosing a pin, or a
     group that will not part (notes in the same city), lists its notes
     under the map, newest first, each linked to its day. The base map is
-    Amazon Location's Standard style, light or dark as the system is, and
-    comes through `/api/map/*` under the web role: the browser holds no key
+    Amazon Location's Standard style, light or dark as the system is, drawn
+    flat and north up (Amazon's style asks for a globe; Jamie wanted "a
+    two-dimensional map"), and comes through `/api/map/*` under the web role: the browser holds no key
     and asks no other host, and only a signed-in owner gets it. Tiles,
     glyphs and sprites are kept by the browser for a day (`private`);
     everything else stays `no-store`. MapLibre GL runs its worker from this

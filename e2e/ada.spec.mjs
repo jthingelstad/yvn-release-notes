@@ -281,6 +281,13 @@ test('a note says where it was, by name, linking to the map', async ({ page }) =
 test("Here names where the browser is, and a saved note's place changes after", async ({ page, context }) => {
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 48.856613, longitude: 2.352222, accuracy: 10 });
+  // "Add where I am" off for this page only, so Here waits for a tap.
+  await page.route('**/api/me', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const res = await route.fetch(),
+      me = await res.json();
+    await route.fulfill({ response: res, json: { ...me, here: false } });
+  });
   await page.goto('/today/');
   const form = page.locator('#note-form');
   const words = `Coffee at ${Date.now()}`;
@@ -293,6 +300,8 @@ test("Here names where the browser is, and a saved note's place changes after", 
   await expect(cafe).toHaveAttribute('aria-pressed', 'true');
   await expect(form.locator('#note-where')).toHaveText(/At Corner Café, Paris\./);
   await form.getByRole('button', { name: 'Save note' }).click();
+  // Saving reads /api/me again; none of it may outlive the test.
+  await page.unrouteAll({ behavior: 'wait' });
 
   // The spot itself, not the city's middle, on the map.
   const note = page.locator('article.note', { hasText: words });
@@ -324,13 +333,7 @@ test("Here names where the browser is, and a saved note's place changes after", 
 test('"Add where I am" looks for each new note, even after "Not there" on the last', async ({ page, context }) => {
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 48.856613, longitude: 2.352222, accuracy: 10 });
-  // The setting on for this page only, so other tests' Today stays as it was.
-  await page.route('**/api/me', async (route) => {
-    if (route.request().method() !== 'GET') return route.continue();
-    const res = await route.fetch(),
-      me = await res.json();
-    await route.fulfill({ response: res, json: { ...me, here: true } });
-  });
+  // On unless turned off, so nothing to set.
   await page.goto('/today/');
   const form = page.locator('#note-form');
   await expect(form.locator('#note-where')).toHaveText(/At Old Town, Paris\./);
@@ -338,8 +341,6 @@ test('"Add where I am" looks for each new note, even after "Not there" on the la
   await form.locator('textarea').fill(`Nowhere at ${Date.now()}`);
   await form.getByRole('button', { name: 'Save note' }).click();
   await expect(form.locator('#note-where')).toHaveText(/At Old Town, Paris\./);
-  // Saving reads /api/me again; none of it may outlive the test.
-  await page.unrouteAll({ behavior: 'wait' });
 });
 
 test('a past day can have a place of its own, and its weather follows', async ({ page }) => {

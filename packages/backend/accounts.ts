@@ -22,7 +22,7 @@ const SETTINGS: Record<string, unknown> = {
   transcribe: false,
   describe: false,
   badges: true,
-  here: false
+  here: true
 };
 const record = (service: SessionService, user: string, events: ActivityEvent[]) =>
   recordActivity(service.context.store, user, service.context.now, events, (f) => service.log(f));

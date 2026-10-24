@@ -78,6 +78,18 @@ describe('NoteWhere', () => {
     await waitFor(() => expect(onProblem).toHaveBeenCalledWith({ error: 'location-denied' }, here));
   });
 
+  it('with "Add where I am", a browser told no stays quiet until Here is tapped', async () => {
+    device({ code: 1 });
+    named('Unused');
+    const onProblem = vi.fn();
+    render(<NoteWhere place={null} onPick={vi.fn()} onProblem={onProblem} auto />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onProblem).not.toHaveBeenCalled();
+    const here = screen.getByRole('button', { name: /Here/ });
+    await userEvent.click(here);
+    await waitFor(() => expect(onProblem).toHaveBeenCalledWith({ error: 'location-denied' }, here));
+  });
+
   it('drops a lookup that a city picked meanwhile has overtaken', async () => {
     let answer: PositionCallback | undefined;
     Object.defineProperty(navigator, 'geolocation', {

@@ -1237,12 +1237,12 @@ test('the map pins notes with a place of their own and passes the base map throu
     assert.equal((await s.call('GET', path)).r.status, 404, path);
   assert.equal(asked.length, 5);
 });
-test('"Add where I am" is a setting, off until turned on, and recorded as a change', async () => {
+test('"Add where I am" is a setting, on until turned off, and recorded as a change', async () => {
   const s = await setup();
-  assert.equal(((await s.call('GET', '/api/me')).b as Item).here, false);
-  const on = await s.call('PUT', '/api/me', { here: true });
-  assert.equal((on.b as Item).here, true);
+  assert.equal(((await s.call('GET', '/api/me')).b as Item).here, true);
+  const off = await s.call('PUT', '/api/me', { here: false });
+  assert.equal((off.b as Item).here, false);
   assert.equal((await s.call('PUT', '/api/me', { here: 'yes' })).r.status, 400);
   const row = s.store.memory.all().find((i) => i.kind === 'settings.changed')!;
-  assert.deepEqual(row.changes, [{ field: 'here', from: false, to: true }]);
+  assert.deepEqual(row.changes, [{ field: 'here', from: true, to: false }]);
 });

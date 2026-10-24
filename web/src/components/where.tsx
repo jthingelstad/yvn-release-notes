@@ -295,6 +295,7 @@ export function DayWhere({ day, where }: { day: string; where?: string }) {
   return (
     <div className="day-where" id="day-where">
       <p className="hint">
+        <Icon name="where" />
         {where ? (
           <>
             <span id="where">Where: {where}</span>{' '}

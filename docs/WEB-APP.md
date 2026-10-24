@@ -39,15 +39,17 @@ nothing there links here yet: that is Jamie's call.
    schedule starts the next day (Jamie, 2026-10-08: they "get the email and
    connect the dots shortly after signing in"). An address that already
    subscribes goes straight to its notes.
-2. **Today**: the version number, today's notes from email and the web
-   together, a box to write one, and the streak.
+2. **Today**: the version number with the streak and what ships next under
+   its dots, the day's place, a box to write a note, and today's notes from
+   email and the web together.
 3. **Timeline**: days by version, newest first, with their notes. Above
    them, the releases (a release is a year of life, "5.4", birthday to
    birthday), newest first, the current one marked, each a link to its
    page: `/release/?v=5.4`, its days with notes, oldest first, under a
    head with its dates, its counts, its longest streak and its tags by how
    many notes have them (Jamie, 2026-10-12).
-4. **Any past day**: pick a date and add notes to it (backfill). Any day from
+4. **Any past day**: the days either side and a calendar to pick another,
+   the day's notes first, then a box to add one (backfill). Any day from
    the birthday to yesterday. A note can say where it was ("Where", the
    city search, optional), and a day can have a place of its own with no
    note; a past day's weather follows it (AGENTS.md, Where a note was).

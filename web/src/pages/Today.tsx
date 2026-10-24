@@ -2,6 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { AppLink, Bar, Digits, Failed, Loading, useTitle } from '../components/common.tsx';
 import { StreakLine } from '../components/days.tsx';
+import { Icon } from '../components/icon.tsx';
 import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
 import { DayWhere } from '../components/where.tsx';
@@ -44,12 +45,17 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
           <span key={i} className={i < t.dots ? 'on' : ''} />
         ))}
       </p>
-      <p className="hint" id="next">
-        <span className="mono">{t.next.version}</span> ships {on}.
-      </p>
+      {/* What comes next and how the run is going, as one line under the dots. */}
+      <div className="day-facts">
+        <p className="hint" id="next">
+          <span className="mono">{t.next.version}</span> ships {on}.
+        </p>
+        <StreakLine s={t.streak}>{me?.badges !== false && <BadgesLink />}</StreakLine>
+      </div>
       <p className="hint" id="paused" hidden={!t.paused_through}>
         {t.paused_through && `Emails paused through ${dayName(t.paused_through)}. Notes still count.`}
       </p>
+      <DayWhere key={t.date} day={t.date} where={t.where} />
 
       <section className="writing" aria-labelledby="write-head">
         <h2 className="big notes-head" id="write-head">
@@ -69,16 +75,14 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
         <h2 className="big notes-head" id="notes-head">
           Today’s notes
         </h2>
-        {/* The day's own place comes before its notes', as on the Day page. */}
-        <DayWhere key={t.date} day={t.date} where={t.where} />
         <NoteList day={t.date} notes={t.notes} tz={t.tz} version={t.version} />
         <EmptyLine t={t} me={me} />
       </section>
 
-      <StreakLine s={t.streak}>{me?.badges !== false && <BadgesLink />}</StreakLine>
-      <p className="hint">
-        <AppLink href="/day/">Add notes for another day</AppLink>
-      </p>
+      <AppLink className="quiet another-day" href="/day/">
+        <Icon name="calendar" />
+        Add notes for another day
+      </AppLink>
     </div>
   );
 }

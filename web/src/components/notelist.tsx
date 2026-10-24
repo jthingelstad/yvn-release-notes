@@ -1,4 +1,5 @@
-// A day's notes, each with Edit, Where, Add files and Delete. An edit shows its
+// A day's notes, each its words, its files, a meta line, then Edit, Where,
+// Add files and Delete. An edit shows its
 // new words at once and a deleted note goes at once; a write that fails
 // puts the note back as it was, saying why. After any of them the pages'
 // data is fetched again, so every list shows the change.
@@ -105,7 +106,6 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
   const shown = mode.is === 'saving' ? { ...n, text: mode.text, parts: undefined } : n;
   return (
     <article className="note" ref={article} hidden={mode.is === 'deleting'}>
-      <NoteMeta n={n} day={day} tz={tz} cls="meta" />
       {mode.is === 'edit' ? (
         <EditForm
           n={n}
@@ -118,6 +118,7 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
         <NoteBody n={shown} />
       )}
       <NoteMedia day={day} n={n} version={version} />
+      <NoteMeta n={n} day={day} tz={tz} cls="meta" />
       {mode.is === 'where' && (
         <SavedNoteWhere
           path={path}

@@ -24,7 +24,7 @@ export function Activity() {
   const entries = pages.flatMap((p) => p.entries);
   return (
     <>
-      <Bar current="/settings/" />
+      <Bar />
       <h1>Activity</h1>
       <p className="lede" id="activity-lede">
         Everything that happened in your Release Notes, newest first: notes added, changed or deleted, recordings

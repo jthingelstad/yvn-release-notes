@@ -38,30 +38,48 @@ export function AppLink({
 const NAV = [
   ['/today/', 'Today', 'today'],
   ['/timeline/', 'Archive', 'archive'],
+  ['/map/', 'Map', 'map'],
   ['/upcoming/', 'Upcoming', 'upcoming'],
-  ['/search/', 'Search', 'search'],
-  ['/settings/', 'Settings', 'settings']
+  ['/you/', 'You', 'you']
 ] as const;
 
-// The bar along the top: the name, and the places for anyone signed in.
-// `current` marks one of them (Tag marks Search).
+// Which place a page belongs to: a tab, or '/search/' for the header's
+// search (Tag marks it too), which no tab stands for.
+export function placeOf(path: string) {
+  return /^\/(day|release|timeline)\//.test(path)
+    ? '/timeline/'
+    : /^\/(tag|search)\//.test(path)
+      ? '/search/'
+      : /^\/(badges|activity|connect|pause|delete|settings|admin|admin-users)\//.test(path)
+        ? '/you/'
+        : path;
+}
+
+// The bar along the top: the name, the search, and the places for anyone
+// signed in. `current` marks one of them.
 export function Bar({ nav = true, current, children }: { nav?: boolean; current?: string; children?: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const here =
-    current ||
-    (/^\/(day|release|timeline|badges|map)\//.test(path)
-      ? '/timeline/'
-      : /^\/(tag|search)\//.test(path)
-        ? '/search/'
-        : /^\/(connect|pause|delete|settings)\//.test(path)
-          ? '/settings/'
-          : path);
+  const here = current || placeOf(path);
   return (
     <header className={nav ? 'bar bar--app' : 'bar'}>
       <Link className="brand" to={nav ? '/today/' : '/'}>
         <BrandMark />
         Release Notes
       </Link>
+      {nav && (
+        // An icon at the top right on a phone, a row under the name in the
+        // rail; "Search notes" either way to assistive technology.
+        <Link
+          className="bar-search"
+          to="/search/"
+          title="Search"
+          aria-current={here === '/search/' ? 'page' : undefined}
+          activeProps={{}}
+        >
+          <Icon name="search" />
+          <span>Search notes</span>
+        </Link>
+      )}
       {nav && (
         <nav className="primary-nav" aria-label="Main navigation">
           {NAV.map(([to, name, icon]) => (
@@ -80,12 +98,12 @@ export function Bar({ nav = true, current, children }: { nav?: boolean; current?
 
 // Only the signed-in rail needs Query; the public/error bar can render even
 // when a failed page has no query provider available.
-function RailSignOut() {
+export function RailSignOut({ className = 'quiet rail-signout' }: { className?: string }) {
   const signOut = useSignedInAs();
   const [leaving, setLeaving] = useState(false);
   return (
     <button
-      className="quiet rail-signout"
+      className={className}
       type="button"
       disabled={leaving}
       onClick={async () => {

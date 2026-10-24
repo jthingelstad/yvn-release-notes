@@ -2,8 +2,10 @@
 // stay out of the build. The surrounding control supplies its accessible name.
 // Badges have a glyph each (docs/BADGES.md); a secret one is a question.
 import {
+  Activity,
   Archive,
   ArrowLeftRight,
+  Award,
   Binary,
   Bot,
   Cake,
@@ -11,6 +13,7 @@ import {
   CalendarPlus,
   CalendarRange,
   CircleHelp,
+  CircleUserRound,
   CloudSunRain,
   Crown,
   Earth,
@@ -29,6 +32,7 @@ import {
   LocateFixed,
   Lock,
   LogOut,
+  Map as MapIcon,
   MapPin,
   Mic,
   NotebookPen,
@@ -62,6 +66,10 @@ const icons = {
   archive: Archive,
   upcoming: CalendarPlus,
   search: Search,
+  map: MapIcon,
+  you: CircleUserRound,
+  badges: Award,
+  activity: Activity,
   settings: Settings,
   files: Paperclip,
   record: Mic,

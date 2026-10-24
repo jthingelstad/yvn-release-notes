@@ -42,7 +42,7 @@ export function Release() {
   const days = pages.flatMap((p) => p.days);
   return (
     <>
-      <Bar current="/timeline/" />
+      <Bar />
       <h1 id="release-title">
         Release{' '}
         <span className="vnum inline">

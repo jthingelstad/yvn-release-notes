@@ -23,7 +23,7 @@ export function Tag() {
 
   return (
     <>
-      <Bar current="/search/" />
+      <Bar />
       <h1 id="tag-title">{d ? `#${d.tag}` : 'Tags'}</h1>
       <p className="hint spaced" id="tag-lede">
         {d && (d.days.length ? count(d.days.length, 'day', 'days') : 'No notes have this tag now.')}

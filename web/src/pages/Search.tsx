@@ -132,6 +132,9 @@ function SearchForm({
         Words in your notes
         <input
           ref={input}
+          // Arriving with nothing asked, the box is ready (and a phone's
+          // keyboard up): the header's search leads here.
+          autoFocus={!q}
           type="search"
           name="q"
           maxLength={200}

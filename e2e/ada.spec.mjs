@@ -149,7 +149,11 @@ test('a file that is not a photo, recording or PDF is refused by name, and nothi
 });
 
 test('search lists every tag, finds words, marks them, and the box clears back to the tags', async ({ page }) => {
-  await page.goto('/search/');
+  // The header's search opens the page with the box ready.
+  await page.goto('/today/');
+  await page.getByRole('link', { name: 'Search notes', exact: true }).click();
+  await expect(page).toHaveURL(/\/search\/$/);
+  await expect(page.locator('#search-form input[type=search]')).toBeFocused();
   const tags = page.locator('#every-tag-list');
   await expect(tags.locator('a.tag').first()).toBeVisible();
   const words = `Lighthouse ${Date.now()}`;
@@ -426,7 +430,7 @@ test('badges open from Today, with this release, the tracks and the shelf', asyn
   await expect(page).toHaveURL(/\/badges\/$/);
   await expect(page.locator('h1')).toHaveText('Badges');
   await expect(
-    page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Archive', exact: true })
+    page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'You', exact: true })
   ).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('#badges-lede')).toContainText('Latest:');
   await expect(page.locator('#coverage')).toContainText('with notes in 4.5 so far');
@@ -503,6 +507,9 @@ test('"Show badges" off hides their links and lines, and on brings them back', a
   await page.goto('/timeline/');
   await expect(page.getByRole('link', { name: 'Tags' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Badges', exact: true })).toHaveCount(0);
+  await page.goto('/you/');
+  await expect(page.locator('#you-activity')).toBeVisible();
+  await expect(page.locator('#you-badges')).toHaveCount(0);
   await page.goto(`/day/?d=${first}`);
   await expect(page.locator('article.note', { hasText: 'Cake for breakfast.' })).toBeVisible();
   await expect(page.locator('#collected-here')).toHaveCount(0);
@@ -512,11 +519,19 @@ test('"Show badges" off hides their links and lines, and on brings them back', a
   await setting(true);
   await page.goto('/today/');
   await expect(page.locator('#badges-link')).toHaveText(/^\d+ badges?$/);
+  await page.goto('/you/');
+  await expect(page.locator('#you-badges')).toContainText(/\d+ badges? so far/);
   await page.goto(`/day/?d=${first}`);
   await expect(page.locator('#collected-here')).toHaveText('Collected here: Release day.');
 });
 
-test('the activity log opens from settings, and the mail log address lands on it', async ({ page }) => {
+test('the activity log opens from You and settings, and the mail log address lands on it', async ({ page }) => {
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  await page.goto('/today/');
+  await nav.getByRole('link', { name: 'You', exact: true }).click();
+  await page.locator('#you-activity').click();
+  await expect(page).toHaveURL(/\/activity\/$/);
+  await expect(nav.getByRole('link', { name: 'You', exact: true })).toHaveAttribute('aria-current', 'page');
   await page.goto('/settings/');
   await page.locator('#activity-link').click();
   await expect(page).toHaveURL(/\/activity\/$/);
@@ -562,8 +577,10 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
     })
   );
   await page.goto('/timeline/');
-  await page.getByRole('link', { name: 'Map', exact: true }).click();
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  await nav.getByRole('link', { name: 'Map', exact: true }).click();
   await expect(page).toHaveURL(/\/map\/$/);
+  await expect(nav.getByRole('link', { name: 'Map', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('h1')).toHaveText('Map');
   await expect(page.locator('.lede')).toHaveText('1 note with a place of its own.');
   const map = page.getByRole('region', { name: 'Map of your notes' });

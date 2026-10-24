@@ -187,6 +187,7 @@ const behind = [
     page('/connect', () => import('./pages/Connect.tsx'), 'Connect'),
     page('/settings', () => import('./pages/Settings.tsx'), 'Settings'),
     page('/activity', () => import('./pages/Activity.tsx'), 'Activity'),
+    page('/you', () => import('./pages/You.tsx'), 'You'),
     page('/map', () => import('./pages/Map.tsx'), 'MapPage'),
     page('/admin', () => import('./pages/Admin.tsx'), 'Admin'),
     page('/admin-users', () => import('./pages/AdminUsers.tsx'), 'AdminUsers'),

@@ -91,6 +91,8 @@ export interface Me {
   describe: boolean;
   // "Show badges" (docs/BADGES.md), on unless turned off
   badges: boolean;
+  // "Add where I am": new notes on Today start with Here
+  here: boolean;
   today: string;
   version: string;
   city?: string;
@@ -108,11 +110,17 @@ export interface Sample {
   next: { version: string; date: string; days: number };
 }
 
+// A city from the search, or a device's spot (`from: 'device'`, "Here"),
+// named at the city and kept exact for a note.
 export interface Place {
   name: string;
   region?: string;
   country?: string;
-  tz: string;
+  tz?: string;
+  lat?: number;
+  lon?: number;
+  accuracy_m?: number;
+  from?: 'device';
 }
 
 // A release is a year of life ("4.5"), birthday to birthday.
@@ -216,6 +224,8 @@ export interface EventActivity extends ActivityHead {
   note?: string;
   version?: string;
   files?: number;
+  // note.edited: where the note was, set or cleared (never the place)
+  place?: 'set' | 'removed';
   added?: number;
   name?: string;
   upcoming?: string;

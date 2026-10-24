@@ -67,8 +67,10 @@ describe photos.
   for the city you were in, and the morning email carries one line of
   today's forecast. [Weather from Open-Meteo](https://open-meteo.com/),
   CC BY 4.0, which is told the city, never your notes.
-- **Places.** A note can say where it was: chosen on the web, or from the
-  place a photo was taken. A photo's spot is named once, at the city, by
+- **Places.** A note can say where it was: chosen on the web, where your
+  device is when you tap Here (or on every new note, if you ask), or from
+  the place a photo was taken. A note keeps the exact spot, named by its
+  city; a day is only ever the city. A spot is named once, at the city, by
   Amazon Location, which is told the coordinates and nothing else; a past
   day's weather then follows you there.
 - **The email tracks nothing.** No open or click tracking, and the HTML email loads

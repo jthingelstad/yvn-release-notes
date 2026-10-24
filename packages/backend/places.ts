@@ -136,3 +136,49 @@ export async function reverse(lat: number, lon: number, client = new GeoPlacesCl
   if (validTimezone(row?.TimeZone?.Name)) found.tz = row.TimeZone.Name;
   return found;
 }
+/** Where a device says it is, for a note (Jamie, 2026-10-24: "for a note
+ * detailed location, specific. For a day the city"): kept to six places,
+ * as a photo's spot is, with the browser's accuracy in metres. Named at the
+ * city by `reverse`, which is told the coordinates alone. */
+export const SPOT_DIGITS = 6;
+export interface Spot {
+  lat: number;
+  lon: number;
+  accuracy_m?: number;
+}
+export function spotOf(raw: unknown): Spot | null {
+  const row = object(raw);
+  if (!row) return null;
+  const lat = row.lat,
+    lon = row.lon,
+    accuracy = row.accuracy_m ?? null;
+  if (typeof lat !== 'number' || !Number.isFinite(lat) || Math.abs(lat) > 90) return null;
+  if (typeof lon !== 'number' || !Number.isFinite(lon) || Math.abs(lon) > 180) return null;
+  if (accuracy !== null && (typeof accuracy !== 'number' || !Number.isFinite(accuracy) || accuracy < 0)) return null;
+  const out: Spot = { lat: rounded(lat, SPOT_DIGITS), lon: rounded(lon, SPOT_DIGITS) };
+  if (accuracy !== null) out.accuracy_m = Math.min(rounded(accuracy), 100_000);
+  return out;
+}
+/** A spot named for a note, as the browser sends it back: the city's
+ * names, a valid zone when there is one, and the spot itself. */
+export function devicePlace(raw: unknown): PlaceRecord | null {
+  const row = object(raw),
+    spot = spotOf(row);
+  if (!row || !spot) return null;
+  const out: PlaceRecord = {};
+  for (const [from, to] of [
+    ['name', 'city'],
+    ['region', 'region'],
+    ['country', 'country']
+  ] as const) {
+    const value = row[from] ?? '';
+    if (typeof value !== 'string' || codePointLength(value) > 100) return null;
+    if (pythonTrim(value)) out[to] = pythonTrim(value);
+  }
+  if (!out.city) return null;
+  if (row.tz != null) {
+    if (!validTimezone(row.tz)) return null;
+    out.tz = row.tz;
+  }
+  return { ...out, ...spot, from: 'device' };
+}

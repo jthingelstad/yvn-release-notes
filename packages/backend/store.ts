@@ -1531,6 +1531,25 @@ export class Store {
       })
     );
   }
+  /** The owner's own change to where a note was (null clears it). */
+  async changeNotePlace(user: string, day: string, id: string, place: Item | null) {
+    try {
+      return (
+        (
+          await this.update(key(user, `NOTE#${day}#${id}`), {
+            UpdateExpression: place ? 'SET #p = :p' : 'REMOVE #p',
+            ConditionExpression: 'attribute_exists(pk)',
+            ExpressionAttributeNames: { '#p': 'place' },
+            ...(place ? { ExpressionAttributeValues: { ':p': place } } : {}),
+            ReturnValues: 'ALL_NEW'
+          })
+        ).Attributes ?? null
+      );
+    } catch (e) {
+      if (conditionFailed(e)) return null;
+      throw e;
+    }
+  }
   async export(user: string) {
     return this.get(key(user, 'EXPORT'));
   }

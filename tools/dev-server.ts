@@ -225,6 +225,13 @@ export async function main(args = process.argv.slice(2)) {
     exportFunction: 'dev-export',
     adminUserId: 'u1',
     geocode: async (q) => cities.filter((c) => c.name.toLowerCase().startsWith(q.toLowerCase())),
+    // "Here" names any spot as the nearest of these cities, never Amazon Location.
+    reverse: async (lat, lon) => {
+      const near = cities.toSorted(
+        (a, b) => Math.hypot(a.lat - lat, a.lon - lon) - Math.hypot(b.lat - lat, b.lon - lon)
+      )[0]!;
+      return { city: near.name, region: near.region, country: near.country, tz: near.tz };
+    },
     fetchTitle: (url) => ({ title: 'A page at ' + new URL(url).hostname, site: new URL(url).hostname }),
     weatherFetch: async (url) => {
       const q = new URL(url).searchParams,

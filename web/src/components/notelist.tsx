@@ -1,4 +1,4 @@
-// A day's notes, each with Edit, Add files and Delete. An edit shows its
+// A day's notes, each with Edit, Where, Add files and Delete. An edit shows its
 // new words at once and a deleted note goes at once; a write that fails
 // puts the note back as it was, saying why. After any of them the pages'
 // data is fetched again, so every list shows the change.
@@ -12,6 +12,7 @@ import type { Note } from '../lib/types.ts';
 import { ErrorLine, LineText, useFocusLater } from './common.tsx';
 import { NoteBody, NoteMedia, NoteMeta } from './notes.tsx';
 import { Icon } from './icon.tsx';
+import { SavedNoteWhere } from './where.tsx';
 
 export function useRefresh() {
   const client = useQueryClient();
@@ -38,6 +39,7 @@ export function NoteList({ day, notes, tz, version }: ListProps) {
 type Mode =
   | { is: 'view' }
   | { is: 'edit'; draft?: string; problem?: Problem }
+  | { is: 'where' }
   | { is: 'saving'; text: string }
   | { is: 'ask'; line?: Line }
   | { is: 'deleting' }
@@ -116,7 +118,17 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
         <NoteBody n={shown} />
       )}
       <NoteMedia day={day} n={n} version={version} />
-      <div className="actions" hidden={mode.is === 'edit'}>
+      {mode.is === 'where' && (
+        <SavedNoteWhere
+          path={path}
+          has={!!n.place}
+          onDone={() => {
+            setMode({ is: 'view' });
+            focusLater(() => article.current?.querySelector<HTMLElement>('.actions button[aria-label="Where"]'));
+          }}
+        />
+      )}
+      <div className="actions" hidden={mode.is === 'edit' || mode.is === 'where'}>
         {mode.is === 'view' && (
           <>
             <button
@@ -127,6 +139,15 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
               onClick={() => setMode({ is: 'edit' })}
             >
               <Icon name="edit" />
+            </button>
+            <button
+              className="quiet icon-button"
+              type="button"
+              aria-label="Where"
+              title="Where"
+              onClick={() => setMode({ is: 'where' })}
+            >
+              <Icon name="where" />
             </button>
             <button
               className="quiet icon-button"

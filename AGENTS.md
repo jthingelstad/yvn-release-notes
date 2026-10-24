@@ -186,16 +186,24 @@ Where things are (each module's design comment has its contract):
   linked to Apple Maps unless it is only the subscriber's city
   (`notes.mapUrl`, Jamie 2026-10-09).
 - **Where a note was** (Jamie, 2026-10-12): the web form's optional "Where",
-  or else its first photo's EXIF GPS, named once at city level by Amazon
-  Location, which is told the coordinates alone. Email has no text
-  convention. A day can have its own place (`PLACE#<day>`), which comes
+  the device's own spot (Jamie, 2026-10-24: "Here", by a tap, or on each new
+  note on Today with "Add where I am" on; `places.devicePlace`, named through
+  `POST /api/places/here`), or else its first photo's EXIF GPS, named once at
+  city level by Amazon Location, which is told the coordinates alone. Email
+  has no text convention. Any note's place can be set, changed or cleared
+  after it is saved, whatever channel brought it. Precision (Jamie,
+  2026-10-24: "for a note detailed location, specific. For a day the
+  city"): a device or photo spot is kept to six places with its city's name,
+  and its map link goes to the spot; a day's place, home and weather stay
+  at the city. A day can have its own place (`PLACE#<day>`), which comes
   first. A past day's weather follows the day's place, else the subscriber's
   city; the morning forecast is always the subscriber's city. The original
   photo is never changed. Coordinates and place names are never logged
   (CloudWatch). The activity log is the owner's own record: a home-city
   change keeps the old and new city by name (Jamie, 2026-10-21: "Yes keep
   the city names"), as settings keep old and new values, never
-  coordinates; a day's own place is recorded by its day alone.
+  coordinates; a day's own place is recorded by its day alone, and a note's
+  by its day and note (`note.edited` with `place` set or removed).
 - **Raw mail is the source of truth.** Every filed reply stays whole in S3
   (`raw/`, `outcome=note`, kept indefinitely); never expire those. Ignored
   mail (`outcome=ignored`) expires in 30 days.

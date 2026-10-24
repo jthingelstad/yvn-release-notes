@@ -79,7 +79,8 @@ const SETTINGS: Record<string, string> = {
   country: 'Country',
   transcribe: 'Transcripts',
   describe: 'Photo descriptions',
-  badges: 'Badges'
+  badges: 'Badges',
+  here: 'Add where I am'
 };
 const setting = (field: string, value: unknown) =>
   value === true
@@ -114,6 +115,8 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
     case 'note.added':
       return [<>Added a note to {day}</>, e.files ? `With ${count(e.files, 'file', 'files')}.` : undefined];
     case 'note.edited':
+      if (e.place === 'set') return [<>Set where a note was on {day}</>];
+      if (e.place === 'removed') return [<>Cleared where a note was on {day}</>];
       return [<>Changed a note on {day}</>];
     case 'note.deleted':
       return [

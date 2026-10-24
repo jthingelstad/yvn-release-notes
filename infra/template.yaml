@@ -1082,8 +1082,9 @@ Resources:
   # name only that host).
   # media-src also takes blob:, so a recording made on the page plays back
   # before it is sent. Permissions-Policy lets the page itself use the
-  # microphone (the new-note form's Record button) and turns off the
-  # camera, location, payment and USB, which the app never asks for.
+  # microphone (the new-note form's Record button) and the location (its
+  # Here button, asked only on a tap or with "Add where I am" on), and turns
+  # off the camera, payment and USB, which the app never asks for.
   WebHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
@@ -1110,7 +1111,7 @@ Resources:
         CustomHeadersConfig:
           Items:
             - Header: Permissions-Policy
-              Value: "microphone=(self), camera=(), geolocation=(), payment=(), usb=()"
+              Value: "microphone=(self), camera=(), geolocation=(self), payment=(), usb=()"
               Override: true
 
   # Static assets and both private HTTP origins share one distribution.
@@ -1337,6 +1338,11 @@ Resources:
                 # (the owner settings action). The permission takes no resource ARN.
                 Action: ses:DeleteSuppressedDestination
                 Resource: "*"
+              - Effect: Allow
+                # Naming the device's spot at the city for a note's Here
+                # (POST /api/places/here, places.reverse), as for a photo.
+                Action: geo-places:ReverseGeocode
+                Resource: !Sub "arn:${AWS::Partition}:geo-places:${AWS::Region}::provider/default"
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource:

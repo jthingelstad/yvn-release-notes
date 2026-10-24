@@ -3,7 +3,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { SessionService, reject } from './sessions.ts';
 import type { Item, Key } from './store-types.ts';
-import { clean } from './places.ts';
+import { clean, devicePlace, object } from './places.ts';
 import { iso, localDay, validDay, addDays, daysBetween } from '../domain/dates.ts';
 import { profileView, pauseStart } from './views.ts';
 import { validCode, digest, clearCookie } from './auth.ts';
@@ -21,7 +21,8 @@ const SETTINGS: Record<string, unknown> = {
   country: null,
   transcribe: false,
   describe: false,
-  badges: true
+  badges: true,
+  here: false
 };
 const record = (service: SessionService, user: string, events: ActivityEvent[]) =>
   recordActivity(service.context.store, user, service.context.now, events, (f) => service.log(f));
@@ -49,6 +50,14 @@ export function chosenPlace(raw: unknown): Item {
   const p = clean(raw);
   if (!p) reject(400, 'place');
   return { city: p.name, region: p.region, country: p.country, tz: p.tz, lat: p.lat, lon: p.lon, from: 'chosen' };
+}
+/** A note's place: a city from the search, or the spot a device gave
+ * ("Here", `POST /api/places/here`), kept exact. */
+export function notePlace(raw: unknown): Item {
+  if (object(raw)?.from !== 'device') return chosenPlace(raw);
+  const p = devicePlace(raw);
+  if (!p) reject(400, 'place');
+  return p;
 }
 export function placeFields(b: Item): Item {
   const p = chosenPlace(b.place);
@@ -98,7 +107,7 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
   if (Object.hasOwn(b, 'birthday') && b.birthday !== p.birthday) reject(400, 'birthday-locked');
   if (Object.hasOwn(b, 'send_time')) fields.send_time = sendTime(b);
   if (Object.hasOwn(b, 'place')) Object.assign(fields, placeFields(b));
-  for (const k of ['transcribe', 'describe', 'badges'])
+  for (const k of ['transcribe', 'describe', 'badges', 'here'])
     if (Object.hasOwn(b, k)) {
       if (typeof b[k] !== 'boolean') reject(400, k);
       fields[k] = b[k];

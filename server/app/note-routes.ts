@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { SessionService, reject } from '../../packages/backend/sessions.ts';
-import { chosenPlace } from '../../packages/backend/accounts.ts';
+import { chosenPlace, notePlace } from '../../packages/backend/accounts.ts';
 import { attachUploads, startUpload } from '../../packages/backend/uploads.ts';
 import { mediaLinks, noteView, dayView } from '../../packages/backend/views.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
@@ -55,7 +55,7 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
     links = mediaLinks(ctx.objects, uid),
     // The activity log (packages/domain/activity.ts), once a change is saved.
     record = (events: ActivityEvent[]) => recordActivity(store, uid, ctx.now, events, (f) => service.log(f));
-  if (pattern.endsWith('/place')) {
+  if (pattern === '/api/days/{date}/place') {
     if (method === 'PUT') {
       const place = chosenPlace((await body(service.request)).place);
       delete place.from;
@@ -76,7 +76,7 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
   if (pattern === '/api/days/{date}/notes') {
     const b = await body(service.request),
       text = textFrom(b, Boolean(b.uploads)),
-      place = b.place != null ? chosenPlace(b.place) : null,
+      place = b.place != null ? notePlace(b.place) : null,
       files = b.uploads ? await attachUploads(service, uid, b.uploads) : [],
       noteId = 'w-' + randomUUID().replace(/-/g, '').slice(0, 20),
       item: Item = {
@@ -130,6 +130,19 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
       url = entry ? await links(entry.key, String(entry.type)) : null;
     if (!url) reject(404, 'media');
     return json({}, 302, { location: url, 'cache-control': 'private, max-age=300' });
+  }
+  if (pattern.endsWith('/{id}/place')) {
+    // Where a saved note was: set, changed or cleared by its owner, from
+    // any channel's note. The day's weather follows, as for a new note.
+    const place = method === 'PUT' ? notePlace((await body(service.request)).place) : null,
+      item = await store.changeNotePlace(uid, day, id!, place);
+    if (!item) reject(404, 'note');
+    await record([
+      { kind: 'note.edited', id: again(id!), fields: { via: 'web', day, note: id!, place: place ? 'set' : 'removed' } },
+      ...badgeEvents(await earned(service, uid, p, item, old), 'web', day, id!)
+    ]);
+    await keepWeather(service, uid, p, day, true);
+    return json(await noteView(item, String(p.tz), Boolean(p.transcribe), links));
   }
   if (pattern.endsWith('/media')) {
     const uploads = (await body(service.request)).uploads;

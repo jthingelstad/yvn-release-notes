@@ -5,7 +5,9 @@ import type { Item, Purpose } from './store-types.ts';
 import type { Objects, Mail, Invocations, Log } from './services.ts';
 import { safeLog } from './services.ts';
 import type { TitleFetcher } from './links.ts';
-import { search, fetchJson, type JsonFetch, type City } from './places.ts';
+import { GeoPlacesClient } from '@aws-sdk/client-geo-places';
+import { search, reverse, fetchJson, type JsonFetch, type City } from './places.ts';
+import type { PlaceRecord } from '../domain/notes.ts';
 import * as auth from './auth.ts';
 import { withWebProof } from './guarded-store.ts';
 import type { TurnstileConfig } from './turnstile.ts';
@@ -21,6 +23,8 @@ export class ApiError extends Error {
 export function reject(status: number, error: string, extra: Item = {}): never {
   throw new ApiError(status, error, extra);
 }
+/** One Amazon Location client for the process, made on first use. */
+let geo: GeoPlacesClient | undefined;
 export interface ApiContext {
   store: Store;
   now: number;
@@ -34,6 +38,7 @@ export interface ApiContext {
   exportFunction: string;
   adminUserId?: string;
   geocode?: (q: string) => Promise<City[]>;
+  reverse?: (lat: number, lon: number) => Promise<PlaceRecord | null>;
   weatherFetch?: JsonFetch;
   fetchTitle?: TitleFetcher;
   turnstile?: TurnstileConfig;
@@ -161,6 +166,10 @@ export class SessionService {
   }
   geocode(q: string): Promise<City[]> {
     return (this.context.geocode ?? search)(q);
+  }
+  /** Names a device's spot at the city ("Here"), as a photo's is named. */
+  reverse(lat: number, lon: number): Promise<PlaceRecord | null> {
+    return this.context.reverse ? this.context.reverse(lat, lon) : reverse(lat, lon, (geo ??= new GeoPlacesClient({})));
   }
   get weatherFetch(): JsonFetch {
     return this.context.weatherFetch ?? fetchJson;

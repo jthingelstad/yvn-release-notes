@@ -1,7 +1,8 @@
 // Where this device is, for a note's "Here" (AGENTS.md, Where a note was):
-// the browser asks once, the spot is named at the city by /api/places/here,
-// and a spot within a short walk of the last one reuses its name, so a
-// morning of notes at one table asks the server once.
+// the browser asks once, /api/places/here names the spot (city,
+// neighbourhood, businesses near enough to offer), and a spot within a short
+// walk of the last one reuses its names, so a morning of notes at one table
+// asks the server once.
 import { api, type ApiData } from './api.ts';
 import type { Place } from './types.ts';
 
@@ -46,3 +47,6 @@ export async function whereAmI(): Promise<{ place: Place } | { problem: ApiData 
   last = r.data;
   return { place: r.data };
 }
+
+// What a note keeps: the place without the list it was picked from.
+export const kept = ({ nearby: _, ...place }: Place): Place => place;

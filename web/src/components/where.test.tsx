@@ -1,6 +1,6 @@
 // A note's "Here": the device's spot, named by the server, asked on a tap
 // or, with "Add where I am", by the form itself.
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -110,6 +110,33 @@ describe('NoteWhere', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(onPick.mock.calls).toEqual([[{ name: 'Duluth', region: 'Minnesota' }]]);
     expect(screen.getByText(/At Duluth, Minnesota/)).toBeTruthy();
+  });
+
+  it('offers what was near by name, and a second tap goes back to the neighbourhood', async () => {
+    const onPick = vi.fn(),
+      place: Place = {
+        name: 'Minneapolis',
+        region: 'Minnesota',
+        district: 'Downtown West',
+        lat: 44.9778,
+        lon: -93.2717,
+        from: 'device',
+        nearby: [
+          { name: 'Caribou Coffee', lat: 44.97787, lon: -93.27098, distance_m: 57 },
+          { name: 'SK Coffee', lat: 44.9783, lon: -93.27132, distance_m: 63 }
+        ]
+      },
+      { rerender } = render(<NoteWhere place={place} onPick={onPick} onProblem={vi.fn()} />);
+    expect(screen.getByText(/At Downtown West, Minneapolis/)).toBeTruthy();
+    const near = screen.getByRole('group', { name: 'Were you at' });
+    await userEvent.click(within(near).getByRole('button', { name: 'Caribou Coffee' }));
+    expect(onPick).toHaveBeenLastCalledWith({ ...place, venue: 'Caribou Coffee' });
+    rerender(<NoteWhere place={{ ...place, venue: 'Caribou Coffee' }} onPick={onPick} onProblem={vi.fn()} />);
+    expect(screen.getByText(/At Caribou Coffee, Minneapolis/)).toBeTruthy();
+    const picked = within(near).getByRole('button', { name: 'Caribou Coffee' });
+    expect(picked.getAttribute('aria-pressed')).toBe('true');
+    await userEvent.click(picked);
+    expect(onPick).toHaveBeenLastCalledWith({ ...place, venue: undefined });
   });
 
   it('shows the place, and "Not there" takes it off', async () => {

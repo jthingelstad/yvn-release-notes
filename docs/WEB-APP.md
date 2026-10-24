@@ -378,9 +378,12 @@ or new CSP exception.
 - **Here** (Jamie, 2026-10-24): the note form's Here button, and the Where
   button on a saved note, ask the browser where it is (`web/src/lib/here.ts`)
   only when tapped, or on Today with "Add where I am" on, and name the spot
-  through `/api/places/here`. A spot within 150 m of the last one named
-  reuses its name without asking the server. "Not there" takes it off and
-  stops Today looking again until the form is opened anew.
+  through `/api/places/here`, by its neighbourhood ("At Downtown West,
+  Minneapolis"). "Were you at" lists the businesses near enough, and a tap
+  names the note by one ("Caribou Coffee, Minneapolis"), another goes back.
+  On a saved note Here saves at once and stays open on that list until
+  Done. A spot within 150 m of the last one named reuses its names without
+  asking the server. "Not there" takes it off for that note.
 - **Home Screen**: `web/public/manifest.webmanifest` (standalone, opening
   on `/today/`) and the icons in `web/public/icons/`, drawn by
   `scripts/make_icons.mjs`: a cobalt "v", its tangerine dot and two note
@@ -418,7 +421,7 @@ or new CSP exception.
 | `POST /api/auth/signout` | |
 | `GET /api/activity?before=` | the owner's activity log, newest first, 100 rows a page: `email`, `tz`, `today`, `entries` and `next` (the `before` of the next page, or null). Each entry has `id`, `at` and `kind`; a mail row adds `message`, `received_at`, `via` reply or address, `day`, `version`, `subject`, `outcome` filed, not-filed or failed, `reason`, `sender` when it was another address, `text` only for a row not filed whose sender was proven, `attempts` and `notified`; a reads row adds `day`, `client`, `connection`, `calls`, `tools`, `errors` and `last_at`; every other row adds the fields its kind keeps (`packages/domain/activity.ts`), and one naming an Upcoming date (`upcoming`) its `title` as it is now, or null once removed. 400 `before` for anything but a row id or time. No table keys |
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |
-| `POST /api/places/here` `{lat, lon, accuracy_m}` | names the device's spot at the city through Amazon Location (told the coordinates alone, at three places): `{name, region, country, tz, lat, lon, accuracy_m, from: "device"}`, the spot kept to six places, for a note's `place`. 404 `place-unnamed` where no city is found, 502 `places-failed`; needs a session |
+| `POST /api/places/here` `{lat, lon, accuracy_m}` | names the device's spot through Amazon Location (told the coordinates alone): `{name, region, country, tz, district, nearby, lat, lon, accuracy_m, from: "device"}`, `name` the city, `district` its neighbourhood when known, `nearby` up to six businesses within the accuracy (50 to 200 m) as `{name, lat, lon, distance_m}`, the spot kept to six places, for a note's `place` (with `venue` set to a picked one; `nearby` is never kept). 404 `place-unnamed` where no city is found, 502 `places-failed`; needs a session |
 | `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address; `badges` is "Show badges"; `here` is "Add where I am"; `admin: true` only for the configured administrator |
 | `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `transcribe`, `describe`, `badges`, `here`, `status: "active"` to start again); the birthday cannot change. `badges: true` after `false` counts everything earned meanwhile as seen |
 | `GET /api/export?format=md\|json` | the words alone, as a download (JSON by default), with a `badges` list (a Badges section in Markdown), oldest first |

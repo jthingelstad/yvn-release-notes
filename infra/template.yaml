@@ -1339,8 +1339,9 @@ Resources:
                 Action: ses:DeleteSuppressedDestination
                 Resource: "*"
               - Effect: Allow
-                # Naming the device's spot at the city for a note's Here
-                # (POST /api/places/here, places.reverse), as for a photo.
+                # Naming the device's spot for a note's Here: its city,
+                # neighbourhood and nearby businesses (POST /api/places/here,
+                # places.nameSpot).
                 Action: geo-places:ReverseGeocode
                 Resource: !Sub "arn:${AWS::Partition}:geo-places:${AWS::Region}::provider/default"
               - Effect: Allow

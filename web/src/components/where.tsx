@@ -5,14 +5,44 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { api, type ApiData } from '../lib/api.ts';
-import { canLocate, whereAmI } from '../lib/here.ts';
+import { canLocate, kept, whereAmI } from '../lib/here.ts';
 import type { Day, DayPage, Place, Today } from '../lib/types.ts';
 import { Icon } from './icon.tsx';
 import { ErrorLine, useBusy, useFocusLater, useProblem } from './common.tsx';
 
 const PlacePicker = lazy(() => import('./placepicker.tsx').then((m) => ({ default: m.PlacePicker })));
 
-export const placeName = (p: Place) => [p.name, p.region].filter(Boolean).join(', ');
+// "Caribou Coffee, Minneapolis", "Downtown West, Minneapolis" or
+// "Minneapolis, Minnesota", as the server labels a note's place.
+export const placeName = (p: Place) => {
+  const near = p.venue || p.district;
+  return near ? `${near}, ${p.name}` : [p.name, p.region].filter(Boolean).join(', ');
+};
+
+// "Were you at": the businesses Here found near, one tap to name the note
+// by one (and again to go back to the neighbourhood). Never chosen for it.
+function Nearby({ place, onPick, busy }: { place: Place; onPick: (p: Place) => void; busy?: boolean }) {
+  if (!place.nearby?.length) return null;
+  return (
+    <div className="row nearby" role="group" aria-labelledby="nearby-label">
+      <span className="hint" id="nearby-label">
+        Were you at
+      </span>
+      {place.nearby.map((v) => (
+        <button
+          key={v.name}
+          className="quiet"
+          type="button"
+          disabled={busy}
+          aria-pressed={place.venue === v.name}
+          onClick={() => onPick(place.venue === v.name ? { ...place, venue: undefined } : { ...place, venue: v.name })}
+        >
+          {v.name}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // The note form's "Here" and "Where": the device's spot, or the search.
 // Calls onPick with the place, or null when it is taken off. With `auto`
@@ -64,21 +94,24 @@ export function NoteWhere({
 
   if (place)
     return (
-      <p className="hint note-where" id="note-where">
-        At {placeName(place)}.{' '}
-        <button
-          className="quiet"
-          type="button"
-          id="note-where-clear"
-          onClick={() => {
-            setDeclined(true);
-            choose(null);
-            focusLater(() => button.current);
-          }}
-        >
-          Not there
-        </button>
-      </p>
+      <>
+        <p className="hint note-where" id="note-where">
+          At {placeName(place)}.{' '}
+          <button
+            className="quiet"
+            type="button"
+            id="note-where-clear"
+            onClick={() => {
+              setDeclined(true);
+              choose(null);
+              focusLater(() => button.current);
+            }}
+          >
+            Not there
+          </button>
+        </p>
+        <Nearby place={place} onPick={choose} />
+      </>
     );
   return (
     <>
@@ -132,23 +165,57 @@ export function NoteWhere({
 
 // A saved note's place, from its Where button: here, a city, or none.
 // Calls onDone once the change is saved (the pages are read again) or
-// given up; a failure stays open, saying why.
+// given up; a failure stays open, saying why. Here saves at once, then
+// stays to offer what was near, until Done.
 export function SavedNoteWhere({ path, has, onDone }: { path: string; has: boolean; onDone: () => void }) {
   const [busy, run] = useBusy();
   const problem = useProblem();
   const client = useQueryClient();
+  const [found, setFound] = useState<Place | null>(null);
   const here = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const done = useRef<HTMLButtonElement>(null);
+  const focusLater = useFocusLater();
 
+  const put = async (place: Place, field?: HTMLElement | null) => {
+    const r = await api('PUT', `${path}/place`, { place: kept(place) });
+    if (!r.ok) problem.show(r.data, field);
+    else await client.invalidateQueries();
+    return r.ok;
+  };
   const send = (place: Place | null, field?: HTMLElement | null) =>
     run(async () => {
       problem.clear();
-      const r = place ? await api('PUT', `${path}/place`, { place }) : await api('DELETE', `${path}/place`);
-      if (!r.ok) return problem.show(r.data, field);
-      await client.invalidateQueries();
+      if (place) {
+        if (!(await put(place, field))) return;
+      } else {
+        const r = await api('DELETE', `${path}/place`);
+        if (!r.ok) return problem.show(r.data, field);
+        await client.invalidateQueries();
+      }
       onDone();
     });
 
+  if (found)
+    return (
+      <div className="stack tight place-picker note-where-edit" id="note-where-edit">
+        <p className="hint">At {placeName(found)}.</p>
+        <Nearby
+          place={found}
+          busy={busy}
+          onPick={(p) =>
+            run(async () => {
+              problem.clear();
+              if (await put(p, done.current)) setFound(p);
+            })
+          }
+        />
+        <button ref={done} className="quiet" type="button" onClick={onDone}>
+          Done
+        </button>
+        <ErrorLine line={problem.line} />
+      </div>
+    );
   return (
     <div className="stack tight place-picker note-where-edit" id="note-where-edit">
       <div className="row">
@@ -161,12 +228,12 @@ export function SavedNoteWhere({ path, has, onDone }: { path: string; has: boole
             onClick={() =>
               run(async () => {
                 problem.clear();
-                const found = await whereAmI();
-                if (!('place' in found)) return problem.show(found.problem, here.current);
-                const r = await api('PUT', `${path}/place`, { place: found.place });
-                if (!r.ok) return problem.show(r.data, here.current);
-                await client.invalidateQueries();
-                onDone();
+                const at = await whereAmI();
+                if (!('place' in at)) return problem.show(at.problem, here.current);
+                if (!(await put(at.place, here.current))) return;
+                if (!at.place.nearby?.length) return onDone();
+                setFound(at.place);
+                focusLater(() => done.current);
               })
             }
           >

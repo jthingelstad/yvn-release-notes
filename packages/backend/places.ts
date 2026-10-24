@@ -1,5 +1,6 @@
-/** City-level places. Forward search shares only the query with Open-Meteo;
- * reverse geocoding shares rounded coordinates with Amazon Location. */
+/** Places. Forward search shares only the query with Open-Meteo; naming a
+ * photo's spot shares rounded coordinates with Amazon Location, and naming
+ * a device's spot ("Here") shares the spot itself (Jamie, 2026-10-24). */
 import { GeoPlacesClient, ReverseGeocodeCommand } from '@aws-sdk/client-geo-places';
 import { validTimezone } from '../domain/dates.ts';
 import { codePointLength, codePointSlice, pythonTrim } from '../domain/unicode.ts';
@@ -160,7 +161,8 @@ export function spotOf(raw: unknown): Spot | null {
   return out;
 }
 /** A spot named for a note, as the browser sends it back: the city's
- * names, a valid zone when there is one, and the spot itself. */
+ * names, the neighbourhood and a chosen business when there are, a valid
+ * zone when there is one, and the spot itself. */
 export function devicePlace(raw: unknown): PlaceRecord | null {
   const row = object(raw),
     spot = spotOf(row);
@@ -169,7 +171,9 @@ export function devicePlace(raw: unknown): PlaceRecord | null {
   for (const [from, to] of [
     ['name', 'city'],
     ['region', 'region'],
-    ['country', 'country']
+    ['country', 'country'],
+    ['district', 'district'],
+    ['venue', 'venue']
   ] as const) {
     const value = row[from] ?? '';
     if (typeof value !== 'string' || codePointLength(value) > 100) return null;
@@ -181,4 +185,75 @@ export function devicePlace(raw: unknown): PlaceRecord | null {
     out.tz = row.tz;
   }
   return { ...out, ...spot, from: 'device' };
+}
+
+/** A business or landmark near a device's spot, offered to name a note by
+ * ("Caribou Coffee, Minneapolis"), never chosen for it: the nearest one is
+ * as often a bus stop or a car park as where someone sat. */
+export interface Venue {
+  name: string;
+  lat: number;
+  lon: number;
+  distance_m: number;
+}
+export interface SpotNames extends PlaceRecord {
+  city: string;
+  district?: string;
+  nearby: Venue[];
+}
+// Kinds no one is "at" when they write a note.
+const PASSING = /^(bus_stop|parking|ev_charging|atm|consumer_services|business_services|commercial|industrial)/;
+/** The nearest few within the browser's accuracy, kept between a short
+ * walk and a block or two, so a vague fix offers no far-off guesses. */
+export const nearRadius = (accuracy?: number) => Math.min(Math.max(accuracy ?? 0, 50), 200);
+
+/** Names a device's spot for a note: its city (and zone), the neighbourhood
+ * the label defaults to, and the businesses close enough to offer. Falls
+ * back to the city alone (`reverse`) where nothing nearby has an address. */
+export async function nameSpot(spot: Spot, client = new GeoPlacesClient({})): Promise<SpotNames | null> {
+  const answer = await client.send(
+    new ReverseGeocodeCommand({
+      QueryPosition: [spot.lon, spot.lat],
+      IntendedUse: 'Storage',
+      MaxResults: 15,
+      Language: 'en',
+      Filter: { IncludePlaceTypes: ['PointOfInterest', 'PointAddress', 'Street'] },
+      AdditionalFeatures: ['TimeZone']
+    })
+  );
+  const rows = answer.ResultItems ?? [],
+    first = rows.find((r) => r.Address?.Locality);
+  if (!first) {
+    const city = await reverse(spot.lat, spot.lon, client);
+    return city?.city ? { ...city, city: city.city, nearby: [] } : null;
+  }
+  const address = first.Address!,
+    text = (v?: string) => codePointSlice(pythonTrim(v ?? ''), 0, 100),
+    radius = nearRadius(spot.accuracy_m),
+    found: SpotNames = {
+      city: text(address.Locality),
+      region: text(address.Region?.Name),
+      country: text(address.Country?.Code2 === 'US' ? 'United States' : address.Country?.Name),
+      nearby: []
+    },
+    district = text(address.District ?? address.SubDistrict);
+  if (district && district !== found.city) found.district = district;
+  const zone = rows.find((r) => r.TimeZone?.Name)?.TimeZone?.Name;
+  if (validTimezone(zone)) found.tz = zone;
+  for (const row of rows) {
+    const name = text(row.Title),
+      [lon, lat] = row.Position ?? [],
+      kind = row.Categories?.find((c) => c.Primary)?.Id ?? row.Categories?.[0]?.Id ?? '';
+    if (row.PlaceType !== 'PointOfInterest' || !name || PASSING.test(kind)) continue;
+    if (typeof lat !== 'number' || typeof lon !== 'number' || (row.Distance ?? Infinity) > radius) continue;
+    if (found.nearby.some((v) => v.name === name)) continue;
+    found.nearby.push({
+      name,
+      lat: rounded(lat, SPOT_DIGITS),
+      lon: rounded(lon, SPOT_DIGITS),
+      distance_m: row.Distance!
+    });
+    if (found.nearby.length === 6) break;
+  }
+  return found;
 }

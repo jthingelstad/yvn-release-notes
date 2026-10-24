@@ -6,8 +6,7 @@ import type { Objects, Mail, Invocations, Log } from './services.ts';
 import { safeLog } from './services.ts';
 import type { TitleFetcher } from './links.ts';
 import { GeoPlacesClient } from '@aws-sdk/client-geo-places';
-import { search, reverse, fetchJson, type JsonFetch, type City } from './places.ts';
-import type { PlaceRecord } from '../domain/notes.ts';
+import { search, nameSpot, fetchJson, type JsonFetch, type City, type Spot, type SpotNames } from './places.ts';
 import * as auth from './auth.ts';
 import { withWebProof } from './guarded-store.ts';
 import type { TurnstileConfig } from './turnstile.ts';
@@ -38,7 +37,7 @@ export interface ApiContext {
   exportFunction: string;
   adminUserId?: string;
   geocode?: (q: string) => Promise<City[]>;
-  reverse?: (lat: number, lon: number) => Promise<PlaceRecord | null>;
+  nameSpot?: (spot: Spot) => Promise<SpotNames | null>;
   weatherFetch?: JsonFetch;
   fetchTitle?: TitleFetcher;
   turnstile?: TurnstileConfig;
@@ -167,9 +166,9 @@ export class SessionService {
   geocode(q: string): Promise<City[]> {
     return (this.context.geocode ?? search)(q);
   }
-  /** Names a device's spot at the city ("Here"), as a photo's is named. */
-  reverse(lat: number, lon: number): Promise<PlaceRecord | null> {
-    return this.context.reverse ? this.context.reverse(lat, lon) : reverse(lat, lon, (geo ??= new GeoPlacesClient({})));
+  /** Names a device's spot ("Here"): city, neighbourhood, what is near. */
+  nameSpot(spot: Spot): Promise<SpotNames | null> {
+    return this.context.nameSpot ? this.context.nameSpot(spot) : nameSpot(spot, (geo ??= new GeoPlacesClient({})));
   }
   get weatherFetch(): JsonFetch {
     return this.context.weatherFetch ?? fetchJson;

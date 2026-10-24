@@ -18,6 +18,7 @@ import { createTurnstileSecret } from '../../packages/backend/aws.ts';
 import * as auth from '../../packages/backend/auth.ts';
 import * as media from '../../packages/backend/media.ts';
 import { zipKey } from '../../workers/export.ts';
+import { nameSpot } from '../../packages/backend/places.ts';
 import { REDIRECT, VERIFIER } from '../oauth/fixtures.ts';
 import { createHash } from 'node:crypto';
 import { Recorder, REGION, ACCOUNT, STACK } from './grants.ts';
@@ -84,11 +85,24 @@ test('the web role grants every request each route and the OAuth endpoints make'
       exportFunction: aws.env.EXPORT_FUNCTION!,
       adminUserId: 'u',
       geocode: async () => [city],
-      // Naming a device's spot, as IAM authorizes places.reverse.
-      reverse: async () => {
-        aws.add('places.reverse', 'geo-places:ReverseGeocode', `arn:aws:geo-places:${REGION}::provider/default`);
-        return { city: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris' };
-      },
+      // Naming a device's spot, the real adapter as IAM authorizes it.
+      nameSpot: (spot) =>
+        nameSpot(spot, {
+          async send() {
+            aws.add('places.nameSpot', 'geo-places:ReverseGeocode', `arn:aws:geo-places:${REGION}::provider/default`);
+            return {
+              ResultItems: [
+                {
+                  Address: {
+                    Locality: 'Paris',
+                    Region: { Name: 'Ile-de-France' },
+                    Country: { Code2: 'FR', Name: 'France' }
+                  }
+                }
+              ]
+            };
+          }
+        } as never),
       fetchTitle: () => null,
       weatherFetch: async () => forecast,
       turnstile: {

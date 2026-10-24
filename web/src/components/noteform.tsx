@@ -21,6 +21,7 @@ import { canRecord, recordClock, useRecorder } from './recorder.ts';
 import { Icon } from './icon.tsx';
 import { UnlockLine } from './unlock.tsx';
 import { NoteWhere } from './where.tsx';
+import { kept } from '../lib/here.ts';
 import { spans, MAX_TAG } from '../../../packages/domain/tags.ts';
 
 interface Props {
@@ -86,7 +87,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
       if (!text.trim() && !files.length) return problem.show({ error: 'text' }, area.current);
       // The zone it is being written in, so its time reads as it did here.
       const body: { text: string; tz: string; uploads?: unknown; place?: Place } = { text, tz: browserZone() };
-      if (place) body.place = place;
+      if (place) body.place = kept(place);
       if (files.length) {
         const out = await sendFiles(files, setChosen);
         showChosen();

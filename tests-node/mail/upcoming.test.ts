@@ -57,7 +57,7 @@ test('plain/HTML reminders are escaped type on paper with bounded lines, no remo
     section = remindersFor([entry], '2026-10-13'),
     text = body(v, '1981-06-14', { upcoming: section }),
     html = htmlBody(v, '1981-06-14', '2026-10-13', { upcoming: section });
-  assert.match(text, /Upcoming\n\nTomorrow — Concert <script>/);
+  assert.match(text, /Upcoming\n\nTomorrow\nConcert <script>/);
   assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /<script>|src="https?:/);
   assert.match(html, /href="https:\/\/notes.yourversionnumber.com\/upcoming\/"/);
@@ -72,8 +72,8 @@ test('sender selects each owner local day, sends once, keeps reminders out of no
   for (const uid of ['east', 'west']) await handler({ send_now: uid }, null, f.services);
   const east = await simpleParser(f.mail.messages[0]!.raw),
     west = await simpleParser(f.mail.messages[1]!.raw);
-  assert.match(east.text!, /Today — Concert <script>/);
-  assert.match(west.text!, /Tomorrow — Private west title/);
+  assert.match(east.text!, /Today\nConcert <script>/);
+  assert.match(west.text!, /Tomorrow\nPrivate west title/);
   assert.doesNotMatch(east.text!, /Private west title/);
   await handler({ send_now: 'east' }, null, f.services);
   assert.equal(f.mail.messages.length, 2);
@@ -86,7 +86,7 @@ test('the activity log has the email and each reminder due, those folded into "N
     f.store.seed({ pk: 'USER#west', sk: 'UPCOMING#' + id, ...entry, id, title: 'Private ' + id });
   f.store.seed({ pk: 'USER#west', sk: 'UPCOMING#later', ...entry, id: 'later', date: '2026-10-30' });
   await handler({ send_now: 'west' }, null, f.services);
-  assert.match((await simpleParser(f.mail.messages[0]!.raw)).text!, /\(2 more today\)/);
+  assert.match((await simpleParser(f.mail.messages[0]!.raw)).text!, /And 2 more today\./);
   const rows = await f.store.activityAll('west');
   assert.deepEqual(rows.map((r) => [r.kind, r.upcoming ?? null, r.when ?? null, r.day, r.via]).sort(), [
     ['email.sent', null, null, '2026-10-13', 'email'],

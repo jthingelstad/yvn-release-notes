@@ -22,6 +22,11 @@ export const PAPER = '#fffbf2',
   PINK_INK = '#c9186a';
 export const FONT = "'Bricolage Grotesque',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif",
   MONO = "'Martian Mono',ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace";
+// The site's kicker, and its action link: cobalt words with no underline,
+// on a line of their own. Links inside a sentence keep their underline.
+export const KICKER = `font-family:${MONO};font-size:12px;line-height:1.5;letter-spacing:0.1em;text-transform:uppercase;color:${INK_2};`;
+export const action = (href: string, label: string, size = 15) =>
+  `<a class="link" href="${href}" style="color:${BLUE};font-family:${FONT};font-size:${size}px;font-weight:700;text-decoration:none;">${label}</a>`;
 export const MAIL_TAG = 'release-notes-mail',
   PAST_MAX = 1000,
   SHOWN = 4,
@@ -206,7 +211,7 @@ export function specialLine(v: Version): string | null {
   return said.length ? `${v} ${said.join(' and ')}.` : null;
 }
 export const closedBody = (c: Closed) =>
-  `${releaseName(c.age)} is closed: ${closedLine(c)}\nSee all of it: ${releaseLink(c.age)}\n\n`;
+  `${releaseName(c.age)} is closed: ${closedLine(c)}\nSee ${releaseName(c.age)}: ${releaseLink(c.age)}\n\n`;
 export function pastText(text: string, limit = PAST_MAX): [string, boolean] {
   if (codePointLength(text) <= limit) return [text, false];
   const prefix = codePointSlice(text, 0, limit),
@@ -261,10 +266,10 @@ export function filesPhrase(files?: Files): string {
   }
   return parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts.at(-1) : (parts[0] ?? '');
 }
-export function pastMore(cut: boolean, files?: Files): string {
+export function pastMore(cut: boolean, files?: Files, name = 'it'): string {
   const phrase = filesPhrase(files);
   if (cut) return phrase ? `Read the rest, with ${phrase}` : 'Read the rest';
-  if (!phrase) return 'See it';
+  if (!phrase) return `See ${name}`;
   const kinds = Object.keys(files ?? {}).filter((k) => files![k]);
   return `${kinds.length === 1 && kinds[0] === 'audio' ? 'Hear' : 'See'} ${phrase}`;
 }
@@ -291,7 +296,7 @@ export function pastBody(v: Version, birthday: string, past: OnThisDay): string 
         '\n' +
         (shown ? `${shown}${cut ? ' ...' : ''}\n\n` : '') +
         (p.tags.length ? p.tags.map((t) => `#${t}`).join(' ') + '\n\n' : '') +
-        `${pastMore(cut, p.files)}: ${pastLink(p.day)}\n\n`
+        `${pastMore(cut, p.files, String(then))}: ${pastLink(p.day)}\n\n`
     );
   }
   if (past.more.length)
@@ -313,7 +318,7 @@ export function yesterdayBody(birthday: string, y: Yesterday): string {
     (shown ? `${shown}${cutMark(shown, cut) ? ' ...' : ''}\n\n` : '') +
     (y.tags.length ? y.tags.map((t) => `#${t}`).join(' ') + '\n\n' : '') +
     (files ? files + '\n' : '') +
-    `${cut ? 'Read the rest' : 'See it'}: ${pastLink(y.day)}\n\n`
+    `${cut ? 'Read the rest' : `See ${then}`}: ${pastLink(y.day)}\n\n`
   );
 }
 export const credited = (forecast?: string | null, past?: OnThisDay | null) =>
@@ -346,14 +351,14 @@ export function body(v: Version, birthday: string, o: BodyOptions = {}): string 
   );
 }
 export function upcomingBody(section: UpcomingSection): string {
-  return `Upcoming\n\n${section.shown.map((r) => `${r.when} — ${r.line}`).join('\n')}\n\nSee all upcoming${section.more ? ` (${section.more} more today)` : ''}: ${APP}/upcoming/\n\n`;
+  return `Upcoming\n\n${section.shown.map((r) => `${r.when}\n${r.line}\n`).join('\n')}\n${section.more ? `And ${section.more} more today.\n` : ''}See all upcoming: ${APP}/upcoming/\n\n`;
 }
 export function upcomingHtml(section?: UpcomingSection | null): string {
   if (!section?.shown.length) return '';
-  return `<tr><td style="padding:40px 0 0;font-family:${FONT};color:${INK};">
-<p class="ink" style="margin:0 0 12px;font-size:22px;font-weight:800;">Upcoming</p>
-${section.shown.map((r) => `<p class="ink" style="margin:0 0 10px;font-size:17px;line-height:1.5;"><strong>${asciiHtml(r.when)}</strong> &mdash; ${asciiHtml(r.line)}</p>`).join('\n')}
-<p style="margin:12px 0 0;font-size:15px;"><a class="link" href="${APP}/upcoming/" style="color:${BLUE};">See all upcoming${section.more ? ` (${section.more} more today)` : ''}</a></p>
+  return `<tr><td style="padding:48px 0 0;font-family:${FONT};color:${INK};">
+<p class="ink" style="margin:0 0 12px;font-size:22px;line-height:1.2;font-weight:800;color:${INK};">Upcoming</p>
+${section.shown.map((r) => `<p class="ink-2" style="margin:0;${KICKER}">${asciiHtml(r.when)}</p>\n<p class="ink" style="margin:0 0 14px;font-size:17px;line-height:1.5;color:${INK};">${asciiHtml(r.line)}</p>`).join('\n')}
+${section.more ? `<p class="ink-2" style="margin:0 0 4px;font-size:15px;line-height:1.45;color:${INK_2};">And ${section.more} more today.</p>\n` : ''}<p style="margin:0;">${action(`${APP}/upcoming/`, 'See all upcoming')}</p>
 </td></tr>`;
 }
 export function vnumHtml(v: Version, size: number, sepColor = ORANGE): string {
@@ -473,15 +478,15 @@ export const DARK_CSS = `
   .streak-row { font-size: 15px !important; }
 }
 @media (prefers-color-scheme: dark) {
-  body, .paper { background: #131634 !important; }
-  .ink { color: #fdf6e8 !important; }
-  .ink-2 { color: #b9bede !important; }
-  .vnum { color: #8fb4ff !important; }
-  .sep, .dot-on { color: #ff8a4d !important; }
+  body, .paper { background: #14163a !important; }
+  .ink { color: #fffbf2 !important; }
+  .ink-2 { color: #c9cbe6 !important; }
+  .vnum { color: #8fb0ff !important; }
+  .sep, .dot-on { color: #ff8a5c !important; }
   .dot-off { color: #2b3062 !important; }
   .today { color: #ffab6b !important; }
   .party { color: #ff9ecb !important; }
-  .link { color: #8fb4ff !important; }
+  .link { color: #8fb0ff !important; }
 }
 `;
 
@@ -490,9 +495,7 @@ export function closedHtml(c: Closed): string {
   return `<tr><td style="padding:48px 0 0;">
 <p class="ink" style="margin:0 0 8px;font-family:${FONT};font-size:22px;line-height:1.2;font-weight:800;color:${INK};"><span class="vnum" style="font-family:${MONO};letter-spacing:-0.03em;color:${BLUE};white-space:nowrap;">${name}</span> is closed</p>
 <p class="ink-2" style="margin:0 0 8px;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${asciiHtml(closedLine(c))}</p>
-<p class="ink-2" style="margin:0;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">
-<a class="link" href="${escape(releaseLink(c.age))}" style="color:${BLUE};font-weight:700;text-decoration:underline;">See all of it</a>
-</p>
+<p style="margin:0;">${action(escape(releaseLink(c.age)), `See ${escape(releaseName(c.age))}`)}</p>
 </td></tr>
 `;
 }
@@ -516,12 +519,10 @@ export function yesterdayHtml(birthday: string, y: Yesterday): string {
         '</p>\n'
       : '';
   return `<tr><td style="padding:48px 0 0;">
-<p class="ink" style="margin:0 0 4px;font-family:${FONT};font-size:22px;line-height:1.2;font-weight:800;color:${INK};">Yesterday</p>
-<p class="ink-2" style="margin:0 0 8px;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${escape(longDate(y.day))}</p>
+<p class="ink" style="margin:0 0 12px;font-family:${FONT};font-size:22px;line-height:1.2;font-weight:800;color:${INK};">Yesterday</p>
+<p class="ink-2" style="margin:0 0 6px;${KICKER}">${escape(longDate(y.day))}</p>
 <p style="margin:0 0 12px;">${vnumHtml(then, 26)}</p>
-${whereHtml}${notesHtml(shown, y.links, cutMark(shown, cut))}${photosHtml(y.photos)}${tagsHtml(y.tags)}${filesHtml}<p class="ink-2" style="margin:2px 0 0;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">
-<a class="link" href="${escape(pastLink(y.day))}" style="color:${BLUE};font-weight:700;text-decoration:underline;">${cut ? 'Read the rest' : 'See it'}</a>
-</p>
+${whereHtml}${notesHtml(shown, y.links, cutMark(shown, cut))}${photosHtml(y.photos)}${tagsHtml(y.tags)}${filesHtml}<p style="margin:2px 0 0;">${action(escape(pastLink(y.day)), cut ? 'Read the rest' : `See ${escape(String(then))}`)}</p>
 </td></tr>
 `;
 }
@@ -534,13 +535,9 @@ export function pastDayHtml(v: Version, birthday: string, p: PastDay, limit: num
     [shown, cut] = shownText(p, limit),
     notes = notesHtml(shown, p.links, cut ? '…' : '') + photosHtml(p.photos),
     tagHtml = tagsHtml(p.tags);
-  return `<p class="ink-2" style="margin:28px 0 6px;font-family:${FONT};font-size:14px;color:${INK_2};">
-<strong class="ink" style="color:${INK};">${escape(yearsAgo(v, then))}</strong> &middot; ${escape(longDate(p.day))}, ${Number(p.day.slice(0, 4))}
-</p>
+  return `<p class="ink-2" style="margin:32px 0 6px;${KICKER}">${escape(yearsAgo(v, then))} &middot; ${escape(longDate(p.day))}, ${Number(p.day.slice(0, 4))}</p>
 <p style="margin:0 0 ${p.sky ? 8 : 12}px;">${vnumHtml(then, 26)}</p>
-${skyHtml}${notes}${tagHtml}<p class="ink-2" style="margin:2px 0 0;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">
-<a class="link" href="${escape(pastLink(p.day))}" style="color:${BLUE};font-weight:700;text-decoration:underline;">${escape(pastMore(cut, unshown(p.files, p.photos)))}</a>
-</p>
+${skyHtml}${notes}${tagHtml}<p style="margin:2px 0 0;">${action(escape(pastLink(p.day)), escape(pastMore(cut, unshown(p.files, p.photos), String(then))))}</p>
 `;
 }
 
@@ -556,15 +553,15 @@ export function pastHtml(v: Version, birthday: string, past: OnThisDay): string 
         '</p>\n'
       : '';
   return `<tr><td style="padding:48px 0 0;">
-<p class="ink" style="margin:0 0 4px;font-family:${FONT};font-size:22px;line-height:1.2;font-weight:800;color:${INK};">On this day</p>
+<p class="ink" style="margin:0 0 6px;font-family:${FONT};font-size:22px;line-height:1.2;font-weight:800;color:${INK};">On this day</p>
 <p class="ink-2" style="margin:0;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${escape(sectionLede(v, past))}</p>
 ${days}${more}</td></tr>
 `;
 }
 
 export function productUpdateHtml(update: ProductUpdate): string {
-  return `<tr><td style="padding:36px 0 0;">
-<p class="ink-2" style="margin:0 0 8px;font-family:${FONT};font-size:13px;line-height:1.5;color:${INK_2};">${UPDATE_LABEL}</p>
+  return `<tr><td style="padding:48px 0 0;">
+<p class="ink-2" style="margin:0 0 8px;${KICKER}">${UPDATE_LABEL}</p>
 <p class="ink" style="margin:0 0 12px;font-family:${FONT};font-size:22px;line-height:1.2;font-weight:800;color:${INK};">${asciiHtml(update.title)}</p>
 ${notesHtml(update.text, update.links)}</td></tr>\n`;
 }
@@ -585,15 +582,11 @@ export function htmlBody(v: Version, birthday: string, day: string, o: BodyOptio
       ? `<tr><td class="ink" style="padding:0 0 32px;font-family:${FONT};font-size:17px;line-height:1.5;color:${INK};">${asciiHtml(welcome)}</td></tr>\n`
       : '',
     forecastHtml = forecast ? `<br><span class="ink-2" style="color:${INK_2};">${asciiHtml(forecast)}</span>` : '',
-    creditHtml = credited(forecast, past)
-      ? ` &middot; <a class="link" href="${CREDIT_URL}" style="color:${BLUE};">${CREDIT}</a>`
-      : '',
-    unsubscribeHtml = token
-      ? ` &middot; <a class="link" href="${escape(unsubscribeLink(token))}" style="color:${BLUE};">Unsubscribe</a>`
-      : '',
-    inboxHtml = inbox
-      ? `<br>Write any day, no reply needed: <a class="link" href="mailto:${escape(inbox)}" style="color:${BLUE};">${escape(inbox)}</a>`
-      : '';
+    meta = (href: string, label: string) =>
+      `<a class="ink-2" href="${href}" style="color:${INK_2};text-decoration:underline;text-underline-offset:2px;">${label}</a>`,
+    creditHtml = credited(forecast, past) ? ` &middot; ${meta(CREDIT_URL, CREDIT)}` : '',
+    unsubscribeHtml = token ? ` &middot; ${meta(escape(unsubscribeLink(token)), 'Unsubscribe')}` : '',
+    inboxHtml = inbox ? `<br>Write any day, no reply needed: ${meta(`mailto:${escape(inbox)}`, escape(inbox))}` : '';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -611,7 +604,7 @@ export function htmlBody(v: Version, birthday: string, day: string, o: BodyOptio
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
 
 <tr><td class="ink-2" style="padding:0 0 40px;font-family:${FONT};font-size:14px;color:${INK_2};">
-<strong class="ink" style="color:${INK};">Release notes</strong> &middot; ${escape(longDate(day))}${forecastHtml}
+<strong class="ink" style="color:${INK};">Release Notes</strong> &middot; ${escape(longDate(day))}${forecastHtml}
 </td></tr>
 
 ${welcomeHtml}<tr><td>
@@ -640,7 +633,7 @@ ${streakHtml(v, birthday, streak, lifetime, o.badges?.news)}
 ${upcomingHtml(o.upcoming)}${closed ? closedHtml(closed) : ''}${yesterday ? yesterdayHtml(birthday, yesterday) : ''}
 ${past ? pastHtml(v, birthday, past) : ''}
 <tr><td class="ink-2" style="padding:48px 0 0;font-family:${FONT};font-size:13px;line-height:1.5;color:${INK_2};">
-Release Notes, from <a class="link" href="${SITE}/" style="color:${BLUE};">Your Version Number</a>. <a class="link" href="${APP}/settings/" style="color:${BLUE};">Pause or manage</a>${unsubscribeHtml}${creditHtml}${inboxHtml}
+Release Notes, from ${meta(`${SITE}/`, 'Your Version Number')}. ${meta(`${APP}/settings/`, 'Pause or manage')}${unsubscribeHtml}${creditHtml}${inboxHtml}
 </td></tr>
 
 </table>
@@ -651,20 +644,44 @@ Release Notes, from <a class="link" href="${SITE}/" style="color:${BLUE};">Your 
 `;
 }
 
-export function lateHtml(version: string, day: string): string {
-  const p = `margin:0 0 18px;font:16px/1.55 ${FONT};color:${INK_2}`;
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light"><title>Too late for ${escape(version)}</title></head>
-<body style="margin:0;padding:0;background:${PAPER}">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER}"><tr><td style="padding:32px 20px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto"><tr><td>
-<p style="margin:0 0 24px;font:800 18px/1.3 ${FONT};color:${INK}">Release Notes</p>
-<p style="${p}">Your reply came in too late to be added to the release notes for <span style="font-family:${MONO};font-weight:700;color:${BLUE};white-space:nowrap">${escape(version)}</span>, ${escape(longDate(day))}, ${Number(day.slice(0, 4))}. A day&rsquo;s email takes replies for 72 hours.</p>
-<p style="margin:0;font:800 22px/1.3 ${FONT};color:${INK}"><a href="${escape(pastLink(day))}" style="color:${BLUE}">Add it on the web, on that day&rsquo;s page</a></p>
-</td></tr></table>
+// The account emails (sign-in, delete, late, notice) share one page: the
+// daily email's header and dark mode, a headline, then the words.
+export const ACCOUNT_CSS = `
+:root { color-scheme: light dark; supported-color-schemes: light dark; }
+@media (prefers-color-scheme: dark) {
+  body, .paper { background: #14163a !important; }
+  .ink { color: #fffbf2 !important; }
+  .ink-2 { color: #c9cbe6 !important; }
+  .vnum, .link { color: #8fb0ff !important; }
+}
+`;
+export const ACCOUNT_P = `margin:0 0 18px;font-family:${FONT};font-size:16px;line-height:1.55;color:${INK_2};`;
+export const accountHtml = (title: string, heading: string, inner: string) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark"><title>${title}</title><style>${ACCOUNT_CSS}</style></head>
+<body class="paper" style="margin:0;padding:0;background:${PAPER};">
+<table role="presentation" class="paper" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${PAPER};"><tr><td align="center" style="padding:40px 22px 48px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;"><tr><td>
+<p class="ink" style="margin:0 0 40px;font-family:${FONT};font-size:14px;font-weight:700;color:${INK};">Release Notes</p>
+<p class="ink" style="margin:0 0 16px;font-family:${FONT};font-size:28px;line-height:1.15;font-weight:800;letter-spacing:-0.01em;color:${INK};">${heading}</p>
+${inner}</td></tr></table>
 </td></tr></table>
 </body></html>
 `;
+export const codeHtml = (label: string, code: string) =>
+  `<p class="ink-2" style="margin:0 0 6px;${KICKER}">${label}</p>
+<p class="vnum" style="margin:0 0 24px;font-family:${MONO};font-size:30px;line-height:1;font-weight:700;letter-spacing:0.2em;color:${BLUE};">${escape(code)}</p>
+`;
+const inlineVersion = (version: string) =>
+  `<span class="vnum" style="font-family:${MONO};font-weight:700;letter-spacing:-0.03em;color:${BLUE};white-space:nowrap;">${escape(version)}</span>`;
+
+export function lateHtml(version: string, day: string): string {
+  return accountHtml(
+    `Too late for ${escape(version)}`,
+    `Too late for ${inlineVersion(version)}`,
+    `<p class="ink-2" style="${ACCOUNT_P}">Your reply came in too late to be added to the release notes for ${inlineVersion(version)}, ${escape(longDate(day))}, ${Number(day.slice(0, 4))}. A day&rsquo;s email takes replies for 72 hours. You can still add it on that day&rsquo;s page.</p>
+<p style="margin:0;">${action(escape(pastLink(day)), 'Add it on the web', 18)}</p>
+`
+  );
 }
 const transport = nodemailer.createTransport({
   streamTransport: true,
@@ -777,22 +794,17 @@ export function noticeLines(o: Omit<NoticeOptions, 'fromAddr'>): [string, string
 export const noticeText = (o: Omit<NoticeOptions, 'fromAddr'>) =>
   noticeLines(o).join('\n\n') +
   `\n\nYour activity log shows what became of each email you send in:\n\n${APP}/activity/\n`;
+const curly = (text: string) => escape(text).replace(/&#x27;/g, '&rsquo;');
 export function noticeHtml(o: Omit<NoticeOptions, 'fromAddr'>): string {
-  const p = `margin:0 0 18px;font:16px/1.55 ${FONT};color:${INK_2}`,
-    [what, next] = noticeLines(o);
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light"><title>Not added to your notes</title></head>
-<body style="margin:0;padding:0;background:${PAPER}">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER}"><tr><td style="padding:32px 20px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto"><tr><td>
-<p style="margin:0 0 24px;font:800 18px/1.3 ${FONT};color:${INK}">Release Notes</p>
-<p style="${p}">${escape(what)}</p>
-<p style="${p}">${escape(next)}</p>
-<p style="margin:0;font:800 22px/1.3 ${FONT};color:${INK}"><a href="${APP}/activity/" style="color:${BLUE}">See your activity log</a></p>
-</td></tr></table>
-</td></tr></table>
-</body></html>
-`;
+  const [what, next] = noticeLines(o);
+  return accountHtml(
+    'Not added to your notes',
+    'An email wasn&rsquo;t added to your notes',
+    `<p class="ink-2" style="${ACCOUNT_P}">${curly(what)}</p>
+<p class="ink-2" style="${ACCOUNT_P}">${curly(next)}</p>
+<p style="margin:0;">${action(`${APP}/activity/`, 'See your activity log', 18)}</p>
+`
+  );
 }
 /** To the owner's own address, never the sender's. */
 export async function noticeMessage(o: NoticeOptions): Promise<Buffer> {

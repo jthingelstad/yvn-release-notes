@@ -377,6 +377,78 @@ test('lost private invocation response retries one committed note and emits no d
   assert.equal(ctx.store.memory.all().filter((i) => String(i.sk).startsWith('LOG#') && i.outcome === 'ok').length, 1);
 });
 
+test('notes_create keeps a city the user named as the note place, as Where on the web does', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx),
+    asked: string[] = [],
+    geocode = async (q: string) => {
+      asked.push(q);
+      if (q === 'down') throw new Error('Search down');
+      return q.toLowerCase() === 'paris'
+        ? [
+            { name: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 },
+            { name: 'Paris', region: 'Texas', country: 'United States', tz: 'America/Chicago', lat: 33.66, lon: -95.56 }
+          ]
+        : [];
+    },
+    opts: McpOptions = {
+      context: () => ctx,
+      capture: (e) => captureNote(e, { ...ctx, geocode }, { fetchTitle: () => null }),
+      log: () => {}
+    };
+  const made = await rpc(
+    ctx,
+    a.token,
+    'notes_create',
+    { text: 'Café', place: 'Paris, Texas', idempotency_key: 'p' },
+    opts
+  );
+  assert.equal(made.body.result.isError, undefined, JSON.stringify(made.value));
+  assert.equal((made.value!.note as OAuthRow).place, 'Paris, Texas');
+  const [note] = await ctx.store.allNotes('u');
+  assert.deepEqual(note!.place, {
+    city: 'Paris',
+    region: 'Texas',
+    country: 'United States',
+    tz: 'America/Chicago',
+    lat: 33.66,
+    lon: -95.56,
+    from: 'chosen'
+  });
+  // An exact retry replays without searching again.
+  const again = await rpc(
+    ctx,
+    a.token,
+    'notes_create',
+    { text: 'Café', place: 'Paris, Texas', idempotency_key: 'p' },
+    opts
+  );
+  assert.equal(again.value!.replayed, true);
+  assert.deepEqual(asked, ['Paris']);
+  // A city the search does not know, or a search that fails, writes nothing.
+  const unknown = await rpc(ctx, a.token, 'notes_create', { text: 'X', place: 'Nowhere', idempotency_key: 'u' }, opts);
+  assert.equal(unknown.value!.error, 'invalid_arguments');
+  assert.match(String(unknown.value!.next_step), /Paris, Texas/);
+  const down = await rpc(ctx, a.token, 'notes_create', { text: 'X', place: 'down', idempotency_key: 'd' }, opts);
+  assert.equal(down.value!.error, 'temporarily_unavailable');
+  assert.equal(
+    (await rpc(ctx, a.token, 'notes_create', { text: 'X', place: '', idempotency_key: 'e' }, opts)).value!.error,
+    'invalid_arguments'
+  );
+  // Appending takes no place, and keeps the note's.
+  const id = String((made.value!.note as OAuthRow).id),
+    date = String((made.value!.note as OAuthRow).date);
+  assert.equal(
+    (await rpc(ctx, a.token, 'notes_append', { date, id, text: 'More', place: 'Paris', idempotency_key: 'a1' }, opts))
+      .value!.error,
+    'invalid_arguments'
+  );
+  await rpc(ctx, a.token, 'notes_append', { date, id, text: 'More', idempotency_key: 'a2' }, opts);
+  const notes = await ctx.store.allNotes('u');
+  assert.equal(notes.length, 1);
+  assert.equal((notes[0]!.place as OAuthRow).region, 'Texas');
+});
+
 test('explicit null JSON-RPC params and tool arguments are invalid rather than missing', async () => {
   const ctx = fixture(),
     a = await connected(ctx),

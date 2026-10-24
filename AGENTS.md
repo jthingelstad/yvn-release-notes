@@ -195,8 +195,9 @@ Where things are (each module's design comment has its contract):
   is named by its neighbourhood (`district`) and offers the businesses
   Amazon Location finds within the browser's accuracy (50 to 200 m,
   `places.nameSpot`), one tap to name the note by one (`venue`); it never
-  picks one itself, since the nearest is as often a bus stop. Email
-  has no text convention. Any note's place can be set, changed or cleared
+  picks one itself, since the nearest is as often a bus stop. An
+  assistant can name the city with `notes_create`'s `place` (MCP 1.7.0),
+  found by the same city search. Email has no text convention. Any note's place can be set, changed or cleared
   after it is saved, whatever channel brought it. Precision (Jamie,
   2026-10-24: "for a note detailed location, specific. For a day the
   city"): a device or photo spot is kept to six places with its city's name,

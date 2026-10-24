@@ -2,7 +2,7 @@
 // and the form to add one.
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { AppLink, Bar, Digits, Failed, Loading, useTitle, WeatherCredit } from '../components/common.tsx';
+import { AppLink, Bar, Crumb, Digits, Failed, Loading, useTitle, WeatherCredit } from '../components/common.tsx';
 import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
 import { DayWhere } from '../components/where.tsx';
@@ -24,6 +24,7 @@ export function Day() {
   return (
     <>
       <Bar />
+      <Crumb href="/timeline/">Archive</Crumb>
       <DayPicker p={p} current={current} />
       {(me.isPending || day.isPending) && !me.isError && <Loading />}
       {(me.isError || day.isError) && <Failed />}

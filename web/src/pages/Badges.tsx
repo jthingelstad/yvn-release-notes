@@ -5,7 +5,7 @@
 // count out of a total, no tier that can no longer be reached.
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { AppLink, Bar, Failed, Loading, useTitle } from '../components/common.tsx';
+import { AppLink, Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx';
 import { BadgeIcon } from '../components/icon.tsx';
 import { count, dayName, thisYearOf } from '../lib/format.ts';
 import { badgesQuery } from '../lib/queries.ts';
@@ -19,6 +19,7 @@ export function Badges() {
   return (
     <>
       <Bar />
+      <Crumb href="/you/">You</Crumb>
       <h1>Badges</h1>
       {badges.isPending && <Loading />}
       {badges.isError && !b && <Failed />}

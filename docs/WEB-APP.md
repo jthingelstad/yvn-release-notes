@@ -363,7 +363,23 @@ where the rail's button is not. `placeOf` in `components/common.tsx` marks
 each page's place with `aria-current="page"`: Day and Release mark Archive;
 Badges, Activity, Settings, Connect, Pause, Delete and the two admin pages
 mark You; Search and Tag mark the header's search and no tab; Edit as text
-marks Upcoming. The admin pages are never in the navigation. Dark appearance and reduced-motion preferences
+marks Upcoming. The admin pages are never in the navigation.
+
+**The page system** (2026-10-24, the design refinement canvas,
+https://claude.ai/artifact/D6yGSqSTcDuQAQ7VjwRbhF): one 720px column (the
+Map's runs to 1040px), the title 64px from the top on every page. A page
+under a tab opens with a crumb back up (`Crumb` in `components/common.tsx`):
+Day and Release go to Archive, Tag to Search, Badges, Activity and Settings
+to You, Pause and Delete to Settings, Edit as text to Upcoming. Actions come
+in four kinds: the tangerine button (`.go`), a filled tangerine-ink danger
+button (`.go.danger`), a 16px cobalt action link 44px tall (`.quiet`), and a
+44px icon button in ink-3 that turns cobalt when pointed at
+(`.quiet.icon-button`). Links inside a sentence keep their underline. Note
+meta and counts are 13px ink-3; tangerine is for the button, the dots,
+tiers and stamps. Light ink-3 is #6e7092, which passes 4.5:1 on paper. On
+a phone the side margins are 20px and only the Map runs edge to edge.
+
+Dark appearance and reduced-motion preferences
 are supported. UI glyphs use Lucide React, bundled locally through the fixed
 named imports in `web/src/components/icon.tsx`; unused icons are excluded from
 the build. Navigation and writing tools retain visible labels. Compact edit,

@@ -1,7 +1,17 @@
 // A dated break from the emails, at most 60 days, ending on its own.
 import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type FormEvent } from 'react';
-import { AppLink, Bar, ErrorLine, Failed, Loading, useBusy, useProblem, useTitle } from '../components/common.tsx';
+import {
+  AppLink,
+  Bar,
+  Crumb,
+  ErrorLine,
+  Failed,
+  Loading,
+  useBusy,
+  useProblem,
+  useTitle
+} from '../components/common.tsx';
 import { api } from '../lib/api.ts';
 import { addDays, clock, dayName, pauseLine, thisYearOf } from '../lib/format.ts';
 import { useGo, useMe } from '../lib/nav.ts';
@@ -22,6 +32,7 @@ export function Pause() {
   return (
     <>
       <Bar />
+      <Crumb href="/settings/">Settings</Crumb>
       <h1>Taking a break?</h1>
       <p className="lede">We’ll stop the emails for a while and start them again on our own.</p>
       {me.isPending && <Loading />}

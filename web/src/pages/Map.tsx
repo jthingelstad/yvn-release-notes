@@ -484,7 +484,7 @@ function Basemap({
   return <div className="map" ref={box} role="region" aria-label="Map of your notes" />;
 }
 
-interface Live {
+export interface Live {
   pins: Pin[];
   linked: Pin[] | null;
   at: [number, number] | null;
@@ -495,12 +495,15 @@ interface Live {
   framed: string | null;
   centred?: string;
 }
-function moved(now: Live) {
+/** Moves the map to a link it has not shown, or else to the pins once the
+ * filters change or a link it showed is gone (the Map tab after a place
+ * link): never again to what it already shows. */
+export function moved(now: Live) {
   const { map: m, lib } = now;
   if (!m || !lib) return;
   let to: Frame | null;
   if (now.link && now.link !== now.centred) to = frame(lib, now.pins, now.linked, now.at);
-  else if (now.view !== null && now.view !== now.framed) to = frame(lib, now.pins);
+  else if (now.view !== null && (now.view !== now.framed || now.link !== now.centred)) to = frame(lib, now.pins);
   else return;
   if (to && 'center' in to) m.easeTo(to);
   else if (to) m.fitBounds(to.bounds, { padding: to.padding, maxZoom: to.maxZoom });

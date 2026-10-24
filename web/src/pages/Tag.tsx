@@ -2,7 +2,7 @@
 // tag is on Search.
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { AppLink, Bar, Failed, Loading, useTitle } from '../components/common.tsx';
+import { AppLink, Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx';
 import { DayList } from '../components/days.tsx';
 import { ApiError } from '../lib/api.ts';
 import { count } from '../lib/format.ts';
@@ -24,6 +24,7 @@ export function Tag() {
   return (
     <>
       <Bar />
+      <Crumb href="/search/">Search</Crumb>
       <h1 id="tag-title">{d ? `#${d.tag}` : 'Tags'}</h1>
       <p className="hint spaced" id="tag-lede">
         {d && (d.days.length ? count(d.days.length, 'day', 'days') : 'No notes have this tag now.')}

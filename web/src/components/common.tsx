@@ -96,6 +96,17 @@ export function Bar({ nav = true, current, children }: { nav?: boolean; current?
   );
 }
 
+// The way back up, above the title of a page that sits under a tab:
+// "← Archive" on a day or a release, "← You" on Settings.
+export function Crumb({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <AppLink className="crumb" href={href}>
+      <Icon name="back" />
+      {children}
+    </AppLink>
+  );
+}
+
 // Only the signed-in rail needs Query; the public/error bar can render even
 // when a failed page has no query provider available.
 export function RailSignOut({ className = 'quiet rail-signout' }: { className?: string }) {

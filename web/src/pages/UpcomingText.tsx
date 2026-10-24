@@ -3,7 +3,7 @@
 // API for a dry run; Apply sends the same batch, which commits all or nothing.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
-import { AppLink, Bar, Failed, Loading, useBusy, useFocusLater, useTitle } from '../components/common.tsx';
+import { AppLink, Bar, Crumb, Failed, Loading, useBusy, useFocusLater, useTitle } from '../components/common.tsx';
 import { api } from '../lib/api.ts';
 import { upcomingQuery } from '../lib/queries.ts';
 import { NAMES, problemFor } from '../lib/upcoming.ts';
@@ -106,6 +106,7 @@ export function UpcomingText() {
   return (
     <>
       <Bar current="/upcoming/" />
+      <Crumb href="/upcoming/">Upcoming</Crumb>
       <h1>Edit Upcoming as text</h1>
       <p className="lede">One date per line. Change, add or delete lines, then preview.</p>
       <p className="hint">

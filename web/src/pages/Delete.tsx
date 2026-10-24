@@ -4,6 +4,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import {
   AppLink,
   Bar,
+  Crumb,
   ErrorLine,
   Failed,
   Loading,
@@ -66,6 +67,7 @@ export function Delete() {
     <>
       <Bar nav={step !== 'deleted'} />
 
+      {step !== 'deleted' && <Crumb href="/settings/">Settings</Crumb>}
       {step !== 'deleted' && me.isPending && <Loading />}
       {step !== 'deleted' && me.isError && <Failed />}
       {p && step !== 'deleted' && (

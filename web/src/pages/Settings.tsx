@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import {
   AppLink,
   Bar,
+  Crumb,
   ErrorLine,
   Failed,
   Loading,
@@ -37,6 +38,7 @@ export function Settings() {
   return (
     <>
       <Bar />
+      <Crumb href="/you/">You</Crumb>
       <div className="settings-page">
         <div className="settings-heading">
           <h1>Settings</h1>

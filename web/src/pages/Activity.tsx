@@ -4,7 +4,7 @@
 // in that day's draft, and nothing is saved until the note is.
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { AppLink, Bar, Failed, Loading, useTitle } from '../components/common.tsx';
+import { AppLink, Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx';
 import { clock, count, dayName, listed, thisYearOf, zoneShortDate, zoneTime } from '../lib/format.ts';
 import { activityQuery } from '../lib/queries.ts';
 import { store } from '../lib/storage.ts';
@@ -25,6 +25,7 @@ export function Activity() {
   return (
     <>
       <Bar />
+      <Crumb href="/you/">You</Crumb>
       <h1>Activity</h1>
       <p className="lede" id="activity-lede">
         Everything that happened in your Release Notes, newest first: notes added, changed or deleted, recordings

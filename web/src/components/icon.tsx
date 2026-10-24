@@ -4,6 +4,7 @@
 import {
   Activity,
   Archive,
+  ArrowLeft,
   ArrowLeftRight,
   Award,
   Binary,
@@ -78,6 +79,7 @@ const icons = {
   out: LogOut,
   edit: Pencil,
   delete: Trash2,
+  back: ArrowLeft,
   write: SquarePen,
   birthday: Cake,
   anniversary: PartyPopper,

@@ -3,7 +3,7 @@
 // a head that sums up all of it. The Timeline lists every release.
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import { AppLink, Bar, Digits, Failed, Loading, useTitle } from '../components/common.tsx';
+import { AppLink, Bar, Crumb, Digits, Failed, Loading, useTitle } from '../components/common.tsx';
 import { DayList } from '../components/days.tsx';
 import { ApiError } from '../lib/api.ts';
 import { count, listed, longDate } from '../lib/format.ts';
@@ -43,6 +43,7 @@ export function Release() {
   return (
     <>
       <Bar />
+      <Crumb href="/timeline/">Archive</Crumb>
       <h1 id="release-title">
         Release{' '}
         <span className="vnum inline">

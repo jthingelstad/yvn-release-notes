@@ -87,6 +87,16 @@ export function clean(raw: unknown): City | null {
   }
   return out as City;
 }
+/** A city from the search, as a place chosen for a note or a profile. */
+export const chosen = (p: City): PlaceRecord => ({
+  city: p.name,
+  region: p.region,
+  country: p.country,
+  tz: p.tz,
+  lat: p.lat,
+  lon: p.lon,
+  from: 'chosen'
+});
 export async function search(query: string, fetcher: JsonFetch = fetchJson): Promise<City[]> {
   const answer = await fetcher(
     `${GEOCODER}?${new URLSearchParams({ name: query, count: '8', language: 'en', format: 'json' })}`

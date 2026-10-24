@@ -3,7 +3,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { SessionService, reject } from './sessions.ts';
 import type { Item, Key } from './store-types.ts';
-import { clean, devicePlace, object } from './places.ts';
+import { chosen, clean, devicePlace, object } from './places.ts';
 import { iso, localDay, validDay, addDays, daysBetween } from '../domain/dates.ts';
 import { profileView, pauseStart } from './views.ts';
 import { validCode, digest, clearCookie } from './auth.ts';
@@ -49,7 +49,7 @@ export const sendTime = (b: Item): string => {
 export function chosenPlace(raw: unknown): Item {
   const p = clean(raw);
   if (!p) reject(400, 'place');
-  return { city: p.name, region: p.region, country: p.country, tz: p.tz, lat: p.lat, lon: p.lon, from: 'chosen' };
+  return { ...chosen(p) };
 }
 /** A note's place: a city from the search, or the spot a device gave
  * ("Here", `POST /api/places/here`), kept exact. */

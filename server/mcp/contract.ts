@@ -45,9 +45,15 @@ export interface McpContract {
   tools: ToolDefinition[];
 }
 export const MCP_CONTRACT: McpContract = {
-  server_version: '1.6.0',
+  server_version: '1.7.0',
   protocol_versions: ['2025-06-18', '2025-03-26'],
   changes: [
+    {
+      version: '1.7.0',
+      date: '2026-10-24',
+      summary:
+        'notes_create takes an optional place, a city written as text ("Zürich" or "Paris, Texas"), for where the user says the note was written; left out, the note shows the day\'s city, as before.'
+    },
     {
       version: '1.6.0',
       date: '2026-10-21',
@@ -1182,6 +1188,13 @@ export const MCP_CONTRACT: McpContract = {
             description: "Plain note text; put hashtags in the text. Only write at the user's explicit request.",
             minLength: 1,
             maxLength: 20000
+          },
+          place: {
+            type: 'string',
+            description:
+              'Where the user says the note was written, as a city: "Zürich", or "Paris, Texas" to choose among same-named cities. Leave it out unless the user said; the note then shows the day\'s city.',
+            minLength: 1,
+            maxLength: 200
           },
           idempotency_key: {
             type: 'string',

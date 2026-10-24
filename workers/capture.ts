@@ -23,8 +23,13 @@ import { codePointLength, pythonTrim } from '../packages/domain/unicode.ts';
 import { agentUpcomingView, Reader, type ReaderContext, type ReaderStore } from '../server/mcp/reader.ts';
 import { TOOLS, UPCOMING_TOOLS, WRITE_TOOLS } from '../server/mcp/contract.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
-import { search, type City } from '../packages/backend/places.ts';
-import { prepareUpcomingBatch, type UpcomingBatch, type UpcomingChange } from '../packages/backend/upcoming.ts';
+import { chosen, search, type City } from '../packages/backend/places.ts';
+import {
+  prepareUpcomingBatch,
+  resolvePlace,
+  type UpcomingBatch,
+  type UpcomingChange
+} from '../packages/backend/upcoming.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
 import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
 import { unlockedBy } from '../packages/backend/badges.ts';
@@ -99,6 +104,7 @@ export async function writeCapture(
     hash = fingerprint({ tool: name, arguments: args }),
     reader = await Reader.create(context, family),
     titles = new Map<string, PageMeta | null>();
+  let place: OAuthRow | undefined;
   const titleOnce: TitleFetcher = async (url) => {
     if (!titles.has(url)) {
       if (titles.size >= MAX_FETCHES) return null;
@@ -137,6 +143,8 @@ export async function writeCapture(
     }
     if (codePointLength(text) > MAX_NOTE)
       throw new ToolError('too_long', 'A note can have at most 20,000 characters; create another note.');
+    // A city the user named, found once, as the web's Where finds one.
+    if (!old && typeof args.place === 'string') place ??= await namedPlace(args.place, context.geocode ?? search);
     const note: OAuthRow = old
       ? Object.fromEntries(FIELDS.filter((k) => Object.hasOwn(old, k)).map((k) => [k, old![k]]))
       : {
@@ -150,7 +158,8 @@ export async function writeCapture(
           on_behalf_of: uid,
           written_at: iso(context.now),
           tz: reader.profile.tz,
-          version: computeVersion(reader.birthday, day).toString()
+          version: computeVersion(reader.birthday, day).toString(),
+          ...(place ? { place } : {})
         };
     Object.assign(note, {
       text,
@@ -211,6 +220,24 @@ export async function writeCapture(
       throw new ToolError('scope_required', 'This connection changed or was disconnected; reconnect before writing.');
   }
   throw new ToolError('busy', 'Try again shortly with exactly the same idempotency_key and arguments.');
+}
+/** A note's place from a city written as text, kept as one chosen on the
+ * web is. */
+async function namedPlace(text: string, geocode: (q: string) => Promise<City[]>): Promise<OAuthRow> {
+  let city: City | null;
+  try {
+    city = await resolvePlace(text, geocode);
+  } catch (error) {
+    if (error instanceof ApiError && error.error === 'places-failed')
+      throw new ToolError('temporarily_unavailable', 'The city search is unavailable; try again shortly.');
+    throw error;
+  }
+  if (!city)
+    throw new ToolError(
+      'invalid_arguments',
+      'place is a city the search knows, like "Zürich" or "Paris, Texas"; leave it out if unsure.'
+    );
+  return chosen(city);
 }
 /** A saved note and the badges it earned, in the owner's activity log; the
  * badges are not marked seen, so the email still tells of them. */

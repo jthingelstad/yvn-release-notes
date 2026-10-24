@@ -85,6 +85,7 @@ describe('sift', () => {
     exact: true,
     tags,
     release,
+    version: release + '.1',
     text: '',
     parts: []
   });
@@ -152,6 +153,7 @@ describe('moved', () => {
     exact: true,
     tags: [],
     release: '5.4',
+    version: '5.4.114',
     text: '',
     parts: []
   });

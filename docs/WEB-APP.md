@@ -163,9 +163,10 @@ nothing there links here yet: that is Jamie's call.
     coordinates, as pins that gather into numbered groups as the map zooms
     out. A note showing its day's or home's city has no spot of its own
     and is left off, as is one cleared with "No place". Choosing a pin or a
-    numbered group lists its notes under the map, newest first, each linked
-    to its day (Jamie, 2026-10-24: "it should work for groups of notes
-    too"); + and − or a double tap zoom in. Words, a tag and a release
+    numbered group lists its notes under the map ("3 notes in
+    Minneapolis"), newest first, each as notes read elsewhere: its day's
+    version, linked to the day, the words and where (Jamie, 2026-10-24: "it
+    should work for groups of notes too", and "listing below map"); + and − or a double tap zoom in. Words, a tag and a release
     narrow the pins (Jamie, 2026-10-24: "filter the pins on the map: by
     search param, tag, year", then "The year should be a version ... like
     5.4, 5.3, 4.4"), as `#q=`, `#tag=` and `#v=` (a release's name, as on
@@ -518,7 +519,7 @@ or new CSP exception.
 | `GET /api/releases` | the releases index: each release with notes, and the current one (`current`), newest first, with `from`, `through`, `days` (with notes) and `notes`; from the notes' keys alone |
 | `GET /api/releases/{v}?after=&limit=` | one release (`4.5`): its head (`from`, `through`, `current`, `days_with_notes`, `notes`, `longest`, `badges` (not with badges off) with its coverage tier and special days `collected` by kind with a `count`, `tags` by count) and its days with notes, oldest first, 30 a page; `after` in the answer is the next page's cursor. 404 `release` for one not begun |
 | `GET /api/badges` | the subscriber's badges as of their `today` (with `tz` and today's `version`): `count`; `earned`, newest first, each with `key` (`id`, or `id:level` for a track tier), `name`, `line`, `shelf`, `earned` (the day it came true), and the `day` and `version` it is stamped with (a collectible's special day); `tracks` (`tier` 0-5, `level`, `best`, `now`, `since`, `next`); `release`, this release's `days`, `percent`, coverage `level`, `next` only while it can still be reached, `following` (the next release and its date), its `collected` special days and the next three `ahead` (never a secret one); `missing`, what is still to find, a secret one as its `hint` alone. Read from the notes' stored fields, never their text |
-| `GET /api/map/notes` | the Map page's pins: each note with a place of its own and coordinates, as `date`, `id`, `lat`, `lon`, `place` (its label), `exact` (a device or photo spot, not a chosen city), `tags` (its hashtags), `release` (the release its day falls in, as `4.5`) and `text` (its first 140 characters); `notes`, how many notes there are in all |
+| `GET /api/map/notes` | the Map page's pins: each note with a place of its own and coordinates, as `date`, `id`, `lat`, `lon`, `place` (its label), `exact` (a device or photo spot, not a chosen city), `tags` (its hashtags), `release` (the release its day falls in, as `4.5`), `version` (its day's, as `4.5.113`) and `text` (its first 140 characters); `notes`, how many notes there are in all |
 | `POST /api/map/search` `{q}` | which pins have every word or "quoted phrase", matched as `POST /api/search` matches, as `found` (`date` and `id` alone) with the `terms`; the words never go in a URL |
 | `GET /api/map/style/{scheme}` | Amazon Location's Standard style, `Light` or `Dark`, with its tiles, glyphs and sprite pointed at the routes below; any other source is dropped. Kept by the browser for a day |
 | `GET /api/map/tiles/{z}/{x}/{y}` | one vector tile of the base map, kept by the browser for a day; 404 outside the zoom's grid |
@@ -611,13 +612,16 @@ Optional read failures omit Upcoming without holding the daily email. Pauses,
 stopped accounts and the daily-send claim retain their existing behavior.
 
 The page shows annual dates' next occurrence, active trips and future events;
-completed trips/events remain under **Past events**, editable or deletable.
-Each event occupies one compact table row, ordered by occurrence date ascending
-(including past events). Tables scroll horizontally within the page on phones.
+completed trips/events remain under **Past dates**, editable or deletable.
+Each date is one row (a table read as rows: when, then what it is with its
+kind, tag and "daily email" or "web only" beneath, then Edit), ordered by
+occurrence date ascending (including past dates). Delete is at the foot of
+Edit, so a row carries one action, or two with a tag. On a phone the date
+sits over the title.
 Trips store a destination only in this first stage. They do not change the
 account's saved home, time zone, forecast or default note location. Automatic
 travel switching remains future work. Kind and Tag filters combine across both
-future and past entries; Tag also offers **No tag**. **Search dates** (2026-10-17)
+future and past entries; Tag also offers **No tag**. **Words** (2026-10-17)
 filters as you type: every word or "quoted phrase" must appear, without case or
 accents, in the title, tag, kind, destination or the occurrence line (so "5.0.0"
 or "major" finds a birthday), through the note search's term rules

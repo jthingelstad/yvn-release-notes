@@ -17,8 +17,10 @@ export const placeName = (p: Place) => [p.name, p.region].filter(Boolean).join('
 // The note form's "Here" and "Where": the device's spot, or the search.
 // Calls onPick with the place, or null when it is taken off. With `auto`
 // ("Add where I am", on Today) it looks for the spot itself whenever the
-// form has none, until "Not there" says otherwise; problems go to the
-// form's line, which takes focus only when a tap asked.
+// form has none, until "Not there" says otherwise (for this note: the form
+// gives each new note a fresh one); problems go to the form's line, which
+// takes focus only when a tap asked. A lookup still out when a place is
+// picked or taken off is dropped, so a slow answer never overrides a choice.
 export function NoteWhere({
   place,
   onPick,
@@ -36,11 +38,19 @@ export function NoteWhere({
   const input = useRef<HTMLInputElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const here = useRef<HTMLButtonElement>(null);
+  const asking = useRef(0);
   const focusLater = useFocusLater();
 
+  const choose = (p: Place | null) => {
+    asking.current++;
+    setFinding(false);
+    onPick(p);
+  };
   const locate = async (asked: boolean) => {
+    const mine = ++asking.current;
     setFinding(true);
     const found = await whereAmI();
+    if (mine !== asking.current) return;
     setFinding(false);
     if ('place' in found) onPick(found.place);
     else onProblem(found.problem, asked ? here.current : undefined);
@@ -62,7 +72,7 @@ export function NoteWhere({
           id="note-where-clear"
           onClick={() => {
             setDeclined(true);
-            onPick(null);
+            choose(null);
             focusLater(() => button.current);
           }}
         >
@@ -107,7 +117,7 @@ export function NoteWhere({
               inputRef={input}
               onPick={(p) => {
                 setOpen(false);
-                onPick(p);
+                choose(p);
               }}
             />
           </Suspense>

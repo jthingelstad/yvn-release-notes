@@ -2,9 +2,19 @@
 // or, with "Add where I am", by the form itself.
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Place } from '../lib/types.ts';
 import { NoteWhere } from './where.tsx';
+
+// The city search stands in as one button that picks Duluth.
+vi.mock('./placepicker.tsx', () => ({
+  PlacePicker: ({ onPick }: { onPick: (p: Place) => void }) => (
+    <button type="button" onClick={() => onPick({ name: 'Duluth', region: 'Minnesota' })}>
+      Duluth
+    </button>
+  )
+}));
 
 afterEach(() => {
   cleanup();
@@ -66,6 +76,40 @@ describe('NoteWhere', () => {
     const here = screen.getByRole('button', { name: /Here/ });
     await userEvent.click(here);
     await waitFor(() => expect(onProblem).toHaveBeenCalledWith({ error: 'location-denied' }, here));
+  });
+
+  it('drops a lookup that a city picked meanwhile has overtaken', async () => {
+    let answer: PositionCallback | undefined;
+    Object.defineProperty(navigator, 'geolocation', {
+      value: { getCurrentPosition: (ok: PositionCallback) => (answer = ok) },
+      configurable: true
+    });
+    named('Minneapolis');
+    const onPick = vi.fn();
+    // Held as the note form holds it, so a pick stops the looking.
+    function Form() {
+      const [place, setPlace] = useState<Place | null>(null);
+      return (
+        <NoteWhere
+          place={place}
+          onPick={(p) => {
+            onPick(p);
+            setPlace(p);
+          }}
+          onProblem={vi.fn()}
+          auto
+        />
+      );
+    }
+    render(<Form />);
+    await waitFor(() => expect(answer).toBeTruthy());
+    await userEvent.click(screen.getByRole('button', { name: /Where/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Duluth' }));
+    expect(screen.getByText(/At Duluth, Minnesota/)).toBeTruthy();
+    answer!({ coords: { latitude: 44.9483, longitude: -93.2817, accuracy: 9 } } as GeolocationPosition);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onPick.mock.calls).toEqual([[{ name: 'Duluth', region: 'Minnesota' }]]);
+    expect(screen.getByText(/At Duluth, Minnesota/)).toBeTruthy();
   });
 
   it('shows the place, and "Not there" takes it off', async () => {

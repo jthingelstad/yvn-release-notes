@@ -270,7 +270,7 @@ test("an owner's change to a note's place sets or removes it, and never recreate
     input: {
       TableName: 'T',
       Key: { pk: 'USER#u', sk: 'NOTE#2026-10-13#a-note' },
-      UpdateExpression: 'SET #p = :p',
+      UpdateExpression: 'SET #p = :p REMOVE place_cleared',
       ConditionExpression: 'attribute_exists(pk)',
       ExpressionAttributeNames: { '#p': 'place' },
       ExpressionAttributeValues: { ':p': spot },
@@ -279,17 +279,22 @@ test("an owner's change to a note's place sets or removes it, and never recreate
   });
   const cleared = await s.changeNotePlace('u', day, 'a-note', null);
   assert.equal(Object.hasOwn(cleared!, 'place'), false);
+  assert.equal(cleared!.place_cleared, true);
   assert.deepEqual(s.memory.calls.at(-1), {
     name: 'UpdateCommand',
     input: {
       TableName: 'T',
       Key: { pk: 'USER#u', sk: 'NOTE#2026-10-13#a-note' },
-      UpdateExpression: 'REMOVE #p',
+      UpdateExpression: 'SET place_cleared = :p REMOVE #p',
       ConditionExpression: 'attribute_exists(pk)',
       ExpressionAttributeNames: { '#p': 'place' },
+      ExpressionAttributeValues: { ':p': true },
       ReturnValues: 'ALL_NEW'
     }
   });
+  // A photo's spot never fills in an owner's "No place"; a new place lifts it.
+  assert.equal(await s.setNotePlaceGuarded('u', day, 'a-note', { city: 'Photo' }), false);
+  assert.equal(Object.hasOwn((await s.changeNotePlace('u', day, 'a-note', spot))!, 'place_cleared'), false);
   assert.equal(await s.changeNotePlace('u', day, 'missing', spot), null);
   assert.equal((await s.note('u', day, 'missing')) ?? null, null);
 });

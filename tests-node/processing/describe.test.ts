@@ -390,6 +390,18 @@ test('photo place naming sends coordinates only, guards deletion and weather fai
   };
   assert.equal(await worker.placeNote(deleted.note, 'u', deleted.services), 'gone');
   assert.equal((await deleted.store.note('u', day, id))?.place, undefined);
+  // The owner's "No place" stands: the photo's spot is not looked up again.
+  const cleared = setup([{ ...photo(), place: { lat: 40, lon: -75 } }]);
+  let asked = 0;
+  cleared.services.geocode = async () => {
+    asked++;
+    return { city: 'Synthetic City' };
+  };
+  assert.equal(
+    await worker.placeNote({ ...cleared.note, place_cleared: true } as NoteRecord, 'u', cleared.services),
+    null
+  );
+  assert.equal(asked, 0);
 });
 test('synthetic model check writes nothing and logs no returned words', async () => {
   const s = setup();

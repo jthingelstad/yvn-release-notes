@@ -977,6 +977,8 @@ test("a saved note's place can be set, changed and cleared, from any channel, an
   const cleared = await s.call('DELETE', path);
   assert.equal(cleared.r.status, 200);
   assert.ok(!Object.hasOwn(cleared.b as Item, 'place'));
+  assert.ok(!Object.hasOwn(cleared.b as Item, 'place_cleared'));
+  assert.equal(note().place_cleared, true);
   assert.ok(!Object.hasOwn(note(), 'place'));
   assert.equal((await s.call('PUT', '/api/days/2026-10-07/notes/missing/place', { place: spot })).r.status, 404);
   assert.equal((await s.call('PUT', path, { place: { ...spot, lat: 'x' } })).r.status, 400);

@@ -69,7 +69,8 @@ async function thumbnail(note: NoteRecord, user: string, s: Services): Promise<n
 }
 export async function placeNote(note: NoteRecord, user: string, s: Services): Promise<string | null> {
   const spot = places.firstPhoto(note);
-  if (note.place || !spot || !s.geocode || !(await alive(s, user))) return null;
+  // An owner's "No place" stands (`place_cleared`).
+  if (note.place || note.place_cleared || !spot || !s.geocode || !(await alive(s, user))) return null;
   const [, day, id] = String(note.sk).split('#');
   if (!day || !id) return null;
   const first = (note.media ?? []).find(

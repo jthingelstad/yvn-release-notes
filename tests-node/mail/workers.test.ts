@@ -318,7 +318,7 @@ test("the day's own place links our map on that day, and a spot shared by notes 
       '2026-10-12'
     ),
     [
-      ['Paris', 'https://notes.yourversionnumber.com/map/#d=2026-10-12'],
+      ['Paris', 'https://notes.yourversionnumber.com/map/#d=2026-10-12&ll=48.85%2C2.35'],
       ['Corner Café, Paris', 'https://notes.yourversionnumber.com/map/#d=2026-10-12&n=%3Cm%231%40example.com%3E']
     ]
   );

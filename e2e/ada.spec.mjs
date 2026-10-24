@@ -601,10 +601,15 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
   await expect(page.getByRole('heading', { name: 'Le Marais, Paris' })).toBeVisible();
   await expect(page.locator('.map-notes li')).toContainText('Croissants on the bench');
   await expect(map.locator('canvas')).toBeVisible();
-  // The email's link for a day's own place opens on that day's notes.
+  // The email's link for a day's own place opens on it with that day's notes,
   await page.goto('/today/');
-  await page.goto('/map/#d=2026-10-06');
+  await page.goto('/map/#d=2026-10-06&ll=48.85%2C2.35');
   await expect(page.getByRole('heading', { name: 'Le Marais, Paris' })).toBeVisible();
+  // and on the place alone when none of that day's notes has a spot.
+  await page.goto('/today/');
+  await page.goto('/map/#d=2026-10-07&ll=44.98%2C-93.26');
+  await expect(map.locator('canvas')).toBeVisible();
+  await expect(page.getByText('Choose a pin to see its notes.')).toBeVisible();
   expect(refused).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
 });

@@ -162,7 +162,8 @@ nothing there links here yet: that is Jamie's call.
     device or photo spot, the city for a chosen city) with the notes there
     already listed. The day and id ride in the `#`, so no server sees which
     note. The email's Yesterday links its places here too, and the day's own
-    place as `#d=<day>`, which opens on that day's notes.
+    place as `#d=<day>&ll=<lat>,<lon>`, which opens on that city with the
+    day's notes listed (no note need have a spot of its own).
     The base map is
     Amazon Location's Standard style, light or dark as the system is, drawn
     flat and north up (Amazon's style asks for a globe; Jamie wanted "a

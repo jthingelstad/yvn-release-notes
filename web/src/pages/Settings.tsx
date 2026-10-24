@@ -15,6 +15,7 @@ import {
   useTitle
 } from '../components/common.tsx';
 import { Connections } from '../components/connections.tsx';
+import { Icon } from '../components/icon.tsx';
 import { SendTimeSelect, ZipExport } from '../components/fields.tsx';
 import { PlacePicker } from '../components/placepicker.tsx';
 import { SettingsGroup } from '../components/settings-group.tsx';
@@ -42,25 +43,22 @@ export function Settings() {
       <div className="settings-page">
         <div className="settings-heading">
           <h1>Settings</h1>
-          {p && (
-            <p className="hint" data-field="email">
-              {p.email}
-            </p>
-          )}
-          <p className="hint">Changes save as you go.</p>
+          <p className="lede">
+            {p && (
+              <>
+                <span data-field="email">{p.email}</span>.{' '}
+              </>
+            )}
+            Changes save as you go.
+          </p>
         </div>
         {me.isPending && <Loading />}
         {me.isError && <Failed />}
         {p && !p.new && <Account p={p} />}
-        {p?.admin && (
-          <p className="section">
-            <AppLink href="/admin/">Administration</AppLink>
-          </p>
-        )}
 
         {(!p || p.new) && <SignOut />}
 
-        <p className="foot">
+        <p className="meta settings-foot">
           Release Notes is a hobby project by <a href="https://www.thingelstad.com/">Jamie Thingelstad</a>, who runs it
           and can read what’s stored. No ads, nothing sold. Page counts by Tinylytics, without cookies.
         </p>
@@ -207,7 +205,7 @@ function Account({ p }: { p: Me }) {
   };
 
   return (
-    <div id="account">
+    <div id="account" className="settings-groups">
       <SettingsGroup id="daily-email" title="Daily email" description={status} defaultOpen>
         <div className="settings-daily-fields">
           <section className="section">
@@ -300,18 +298,10 @@ function Account({ p }: { p: Me }) {
           </button>
           <ErrorLine line={emailsProblem.line} />
         </section>
-        <section className="section">
-          <p className="hint">
-            <AppLink href="/activity/" id="activity-link">
-              Activity
-            </AppLink>
-            : what happened in your account, including what became of each email you sent in.
-          </p>
-        </section>
       </SettingsGroup>
       <SettingsGroup
         id="writing-settings"
-        title="Writing & search"
+        title="Writing and search"
         description="Your email address, where you are, recordings, photos and badges"
       >
         <Inbox p={p} />
@@ -402,7 +392,7 @@ function Account({ p }: { p: Me }) {
           </p>
           <ErrorLine line={badges.problem.line} />
         </section>
-        <p className="hint settings-link-privacy">
+        <p className="meta settings-link-privacy">
           When a note has a link, we visit the page once, as the note is saved, to keep its title. Nothing else is
           fetched.
         </p>
@@ -446,6 +436,15 @@ function Account({ p }: { p: Me }) {
           </p>
         </section>
       </SettingsGroup>
+      {p.admin && (
+        <AppLink className="settings-group-link" href="/admin/" id="admin-link">
+          <span className="settings-group-label">
+            <span className="settings-group-title">Administration</span>
+            <span className="hint">Product updates and subscribers. Only you see this.</span>
+          </span>
+          <Icon name="next" />
+        </AppLink>
+      )}
     </div>
   );
 }

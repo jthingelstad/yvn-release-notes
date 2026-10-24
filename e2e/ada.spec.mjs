@@ -609,6 +609,7 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
             exact: true,
             tags: [],
             release: '4.5',
+            version: '4.5.114',
             text: 'Croissants on the bench'
           }
         ]
@@ -624,7 +625,7 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
   await expect(page.locator('.lede')).toHaveText('1 note with a place of its own.');
   const map = page.getByRole('region', { name: 'Map of your notes' });
   await expect(map.locator('canvas')).toBeVisible();
-  await expect(page.getByText('Choose a pin or a group to see its notes.')).toBeVisible();
+  await expect(page.getByText('Choose a pin or a group to list its notes here. Each version number opens its day.')).toBeVisible();
   // The pin is drawn at the centre once the map has settled.
   const box = await map.boundingBox();
   await expect(async () => {
@@ -634,7 +635,7 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
   const picked = page.locator('.map-notes li');
   await expect(picked).toHaveCount(1);
   await expect(picked).toContainText('Croissants on the bench');
-  await expect(picked.getByRole('link')).toHaveAttribute('href', '/day/?d=2026-10-06');
+  await expect(picked.locator('a.tday-head')).toHaveAttribute('href', '/day/?d=2026-10-06');
 
   // A note's place link opens the map on its spot, its notes already listed.
   await page.goto('/today/');
@@ -650,7 +651,7 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
   await page.goto('/today/');
   await page.goto('/map/#d=2026-10-07&ll=44.98%2C-93.26');
   await expect(map.locator('canvas')).toBeVisible();
-  await expect(page.getByText('Choose a pin or a group to see its notes.')).toBeVisible();
+  await expect(page.getByText('Choose a pin or a group to list its notes here. Each version number opens its day.')).toBeVisible();
   expect(refused).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
 });
@@ -666,6 +667,7 @@ test('the map narrows by words, tag and release, and a group lists every note in
     date,
     id,
     release,
+    version: release + '.100',
     lat,
     lon,
     place,
@@ -691,8 +693,8 @@ test('the map narrows by words, tag and release, and a group lists every note in
   });
   await page.goto('/map/');
   const lede = page.locator('.lede'),
-    releases = page.getByLabel('Filter by release'),
-    tags = page.getByLabel('Filter by tag'),
+    releases = page.getByRole('combobox', { name: 'Release' }),
+    tags = page.getByRole('combobox', { name: 'Tag' }),
     map = page.getByRole('region', { name: 'Map of your notes' });
   await expect(lede).toHaveText('3 notes with a place of their own.');
   await expect(releases.locator('option')).toHaveText(['All releases', '4.5 (2)', '4.3 (1)']);
@@ -715,19 +717,19 @@ test('the map narrows by words, tag and release, and a group lists every note in
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await expect(page.getByRole('heading', { name: 'Le Marais, Paris' })).toBeFocused({ timeout: 1000 });
   }).toPass({ timeout: 15000 });
-  await expect(page.getByText('2 notes, newest first.')).toBeVisible();
+  await expect(page.locator('#map-picked')).toHaveText('2 notes in Le Marais, Paris');
   await expect(page.locator('.map-notes li')).toHaveText([/Croissants on the bench/, /Rain on the Seine/]);
 
   // A tag, then the words: found by POST, and kept in the # alone.
   await page.getByRole('button', { name: 'Clear filters' }).click();
   await expect(lede).toHaveText('3 notes with a place of their own.');
-  await expect(page.getByText('Choose a pin or a group to see its notes.')).toBeVisible();
+  await expect(page.getByText('Choose a pin or a group to list its notes here. Each version number opens its day.')).toBeVisible();
   await tags.selectOption('lake');
   await expect(lede).toHaveText('1 of 3 notes with a place of their own.');
   await expect(releases).toBeVisible();
   await page.getByRole('button', { name: 'Clear filters' }).click();
   await releases.selectOption('4.5');
-  await page.getByLabel('Search notes').fill('snow');
+  await page.getByRole('searchbox', { name: 'Words' }).fill('snow');
   await expect(lede).toHaveText('None of your 3 notes with a place of their own match.');
   await expect(page).toHaveURL(/\/map\/#q=snow&v=4\.5$/);
   expect(asked).toEqual([{ q: 'snow' }]);

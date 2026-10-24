@@ -93,99 +93,93 @@ export function Upcoming() {
       setNotice('Date deleted.');
     });
   }
+  // Each date as a row: when, what (its kind, tag and whether the email
+  // carries it beneath), and Edit, with Delete inside it. A table still, for
+  // assistive technology, with its roles said outright: laid out as rows,
+  // Chrome would otherwise drop them.
   function list(items: UpcomingView[], label: string) {
     const year = Number(query.data?.today.slice(0, 4));
     return (
-      <div className="table-scroll" role="region" aria-label={label} tabIndex={0}>
-        <table className="data-table upcoming-table" aria-label={label}>
-          <thead>
-            <tr>
-              <th scope="col">Date</th>
-              <th scope="col">Event</th>
-              <th scope="col">Kind</th>
-              <th scope="col">Email</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((entry) => (
-              <tr key={entry.id}>
-                <td className="table-date">
-                  <time dateTime={entry.occurrence.date}>{shortDay(entry.occurrence.date, year)}</time>
-                  {entry.occurrence.end_date && entry.occurrence.end_date !== entry.occurrence.date && (
-                    <>
-                      {' '}
-                      – <time dateTime={entry.occurrence.end_date}>{shortDay(entry.occurrence.end_date, year)}</time>
-                    </>
-                  )}
-                  {(entry.occurrence.status === 'ongoing' || entry.occurrence.status === 'today') && (
-                    <span className="table-detail">
-                      {entry.occurrence.status === 'ongoing' ? 'Happening now' : 'Today'}
-                    </span>
-                  )}
-                </td>
-                <th scope="row" className="table-event">
-                  {entry.occurrence.line}
-                  {entry.tag && <span className="table-detail">#{entry.tag}</span>}
-                </th>
-                <td>
-                  <span
-                    className="upcoming-kind"
-                    role="img"
-                    aria-label={NAMES[entry.kind] + (annual(entry.kind) ? ' (every year)' : '')}
-                    title={NAMES[entry.kind] + (annual(entry.kind) ? ' (every year)' : '')}
-                  >
-                    <Icon name={entry.kind} />
+      <table className="upcoming-rows" role="table" aria-label={label}>
+        <thead className="vh" role="rowgroup">
+          <tr role="row">
+            <th scope="col" role="columnheader">
+              Date
+            </th>
+            <th scope="col" role="columnheader">
+              Event
+            </th>
+            <th scope="col" role="columnheader">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody role="rowgroup">
+          {items.map((entry) => (
+            <tr key={entry.id} role="row">
+              <td className="upcoming-when" role="cell">
+                <time dateTime={entry.occurrence.date}>{shortDay(entry.occurrence.date, year)}</time>
+                {entry.occurrence.end_date && entry.occurrence.end_date !== entry.occurrence.date && (
+                  <>
+                    {' '}
+                    – <time dateTime={entry.occurrence.end_date}>{shortDay(entry.occurrence.end_date, year)}</time>
+                  </>
+                )}
+                {(entry.occurrence.status === 'ongoing' || entry.occurrence.status === 'today') && (
+                  <span className="upcoming-now">
+                    {entry.occurrence.status === 'ongoing' ? 'Happening now' : 'Today'}
                   </span>
-                </td>
-                <td>{entry.email ? 'Daily email' : 'Web only'}</td>
-                <td>
-                  <div className="row upcoming-actions">
-                    {entry.tag && (
-                      <AppLink
-                        className="quiet icon-button"
-                        href={`/today/#tag=${encodeURIComponent(entry.tag)}`}
-                        aria-label={`Write a note tagged #${entry.tag} for ${entry.title}`}
-                        title={`Write a note tagged #${entry.tag}`}
-                      >
-                        <Icon name="write" />
-                      </AppLink>
-                    )}
-                    <button
+                )}
+              </td>
+              <th scope="row" className="upcoming-what" role="rowheader">
+                <span className="upcoming-line">{entry.occurrence.line}</span>
+                <span className="meta">
+                  {[
+                    NAMES[entry.kind] + (annual(entry.kind) ? ', every year' : ''),
+                    entry.tag && '#' + entry.tag,
+                    entry.email ? 'daily email' : 'web only'
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </th>
+              <td role="cell">
+                <div className="upcoming-actions">
+                  {entry.tag && (
+                    <AppLink
                       className="quiet icon-button"
-                      type="button"
-                      disabled={busy}
-                      aria-label={`Edit ${entry.title}`}
-                      title="Edit"
-                      onClick={() => choose(entry)}
+                      href={`/today/#tag=${encodeURIComponent(entry.tag)}`}
+                      aria-label={`Write a note tagged #${entry.tag} for ${entry.title}`}
+                      title={`Write a note tagged #${entry.tag}`}
                     >
-                      <Icon name="edit" />
-                    </button>
-                    <button
-                      className="quiet danger icon-button"
-                      type="button"
-                      disabled={busy}
-                      aria-label={`Delete ${entry.title}`}
-                      title="Delete"
-                      onClick={() => remove(entry)}
-                    >
-                      <Icon name="delete" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                      <Icon name="write" />
+                    </AppLink>
+                  )}
+                  <button
+                    className="quiet icon-button"
+                    type="button"
+                    disabled={busy}
+                    aria-label={`Edit ${entry.title}`}
+                    title="Edit"
+                    onClick={() => choose(entry)}
+                  >
+                    <Icon name="edit" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     );
   }
   return (
     <>
       <Bar />
       <h1>Upcoming</h1>
-      <p className="lede">People, milestones, and things to look forward to.</p>
-      <p className="hint">A few personal dates in your daily email, when they’re close.</p>
+      <p className="lede">
+        People, milestones and things to look forward to. When one is close, your daily email says so.
+      </p>
       {query.isPending ? (
         <Loading />
       ) : query.isError ? (
@@ -201,15 +195,20 @@ export function Upcoming() {
             >
               Add a date
             </button>
+            <AppLink className="quiet" href="/upcoming-text/">
+              <Icon name="text" />
+              Edit as text
+            </AppLink>
             <button
-              className="quiet"
+              className="quiet icon-button upcoming-reload"
               type="button"
               disabled={busy}
+              aria-label="Reload list"
+              title="Reload list"
               onClick={() => client.invalidateQueries({ queryKey: upcomingQuery.queryKey })}
             >
-              Reload list
+              <Icon name="reload" />
             </button>
-            <AppLink href="/upcoming-text/">Edit as text</AppLink>
           </div>
           {selected !== undefined && (
             <UpcomingForm
@@ -223,6 +222,7 @@ export function Upcoming() {
               busy={busy}
               run={run}
               onCancel={() => setSelected(undefined)}
+              onDelete={selected ? () => remove(selected) : undefined}
               onSaved={async () => {
                 setSelected(undefined);
                 await client.invalidateQueries({ queryKey: upcomingQuery.queryKey });
@@ -239,8 +239,12 @@ export function Upcoming() {
               <>
                 <div className="upcoming-filters">
                   <label>
-                    Filter by kind
-                    <select value={kindFilter} onChange={(e) => filter(e.target.value, tagFilter)}>
+                    Kind
+                    <select
+                      aria-label="Filter by kind"
+                      value={kindFilter}
+                      onChange={(e) => filter(e.target.value, tagFilter)}
+                    >
                       <option value="">All kinds</option>
                       {Object.entries(NAMES).map(([value, label]) => (
                         <option key={value} value={value}>
@@ -250,8 +254,12 @@ export function Upcoming() {
                     </select>
                   </label>
                   <label>
-                    Filter by tag
-                    <select value={tagFilter} onChange={(e) => filter(kindFilter, e.target.value)}>
+                    Tag
+                    <select
+                      aria-label="Filter by tag"
+                      value={tagFilter}
+                      onChange={(e) => filter(kindFilter, e.target.value)}
+                    >
                       <option value="">All tags</option>
                       <option value="-">No tag</option>
                       {tags.map((tag) => (
@@ -265,8 +273,9 @@ export function Upcoming() {
                     </select>
                   </label>
                   <label className="upcoming-search">
-                    Search dates
+                    Words
                     <input
+                      aria-label="Words in your dates"
                       type="search"
                       name="q"
                       maxLength={MAX_QUERY}
@@ -283,8 +292,9 @@ export function Upcoming() {
                     </button>
                   )}
                 </div>
-                <p className="hint" role="status">
+                <p className="meta upcoming-count" role="status">
                   Showing {filtered.length} of {entries.length} saved dates.
+                  {past.length > 0 && (past.length === 1 ? ' One is past.' : ` ${past.length} are past.`)}
                 </p>
               </>
             )}
@@ -302,12 +312,12 @@ export function Upcoming() {
           </section>
           {past.length > 0 && (
             <details className="upcoming-past">
-              <summary>Past events ({past.length})</summary>
-              {list(past, 'Past events')}
+              <summary>Past dates ({past.length})</summary>
+              {list(past, 'Past dates')}
             </details>
           )}
           <CalendarLink calendar={query.data!.calendar} busy={busy} run={run} />
-          <p className="hint upcoming-footnote">
+          <p className="meta upcoming-footnote">
             These are saved plans. Write what happened in your release notes when the day comes.
           </p>
         </>
@@ -365,21 +375,19 @@ function CalendarLink({
     });
   return (
     <section className="section upcoming-calendar" id="calendar" aria-labelledby="calendar-heading">
-      <h2 id="calendar-heading">In your calendar</h2>
+      <h2 className="big" id="calendar-heading">
+        In your calendar
+      </h2>
       <p className="hint">
-        Subscribe to these dates from your calendar app and it keeps them current on its own: each birthday with the
-        version it turns, every anniversary, trip and event. Reminders still come only in your daily email.
+        Subscribe from your calendar app and it keeps these dates current: each birthday with the version it turns,
+        every anniversary, trip and event. Reminders still come only in your daily email.
       </p>
       {calendar && (
         <p className="value mono" data-field="calendar">
           {calendar}
         </p>
       )}
-      <p className="hint" hidden={!calendar}>
-        On an iPhone, iPad or Mac, Subscribe opens Calendar. In Google Calendar and others, add a calendar from a URL
-        and paste the link. Keep it to yourself: anyone who has it can read these dates.
-      </p>
-      <div className="row">
+      <div className="row calendar-actions">
         {calendar && (
           <a className="quiet" href={calendar.replace(/^https?:/, 'webcal:')} id="calendar-subscribe">
             Subscribe
@@ -406,6 +414,10 @@ function CalendarLink({
       <p className="aside saved" id="calendar-copied" role="status" hidden={!copied}>
         Copied.
       </p>
+      <p className="meta" hidden={!calendar}>
+        On an iPhone, iPad or Mac, Subscribe opens Calendar. Elsewhere, add a calendar from a URL. Anyone with the link
+        can read these dates.
+      </p>
       <ErrorLine line={problem.line} />
     </section>
   );
@@ -421,6 +433,7 @@ function UpcomingForm({
   busy,
   run,
   onCancel,
+  onDelete,
   onSaved
 }: {
   entry: UpcomingView | null;
@@ -432,6 +445,8 @@ function UpcomingForm({
   busy: boolean;
   run: (fn: () => Promise<unknown>) => Promise<void>;
   onCancel: () => void;
+  /** A saved date's Delete, at the form's foot. */
+  onDelete?: () => void;
   onSaved: () => Promise<void>;
 }) {
   const [kind, setKind] = useState<UpcomingKind>(entry?.kind ?? initialKind),
@@ -652,6 +667,17 @@ function UpcomingForm({
           <button className="quiet" type="button" onClick={onCancel}>
             Cancel
           </button>
+          {entry && onDelete && (
+            <button
+              className="quiet danger upcoming-delete"
+              type="button"
+              aria-label={`Delete ${entry.title}`}
+              onClick={onDelete}
+            >
+              <Icon name="delete" />
+              Delete
+            </button>
+          )}
         </div>
       </fieldset>
     </form>

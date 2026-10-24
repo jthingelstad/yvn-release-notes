@@ -109,6 +109,8 @@ export interface Pin {
   /** The release its day falls in ("5.4", a year of life): the Map's
    * release filter. */
   release: string;
+  /** Its day's version ("5.4.113"), which heads it in the Map's list. */
+  version: string;
   /** The preview as plain words, and as the web shows it (`parts`, the
    * same links by name and tags as every note: links.segments). */
   text: string;
@@ -148,7 +150,8 @@ export function pins(notes: readonly NoteRecord[], birthday: Day): Pin[] {
       lon = Number(place.lon ?? NaN);
     if (place.lat == null || place.lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
     if (Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
-    const [, date = '', ...rest] = String(note.sk).split('#');
+    const [, date = '', ...rest] = String(note.sk).split('#'),
+      version = computeVersion(birthday, date);
     out.push({
       date,
       id: rest.join('#'),
@@ -158,7 +161,8 @@ export function pins(notes: readonly NoteRecord[], birthday: Day): Pin[] {
       // A city chosen from the search stands for the city, not a spot in it.
       exact: place.from !== 'chosen',
       tags: Array.isArray(note.tags) ? note.tags.map(String) : [],
-      release: releaseName(computeVersion(birthday, date).age),
+      release: releaseName(version.age),
+      version: version.toString(),
       ...preview(note)
     });
   }

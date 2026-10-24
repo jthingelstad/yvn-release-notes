@@ -44,7 +44,7 @@ test('Upcoming dates persist and remain usable on phone, tablet, desktop and lan
   await page.getByLabel('Name',{exact:true}).fill('Alexa');
   await page.getByLabel('Include in my daily email').uncheck();
   await page.getByRole('button',{name:'Save date',exact:true}).click();
-  await expect(page.getByLabel('Upcoming dates')).toContainText('Web only');
+  await expect(page.getByLabel('Upcoming dates')).toContainText('web only');
   await expect(page.getByRole('rowheader',{name:'Alexa',exact:false})).toBeVisible();
 
   await page.getByRole('button',{name:'Add a date',exact:true}).click();
@@ -73,19 +73,19 @@ test('Upcoming dates persist and remain usable on phone, tablet, desktop and lan
   await expect(page.getByRole('rowheader',{name:'Autumn trip',exact:false})).toBeVisible();
   await expect(page.getByLabel('Upcoming dates')).toContainText('Paris');
   expect((await (await context.request.get('/api/me')).json()).tz).toBe('America/Chicago');
-  await expect(page.getByRole('img',{name:'Birthday (every year)',exact:true})).toBeVisible();
-  await expect(page.getByRole('img',{name:'Anniversary (every year)',exact:true})).toBeVisible();
-  await expect(page.getByRole('img',{name:'Trip',exact:true})).toBeVisible();
+  await expect(page.getByRole('rowheader',{name:'Alexa',exact:false})).toContainText('Birthday, every year');
+  await expect(page.getByRole('rowheader',{name:'A project',exact:false})).toContainText('Anniversary, every year');
+  await expect(page.getByRole('rowheader',{name:'Autumn trip',exact:false})).toContainText('Trip · daily email');
 
   await page.getByRole('button',{name:'Add a date',exact:true}).click();
   await page.getByRole('combobox',{name:'Kind',exact:true}).selectOption('event');
   await page.getByLabel('Title',{exact:true}).fill('A concert');
   await page.getByLabel('Date',{exact:true}).fill('2026-01-01');
   await page.getByRole('button',{name:'Save date',exact:true}).click();
-  await page.getByText('Past events (1)',{exact:true}).click();
+  await page.getByText('Past dates (1)',{exact:true}).click();
   await expect(page.getByRole('rowheader',{name:'A concert',exact:false})).toBeVisible();
   await page.reload();
-  await expect(page.getByText('Past events (1)',{exact:true})).toBeVisible();
+  await expect(page.getByText('Past dates (1)',{exact:true})).toBeVisible();
 
   for(const [width,height,name] of [[320,740,'small-phone'],[390,844,'phone'],[768,1024,'tablet'],[1280,1000,'desktop'],[844,390,'landscape']]) {
     await page.setViewportSize({width,height});
@@ -93,7 +93,7 @@ test('Upcoming dates persist and remain usable on phone, tablet, desktop and lan
       await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
       await expect(page.getByRole('navigation',{name:'Main navigation'}).getByRole('link',{name:'Upcoming',exact:true})).toHaveAttribute('aria-current','page');
       expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth+1)).toBeTruthy();
-      for (const action of ['Edit Autumn trip','Delete Autumn trip']) {
+      for (const action of ['Edit Autumn trip','Reload list']) {
         const button = page.getByRole('button',{name:action,exact:true});
         const bounds = await button.boundingBox();
         expect(bounds.width).toBeGreaterThanOrEqual(44);
@@ -108,8 +108,11 @@ test('Upcoming dates persist and remain usable on phone, tablet, desktop and lan
       await page.getByRole('button',{name:'Cancel',exact:true}).click();
     }
   }
+  // Delete is inside Edit.
+  await page.getByRole('button',{name:'Edit Alexa',exact:true}).click();
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:'Delete Alexa',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Edit date',exact:true})).toHaveCount(0);
   await expect(page.getByRole('rowheader',{name:'Alexa',exact:false})).toHaveCount(0);
   const exported=await (await context.request.get('/api/export')).json();
   expect(exported.upcoming.map(e=>e.title)).toEqual(expect.arrayContaining(['A project','Autumn trip','A concert']));
@@ -158,11 +161,11 @@ test('event tables order occurrence dates ascending even when the response is un
   await page.route('**/api/upcoming', route => route.fulfill({ json: { ...snapshot, entries: snapshot.entries.toReversed() } }));
   await page.goto('/upcoming/');
   const future = page.getByRole('table', { name: 'Upcoming events', exact: true });
-  await expect(future.getByRole('rowheader', { name: 'Earlier event', exact: true })).toBeVisible();
+  await expect(future.getByRole('rowheader', { name: 'Earlier event' })).toBeVisible();
   const dates = await future.locator('tbody tr td:first-child time:first-child').evaluateAll(nodes => nodes.map(n => n.dateTime));
   expect(dates).toEqual(dates.toSorted());
   await page.locator('.upcoming-past summary').click();
-  const past = page.getByRole('table', { name: 'Past events', exact: true });
+  const past = page.getByRole('table', { name: 'Past dates', exact: true });
   const pastDates = await past.locator('tbody tr td:first-child time:first-child').evaluateAll(nodes => nodes.map(n => n.dateTime));
   expect(pastDates.length).toBeGreaterThan(1);
   expect(pastDates).toEqual(pastDates.toSorted());
@@ -223,23 +226,23 @@ test('kind and tag filters combine, survive reloads and carry a tag into an exis
   await expect(page.getByText('No dates match these filters.',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Clear filters',exact:true}).click();
   await page.getByRole('combobox',{name:'Filter by tag',exact:true}).selectOption('-');
-  await expect(page.getByRole('rowheader',{name:'Untagged event',exact:true})).toBeVisible();
+  await expect(page.getByRole('rowheader',{name:'Untagged event',exact:false})).toBeVisible();
   await expect(page.getByRole('rowheader',{name:'Second team milestone',exact:false})).toBeVisible();
   await page.getByRole('combobox',{name:'Filter by tag',exact:true}).selectOption('sps');
   // Search combines with the selects, survives a reload in the fragment, and clears with them.
-  await page.getByRole('searchbox',{name:'Search dates',exact:true}).fill('MILESTONE');
+  await page.getByRole('searchbox',{name:'Words in your dates',exact:true}).fill('MILESTONE');
   await expect(page.getByRole('rowheader',{name:'Team milestone',exact:false})).toBeVisible();
   await expect(page.getByRole('rowheader',{name:'Team birthday',exact:false})).toHaveCount(0);
   await expect(page).toHaveURL(/#.*q=MILESTONE/);
   await page.reload();
-  await expect(page.getByRole('searchbox',{name:'Search dates',exact:true})).toHaveValue('MILESTONE');
-  await page.getByRole('searchbox',{name:'Search dates',exact:true}).fill('"family milestone"');
+  await expect(page.getByRole('searchbox',{name:'Words in your dates',exact:true})).toHaveValue('MILESTONE');
+  await page.getByRole('searchbox',{name:'Words in your dates',exact:true}).fill('"family milestone"');
   await expect(page.getByText('No dates match these filters.',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Clear filters',exact:true}).click();
-  await expect(page.getByRole('searchbox',{name:'Search dates',exact:true})).toHaveValue('');
+  await expect(page.getByRole('searchbox',{name:'Words in your dates',exact:true})).toHaveValue('');
   await page.getByRole('combobox',{name:'Filter by tag',exact:true}).selectOption('sps');
   await page.locator('.upcoming-past summary').click();
-  await expect(page.getByRole('table',{name:'Past events',exact:true})).toContainText('Past team event');
+  await expect(page.getByRole('table',{name:'Past dates',exact:true})).toContainText('Past team event');
   await page.evaluate(day => sessionStorage.setItem(`rn-draft-${day}`,'Already writing about today.'),today);
   const write = () => page.getByRole('link',{name:'Write a note tagged #sps for Team milestone',exact:true});
   await write().click();

@@ -643,11 +643,11 @@ main:has(.bar--app) h1:not(.vnum) { margin-top: 0; font-size: 42px; }
 .table-sort:hover { color: var(--blue); }
 .users-table { min-width: 960px; }
 .users-table td { max-width: 180px; }
-.upcoming-table { min-width: 720px; }
-.upcoming-table td:nth-child(3), .upcoming-table td:nth-child(4) { white-space: nowrap; }
 
 /* Personal dates: type on paper, with a simple editor and date-ordered rows. */
-.upcoming-toolbar { margin: 24px 0 8px; }
+.upcoming-toolbar { margin: 20px 0 8px; gap: 8px 24px; }
+.upcoming-reload { margin-left: auto; }
+.upcoming-toolbar > * { align-self: center; }
 .upcoming-text label { display: block; }
 .upcoming-text textarea { display: block; width: 100%; margin-top: 8px; font-family: var(--mono); font-size: 14px; line-height: 1.6; white-space: pre; overflow-x: auto; tab-size: 4; }
 .upcoming-problems { margin: 12px 0 0; padding-left: 20px; }
@@ -659,16 +659,25 @@ main:has(.bar--app) h1:not(.vnum) { margin-top: 0; font-size: 42px; }
 .upcoming-filters select { width: 100%; }
 .upcoming-filters .upcoming-search { flex: 2 1 240px; }
 .upcoming-filters input[type='search'] { width: 100%; }
-.upcoming-actions { flex-wrap: nowrap; gap: 4px; }
-.upcoming-kind { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: var(--ink-2); }
-.upcoming-kind .icon { width: 21px; height: 21px; }
+.upcoming-count { margin-top: 4px; }
+/* The dates: a table read as rows, when, what, then Edit. */
+.upcoming-rows { display: block; width: 100%; margin-top: 8px; border-bottom: 1px solid var(--rule); }
+.upcoming-rows tbody { display: block; }
+.upcoming-rows tr { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 4px 20px; align-items: center; padding: 14px 0; border-top: 1px solid var(--rule); }
+.upcoming-rows td, .upcoming-rows th { padding: 0; text-align: left; }
+.upcoming-when { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.upcoming-now { display: block; font-size: 13px; font-weight: 400; color: var(--orange-ink); }
+.upcoming-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-weight: 400; overflow-wrap: anywhere; }
+.upcoming-line { font-size: 17px; font-weight: 700; }
+.upcoming-actions { display: flex; align-items: center; }
+.upcoming-delete { margin-left: auto; }
 .upcoming-empty { max-width: 32rem; font-size: 22px; line-height: 1.5; }
-.upcoming-past { margin-top: 44px; }
-.upcoming-past summary { cursor: pointer; min-height: 44px; font-weight: 700; }
-.upcoming-past .table-scroll { margin-top: 8px; }
-.upcoming-footnote { margin-top: 44px; }
-.upcoming-calendar { margin-top: 44px; }
-.upcoming-calendar .value { font-size: 15px; overflow-wrap: anywhere; }
+.upcoming-past { margin-top: 20px; }
+.upcoming-past summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-size: 16px; font-weight: 600; color: var(--blue); }
+.upcoming-footnote { margin-top: 48px; }
+.upcoming-calendar { margin-top: 48px; gap: 12px; }
+.upcoming-calendar .value { margin-top: 4px; font-size: 13px; overflow-wrap: anywhere; }
+.calendar-actions { gap: 0 24px; }
 .upcoming-form { margin-bottom: 44px; }
 .upcoming-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 .upcoming-date-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 20px; }
@@ -676,6 +685,11 @@ main:has(.bar--app) h1:not(.vnum) { margin-top: 0; font-size: 42px; }
 .upcoming-date-fields input { min-width: 0; }
 @media (max-width: 760px) {
   .upcoming-date-fields { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  /* On a phone the date sits over what it is. */
+  .upcoming-rows tr { grid-template-columns: minmax(0, 1fr) auto; }
+  .upcoming-when { grid-column: 1; font-size: 15px; }
+  .upcoming-what { grid-column: 1; }
+  .upcoming-rows td:last-child { grid-column: 2; grid-row: 1 / span 2; }
 }
 
 /* Badges (docs/BADGES.md): type on paper, no cards. Earned glyphs are cobalt,
@@ -741,8 +755,15 @@ main:has(.bar--app) h1:not(.vnum) { margin-top: 0; font-size: 42px; }
 .map:focus-visible, .map .maplibregl-canvas:focus-visible { outline: 3px solid var(--blue); outline-offset: -3px; }
 .map-picked { margin-top: 32px; }
 .map-picked h2:focus { outline: none; }
-.map-notes { list-style: none; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
-.map-notes .map-text { margin: 4px 0 0; color: var(--ink-2); }
+.map-picked-hint { margin-top: 16px; }
+.map-notes { list-style: none; margin: 20px 0 0; padding: 0; display: flex; flex-direction: column; gap: 30px; }
+/* The zoom buttons in paper and ink, 44px each. */
+.map .maplibregl-ctrl-group { background: var(--paper); border-radius: 8px; box-shadow: 0 0 0 1px var(--rule); }
+.map .maplibregl-ctrl-group button { width: 44px; height: 44px; }
+.map .maplibregl-ctrl-group button + button { border-top: 1px solid var(--rule); }
+@media (prefers-color-scheme: dark) {
+  .map .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1); }
+}
 /* On a phone the map alone runs edge to edge. */
 @media (max-width: 760px) {
   .map { height: 400px; margin: 24px -20px 0; }

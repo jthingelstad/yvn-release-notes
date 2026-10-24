@@ -1164,6 +1164,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       exact: false,
       tags: ['paris'],
       release: '4.5',
+      version: '4.5.114',
       text: 'Croissants and a long walk along the river The river walk #paris',
       parts: [
         'Croissants and a long walk along the river ',
@@ -1181,6 +1182,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       exact: true,
       tags: [],
       release: '4.5',
+      version: '4.5.114',
       text: 'On the bench',
       parts: ['On the bench']
     },
@@ -1193,6 +1195,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       exact: false,
       tags: [],
       release: '4.5',
+      version: '4.5.114',
       text: ('Then ' + 'more and '.repeat(30)).slice(0, 139) + '…',
       parts: [('Then ' + 'more and '.repeat(30)).slice(0, 139), '…']
     }

@@ -16,7 +16,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GeoJSONSource, LngLatBounds, Map as MapLibre } from 'maplibre-gl';
-import { AppLink, Bar, ErrorLine, Failed, Loading, useTitle } from '../components/common.tsx';
+import { AppLink, Bar, Digits, ErrorLine, Failed, Loading, useTitle } from '../components/common.tsx';
 import { dayHref } from '../components/days.tsx';
 import { NoteBody } from '../components/notes.tsx';
 import { MAX_QUERY, searchTerms } from '../../../packages/domain/search.ts';
@@ -186,7 +186,7 @@ export function MapPage() {
             <>
               <div className="map-filters">
                 <label className="map-search">
-                  Search notes
+                  Words
                   <input
                     type="search"
                     name="q"
@@ -201,7 +201,7 @@ export function MapPage() {
                 </label>
                 {(menus?.tags || tag) && (
                   <label>
-                    Filter by tag
+                    Tag
                     <select value={tag} onChange={(e) => filter({ tag: e.target.value })}>
                       <option value="">All tags</option>
                       {sifted.tags.map((t) => (
@@ -214,7 +214,7 @@ export function MapPage() {
                 )}
                 {(menus?.releases || release) && (
                   <label>
-                    Filter by release
+                    Release
                     <select value={release} onChange={(e) => filter({ v: e.target.value })}>
                       <option value="">All releases</option>
                       {sifted.releases.map((r) => (
@@ -259,20 +259,32 @@ function Picked({ pins, linked }: { pins: Pin[] | null; linked?: boolean }) {
   useEffect(() => {
     if (pins && !linked) head.current?.focus();
   }, [pins, linked]);
-  if (!pins) return <p className="hint spaced">Choose a pin or a group to see its notes.</p>;
+  if (!pins)
+    return (
+      <p className="meta map-picked-hint">
+        Choose a pin or a group to list its notes here. Each version number opens its day.
+      </p>
+    );
   const places = [...new Set(pins.map((p) => p.place))];
   return (
     <section className="map-picked" aria-labelledby="map-picked">
       <h2 className="big" id="map-picked" tabIndex={-1} ref={head}>
+        {count(pins.length, 'note', 'notes')} in{' '}
         {places.length === 1 ? places[0] : count(places.length, 'place', 'places')}
       </h2>
-      {pins.length > 1 && <p className="hint">{count(pins.length, 'note', 'notes')}, newest first.</p>}
+      {/* Newest first, each as a note reads elsewhere: its day's version,
+          linked to the day, the words, and where. */}
       <ul className="map-notes">
         {[...pins].sort(ORDER).map((p) => (
-          <li key={p.date + p.id}>
-            <AppLink href={dayHref(p.date, '')}>{dayName(p.date, THIS_YEAR)}</AppLink>
-            {places.length > 1 && <span className="hint"> · {p.place}</span>}
-            <NoteBody n={{ id: p.id, source: 'web', text: p.text, parts: p.parts }} cls="map-text" />
+          <li key={p.date + p.id} className="tday">
+            <AppLink className="tday-head" href={dayHref(p.date, '')}>
+              <span className="vnum small">
+                <Digits v={p.version} named />
+              </span>
+              <span className="when">{dayName(p.date, THIS_YEAR)}</span>
+            </AppLink>
+            <NoteBody n={{ id: p.id, source: 'web', text: p.text, parts: p.parts }} />
+            <p className="meta">{p.place}</p>
           </li>
         ))}
       </ul>

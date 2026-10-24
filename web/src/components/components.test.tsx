@@ -2,6 +2,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Note } from '../lib/types.ts';
+import { placeOf } from './common.tsx';
 import { StreakLine } from './days.tsx';
 import { Marked, NoteBody, NoteMeta, noteText } from './notes.tsx';
 import { answered } from './where.tsx';
@@ -98,5 +99,50 @@ describe('answered', () => {
     expect(answered(['today'], { date: '2026-09-12' }, '2026-09-12')).toBe(true);
     expect(answered(['today'], { date: '2026-10-12' }, '2026-09-12')).toBe(false);
     expect(answered(['days'], undefined, '2026-09-12')).toBe(false);
+  });
+});
+
+describe('placeOf', () => {
+  it('marks the tab, or the header search, each page belongs to', () => {
+    const places = Object.fromEntries(
+      [
+        '/today/',
+        '/timeline/',
+        '/day/',
+        '/release/',
+        '/map/',
+        '/upcoming/',
+        '/search/',
+        '/tag/',
+        '/you/',
+        '/badges/',
+        '/activity/',
+        '/settings/',
+        '/connect/',
+        '/pause/',
+        '/delete/',
+        '/admin/',
+        '/admin-users/'
+      ].map((p) => [p, placeOf(p)])
+    );
+    expect(places).toEqual({
+      '/today/': '/today/',
+      '/timeline/': '/timeline/',
+      '/day/': '/timeline/',
+      '/release/': '/timeline/',
+      '/map/': '/map/',
+      '/upcoming/': '/upcoming/',
+      '/search/': '/search/',
+      '/tag/': '/search/',
+      '/you/': '/you/',
+      '/badges/': '/you/',
+      '/activity/': '/you/',
+      '/settings/': '/you/',
+      '/connect/': '/you/',
+      '/pause/': '/you/',
+      '/delete/': '/you/',
+      '/admin/': '/you/',
+      '/admin-users/': '/you/'
+    });
   });
 });

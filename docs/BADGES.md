@@ -172,8 +172,8 @@ honestly about a past palindrome day is journaling, not cheating.
 ### The Badges page
 
 `/badges/`, linked from the streak line on Today ("33 badges") and from the
-Archive page's head. No new item in the navigation: the phone bar already
-holds five.
+You tab (2026-10-24, which took the Archive head's link), whose mark it
+carries. No tab of its own: the bar holds five.
 
 From the top:
 

@@ -270,6 +270,22 @@ main:has(.bar--app) { max-width: 1180px; margin-left: 248px; padding: 64px 72px 
 .bar--app .primary-nav a[aria-current="page"] { color: var(--blue); font-weight: 700; text-decoration: none; }
 .bar--app .rail-signout { margin-top: auto; color: var(--ink-2); font-weight: 500; }
 main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
+/* Search sits in the header, not a tab: a row under the name in the rail,
+   ruled like the box it opens; an icon at the top right on a phone. */
+.bar--app .brand { margin-bottom: 20px; }
+.bar--app a.bar-search { align-self: stretch; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0; margin-bottom: 22px; border-bottom: 2px solid var(--ink-3); color: var(--ink-2); font-size: 16px; font-weight: 500; }
+.bar--app a.bar-search .icon { width: 20px; height: 20px; }
+.bar--app a.bar-search:hover { color: var(--blue-hover); border-color: currentColor; }
+.bar--app a.bar-search[aria-current="page"] { color: var(--blue); border-color: var(--blue); font-weight: 700; text-decoration: none; }
+/* You: the places that left the bar, one row each. */
+.you-places { list-style: none; margin: 32px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-width: 36rem; }
+.you-places a { display: flex; align-items: flex-start; gap: 14px; min-height: 60px; padding: 8px 0; color: var(--ink); text-decoration: none; }
+.you-places a:hover .you-name { color: var(--blue-hover); }
+.you-places .icon { color: var(--blue); margin-top: 3px; }
+.you-places a > span { display: flex; flex-direction: column; }
+.you-name { font-size: 20px; font-weight: 700; }
+.you-places .hint { font-weight: 400; }
+.you-signout { display: none; }
 #day .dateline { margin-top: 0; text-transform: uppercase; letter-spacing: .1em; font-family: var(--mono); font-size: 13px; }
 #day .vnum.huge { font-family: var(--font); color: var(--ink); font-size: clamp(64px, 8vw, 116px); font-weight: 800; letter-spacing: -.025em; font-variant-numeric: tabular-nums; margin-top: 14px; }
 #day .vnum.huge .dot { color: inherit; padding: 0 .025em; letter-spacing: 0; }
@@ -318,6 +334,11 @@ main:has(.bar--app) > h1 { margin-top: 0; font-size: 42px; }
   .bar--app .primary-nav { position: fixed; z-index: 10; inset: auto 0 0; flex-direction: row; justify-content: space-around; gap: 0; background: var(--paper); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
   .bar--app .primary-nav a { flex-direction: column; gap: 4px; min-width: 0; flex: 1; padding: 5px 0; font-size: 12px; }
   .bar--app .rail-signout { display: none; }
+  .bar--app { flex-direction: row; align-items: center; }
+  .bar--app a.bar-search { align-self: auto; justify-content: center; width: 44px; margin: 0 -10px 0 auto; border: 0; }
+  .bar--app a.bar-search .icon { width: 24px; height: 24px; }
+  .bar--app a.bar-search span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .you-signout { display: inline-flex; align-items: center; gap: 13px; align-self: flex-start; min-height: 44px; margin-top: 36px; color: var(--ink-2); font-weight: 500; }
   main:has(.bar--app) > h1 { font-size: 34px; }
   #day .dateline { font-size: 11px; letter-spacing: .06em; }
   #day .vnum.huge { font-size: clamp(56px, 18vw, 92px); }

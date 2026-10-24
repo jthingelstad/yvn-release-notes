@@ -39,10 +39,18 @@ for (const size of [{width:320,height:740},{width:390,height:844},{width:768,hei
       page.on('pageerror', error => errors.push(error.message));
       await page.setViewportSize(size);
       await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
-      for (const [url, selected] of [['/today/', 'Today'], ['/timeline/', 'Archive'], ['/badges/', 'Archive'], ['/search/', 'Search'], ['/settings/', 'Settings']]) {
+      for (const [url, selected] of [['/today/', 'Today'], ['/timeline/', 'Archive'], ['/you/', 'You'], ['/badges/', 'You'], ['/search/', null], ['/settings/', 'You']]) {
         await page.goto(url);
         const nav = page.getByRole('navigation', { name: 'Main navigation' });
-        await expect(nav.getByRole('link', { name: selected, exact: true })).toHaveAttribute('aria-current', 'page');
+        // Search is the header's, not a tab: on its page no tab is marked.
+        const search = page.getByRole('link', { name: 'Search notes', exact: true });
+        if (selected) await expect(nav.getByRole('link', { name: selected, exact: true })).toHaveAttribute('aria-current', 'page');
+        else await expect(nav.locator('[aria-current]')).toHaveCount(0);
+        if (selected) await expect(search).not.toHaveAttribute('aria-current', 'page');
+        else await expect(search).toHaveAttribute('aria-current', 'page');
+        const target = await search.boundingBox();
+        expect(target.width).toBeGreaterThanOrEqual(44);
+        expect(target.height).toBeGreaterThanOrEqual(44);
         await expect(page.locator('h1').first()).toBeVisible();
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
         expect(overflow, `${url} must fit the viewport`).toBe(false);

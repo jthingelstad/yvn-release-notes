@@ -75,7 +75,7 @@ export function AdminUsers() {
   }
   return (
     <>
-      <Bar current="/settings/" />
+      <Bar />
       <h1>Users</h1>
       <p className="lede">Who’s here, and how their Release Notes are going.</p>
       <AdminNav current="users" />

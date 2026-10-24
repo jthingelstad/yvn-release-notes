@@ -73,8 +73,7 @@ nothing there links here yet: that is Jamie's call.
    page (Front end, below). AGENTS.md has their rules.
 10. **Badges** (`/badges/`, `docs/BADGES.md`, 2026-10-20): what writing
     regularly has earned, each stamped with the version it came true on.
-    Linked from the streak line on Today and from the Archive; no new
-    navigation item. Worked out on each read from stored fields
+    Linked from the streak line on Today and from You. Worked out on each read from stored fields
     (`packages/domain/badges.ts`); the one thing stored is `seen`, what
     has already been celebrated. A note saved on Today or another day
     says what it unlocked under the form; a Day page says what its
@@ -82,7 +81,7 @@ nothing there links here yet: that is Jamie's call.
     head its coverage and special days, and both exports list the
     badges, oldest first. "Show badges" off in Settings hides the links,
     the unlock and those lines; the page and the exports stay.
-11. **Activity** (`/activity/`, linked from Settings, Daily email, and
+11. **Activity** (`/activity/`, linked from You, from Settings, Daily email, and
     from each mail notice; 2026-10-21, from the mail log of 2026-10-20):
     what happened in the account, newest first, 100 rows a page with
     "Older". Jamie, 2026-10-20: "a full log of any activity happening in
@@ -151,7 +150,7 @@ nothing there links here yet: that is Jamie's call.
       Then the record goes on to the failed queue unchanged. A row that cannot
       be written leaves the record to be read again; the third failed read
       sends it on unread.
-12. **Map** (`/map/`, linked from the Archive, 2026-10-24; Jamie: "a Map
+12. **Map** (`/map/`, a tab since 2026-10-24; Jamie: "a Map
     view for my notes"): every note with a place of its own and
     coordinates, as pins that gather into numbered groups as the map zooms
     out. A note showing its day's or home's city has no spot of its own
@@ -277,7 +276,7 @@ notes.yourversionnumber.com
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/badges/`, `/map/`, `/search/`,
-  `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/settings/`, `/activity/` (`/mail-log/` redirects there), `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
+  `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/you/`, `/settings/`, `/activity/` (`/mail-log/` redirects there), `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
   `/connect/` approves an external agent request whose opaque id stays in the fragment.
   `/admin/` manages product updates; `/admin-users/` shows subscriber metadata. Administration is visible in settings only to the configured administrator.
 
@@ -333,7 +332,21 @@ The redesigned UI uses warm paper, Bricolage typography and the version as
 its focal point. Today places the editor before saved notes, with labelled
 file, recording and place controls. Desktop navigation is a rail; phone
 navigation stays at the bottom with safe-area spacing. Archive uses the
-existing `/timeline/` address. Dark appearance and reduced-motion preferences
+existing `/timeline/` address.
+
+**Navigation** (Jamie, 2026-10-24, option A2 on the navigation design
+canvas, https://claude.ai/artifact/SYr3VHYuSLduMpCwVcUtXj): five tabs,
+Today, Archive, Map, Upcoming and You, the same on a phone and in the rail
+whether "Show badges" is on or off. Search is in the header, not a tab: a
+44px icon at the top right on a phone and a "Search notes" row under the
+name in the rail, named "Search notes" either way; its page opens with the
+box focused when nothing has been asked yet. `/you/` holds Badges (gone
+with "Show badges" off), Activity and Settings, with Sign out on a phone,
+where the rail's button is not. `placeOf` in `components/common.tsx` marks
+each page's place with `aria-current="page"`: Day and Release mark Archive;
+Badges, Activity, Settings, Connect, Pause, Delete and the two admin pages
+mark You; Search and Tag mark the header's search and no tab; Edit as text
+marks Upcoming. The admin pages are never in the navigation. Dark appearance and reduced-motion preferences
 are supported. UI glyphs use Lucide React, bundled locally through the fixed
 named imports in `web/src/components/icon.tsx`; unused icons are excluded from
 the build. Navigation and writing tools retain visible labels. Compact edit,

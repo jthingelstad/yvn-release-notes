@@ -105,7 +105,7 @@ export function Admin() {
   };
   return (
     <>
-      <Bar current="/settings/" />
+      <Bar />
       <h1>Product updates</h1>
       <p className="lede">Release notes for Release Notes, in everyone’s daily email.</p>
       <AdminNav current="updates" />

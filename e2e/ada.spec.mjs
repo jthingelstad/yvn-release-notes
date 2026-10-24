@@ -286,15 +286,29 @@ test("Here names where the browser is, and a saved note's place changes after", 
   const words = `Coffee at ${Date.now()}`;
   await form.locator('textarea').fill(words);
   await form.getByRole('button', { name: 'Here', exact: true }).click();
-  await expect(form.locator('#note-where')).toHaveText(/At Paris, Ile-de-France\./);
+  // The neighbourhood first; a business near is one tap, and one more back.
+  await expect(form.locator('#note-where')).toHaveText(/At Old Town, Paris\./);
+  const cafe = form.getByRole('group', { name: 'Were you at' }).getByRole('button', { name: 'Corner Café' });
+  await cafe.click();
+  await expect(cafe).toHaveAttribute('aria-pressed', 'true');
+  await expect(form.locator('#note-where')).toHaveText(/At Corner Café, Paris\./);
   await form.getByRole('button', { name: 'Save note' }).click();
 
   // The spot itself, not the city's middle, on the map.
   const note = page.locator('article.note', { hasText: words });
-  await expect(note.getByRole('link', { name: 'Paris, Ile-de-France' })).toHaveAttribute(
+  await expect(note.getByRole('link', { name: 'Corner Café, Paris' })).toHaveAttribute(
     'href',
     /^https:\/\/maps\.apple\.com\/\?ll=48\.856613,2\.352222/
   );
+
+  // Here again on the saved note: saved at the neighbourhood, then named
+  // by what was near until Done.
+  await note.getByRole('button', { name: 'Where', exact: true }).click();
+  await note.getByRole('button', { name: 'Here', exact: true }).click();
+  await expect(note.getByRole('link', { name: 'Old Town, Paris' })).toBeVisible();
+  await note.getByRole('button', { name: 'Reading Room' }).click();
+  await expect(note.getByRole('link', { name: 'Reading Room, Paris' })).toBeVisible();
+  await note.getByRole('button', { name: 'Done' }).click();
 
   // Taken off, then a city from the search instead.
   await note.getByRole('button', { name: 'Where', exact: true }).click();
@@ -318,11 +332,11 @@ test('"Add where I am" looks for each new note, even after "Not there" on the la
   });
   await page.goto('/today/');
   const form = page.locator('#note-form');
-  await expect(form.locator('#note-where')).toHaveText(/At Paris, Ile-de-France\./);
+  await expect(form.locator('#note-where')).toHaveText(/At Old Town, Paris\./);
   await form.getByRole('button', { name: 'Not there' }).click();
   await form.locator('textarea').fill(`Nowhere at ${Date.now()}`);
   await form.getByRole('button', { name: 'Save note' }).click();
-  await expect(form.locator('#note-where')).toHaveText(/At Paris, Ile-de-France\./);
+  await expect(form.locator('#note-where')).toHaveText(/At Old Town, Paris\./);
 });
 
 test('a past day can have a place of its own, and its weather follows', async ({ page }) => {

@@ -225,12 +225,23 @@ export async function main(args = process.argv.slice(2)) {
     exportFunction: 'dev-export',
     adminUserId: 'u1',
     geocode: async (q) => cities.filter((c) => c.name.toLowerCase().startsWith(q.toLowerCase())),
-    // "Here" names any spot as the nearest of these cities, never Amazon Location.
-    reverse: async (lat, lon) => {
+    // "Here" names any spot as the nearest of these cities, in a made-up
+    // neighbourhood beside two made-up businesses, never Amazon Location.
+    nameSpot: async ({ lat, lon }) => {
       const near = cities.toSorted(
         (a, b) => Math.hypot(a.lat - lat, a.lon - lon) - Math.hypot(b.lat - lat, b.lon - lon)
       )[0]!;
-      return { city: near.name, region: near.region, country: near.country, tz: near.tz };
+      return {
+        city: near.name,
+        region: near.region,
+        country: near.country,
+        tz: near.tz,
+        district: 'Old Town',
+        nearby: [
+          { name: 'Corner Café', lat: lat + 0.0002, lon, distance_m: 22 },
+          { name: 'Reading Room', lat, lon: lon + 0.0004, distance_m: 41 }
+        ]
+      };
     },
     fetchTitle: (url) => ({ title: 'A page at ' + new URL(url).hostname, site: new URL(url).hostname }),
     weatherFetch: async (url) => {

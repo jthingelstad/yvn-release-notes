@@ -121,6 +121,16 @@ export interface Place {
   lon?: number;
   accuracy_m?: number;
   from?: 'device';
+  // Here's: the neighbourhood, the business picked, and what was near.
+  district?: string;
+  venue?: string;
+  nearby?: Venue[];
+}
+export interface Venue {
+  name: string;
+  lat: number;
+  lon: number;
+  distance_m: number;
 }
 
 // A release is a year of life ("4.5"), birthday to birthday.

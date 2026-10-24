@@ -189,7 +189,11 @@ Where things are (each module's design comment has its contract):
   the device's own spot (Jamie, 2026-10-24: "Here", by a tap, or on each new
   note on Today with "Add where I am" on; `places.devicePlace`, named through
   `POST /api/places/here`), or else its first photo's EXIF GPS, named once at
-  city level by Amazon Location, which is told the coordinates alone. Email
+  city level by Amazon Location, which is told the coordinates alone. Here
+  is named by its neighbourhood (`district`) and offers the businesses
+  Amazon Location finds within the browser's accuracy (50 to 200 m,
+  `places.nameSpot`), one tap to name the note by one (`venue`); it never
+  picks one itself, since the nearest is as often a bus stop. Email
   has no text convention. Any note's place can be set, changed or cleared
   after it is saved, whatever channel brought it. Precision (Jamie,
   2026-10-24: "for a note detailed location, specific. For a day the

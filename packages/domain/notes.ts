@@ -6,6 +6,7 @@ export const SOURCES = ['email', 'web', 'import', 'agent'] as const;
 export interface PlaceRecord {
   label?: string;
   venue?: string;
+  district?: string;
   city?: string;
   region?: string;
   country?: string;
@@ -37,7 +38,7 @@ export function writtenAt(note: NoteRecord): string {
   return note.written_at || note.received_at || '';
 }
 export function placeLabel(place: PlaceRecord): string {
-  const name = place.label || place.venue || '',
+  const name = place.label || place.venue || place.district || '',
     city = place.city || '';
   if (name && city && name !== city) return `${name}, ${city}`;
   return [name || city, place.region || place.country || ''].filter(Boolean).join(', ');

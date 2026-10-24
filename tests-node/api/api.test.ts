@@ -882,12 +882,20 @@ test('activity pages hold 100 rows and say where the next starts', async () => {
   const last = (await s.call('GET', '/api/activity?before=' + encodeURIComponent(String(first.next)))).b as Item;
   assert.deepEqual([(last.entries as Item[]).map((e) => e.message), last.next], [['m0'], null]);
 });
-test("Here names the device's spot at the city; a note keeps the spot exact, the weather the city", async () => {
+test("Here names the device's spot; a note keeps the spot exact and its neighbourhood or business, the weather the city", async () => {
   const s = await setup(),
-    asked: number[][] = [];
-  s.ctx.reverse = async (lat, lon) => {
-    asked.push([lat, lon]);
-    return { city: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris' };
+    asked: unknown[] = [],
+    cafe = { name: 'Café de Flore', lat: 48.854, lon: 2.3325, distance_m: 30 };
+  s.ctx.nameSpot = async (spot) => {
+    asked.push(spot);
+    return {
+      city: 'Paris',
+      region: 'Ile-de-France',
+      country: 'France',
+      tz: 'Europe/Paris',
+      district: 'Le Marais',
+      nearby: [cafe]
+    };
   };
   s.ctx.weatherFetch = async () => ({
     daily: { time: ['2026-10-07'], temperature_2m_max: [20], temperature_2m_min: [10], weather_code: [2] }
@@ -900,23 +908,27 @@ test("Here names the device's spot at the city; a note keeps the spot exact, the
     region: 'Ile-de-France',
     country: 'France',
     tz: 'Europe/Paris',
+    district: 'Le Marais',
+    nearby: [cafe],
     lat: 48.856613,
     lon: 2.352222,
     accuracy_m: 12,
     from: 'device'
   });
-  assert.deepEqual(asked, [[48.856613, 2.352222]]);
+  assert.deepEqual(asked, [{ lat: 48.856613, lon: 2.352222, accuracy_m: 12 }]);
   // Refused: signed out, without our Origin, nonsense, and a spot with no city.
   assert.equal((await s.call('POST', '/api/places/here', spot, '')).r.status, 401);
   assert.equal((await s.call('POST', '/api/places/here', spot, s.token, false)).r.status, 403);
   for (const bad of [{}, { lat: 91, lon: 0 }, { lat: '1', lon: 2 }, { lat: 1, lon: 2, accuracy_m: -1 }])
     assert.equal((await s.call('POST', '/api/places/here', bad)).r.status, 400, JSON.stringify(bad));
-  s.ctx.reverse = async () => null;
+  const naming = s.ctx.nameSpot;
+  s.ctx.nameSpot = async () => null;
   assert.deepEqual((await s.call('POST', '/api/places/here', spot)).b, { error: 'place-unnamed' });
-  s.ctx.reverse = async () => {
+  s.ctx.nameSpot = async () => {
     throw new Error('down');
   };
   assert.equal((await s.call('POST', '/api/places/here', spot)).r.status, 502);
+  s.ctx.nameSpot = naming;
 
   // A note written there keeps the spot; it shows by name, mapped to the spot.
   const added = await s.call('POST', '/api/days/2026-10-07/notes', {
@@ -927,12 +939,14 @@ test("Here names the device's spot at the city; a note keeps the spot exact, the
   assert.equal(added.r.status, 201);
   const id = String((added.b as Item).id),
     note = () => s.store.memory.all().find((i) => i.sk === `NOTE#2026-10-07#${id}`)! as Item & { place: Item };
-  assert.equal((added.b as Item).place, 'Paris, Ile-de-France');
+  assert.equal((added.b as Item).place, 'Le Marais, Paris');
   assert.match(String((added.b as Item).map), /48\.856613,2\.352222/);
   assert.deepEqual(
-    [note().place.lat, note().place.lon, note().place.accuracy_m, note().place.from],
-    [48.856613, 2.352222, 12, 'device']
+    [note().place.lat, note().place.lon, note().place.accuracy_m, note().place.from, note().place.district],
+    [48.856613, 2.352222, 12, 'device', 'Le Marais']
   );
+  // What was near is offered, never kept.
+  assert.ok(!Object.hasOwn(note().place, 'nearby'));
   // The day's weather is for the city, never the spot.
   const sky = () => s.store.memory.all().find((i) => i.sk === 'WEATHER#2026-10-07')!;
   assert.deepEqual([sky().lat, sky().lon], [48.86, 2.35]);
@@ -940,7 +954,9 @@ test("Here names the device's spot at the city; a note keeps the spot exact, the
   for (const bad of [
     { ...(here.b as Item), name: '' },
     { ...(here.b as Item), tz: 'Mars/Base' },
-    { ...(here.b as Item), lat: 200 }
+    { ...(here.b as Item), lat: 200 },
+    { ...(here.b as Item), venue: 'x'.repeat(101) },
+    { ...(here.b as Item), district: 7 }
   ])
     assert.equal(
       (await s.call('POST', '/api/days/2026-10-07/notes', { text: 'No', place: bad })).r.status,
@@ -948,6 +964,14 @@ test("Here names the device's spot at the city; a note keeps the spot exact, the
       JSON.stringify(bad)
     );
   assert.equal((await s.store.allNotes('u')).length, 1);
+
+  // The business picked from what was near names it, still mapped to the spot.
+  const at = await s.call('PUT', `/api/days/2026-10-07/notes/${id}/place`, {
+    place: { ...(here.b as Item), venue: 'Café de Flore' }
+  });
+  assert.equal((at.b as Item).place, 'Café de Flore, Paris');
+  assert.match(String((at.b as Item).map), /ll=48\.856613,2\.352222&q=Caf%C3%A9%20de%20Flore,%20Paris$/);
+  assert.equal(note().place.venue, 'Café de Flore');
 });
 test("a saved note's place can be set, changed and cleared, from any channel, and the log never keeps it", async () => {
   const s = await setup();

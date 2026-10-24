@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import { read } from '../../packages/backend/exif.ts';
 import * as media from '../../packages/backend/media.ts';
 import * as weather from '../../packages/backend/weather.ts';
-import { clean, rounded } from '../../packages/backend/places.ts';
+import { clean, nameSpot, rounded } from '../../packages/backend/places.ts';
 import { make, thumbnail } from '../../packages/backend/thumbs.ts';
 import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects } from '../../packages/testing/services.ts';
@@ -38,6 +38,88 @@ function png(width: number, height: number) {
   b.writeUInt32BE(height, 20);
   return b;
 }
+test("Here's naming offers what is near, never a bus stop or a car park, and falls back to the city", async () => {
+  const sent: Array<Record<string, unknown>> = [],
+    address = {
+      Locality: 'Minneapolis',
+      District: 'Downtown West',
+      Region: { Name: 'Minnesota' },
+      Country: { Code2: 'US' }
+    },
+    poi = (name: string, kind: string, distance: number) => ({
+      PlaceType: 'PointOfInterest',
+      Title: name,
+      Distance: distance,
+      Position: [-93.2709812, 44.9778712],
+      Categories: [{ Id: kind, Primary: true }],
+      Address: address
+    }),
+    client = (answers: unknown[][]) => ({
+      async send(command: { input: Record<string, unknown> }) {
+        sent.push(command.input);
+        return { ResultItems: answers.shift() };
+      }
+    });
+  const found = await nameSpot(
+    { lat: 44.9778, lon: -93.2717, accuracy_m: 20 },
+    client([
+      [
+        poi('Pest Control Minneapolis', 'consumer_services', 3),
+        poi('6th St S & Nicollet Mall', 'bus_stop', 10),
+        {
+          PlaceType: 'PointAddress',
+          Title: '603 Nicollet Mall',
+          Distance: 20,
+          Address: address,
+          TimeZone: { Name: 'America/Chicago' }
+        },
+        poi('Gaviidae Commons Garage', 'parking_garage-parking_house', 34),
+        poi('FIVE GUYS', 'fast_food', 41),
+        poi('FIVE GUYS', 'fast_food', 44),
+        poi('Caribou Coffee', 'fast_food', 50),
+        poi('SK Coffee', 'coffee_shop', 63)
+      ]
+    ]) as never
+  );
+  assert.deepEqual(found, {
+    city: 'Minneapolis',
+    region: 'Minnesota',
+    country: 'United States',
+    district: 'Downtown West',
+    tz: 'America/Chicago',
+    nearby: [
+      { name: 'FIVE GUYS', lat: 44.977871, lon: -93.270981, distance_m: 41 },
+      { name: 'Caribou Coffee', lat: 44.977871, lon: -93.270981, distance_m: 50 }
+    ]
+  });
+  // The spot itself goes, kept to be stored, with the zone asked for.
+  assert.deepEqual(sent[0], {
+    QueryPosition: [-93.2717, 44.9778],
+    IntendedUse: 'Storage',
+    MaxResults: 15,
+    Language: 'en',
+    Filter: { IncludePlaceTypes: ['PointOfInterest', 'PointAddress', 'Street'] },
+    AdditionalFeatures: ['TimeZone']
+  });
+  // A vague fix reaches a little further, never past 200 m.
+  const vague = await nameSpot(
+    { lat: 1, lon: 2, accuracy_m: 5000 },
+    client([[poi('SK Coffee', 'coffee_shop', 63), poi('Far', 'cafe', 201)]]) as never
+  );
+  assert.deepEqual(
+    vague!.nearby.map((v) => v.name),
+    ['SK Coffee']
+  );
+  // Nothing nearby with an address: the city alone, as a photo is named.
+  sent.length = 0;
+  const lone = await nameSpot(
+    { lat: 47.9, lon: -91.8 },
+    client([[], [{ Address: { Locality: 'Ely', Region: { Name: 'Minnesota' }, Country: { Code2: 'US' } } }]]) as never
+  );
+  assert.deepEqual(lone, { city: 'Ely', region: 'Minnesota', country: 'United States', nearby: [] });
+  assert.deepEqual((sent[1]!.Filter as Record<string, unknown>).IncludePlaceTypes, ['Locality']);
+  assert.equal(await nameSpot({ lat: 0, lon: 0 }, client([[], []]) as never), null);
+});
 test('media checks bytes, drops logos and limits files without losing raw attachment order', () => {
   const parts = [
     { type: 'image/jpeg', filename: 'forged.jpg', data: Buffer.alloc(30000) },

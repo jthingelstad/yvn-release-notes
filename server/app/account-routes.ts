@@ -12,7 +12,7 @@ import { signinMessage, deleteMessage } from '../../packages/mail/auth.ts';
 import { checkTurnstile, turnstileClient, turnstileToken } from '../../packages/backend/turnstile.ts';
 import { activityId, activityView, titled } from '../../packages/domain/activity.ts';
 import { eventId, recordActivity } from '../../packages/backend/activity.ts';
-import { spotOf } from '../../packages/backend/places.ts';
+import { spotOf, type SpotNames } from '../../packages/backend/places.ts';
 import { json, body } from './requests.ts';
 const ACTIVITY_SHOWN = 100;
 export async function accountRoutes(
@@ -214,14 +214,15 @@ export async function accountRoutes(
     }
   }
   if (pattern === '/api/places/here') {
-    // The device's spot, named at the city for a note (AGENTS.md, Where a
-    // note was). Coordinates travel in the body, never a logged URL.
+    // The device's spot, named for a note (AGENTS.md, Where a note was):
+    // the city, the neighbourhood, and businesses near enough to offer.
+    // Coordinates travel in the body, never a logged URL.
     await service.signedIn();
     const spot = spotOf(await body(service.request));
     if (!spot) reject(400, 'place');
-    let named: Item | null;
+    let named: SpotNames | null;
     try {
-      named = await service.reverse(spot.lat, spot.lon);
+      named = await service.nameSpot(spot);
     } catch {
       reject(502, 'places-failed');
     }
@@ -231,6 +232,8 @@ export async function accountRoutes(
       region: named.region ?? '',
       country: named.country ?? '',
       ...(named.tz ? { tz: named.tz } : {}),
+      ...(named.district ? { district: named.district } : {}),
+      nearby: named.nearby,
       ...spot,
       from: 'device'
     });

@@ -38,6 +38,9 @@ export function Search() {
     <>
       <Bar />
       <h1>Search</h1>
+      <p className="lede">
+        Words and tags in every note, and what your recordings and photos hold if you turned that on in Settings.
+      </p>
       {/* The box starts again from the words in the address, after back and
           forward too. */}
       <SearchForm
@@ -50,14 +53,14 @@ export function Search() {
         }}
         cleared={() => navigate({ to: '/search/' })}
       />
-      <p className="hint spaced" id="search-lede" role="status" hidden={!q || !d}>
+      <p className="search-lede" id="search-lede" role="status" hidden={!q || !d}>
         {d &&
           (!d.notes
             ? 'No notes have all of those words.'
-            : `${count(d.notes, 'note', 'notes')} on ${count(d.day_count, 'day', 'days')}` +
+            : `${count(d.notes, 'note', 'notes')} for “${q}”, newest first` +
               (d.day_count > d.days.length
-                ? `. The newest ${d.days.length} days are here; more words narrow it.`
-                : '.'))}
+                ? `. Here are the newest ${d.days.length} of ${d.day_count} days; more words narrow it.`
+                : ''))}
       </p>
       {q && found.isPending && <Loading />}
       {q && found.isError && !refused && <Failed />}
@@ -65,7 +68,7 @@ export function Search() {
 
       <section id="every-tag-list" hidden={!!q}>
         <h2 className="big">Tags</h2>
-        <p className="hint spaced" id="tags-lede">
+        <p className="hint" id="tags-lede">
           {tags.data &&
             (tags.data.tags.length
               ? 'Every hashtag in your notes. Write one, like #cabin, in an email or here, and the note has that tag.'
@@ -128,9 +131,10 @@ function SearchForm({
 
   return (
     <form id="search-form" className="search-form" role="search" noValidate onSubmit={submit}>
-      <label>
-        Words in your notes
+      <label htmlFor="q">Words in your notes</label>
+      <div className="search-row">
         <input
+          id="q"
           ref={input}
           // Arriving with nothing asked, the box is ready (and a phone's
           // keyboard up): the header's search leads here.
@@ -147,10 +151,10 @@ function SearchForm({
             setText(e.target.value);
           }}
         />
-      </label>
-      <button className="go" type="submit">
-        Search
-      </button>
+        <button className="go" type="submit">
+          Search
+        </button>
+      </div>
       <ErrorLine line={problem.line || (refused && sayFor(refused))} />
     </form>
   );

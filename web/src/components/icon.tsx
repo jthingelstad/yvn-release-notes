@@ -85,6 +85,7 @@ const icons = {
   prev: ChevronLeft,
   next: ChevronRight,
   calendar: CalendarDays,
+  tags: Tags,
   write: SquarePen,
   birthday: Cake,
   anniversary: PartyPopper,

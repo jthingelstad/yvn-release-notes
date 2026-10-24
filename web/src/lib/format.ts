@@ -8,6 +8,23 @@ export function longDate(iso: string): string {
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+// "October 17 to 20", "September 30 to October 2", one day alone as
+// "October 24": the year once, at the end, unless it is `thisYear`, and
+// both in full across a new year.
+export function dateRange(from: string, to: string, thisYear?: number): string {
+  const [fy, fm, fd] = parts(from);
+  const [ty, tm, td] = parts(to);
+  if (fy !== ty) return `${longDate(from)} to ${longDate(to)}`;
+  const month = (m: number) => new Date(fy, m - 1, 1).toLocaleDateString('en-US', { month: 'long' });
+  const span =
+    from === to
+      ? `${month(fm)} ${fd}`
+      : fm === tm
+        ? `${month(fm)} ${fd} to ${td}`
+        : `${month(fm)} ${fd} to ${month(tm)} ${td}`;
+  return fy === thisYear ? span : `${span}, ${fy}`;
+}
+
 // "6:00 AM" for "06:00"
 export function clock(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number);

@@ -166,7 +166,7 @@ test('search lists every tag, finds words, marks them, and the box clears back t
   await box.fill(words.toLowerCase());
   await box.press('Enter');
   await expect(page).toHaveURL(new RegExp(`#q=${encodeURIComponent(words.toLowerCase())}$`));
-  await expect(page.locator('#search-lede')).toHaveText('1 note on 1 day.');
+  await expect(page.locator('#search-lede')).toHaveText(`1 note for “${words.toLowerCase()}”, newest first`);
   await expect(page.locator('#results mark').first()).toHaveText('Lighthouse');
   await expect(tags).toBeHidden();
 
@@ -442,7 +442,8 @@ test('the timeline lists the releases, and a release shows its days oldest first
   await releases.getByRole('link', { name: 'Version 4.4' }).click();
   await expect(page).toHaveURL(/\/release\/\?v=4\.4$/);
   await expect(page.locator('#release-title')).toHaveText('Release 4.4');
-  await expect(page.locator('#release-counts')).toHaveText('1 day with notes, 1 note.');
+  await expect(page.locator('#release-counts li')).toHaveText(['1 day with notes', '1 note']);
+  await expect(page.getByRole('navigation', { name: 'Other releases' })).toContainText('Release 3.5');
   await expect(page.locator('#release-days .tday')).toHaveCount(1);
   await expect(page.locator('#release-days')).toContainText('the day the new bike came');
 

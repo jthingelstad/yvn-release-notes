@@ -42,12 +42,18 @@ nothing there links here yet: that is Jamie's call.
 2. **Today**: the version number with the streak and what ships next under
    its dots, the day's place, a box to write a note, and today's notes from
    email and the web together.
-3. **Timeline**: days by version, newest first, with their notes. Above
-   them, the releases (a release is a year of life, "5.4", birthday to
-   birthday), newest first, the current one marked, each a link to its
-   page: `/release/?v=5.4`, its days with notes, oldest first, under a
-   head with its dates, its counts, its longest streak and its tags by how
-   many notes have them (Jamie, 2026-10-12).
+3. **Archive** (`/timeline/`): days by version, newest first, with their
+   notes. Days in a row with nothing in them read as one quiet line (their
+   versions, their dates, "Add some"), paused days apart from the rest
+   ("Your streak waited"). Above them, the releases (a release is a year of
+   life, "5.4", birthday to birthday), newest first, the current one
+   marked, each a link to its page: `/release/?v=5.4`, its days with notes,
+   oldest first, under a head with its dates, three figures (days with
+   notes, notes, longest streak) and its tags by how many notes have them
+   (Jamie, 2026-10-12), and links to the releases either side. A tag's page
+   (`/tag/?t=`) takes the same head: how many notes on how many days, and
+   when. Search puts its box and button on one line and counts what it
+   found, newest first.
 4. **Any past day**: the days either side and a calendar to pick another,
    the day's notes first, then a box to add one (backfill). Any day from
    the birthday to yesterday. A note can say where it was ("Where", the

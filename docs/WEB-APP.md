@@ -60,7 +60,9 @@ nothing there links here yet: that is Jamie's call.
    city search, optional), and a day can have a place of its own with no
    note; a past day's weather follows it (AGENTS.md, Where a note was).
 5. **Pause**: no emails for N days (1-60) or until a date. Resume any time;
-   otherwise the emails start again on their own.
+   otherwise the emails start again on their own. The lengths are 52px option rows.
+   **Delete** offers the zip as an outline button ("Make the zip") above a
+   ruled step whose filled button emails the code.
 6. **Export your data**: every note, its day and version, plus the profile,
    as Markdown and JSON; since phase 3, a zip with those and every photo
    and recording, built in the background (`workers/export.ts`). It arrives with sign-in, before anything else, so
@@ -314,7 +316,7 @@ notes.yourversionnumber.com
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/badges/`, `/map/`, `/search/`,
   `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/you/`, `/settings/`, `/activity/` (`/mail-log/` redirects there), `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
-  `/connect/` approves an external agent request whose opaque id stays in the fragment.
+  `/connect/` approves an external agent request whose opaque id stays in the fragment. With no request it shows the MCP address to add, with Copy; with one, the request's question is the title, what it shares as a list, each extra approval as a ruled checkbox row, and the retention paragraphs in full above Allow.
   `/admin/` manages product updates; `/admin-users/` shows subscriber metadata. Administration is visible in settings only to the configured administrator.
 
 - **A pause** starts on the next day an email would go (today, unless

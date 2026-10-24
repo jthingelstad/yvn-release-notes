@@ -78,13 +78,13 @@ export function Delete() {
             can’t be undone.
           </p>
 
-          <div className="section wide" id="keep-copy">
+          <div className="section wide keep-copy" id="keep-copy">
             <h2 className="big">Keep a copy first</h2>
             <p className="hint">
               Every note you’ve kept, with its day and version, every photo and recording, and your settings, in one
               zip.
             </p>
-            <ZipExport />
+            <ZipExport secondary />
             <p className="hint">
               Or the words alone:{' '}
               <a href="/api/export?format=md" download>
@@ -101,26 +101,28 @@ export function Delete() {
           <form
             ref={askForm}
             id="code-ask"
-            className="stack tight spaced-lg"
+            className="stack tight delete-step"
             noValidate
             hidden={step !== 'ask'}
             onSubmit={ask}
           >
-            <p className="hint">
+            <p>
               To make sure it’s you, we’ll email a code to <strong id="to">{p.email}</strong>.
             </p>
             <div className="row">
-              <button className="quiet danger" type="submit" disabled={askBusy}>
+              <button className="go danger" type="submit" disabled={askBusy}>
                 Email me a code to delete my account
               </button>
-              <AppLink href="/settings/">Not now</AppLink>
+              <AppLink className="quiet" href="/settings/">
+                Not now
+              </AppLink>
             </div>
             <ErrorLine line={askProblem.line} />
           </form>
 
           <form
             id="code-confirm"
-            className="spaced-lg"
+            className="stack tight delete-step"
             noValidate
             hidden={step !== 'confirm'}
             onSubmit={confirm}
@@ -141,7 +143,9 @@ export function Delete() {
               <button className="go danger" type="submit" disabled={confirmBusy}>
                 Delete everything
               </button>
-              <AppLink href="/settings/">Keep my account</AppLink>
+              <AppLink className="quiet" href="/settings/">
+                Keep my account
+              </AppLink>
             </div>
             <ErrorLine line={confirmProblem.line} />
           </form>

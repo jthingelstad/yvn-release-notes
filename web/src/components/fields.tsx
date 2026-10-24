@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { api, get } from '../lib/api.ts';
 import { clock, megabytes, SEND_TIMES } from '../lib/format.ts';
 import type { ZipStatus } from '../lib/types.ts';
+import { Icon } from './icon.tsx';
 
 // --- the birthday ------------------------------------------------------------
 // Month, day and year as three fields: quicker than a date picker's wheel
@@ -149,7 +150,9 @@ export function SendTimeSelect({
 // Everything, photos and recordings too, built in the background
 // (export_job.py): start it, ask every few seconds, then offer the link.
 
-export function ZipExport() {
+// On the delete page the zip is the lesser action, so `secondary` draws it
+// as an outline beside the filled one that deletes.
+export function ZipExport({ secondary = false }: { secondary?: boolean }) {
   const client = useQueryClient();
   const zip = useQuery({
     queryKey: ['zip'],
@@ -196,14 +199,21 @@ export function ZipExport() {
           Download the zip
         </a>
         <button
-          className={state === 'ready' ? 'quiet' : 'go'}
+          className={state === 'ready' ? 'quiet' : secondary ? 'sec' : 'go'}
           type="button"
           data-zip-start=""
           hidden={state === 'building'}
           disabled={starting}
           onClick={start}
         >
-          {state === 'ready' ? 'Make a fresh one' : state === 'failed' ? 'Try again' : 'Export everything'}
+          {secondary && state !== 'ready' && <Icon name="download" />}
+          {state === 'ready'
+            ? 'Make a fresh one'
+            : state === 'failed'
+              ? 'Try again'
+              : secondary
+                ? 'Make the zip'
+                : 'Export everything'}
         </button>
       </div>
       <p className="hint" data-zip-status="" role="status" hidden={!status}>

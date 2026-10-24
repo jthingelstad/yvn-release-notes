@@ -108,7 +108,8 @@ export async function dayView(
   notes: Item[],
   sky?: Item | null,
   link?: MediaLink,
-  own?: Item | null
+  own?: Item | null,
+  whole: Item[] = notes
 ): Promise<Item> {
   const view: Item = {
     date: day,
@@ -120,7 +121,8 @@ export async function dayView(
   // never mapped (Jamie, 2026-10-24: "inherit the users location for that
   // account or day unless they override it"). Derived here, never stored,
   // so it follows the day; a note's own place, or its "No place", wins.
-  const shared = dayPlace(own as PlaceRecord | null, notes as NoteRecord[], String(p.tz)),
+  // From the whole day, so a search or tag page shows what the day does.
+  const shared = dayPlace(own as PlaceRecord | null, whole as NoteRecord[], String(p.tz)),
     around = shared ?? placeOf(p),
     label = around && placeLabel({ city: around.city, region: around.region, country: around.country });
   if (label)

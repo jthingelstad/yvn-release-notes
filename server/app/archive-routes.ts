@@ -16,7 +16,8 @@ export async function renderedDays(
   uid: string,
   p: Item,
   dates: string[],
-  provided?: Record<string, Item[]>
+  provided?: Record<string, Item[]>,
+  whole?: Record<string, Item[]>
 ): Promise<Item[]> {
   const store = service.context.store,
     by: Record<string, Item[]> = { ...provided };
@@ -27,7 +28,9 @@ export async function renderedDays(
   if (!provided) for (const n of await store.notesBetween(uid, first, last)) (by[dateOf(n)] ??= []).push(n);
   const [sky, own] = await Promise.all([store.weatherBetween(uid, first, last), store.placesBetween(uid, first, last)]);
   return Promise.all(
-    dates.map((d) => dayView(p, d, by[d] ?? [], sky[d], mediaLinks(service.context.objects, uid), own[d]))
+    dates.map((d) =>
+      dayView(p, d, by[d] ?? [], sky[d], mediaLinks(service.context.objects, uid), own[d], whole?.[d] ?? by[d] ?? [])
+    )
   );
 }
 export async function archiveRoutes(
@@ -184,21 +187,27 @@ export async function archiveRoutes(
     });
   }
   const by: Record<string, Item[]> = {};
-  let terms: string[] = [];
+  let terms: string[] = [],
+    every: Item[] | null = null;
   if (pattern === '/api/search') {
     const q = (await body(service.request)).q;
     if (typeof q !== 'string' || !pythonTrim(q)) reject(400, 'query');
     if (codePointLength(q) > 200) reject(400, 'query-too-long');
     terms = searchTerms(q);
     if (!terms.length) reject(400, 'query');
-    for (const n of await store.allNotes(uid))
-      if (terms.every((t) => searchedText(n).includes(t))) (by[dateOf(n)] ??= []).push(n);
+    every = await store.allNotes(uid);
+    for (const n of every) if (terms.every((t) => searchedText(n).includes(t))) (by[dateOf(n)] ??= []).push(n);
   } else
     for (const n of await store.taggedNotes(uid, args[0]!))
       if (((n.tags as string[]) ?? []).includes(args[0]!)) (by[dateOf(n)] ??= []).push(n);
   const dates = Object.keys(by).sort().reverse(),
-    shown = pattern === '/api/search' ? dates.slice(0, 100) : dates,
-    views = await renderedDays(service, uid, p, shown, by);
+    shown = pattern === '/api/search' ? dates.slice(0, 100) : dates;
+  // A note with no place shows its whole day's city, so read the whole day
+  // where one is shown (a tag page reads its notes alone until then).
+  if (!every && shown.some((d) => by[d]!.some((n) => !n.place && !n.place_cleared))) every = await store.allNotes(uid);
+  const whole: Record<string, Item[]> = {};
+  for (const n of every ?? []) if (by[dateOf(n)]) (whole[dateOf(n)] ??= []).push(n);
+  const views = await renderedDays(service, uid, p, shown, by, every ? whole : undefined);
   for (const v of views) delete v.weather;
   return json({
     ...(pattern === '/api/search'

@@ -376,8 +376,9 @@ or new CSP exception.
   microphone and the location to the page itself and turns off the camera,
   payment and USB. The e2e test records Chromium's fake microphone.
 - **Inherited place**: a note with no place of its own shows the day's city
-  (or home's) in italics, unlinked, its title saying which; Where on it
-  offers to set one, as for a note with none.
+  (or home's) in italics, unlinked, its title saying which, the same on
+  its day, search and tag pages (worked out from the whole day). Where on
+  it sets one, or "No place" clears it, so nothing shows.
 - **Here** (Jamie, 2026-10-24): the note form's Here button, and the Where
   button on a saved note, ask the browser where it is (`web/src/lib/here.ts`)
   only when tapped, or on Today with "Add where I am" on, and name the spot

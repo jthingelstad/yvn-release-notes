@@ -1064,6 +1064,26 @@ test("a note without a place shows the day's city or home, marked inherited, unl
       'place'
     )
   );
+  // "No place" on it: the inherited city goes too.
+  assert.equal((await s.call('DELETE', '/api/days/2026-10-05/notes/m-4/place')).r.status, 200);
+  assert.ok(!Object.hasOwn((await day('2026-10-05'))[0]!, 'place'));
+});
+test('search and tag pages show the inherited city the whole day does, not their matches alone', async () => {
+  const s = await setup();
+  s.ctx.weatherFetch = async () => ({
+    daily: { time: [], temperature_2m_max: [], temperature_2m_min: [], weather_code: [] }
+  });
+  const add = async (text: string, place?: Item) =>
+    String(((await s.call('POST', '/api/days/2026-10-06/notes', { text, ...(place ? { place } : {}) })).b as Item).id);
+  await add('Croissants', city);
+  const id = await add('Thinking about #walks');
+  const matched = async (r: Promise<{ b: unknown }>) =>
+    (((await r).b as Item).days as Item[]).flatMap((d) => d.notes as Item[]).find((n) => n.id === id)!;
+  for (const found of [
+    await matched(s.call('POST', '/api/search', { q: 'thinking' })),
+    await matched(s.call('GET', '/api/tags/walks'))
+  ])
+    assert.deepEqual([found.place, found.place_from], ['Paris, Ile-de-France', 'day']);
 });
 test('"Add where I am" is a setting, off until turned on, and recorded as a change', async () => {
   const s = await setup();

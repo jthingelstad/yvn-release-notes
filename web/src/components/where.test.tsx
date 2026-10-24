@@ -1,5 +1,5 @@
-// A note's "Here": the device's spot, named by the server, asked on a tap
-// or, with "Add where I am", by the form itself.
+// A note's "Here": the device's spot, named by the server, asked only on a
+// tap ("Add where I am" asks as a note is saved: noteform.tsx).
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
@@ -57,11 +57,12 @@ describe('NoteWhere', () => {
     expect((onPick.mock.calls[0]![0] as Place).name).toBe('Minneapolis');
   });
 
-  it('with "Add where I am" it looks by itself, and a short walk reuses the name', async () => {
+  it('a short walk from the last spot reuses its name', async () => {
     device({ lat: 44.9485, lon: -93.2819 });
     const fetch = named('Elsewhere'),
       onPick = vi.fn();
-    render(<NoteWhere place={null} onPick={onPick} onProblem={vi.fn()} auto />);
+    render(<NoteWhere place={null} onPick={onPick} onProblem={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: /Here/ }));
     await waitFor(() => expect(onPick).toHaveBeenCalled());
     // A few metres from the last spot named: no second request.
     expect(fetch).not.toHaveBeenCalled();
@@ -73,18 +74,6 @@ describe('NoteWhere', () => {
     named('Unused');
     const onProblem = vi.fn();
     render(<NoteWhere place={null} onPick={vi.fn()} onProblem={onProblem} />);
-    const here = screen.getByRole('button', { name: /Here/ });
-    await userEvent.click(here);
-    await waitFor(() => expect(onProblem).toHaveBeenCalledWith({ error: 'location-denied' }, here));
-  });
-
-  it('with "Add where I am", a browser told no stays quiet until Here is tapped', async () => {
-    device({ code: 1 });
-    named('Unused');
-    const onProblem = vi.fn();
-    render(<NoteWhere place={null} onPick={vi.fn()} onProblem={onProblem} auto />);
-    await new Promise((r) => setTimeout(r, 20));
-    expect(onProblem).not.toHaveBeenCalled();
     const here = screen.getByRole('button', { name: /Here/ });
     await userEvent.click(here);
     await waitFor(() => expect(onProblem).toHaveBeenCalledWith({ error: 'location-denied' }, here));
@@ -109,11 +98,11 @@ describe('NoteWhere', () => {
             setPlace(p);
           }}
           onProblem={vi.fn()}
-          auto
         />
       );
     }
     render(<Form />);
+    await userEvent.click(screen.getByRole('button', { name: /Here/ }));
     await waitFor(() => expect(answer).toBeTruthy());
     await userEvent.click(screen.getByRole('button', { name: /Where/ }));
     await userEvent.click(await screen.findByRole('button', { name: 'Duluth' }));
@@ -151,18 +140,28 @@ describe('NoteWhere', () => {
     expect(onPick).toHaveBeenLastCalledWith({ ...place, venue: undefined });
   });
 
-  it('shows the place, and "Not there" takes it off', async () => {
-    const onPick = vi.fn();
+  it('shows the place, and "Not there" takes it off and says so', async () => {
+    const onPick = vi.fn(),
+      onNotThere = vi.fn();
     render(
       <NoteWhere
         place={{ name: 'Paris', region: 'Ile-de-France', lat: 48.856613, lon: 2.352222, from: 'device' }}
         onPick={onPick}
         onProblem={vi.fn()}
-        auto
+        onNotThere={onNotThere}
       />
     );
     expect(screen.getByText(/At Paris, Ile-de-France/)).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Not there' }));
     expect(onPick).toHaveBeenCalledWith(null);
+    expect(onNotThere).toHaveBeenCalled();
+  });
+
+  it('never asks the browser by itself', async () => {
+    const asked = device({ lat: 44.9483, lon: -93.2817 });
+    named('Unused');
+    render(<NoteWhere place={null} onPick={vi.fn()} onProblem={vi.fn()} />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(asked).not.toHaveBeenCalled();
   });
 });

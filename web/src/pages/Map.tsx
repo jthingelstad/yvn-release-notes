@@ -380,6 +380,10 @@ function Basemap({
       Object.assign(now, { framed: now.view, centred: now.link });
       m.touchZoomRotate.disableRotation();
       m.keyboard.disableRotation();
+      // Flat whatever the style says: the browser keeps the style a day
+      // (map-routes.ts), so one fetched while it still asked for a globe
+      // would keep drawing one.
+      m.on('style.load', () => m.setProjection({ type: 'mercator' }));
       m.addControl(new maplibre.NavigationControl({ showCompass: false }));
       const pinsOf = (features: { properties?: Record<string, unknown> | null }[]) => {
         const byKey = new Map(now.pins.map((p) => [keyOf(p), p]));

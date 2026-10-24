@@ -94,7 +94,7 @@ export interface Me {
   describe: boolean;
   // "Show badges" (docs/BADGES.md), on unless turned off
   badges: boolean;
-  // "Add where I am": new notes on Today start with Here
+  // "Add where I am": a note saved on Today with no place gets Here's
   here: boolean;
   today: string;
   version: string;

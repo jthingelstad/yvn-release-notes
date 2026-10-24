@@ -83,7 +83,10 @@ export function NoteWhere({
     if (mine !== asking.current) return;
     setFinding(false);
     if ('place' in found) onPick(found.place);
-    else onProblem(found.problem, asked ? here.current : undefined);
+    // "Add where I am" is on unless turned off, so a browser that was told
+    // no stays quiet until Here is tapped: no complaint on every visit.
+    else if (asked || found.problem.error !== 'location-denied')
+      onProblem(found.problem, asked ? here.current : undefined);
   };
   const looking = auto && !place && !declined && !open && canLocate();
   useEffect(() => {

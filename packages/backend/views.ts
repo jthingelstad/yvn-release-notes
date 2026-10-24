@@ -24,7 +24,8 @@ export function profileView(p: Item, now: number, inboundDomain: string): Item {
       transcribe: Boolean(p.transcribe),
       describe: Boolean(p.describe),
       badges: p.badges !== false,
-      here: Boolean(p.here),
+      // On unless turned off (Jamie, 2026-10-24).
+      here: p.here !== false,
       today,
       version: v.toString(),
       pause_starts: pauseStart(p, today)

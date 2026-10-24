@@ -62,7 +62,7 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
           label="Add to today"
           placeholder="A few words, a photo, a voice memo…"
           submit="Save note"
-          here={!!me?.here}
+          here={!!me && me.here !== false}
         />
       </section>
       <section className="saved-notes" aria-labelledby="notes-head">

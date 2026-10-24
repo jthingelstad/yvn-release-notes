@@ -179,7 +179,7 @@ function Account({ p }: { p: Me }) {
   const transcribe = useSetting(!!p.transcribe);
   const describe = useSetting(!!p.describe);
   const badges = useSetting(p.badges !== false);
-  const here = useSetting(!!p.here);
+  const here = useSetting(p.here !== false);
   const cityProblem = useProblem();
   const emailsProblem = useProblem();
   const focusLater = useFocusLater();

@@ -8,10 +8,10 @@
 // own place as #d=<day>&ll=<lat>,<lon>: the map opens on that day's notes,
 // or on the place alone when none of them has a spot.
 //
-// Words, a tag and a year narrow the pins (#q=, #tag=, #year=). The words
-// are found as the Search page finds them, by POST, so they stay in the #;
-// the tag and the year are read from the pins. Each menu offers what the
-// other filters leave.
+// Words, a tag and a release narrow the pins (#q=, #tag=, #v=, the
+// release's name as on /release/?v=). The words are found as the Search
+// page finds them, by POST, so they stay in the #; the tag and the release
+// are read from the pins. Each menu offers what the other filters leave.
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -20,6 +20,7 @@ import { AppLink, Bar, ErrorLine, Failed, Loading, useTitle } from '../component
 import { dayHref } from '../components/days.tsx';
 import { NoteBody } from '../components/notes.tsx';
 import { MAX_QUERY, searchTerms } from '../../../packages/domain/search.ts';
+import { releaseAge } from '../../../packages/domain/version.ts';
 import { ApiError, load } from '../lib/api.ts';
 import { count, dayName } from '../lib/format.ts';
 import { useHashParam } from '../lib/nav.ts';
@@ -31,32 +32,32 @@ const keyOf = (p: { date: string; id: string }) => p.date + '#' + p.id;
 
 export interface Sieve {
   tag: string;
-  year: string;
+  release: string;
   /** The pins with the words, by key; null when no words are asked. */
   found: Set<string> | null;
 }
 export interface Sifted {
   shown: Pin[];
   tags: { tag: string; notes: number }[];
-  years: { year: string; notes: number }[];
+  releases: { release: string; notes: number }[];
 }
 /** The pins every filter keeps, and what each menu can offer: the tags
- * among the pins the words and year keep, and the years among those the
- * words and tag keep, most used and newest first. A choice that keeps
+ * among the pins the words and release keep, and the releases among those
+ * the words and tag keep, most used and newest first. A choice that keeps
  * nothing stays on its menu. */
 export function sift(pins: readonly Pin[], sieve: Sieve): Sifted {
   const words = (p: Pin) => !sieve.found || sieve.found.has(keyOf(p)),
     tagged = (p: Pin) => !sieve.tag || p.tags.includes(sieve.tag),
-    dated = (p: Pin) => !sieve.year || p.date.slice(0, 4) === sieve.year,
+    dated = (p: Pin) => !sieve.release || p.release === sieve.release,
     tags = new Map<string, number>(),
-    years = new Map<string, number>(),
+    releases = new Map<string, number>(),
     shown: Pin[] = [];
   if (sieve.tag) tags.set(sieve.tag, 0);
-  if (sieve.year) years.set(sieve.year, 0);
+  if (sieve.release) releases.set(sieve.release, 0);
   for (const p of pins) {
     if (!words(p)) continue;
     if (dated(p)) for (const t of new Set(p.tags)) tags.set(t, (tags.get(t) ?? 0) + 1);
-    if (tagged(p)) years.set(p.date.slice(0, 4), (years.get(p.date.slice(0, 4)) ?? 0) + 1);
+    if (tagged(p)) releases.set(p.release, (releases.get(p.release) ?? 0) + 1);
     if (dated(p) && tagged(p)) shown.push(p);
   }
   return {
@@ -64,7 +65,10 @@ export function sift(pins: readonly Pin[], sieve: Sieve): Sifted {
     tags: [...tags]
       .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
       .map(([tag, notes]) => ({ tag, notes })),
-    years: [...years].sort(([a], [b]) => b.localeCompare(a)).map(([year, notes]) => ({ year, notes }))
+    // 10.0 after 9.9: by age, not by spelling.
+    releases: [...releases]
+      .sort(([a], [b]) => (releaseAge(b) ?? -1) - (releaseAge(a) ?? -1))
+      .map(([release, notes]) => ({ release, notes }))
   };
 }
 
@@ -78,7 +82,7 @@ export function MapPage() {
     ll = useHashParam('ll'),
     q = (useHashParam('q') || '').trim(),
     tag = useHashParam('tag') || '',
-    year = useHashParam('year') || '';
+    release = useHashParam('v') || '';
   // Words with no terms in them (a pair of quotes) are no search.
   const asked = searchTerms(q).length > 0;
   const searched = useQuery({
@@ -94,26 +98,25 @@ export function MapPage() {
     () => (asked && searched.data ? new Set(searched.data.found.map(keyOf)) : null),
     [asked, searched.data]
   );
-  const sifted = useMemo(() => d && sift(d.pins, { tag, year, found: words }), [d, tag, year, words]);
+  const sifted = useMemo(() => d && sift(d.pins, { tag, release, found: words }), [d, tag, release, words]);
   // A menu shows when there is something to choose at all, whatever the
   // other filters leave, so it never comes and goes.
   const menus = useMemo(
-    () =>
-      d && { tags: d.pins.some((p) => p.tags.length), years: new Set(d.pins.map((p) => p.date.slice(0, 4))).size > 1 },
+    () => d && { tags: d.pins.some((p) => p.tags.length), releases: new Set(d.pins.map((p) => p.release)).size > 1 },
     [d]
   );
-  const filtering = Boolean(q || tag || year);
+  const filtering = Boolean(q || tag || release);
   // The map moves to what the filters keep once the words are found.
-  const view = asked && (searched.isPending || searched.isPlaceholderData) ? null : [q, tag, year].join('\n');
+  const view = asked && (searched.isPending || searched.isPlaceholderData) ? null : [q, tag, release].join('\n');
 
   // A filter replaces the note a place link asked for.
   const filter = useCallback(
-    (next: Partial<Record<'q' | 'tag' | 'year', string>>) => {
+    (next: Partial<Record<'q' | 'tag' | 'v', string>>) => {
       const hash = new URLSearchParams();
-      for (const [k, v] of Object.entries({ q, tag, year, ...next })) if (v) hash.set(k, v);
+      for (const [k, v] of Object.entries({ q, tag, v: release, ...next })) if (v) hash.set(k, v);
       navigate({ to: '/map/', hash: hash.toString(), replace: true });
     },
-    [navigate, q, tag, year]
+    [navigate, q, tag, release]
   );
   // The words go in a moment after the last key, not with every one. The
   // box follows the address when something else changes it (the Map tab,
@@ -154,7 +157,7 @@ export function MapPage() {
     return !id && ofDay.length ? ofDay : null;
   }, [shown, day, id]);
   const link = linked || at ? `${day}#${id ?? ''}#${ll ?? ''}` : '',
-    here = [link, q, tag, year].join('\n');
+    here = [link, q, tag, release].join('\n');
   const [chosen, setChosen] = useState<{ pins: Pin[]; under: string } | null>(null);
   const pick = useCallback((pins: Pin[] | null) => setChosen(pins && { pins, under: here }), [here]);
   const picked = chosen && chosen.under === here ? chosen.pins : linked;
@@ -209,14 +212,14 @@ export function MapPage() {
                     </select>
                   </label>
                 )}
-                {(menus?.years || year) && (
+                {(menus?.releases || release) && (
                   <label>
-                    Filter by year
-                    <select value={year} onChange={(e) => filter({ year: e.target.value })}>
-                      <option value="">All years</option>
-                      {sifted.years.map((y) => (
-                        <option key={y.year} value={y.year}>
-                          {y.year} ({y.notes})
+                    Filter by release
+                    <select value={release} onChange={(e) => filter({ v: e.target.value })}>
+                      <option value="">All releases</option>
+                      {sifted.releases.map((r) => (
+                        <option key={r.release} value={r.release}>
+                          {r.release} ({r.notes})
                         </option>
                       ))}
                     </select>
@@ -229,7 +232,7 @@ export function MapPage() {
                     onClick={() => {
                       setText('');
                       setSent('');
-                      filter({ q: '', tag: '', year: '' });
+                      filter({ q: '', tag: '', v: '' });
                     }}
                   >
                     Clear filters

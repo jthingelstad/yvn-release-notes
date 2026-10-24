@@ -569,6 +569,7 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
             place: 'Le Marais, Paris',
             exact: true,
             tags: [],
+            release: '4.5',
             text: 'Croissants on the bench'
           }
         ]
@@ -615,22 +616,32 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
   await page.unrouteAll({ behavior: 'wait' });
 });
 
-test('the map narrows by words, tag and year, and a group lists every note in it', async ({ page }) => {
+test('the map narrows by words, tag and release, and a group lists every note in it', async ({ page }) => {
   const refused = [],
     asked = [];
   page.on('console', (m) => /Content Security Policy|Refused to/.test(m.text()) && refused.push(m.text()));
   // Two notes 800 m apart in Paris, one group at the zoom the map fits them
   // to (11) but 32px either side of it, too far for one tap to reach both
-  // pins, and one in Minneapolis two years before.
-  const pin = (date, id, lat, lon, place, tags, text) => ({ date, id, lat, lon, place, exact: true, tags, text });
+  // pins, and one in Minneapolis two releases before.
+  const pin = (date, id, release, lat, lon, place, tags, text) => ({
+    date,
+    id,
+    release,
+    lat,
+    lon,
+    place,
+    exact: true,
+    tags,
+    text
+  });
   await page.route('**/api/map/notes', (route) =>
     route.fulfill({
       json: {
         notes: 3,
         pins: [
-          pin('2026-10-06', 'w-a', 48.8566, 2.3522, 'Le Marais, Paris', ['bakery'], 'Croissants on the bench'),
-          pin('2026-10-05', 'w-b', 48.8566, 2.3631, 'Le Marais, Paris', [], 'Rain on the Seine'),
-          pin('2024-01-12', 'w-c', 44.9778, -93.265, 'Minneapolis', ['lake'], 'First snow on the lake')
+          pin('2026-10-06', 'w-a', '4.5', 48.8566, 2.3522, 'Le Marais, Paris', ['bakery'], 'Croissants on the bench'),
+          pin('2026-10-05', 'w-b', '4.5', 48.8566, 2.3631, 'Le Marais, Paris', [], 'Rain on the Seine'),
+          pin('2024-01-12', 'w-c', '4.3', 44.9778, -93.265, 'Minneapolis', ['lake'], 'First snow on the lake')
         ]
       }
     })
@@ -641,21 +652,21 @@ test('the map narrows by words, tag and year, and a group lists every note in it
   });
   await page.goto('/map/');
   const lede = page.locator('.lede'),
-    years = page.getByLabel('Filter by year'),
+    releases = page.getByLabel('Filter by release'),
     tags = page.getByLabel('Filter by tag'),
     map = page.getByRole('region', { name: 'Map of your notes' });
   await expect(lede).toHaveText('3 notes with a place of their own.');
-  await expect(years.locator('option')).toHaveText(['All years', '2026 (2)', '2024 (1)']);
+  await expect(releases.locator('option')).toHaveText(['All releases', '4.5 (2)', '4.3 (1)']);
   await expect(tags.locator('option')).toHaveText(['All tags', '#bakery (1)', '#lake (1)']);
 
-  // A year keeps its pins, and the tags menu offers what that year has.
-  await years.selectOption('2026');
-  await expect(page).toHaveURL(/\/map\/#year=2026$/);
+  // A release keeps its pins, and the tags menu offers what that release has.
+  await releases.selectOption('4.5');
+  await expect(page).toHaveURL(/\/map\/#v=4\.5$/);
   await expect(lede).toHaveText('2 of 3 notes with a place of their own.');
   await expect(tags.locator('option')).toHaveText(['All tags', '#bakery (1)']);
 
   // The map fits the two, which stay one group at its middle: choosing it
-  // lists both, newest first. (Opened on the year, so no move is under way:
+  // lists both, newest first. (Opened on the release, so no move is under way:
   // a tap stops one where it is.)
   await page.reload();
   await expect(lede).toHaveText('2 of 3 notes with a place of their own.');
@@ -674,16 +685,16 @@ test('the map narrows by words, tag and year, and a group lists every note in it
   await expect(page.getByText('Choose a pin or a group to see its notes.')).toBeVisible();
   await tags.selectOption('lake');
   await expect(lede).toHaveText('1 of 3 notes with a place of their own.');
-  await expect(years).toBeVisible();
+  await expect(releases).toBeVisible();
   await page.getByRole('button', { name: 'Clear filters' }).click();
-  await years.selectOption('2026');
+  await releases.selectOption('4.5');
   await page.getByLabel('Search notes').fill('snow');
   await expect(lede).toHaveText('None of your 3 notes with a place of their own match.');
-  await expect(page).toHaveURL(/\/map\/#q=snow&year=2026$/);
+  await expect(page).toHaveURL(/\/map\/#q=snow&v=4\.5$/);
   expect(asked).toEqual([{ q: 'snow' }]);
-  // The year that keeps nothing stays to be undone.
-  await expect(years.locator('option')).toHaveText(['All years', '2026 (0)', '2024 (1)']);
-  await years.selectOption('');
+  // The release that keeps nothing stays to be undone.
+  await expect(releases.locator('option')).toHaveText(['All releases', '4.5 (0)', '4.3 (1)']);
+  await releases.selectOption('');
   await expect(lede).toHaveText('1 of 3 notes with a place of their own.');
   expect(refused).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });

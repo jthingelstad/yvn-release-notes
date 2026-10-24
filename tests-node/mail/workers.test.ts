@@ -300,8 +300,28 @@ test('history preserves assistant provenance, tags from words, written order and
     [, , y] = await sender.readHistory(f.services, sub, day);
   assert.match(y!.text, /Owner words[\s\S]*Added by helper #not-a-tag:\nAgent words/);
   assert.deepEqual(y!.tags, ['mine']);
-  assert.equal(y!.places.length, 2);
-  assert.equal(y!.places[1]?.[1], null);
+  // A note's spot links our map on that note; home's city is not mapped.
+  assert.deepEqual(y!.places, [
+    ['Example', 'https://notes.yourversionnumber.com/map/#d=2026-10-12&n=z'],
+    ['Example', null]
+  ]);
+});
+test("the day's own place links our map on that day, and a spot shared by notes shows once", () => {
+  const at = { city: 'Paris', label: 'Corner Café', lat: 48.856613, lon: 2.352222 };
+  assert.deepEqual(
+    sender.placesOf(
+      [
+        { sk: 'NOTE#2026-10-12#w-2', written_at: '2026-10-12T02:00:00Z', place: at },
+        { sk: 'NOTE#2026-10-12#<m#1@example.com>', written_at: '2026-10-12T01:00:00Z', place: at }
+      ],
+      { city: 'Paris', lat: 48.85, lon: 2.35, from: 'chosen' },
+      '2026-10-12'
+    ),
+    [
+      ['Paris', 'https://notes.yourversionnumber.com/map/#d=2026-10-12'],
+      ['Corner Café, Paris', 'https://notes.yourversionnumber.com/map/#d=2026-10-12&n=%3Cm%231%40example.com%3E']
+    ]
+  );
 });
 test('on birthday closed release counts imported notes, paused gaps and photos', async () => {
   const f = setup({ birthday: '1972-10-13' });

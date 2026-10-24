@@ -161,7 +161,8 @@ nothing there links here yet: that is Jamie's call.
     to OUR map"): `/map/#d=<day>&n=<id>` opens on its spot (close in on a
     device or photo spot, the city for a chosen city) with the notes there
     already listed. The day and id ride in the `#`, so no server sees which
-    note. The email and the exports still link Apple Maps (`notes.mapUrl`).
+    note. The email's Yesterday links its places here too, and the day's own
+    place as `#d=<day>`, which opens on that day's notes.
     The base map is
     Amazon Location's Standard style, light or dark as the system is, drawn
     flat and north up (Amazon's style asks for a globe; Jamie wanted "a

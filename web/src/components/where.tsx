@@ -1,9 +1,11 @@
 // Where a note or a day was (AGENTS.md, Where a note was): the city search
 // (placepicker.tsx), loaded only once someone asks for it, so React Aria
-// stays off Today and Day until then. Optional everywhere.
+// stays off Today and Day until then, and for a note "Here", the device's
+// own spot (lib/here.ts). Optional everywhere.
 import { useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useRef, useState } from 'react';
-import { api } from '../lib/api.ts';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { api, type ApiData } from '../lib/api.ts';
+import { canLocate, whereAmI } from '../lib/here.ts';
 import type { Day, DayPage, Place, Today } from '../lib/types.ts';
 import { Icon } from './icon.tsx';
 import { ErrorLine, useBusy, useFocusLater, useProblem } from './common.tsx';
@@ -12,13 +14,44 @@ const PlacePicker = lazy(() => import('./placepicker.tsx').then((m) => ({ defaul
 
 export const placeName = (p: Place) => [p.name, p.region].filter(Boolean).join(', ');
 
-// The note form's "Where": a button, then the search. Calls onPick with
-// the place, or null when it is taken off.
-export function NoteWhere({ place, onPick }: { place: Place | null; onPick: (p: Place | null) => void }) {
+// The note form's "Here" and "Where": the device's spot, or the search.
+// Calls onPick with the place, or null when it is taken off. With `auto`
+// ("Add where I am", on Today) it looks for the spot itself whenever the
+// form has none, until "Not there" says otherwise; problems go to the
+// form's line, which takes focus only when a tap asked.
+export function NoteWhere({
+  place,
+  onPick,
+  onProblem,
+  auto = false
+}: {
+  place: Place | null;
+  onPick: (p: Place | null) => void;
+  onProblem: (p: ApiData, field?: HTMLElement | null) => void;
+  auto?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const [finding, setFinding] = useState(false);
+  const [declined, setDeclined] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  const here = useRef<HTMLButtonElement>(null);
   const focusLater = useFocusLater();
+
+  const locate = async (asked: boolean) => {
+    setFinding(true);
+    const found = await whereAmI();
+    setFinding(false);
+    if ('place' in found) onPick(found.place);
+    else onProblem(found.problem, asked ? here.current : undefined);
+  };
+  const looking = auto && !place && !declined && !open && canLocate();
+  useEffect(() => {
+    if (looking) locate(false);
+    // Once for each time the form is left without a place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [looking]);
+
   if (place)
     return (
       <p className="hint note-where" id="note-where">
@@ -28,6 +61,7 @@ export function NoteWhere({ place, onPick }: { place: Place | null; onPick: (p: 
           type="button"
           id="note-where-clear"
           onClick={() => {
+            setDeclined(true);
             onPick(null);
             focusLater(() => button.current);
           }}
@@ -38,6 +72,19 @@ export function NoteWhere({ place, onPick }: { place: Place | null; onPick: (p: 
     );
   return (
     <>
+      {canLocate() && (
+        <button
+          ref={here}
+          className="quiet"
+          type="button"
+          id="note-where-here"
+          hidden={open}
+          disabled={finding}
+          onClick={() => locate(true)}
+        >
+          <Icon name="here" /> {finding ? 'Finding…' : 'Here'}
+        </button>
+      )}
       <button
         ref={button}
         className="quiet"
@@ -70,6 +117,71 @@ export function NoteWhere({ place, onPick }: { place: Place | null; onPick: (p: 
         </div>
       )}
     </>
+  );
+}
+
+// A saved note's place, from its Where button: here, a city, or none.
+// Calls onDone once the change is saved (the pages are read again) or
+// given up; a failure stays open, saying why.
+export function SavedNoteWhere({ path, has, onDone }: { path: string; has: boolean; onDone: () => void }) {
+  const [busy, run] = useBusy();
+  const problem = useProblem();
+  const client = useQueryClient();
+  const here = useRef<HTMLButtonElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+
+  const send = (place: Place | null, field?: HTMLElement | null) =>
+    run(async () => {
+      problem.clear();
+      const r = place ? await api('PUT', `${path}/place`, { place }) : await api('DELETE', `${path}/place`);
+      if (!r.ok) return problem.show(r.data, field);
+      await client.invalidateQueries();
+      onDone();
+    });
+
+  return (
+    <div className="stack tight place-picker note-where-edit" id="note-where-edit">
+      <div className="row">
+        {canLocate() && (
+          <button
+            ref={here}
+            className="quiet"
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                problem.clear();
+                const found = await whereAmI();
+                if (!('place' in found)) return problem.show(found.problem, here.current);
+                const r = await api('PUT', `${path}/place`, { place: found.place });
+                if (!r.ok) return problem.show(r.data, here.current);
+                await client.invalidateQueries();
+                onDone();
+              })
+            }
+          >
+            <Icon name="here" /> {busy ? 'Saving…' : 'Here'}
+          </button>
+        )}
+        {has && (
+          <button className="quiet" type="button" disabled={busy} onClick={() => send(null)}>
+            No place
+          </button>
+        )}
+        <button className="quiet" type="button" onClick={onDone}>
+          Cancel
+        </button>
+      </div>
+      <Suspense fallback={<p className="hint">Loading…</p>}>
+        <PlacePicker
+          label={has ? 'Where this note was instead' : 'Where this note was'}
+          placeholder="Start typing a city"
+          inputRef={input}
+          onPick={(p) => send(p, input.current)}
+        />
+      </Suspense>
+      <ErrorLine line={problem.line} />
+    </div>
   );
 }
 

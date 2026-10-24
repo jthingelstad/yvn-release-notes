@@ -259,6 +259,40 @@ test('edits remove stale links and tags, missing note is not recreated', async (
   assert.equal((await s.deleteNote('u', day, 'a-note'))?.text, 'Clear');
   assert.equal(await s.deleteNote('u', day, 'a-note'), null);
 });
+test("an owner's change to a note's place sets or removes it, and never recreates a note", async () => {
+  const s = setup();
+  s.seed(note);
+  const spot = { city: 'Paris', lat: 48.856613, lon: 2.352222, from: 'device' },
+    set = await s.changeNotePlace('u', day, 'a-note', spot);
+  assert.deepEqual(set?.place, spot);
+  assert.deepEqual(s.memory.calls.at(-1), {
+    name: 'UpdateCommand',
+    input: {
+      TableName: 'T',
+      Key: { pk: 'USER#u', sk: 'NOTE#2026-10-13#a-note' },
+      UpdateExpression: 'SET #p = :p',
+      ConditionExpression: 'attribute_exists(pk)',
+      ExpressionAttributeNames: { '#p': 'place' },
+      ExpressionAttributeValues: { ':p': spot },
+      ReturnValues: 'ALL_NEW'
+    }
+  });
+  const cleared = await s.changeNotePlace('u', day, 'a-note', null);
+  assert.equal(Object.hasOwn(cleared!, 'place'), false);
+  assert.deepEqual(s.memory.calls.at(-1), {
+    name: 'UpdateCommand',
+    input: {
+      TableName: 'T',
+      Key: { pk: 'USER#u', sk: 'NOTE#2026-10-13#a-note' },
+      UpdateExpression: 'REMOVE #p',
+      ConditionExpression: 'attribute_exists(pk)',
+      ExpressionAttributeNames: { '#p': 'place' },
+      ReturnValues: 'ALL_NEW'
+    }
+  });
+  assert.equal(await s.changeNotePlace('u', day, 'missing', spot), null);
+  assert.equal((await s.note('u', day, 'missing')) ?? null, null);
+});
 test('media appends claim prior size and fields update the right list entry only', async () => {
   const s = setup();
   s.seed(note);

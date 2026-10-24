@@ -31,7 +31,8 @@ nothing there links here yet: that is Jamie's call.
    - **Birthday**, carried over from the front page.
    - **Location, to the city.** It is chosen from a search, and gives the
      time zone and coordinates rounded to the city (for the day's weather
-     and the morning forecast, `packages/backend/weather.ts`). No street address, no device location.
+     and the morning forecast, `packages/backend/weather.ts`). No street address, no device location: home
+     is chosen. A note can carry the device's spot (Where a note was, AGENTS.md).
    - **Send time**, on a quarter hour. The default is 06:00.
 
    Today's email goes as soon as they finish, with a welcome line, and the
@@ -206,7 +207,7 @@ notes.yourversionnumber.com
   and drains active requests within a bounded deadline.
 - **Security headers** on every response: a CSP of `'self'` (no inline
   script or style), HSTS, `DENY` framing, and a Permissions-Policy that
-  allows only the microphone. The CSP names its few exceptions: Tinylytics
+  allows only the microphone and the location. The CSP names its few exceptions: Tinylytics
   for the page count, the mail bucket's host for signed file links and
   uploads, and Cloudflare's challenge host (script and frame) for the
   sign-in Turnstile. Everything else goes through `/api`: the city search asks
@@ -372,8 +373,14 @@ or new CSP exception.
   (Safari, newer Chrome) else WebM or Ogg. Each recording plays back from
   a `blob:` URL and can be removed before the note is added; adding the
   note sends it like a chosen file. The Permissions-Policy allows the
-  microphone to the page itself and turns off the camera, location,
+  microphone and the location to the page itself and turns off the camera,
   payment and USB. The e2e test records Chromium's fake microphone.
+- **Here** (Jamie, 2026-10-24): the note form's Here button, and the Where
+  button on a saved note, ask the browser where it is (`web/src/lib/here.ts`)
+  only when tapped, or on Today with "Add where I am" on, and name the spot
+  through `/api/places/here`. A spot within 150 m of the last one named
+  reuses its name without asking the server. "Not there" takes it off and
+  stops Today looking again until the form is opened anew.
 - **Home Screen**: `web/public/manifest.webmanifest` (standalone, opening
   on `/today/`) and the icons in `web/public/icons/`, drawn by
   `scripts/make_icons.mjs`: a cobalt "v", its tangerine dot and two note
@@ -411,8 +418,9 @@ or new CSP exception.
 | `POST /api/auth/signout` | |
 | `GET /api/activity?before=` | the owner's activity log, newest first, 100 rows a page: `email`, `tz`, `today`, `entries` and `next` (the `before` of the next page, or null). Each entry has `id`, `at` and `kind`; a mail row adds `message`, `received_at`, `via` reply or address, `day`, `version`, `subject`, `outcome` filed, not-filed or failed, `reason`, `sender` when it was another address, `text` only for a row not filed whose sender was proven, `attempts` and `notified`; a reads row adds `day`, `client`, `connection`, `calls`, `tools`, `errors` and `last_at`; every other row adds the fields its kind keeps (`packages/domain/activity.ts`), and one naming an Upcoming date (`upcoming`) its `title` as it is now, or null once removed. 400 `before` for anything but a row id or time. No table keys |
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |
-| `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address; `badges` is "Show badges"; `admin: true` only for the configured administrator |
-| `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `transcribe`, `describe`, `badges`, `status: "active"` to start again); the birthday cannot change. `badges: true` after `false` counts everything earned meanwhile as seen |
+| `POST /api/places/here` `{lat, lon, accuracy_m}` | names the device's spot at the city through Amazon Location (told the coordinates alone, at three places): `{name, region, country, tz, lat, lon, accuracy_m, from: "device"}`, the spot kept to six places, for a note's `place`. 404 `place-unnamed` where no city is found, 502 `places-failed`; needs a session |
+| `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address; `badges` is "Show badges"; `here` is "Add where I am"; `admin: true` only for the configured administrator |
+| `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `transcribe`, `describe`, `badges`, `here`, `status: "active"` to start again); the birthday cannot change. `badges: true` after `false` counts everything earned meanwhile as seen |
 | `GET /api/export?format=md\|json` | the words alone, as a download (JSON by default), with a `badges` list (a Badges section in Markdown), oldest first |
 | `POST /api/export/zip` | start a zip of everything, photos and recordings too (202); answers with the build already going, if one is |
 | `GET /api/export/zip` | how it is going: `none`, `building`, `failed`, or `ready` with size, files and until |
@@ -431,9 +439,10 @@ or new CSP exception.
 | `GET /api/releases/{v}?after=&limit=` | one release (`4.5`): its head (`from`, `through`, `current`, `days_with_notes`, `notes`, `longest`, `badges` (not with badges off) with its coverage tier and special days `collected` by kind with a `count`, `tags` by count) and its days with notes, oldest first, 30 a page; `after` in the answer is the next page's cursor. 404 `release` for one not begun |
 | `GET /api/badges` | the subscriber's badges as of their `today` (with `tz` and today's `version`): `count`; `earned`, newest first, each with `key` (`id`, or `id:level` for a track tier), `name`, `line`, `shelf`, `earned` (the day it came true), and the `day` and `version` it is stamped with (a collectible's special day); `tracks` (`tier` 0-5, `level`, `best`, `now`, `since`, `next`); `release`, this release's `days`, `percent`, coverage `level`, `next` only while it can still be reached, `following` (the next release and its date), its `collected` special days and the next three `ahead` (never a secret one); `missing`, what is still to find, a secret one as its `hint` alone. Read from the notes' stored fields, never their text |
 | `GET /api/days/{date}` | one day: version, notes (each note's `parts` is its text split into strings and links by name), `weather`, the day's recorded weather as a line, when kept, `where`, the day's own place by name, when set, and `collected`, the special days (by name) a day with notes collected (not with badges off) |
-| `POST /api/days/{date}/notes` | write for today or a past day; `uploads` attaches files, and a note with files may have no text; `place` (a city from `/api/places`) says where. Answers with the note and `unlocked`, what it just earned in the order it came true (`key`, `id`, `name`, `version`; `album` for this release's special day collected again), left out with badges off or when that could not be read; the badges in it become `seen` |
+| `POST /api/days/{date}/notes` | write for today or a past day; `uploads` attaches files, and a note with files may have no text; `place` (a city from `/api/places`, or a spot from `/api/places/here`) says where. Answers with the note and `unlocked`, what it just earned in the order it came true (`key`, `id`, `name`, `version`; `album` for this release's special day collected again), left out with badges off or when that could not be read; the badges in it become `seen` |
 | `PUT/DELETE /api/days/{date}/place` | set the day's own place (a city from `/api/places`) or clear it; answers `{date, where, weather}`, the past day's weather fetched again for it |
 | `PUT/DELETE /api/days/{date}/notes/{id}` | edit, delete (an emailed note's email and files go with it) |
+| `PUT/DELETE /api/days/{date}/notes/{id}/place` | set (`place`, as for a new note) or clear where any note was, whatever channel brought it; answers the note, the past day's weather fetched again for it. Leaves `updated_at` alone |
 | `POST /api/days/{date}/notes/{id}/media` `{uploads}` | add files to a note already there |
 | `GET /api/days/{date}/notes/{id}/media/{n}` | a file: a redirect to a fresh signed link, for its owner. Every file in an answer already carries `url`; this is the fallback once it has run out |
 | `POST /api/uploads` | a signed form for one file, of the type and exact size given, for five minutes; 429 `upload-limit` past the day's ceilings |

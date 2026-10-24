@@ -12,6 +12,7 @@ import { signinMessage, deleteMessage } from '../../packages/mail/auth.ts';
 import { checkTurnstile, turnstileClient, turnstileToken } from '../../packages/backend/turnstile.ts';
 import { activityId, activityView, titled } from '../../packages/domain/activity.ts';
 import { eventId, recordActivity } from '../../packages/backend/activity.ts';
+import { spotOf } from '../../packages/backend/places.ts';
 import { json, body } from './requests.ts';
 const ACTIVITY_SHOWN = 100;
 export async function accountRoutes(
@@ -211,6 +212,28 @@ export async function accountRoutes(
     } catch {
       reject(502, 'places-failed');
     }
+  }
+  if (pattern === '/api/places/here') {
+    // The device's spot, named at the city for a note (AGENTS.md, Where a
+    // note was). Coordinates travel in the body, never a logged URL.
+    await service.signedIn();
+    const spot = spotOf(await body(service.request));
+    if (!spot) reject(400, 'place');
+    let named: Item | null;
+    try {
+      named = await service.reverse(spot.lat, spot.lon);
+    } catch {
+      reject(502, 'places-failed');
+    }
+    if (!named?.city) reject(404, 'place-unnamed');
+    return json({
+      name: named.city,
+      region: named.region ?? '',
+      country: named.country ?? '',
+      ...(named.tz ? { tz: named.tz } : {}),
+      ...spot,
+      from: 'device'
+    });
   }
   if (pattern === '/api/me/inbox') {
     const { uid, profile: p } = await service.account(),

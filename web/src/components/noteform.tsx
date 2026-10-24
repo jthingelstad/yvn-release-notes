@@ -3,7 +3,8 @@
 // until it is saved, so a sign-out mid-note (or a reload) doesn't lose it.
 // Once any files are sent, the note shows in the list at once ("Saving…")
 // and the form empties; a write that fails puts it all back. "Where" is
-// optional (where.tsx). What a saved note earned shows under the form
+// optional (where.tsx), and with "Add where I am" on, Today's form starts
+// each note with Here. What a saved note earned shows under the form
 // (unlock.tsx).
 import { useQueryClient } from '@tanstack/react-query';
 import { useBlocker } from '@tanstack/react-router';
@@ -28,10 +29,12 @@ interface Props {
   placeholder: string;
   submit: ReactNode;
   initialTag?: string | null;
+  // "Add where I am" (Settings): start each note with Here
+  here?: boolean;
 }
 
 // Give it a `key` of the day, so another day starts with that day's draft.
-export function NoteForm({ day, label, placeholder, submit, initialTag }: Props) {
+export function NoteForm({ day, label, placeholder, submit, initialTag, here = false }: Props) {
   const key = `rn-draft-${day}`;
   const [text, setText] = useState(() => {
     const draft = store.get(key) || '';
@@ -173,7 +176,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag }: Props)
           >
             <Icon name="record" /> {rec.seconds === null ? 'Record' : `Stop · ${recordClock(rec.seconds)}`}
           </button>
-          <NoteWhere place={place} onPick={setPlace} />
+          <NoteWhere place={place} onPick={setPlace} onProblem={show} auto={here} />
           <button className="go" type="submit" disabled={busy}>
             {submit}
           </button>

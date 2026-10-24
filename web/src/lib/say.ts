@@ -26,6 +26,7 @@ export const SAY: Record<string, Line> = {
   'send-time': 'Pick a time for your email.',
   transcribe: 'That didn’t save. Try again.',
   describe: 'That didn’t save. Try again.',
+  here: 'That didn’t save. Try again.',
   'places-failed': 'The city search isn’t answering. Try again in a minute.',
   token: ['This link isn’t one we sent. ', { href: '/#sign-in', text: 'Sign in to manage your emails' }, '.'],
   origin: 'That came from outside notes.yourversionnumber.com. Open Release Notes there and try again.',
@@ -48,7 +49,11 @@ export const SAY: Record<string, Line> = {
   'upload-limit': 'That’s more files than one day takes. Try again tomorrow.',
   busy: 'That note just changed. Reload the page and try again.',
   microphone:
-    'Release Notes can’t use the microphone. Allow it for this site in your browser’s settings, then try again.'
+    'Release Notes can’t use the microphone. Allow it for this site in your browser’s settings, then try again.',
+  location: 'Couldn’t tell where you are just now. Try again, or pick a city.',
+  'location-denied':
+    'Release Notes can’t use your location. Allow it for this site in your browser’s settings, then try again.',
+  'place-unnamed': 'Couldn’t find a city for where you are. Pick one instead.'
 };
 
 const FALLBACK = 'Something went wrong. Try again.';

@@ -8,8 +8,9 @@
 // Transcripts: the setting, a recording written out, and found by search.
 // Descriptions: the setting, a photo described, shown only where search
 // found it.
-// Where: a note's place from the city search, and a day's own place, set
-// and cleared, its weather following.
+// Where: a note's place from the city search, or Here from the browser's
+// (made-up) location, changed and cleared on the saved note; and a day's own
+// place, set and cleared, its weather following.
 // The standing address: shown in settings, copied, and replaced.
 // Releases: the Timeline's index, and a release's page, oldest first.
 // Badges: reached from Today, the release's album, the tracks and the shelf;
@@ -80,7 +81,7 @@ test('note glyph actions support keyboard editing and explicit delete confirmati
   await page.getByRole('button',{name:'Save note',exact:true}).click();
   const note = page.locator('article.note',{hasText:'A note for glyph controls.'});
   await expect(note).toBeVisible();
-  for (const action of ['Edit','Add files','Delete']) {
+  for (const action of ['Edit','Where','Add files','Delete']) {
     const button = note.getByRole('button',{name:action,exact:true});
     await expect(button).toHaveAttribute('title',action);
     const bounds = await button.boundingBox();
@@ -266,6 +267,35 @@ test('a note says where it was, by name, linking to the map', async ({ page }) =
   // The form starts over without a place.
   await expect(form.locator('#note-where')).toBeHidden();
   await expect(form.getByRole('button', { name: 'Where' })).toBeVisible();
+});
+
+test("Here names where the browser is, and a saved note's place changes after", async ({ page, context }) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 48.856613, longitude: 2.352222, accuracy: 10 });
+  await page.goto('/today/');
+  const form = page.locator('#note-form');
+  const words = `Coffee at ${Date.now()}`;
+  await form.locator('textarea').fill(words);
+  await form.getByRole('button', { name: 'Here', exact: true }).click();
+  await expect(form.locator('#note-where')).toHaveText(/At Paris, Ile-de-France\./);
+  await form.getByRole('button', { name: 'Save note' }).click();
+
+  // The spot itself, not the city's middle, on the map.
+  const note = page.locator('article.note', { hasText: words });
+  await expect(note.getByRole('link', { name: 'Paris, Ile-de-France' })).toHaveAttribute(
+    'href',
+    /^https:\/\/maps\.apple\.com\/\?ll=48\.856613,2\.352222/
+  );
+
+  // Taken off, then a city from the search instead.
+  await note.getByRole('button', { name: 'Where', exact: true }).click();
+  await note.getByRole('button', { name: 'No place' }).click();
+  await expect(note.getByRole('link', { name: /Paris/ })).toHaveCount(0);
+  await note.getByRole('button', { name: 'Where', exact: true }).click();
+  await note.getByLabel('Where this note was').fill('Minn');
+  await note.getByRole('option', { name: /Minneapolis.*Minnesota/ }).click();
+  await expect(note.getByRole('link', { name: 'Minneapolis, Minnesota' })).toHaveAttribute('href', /ll=44\.98,-93\.26/);
+  await expect(note.getByRole('button', { name: 'Where', exact: true })).toBeFocused();
 });
 
 test('a past day can have a place of its own, and its weather follows', async ({ page }) => {

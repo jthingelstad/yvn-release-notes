@@ -69,7 +69,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 57);
+  assert.equal(ROUTES.length, 60);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -881,4 +881,121 @@ test('activity pages hold 100 rows and say where the next starts', async () => {
   assert.equal(first.next, rows[99]!.id);
   const last = (await s.call('GET', '/api/activity?before=' + encodeURIComponent(String(first.next)))).b as Item;
   assert.deepEqual([(last.entries as Item[]).map((e) => e.message), last.next], [['m0'], null]);
+});
+test("Here names the device's spot at the city; a note keeps the spot exact, the weather the city", async () => {
+  const s = await setup(),
+    asked: number[][] = [];
+  s.ctx.reverse = async (lat, lon) => {
+    asked.push([lat, lon]);
+    return { city: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris' };
+  };
+  s.ctx.weatherFetch = async () => ({
+    daily: { time: ['2026-10-07'], temperature_2m_max: [20], temperature_2m_min: [10], weather_code: [2] }
+  });
+  const spot = { lat: 48.8566134, lon: 2.3522219, accuracy_m: 11.6 },
+    here = await s.call('POST', '/api/places/here', spot);
+  assert.equal(here.r.status, 200);
+  assert.deepEqual(here.b, {
+    name: 'Paris',
+    region: 'Ile-de-France',
+    country: 'France',
+    tz: 'Europe/Paris',
+    lat: 48.856613,
+    lon: 2.352222,
+    accuracy_m: 12,
+    from: 'device'
+  });
+  assert.deepEqual(asked, [[48.856613, 2.352222]]);
+  // Refused: signed out, without our Origin, nonsense, and a spot with no city.
+  assert.equal((await s.call('POST', '/api/places/here', spot, '')).r.status, 401);
+  assert.equal((await s.call('POST', '/api/places/here', spot, s.token, false)).r.status, 403);
+  for (const bad of [{}, { lat: 91, lon: 0 }, { lat: '1', lon: 2 }, { lat: 1, lon: 2, accuracy_m: -1 }])
+    assert.equal((await s.call('POST', '/api/places/here', bad)).r.status, 400, JSON.stringify(bad));
+  s.ctx.reverse = async () => null;
+  assert.deepEqual((await s.call('POST', '/api/places/here', spot)).b, { error: 'place-unnamed' });
+  s.ctx.reverse = async () => {
+    throw new Error('down');
+  };
+  assert.equal((await s.call('POST', '/api/places/here', spot)).r.status, 502);
+
+  // A note written there keeps the spot; it shows by name, mapped to the spot.
+  const added = await s.call('POST', '/api/days/2026-10-07/notes', {
+    text: 'Coffee',
+    place: here.b,
+    tz: 'Europe/Paris'
+  });
+  assert.equal(added.r.status, 201);
+  const id = String((added.b as Item).id),
+    note = () => s.store.memory.all().find((i) => i.sk === `NOTE#2026-10-07#${id}`)! as Item & { place: Item };
+  assert.equal((added.b as Item).place, 'Paris, Ile-de-France');
+  assert.match(String((added.b as Item).map), /48\.856613,2\.352222/);
+  assert.deepEqual(
+    [note().place.lat, note().place.lon, note().place.accuracy_m, note().place.from],
+    [48.856613, 2.352222, 12, 'device']
+  );
+  // The day's weather is for the city, never the spot.
+  const sky = () => s.store.memory.all().find((i) => i.sk === 'WEATHER#2026-10-07')!;
+  assert.deepEqual([sky().lat, sky().lon], [48.86, 2.35]);
+  // A made-up device place is refused, nothing written.
+  for (const bad of [
+    { ...(here.b as Item), name: '' },
+    { ...(here.b as Item), tz: 'Mars/Base' },
+    { ...(here.b as Item), lat: 200 }
+  ])
+    assert.equal(
+      (await s.call('POST', '/api/days/2026-10-07/notes', { text: 'No', place: bad })).r.status,
+      400,
+      JSON.stringify(bad)
+    );
+  assert.equal((await s.store.allNotes('u')).length, 1);
+});
+test("a saved note's place can be set, changed and cleared, from any channel, and the log never keeps it", async () => {
+  const s = await setup();
+  s.ctx.weatherFetch = async () => ({
+    daily: { time: ['2026-10-07'], temperature_2m_max: [20], temperature_2m_min: [10], weather_code: [2] }
+  });
+  // An emailed note, which came with no place.
+  await s.store.putNote('u', '2026-10-07', 'm-1', {
+    text: 'By email',
+    source: 'email',
+    written_at: '2026-10-07T15:00:00Z'
+  });
+  const path = '/api/days/2026-10-07/notes/m-1/place',
+    note = () => s.store.memory.all().find((i) => i.sk === 'NOTE#2026-10-07#m-1')! as Item & { place: Item },
+    spot = { name: 'Paris', region: 'Ile-de-France', country: 'France', lat: 48.856613, lon: 2.352222, from: 'device' };
+  const set = await s.call('PUT', path, { place: spot });
+  assert.equal(set.r.status, 200);
+  assert.equal((set.b as Item).place, 'Paris, Ile-de-France');
+  assert.equal((set.b as Item).text, 'By email');
+  assert.equal(note().place.lat, 48.856613);
+  assert.equal(note().updated_at, undefined);
+  assert.deepEqual([s.store.memory.all().find((i) => i.sk === 'WEATHER#2026-10-07')!.lat], [48.86]);
+  // Changed to a city from the search, which is kept at the city.
+  const moved = await s.call('PUT', path, { place: { ...city, name: 'Lyon', lat: 45.76, lon: 4.84 } });
+  assert.equal((moved.b as Item).place, 'Lyon, Ile-de-France');
+  assert.deepEqual([note().place.lat, note().place.from], [45.76, 'chosen']);
+  const cleared = await s.call('DELETE', path);
+  assert.equal(cleared.r.status, 200);
+  assert.ok(!Object.hasOwn(cleared.b as Item, 'place'));
+  assert.ok(!Object.hasOwn(note(), 'place'));
+  assert.equal((await s.call('PUT', '/api/days/2026-10-07/notes/missing/place', { place: spot })).r.status, 404);
+  assert.equal((await s.call('PUT', path, { place: { ...spot, lat: 'x' } })).r.status, 400);
+  assert.equal((await s.call('PUT', path, { place: spot }, s.token, false)).r.status, 403);
+  const rows = s.store.memory
+    .all()
+    .filter((i) => i.pk === 'USER#u' && String(i.sk).startsWith('ACTIVITY#') && i.kind === 'note.edited')
+    .sort((a, b) => (String(a.sk) < String(b.sk) ? -1 : 1));
+  // Rows written in one second order by their ids, not by when.
+  assert.deepEqual(rows.map((r) => r.place).sort(), ['removed', 'set', 'set']);
+  const kept = JSON.stringify(rows);
+  for (const hidden of ['Paris', 'Lyon', '48.85', '2.35', 'By email']) assert.ok(!kept.includes(hidden), hidden);
+});
+test('"Add where I am" is a setting, off until turned on, and recorded as a change', async () => {
+  const s = await setup();
+  assert.equal(((await s.call('GET', '/api/me')).b as Item).here, false);
+  const on = await s.call('PUT', '/api/me', { here: true });
+  assert.equal((on.b as Item).here, true);
+  assert.equal((await s.call('PUT', '/api/me', { here: 'yes' })).r.status, 400);
+  const row = s.store.memory.all().find((i) => i.kind === 'settings.changed')!;
+  assert.deepEqual(row.changes, [{ field: 'here', from: false, to: true }]);
 });

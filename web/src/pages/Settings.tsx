@@ -179,6 +179,7 @@ function Account({ p }: { p: Me }) {
   const transcribe = useSetting(!!p.transcribe);
   const describe = useSetting(!!p.describe);
   const badges = useSetting(p.badges !== false);
+  const here = useSetting(!!p.here);
   const cityProblem = useProblem();
   const emailsProblem = useProblem();
   const focusLater = useFocusLater();
@@ -309,9 +310,31 @@ function Account({ p }: { p: Me }) {
       <SettingsGroup
         id="writing-settings"
         title="Writing & search"
-        description="Your email address, recordings, photos and badges"
+        description="Your email address, where you are, recordings, photos and badges"
       >
         <Inbox p={p} />
+        <section className="section">
+          <h3>Where you are</h3>
+          <label className="check">
+            <input
+              type="checkbox"
+              id="here"
+              checked={here.value}
+              onChange={(e) => here.change(e.target.checked, { here: e.target.checked }, e.target)}
+            />{' '}
+            Add where I am
+          </label>
+          <p className="hint">
+            A note you write on Today starts with where you are, as your browser tells it. The spot is kept exactly,
+            with the city’s name, so its map shows where you were; the city alone names your day. To name the city, the
+            spot is sent to Amazon Location and nothing else. Any note can say “Not there” before it’s saved, or change
+            its place after.
+          </p>
+          <p className="aside saved" id="here-saved" role="status" hidden={!here.saved}>
+            Saved.
+          </p>
+          <ErrorLine line={here.problem.line} />
+        </section>
         <section className="section">
           <h3>Recordings</h3>
           <label className="check">

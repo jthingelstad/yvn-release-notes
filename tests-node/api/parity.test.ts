@@ -16,11 +16,11 @@ const fixture = JSON.parse(readFileSync(new URL('./fixtures/python-readers.json'
   cases: { method: string; path: string; body: Item | null; status: number; response: Item }[];
 };
 // Fields added since the Python web app, each tested on its own: a
-// release's badges and the profile's "Show badges" (docs/BADGES.md,
-// api.test.ts). A path ending in / covers the paths under it.
+// release's badges, the profile's "Show badges" (docs/BADGES.md,
+// api.test.ts) and its "Add where I am". A path ending in / covers the paths under it.
 const ADDED: [string, string[]][] = [
   ['/api/releases/', ['badges']],
-  ['/api/me', ['badges']]
+  ['/api/me', ['badges', 'here']]
 ];
 for (const sample of fixture.cases)
   test('Python HTTP wire parity: ' + sample.method + ' ' + sample.path, async () => {

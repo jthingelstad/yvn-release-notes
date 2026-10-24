@@ -1,7 +1,8 @@
 /** The web app's role grants what every route and the OAuth endpoints
  * request: sign-in mail with the Turnstile secret and verdicts, sign-up and
  * its first-email invoke, settings with a restart's unsuppress, notes with
- * uploads signed, checked and copied, media links, places and weather,
+ * uploads signed, checked and copied, media links, places (a device's spot
+ * named) and weather,
  * Upcoming and the calendar feed, pauses, exports (the zip invoke, its link and
  * a replaced build's delete), MCP connections, the admin scan and product
  * updates, and both account-deletion cascades (tests-node/infra/grants.ts). */
@@ -83,6 +84,11 @@ test('the web role grants every request each route and the OAuth endpoints make'
       exportFunction: aws.env.EXPORT_FUNCTION!,
       adminUserId: 'u',
       geocode: async () => [city],
+      // Naming a device's spot, as IAM authorizes places.reverse.
+      reverse: async () => {
+        aws.add('places.reverse', 'geo-places:ReverseGeocode', `arn:aws:geo-places:${REGION}::provider/default`);
+        return { city: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris' };
+      },
       fetchTitle: () => null,
       weatherFetch: async () => forecast,
       turnstile: {
@@ -142,6 +148,7 @@ test('the web role grants every request each route and the OAuth endpoints make'
   assert.equal(aws.requests.filter((r) => r.action === 'ses:DeleteSuppressedDestination').length, 1);
   await call('POST', '/api/me/inbox', {});
   await call('GET', '/api/places?q=Paris');
+  const here = (await call('POST', '/api/places/here', { lat: 48.856613, lon: 2.352222, accuracy_m: 12 })).b;
   await call('GET', '/api/activity');
 
   // Notes, files and places.
@@ -159,6 +166,8 @@ test('the web role grants every request each route and the OAuth endpoints make'
   );
   await call('GET', `/api/days/${day}/notes/${id}/media/1`, undefined, 302);
   await call('PUT', `/api/days/${day}/notes/${id}`, { text: 'Lake day, edited #made' });
+  await call('PUT', `/api/days/${day}/notes/${id}/place`, { place: here });
+  await call('DELETE', `/api/days/${day}/notes/${id}/place`);
   await call('PUT', `/api/days/${day}/place`, { place: city });
   await call('DELETE', `/api/days/${day}/place`);
   for (const path of [
@@ -322,7 +331,8 @@ test('the web role grants every request each route and the OAuth endpoints make'
     's3:DeleteObjectVersion',
     's3:ListBucket',
     'dynamodb:Scan',
-    'dynamodb:BatchWriteItem'
+    'dynamodb:BatchWriteItem',
+    'geo-places:ReverseGeocode'
   ])
     assert.ok(actions.has(action), action);
   // Attachment checks read the tags of the exact version uploaded, so plain

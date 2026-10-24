@@ -115,6 +115,8 @@ export function firstPhoto(note: NoteRecord): { lat: number; lon: number } | nul
   }
   return null;
 }
+/** Names a spot at the city alone: nameSpot's fallback where nothing
+ * nearby has an address. */
 export async function reverse(lat: number, lon: number, client = new GeoPlacesClient({})): Promise<PlaceRecord | null> {
   const answer = await client.send(
     new ReverseGeocodeCommand({
@@ -256,4 +258,17 @@ export async function nameSpot(spot: Spot, client = new GeoPlacesClient({})): Pr
     if (found.nearby.length === 6) break;
   }
   return found;
+}
+/** Names a photo's spot as Here does, by its neighbourhood, offering
+ * nothing: no one is there to pick from what was near. */
+export async function namePhoto(
+  lat: number,
+  lon: number,
+  client = new GeoPlacesClient({})
+): Promise<PlaceRecord | null> {
+  const named = await nameSpot({ lat: rounded(lat, SPOT_DIGITS), lon: rounded(lon, SPOT_DIGITS) }, client);
+  if (!named) return null;
+  const place: PlaceRecord = { ...named };
+  delete place.nearby;
+  return place;
 }

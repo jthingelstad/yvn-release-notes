@@ -9,7 +9,7 @@ import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects, FakeInvocations } from '../../packages/testing/services.ts';
 import type { Item } from '../../packages/backend/store.ts';
 import * as describe from '../../packages/backend/describe.ts';
-import { reverse } from '../../packages/backend/places.ts';
+import { namePhoto } from '../../packages/backend/places.ts';
 import * as worker from '../../workers/describe.ts';
 import { stream } from '../processing/helpers.ts';
 import { Recorder, REGION, ACCOUNT } from './grants.ts';
@@ -67,7 +67,7 @@ test('the describe role grants every request a stream record, describe_all and t
     } as never),
     geo = {
       async send() {
-        aws.add('places.reverse', 'geo-places:ReverseGeocode', `arn:aws:geo-places:${REGION}::provider/default`);
+        aws.add('places.namePhoto', 'geo-places:ReverseGeocode', `arn:aws:geo-places:${REGION}::provider/default`);
         return { ResultItems: [{ Address: { Locality: 'Example', Country: { Code2: 'US' } } }] };
       }
     },
@@ -84,7 +84,7 @@ test('the describe role grants every request a stream record, describe_all and t
         if (gone.pending) await aws.aside(store, null, () => store.deleteNote('u', day, 'gone'));
         return { body: Buffer.from('synthetic thumb'), width: 64, height: 64 };
       },
-      geocode: (lat, lon) => reverse(lat, lon, geo as never),
+      geocode: (lat, lon) => namePhoto(lat, lon, geo as never),
       weatherFetch: async () => forecast,
       model: async () => {
         await describe.keyFrom(secrets, aws.env.SECRET!);

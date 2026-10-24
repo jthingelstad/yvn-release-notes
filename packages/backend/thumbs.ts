@@ -13,6 +13,8 @@ export const LONGEST = 640,
   SMALLEST = 240,
   MAX_PIXELS = 100_000_000;
 export const FORMATS = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+// Photos whose time and place are read (exif.ts): a JPEG, or an iPhone's HEIC.
+export const EXIF = new Set(['image/jpeg', 'image/heic', 'image/heif']);
 export const QUALITIES = [80, 72, 64, 56];
 export interface Thumbnail {
   body: Buffer;
@@ -20,16 +22,22 @@ export interface Thumbnail {
   height: number;
 }
 export type Maker = (data: Buffer) => Promise<Thumbnail | null>;
+/** Photos not yet seen by this worker: those it can make a thumbnail of,
+ * and HEICs, read only for their time and place. */
 export function waiting(note: NoteRecord) {
   return (note.media ?? []).filter(
     (m) =>
-      m.kind === 'image' && FORMATS.has(String(m.type)) && !('thumb' in m) && String(m.key ?? '').startsWith('media/')
+      m.kind === 'image' &&
+      (FORMATS.has(String(m.type)) || EXIF.has(String(m.type))) &&
+      !('thumb' in m) &&
+      String(m.key ?? '').startsWith('media/')
   );
 }
 export function counts(notes: readonly NoteRecord[]) {
   const out = { notes: 0, photos: 0, bytes: 0, left: {} as Record<string, number> };
   for (const note of notes) {
-    const todo = waiting(note);
+    // Thumbnails still to make; a HEIC (read only for metadata) is `left`.
+    const todo = waiting(note).filter((m) => FORMATS.has(String(m.type)));
     out.notes += Number(todo.length > 0);
     out.photos += todo.length;
     out.bytes += todo.reduce((sum, m) => sum + Number(m.size || 0), 0);
@@ -84,14 +92,15 @@ export async function thumbnail(
     } catch (error) {
       if (!missing(error)) throw error;
     }
-    if (data && m.type === 'image/jpeg' && (!('taken_at' in m) || !('place' in m))) {
+    if (data && EXIF.has(String(m.type)) && (!('taken_at' in m) || !('place' in m))) {
       const found = exif(data);
       if (found.taken_at && !('taken_at' in m))
         await store.setMediaField(user, day, id, Number(m.n), 'taken_at', found.taken_at);
       if (found.lat !== undefined && !('place' in m))
         await store.setMediaField(user, day, id, Number(m.n), 'place', { lat: found.lat, lon: found.lon });
     }
-    const made = data ? await maker(data) : null;
+    // A HEIC is read for its time and place, but no thumbnail is made of it.
+    const made = data && FORMATS.has(String(m.type)) ? await maker(data) : null;
     let entry: Record<string, unknown> = {};
     if (made) {
       const key = thumbKey(String(m.key));

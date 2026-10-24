@@ -188,8 +188,10 @@ Where things are (each module's design comment has its contract):
 - **Where a note was** (Jamie, 2026-10-12): the web form's optional "Where",
   the device's own spot (Jamie, 2026-10-24: "Here", by a tap, or on each new
   note on Today with "Add where I am" on; `places.devicePlace`, named through
-  `POST /api/places/here`), or else its first photo's EXIF GPS, named once at
-  city level by Amazon Location, which is told the coordinates alone. Here
+  `POST /api/places/here`), or else its first photo's EXIF GPS (a JPEG's,
+  or an iPhone HEIC's Exif item, `exif.read`), named once by its
+  neighbourhood by Amazon Location (`places.namePhoto`), which is told the
+  coordinates alone. Here
   is named by its neighbourhood (`district`) and offers the businesses
   Amazon Location finds within the browser's accuracy (50 to 200 m,
   `places.nameSpot`), one tap to name the note by one (`venue`); it never
@@ -252,7 +254,8 @@ Where things are (each module's design comment has its contract):
   are off until the subscriber ticks "Describe my photos".
 - **Thumbnails** (Jamie, 2026-10-12: photos in the email) are made once for
   every photo, opted in or not: about 640px, a JPEG under 80 KB, with no EXIF
-  or GPS. The email reads only these, never an original.
+  or GPS. The email reads only these, never an original. A HEIC gets none
+  (`thumb: {}`), but its time and place are still read.
 - **Day One imports are planned before anything is written** (Jamie,
   2026-10-09: "keep it to dry-run"): `--write` imports, and **every live run
   needs Jamie's go**. A repeat skips what was imported before, deleted since

@@ -18,6 +18,84 @@ const fixture = JSON.parse(await readFile(new URL('./fixtures/metadata.json', im
 test('JPEG metadata agrees with 509 synthetic originals and malformed variants', () => {
   for (const sample of fixture.exif) assert.deepEqual(read(Buffer.from(sample.bytes, 'base64')), sample.result);
 });
+// An iPhone HEIC: ftyp, then meta (iinf naming an Exif item, iloc saying
+// where its bytes are), then mdat. The EXIF itself is a fixture JPEG's.
+function heic(tiff: Buffer, { version = 0, prefix = true } = {}) {
+  const box = (type: string, ...parts: Buffer[]) => {
+      const body = Buffer.concat(parts),
+        head = Buffer.alloc(8);
+      head.writeUInt32BE(8 + body.length);
+      head.write(type, 4, 'latin1');
+      return Buffer.concat([head, body]);
+    },
+    u16 = (n: number) => Buffer.from([n >> 8, n & 255]),
+    u32 = (n: number) => {
+      const b = Buffer.alloc(4);
+      b.writeUInt32BE(n);
+      return b;
+    },
+    item = Buffer.concat([u32(prefix ? 6 : 0), prefix ? Buffer.from('Exif\0\0', 'latin1') : Buffer.alloc(0), tiff]),
+    infe = (id: number, type: string) =>
+      box('infe', Buffer.from([2, 0, 0, 0]), u16(id), u16(0), Buffer.from(type + '\0', 'latin1')),
+    iinf = box('iinf', Buffer.from([0, 0, 0, 0]), u16(2), infe(1, 'hvc1'), infe(7, 'Exif')),
+    iloc = (at: number) =>
+      version === 0
+        ? box(
+            'iloc',
+            Buffer.from([0, 0, 0, 0]),
+            u16(0x4400),
+            u16(2),
+            u16(1),
+            u16(0),
+            u16(1),
+            u32(0),
+            u32(4),
+            u16(7),
+            u16(0),
+            u16(1),
+            u32(at),
+            u32(item.length)
+          )
+        : box(
+            'iloc',
+            Buffer.from([1, 0, 0, 0]),
+            u16(0x4400),
+            u16(2),
+            u16(1),
+            u16(0),
+            u16(0),
+            u16(1),
+            u32(0),
+            u32(4),
+            u16(7),
+            u16(0),
+            u16(0),
+            u16(1),
+            u32(at),
+            u32(item.length)
+          ),
+    ftyp = box('ftyp', Buffer.from('heicmif1heic', 'latin1')),
+    meta = (at: number) => box('meta', Buffer.from([0, 0, 0, 0]), box('hdlr', Buffer.alloc(24)), iinf, iloc(at)),
+    before = ftyp.length + meta(0).length + 8 + 4;
+  return Buffer.concat([ftyp, meta(before), box('mdat', Buffer.from('hvc1'), item)]);
+}
+test("an iPhone's HEIC gives its time and place as a JPEG with the same EXIF does", () => {
+  const tiffOf = (jpeg: Buffer) => {
+      const at = jpeg.indexOf('Exif\0\0', 0, 'latin1');
+      return at < 0 ? null : jpeg.subarray(at + 6, at - 4 + jpeg.readUInt16BE(at - 2) + 2);
+    },
+    placed = fixture.exif.filter((x) => x.result.lat !== undefined).slice(0, 25);
+  assert.ok(placed.length > 0);
+  for (const sample of placed) {
+    const tiff = tiffOf(Buffer.from(sample.bytes, 'base64'))!;
+    assert.deepEqual(read(heic(tiff)), sample.result);
+    assert.deepEqual(read(heic(tiff, { version: 1, prefix: false })), sample.result);
+  }
+  // Cut short or without an Exif item: nothing, never a throw.
+  const whole = heic(tiffOf(Buffer.from(placed[0]!.bytes, 'base64'))!);
+  for (const cut of [12, 40, 100, whole.length - 10]) assert.deepEqual(read(whole.subarray(0, cut)), {});
+  assert.deepEqual(read(Buffer.from(whole.toString('latin1').replace('Exif\0\0\0', 'mime\0\0\0'), 'latin1')), {});
+});
 test('coordinate and thermometer rounding preserves Python binary ties', () => {
   for (const sample of fixture.rounded) assert.equal(rounded(sample.value, sample.digits), sample.result);
 });
@@ -272,4 +350,18 @@ test('a concurrently deleted photo removes its generated thumbnail', async () =>
   }));
   assert.equal(done, 0);
   await assert.rejects(objects.get('media/u1/files/a.thumb.jpg'));
+});
+test("a HEIC photo's time and place are kept on its media entry, though no thumbnail is made", async () => {
+  const sample = fixture.exif.find((x) => x.result.lat !== undefined && x.result.taken_at)!,
+    jpeg = Buffer.from(sample.bytes, 'base64'),
+    at = jpeg.indexOf('Exif\0\0', 0, 'latin1'),
+    store = new FakeStore(),
+    objects = new FakeObjects(),
+    m = { n: 0, kind: 'image', type: 'image/heic', key: 'media/u1/2026-10-11/w-a/0.heic', size: 99 };
+  await store.putNote('u1', '2026-10-11', 'w-a', { text: '', media: [m] });
+  await objects.put(m.key, heic(jpeg.subarray(at + 6, at - 2 + jpeg.readUInt16BE(at - 2))), { type: 'image/heic' });
+  await thumbnail({ sk: 'NOTE#2026-10-11#w-a', media: [m] }, 'u1', store, objects, async () => null);
+  const [kept] = (await store.allNotes('u1'))[0]!.media as Item[];
+  assert.deepEqual(kept!.place, { lat: sample.result.lat, lon: sample.result.lon });
+  assert.equal(kept!.taken_at, sample.result.taken_at);
 });

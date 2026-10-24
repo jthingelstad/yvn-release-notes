@@ -1866,7 +1866,8 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-??????"
               - Effect: Allow
-                # Naming a photo's place, at the city, to keep (places.reverse).
+                # Naming a photo's place by its neighbourhood, to keep
+                # (places.namePhoto).
                 Action: geo-places:ReverseGeocode
                 Resource: !Sub "arn:${AWS::Partition}:geo-places:${AWS::Region}::provider/default"
               - Effect: Allow

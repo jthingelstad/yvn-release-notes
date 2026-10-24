@@ -427,8 +427,10 @@ or new CSP exception.
 - **Here** (Jamie, 2026-10-24): the note form's Here button, and the Where
   button on a saved note, ask the browser where it is (`web/src/lib/here.ts`)
   only when tapped, or on Today with "Add where I am" on (on unless turned
-  off, Jamie 2026-10-24; a browser told no stays quiet until Here is
-  tapped), and name the spot
+  off, Jamie 2026-10-24) as a note with no place is saved, never as the
+  page opens (Jamie, 2026-10-24: "Do it when we know that we need the
+  location"; a note is saved without one when the browser can't or won't
+  say, and "Not there" after a Here leaves it off), and name the spot
   through `/api/places/here`, by its neighbourhood ("At Downtown West,
   Minneapolis"). "Were you at" lists the businesses near enough, and a tap
   names the note by one ("Caribou Coffee, Minneapolis"), another goes back.

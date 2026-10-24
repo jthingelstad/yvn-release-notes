@@ -19,23 +19,29 @@ function metres(a: { lat?: number; lon?: number }, b: { lat?: number; lon?: numb
   return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
 }
 
-function position(): Promise<GeolocationPosition> {
-  return new Promise((resolve, reject) =>
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 20_000,
-      maximumAge: 60_000
-    })
-  );
+function position(timeout: number, cap: number): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    // A browser's question left unanswered never calls back at all.
+    const late = setTimeout(() => reject({ code: 3 }), cap);
+    navigator.geolocation.getCurrentPosition(
+      (at) => (clearTimeout(late), resolve(at)),
+      (e) => (clearTimeout(late), reject(e)),
+      { enableHighAccuracy: true, timeout, maximumAge: 60_000 }
+    );
+  });
 }
 
 // The place, or the problem as the pages say it (say.ts): `location`
-// when the browser refuses or cannot tell.
-export async function whereAmI(): Promise<{ place: Place } | { problem: ApiData }> {
+// when the browser refuses or cannot tell. `timeout` counts from when the
+// browser is allowed to look, not while it asks; `cap` is all the waiting
+// there is, the asking included.
+export async function whereAmI({ timeout = 20_000, cap = 60_000 } = {}): Promise<
+  { place: Place } | { problem: ApiData }
+> {
   if (!canLocate()) return { problem: { error: 'location' } };
   let at: GeolocationPosition;
   try {
-    at = await position();
+    at = await position(timeout, cap);
   } catch (e) {
     const denied = (e as GeolocationPositionError).code === 1;
     return { problem: { error: denied ? 'location-denied' : 'location' } };

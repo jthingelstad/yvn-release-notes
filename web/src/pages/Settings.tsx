@@ -325,10 +325,10 @@ function Account({ p }: { p: Me }) {
             Add where I am
           </label>
           <p className="hint">
-            A note you write on Today starts with where you are, as your browser tells it. The spot is kept exactly,
-            with the city’s name, so its map shows where you were; the city alone names your day. To name the city, the
-            spot is sent to Amazon Location and nothing else. Any note can say “Not there” before it’s saved, or change
-            its place after.
+            A note you save on Today adds where you are, as your browser tells it. Your browser asks only as you save,
+            never as the page opens. The spot is kept exactly, with the city’s name, so its map shows where you were;
+            the city alone names your day. To name the city, the spot is sent to Amazon Location and nothing else. Any
+            note can change its place after it’s saved.
           </p>
           <p className="aside saved" id="here-saved" role="status" hidden={!here.saved}>
             Saved.

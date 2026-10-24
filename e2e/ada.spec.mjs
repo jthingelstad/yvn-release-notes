@@ -332,17 +332,45 @@ test("Here names where the browser is, and a saved note's place changes after", 
   await expect(note.getByRole('button', { name: 'Where', exact: true })).toBeFocused();
 });
 
-test('"Add where I am" looks for each new note, even after "Not there" on the last', async ({ page, context }) => {
+test('"Add where I am" asks only as a note is saved, and "Not there" leaves it off', async ({ page, context }) => {
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 48.856613, longitude: 2.352222, accuracy: 10 });
-  // On unless turned off, so nothing to set.
+  // Every time the page asks the browser where it is.
+  await page.addInitScript(() => {
+    const ask = navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
+    window.asked = 0;
+    navigator.geolocation.getCurrentPosition = (...args) => (window.asked++, ask(...args));
+  });
+  const asked = () => page.evaluate(() => window.asked);
+  // On unless turned off, so nothing to set. Opening Today asks nothing.
   await page.goto('/today/');
+  await page.waitForLoadState('networkidle');
   const form = page.locator('#note-form');
+  await expect(form.getByRole('button', { name: 'Here', exact: true })).toBeVisible();
+  await expect(form.locator('#note-where')).toBeHidden();
+  expect(await asked()).toBe(0);
+
+  // Saving asks, and the note keeps where it was written.
+  const there = `Somewhere at ${Date.now()}`;
+  await form.locator('textarea').fill(there);
+  await form.getByRole('button', { name: 'Save note' }).click();
+  await expect(
+    page.locator('article.note', { hasText: there }).getByRole('link', { name: 'Old Town, Paris' })
+  ).toBeVisible();
+  expect(await asked()).toBe(1);
+
+  // "Not there" after a Here: saved with no place, and not asked again.
+  await form.getByRole('button', { name: 'Here', exact: true }).click();
   await expect(form.locator('#note-where')).toHaveText(/At Old Town, Paris\./);
   await form.getByRole('button', { name: 'Not there' }).click();
-  await form.locator('textarea').fill(`Nowhere at ${Date.now()}`);
+  const nowhere = `Nowhere at ${Date.now()}`;
+  await form.locator('textarea').fill(nowhere);
   await form.getByRole('button', { name: 'Save note' }).click();
-  await expect(form.locator('#note-where')).toHaveText(/At Old Town, Paris\./);
+  // Saved, not still "Saving…": a saved note has its Where.
+  const note = page.locator('article.note', { hasText: nowhere });
+  await expect(note.getByRole('button', { name: 'Where', exact: true })).toBeVisible();
+  await expect(note.getByRole('link', { name: /Paris/ })).toHaveCount(0);
+  expect(await asked()).toBe(2);
 });
 
 test('a past day can have a place of its own, and its weather follows', async ({ page }) => {

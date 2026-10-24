@@ -3,9 +3,9 @@
 // until it is saved, so a sign-out mid-note (or a reload) doesn't lose it.
 // Once any files are sent, the note shows in the list at once ("Saving…")
 // and the form empties; a write that fails puts it all back. "Where" is
-// optional (where.tsx), and with "Add where I am" on, Today's form starts
-// each note with Here. What a saved note earned shows under the form
-// (unlock.tsx).
+// optional (where.tsx), and with "Add where I am" on, Today's form adds
+// where the device is as a note is saved. What a saved note earned shows
+// under the form (unlock.tsx).
 import { useQueryClient } from '@tanstack/react-query';
 import { useBlocker } from '@tanstack/react-router';
 import { useCallback, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -21,7 +21,7 @@ import { canRecord, recordClock, useRecorder } from './recorder.ts';
 import { Icon } from './icon.tsx';
 import { UnlockLine } from './unlock.tsx';
 import { NoteWhere } from './where.tsx';
-import { kept } from '../lib/here.ts';
+import { canLocate, kept, whereAmI } from '../lib/here.ts';
 import { spans, MAX_TAG } from '../../../packages/domain/tags.ts';
 
 interface Props {
@@ -30,7 +30,7 @@ interface Props {
   placeholder: string;
   submit: ReactNode;
   initialTag?: string | null;
-  // "Add where I am" (Settings): start each note with Here
+  // "Add where I am" (Settings): a note saved with no place gets Here's
   here?: boolean;
 }
 
@@ -53,6 +53,9 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
   });
   const [chosen, setChosen] = useState<string>('');
   const [place, setPlace] = useState<Place | null>(null);
+  // "Not there" on this note: it is saved with no place.
+  const [notThere, setNotThere] = useState(false);
+  const [locating, setLocating] = useState(false);
   // Each new note starts its "Where" over, Here's "Not there" included.
   const [round, setRound] = useState(0);
   const [won, setWon] = useState<Unlocked[]>([]);
@@ -85,9 +88,19 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
       setWon([]);
       const files = [...(pick.current?.files || []), ...(await rec.files())];
       if (!text.trim() && !files.length) return problem.show({ error: 'text' }, area.current);
+      // "Add where I am" asks the browser now, as the note is saved, never
+      // as the page opens (Jamie, 2026-10-24: "Do it when we know that we
+      // need the location"). The note is saved without it when the browser
+      // can't or won't say, and its Where can add one after.
+      let at = place;
+      if (!at && here && !notThere && canLocate()) {
+        setLocating(true);
+        const found = await whereAmI({ timeout: 10_000, cap: 20_000 }).finally(() => setLocating(false));
+        if ('place' in found) at = found.place;
+      }
       // The zone it is being written in, so its time reads as it did here.
       const body: { text: string; tz: string; uploads?: unknown; place?: Place } = { text, tz: browserZone() };
-      if (place) body.place = kept(place);
+      if (at) body.place = kept(at);
       if (files.length) {
         const out = await sendFiles(files, setChosen);
         showChosen();
@@ -104,6 +117,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
       showChosen();
       rec.clear();
       setPlace(null);
+      setNotThere(false);
       setRound((n) => n + 1);
       const r = await api<{ unlocked?: Unlocked[] }>('POST', `/api/days/${day}/notes`, body);
       if (!r.ok) {
@@ -112,7 +126,8 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
         store.set(key, text);
         putBack(pick.current, files);
         showChosen();
-        setPlace(place);
+        setPlace(at);
+        setNotThere(notThere);
         return problem.show({ ...r.data, draft: 'kept' }, area.current);
       }
       setWon(r.data.unlocked || []);
@@ -180,11 +195,22 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
           >
             <Icon name="record" /> {rec.seconds === null ? 'Record' : `Stop · ${recordClock(rec.seconds)}`}
           </button>
-          <NoteWhere key={round} place={place} onPick={setPlace} onProblem={show} auto={here} />
+          <NoteWhere
+            key={round}
+            place={place}
+            onPick={setPlace}
+            onProblem={show}
+            onNotThere={() => setNotThere(true)}
+          />
           <button className="go" type="submit" disabled={busy}>
             {submit}
           </button>
         </div>
+        {locating && (
+          <p className="hint" role="status">
+            Finding where you are…
+          </p>
+        )}
         <ErrorLine line={problem.line} />
       </form>
       <UnlockLine items={won} />

@@ -190,7 +190,8 @@ Where things are (each module's design comment has its contract):
   the web reads it only as "this place has a spot".
 - **Where a note was** (Jamie, 2026-10-12): the web form's optional "Where",
   the device's own spot (Jamie, 2026-10-24: "Here", by a tap, or on each new
-  note on Today with "Add where I am" on; `places.devicePlace`, named through
+  note saved on Today with "Add where I am" on, asked as it is saved, never
+  as the page opens; `places.devicePlace`, named through
   `POST /api/places/here`), or else its first photo's EXIF GPS (a JPEG's,
   or an iPhone HEIC's Exif item, `exif.read`), named once by its
   neighbourhood by Amazon Location (`places.namePhoto`), which is told the

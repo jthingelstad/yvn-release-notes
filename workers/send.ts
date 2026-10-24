@@ -125,7 +125,7 @@ export async function readStreak(s: SenderServices, sub: Subscriber, day: string
   }
 }
 // Each place once, linked to our map where it has a spot (mapUrl says
-// which): a note's on that note, the day's own on the day. The first note
+// which): a note's on that note, the day's own on its spot and day. The first note
 // at a spot stands for the rest; the map lists them all.
 export function placesOf(notes: NoteRecord[], own: PlaceRecord | null = null, day = ''): [string, string | null][] {
   const out: [string, string | null][] = [],
@@ -140,11 +140,11 @@ export function placesOf(notes: NoteRecord[], own: PlaceRecord | null = null, da
       out.push([name, spot && link()]);
     }
   };
-  if (own) add(own, () => mapLink(day));
+  if (own) add(own, () => mapLink(day, { ll: `${Number(own.lat)},${Number(own.lon)}` }));
   for (const note of [...notes].sort((a, b) =>
     writtenAt(a) < writtenAt(b) ? -1 : writtenAt(a) > writtenAt(b) ? 1 : 0
   ))
-    if (note.place) add(note.place, () => mapLink(day, String(note.sk).split('#').slice(2).join('#')));
+    if (note.place) add(note.place, () => mapLink(day, { id: String(note.sk).split('#').slice(2).join('#') }));
   return out;
 }
 export function thumbsOf(sub: Subscriber, notes: NoteRecord[]): Thumbnail[] {

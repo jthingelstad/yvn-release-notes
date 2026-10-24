@@ -23,17 +23,23 @@ export function MapPage() {
   const found = useQuery(mapQuery);
   const d = found.data;
   const day = useHashParam('d'),
-    id = useHashParam('n');
-  // A note's link lists the notes at its spot, a day's (the email's link
-  // for the day's own place) that day's; the map stays in view rather than
-  // the list taking focus, and a pin chosen after replaces them.
+    id = useHashParam('n'),
+    ll = useHashParam('ll');
+  // A day's own place (the email's link for it), which no pin need mark.
+  const at = useMemo(() => {
+    const [lat, lon] = (ll ?? '').split(',').map(Number);
+    return ll && Math.abs(lat!) <= 90 && Math.abs(lon!) <= 180 ? ([lon, lat] as [number, number]) : null;
+  }, [ll]);
+  // A note's link lists the notes at its spot, a day's that day's; the map
+  // stays in view rather than the list taking focus, and a pin chosen after
+  // replaces them.
   const linked = useMemo(() => {
     const ofDay = d && day ? d.pins.filter((p) => p.date === day) : [],
       focus = id ? ofDay.find((p) => p.id === id) : null;
     if (focus) return d!.pins.filter((p) => p.lat === focus.lat && p.lon === focus.lon);
     return !id && ofDay.length ? ofDay : null;
   }, [d, day, id]);
-  const here = linked ? `${day}#${id ?? ''}` : '';
+  const here = linked || at ? `${day}#${id ?? ''}#${ll ?? ''}` : '';
   const [chosen, setChosen] = useState<{ pins: Pin[]; under: string } | null>(null);
   const pick = useCallback((pins: Pin[] | null) => setChosen(pins && { pins, under: here }), [here]);
   const picked = chosen && chosen.under === here ? chosen.pins : linked;
@@ -50,9 +56,9 @@ export function MapPage() {
             : 'No note has a place of its own yet. Add one with Where, or Here on a note.'}
         </p>
       )}
-      {d && d.pins.length > 0 && (
+      {d && (d.pins.length > 0 || at) && (
         <>
-          <Basemap pins={d.pins} focus={linked} pick={pick} />
+          <Basemap pins={d.pins} focus={linked} at={at} pick={pick} />
           <Picked pins={picked} linked={picked === linked} />
         </>
       )}
@@ -91,7 +97,17 @@ function Picked({ pins, linked }: { pins: Pin[] | null; linked?: boolean }) {
 // Colours from the page's own tokens, so the pins follow light and dark.
 const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-function Basemap({ pins, focus, pick }: { pins: Pin[]; focus: Pin[] | null; pick: (p: Pin[] | null) => void }) {
+function Basemap({
+  pins,
+  focus,
+  at,
+  pick
+}: {
+  pins: Pin[];
+  focus: Pin[] | null;
+  at: [number, number] | null;
+  pick: (p: Pin[] | null) => void;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const [broken, setBroken] = useState(false);
   useEffect(() => {
@@ -117,10 +133,12 @@ function Basemap({ pins, focus, pick }: { pins: Pin[]; focus: Pin[] | null; pick
           container: box.current,
           style: `${location.origin}/api/map/style/${dark ? 'Dark' : 'Light'}`,
           // Every pin, or what a place link asked for: close in on a spot,
-          // the city for a chosen city.
-          ...(one
-            ? { center: [first!.lon, first!.lat] as [number, number], zoom: first!.exact ? 15 : 11 }
-            : { bounds, fitBoundsOptions: { padding: 48, maxZoom: focus ? 15 : 11 } }),
+          // the city for a chosen city or a day's own place.
+          ...(at
+            ? { center: at, zoom: 11 }
+            : one
+              ? { center: [first!.lon, first!.lat] as [number, number], zoom: first!.exact ? 15 : 11 }
+              : { bounds, fitBoundsOptions: { padding: 48, maxZoom: focus ? 15 : 11 } }),
           attributionControl: { compact: true },
           cooperativeGestures: true,
           // A flat map that stays north up: no tilting, no turning.
@@ -232,7 +250,7 @@ function Basemap({ pins, focus, pick }: { pins: Pin[]; focus: Pin[] | null; pick
       gone = true;
       map?.remove();
     };
-  }, [pins, focus, pick]);
+  }, [pins, focus, at, pick]);
   if (broken) return <p className="hint spaced">This browser can't draw the map.</p>;
   return <div className="map" ref={box} role="region" aria-label="Map of your notes" />;
 }

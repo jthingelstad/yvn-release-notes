@@ -231,11 +231,12 @@ export function filesLine(files?: Files, others = 0): string {
   return parts.join(', ');
 }
 export const pastLink = (day: string) => `${APP}/day/?d=${day}`;
-// Our Map page, opened on a note's spot or on a day's notes (Jamie,
-// 2026-10-24: place links go to our map, not Apple's). The day and id ride
-// in the #, so no server sees which.
-export const mapLink = (day: string, id?: string) =>
-  `${APP}/map/#${new URLSearchParams(id ? { d: day, n: id } : { d: day }).toString()}`;
+// Our Map page, opened on a note's spot, or on a day's own place (`ll`,
+// since no note there need have a spot) with that day's notes (Jamie,
+// 2026-10-24: place links go to our map, not Apple's). It all rides in the
+// #, so no server sees which.
+export const mapLink = (day: string, at: { id: string } | { ll: string }) =>
+  `${APP}/map/#${new URLSearchParams('id' in at ? { d: day, n: at.id } : { d: day, ll: at.ll }).toString()}`;
 export const tagLink = (tag: string) => `${APP}/tag/?t=${tag}`;
 export const escape = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;' })[c]!);

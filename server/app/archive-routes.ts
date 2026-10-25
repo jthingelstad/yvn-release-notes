@@ -9,6 +9,9 @@ import { searchedText } from '../../packages/domain/search.ts';
 import { rounded } from '../../packages/backend/places.ts';
 import { badges } from '../../packages/backend/badges.ts';
 import { collectedOn, releaseBadges } from '../../packages/domain/badges.ts';
+import { givenDuring } from '../../packages/domain/giving.ts';
+/** A release's giving, only when there is some (domain/giving.ts). */
+const given = (giving: string[]) => (giving.length ? { giving } : {});
 import { json, body, dayFrom, dateOf, pageLimit, searchFrom } from './requests.ts';
 export async function renderedDays(
   service: SessionService,
@@ -153,6 +156,7 @@ export async function archiveRoutes(
       notes: index.length,
       longest: computeStreak(new Set(have), addDays(shownLast, 1), paused).longest,
       ...(p.badges !== false ? { badges: releaseBadges(String(p.birthday), age, new Set(have)) } : {}),
+      ...given(givenDuring(p.giving, first, shownLast)),
       tags: [...counts]
         .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
         .map(([tag, notes]) => ({ tag, notes })),

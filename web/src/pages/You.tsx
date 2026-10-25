@@ -84,7 +84,8 @@ function Status({ p }: { p: Me }) {
   );
 }
 
-// Release Notes comes with the Weekly Thing. Supporting Members are thanked;
+// Release Notes comes with the Weekly Thing. Supporting Members are thanked,
+// and each year they give earns a badge (domain/giving.ts);
 // an account made before the gate, or whose address has left the list,
 // keeps everything and gets one quiet line offering to add it back (Jamie,
 // 2026-10-25: "Keep them"). Nothing shows until the address has been
@@ -106,7 +107,10 @@ function WeeklyThingLine({ p }: { p: Me }) {
     <div className="you-weekly" id="you-weekly" data-standing={p.weekly_thing}>
       <p className="hint">
         {p.weekly_thing === 'member' ? (
-          <>Weekly Thing Supporting Member. Thank you for giving to this year’s nonprofit.</>
+          <>
+            Weekly Thing Supporting Member. Thank you for giving to this year’s nonprofit: each year you give earns a{' '}
+            <AppLink href="/badges/">badge</AppLink>.
+          </>
         ) : p.weekly_thing === 'reader' ? (
           <>
             Free with your Weekly Thing subscription. <a href={MEMBERS_URL}>Supporting Members</a> give to a nonprofit

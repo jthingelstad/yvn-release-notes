@@ -60,7 +60,7 @@ And three new ones:
 - **A few words count.** The ask is "a few words, a photo, a voice memo",
   so no badge rewards length beyond a single one-off (RFC).
 
-## Four shelves
+## Five shelves
 
 | Shelf            | What it rewards                                            | How it renews                                  |
 | ---------------- | ---------------------------------------------------------- | ---------------------------------------------- |
@@ -68,6 +68,7 @@ And three new ones:
 | This release     | Coverage of the current year of life, and its special days | Starts over every birthday                     |
 | Firsts and craft | Trying each part of the product, richer notes              | Earned once                                    |
 | Collectibles     | Notes on special version numbers, some secret              | Earned once, and again in each release's album |
+| Giving           | Each year given as a Weekly Thing Supporting Member        | One a calendar year                            |
 
 ### Tracks
 
@@ -133,6 +134,37 @@ The weather badges read the day's stored weather (`WEATHER#<day>`), the same
 record the day pages show, so they cost nothing new and follow the day's
 place. Open-Meteo's credit stays wherever weather shows; a badge description
 names the condition, not the data.
+
+### Giving
+
+Added 2026-10-25 (Jamie: "Yearly giving badge is EXCELLENT! Love that."),
+the one shelf not worked out from notes. Weekly Thing Supporting
+Membership gives 100% to one nonprofit a calendar year, so each year a
+Weekly Thing lookup sees a member is a badge named for that year's
+nonprofit:
+
+> Supported Signal. A Weekly Thing Supporting Member in 2026, the year
+> membership went to Signal.
+
+- **The facts** are the profile's `giving` (`packages/domain/giving.ts`): a
+  calendar year with the first and last local days a lookup answered
+  `member`, recorded wherever the standing is looked up (sign-up, a visit,
+  the sender after an email; AGENTS.md, Subscribers and accounts). The
+  badge is stamped with the first day seen and joins the replay in date
+  order.
+- **Nothing is taken away.** A year is only ever widened, so a lapsed
+  member keeps every year they gave.
+- **Never still to find.** Giving badges are not in `missing`: the shelf
+  thanks members and never pitches membership to anyone else.
+- **The nonprofits** are `NONPROFITS`, copied from the Weekly Thing's
+  members page data. A year seen before its nonprofit is listed earns its
+  badge once it is, told in the next email as usual (no activity row then).
+  Release Notes first asked on 2026-10-25, so no earlier year is known.
+- **The glyph** is a star, the Weekly Thing's gold star for its members.
+- **The birthday** block and the release page thank the member by the
+  nonprofits given to while the release ran: "During 5.4 you supported
+  Signal as a Weekly Thing Supporting Member. Thank you." That line is a
+  thank-you rather than a badge, so it shows with "Show badges" off too.
 
 ### Collectibles
 
@@ -359,6 +391,13 @@ they are found by writing on those days or not at all.
    2026-10-20: "add read-only MCP tools to Release Notes for badges, the
    mail log, releases, on this day and account settings under
    notes:read"). **Built 2026-10-20.**
+
+## Jamie's calls (2026-10-25)
+
+1. **Giving badges** from the Supporting Member perks suggested that day
+   ("Yearly giving badge is EXCELLENT! Love that."), with the birthday
+   thank-you ("Love the birthday email idea too!"). A model-written daily
+   email was set aside ("I like your three ideas WAY more").
 
 ## Jamie's calls (2026-10-20)
 

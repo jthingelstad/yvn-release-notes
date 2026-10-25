@@ -12,6 +12,7 @@ import { count, listed, longDate } from '../lib/format.ts';
 import { useGo, useQueryParam } from '../lib/nav.ts';
 import { releaseQuery, releasesQuery } from '../lib/queries.ts';
 import type { ReleasePage } from '../lib/types.ts';
+import { givingLine } from '../../../packages/domain/giving.ts';
 
 export function Release() {
   const go = useGo();
@@ -69,6 +70,11 @@ export function Release() {
             </p>
           )}
           <ReleaseBadges b={head.badges} current={head.current} />
+          {head.giving && head.giving.length > 0 && (
+            <p className="meta release-giving" id="release-giving">
+              {givingLine(head.v, head.giving)}
+            </p>
+          )}
           {head.tags.length > 0 && (
             <div className="tag-row">
               <p className="kicker" id="release-tags-k">

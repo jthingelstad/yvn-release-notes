@@ -11,6 +11,7 @@ import { codePointLength, codePointSlice, pythonRstrip, pythonTrim } from '../do
 import { UPDATE_LABEL, type ProductUpdate } from '../domain/product-updates.ts';
 import type { UpcomingSection } from '../domain/upcoming.ts';
 import { specialKinds } from '../domain/badges.ts';
+import { givingLine } from '../domain/giving.ts';
 export const SITE = 'https://yourversionnumber.com',
   APP = 'https://notes.yourversionnumber.com';
 export const PAPER = '#fffbf2',
@@ -80,6 +81,9 @@ export interface Closed {
   longest: number;
   /** The release's badges, with "Show badges" on (docs/BADGES.md). */
   badges?: { coverage: string | null; collected: { name: string; count: number }[] } | null;
+  /** The nonprofits given to as a Weekly Thing Supporting Member while the
+   * release ran (domain/giving.ts), whatever "Show badges" says. */
+  giving?: string[];
 }
 /** A badge earned and not yet celebrated, oldest first. */
 export interface NewBadge {
@@ -210,8 +214,11 @@ export function specialLine(v: Version): string | null {
     ];
   return said.length ? `${v} ${said.join(' and ')}.` : null;
 }
-export const closedBody = (c: Closed) =>
-  `${releaseName(c.age)} is closed: ${closedLine(c)}\nSee ${releaseName(c.age)}: ${releaseLink(c.age)}\n\n`;
+const closedGiving = (c: Closed) => (c.giving?.length ? givingLine(releaseName(c.age), c.giving) : null);
+export const closedBody = (c: Closed) => {
+  const giving = closedGiving(c);
+  return `${releaseName(c.age)} is closed: ${closedLine(c)}\n${giving ? `${giving}\n` : ''}See ${releaseName(c.age)}: ${releaseLink(c.age)}\n\n`;
+};
 export function pastText(text: string, limit = PAST_MAX): [string, boolean] {
   if (codePointLength(text) <= limit) return [text, false];
   const prefix = codePointSlice(text, 0, limit),
@@ -491,11 +498,12 @@ export const DARK_CSS = `
 `;
 
 export function closedHtml(c: Closed): string {
-  const name = escape(releaseName(c.age)).replace(/\./g, `<span class="sep" style="color:${ORANGE_INK};">.</span>`);
+  const giving = closedGiving(c),
+    name = escape(releaseName(c.age)).replace(/\./g, `<span class="sep" style="color:${ORANGE_INK};">.</span>`);
   return `<tr><td style="padding:48px 0 0;">
 <p class="ink" style="margin:0 0 8px;font-family:${FONT};font-size:22px;line-height:1.2;font-weight:800;color:${INK};"><span class="vnum" style="font-family:${MONO};letter-spacing:-0.03em;color:${BLUE};white-space:nowrap;">${name}</span> is closed</p>
 <p class="ink-2" style="margin:0 0 8px;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${asciiHtml(closedLine(c))}</p>
-<p style="margin:0;">${action(escape(releaseLink(c.age)), `See ${escape(releaseName(c.age))}`)}</p>
+${giving ? `<p class="ink-2" style="margin:0 0 8px;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${asciiHtml(giving)}</p>\n` : ''}<p style="margin:0;">${action(escape(releaseLink(c.age)), `See ${escape(releaseName(c.age))}`)}</p>
 </td></tr>
 `;
 }

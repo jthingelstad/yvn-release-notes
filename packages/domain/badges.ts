@@ -6,13 +6,17 @@
  * was first written and a late note on the day it was filed in. Collectibles
  * carry the special version they were collected on. Tracks are earned at the
  * best run, never the current one, so a break takes nothing away; deleting
- * the note that earned a badge does. Nothing here names a miss. */
+ * the note that earned a badge does. Nothing here names a miss.
+ * Giving badges (domain/giving.ts) are the one shelf not worked out from
+ * notes: one for each year a Weekly Thing lookup saw a Supporting Member,
+ * stamped with the first day it did, and never listed as still to find. */
 import { addDays, daysBetween, type Day } from './dates.ts';
 import { computeVersion, releaseName, releaseSpan } from './version.ts';
 import { computeStreak } from './streak.ts';
 import { fold } from './unicode.ts';
+import { NONPROFITS, givingId, givingYearOf, type GivingYear } from './giving.ts';
 
-export type Shelf = 'track' | 'first' | 'craft' | 'collectible';
+export type Shelf = 'track' | 'first' | 'craft' | 'collectible' | 'giving';
 export interface BadgeInfo {
   id: string;
   name: string;
@@ -153,6 +157,22 @@ export const BADGES: readonly BadgeInfo[] = [
 ];
 const INFO = new Map(BADGES.map((b) => [b.id, b]));
 const ORDER = new Map(BADGES.map((b, i) => [b.id, i]));
+/** A giving year's badge, once its nonprofit is known. */
+export function givingBadge(year: number): BadgeInfo | null {
+  const n = NONPROFITS[year];
+  if (!n) return null;
+  return badge(
+    'giving',
+    givingId(year),
+    `Supported ${n.short}`,
+    `A Weekly Thing Supporting Member in ${year}, the year membership went to ${n.full}.`,
+    ''
+  );
+}
+const infoOf = (id: string) => {
+  const year = givingYearOf(id);
+  return INFO.get(id) ?? (year === null ? null : givingBadge(year));
+};
 
 /** One note, as the evaluator needs it. `written` is the local day it was
  * written; `reply` marks an email answering a daily email (the standing
@@ -179,6 +199,8 @@ export interface BadgeFacts {
   notes: readonly BadgeNote[];
   weather: Readonly<Record<Day, { high_c?: unknown; code?: unknown }>>;
   paused: ReadonlySet<Day>;
+  /** The profile's giving years (domain/giving.ts). */
+  giving?: readonly GivingYear[];
 }
 export interface Earned {
   key: string;
@@ -334,7 +356,7 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
     const key = level ? `${id}:${level.toLowerCase()}` : id;
     if (earned.has(key)) return;
     const track = TRACKS.find((t) => t.id === id),
-      info = INFO.get(id);
+      info = infoOf(id);
     earned.set(key, {
       key,
       id,
@@ -386,7 +408,18 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
   };
   const home = facts.homeCountry ? fold(facts.homeCountry) : '';
 
+  // Giving years join the replay on the first day each was seen.
+  const giving = (facts.giving ?? [])
+    .filter((g) => givingBadge(g.year) && g.first >= birthday && g.first <= today)
+    .sort((a, b) => cmp(a.first, b.first));
+  let gave = 0;
+  const giveUpTo = (day: Day) => {
+    for (; gave < giving.length && giving[gave]!.first <= day; gave++)
+      give(givingId(giving[gave]!.year), giving[gave]!.first);
+  };
+
   for (const { n, w } of notes) {
+    giveUpTo(w);
     const fresh = !have.has(n.day);
     give('hello', w);
     if (n.source === 'email' && n.reply) give('ack', w);
@@ -456,6 +489,7 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
       if (twin <= last && have.has(twin)) give('compatible', w, twin > n.day ? twin : n.day);
     }
   }
+  giveUpTo(today);
   function tiers(id: TrackId, value: number, w: Day) {
     TRACKS.find((t) => t.id === id)!.at.forEach((t, i) => {
       if (value >= t) give(id, w, w, LEVELS[i]);

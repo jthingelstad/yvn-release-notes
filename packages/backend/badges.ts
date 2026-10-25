@@ -3,11 +3,13 @@
  * profile. A note's text is used in memory for its word count only, never
  * kept or logged. A reply to a daily email keeps its `subject` (empty or not)
  * and a note to the standing address never has one, which tells them apart.
- * The export works the same facts out of the rows it already holds. */
+ * The export works the same facts out of the rows it already holds. Giving
+ * years come from the profile's `giving` (domain/giving.ts). */
 import type { Store, Item } from './store.ts';
 import { localDay, validTimezone, type Day } from '../domain/dates.ts';
 import { writtenAt, type NoteRecord, type PlaceRecord } from '../domain/notes.ts';
 import { pauseDays } from '../domain/streak.ts';
+import { givingYears } from '../domain/giving.ts';
 import {
   evaluateBadges,
   unlocked,
@@ -72,7 +74,8 @@ export async function badgeFacts(
     ...(profile.country ? { homeCountry: String(profile.country) } : {}),
     notes: notes.filter((n) => n.sk !== except).map((n) => badgeNote(n, profile)),
     weather,
-    paused: pauseDays(pauses, weekEnd(today))
+    paused: pauseDays(pauses, weekEnd(today)),
+    giving: givingYears(profile.giving)
   };
 }
 
@@ -118,7 +121,8 @@ export function badgesOf(items: readonly Item[], profile: Item, today: Day): Bad
       ...(profile.country ? { homeCountry: String(profile.country) } : {}),
       notes,
       weather,
-      paused: pauseDays(pauses, weekEnd(today))
+      paused: pauseDays(pauses, weekEnd(today)),
+      giving: givingYears(profile.giving)
     },
     today
   );

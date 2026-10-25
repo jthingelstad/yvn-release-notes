@@ -1,7 +1,10 @@
 /** Quarter-hour daily sender. Optional history/weather/photo/product-news/badge reads happen
  * before claiming a local day. Badges announced go into `seen` only once the
  * email has gone (docs/BADGES.md), and the activity log gets a row for the
- * email and one for each reminder due, those folded into "and N more" too. The DynamoDB claim prevents competing runs;
+ * email and one for each reminder due, those folded into "and N more" too.
+ * After the email, a Weekly Thing standing that is due is looked at again
+ * (packages/backend/weekly-thing.ts), so an account that never opens the web
+ * still records the years it gave. The DynamoDB claim prevents competing runs;
  * failed sends restore it conditionally. SES acceptance followed by transport
  * failure remains an unavoidable ambiguous send, as in the original worker.
  * dry_run (including alternate now) reads only and never sends or writes. */
@@ -28,7 +31,10 @@ import { activityLog, recordActivity } from '../packages/backend/activity.ts';
 import { computeStreak, pauseDays, type Streak } from '../packages/domain/streak.ts';
 import { computeVersion, releaseName, releaseSpan, sameDayBefore, type Version } from '../packages/domain/version.ts';
 import { releaseBadges } from '../packages/domain/badges.ts';
+import { givenDuring } from '../packages/domain/giving.ts';
 import { badges as readBadgesOf } from '../packages/backend/badges.ts';
+import { givingEvents } from '../packages/backend/activity.ts';
+import { LookupError, recheckDue, standingFields, type WeeklyThing } from '../packages/backend/weekly-thing.ts';
 import {
   buildMessage,
   newToken,
@@ -61,6 +67,8 @@ export interface SenderServices {
   inboundDomain: string;
   clock?: () => number;
   weatherFetch?: JsonFetch;
+  /** The Librarian's standing lookup; absent, nothing is looked up. */
+  weeklyThing?: WeeklyThing;
   log?: Log;
   report?: (store: Store, now: number) => Promise<void>;
 }
@@ -208,14 +216,16 @@ export async function readClosed(
   if (!within.length) return null;
   try {
     const have = new Set(within.map(([d]) => d)),
-      paused = [...pauseDays(await s.store.pauses(sub.user_id), last)].filter((d) => d >= first);
+      paused = [...pauseDays(await s.store.pauses(sub.user_id), last)].filter((d) => d >= first),
+      giving = givenDuring(sub.giving, first, last);
     return {
       age: v.age - 1,
       days: have.size,
       notes: within.length,
       photos: within.reduce((n, [, p]) => n + p, 0),
       longest: computeStreak(have, addDays(last, 1), paused).longest,
-      ...(sub.badges ? { badges: releaseBadges(sub.birthday, v.age - 1, have) } : {})
+      ...(sub.badges ? { badges: releaseBadges(sub.birthday, v.age - 1, have) } : {}),
+      ...(giving.length ? { giving } : {})
     };
   } catch (e) {
     s.log?.({ event: 'closed-error', user: sub.user_id, date: day, error: errorName(e) });
@@ -236,6 +246,7 @@ export async function readBadges(
     const profile = {
         birthday: sub.birthday,
         tz: sub.tz,
+        giving: sub.giving,
         ...(sub.place ? { city: sub.place.city, country: sub.place.country } : {})
       },
       [earned, seen] = await Promise.all([
@@ -572,7 +583,43 @@ export async function sendOne(
     ],
     s.log && activityLog(at, (fields) => s.log!(fields as Parameters<Log>[0]))
   );
+  await recheckStanding(s, sub.user_id, fresh, day, at);
   return { user: sub.user_id, date: day, version: String(v), outcome: 'sent' };
+}
+/** After the email: the account's Weekly Thing standing, looked up again once
+ * it is due, as the web does on a visit, and for a member the year it gave
+ * (domain/giving.ts) with its badge's activity row. A failure is logged and
+ * waits for the next email; it never touches the one just sent. */
+export async function recheckStanding(
+  s: SenderServices,
+  user: string,
+  profile: Item,
+  day: string,
+  at: number
+): Promise<void> {
+  if (!s.weeklyThing || !recheckDue(profile, at)) return;
+  let fields: Item;
+  try {
+    const standing = await s.weeklyThing.standing(String(profile.email));
+    fields = standingFields(standing, at, day, profile);
+    await s.store.updateProfile(user, fields);
+    s.log?.({ event: 'weekly-thing', user, standing });
+  } catch (e) {
+    s.log?.({
+      event: 'weekly-thing-error',
+      user,
+      error: errorName(e),
+      ...(e instanceof LookupError ? { status: e.status } : {})
+    });
+    return;
+  }
+  await recordActivity(
+    s.store,
+    user,
+    at,
+    givingEvents(profile, fields),
+    s.log && activityLog(at, (f) => s.log!(f as Parameters<Log>[0]))
+  );
 }
 export async function readUpcoming(s: SenderServices, user: string, day: string): Promise<UpcomingDue | null> {
   try {
@@ -664,7 +711,8 @@ export async function handler(
               notes: closed.notes,
               photos: closed.photos,
               longest: closed.longest,
-              ...(closed.badges ? { badges: closed.badges } : {})
+              ...(closed.badges ? { badges: closed.badges } : {}),
+              ...(closed.giving ? { giving: closed.giving } : {})
             }
           : null,
         badges: earned ? earned.news.length : null,

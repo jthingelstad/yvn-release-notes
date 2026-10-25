@@ -20,6 +20,9 @@
  * TURNSTILE#<sha256 of token> / VERDICT keeps Cloudflare's answer for one
  * sign-in token (result, codes, email_hash, uses, verified_at) for five
  * minutes and three uses (`turnstile.ts`); no address, only its hash.
+ * PROFILE.giving maps a calendar year ("2026") to `{first, last}`, the local
+ * days a Weekly Thing lookup saw a Supporting Member (domain/giving.ts):
+ * set whole with the standing, only ever widened, gone with the profile.
  * USER#<owner> / BADGES holds `seen`, a string set of the badges (`id` or
  * `id:tier`) already celebrated, so the email names each once
  * (docs/BADGES.md). Only ever ADDed to, with the account proof; deleted

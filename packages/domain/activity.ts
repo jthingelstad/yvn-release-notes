@@ -27,7 +27,8 @@
  *   `empty` (nothing could be made out); description.added: `day`, `note`,
  *   `photos` (how many that pass described). Never the words.
  * - badge.earned: `badge`, `key`, `name`, `version`, `day`, `note`, from a
- *   save on the web, by an assistant or by email.
+ *   save on the web, by an assistant or by email; a giving year's (via
+ *   `weekly-thing`, domain/giving.ts) has no `day` or `note`.
  * - import.notes (one a run that imported anything, even one that stopped
  *   partway): `app` (dayone), `notes`, `files` (of those notes).
  * - email.sent: `day`, `version`; reminder (one per reminder due that

@@ -308,15 +308,27 @@ Where things are (each module's design comment has its contract):
   - Accounts made before the gate keep everything (Jamie: "Keep them").
   - Every account is looked up again on `GET /api/me` once nine days have
     passed (Jamie: "Re-check like Thingy"), or ten minutes while a
-    subscription it asked for waits to be confirmed. The answer is kept on
-    the profile as `weekly_thing` (`member`, `reader`, `unconfirmed`,
-    `none`) with `weekly_thing_at`, and changes only what You says: a
-    member is thanked, and anyone who has left keeps their notes and gets
-    one quiet line with the same Subscribe button. Nothing is ever taken
-    away.
-  - Supporting membership is framing only for now (Jamie: "Framing only
-    for now"): no feature differs. Membership fees go 100% to a nonprofit,
-    so no copy calls membership the price of anything here.
+    subscription it asked for waits to be confirmed, and by the sender after
+    a morning's email once it is due, for accounts that never open the web.
+    The answer is kept on the profile as `weekly_thing` (`member`,
+    `reader`, `unconfirmed`, `none`) with `weekly_thing_at`: a member is
+    thanked, and anyone who has left keeps their notes and gets one quiet
+    line with the same Subscribe button. Nothing is ever taken away.
+  - **Giving** (Jamie, 2026-10-25, picking from suggested perks: "Yearly
+    giving badge is EXCELLENT!" and "Love the birthday email idea too!").
+    A lookup that answers `member` records the calendar year on the
+    profile's `giving` (first and last local day seen, only ever widened;
+    `packages/domain/giving.ts`). Each year is a badge on its own shelf,
+    "Supported Signal", stamped with the first day seen, never listed as
+    still to find, with one `badge.earned` row (via `weekly-thing`) while
+    "Show badges" is on. A release's page and its birthday email thank the
+    member by the nonprofits given to while it ran, whatever "Show badges"
+    says. The nonprofit for each year is `NONPROFITS` in that module,
+    copied from the Weekly Thing's `support.json`: add each year's when
+    Jamie names it (a year seen before then earns its badge once added).
+    Release Notes first asked on 2026-10-25, so no earlier year is known.
+    Membership fees go 100% to a nonprofit, so no copy calls membership the
+    price of anything here; thank, never sell.
   - A failed lookup never locks anyone out: sign-up goes ahead and a
     re-check keeps what was known. A failed subscribe asks the reader to
     try again (503 `weekly-thing-busy`); one Buttondown's firewall holds,

@@ -1,0 +1,11 @@
+# Release Notes: the front page is public and welcome in search. Everything
+# else is the signed-in app or a link from an email, and the app marks those
+# pages noindex.
+User-agent: *
+Disallow: /api/
+Disallow: /oauth/
+Disallow: /mcp
+Disallow: /signin/
+Disallow: /unsubscribe/
+
+Sitemap: https://notes.yourversionnumber.com/sitemap.xml

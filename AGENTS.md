@@ -9,8 +9,11 @@ It is its own repo and stack, separate from `~/Projects/yourversionnumber.com`
 (the birthday and work sites). Those sites keep everything in the URL because
 that was a fun way to build them, not because of a rule (Jamie, 2026-10-08:
 "This is a hobby project. It's just fun."). This product stores data.
-Nothing on the sites links here yet: whether to add a link is Jamie's call,
-so leave the sites alone.
+The sites link here, and the front page is for search (Jamie, 2026-10-25:
+"Yes we want Release Notes in search where it can be. We also now should
+link YVN to Release Notes so people may find it"). Every other page is the
+signed-in app or an emailed link and stays out of search (`web/public/robots.txt`
+and the noindex in `web/src/main.tsx`).
 
 This file holds the rules and the decisions behind them. `docs/OPERATING.md`
 says how to run things and `infra/NATIVE-WEB.md` how a release works. Design

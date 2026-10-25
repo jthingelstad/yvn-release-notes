@@ -321,8 +321,9 @@ Where things are (each module's design comment has its contract):
     each step its own conditional write so lookups racing never narrow it:
     `Store.widenGiving`; `packages/domain/giving.ts`). Each year is a badge
     on its own shelf,
-    "Supported Signal", stamped with the first day seen, never listed as
-    still to find, with one `badge.earned` row (via `weekly-thing`) while
+    "Supported Signal", stamped with the first day seen; this year's is
+    still to find until earned (Jamie: "We should be encouraging people to
+    be a supporting member"); one `badge.earned` row (via `weekly-thing`) while
     "Show badges" is on. A release's page and its birthday email thank the
     member by the nonprofits given to while it ran, whatever "Show badges"
     says; a release with no notes that gave closes with the thank-you

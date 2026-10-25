@@ -26,6 +26,7 @@ import {
   daysQuery,
   dayQuery,
   meQuery,
+  newBadgesQuery,
   pickDay,
   releaseQuery,
   releasesQuery,
@@ -112,6 +113,8 @@ const signedInRoute = createRoute({
     try {
       const me = await context.queryClient.ensureQueryData(meQuery);
       if (me.new && !preload) throw redirect({ to: '/setup/', replace: true });
+      // New badges, asked beside the page's own data rather than after it.
+      if (!me.new && !preload) void context.queryClient.prefetchQuery(newBadgesQuery);
     } catch (e) {
       if (preload || !(e instanceof ApiError)) throw e;
       if (e.answer.status === 401) {

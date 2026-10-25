@@ -11,6 +11,7 @@ import type {
   DaysPage,
   MapNotes,
   Me,
+  NewBadges,
   Note,
   ReleasePage,
   Releases,
@@ -77,6 +78,16 @@ export const activityQuery = infiniteQueryOptions({
 export const badgesQuery = queryOptions({
   queryKey: ['badges'],
   queryFn: () => get<Badges>('/api/badges')
+});
+
+// What was earned and not yet told, read once a visit (signing in or out
+// clears it): the page marks it told as it shows it. A failure shows nothing.
+export const newBadgesQuery = queryOptions({
+  queryKey: ['badges-new'],
+  queryFn: () => get<NewBadges>('/api/badges/new'),
+  staleTime: Infinity,
+  retry: false,
+  meta: { bounce: false }
 });
 
 export const dayQuery = (day: string | null) =>

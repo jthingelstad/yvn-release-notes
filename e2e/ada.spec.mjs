@@ -526,6 +526,65 @@ test('anyone else sees the commentary box off and dimmed, and what membership br
   ).toBeLessThan(1);
 });
 
+test('a badge earned since the last visit is welcomed once, then marked told', async ({ page }) => {
+  // Two badges the morning email hasn't told yet, a Supporting Member's year one of them.
+  const news = {
+    badges: [
+      {
+        key: 'giving-2026',
+        id: 'giving-2026',
+        name: 'Supported Signal',
+        line: 'A Weekly Thing Supporting Member in 2026.',
+        version: '4.5.10'
+      },
+      { key: 'hello', id: 'hello', name: 'Hello, world', line: 'Your first note.', version: '4.5.11' }
+    ],
+    keys: ['giving-2026', 'hello']
+  };
+  const told = [];
+  await page.route('**/api/badges/new', (route) => route.fulfill({ json: news }));
+  await page.route('**/api/badges/seen', (route) => {
+    told.push(route.request().postDataJSON());
+    return route.fulfill({ json: { seen: 2 } });
+  });
+  await page.goto('/today/');
+  const welcome = page.locator('#welcome-badges');
+  await expect(welcome).toContainText('New since your last visit');
+  await expect(welcome.locator('li')).toHaveText([
+    /^Supported Signal, 4\.5\.10A Weekly Thing/,
+    /^Hello, world, 4\.5\.11Your first note\.$/
+  ]);
+  await expect.poll(() => told).toEqual([{ keys: ['giving-2026', 'hello'] }]);
+  // It stays from page to page, told only the once, until it is closed.
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Archive' }).click();
+  await expect(page).toHaveURL(/\/timeline\/$/);
+  await expect(welcome).toBeVisible();
+  await welcome.getByRole('button', { name: 'Close' }).click();
+  await expect(welcome).toHaveCount(0);
+  expect(told).toHaveLength(1);
+});
+
+test('a Supporting Member has a mark in the rail above Sign out', async ({ page }) => {
+  // The rail is the desktop layout's.
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.route('**/api/me', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const res = await route.fetch(),
+      me = await res.json();
+    await route.fulfill({ response: res, json: { ...me, weekly_thing: 'member' } });
+  });
+  await page.goto('/today/');
+  const mark = page.locator('#rail-member');
+  await expect(mark).toHaveText(/^Supporting Member(Giving to \w+)?$/);
+  await expect(mark).toHaveAttribute('href', '/badges/');
+  // Above Sign out, at the foot of the rail.
+  const [m, out] = await Promise.all([mark.boundingBox(), page.locator('.bar--app .rail-signout').boundingBox()]);
+  expect(m.y + m.height).toBeLessThanOrEqual(out.y);
+  // A phone's bar has no room for it.
+  await page.setViewportSize({ width: 520, height: 1000 });
+  await expect(mark).toBeHidden();
+});
+
 test('badges open from Today, with this release, the tracks and the shelf', async ({ page }) => {
   await page.goto('/today/');
   const link = page.locator('#badges-link');

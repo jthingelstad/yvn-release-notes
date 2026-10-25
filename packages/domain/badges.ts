@@ -591,6 +591,16 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
   };
 }
 
+/** What is earned and not yet told (`seen`), for the morning email's line
+ * and the web's welcome back: oldest first, a track's tiers earned since as
+ * the highest alone, and `keys`, every one of them to mark seen once told. */
+export function untold(b: Badges, seen: ReadonlySet<string>): { news: Earned[]; keys: string[] } {
+  const fresh = b.earned.filter((e) => !seen.has(e.key)).reverse(),
+    top = new Map<string, number>();
+  fresh.forEach((e, i) => top.set(e.id, i));
+  return { news: fresh.filter((e, i) => top.get(e.id) === i), keys: fresh.map((e) => e.key) };
+}
+
 /** What a save earned: what `after` (with the new note) has that `before`
  * (without it) did not, in the order it came true, then this release's
  * special days it collected for badges earned before. */

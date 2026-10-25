@@ -62,16 +62,19 @@ async function saveWeeklyThing(service: SessionService, uid: string, p: Item, st
   const now = service.context.now,
     day = localDay(now, String(p.tz)),
     fields = standingFields(standing, now);
-  let added = false;
+  // The year first: when either write fails, the standing keeps its old
+  // time, so the next visit asks again rather than nine days on.
+  let added = false,
+    saved = true;
   try {
-    await service.context.store.updateProfile(uid, fields);
     if (standing === 'member') added = await service.context.store.widenGiving(uid, day, p.giving);
+    await service.context.store.updateProfile(uid, fields);
   } catch {
     service.log({ event: 'weekly-thing-save-error', user: uid });
-    return p;
+    saved = false;
   }
   await record(service, uid, givingEvents(p, added ? day : null));
-  return { ...p, ...fields };
+  return saved ? { ...p, ...fields } : p;
 }
 /** Adds the session's verified address to the Weekly Thing, as Thingy offers
  * to (Jamie: "offer to sign people up directly in release notes"). The

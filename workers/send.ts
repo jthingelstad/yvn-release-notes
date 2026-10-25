@@ -601,11 +601,13 @@ export async function recheckStanding(
   at: number
 ): Promise<void> {
   if (!s.weeklyThing || !recheckDue(profile, at)) return;
+  // The year before the standing's time, so a failed write is asked again
+  // after the next email (as web visits do, packages/backend/accounts.ts).
   let added = false;
   try {
     const standing = await s.weeklyThing.standing(String(profile.email));
-    await s.store.updateProfile(user, standingFields(standing, at));
     if (standing === 'member') added = await s.store.widenGiving(user, day, profile.giving);
+    await s.store.updateProfile(user, standingFields(standing, at));
     s.log?.({ event: 'weekly-thing', user, standing });
   } catch (e) {
     s.log?.({
@@ -614,13 +616,13 @@ export async function recheckStanding(
       error: errorName(e),
       ...(e instanceof LookupError ? { status: e.status } : {})
     });
-    return;
   }
+  if (!added) return;
   await recordActivity(
     s.store,
     user,
     at,
-    givingEvents(profile, added ? day : null),
+    givingEvents(profile, day),
     s.log && activityLog(at, (f) => s.log!(f as Parameters<Log>[0]))
   );
 }

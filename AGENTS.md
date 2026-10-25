@@ -314,6 +314,9 @@ Where things are (each module's design comment has its contract):
     passed (Jamie: "Re-check like Thingy"), or ten minutes while a
     subscription it asked for waits to be confirmed, and by the sender after
     a morning's email once it is due, for accounts that never open the web.
+    The first `GET /api/me` after a sign-in looks again too (the session's
+    `created_at` is newer than `weekly_thing_at`), as Thingy's sign-in does
+    (2026-10-25: Jamie renewed, signed out and in, and no badge came).
     The answer is kept on the profile as `weekly_thing` (`member`,
     `reader`, `unconfirmed`, `none`) with `weekly_thing_at`: a member is
     thanked, and anyone who has left keeps their notes and gets one quiet

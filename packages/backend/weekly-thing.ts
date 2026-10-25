@@ -45,11 +45,14 @@ export const STANDINGS: readonly Standing[] = ['member', 'reader', 'unconfirmed'
 /** Standings that may make an account. */
 export const welcome = (s: Standing) => s === 'member' || s === 'reader';
 /** Whether a profile's standing is due a fresh look: `RECHECK_SECONDS` old,
- * sooner while unconfirmed, or never asked (an account from before the gate). */
-export function recheckDue(p: Item, now: number): boolean {
+ * sooner while unconfirmed, never asked (an account from before the gate),
+ * or asked before the sign-in at `signedInAt`. Signing in looks again, as
+ * Thingy's sign-in does, so someone who has just joined or renewed sees it
+ * then, not nine days on. */
+export function recheckDue(p: Item, now: number, signedInAt?: number): boolean {
   const at = Date.parse(String(p.weekly_thing_at ?? '')) / 1000,
     every = p.weekly_thing === 'unconfirmed' ? UNCONFIRMED_RECHECK_SECONDS : RECHECK_SECONDS;
-  return !Number.isFinite(at) || now - at >= every;
+  return !Number.isFinite(at) || now - at >= every || (signedInAt !== undefined && at < signedInAt);
 }
 /** The profile fields a standing seen at `now` sets. A member's year is
  * written apart from them (`Store.widenGiving`), so lookups racing only

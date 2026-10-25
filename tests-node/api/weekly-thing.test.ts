@@ -226,6 +226,34 @@ test('an account made before the gate keeps everything and is looked at every ni
   assert.equal(kept.b.weekly_thing, 'member', 'a failed lookup keeps what was known');
 });
 
+test('a sign-in looks again, so a membership taken up since shows at once', async () => {
+  const wt = lookup({ 'ada@example.com': 'reader' }),
+    s = await setup(wt.weeklyThing);
+  assert.equal((await s.call('GET', '/api/me', s.member)).b.weekly_thing, 'reader');
+  // Renewed: the session already open doesn't ask again before nine days.
+  wt.weeklyThing.standing = async (email) => {
+    wt.asked.push(email);
+    return 'member';
+  };
+  s.ctx.now = now + 600;
+  assert.equal((await s.call('GET', '/api/me', s.member)).b.weekly_thing, 'reader');
+  assert.equal(wt.asked.length, 1);
+
+  // Signing in again (a session made now, as /api/auth/verify makes it) does, once.
+  const again = auth.newToken();
+  await s.store.putSession(auth.digest(again), { user_id: 'u', now: s.ctx.now, expires: s.ctx.now + 86400 });
+  assert.equal((await s.call('GET', '/api/me', again)).b.weekly_thing, 'member');
+  assert.equal(wt.asked.length, 2);
+  assert.deepEqual(
+    (await s.store.activityAll('u')).filter((r) => r.kind === 'badge.earned').map((r) => r.badge),
+    ['giving-2026']
+  );
+  s.ctx.now += 60;
+  await s.call('GET', '/api/me', again);
+  await s.call('GET', '/api/me', s.member);
+  assert.equal(wt.asked.length, 2, 'each sign-in asks once, and an older session not again');
+});
+
 test('a new address can ask to be added, and then waits on one email', async () => {
   const wt = lookup({}, { 'flagged@example.com': { outcome: 'review' }, 'gone@example.com': { outcome: 'by-hand' } }),
     s = await setup(wt.weeklyThing);

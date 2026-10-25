@@ -153,7 +153,8 @@ export function Digits({ v, named = false }: { v: string; named?: boolean }) {
 
 // Text, or strings and links, as one line. A link marked `back` comes back
 // here after signing in again, with the signed-in hint dropped so the home
-// page shows its form at once.
+// page shows its form at once. A link to another site opens in a new tab,
+// so whatever was typed here stays.
 export function LineText({ line }: { line: Line }) {
   if (typeof line === 'string') return <>{line}</>;
   return (
@@ -161,6 +162,10 @@ export function LineText({ line }: { line: Line }) {
       {line.map((part, i) =>
         typeof part === 'string' ? (
           <span key={i}>{part}</span>
+        ) : /^https?:/.test(part.href) ? (
+          <a key={i} href={part.href} target="_blank" rel="noopener">
+            {part.text}
+          </a>
         ) : (
           <AppLink
             key={i}

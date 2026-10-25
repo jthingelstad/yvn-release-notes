@@ -11,6 +11,7 @@ import { search, nameSpot, fetchJson, type JsonFetch, type City, type Spot, type
 import * as auth from './auth.ts';
 import { withWebProof } from './guarded-store.ts';
 import type { TurnstileConfig } from './turnstile.ts';
+import type { WeeklyThing } from './weekly-thing.ts';
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -43,6 +44,8 @@ export interface ApiContext {
   weatherFetch?: JsonFetch;
   fetchTitle?: TitleFetcher;
   turnstile?: TurnstileConfig;
+  /** The Weekly Thing lookup; absent means no gate. */
+  weeklyThing?: WeeklyThing;
   log?: Log;
 }
 export class SessionService {

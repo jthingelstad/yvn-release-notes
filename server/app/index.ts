@@ -8,6 +8,7 @@ import {
   createInvocations,
   createTurnstileSecret
 } from '../../packages/backend/aws.ts';
+import { createWeeklyThing } from '../../packages/backend/weekly-thing.ts';
 const region = process.env.AWS_REGION ?? 'us-east-1',
   store = createStore(process.env.TABLE ?? '', region),
   objects = createObjects(process.env.MAIL_BUCKET ?? '', region),
@@ -16,7 +17,8 @@ const region = process.env.AWS_REGION ?? 'us-east-1',
   turnstile = {
     mode: process.env.TURNSTILE_MODE,
     secret: createTurnstileSecret(process.env.RUNTIME_SECRET ?? '', region)
-  };
+  },
+  weeklyThing = createWeeklyThing();
 listen(
   createApp({
     context: () => ({
@@ -32,7 +34,8 @@ listen(
       senderFunction: process.env.SENDER_FUNCTION ?? '',
       exportFunction: process.env.EXPORT_FUNCTION ?? '',
       adminUserId: process.env.ADMIN_USER_ID ?? '',
-      turnstile
+      turnstile,
+      weeklyThing
     })
   })
 );

@@ -53,7 +53,16 @@ export const SAY: Record<string, Line> = {
   location: 'Couldn’t tell where you are just now. Try again, or pick a city.',
   'location-denied':
     'Release Notes can’t use your location. Allow it for this site in your browser’s settings, then try again.',
-  'place-unnamed': 'Couldn’t find a city for where you are. Pick one instead.'
+  'place-unnamed': 'Couldn’t find a city for where you are. Pick one instead.',
+  'weekly-thing': 'Release Notes comes with the Weekly Thing, and this address isn’t subscribed yet.',
+  'weekly-thing-unconfirmed':
+    'Your Weekly Thing subscription isn’t confirmed yet. Open the email it sent you, confirm, then try again.',
+  'weekly-thing-busy': 'Couldn’t reach the Weekly Thing just now. Try again in a minute.',
+  'weekly-thing-review':
+    'The Weekly Thing’s list is holding this address for review, so it isn’t subscribed yet. If it’s yours, email jamie@thingelstad.com.',
+  'weekly-thing-by-hand':
+    'This address was on the Weekly Thing before and can’t be added again automatically. Email jamie@thingelstad.com to be added by hand.',
+  'weekly-thing-off': 'The Weekly Thing isn’t asked about here. Try again later.'
 };
 
 const FALLBACK = 'Something went wrong. Try again.';

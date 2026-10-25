@@ -1,13 +1,14 @@
 // The fifth place: what writing has earned, what happened in the account,
 // and how it is set up. Signing out is here on a phone, where the rail's
 // button is not.
-import { useQuery } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
-import { AppLink, Bar, Digits, RailSignOut, useTitle } from '../components/common.tsx';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRef, type ReactNode } from 'react';
+import { AppLink, Bar, Digits, ErrorLine, RailSignOut, useBusy, useProblem, useTitle } from '../components/common.tsx';
 import { Icon, type IconName } from '../components/icon.tsx';
 import { clock, count } from '../lib/format.ts';
 import { badgesQuery, meQuery } from '../lib/queries.ts';
 import type { Me } from '../lib/types.ts';
+import { MEMBERS_URL, subscribeWeeklyThing } from '../lib/weekly-thing.ts';
 
 export function You() {
   useTitle('You');
@@ -20,6 +21,7 @@ export function You() {
       <h1>You</h1>
       <p className="lede">What you’ve earned, what happened, and how it’s set up.</p>
       {me && !me.new && <Status p={me} />}
+      {me && !me.new && <WeeklyThingLine p={me} />}
       <ul className="you-places">
         {shown && <BadgesRow />}
         <Row href="/activity/" id="you-activity" icon="activity" name="Activity">
@@ -79,6 +81,58 @@ function Status({ p }: { p: Me }) {
       today · {email}
       {p.city && ` · ${p.city}`}
     </p>
+  );
+}
+
+// Release Notes comes with the Weekly Thing. Supporting Members are thanked;
+// an account made before the gate, or whose address has left the list,
+// keeps everything and gets one quiet line offering to add it back (Jamie,
+// 2026-10-25: "Keep them"). Nothing shows until the address has been
+// looked up.
+function WeeklyThingLine({ p }: { p: Me }) {
+  const client = useQueryClient();
+  const problem = useProblem();
+  const [busy, run] = useBusy();
+  const button = useRef<HTMLButtonElement>(null);
+  if (!p.weekly_thing) return null;
+  const subscribe = () =>
+    run(async () => {
+      problem.clear();
+      const r = await subscribeWeeklyThing();
+      if (!r.ok) return problem.show(r.data, button.current);
+      client.setQueryData(['me'], { ...p, weekly_thing: r.data.weekly_thing });
+    });
+  return (
+    <div className="you-weekly" id="you-weekly" data-standing={p.weekly_thing}>
+      <p className="hint">
+        {p.weekly_thing === 'member' ? (
+          <>Weekly Thing Supporting Member. Thank you for giving to this year’s nonprofit.</>
+        ) : p.weekly_thing === 'reader' ? (
+          <>
+            Free with your Weekly Thing subscription. <a href={MEMBERS_URL}>Supporting Members</a> give to a nonprofit
+            every year.
+          </>
+        ) : p.weekly_thing === 'unconfirmed' ? (
+          <>Your Weekly Thing subscription isn’t confirmed yet: look for its email.</>
+        ) : (
+          <>
+            Release Notes comes with the Weekly Thing, and your notes stay yours either way.{' '}
+            <button
+              className="quiet inline"
+              type="button"
+              id="you-weekly-subscribe"
+              ref={button}
+              disabled={busy}
+              onClick={subscribe}
+            >
+              Subscribe this address
+            </button>
+            , free.
+          </>
+        )}
+      </p>
+      <ErrorLine line={problem.line} />
+    </div>
   );
 }
 

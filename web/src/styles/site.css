@@ -125,6 +125,9 @@ form + .hint { margin-top: 32px; }
 
 /* sign-up and settings */
 form.roomy { margin-top: 32px; gap: 36px; }
+/* setup's Weekly Thing gate */
+.gate-steps { margin-top: 32px; gap: 14px; }
+.gate-again { margin-top: 28px; }
 .stack.tight { gap: 10px; }
 .vnum.inline { display: inline; font-size: inherit; letter-spacing: -0.03em; }
 .places { display: flex; flex-direction: column; gap: 2px; }
@@ -280,6 +283,27 @@ h1[tabindex="-1"]:focus, main[tabindex="-1"]:focus { outline: none; }
 .explain dd { margin: 0; font-size: 16px; line-height: 1.4; }
 .explain dd span { color: var(--ink-2); }
 .get-it { margin-top: 48px; font-size: 26px; line-height: 1.15; }
+/* The tour under the front page's asking (components/tour.tsx): headings,
+   numbered steps, lists led by a few bold words, and a made-up email set
+   in from the margin. Type only. */
+.tour { margin-top: 96px; }
+.tour h2.big { margin-top: 8px; line-height: 1.15; }
+.tour h2.tour-head { margin-top: 72px; }
+.tour-steps { list-style: none; margin: 28px 0 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.tour-steps li { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 14px; align-items: baseline; }
+.tour-steps .vnum { font-size: 22px; text-align: right; }
+.tour-steps p, .tour-list li { margin: 0; font-size: 17px; line-height: 1.45; color: var(--ink-2); }
+.tour-list { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.tour h3.tour-group { margin: 32px 0 0; font-family: var(--mono); font-size: 12px; font-weight: 400; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.sample { margin: 56px 0 0; padding: 0 0 0 28px; }
+.sample > p { margin: 12px 0 0; font-size: 17px; line-height: 1.5; }
+.sample .sample-subject { margin-top: 14px; font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--ink); }
+.sample .sample-meta, .sample .sample-quiet { font-size: 15px; color: var(--ink-2); }
+.sample .vnum.big { margin-top: 22px; font-size: 44px; }
+.sample h3 { margin: 28px 0 0; font-size: 20px; font-weight: 800; line-height: 1.2; }
+.sample .mono { margin-right: 6px; color: var(--blue); }
+.sample-tag { color: var(--blue); font-weight: 600; }
+.sample .sample-note { margin-top: 20px; }
 .quiet.inline { display: inline; padding: 0; min-height: 0; font-size: inherit; text-decoration: underline; }
 .tags { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 20px; }
 .tags li { font-size: 17px; }
@@ -365,6 +389,7 @@ main:has(.bar--app) h1:not(.vnum) { margin-top: 0; font-size: 42px; }
 /* You: the places that left the bar, one row each. */
 .you-status { margin: 28px 0 0; font-size: 17px; color: var(--ink-2); }
 .you-status b { color: var(--ink); }
+.you-weekly { margin: 6px 0 0; max-width: 36rem; }
 .you-places { list-style: none; margin: 24px 0 0; padding: 0; max-width: 36rem; border-bottom: 1px solid var(--rule); }
 .you-places a { display: flex; align-items: center; gap: 16px; min-height: 72px; padding: 12px 0; border-top: 1px solid var(--rule); color: var(--ink); text-decoration: none; }
 .you-places a:hover .you-name { color: var(--blue-hover); }
@@ -432,6 +457,8 @@ main:has(.bar--app) h1:not(.vnum) { margin-top: 0; font-size: 42px; }
   .note-tools { gap: 10px 16px; }
 }
 @media (max-width: 760px) {
+  .sample { padding-left: 16px; }
+  .tour { margin-top: 72px; }
   main, main:has(.bar--app) { max-width: 42rem; margin: 0 auto; padding: 28px 20px 48px; }
   main:has(.bar--app):has(.map) { max-width: 42rem; }
   .crumb { margin-top: -12px; }

@@ -2,9 +2,11 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Note } from '../lib/types.ts';
-import { placeOf, splitHref } from './common.tsx';
+import { MEMBERS_URL, WEEKLY_THING_URL } from '../lib/weekly-thing.ts';
+import { LineText, placeOf, splitHref } from './common.tsx';
 import { StreakLine } from './days.tsx';
 import { mapHref, Marked, NoteBody, NoteMeta, noteText } from './notes.tsx';
+import { Tour } from './tour.tsx';
 import { answered } from './where.tsx';
 
 afterEach(cleanup);
@@ -153,5 +155,22 @@ describe('placeOf', () => {
       '/admin/': '/you/',
       '/admin-users/': '/you/'
     });
+  });
+});
+
+describe('the Weekly Thing', () => {
+  it('links a line to another site whole, in a new tab', () => {
+    const { container } = render(<LineText line={['See ', { href: WEEKLY_THING_URL, text: 'the Weekly Thing' }]} />);
+    const a = container.querySelector('a')!;
+    expect(a.getAttribute('href')).toBe(WEEKLY_THING_URL);
+    expect(a.target).toBe('_blank');
+    expect(WEEKLY_THING_URL).toContain('ref=release-notes');
+  });
+
+  it('closes the tour with how to subscribe and what membership is', () => {
+    const { container } = render(<Tour hidden={false} />);
+    const hrefs = [...container.querySelectorAll('#tour-free ~ p a')].map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual([WEEKLY_THING_URL, MEMBERS_URL]);
+    expect(container.textContent).toContain('Free with the Weekly Thing.');
   });
 });

@@ -177,3 +177,74 @@ test('back and forward keep the address bar and the step together', async ({ pag
   await page.goForward();
   await expect(page.locator('#sign-in')).toBeVisible();
 });
+
+// The dev server's made-up Weekly Thing list: an address starting
+// "not-subscribed" isn't on it, one starting "unconfirmed" hasn't confirmed
+// and one starting "flagged" is held for review when it asks to be added.
+// Everyone else gets the issues, so the tests above sign up.
+async function signUpAs(page, request, email) {
+  await page.goto('/');
+  await typeBirthday(page, 6, 14, 1981);
+  await sendLink(page, email);
+  await page.locator('#code-form [name=code]').fill(codeIn(await mail(request, email)));
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/setup\/$/);
+}
+
+test('the front page tells what Release Notes is, until someone signs in', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#tour')).toBeVisible();
+  await expect(page.locator('#tour-subscribe')).toHaveAttribute('href', 'https://weekly.thingelstad.com/?ref=release-notes');
+  await typeBirthday(page, 6, 14, 1981);
+  await expect(page.locator('#tour')).toBeVisible();
+  await page.locator('#to-sign-in').click();
+  await expect(page.locator('#sign-in')).toBeVisible();
+  await expect(page.locator('#tour')).toBeHidden();
+});
+
+test('an address without the Weekly Thing is offered it, and can start again', async ({ page, request }) => {
+  const email = `not-subscribed-${someone()}`;
+  await signUpAs(page, request, email);
+  await expect(page.locator('#weekly-gate')).toHaveAttribute('data-gate', 'none');
+  await expect(page.locator('#gate-email')).toHaveText(email);
+  await expect(page.locator('#setup-form')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Subscribe to the Weekly Thing' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Check again' }).click();
+  await expect(page.locator('#gate-still')).toBeVisible();
+
+  // Another address: signed out, back at the number, the birthday kept.
+  await page.getByRole('button', { name: 'Use that one' }).click();
+  await expect(page.locator('#number')).toBeVisible();
+  await expect(page.locator('#start-form [name=email]')).toBeVisible();
+  expect(JSON.parse(await waiting(page)).b).toBe('1981-06-14');
+  expect((await page.request.get('/api/me')).status()).toBe(401);
+});
+
+test('an unconfirmed Weekly Thing subscription is asked to confirm first', async ({ page, request }) => {
+  await signUpAs(page, request, `unconfirmed-${someone()}`);
+  await expect(page.locator('#weekly-gate')).toHaveAttribute('data-gate', 'unconfirmed');
+  await expect(page.getByRole('heading', { name: 'Confirm your Weekly Thing subscription.' })).toBeVisible();
+  await expect(page.locator('#setup-form')).toHaveCount(0);
+});
+
+test('the address can be added to the Weekly Thing from Release Notes', async ({ page, request }) => {
+  await signUpAs(page, request, `not-subscribed-${someone()}`);
+  await page.getByRole('button', { name: 'Subscribe to the Weekly Thing' }).click();
+  await expect(page.locator('#weekly-gate')).toHaveAttribute('data-gate', 'unconfirmed');
+  await expect(page.locator('#weekly-gate .lede')).toContainText('Nearly there.');
+  // The confirmation again, for an inbox that didn't get it.
+  await page.getByRole('button', { name: 'Send it again' }).click();
+  await expect(page.locator('#weekly-gate')).toHaveAttribute('data-gate', 'unconfirmed');
+  await expect(page.locator('#weekly-gate .error')).toBeHidden();
+  await page.getByRole('button', { name: 'Check again' }).click();
+  await expect(page.locator('#gate-still')).toHaveText(/Not confirmed yet/);
+  await expect(page.locator('#setup-form')).toHaveCount(0);
+});
+
+test('an address the list holds for review is told to email Jamie', async ({ page, request }) => {
+  await signUpAs(page, request, `flagged-${someone()}`);
+  await page.getByRole('button', { name: 'Subscribe to the Weekly Thing' }).click();
+  await expect(page.locator('#weekly-gate .error')).toContainText('holding this address for review');
+  await expect(page.locator('#weekly-gate')).toHaveAttribute('data-gate', 'none');
+});

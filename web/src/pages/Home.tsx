@@ -1,10 +1,12 @@
 // The front page asks for a birthday first and shows the number it makes,
 // then asks for an email. The birthday waits in this browser
 // (pendingBirthday) and setup saves it after sign-in. "Sign in" skips
-// straight to the email for anyone returning.
+// straight to the email for anyone returning. Under the asking, the tour
+// says what Release Notes is to anyone who hasn't signed up.
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { BirthdayFields, emptyMdy, mdyOf, mdyValue, type Mdy } from '../components/fields.tsx';
+import { Tour } from '../components/tour.tsx';
 import {
   Bar,
   Digits,
@@ -389,7 +391,8 @@ export function Home() {
         </button>
         <ErrorLine line={startProblem.line} />
         <p className="hint" hidden={!shows('number')}>
-          We’ll email a link and a six-digit code. Your birthday comes along once you confirm.{' '}
+          Release Notes is free with the Weekly Thing: use the address it comes to, or any address and subscribe it
+          next. We’ll email a link and a six-digit code, and your birthday comes along once you confirm.{' '}
           <button
             className="quiet inline"
             type="button"
@@ -481,10 +484,14 @@ export function Home() {
           again", and outside the forms. Shown only while Cloudflare asks. */}
       <div className="turnstile" id="signin-check" ref={slotRef} />
 
+      <Tour hidden={!shows('ask', 'number')} />
+
       <p className="foot" id="home-foot" hidden={!shows('ask', 'number', 'signin')}>
-        A hobby by <a href="https://www.thingelstad.com/">Jamie Thingelstad</a>. Your notes are yours: export or delete
-        them any time. Jamie runs it and can read what’s stored; nothing is sold or shared. No ads. Page counts by
-        Tinylytics, without cookies. From <a href="https://yourversionnumber.com/">Your Version Number</a>.
+        A hobby by <a href="https://www.thingelstad.com/">Jamie Thingelstad</a>, free with the{' '}
+        <a href="https://weekly.thingelstad.com/">Weekly Thing</a>. Your notes are yours: export or delete them any
+        time. Jamie runs it and can read what’s stored; nothing is sold or shared. No ads. Sign-up checks your address
+        against the Weekly Thing’s list, and looks again now and then. Page counts by Tinylytics, without cookies. From{' '}
+        <a href="https://yourversionnumber.com/">Your Version Number</a>.
       </p>
     </>
   );

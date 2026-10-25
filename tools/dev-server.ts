@@ -78,6 +78,8 @@ export async function loadDayOne(
 }
 export async function main(args = process.argv.slice(2)) {
   const options = devOptions(args);
+  /** Addresses that asked to be added to the made-up Weekly Thing list. */
+  const added = new Set<string>();
   if (options.help) {
     console.log(
       'tools/dev-server.ts [--port 8790] [--dayone ZIP ...] [--fake-places] [--fake-links] — fictional in-memory services only'
@@ -280,6 +282,25 @@ export async function main(args = process.argv.slice(2)) {
           temperature_2m_min: days.map(() => 8)
         }
       };
+    },
+    // A made-up Weekly Thing list, never the Librarian: an address starting
+    // "not-subscribed" isn't on it, "unconfirmed" hasn't confirmed and
+    // "member" is a Supporting Member; anyone else gets the issues. Asking
+    // to be added leaves it unconfirmed, except "flagged" (held for review).
+    weeklyThing: {
+      standing: async (email) =>
+        added.has(email) || email.startsWith('unconfirmed')
+          ? 'unconfirmed'
+          : email.startsWith('not-subscribed') || email.startsWith('flagged')
+            ? 'none'
+            : email.startsWith('member')
+              ? 'member'
+              : 'reader',
+      subscribe: async (email) => {
+        if (email.startsWith('flagged')) return { outcome: 'review' };
+        added.add(email);
+        return { outcome: 'added' };
+      }
     },
     log: (f) => console.log(JSON.stringify(f))
   });

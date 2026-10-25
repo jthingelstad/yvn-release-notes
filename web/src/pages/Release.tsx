@@ -9,7 +9,7 @@ import { DayList } from '../components/days.tsx';
 import { Icon } from '../components/icon.tsx';
 import { ApiError } from '../lib/api.ts';
 import { count, listed, longDate } from '../lib/format.ts';
-import { useGo, useQueryParam } from '../lib/nav.ts';
+import { useGo, useQueryParam, useStillAt } from '../lib/nav.ts';
 import { releaseQuery, releasesQuery } from '../lib/queries.ts';
 import type { ReleasePage } from '../lib/types.ts';
 import { givingLine } from '../../../packages/domain/giving.ts';
@@ -17,6 +17,7 @@ import { givingLine } from '../../../packages/domain/giving.ts';
 export function Release() {
   const go = useGo();
   const v = useQueryParam('v');
+  const here = useStillAt('/release/');
   const release = useInfiniteQuery(releaseQuery(v));
   const pages = release.data?.pages || [];
   const head = pages[0];
@@ -28,8 +29,8 @@ export function Release() {
   const clicked = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!v || gone) go('/timeline/');
-  }, [v, gone, go]);
+    if (here && (!v || gone)) go('/timeline/');
+  }, [here, v, gone, go]);
 
   // Clicking disabled the button, which dropped focus: give it back, or,
   // when the last page took the button away, move to the first day it added.

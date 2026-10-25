@@ -6,21 +6,22 @@ import { Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx'
 import { DayList } from '../components/days.tsx';
 import { ApiError } from '../lib/api.ts';
 import { count, dateRange } from '../lib/format.ts';
-import { useGo, useQueryParam } from '../lib/nav.ts';
+import { useGo, useQueryParam, useStillAt } from '../lib/nav.ts';
 import { tagQuery } from '../lib/queries.ts';
 import type { Day } from '../lib/types.ts';
 
 export function Tag() {
   const go = useGo();
   const tag = useQueryParam('t');
+  const here = useStillAt('/tag/');
   const tagged = useQuery(tagQuery(tag));
   const d = tagged.data;
   useTitle(d ? `#${d.tag}` : 'Tags');
   const gone = tagged.error instanceof ApiError && tagged.error.answer.status === 404;
 
   useEffect(() => {
-    if (!tag || gone) go('/search/');
-  }, [tag, gone, go]);
+    if (here && (!tag || gone)) go('/search/');
+  }, [here, tag, gone, go]);
 
   return (
     <>

@@ -52,3 +52,11 @@ export function useQueryParam(name: string): string | null {
 export function useHashParam(name: string): string | null {
   return useLocation({ select: (l) => new URLSearchParams(l.hash).get(name) });
 }
+
+// Whether the address is still this page's (a path such as '/release/').
+// While a link's next page loads, the page it left is still drawn under the
+// new address, its ?query gone: a page that sends its reader on when its
+// query is missing asks this first, so a link away from it isn't bounced.
+export function useStillAt(path: string): boolean {
+  return useLocation({ select: (l) => l.pathname.startsWith(path) });
+}

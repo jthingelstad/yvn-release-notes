@@ -453,6 +453,10 @@ test('the timeline lists the releases, and a release shows its days oldest first
   const heads = page.locator('#release-days a.tday-head');
   await expect(heads.last()).toHaveAttribute('href', '/today/');
   await expect(heads.first()).not.toHaveAttribute('href', '/today/');
+  // A day's link goes to the day: the release page, still drawn while the
+  // day loads, doesn't take the new address for a missing ?v= and go back.
+  await heads.first().click();
+  await expect(page).toHaveURL(/\/day\/\?d=\d{4}-\d{2}-\d{2}$/);
 
   // A release not begun goes back to the Timeline.
   await page.goto('/release/?v=9.9');

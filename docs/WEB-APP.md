@@ -89,8 +89,9 @@ nothing there links here yet: that is Jamie's call.
    that starts a release and ends within it, else the dates. A Supporting
    Member (or the administrator) also sees "Add commentary by Claude", the
    consent for that book alone, saying what is sent to Anthropic and how
-   many of the release's 10 are left; anyone else sees one line naming it
-   as a thank-you to Supporting Members. The tick clears once the book is
+   many of the release's 10 are left; anyone else sees the same box, off
+   and dimmed, with what it does, that membership goes 100% to the year's
+   nonprofit and "Become a Supporting Member". The tick clears once the book is
    asked for. Claude's pieces are set apart under a rule, or as pages of
    their own, and named in the colophon (`packages/book/commentary.ts`).
 7. **Settings**: the address and "Changes save as you go." as the lede,

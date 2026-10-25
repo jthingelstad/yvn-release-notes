@@ -338,8 +338,10 @@ Where things are (each module's design comment has its contract):
     copied from the Weekly Thing's `support.json`: add each year's when
     Jamie names it (a year seen before then earns its badge once added).
     Release Notes first asked on 2026-10-25, so no earlier year is known.
-    Membership fees go 100% to a nonprofit, so no copy calls membership the
-    price of anything here; thank, never sell.
+    Membership fees go 100% to a nonprofit, and the copy says so and what
+    members get, up front (Jamie, 2026-10-25: "remember we are raising money
+    for non-profits, we can be up front about the benefits"): what only a
+    member can do is shown to everyone, off, with a link to become one.
   - A failed lookup never locks anyone out: sign-up goes ahead and a
     re-check keeps what was known. A failed subscribe asks the reader to
     try again (503 `weekly-thing-busy`); one Buttondown's firewall holds,

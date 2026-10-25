@@ -2,8 +2,8 @@
  * Supporting Member gives: "Yearly giving badge is EXCELLENT!", and of the
  * birthday email naming it: "Love the birthday email idea too!"). Supporting
  * membership gives 100% to one nonprofit a calendar year, so a year seen as a
- * member is a year that gave to that year's nonprofit. Nothing here calls
- * membership the price of anything in Release Notes.
+ * member is a year that gave to that year's nonprofit, which the copy names
+ * up front wherever it says what members get.
  *
  * The profile keeps `giving`, a map from a calendar year ("2026") to the
  * first and last local days a Weekly Thing lookup answered `member` in it

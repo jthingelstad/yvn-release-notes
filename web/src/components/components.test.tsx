@@ -133,7 +133,8 @@ describe('placeOf', () => {
         '/pause/',
         '/delete/',
         '/admin/',
-        '/admin-users/'
+        '/admin-users/',
+        '/book/'
       ].map((p) => [p, placeOf(p)])
     );
     expect(places).toEqual({
@@ -153,8 +154,12 @@ describe('placeOf', () => {
       '/pause/': '/you/',
       '/delete/': '/you/',
       '/admin/': '/you/',
-      '/admin-users/': '/you/'
+      '/admin-users/': '/you/',
+      '/book/': '/book/'
     });
+    // On a phone a book is the Archive's: the tab bar has no place for it.
+    expect(placeOf('/book/', false)).toBe('/timeline/');
+    expect(placeOf('/map/', false)).toBe('/map/');
   });
 });
 

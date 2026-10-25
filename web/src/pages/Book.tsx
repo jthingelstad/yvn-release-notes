@@ -35,7 +35,9 @@ export function Book() {
   return (
     <>
       <Bar />
-      <Crumb href="/settings/">Settings</Crumb>
+      <Crumb href="/timeline/" phone>
+        Archive
+      </Crumb>
       <h1>Make a book</h1>
       <p className="lede">
         Your notes from any days you pick, set as a book with their photos, places and weather: a PDF to read, or to

@@ -1,7 +1,7 @@
 // Small pieces every page uses: the bar, the version number, links, the
 // lines that say something went wrong or is loading.
 import { Link, useRouterState } from '@tanstack/react-router';
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { sayFor, type Line, type Problem } from '../lib/say.ts';
 import { api } from '../lib/api.ts';
 import { useSignedInAs } from '../lib/nav.ts';
@@ -40,13 +40,18 @@ const NAV = [
   ['/timeline/', 'Archive', 'archive'],
   ['/map/', 'Map', 'map'],
   ['/upcoming/', 'Upcoming', 'upcoming'],
-  ['/you/', 'You', 'you']
+  ['/you/', 'You', 'you'],
+  // The rail's alone (Jamie, 2026-10-25: "on mobile I would put it inside
+  // of Archive? On desktop I'd put it on it's own in the rail").
+  ['/book/', 'Make a book', 'book']
 ] as const;
+const RAIL_ONLY = '/book/';
 
 // Which place a page belongs to: a tab, or '/search/' for the header's
-// search (Tag marks it too), which no tab stands for.
-export function placeOf(path: string) {
-  return /^\/(day|release|timeline)\//.test(path)
+// search (Tag marks it too), which no tab stands for. A book is its own
+// place in the rail and the Archive's on a phone.
+export function placeOf(path: string, rail = true) {
+  return /^\/(day|release|timeline)\//.test(path) || (!rail && path.startsWith(RAIL_ONLY))
     ? '/timeline/'
     : /^\/(tag|search)\//.test(path)
       ? '/search/'
@@ -55,11 +60,27 @@ export function placeOf(path: string) {
         : path;
 }
 
+// Whether the bar is the rail: wider than site.css's 760px phone layout.
+const RAIL = '(min-width: 761px)';
+const hasMedia = () => typeof matchMedia === 'function';
+function useRail(): boolean {
+  return useSyncExternalStore(
+    (changed) => {
+      if (!hasMedia()) return () => undefined;
+      const query = matchMedia(RAIL);
+      query.addEventListener('change', changed);
+      return () => query.removeEventListener('change', changed);
+    },
+    () => !hasMedia() || matchMedia(RAIL).matches
+  );
+}
+
 // The bar along the top: the name, the search, and the places for anyone
 // signed in. `current` marks one of them.
 export function Bar({ nav = true, current, children }: { nav?: boolean; current?: string; children?: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const here = current || placeOf(path);
+  const rail = useRail();
+  const here = current || placeOf(path, rail);
   return (
     <header className={nav ? 'bar bar--app' : 'bar'}>
       <Link className="brand" to={nav ? '/today/' : '/'}>
@@ -82,7 +103,7 @@ export function Bar({ nav = true, current, children }: { nav?: boolean; current?
       )}
       {nav && (
         <nav className="primary-nav" aria-label="Main navigation">
-          {NAV.map(([to, name, icon]) => (
+          {NAV.filter(([to]) => rail || to !== RAIL_ONLY).map(([to, name, icon]) => (
             <Link key={to} to={to} aria-current={here === to ? 'page' : undefined} activeProps={{}}>
               <Icon name={icon as IconName} />
               <span>{name}</span>
@@ -97,10 +118,11 @@ export function Bar({ nav = true, current, children }: { nav?: boolean; current?
 }
 
 // The way back up, above the title of a page that sits under a tab:
-// "← Archive" on a day or a release, "← You" on Settings.
-export function Crumb({ href, children }: { href: string; children: ReactNode }) {
+// "← Archive" on a day or a release, "← You" on Settings. `phone` keeps it
+// to a phone, for a page the rail has a place for (a book).
+export function Crumb({ href, phone, children }: { href: string; phone?: true; children: ReactNode }) {
   return (
-    <AppLink className="crumb" href={href}>
+    <AppLink className={phone ? 'crumb phone-only' : 'crumb'} href={href}>
       <Icon name="back" />
       {children}
     </AppLink>

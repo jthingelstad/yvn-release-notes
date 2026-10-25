@@ -2804,3 +2804,10 @@ fieldset.book-fields {
     margin: 24px -20px 0;
   }
 }
+/* A book is the rail's own place, and the Archive's on a phone. */
+@media (min-width: 761px) {
+  .crumb.phone-only,
+  .page-actions a.phone-only {
+    display: none;
+  }
+}

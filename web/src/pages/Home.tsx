@@ -50,18 +50,23 @@ const sampleFor = (b: string) =>
   api<Sample>('GET', `/api/sample?birthday=${b}&tz=${encodeURIComponent(browserZone())}`);
 
 // Opened from the Home Screen, the app keeps its own cookies: the email's
-// link would sign in the browser instead, so the code is the way in.
+// link would sign in the browser instead, so the code is the way in. (No
+// matchMedia when front.html is drawn at build time.)
 const fromHomeScreen = () =>
-  matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
+  (typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches) ||
+  (navigator as { standalone?: boolean }).standalone === true;
 
-export function Home() {
+// `prerender` draws the page as it opens for someone signed out, asking
+// for the birthday, for front.html (prerender.tsx). The app always starts
+// with nothing shown and decides as it opens, below.
+export function Home({ prerender = false }: { prerender?: boolean }) {
   useTitle('');
   const navigate = useNavigate();
   const signIn = useSignedInAs();
   const go = useGo();
   const hash = useLocation({ select: (l) => l.hash });
 
-  const [mode, setMode] = useState<Mode | null>(null);
+  const [mode, setMode] = useState<Mode | null>(prerender ? 'ask' : null);
   const [opening, setOpening] = useState(false);
   const [birthday, setBirthday] = useState<Mdy>(emptyMdy);
   const [sample, setSample] = useState<Sample | null>(null);

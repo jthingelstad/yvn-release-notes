@@ -451,15 +451,27 @@ kind/recurrence labels and hover titles. Icons and fonts require no remote loads
 or new CSP exception.
 
 - CloudFront's function answers every address that is not a file with
-  `index.html` (the dev server does the same), and the router shows the
-  page.
+  `index.html`, and the router shows the page; `/` alone it answers with
+  `front.html` (the dev server does the same).
+- `front.html` is `index.html` with the front page drawn into `#app` at
+  build time (`web/src/prerender.tsx`, from `vite.config.ts`), so search
+  and link previews that run no script read what the page says. It is
+  `Home` itself as it opens for someone signed out, asking for the
+  birthday, with what that view hides left out: nothing typed twice, and
+  nothing dated, fetched or personal. The app never hydrates it:
+  `createRoot` replaces it as the app first draws, and `site.css` keeps it
+  out of sight wherever scripts run (`@media (scripting: none)` alone shows
+  it), so no one running the app sees it, signed in or out. Every other
+  address keeps `index.html`'s empty `#app`, so none of them says the front
+  page's words. `tests-node/front-page.test.ts` builds both pages and
+  `e2e/front.spec.mjs` reads them in Chromium, with scripts and without.
 - Search sees the front page alone. `index.html` carries its canonical
-  link and share tags (the paper mark as the image), `web/public/robots.txt`
-  keeps crawlers off the API, OAuth and MCP addresses and names
-  `sitemap.xml`, which lists `/` only, and the router marks every other
-  page `noindex` as it resolves, since they all serve `index.html`. Those
-  pages stay crawlable: a page robots.txt blocks can still be listed,
-  because its `noindex` is never read.
+  link and share tags (the paper mark as the image), and `front.html` the
+  same head; `web/public/robots.txt` keeps crawlers off the API, OAuth and
+  MCP addresses and names `sitemap.xml`, which lists `/` only, and the
+  router marks every other page `noindex` as it resolves, since they all
+  serve `index.html`. Those pages stay crawlable: a page robots.txt blocks
+  can still be listed, because its `noindex` is never read.
 - The signed-in pages sit behind one gate in `main.tsx` that has the
   profile before any of them shows. Each page's data (`lib/queries.ts`)
   loads before it shows, from the moment its link is pointed at. Every

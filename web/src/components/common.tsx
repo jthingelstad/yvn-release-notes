@@ -62,6 +62,8 @@ export function placeOf(path: string, rail = true) {
 }
 
 // Whether the bar is the rail: wider than site.css's 760px phone layout.
+// Drawn at build time for front.html, whose bar has no places, there is no
+// screen to ask, so it says the rail.
 const RAIL = '(min-width: 761px)';
 const hasMedia = () => typeof matchMedia === 'function';
 function useRail(): boolean {
@@ -72,7 +74,8 @@ function useRail(): boolean {
       query.addEventListener('change', changed);
       return () => query.removeEventListener('change', changed);
     },
-    () => !hasMedia() || matchMedia(RAIL).matches
+    () => !hasMedia() || matchMedia(RAIL).matches,
+    () => true
   );
 }
 

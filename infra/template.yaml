@@ -1038,8 +1038,10 @@ Resources:
         SigningProtocol: sigv4
 
   # The web app is one page: any address but a file (/settings/,
-  # /day/?d=...) is index.html, and the app's router shows the page. A file
-  # (a name with a dot) is served as is. /api/* never runs it.
+  # /day/?d=...) is index.html, and the app's router shows the page. / alone
+  # is front.html, the same page with the front page drawn in at build time
+  # for readers that run no script (web/src/prerender.tsx). A file (a name
+  # with a dot) is served as is. /api/* never runs it.
   WebIndexFunction:
     Type: AWS::CloudFront::Function
     Properties:
@@ -1052,7 +1054,9 @@ Resources:
         function handler(event) {
           var request = event.request;
           var uri = request.uri;
-          if (uri.lastIndexOf('.') < uri.lastIndexOf('/')) {
+          if (uri === '/') {
+            request.uri = '/front.html';
+          } else if (uri.lastIndexOf('.') < uri.lastIndexOf('/')) {
             request.uri = '/index.html';
           }
           return request;
@@ -1124,7 +1128,8 @@ Resources:
         HttpVersion: http2and3
         IPV6Enabled: true
         PriceClass: PriceClass_100
-        DefaultRootObject: index.html
+        # / is front.html whichever comes first, this or WebIndexFunction.
+        DefaultRootObject: front.html
         Aliases: !If [HasWebCertificate, [!Ref WebDomain], !Ref AWS::NoValue]
         ViewerCertificate: !If
           - HasWebCertificate

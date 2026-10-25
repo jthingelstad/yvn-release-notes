@@ -13,7 +13,9 @@ The sites link here, and the front page is for search (Jamie, 2026-10-25:
 "Yes we want Release Notes in search where it can be. We also now should
 link YVN to Release Notes so people may find it"). Every other page is the
 signed-in app or an emailed link and stays out of search (`web/public/robots.txt`
-and the noindex in `web/src/main.tsx`). It is free with a Weekly Thing
+and the noindex in `web/src/main.tsx`). `/` alone is served as `front.html`,
+the front page drawn in at build time for search and previews that run no
+script (`web/src/prerender.tsx`, docs/WEB-APP.md). It is free with a Weekly Thing
 subscription, and a new account needs one (Subscribers and accounts).
 
 This file holds the rules and the decisions behind them. `docs/OPERATING.md`

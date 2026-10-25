@@ -189,11 +189,11 @@ function cloudWrites(events: Event[]) {
 const overrides = (deploy: Event) =>
   deploy.args.slice(deploy.args.indexOf('--parameter-overrides') + 1, deploy.args.indexOf('--tags'));
 
-test('a release uploads the code, updates the stack once, then confirms grants, syncs the web app and probes', async () => {
+test('a release uploads the code, stages new web files, updates the stack once, then confirms grants, syncs the web app and probes', async () => {
   await withFixture(async (f) => {
     const { result, events } = await f.release();
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
     const upload = cli(events, 'upload')[0]!;
     assert.equal(upload.args[upload.args.indexOf('--commit') + 1], commit);
     const deploy = aws(events, 'deploy')[0]!;
@@ -218,12 +218,46 @@ test('a release uploads the code, updates the stack once, then confirms grants, 
   });
 });
 
+test('the web files staged before the stack update are only added: nothing served is overwritten or deleted', async () => {
+  await withFixture(async (f) => {
+    const { result, events } = await f.release();
+    assert.equal(result.status, 0, result.stderr);
+    const deploy = events.indexOf(aws(events, 'deploy')[0]!),
+      syncs = aws(events, 'sync'),
+      before = syncs.filter((e) => events.indexOf(e) < deploy),
+      after = syncs.filter((e) => events.indexOf(e) > deploy);
+    // This build's files, then any page the bucket has not had (front.html,
+    // which the stack update starts serving for /).
+    assert.deepEqual(
+      before.map((e) => e.args.slice(2, 4)),
+      [
+        [`${f.bundle}/web/assets/`, 's3://fictional-web-bucket/assets/'],
+        [`${f.bundle}/web/`, 's3://fictional-web-bucket/']
+      ]
+    );
+    for (const sync of before) {
+      assert.ok(sync.args.includes('--no-overwrite'), sync.args.join(' '));
+      assert.ok(!sync.args.includes('--delete'), sync.args.join(' '));
+    }
+    assert.deepEqual(
+      before[1]!.args.slice(before[1]!.args.indexOf('--exclude'), before[1]!.args.indexOf('--include') + 2),
+      ['--exclude', '*', '--include', '*.html']
+    );
+    // The web sync after it makes the bucket this build's alone, as before.
+    assert.equal(after.length, 3);
+    for (const sync of after) {
+      assert.ok(sync.args.includes('--delete'), sync.args.join(' '));
+      assert.ok(!sync.args.includes('--no-overwrite'), sync.args.join(' '));
+    }
+  });
+});
+
 test('a release another one replaced stops before its web sync, or after it, and never probes', async () => {
   await withFixture(async (f) => {
     let { result, events } = await f.release([], { env: { FIXTURE_REPLACED_AFTER: '0' } });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /refusing: before the web sync: the stack now runs b{40}/);
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies']);
 
     ({ result, events } = await f.release([], { env: { FIXTURE_REPLACED_AFTER: '1' } }));
     assert.equal(result.status, 1);
@@ -231,7 +265,7 @@ test('a release another one replaced stops before its web sync, or after it, and
       result.stderr,
       /after the web sync: the stack now runs b{40}, released by another run; re-run the newer release/
     );
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation']);
   });
 });
 
@@ -246,7 +280,7 @@ test('a release waits out another one updating the stack, then syncs if that upd
       result.stdout,
       /before the web sync: another release is updating the stack \(UPDATE_IN_PROGRESS\); waiting/
     );
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
     assert.equal(await sleeps(), 2);
 
     ({ result, events } = await f.release([], {
@@ -254,7 +288,7 @@ test('a release waits out another one updating the stack, then syncs if that upd
     }));
     assert.equal(result.status, 1);
     assert.match(result.stderr, /refusing: before the web sync: the stack now runs b{40}, released by another run$/m);
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies']);
 
     // After the sync: the other update lands, so its run has the web app to fix.
     ({ result, events } = await f.release([], {
@@ -265,12 +299,12 @@ test('a release waits out another one updating the stack, then syncs if that upd
       result.stderr,
       /after the web sync: the stack now runs b{40}, released by another run; re-run the newer/
     );
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation']);
 
     ({ result, events } = await f.release([], { env: { FIXTURE_UPDATING_AFTER: '0', FIXTURE_UPDATE_ENDS: 'never' } }));
     assert.equal(result.status, 1);
     assert.match(result.stderr, /before the web sync: another release has been updating the stack for 30 minutes/);
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies']);
     assert.equal(await sleeps(), 119);
   });
 });
@@ -357,7 +391,7 @@ test('a failed stack update says what failed and stops: nothing was released', a
   await withFixture(async (f) => {
     const { result, events } = await f.release([], { failure: 'deploy' });
     assert.notEqual(result.status, 0);
-    assert.deepEqual(steps(events), ['upload', 'deploy']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy']);
     assert.equal(aws(events, 'describe-stack-events').length, 1);
     assert.match(result.stderr, /NativeAppRevision\tfictional reason/);
     assert.match(result.stderr, /rolled back; nothing was released/);
@@ -368,7 +402,7 @@ test('a grant that cannot be confirmed stops before the web app and the probe', 
   await withFixture(async (f) => {
     const { result, events } = await f.release([], { failure: 'policies' });
     assert.notEqual(result.status, 0);
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies']);
   });
 });
 
@@ -376,7 +410,7 @@ test('a failed probe fails the release and says to revert', async () => {
   await withFixture(async (f) => {
     const { result, events } = await f.release([], { failure: 'probe' });
     assert.notEqual(result.status, 0);
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
     assert.match(result.stderr, /live but failed its probe; revert the merge/);
   });
 });
@@ -439,7 +473,7 @@ test('in GitHub Actions the deploy role releases and identifiers are masked', as
     assert.deepEqual([...aws(events, 'create-bucket'), ...aws(events, 'put-bucket-policy')], []);
     assert.deepEqual(aws(events, 'set-active-receipt-rule-set'), []);
     assert.match(result.stdout, /::warning::No SES receipt rule set/);
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
 
     for (const env of [{ FIXTURE_NO_CODE_BUCKET: '1' }, { FIXTURE_INSECURE: '1' }] as Record<string, string>[]) {
       const refused = await f.release([], { ...actions, env: { ...actions.env, ...env } });
@@ -501,7 +535,7 @@ test('deploy.sh builds the committed tree with build-release.sh, then hands it t
     assert.ok(events.some((e) => e.program === 'gh'));
     assert.ok(events.indexOf(build) < events.indexOf(cli(events, 'upload')[0]!));
     assert.ok(overrides(aws(events, 'deploy')[0]!).includes('TurnstileMode=observe'));
-    assert.deepEqual(steps(events), ['upload', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
 
     ({ result, events } = await deploy([], { env: { FIXTURE_BUILD_FAILS: '1' } }));
     assert.notEqual(result.status, 0);

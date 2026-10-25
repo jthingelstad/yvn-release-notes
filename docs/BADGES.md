@@ -246,6 +246,23 @@ earned in an earlier one, reads "Collected: Round number, 5.5.200". A badge
 celebrated here is not repeated in the email (from step 3, through
 `seen`).
 
+### Welcome back
+
+A badge earned away from the web (a reply by email, an agent's note, a
+Supporting Member's year found at sign-in) used to wait silently for the
+next morning's email. Jamie, 2026-10-25: "when you come to the website and
+there is a badge since your last visit that should get special attention!"
+So the first signed-in page of a visit (`GET /api/badges/new`, read once
+a visit, beside the page's own data) shows, above its title, "New since
+your last visit" and each badge earned and not yet told: its glyph stamping
+in, one after another, its name and version stamp, and its line, at most
+three and then "And N more", with "See your badges" and Close. It stays
+from page to page until closed or followed, and only in that tab. As it
+shows, the page marks it told (`POST /api/badges/seen`), so the email
+doesn't repeat it; a failed mark only means seeing it again next visit.
+It reads `seen` as the sender does (`untold` in `packages/domain/badges.ts`):
+a track's tiers as the highest, and nothing with "Show badges" off.
+
 ### The email
 
 One line under the lifetime line, only on mornings after something was
@@ -365,7 +382,8 @@ they are found by writing on those days or not at all.
   `unlocked`, what it just earned, worked out from the person's notes read
   after the save, with and without the new one (a failed read leaves it
   out and never fails the note). A Day answers with `collected` and a
-  release with `badges`. All are in `docs/WEB-APP.md`'s API table.
+  release with `badges`. `GET /api/badges/new` and `POST /api/badges/seen`
+  are the welcome back's. All are in `docs/WEB-APP.md`'s API table.
 - **Sender:** reads badges and `seen` after the note index, before
   claiming the day; adds what the line named to `seen` once the email has
   gone (a failed write only means telling it again tomorrow). A track's

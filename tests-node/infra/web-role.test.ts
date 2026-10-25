@@ -215,6 +215,7 @@ test('the web role grants every request each route and the OAuth endpoints make'
     '/api/releases',
     '/api/releases/4.5',
     '/api/badges',
+    '/api/badges/new',
     '/api/tags',
     '/api/tags/made',
     '/api/map/notes',
@@ -225,6 +226,7 @@ test('the web role grants every request each route and the OAuth endpoints make'
   ])
     await call('GET', path);
   await call('POST', '/api/search', { q: 'lake' });
+  await call('POST', '/api/badges/seen', { keys: ['hello'] });
   await call('POST', '/api/map/search', { q: 'lake' });
 
   // Upcoming and its calendar feed.

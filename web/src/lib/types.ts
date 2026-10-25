@@ -346,3 +346,17 @@ export interface MapSearch {
   terms: string[];
   found: { date: string; id: string }[];
 }
+
+// Earned and not yet told (GET /api/badges/new): the welcome back's, each a
+// track's highest tier, and `keys`, everything to mark told.
+export interface NewBadge {
+  key: string;
+  id: string;
+  name: string;
+  line: string;
+  version: string;
+}
+export interface NewBadges {
+  badges: NewBadge[];
+  keys: string[];
+}

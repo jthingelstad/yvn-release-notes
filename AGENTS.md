@@ -457,7 +457,10 @@ Where things are (each module's design comment has its contract):
   that is not secret one clause beside the number ("5.4.300 is a round
   number."). Never a line about what is close, at risk or missed. A badge is
   told once, marked `seen` only after the email has gone (a web save's
-  unlock line counts too). "Show badges" off drops all of it.
+  unlock line counts too, and so does the web's welcome back, Jamie,
+  2026-10-25: "when you come to the website and there is a badge since your
+  last visit that should get special attention!"; docs/BADGES.md). "Show
+  badges" off drops all of it.
 - **A birthday closes the release** (2026-10-12): that day's email sums up
   the year of life just ended in one short block ("5.4 is closed": days with
   notes, notes, photos, the longest streak) and links its page,

@@ -2632,6 +2632,98 @@ fieldset.book-fields {
   margin: 12px 0 0;
 }
 
+/* Welcome back: what was earned since the last visit, above the page's
+   title, each glyph stamping in after the one before. Type on paper. */
+.welcome {
+  margin: 0 0 40px;
+}
+.welcome-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.welcome-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  font-size: 19px;
+  line-height: 1.4;
+}
+.welcome .stamp-in {
+  display: inline-block;
+  flex: none;
+  animation: stamp-in 300ms cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+}
+.welcome-list li:nth-child(2) .stamp-in {
+  animation-delay: 120ms;
+}
+.welcome-list li:nth-child(3) .stamp-in {
+  animation-delay: 240ms;
+}
+.welcome .icon {
+  width: 36px;
+  height: 36px;
+  color: var(--blue);
+}
+.welcome-why {
+  display: block;
+  font-size: 16px;
+  color: var(--ink-2);
+}
+.welcome-links {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  font-size: 16px;
+}
+
+/* A Supporting Member's mark in the rail, above Sign out: the giving star
+   in tangerine, filled, and where this year's membership goes. */
+.bar--app .rail-member {
+  margin-top: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-decoration: none;
+}
+.bar--app .rail-member .icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: var(--orange);
+  fill: var(--orange);
+}
+.rail-member-to {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.bar--app .rail-member:hover .rail-member-to {
+  color: var(--blue-hover);
+}
+.bar--app .rail-member + .rail-signout {
+  margin-top: 18px;
+}
+/* The rail's alone: a phone's bar has no room for it, and You says it. */
+@media (max-width: 760px) {
+  .bar--app .rail-member {
+    display: none;
+  }
+}
+
 /* The activity log: rows under the day they happened, each the time, a
    glyph, and what happened. */
 .activity-kept {

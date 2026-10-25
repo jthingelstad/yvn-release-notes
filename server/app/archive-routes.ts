@@ -2,16 +2,18 @@
 import { SessionService, reject } from '../../packages/backend/sessions.ts';
 import { dayView, mediaLinks } from '../../packages/backend/views.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
-import { localDay, addDays } from '../../packages/domain/dates.ts';
+import { localDay, addDays, iso } from '../../packages/domain/dates.ts';
 import { computeVersion, releaseAge, releaseName, releaseSpan } from '../../packages/domain/version.ts';
 import { pauseDays, computeStreak } from '../../packages/domain/streak.ts';
 import { searchedText } from '../../packages/domain/search.ts';
 import { rounded } from '../../packages/backend/places.ts';
 import { badges } from '../../packages/backend/badges.ts';
-import { collectedOn, releaseBadges } from '../../packages/domain/badges.ts';
+import { collectedOn, releaseBadges, untold } from '../../packages/domain/badges.ts';
 import { givenDuring } from '../../packages/domain/giving.ts';
 /** A release's giving, only when there is some (domain/giving.ts). */
 const given = (giving: string[]) => (giving.length ? { giving } : {});
+/** The most badge keys one welcome back marks seen: more than are earnable. */
+const MAX_TOLD = 500;
 import { json, body, dayFrom, dateOf, pageLimit, searchFrom } from './requests.ts';
 export async function renderedDays(
   service: SessionService,
@@ -49,6 +51,8 @@ export async function archiveRoutes(
       '/api/releases',
       '/api/releases/{v}',
       '/api/badges',
+      '/api/badges/new',
+      '/api/badges/seen',
       '/api/tags',
       '/api/tags/{tag}',
       '/api/search'
@@ -171,6 +175,31 @@ export async function archiveRoutes(
       version: computeVersion(String(p.birthday), today).toString(),
       ...(await badges(store, uid, p, today))
     });
+  // Welcome back (Jamie, 2026-10-25: "when you come to the website and
+  // there is a badge since your last visit that should get special
+  // attention"): what is earned and not yet told, as the morning email
+  // reads it, and the page's word that it showed them. Told once: what the
+  // page marks seen the email doesn't repeat. Nothing with badges off.
+  if (pattern === '/api/badges/new') {
+    if (p.badges === false) return json({ badges: [], keys: [] });
+    const [earned, seen] = await Promise.all([badges(store, uid, p, today), store.seenBadges(uid)]),
+      { news, keys } = untold(earned, seen);
+    return json({
+      badges: news.map((e) => ({ key: e.key, id: e.id, name: e.name, line: e.line, version: e.version })),
+      keys
+    });
+  }
+  if (pattern === '/api/badges/seen') {
+    const asked = (await body(service.request)).keys;
+    if (!Array.isArray(asked) || asked.length > MAX_TOLD || !asked.every((k) => typeof k === 'string'))
+      reject(400, 'badges-seen');
+    if (p.badges === false) return json({ seen: 0 });
+    // Only what is earned: anything else would sit in the set for nothing.
+    const earned = new Set((await badges(store, uid, p, today)).earned.map((e) => e.key)),
+      keys = [...new Set(asked as string[])].filter((k) => earned.has(k));
+    if (keys.length && !(await store.addSeenBadges(uid, keys, iso(ctx.now)))) reject(401, 'signed-out');
+    return json({ seen: keys.length });
+  }
   if (pattern === '/api/tags') {
     const counts = new Map<string, { tag: string; notes: number; days: Set<string>; first: string; last: string }>();
     for (const n of await store.noteTags(uid))

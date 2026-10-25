@@ -30,7 +30,7 @@ import { remindersFor, type UpcomingDue } from '../packages/domain/upcoming.ts';
 import { activityLog, recordActivity } from '../packages/backend/activity.ts';
 import { computeStreak, pauseDays, type Streak } from '../packages/domain/streak.ts';
 import { computeVersion, releaseName, releaseSpan, sameDayBefore, type Version } from '../packages/domain/version.ts';
-import { releaseBadges } from '../packages/domain/badges.ts';
+import { releaseBadges, untold } from '../packages/domain/badges.ts';
 import { givenDuring } from '../packages/domain/giving.ts';
 import { badges as readBadgesOf } from '../packages/backend/badges.ts';
 import { givingEvents } from '../packages/backend/activity.ts';
@@ -256,13 +256,8 @@ export async function readBadges(
         readBadgesOf(s.store, sub.user_id, profile, day),
         s.store.seenBadges(sub.user_id)
       ]),
-      fresh = earned.earned.filter((e) => !seen.has(e.key)).reverse(),
-      top = new Map<string, number>();
-    fresh.forEach((e, i) => top.set(e.id, i));
-    return {
-      news: fresh.filter((e, i) => top.get(e.id) === i).map((e) => ({ name: e.name, version: e.version })),
-      keys: fresh.map((e) => e.key)
-    };
+      { news, keys } = untold(earned, seen);
+    return { news: news.map((e) => ({ name: e.name, version: e.version })), keys };
   } catch (e) {
     s.log?.({ event: 'badges-error', user: sub.user_id, date: day, error: errorName(e) });
     return { news: [], keys: [] };

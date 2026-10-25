@@ -69,7 +69,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 71);
+  assert.equal(ROUTES.length, 73);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -551,6 +551,53 @@ test('"Show badges" off hides every badge line; back on, what was earned meanwhi
   s.store.memory.calls.length = 0;
   await read('PUT', '/api/me', { badges: true });
   assert.ok(!s.store.memory.calls.some((c) => JSON.stringify(c.input).includes('BADGES')));
+});
+
+test('welcome back: what was earned and not yet told shows once, and is then seen', async () => {
+  const s = await setup();
+  // A Supporting Member since yesterday, and a reply to yesterday's email:
+  // nothing a web save told.
+  s.store.seed({ ...profile, giving: { '2026': { first: '2026-10-12', last: '2026-10-12' } } });
+  await s.store.putNote('u', '2026-10-12', 'm1', {
+    text: 'A quiet reply',
+    source: 'email',
+    subject: '',
+    written_at: '2026-10-12T23:00:00Z',
+    tz: 'America/Chicago'
+  });
+  const news = await s.call('GET', '/api/badges/new'),
+    b = news.b as { badges: Item[]; keys: string[] };
+  assert.equal(news.r.status, 200);
+  assert.deepEqual(
+    b.badges.find((x) => x.id === 'giving-2026'),
+    {
+      key: 'giving-2026',
+      id: 'giving-2026',
+      name: 'Supported Signal',
+      line: 'A Weekly Thing Supporting Member in 2026, the year membership went to Signal.',
+      version: '4.5.120'
+    }
+  );
+  assert.ok(b.badges.some((x) => x.id === 'ack'));
+  assert.deepEqual(new Set(b.badges.map((x) => x.key)), new Set(b.keys), 'no track had two tiers to fold');
+  assert.ok(!JSON.stringify(b).includes('quiet'));
+  // Told: those are seen, and anything not earned is left out.
+  const told = await s.call('POST', '/api/badges/seen', { keys: [...b.keys, 'made-up', b.keys[0]] });
+  assert.deepEqual([told.r.status, (told.b as Item).seen], [200, b.keys.length]);
+  assert.deepEqual(await s.store.seenBadges('u'), new Set(b.keys));
+  assert.deepEqual((await s.call('GET', '/api/badges/new')).b, { badges: [], keys: [] });
+  for (const bad of [{}, { keys: 'giving-2026' }, { keys: [1] }, { keys: Array(501).fill('ack') }]) {
+    const refused = await s.call('POST', '/api/badges/seen', bad);
+    assert.deepEqual([refused.r.status, (refused.b as Item).error], [400, 'badges-seen']);
+  }
+  assert.equal((await s.call('POST', '/api/badges/seen', { keys: [] }, undefined, false)).r.status, 403);
+  assert.equal((await s.call('GET', '/api/badges/new', undefined, '')).r.status, 401);
+  // With badges off there is nothing to tell, and nothing is marked.
+  await s.call('PUT', '/api/me', { badges: false });
+  await s.store.putNote('u', '2026-10-13', 'm2', { text: 'Another', source: 'email', subject: '' });
+  assert.deepEqual((await s.call('GET', '/api/badges/new')).b, { badges: [], keys: [] });
+  assert.deepEqual((await s.call('POST', '/api/badges/seen', { keys: ['commit'] })).b, { seen: 0 });
+  assert.deepEqual(await s.store.seenBadges('u'), new Set(b.keys));
 });
 
 test('a pause already set for the rest of this week lowers its cadence bar today', async () => {

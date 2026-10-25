@@ -7,6 +7,7 @@ import { api } from '../lib/api.ts';
 import { useSignedInAs } from '../lib/nav.ts';
 import { Icon, type IconName } from './icon.tsx';
 import { BrandMark } from './brand-mark.tsx';
+import { NewBadges, RailMember } from './welcome.tsx';
 import { signedIn, store } from '../lib/storage.ts';
 
 // A same-site address as a router link: path, ?query and #hash.
@@ -76,44 +77,49 @@ function useRail(): boolean {
 }
 
 // The bar along the top: the name, the search, and the places for anyone
-// signed in. `current` marks one of them.
+// signed in. `current` marks one of them. Signed in, it also carries what
+// welcome.tsx adds: a member's mark in the rail, and new badges after it.
 export function Bar({ nav = true, current, children }: { nav?: boolean; current?: string; children?: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const rail = useRail();
   const here = current || placeOf(path, rail);
   return (
-    <header className={nav ? 'bar bar--app' : 'bar'}>
-      <Link className="brand" to={nav ? '/today/' : '/'}>
-        <BrandMark />
-        Release Notes
-      </Link>
-      {nav && (
-        // An icon at the top right on a phone, a row under the name in the
-        // rail; "Search notes" either way to assistive technology.
-        <Link
-          className="bar-search"
-          to="/search/"
-          title="Search"
-          aria-current={here === '/search/' ? 'page' : undefined}
-          activeProps={{}}
-        >
-          <Icon name="search" />
-          <span>Search notes</span>
+    <>
+      <header className={nav ? 'bar bar--app' : 'bar'}>
+        <Link className="brand" to={nav ? '/today/' : '/'}>
+          <BrandMark />
+          Release Notes
         </Link>
-      )}
-      {nav && (
-        <nav className="primary-nav" aria-label="Main navigation">
-          {NAV.filter(([to]) => rail || to !== RAIL_ONLY).map(([to, name, icon]) => (
-            <Link key={to} to={to} aria-current={here === to ? 'page' : undefined} activeProps={{}}>
-              <Icon name={icon as IconName} />
-              <span>{name}</span>
-            </Link>
-          ))}
-        </nav>
-      )}
-      {nav && <RailSignOut />}
-      {children}
-    </header>
+        {nav && (
+          // An icon at the top right on a phone, a row under the name in the
+          // rail; "Search notes" either way to assistive technology.
+          <Link
+            className="bar-search"
+            to="/search/"
+            title="Search"
+            aria-current={here === '/search/' ? 'page' : undefined}
+            activeProps={{}}
+          >
+            <Icon name="search" />
+            <span>Search notes</span>
+          </Link>
+        )}
+        {nav && (
+          <nav className="primary-nav" aria-label="Main navigation">
+            {NAV.filter(([to]) => rail || to !== RAIL_ONLY).map(([to, name, icon]) => (
+              <Link key={to} to={to} aria-current={here === to ? 'page' : undefined} activeProps={{}}>
+                <Icon name={icon as IconName} />
+                <span>{name}</span>
+              </Link>
+            ))}
+          </nav>
+        )}
+        {nav && <RailMember />}
+        {nav && <RailSignOut />}
+        {children}
+      </header>
+      {nav && <NewBadges />}
+    </>
   );
 }
 

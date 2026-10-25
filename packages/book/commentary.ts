@@ -10,7 +10,7 @@
  * day or month the book doesn't hold is dropped. No word of it is logged or
  * kept outside the PDF. */
 import Anthropic from '@anthropic-ai/sdk';
-import type { BookData } from './data.ts';
+import { plainText, type BookData } from './data.ts';
 import { longDate } from '../backend/export.ts';
 
 export const MODEL = 'claude-opus-5-5',
@@ -116,7 +116,7 @@ export function bookWords(data: BookData) {
         dateline: d.dateline,
         notes: d.notes.map((n) => ({
           ...(n.by ? { by: n.by } : {}),
-          text: n.paragraphs.map((p) => p.map((line) => line.map((s) => s.text).join('')).join('\n')).join('\n\n'),
+          text: plainText(n),
           ...(n.place ? { place: n.place } : {}),
           ...(n.images.length ? { photos: n.images.map((i) => i.alt || 'A photo') } : {}),
           ...(n.audio.length ? { voice_memos: n.audio.map((a) => a.transcript ?? 'A voice memo') } : {}),

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
-import { bookPlan, defaultTitle, PAGES, paragraphs, span } from '../../packages/book/data.ts';
+import { blocks, bookPlan, defaultTitle, PAGES, paragraphs, plainText, span } from '../../packages/book/data.ts';
 import { photo, renderBook, rows, selfTest } from '../../packages/book/render.ts';
 import { bookKey, runBook } from '../../workers/export.ts';
 import { FakeStore } from '../../packages/testing/store.ts';
@@ -43,6 +43,30 @@ test('a note’s words keep their paragraphs and lines, with links by name and t
     ]
   );
   assert.deepEqual(paragraphs(['\n\n  \n']), []);
+  // A link named for its own site doesn't print the site again.
+  assert.deepEqual(paragraphs([{ url: 'https://www.example.com/', label: 'example.com/', site: 'example.com' }]), [
+    [[{ text: 'example.com/', href: 'https://www.example.com/' }]]
+  ]);
+});
+
+test('lines written as a list print as one, under a short line that heads them', () => {
+  const written =
+      'Notable things…\n- a walk\n* coffee\n\nFaster for people\n- compressed. #fast\nAfter the list.\n\nAn ending.',
+    made = blocks(paragraphs([written.split('#fast')[0]!, { tag: 'fast', text: '#fast' }, written.split('#fast')[1]!]));
+  assert.deepEqual(
+    made.map((b) => [b.kind, b.lines.map((l) => l.map((s) => s.text).join('')), b.tight ?? false]),
+    [
+      ['text', ['Notable things…'], false],
+      ['list', ['a walk', 'coffee'], true],
+      ['head', ['Faster for people'], false],
+      ['list', ['compressed. #fast'], true],
+      ['text', ['After the list.'], true],
+      ['text', ['An ending.'], false]
+    ]
+  );
+  // The tag keeps its mark, and the commentary reads the words as written.
+  assert.deepEqual(made[3]!.lines[0]!.at(-1), { text: '#fast', tag: true });
+  assert.equal(plainText({ blocks: made }), written.replace('* coffee', '- coffee'));
 });
 
 test('a book is named for its release when it starts the release, else for its days', () => {
@@ -115,12 +139,16 @@ test('the plan reads the days as the web does, keeping only the owner’s photos
     assert.equal(first!.version, '4.5.120');
     // A note with no place shows the home city, once, in the dateline.
     assert.equal(first!.dateline, 'Monday, October 12, 2026 · Minneapolis, Minnesota');
+    assert.deepEqual(
+      [first!.date, first!.weather, first!.where],
+      ['Monday, October 12', undefined, 'Minneapolis, Minnesota']
+    );
     const lake = first!.notes[0]!;
     assert.equal(lake.place, undefined);
     assert.equal(lake.by, undefined);
-    assert.deepEqual(lake.paragraphs, [
-      [[{ text: 'Lake day.' }]],
-      [[{ text: 'A loon, close. ' }, { text: '#lake', tag: true }]]
+    assert.deepEqual(lake.blocks, [
+      { kind: 'text', lines: [[{ text: 'Lake day.' }]] },
+      { kind: 'text', lines: [[{ text: 'A loon, close. ' }, { text: '#lake', tag: true }]] }
     ]);
     assert.deepEqual(
       lake.images.map((i) => i.alt),
@@ -135,6 +163,21 @@ test('the plan reads the days as the web does, keeping only the owner’s photos
     const words = JSON.stringify(plan.data);
     assert.ok(!words.includes('media/') && !words.includes('ada@example.com'));
     assert.ok(!plan.data.colophon.some((line) => line.includes('Open-Meteo')));
+    // The cover's strip, the contents' calendar, the month's line and the index.
+    assert.deepEqual(plan.data.strip, { total: 2, noted: [0, 1], marks: [{ at: 0, label: 'Oct' }] });
+    assert.deepEqual(plan.data.calendar, [
+      { label: 'Oct 2026', starts: 4, length: 31, first: 12, last: 13, noted: [12, 13] }
+    ]);
+    assert.equal(plan.data.chapters[0]!.versions, '4.5.120 to 4.5.121');
+    assert.equal(plan.data.chapters[0]!.counts, '2 days · 2 notes · 2 photos · 1 voice memo');
+    assert.deepEqual(plan.data.index, {
+      tags: [{ name: '#lake', refs: '120' }],
+      places: [
+        { name: 'Duluth, Minnesota', refs: '121' },
+        { name: 'Minneapolis, Minnesota', refs: '120' }
+      ],
+      short: '4.5'
+    });
   }
   const { store } = await subscriber(),
     p = (await store.profile('u1'))!,
@@ -172,14 +215,15 @@ test('photos sit two to a row sharing one height, and a small one is never stret
   assert.ok(Math.abs(a!.w + b!.w + 6 / 72 - 4.55) < 0.01);
   assert.equal(a!.alt, 'A');
   assert.equal(b!.alt, undefined);
-  // A tall one and a tiny one: the tiny one's 120px stop the row at 1.2in.
+  // A tall one and a tiny one: the tiny one's 120px stop the row at 0.6in.
   assert.deepEqual(
     made[1]!.map((p) => p.w),
-    [0.9, 1.6]
+    [0.45, 0.8]
   );
   const [alone] = rows([{ file: '5.jpg', width: 1200, height: 1600 }]);
-  assert.equal(alone![0]!.w, 3.3);
-  // On US Letter the text block is 6.3 inches and a lone photo stands 5.4 tall.
+  assert.equal(alone![0]!.w, 2.7);
+  // On US Letter the notes' column beside the rail is 5.05 inches and a lone
+  // photo stands 4 tall.
   const [wide] = rows(
       [
         { file: '1.jpg', width: 2000, height: 1333 },
@@ -188,8 +232,8 @@ test('photos sit two to a row sharing one height, and a small one is never stret
       PAGES.letter
     ),
     [tall] = rows([{ file: '3.jpg', width: 1500, height: 2000 }], PAGES.letter);
-  assert.ok(Math.abs(wide![0]!.w + wide![1]!.w + 6 / 72 - 6.3) < 0.01);
-  assert.equal(tall![0]!.w, 4.05);
+  assert.ok(Math.abs(wide![0]!.w + wide![1]!.w + 6 / 72 - 5.05) < 0.01);
+  assert.equal(tall![0]!.w, 3);
 });
 
 test('a photo is turned upright, shrunk to 1600px on white, and keeps no EXIF', async () => {

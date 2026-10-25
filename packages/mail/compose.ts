@@ -217,7 +217,7 @@ export function specialLine(v: Version): string | null {
 const closedGiving = (c: Closed) => (c.giving?.length ? givingLine(releaseName(c.age), c.giving) : null);
 export const closedBody = (c: Closed) => {
   const giving = closedGiving(c);
-  return `${releaseName(c.age)} is closed: ${closedLine(c)}\n${giving ? `${giving}\n` : ''}See ${releaseName(c.age)}: ${releaseLink(c.age)}\n\n`;
+  return `${releaseName(c.age)} is closed${c.notes ? `: ${closedLine(c)}` : '.'}\n${giving ? `${giving}\n` : ''}See ${releaseName(c.age)}: ${releaseLink(c.age)}\n\n`;
 };
 export function pastText(text: string, limit = PAST_MAX): [string, boolean] {
   if (codePointLength(text) <= limit) return [text, false];
@@ -502,8 +502,7 @@ export function closedHtml(c: Closed): string {
     name = escape(releaseName(c.age)).replace(/\./g, `<span class="sep" style="color:${ORANGE_INK};">.</span>`);
   return `<tr><td style="padding:48px 0 0;">
 <p class="ink" style="margin:0 0 8px;font-family:${FONT};font-size:22px;line-height:1.2;font-weight:800;color:${INK};"><span class="vnum" style="font-family:${MONO};letter-spacing:-0.03em;color:${BLUE};white-space:nowrap;">${name}</span> is closed</p>
-<p class="ink-2" style="margin:0 0 8px;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${asciiHtml(closedLine(c))}</p>
-${giving ? `<p class="ink-2" style="margin:0 0 8px;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${asciiHtml(giving)}</p>\n` : ''}<p style="margin:0;">${action(escape(releaseLink(c.age)), `See ${escape(releaseName(c.age))}`)}</p>
+${c.notes ? `<p class="ink-2" style="margin:0 0 8px;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${asciiHtml(closedLine(c))}</p>\n` : ''}${giving ? `<p class="ink-2" style="margin:0 0 8px;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">${asciiHtml(giving)}</p>\n` : ''}<p style="margin:0;">${action(escape(releaseLink(c.age)), `See ${escape(releaseName(c.age))}`)}</p>
 </td></tr>
 `;
 }

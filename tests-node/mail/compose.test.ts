@@ -186,3 +186,12 @@ test('the closed release thanks a Supporting Member by the nonprofits given to, 
     assert.ok(!c.closedHtml(none).includes('Supporting Member'));
   }
 });
+
+test('a release with no notes that gave closes with the thank-you alone', () => {
+  const closed = { age: 54, days: 0, notes: 0, photos: 0, longest: 0, giving: ['Signal'] },
+    thanks = 'During 5.4 you supported Signal as a Weekly Thing Supporting Member. Thank you.';
+  assert.ok(c.closedBody(closed).startsWith(`5.4 is closed.\n${thanks}\nSee 5.4: `), c.closedBody(closed));
+  const html = c.closedHtml(closed);
+  assert.ok(html.includes(thanks));
+  assert.ok(!html.includes('with notes'), 'no count of nothing');
+});

@@ -12,6 +12,7 @@ import { OAuthService } from './oauth.ts';
 import { badges } from './badges.ts';
 import { again, eventId, givingEvents, recordActivity } from './activity.ts';
 import type { ActivityEvent } from '../domain/activity.ts';
+import { sawMember } from '../domain/giving.ts';
 import { LookupError, recheckDue, standingFields, welcome, type Standing } from './weekly-thing.ts';
 /** The settings a change records, each with what it reads as when unset. */
 const SETTINGS: Record<string, unknown> = {
@@ -59,14 +60,17 @@ export async function recheckWeeklyThing(service: SessionService, uid: string, p
 }
 async function saveWeeklyThing(service: SessionService, uid: string, p: Item, standing: Standing): Promise<Item> {
   const now = service.context.now,
-    fields = standingFields(standing, now, localDay(now, String(p.tz)), p);
+    day = localDay(now, String(p.tz)),
+    fields = standingFields(standing, now);
+  let added = false;
   try {
     await service.context.store.updateProfile(uid, fields);
+    if (standing === 'member') added = await service.context.store.widenGiving(uid, day, p.giving);
   } catch {
     service.log({ event: 'weekly-thing-save-error', user: uid });
     return p;
   }
-  await record(service, uid, givingEvents(p, fields));
+  await record(service, uid, givingEvents(p, added ? day : null));
   return { ...p, ...fields };
 }
 /** Adds the session's verified address to the Weekly Thing, as Thingy offers
@@ -151,7 +155,11 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
     const { weekly_thing } = await lookUpWeeklyThing(service, email);
     if (weekly_thing === 'unconfirmed') reject(403, 'weekly-thing-unconfirmed');
     if (weekly_thing && !welcome(weekly_thing)) reject(403, 'weekly-thing');
-    const standing = weekly_thing ? standingFields(weekly_thing, ctx.now, today, {}) : {};
+    // A new profile has no giving to race, so a member's first year goes in whole.
+    const member = weekly_thing === 'member',
+      standing = weekly_thing
+        ? { ...standingFields(weekly_thing, ctx.now), ...(member ? { giving: sawMember(undefined, today) } : {}) }
+        : {};
     let uid = randomUUID().replace(/-/g, ''),
       p: Item = { birthday, send_time: time, status: 'active', created_at: iso(ctx.now), ...fields, ...standing };
     if (!(await store.createSubscriberVerified(uid, email, p, String(s.hash), ctx.now, Number(s.expires_at)))) {
@@ -173,7 +181,7 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
       await service.tally('signups');
       await record(service, uid, [
         { kind: 'account.created', id: uid, fields: { via: 'web' } },
-        ...givingEvents({ birthday }, standing)
+        ...givingEvents({ birthday }, member ? today : null)
       ]);
     }
     if (!(await store.claimVerifiedSession(String(s.hash), uid, email, ctx.now, Number(s.expires_at))))

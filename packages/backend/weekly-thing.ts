@@ -18,10 +18,10 @@
  * is kept on the profile as one word. A lookup that fails never locks anyone
  * out: sign-up goes ahead and a re-check keeps what was known. A lookup that
  * answers `member` also records the year in the profile's `giving`
- * (domain/giving.ts), which earns that year's giving badge.
+ * (domain/giving.ts, `Store.widenGiving`), which earns that year's giving
+ * badge.
  */
-import { iso, type Day } from '../domain/dates.ts';
-import { sawMember } from '../domain/giving.ts';
+import { iso } from '../domain/dates.ts';
 import type { Item } from './store-types.ts';
 
 export const LIBRARIAN_AUTH = 'https://librarian.thingelstad.com/auth';
@@ -51,12 +51,13 @@ export function recheckDue(p: Item, now: number): boolean {
     every = p.weekly_thing === 'unconfirmed' ? UNCONFIRMED_RECHECK_SECONDS : RECHECK_SECONDS;
   return !Number.isFinite(at) || now - at >= every;
 }
-/** The profile fields a standing seen at `now` (the account's local `day`)
- * sets: the standing, when, and for a member the year it gave. */
-export function standingFields(standing: Standing, now: number, day: Day, p: Item): Item {
-  const giving = standing === 'member' ? sawMember(p.giving, day) : null;
-  return { weekly_thing: standing, weekly_thing_at: iso(now), ...(giving ? { giving } : {}) };
-}
+/** The profile fields a standing seen at `now` sets. A member's year is
+ * written apart from them (`Store.widenGiving`), so lookups racing only
+ * ever widen it. */
+export const standingFields = (standing: Standing, now: number): Item => ({
+  weekly_thing: standing,
+  weekly_thing_at: iso(now)
+});
 
 /** How asking to be added ended. `added` means Buttondown sent its
  * confirmation email; `review` that its firewall is holding the address for

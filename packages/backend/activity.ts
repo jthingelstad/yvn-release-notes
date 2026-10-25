@@ -6,7 +6,6 @@
 import { randomUUID } from 'node:crypto';
 import { activityRow, activityTime, familyOf, type ActivityEvent } from '../domain/activity.ts';
 import { givingBadge, type Unlocked } from '../domain/badges.ts';
-import { givingYears } from '../domain/giving.ts';
 import { computeVersion } from '../domain/version.ts';
 import type { Item } from './store-types.ts';
 import type { Store } from './store.ts';
@@ -101,30 +100,27 @@ export function badgeEvents(
       }
     }));
 }
-/** One row for each giving year (domain/giving.ts) that `fields`, a
- * standing just saved, adds to profile `p`, while "Show badges" is on, as a
- * save's badges get. It names no day or note: membership earned it. A year
- * whose nonprofit is not known yet gets its badge later and no row. */
-export function givingEvents(p: Item, fields: Item): ActivityEvent[] {
-  if (p.badges === false || !fields.giving) return [];
-  const had = new Set(givingYears(p.giving).map((g) => g.year));
-  return givingYears(fields.giving)
-    .filter((g) => !had.has(g.year))
-    .flatMap((g) => {
-      const b = givingBadge(g.year);
-      if (!b) return [];
-      return [
-        {
-          kind: 'badge.earned',
-          id: b.id,
-          fields: {
-            via: 'weekly-thing',
-            badge: b.id,
-            key: b.id,
-            name: b.name,
-            version: String(computeVersion(String(p.birthday), g.first))
-          }
-        }
-      ];
-    });
+/** The row for the giving year (domain/giving.ts) a lookup just added to
+ * profile `p`, first seen on `day` (`Store.widenGiving` answers whether this
+ * lookup added it, so a year gets one row however many lookups race), while
+ * "Show badges" is on, as a save's badges get. It names no day or note:
+ * membership earned it. A year whose nonprofit is not known yet gets its
+ * badge later and no row. */
+export function givingEvents(p: Item, day: string | null): ActivityEvent[] {
+  if (!day || p.badges === false) return [];
+  const b = givingBadge(Number(day.slice(0, 4)));
+  if (!b) return [];
+  return [
+    {
+      kind: 'badge.earned',
+      id: b.id,
+      fields: {
+        via: 'weekly-thing',
+        badge: b.id,
+        key: b.id,
+        name: b.name,
+        version: String(computeVersion(String(p.birthday), day))
+      }
+    }
+  ];
 }

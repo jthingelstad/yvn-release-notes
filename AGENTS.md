@@ -317,13 +317,16 @@ Where things are (each module's design comment has its contract):
   - **Giving** (Jamie, 2026-10-25, picking from suggested perks: "Yearly
     giving badge is EXCELLENT!" and "Love the birthday email idea too!").
     A lookup that answers `member` records the calendar year on the
-    profile's `giving` (first and last local day seen, only ever widened;
-    `packages/domain/giving.ts`). Each year is a badge on its own shelf,
+    profile's `giving` (first and last local day seen, only ever widened,
+    each step its own conditional write so lookups racing never narrow it:
+    `Store.widenGiving`; `packages/domain/giving.ts`). Each year is a badge
+    on its own shelf,
     "Supported Signal", stamped with the first day seen, never listed as
     still to find, with one `badge.earned` row (via `weekly-thing`) while
     "Show badges" is on. A release's page and its birthday email thank the
     member by the nonprofits given to while it ran, whatever "Show badges"
-    says. The nonprofit for each year is `NONPROFITS` in that module,
+    says; a release with no notes that gave closes with the thank-you
+    alone. The nonprofit for each year is `NONPROFITS` in that module,
     copied from the Weekly Thing's `support.json`: add each year's when
     Jamie names it (a year seen before then earns its badge once added).
     Release Notes first asked on 2026-10-25, so no earlier year is known.

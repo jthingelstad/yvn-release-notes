@@ -32,8 +32,9 @@ describe('index.html', () => {
     expect(html).toContain('<link rel="canonical" href="https://notes.yourversionnumber.com/" />');
     const robots = readFileSync('web/public/robots.txt', 'utf8');
     expect(robots).toMatch(/^Sitemap: https:\/\/notes\.yourversionnumber\.com\/sitemap\.xml$/m);
-    for (const path of ['/api/', '/oauth/', '/mcp', '/signin/', '/unsubscribe/'])
-      expect(robots).toContain(`Disallow: ${path}\n`);
+    for (const path of ['/api/', '/oauth/', '/mcp']) expect(robots).toContain(`Disallow: ${path}\n`);
+    // A page blocked here could still be listed, its noindex unread.
+    expect(robots).not.toMatch(/^Disallow: \/(signin|unsubscribe)/m);
     const sitemap = readFileSync('web/public/sitemap.xml', 'utf8');
     expect(Array.from(sitemap.matchAll(/<loc>([^<]+)<\/loc>/g), (m) => m[1])).toEqual([
       'https://notes.yourversionnumber.com/'

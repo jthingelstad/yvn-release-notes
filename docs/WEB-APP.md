@@ -417,9 +417,11 @@ or new CSP exception.
   page.
 - Search sees the front page alone. `index.html` carries its canonical
   link and share tags (the paper mark as the image), `web/public/robots.txt`
-  keeps crawlers off the API, OAuth, MCP and emailed-link addresses and
-  names `sitemap.xml`, which lists `/` only, and the router marks every
-  other page `noindex` as it resolves, since they all serve `index.html`.
+  keeps crawlers off the API, OAuth and MCP addresses and names
+  `sitemap.xml`, which lists `/` only, and the router marks every other
+  page `noindex` as it resolves, since they all serve `index.html`. Those
+  pages stay crawlable: a page robots.txt blocks can still be listed,
+  because its `noindex` is never read.
 - The signed-in pages sit behind one gate in `main.tsx` that has the
   profile before any of them shows. Each page's data (`lib/queries.ts`)
   loads before it shows, from the moment its link is pointed at. Every

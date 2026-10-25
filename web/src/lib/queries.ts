@@ -82,10 +82,12 @@ export const badgesQuery = queryOptions({
 
 // What was earned and not yet told, read once a visit (signing in or out
 // clears it): the page marks it told as it shows it. A failure shows nothing.
+// Read once a visit: 'static' keeps it out of the refresh after a save
+// (and every other invalidation), which would find it told and empty.
 export const newBadgesQuery = queryOptions({
   queryKey: ['badges-new'],
   queryFn: () => get<NewBadges>('/api/badges/new'),
-  staleTime: Infinity,
+  staleTime: 'static',
   retry: false,
   meta: { bounce: false }
 });

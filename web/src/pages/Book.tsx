@@ -1,7 +1,7 @@
 // A book of the owner's notes for any days they pick (?from&to, which a
-// release's page fills in): a 6 by 9 inch PDF with the photos, places and
-// weather, typeset by the export worker and offered for a day. A thank-you
-// to Weekly Thing Supporting Members (packages/backend/books.ts).
+// release's page fills in): a PDF at 6 by 9 inches or US Letter with the
+// photos, places and weather, typeset by the export worker and offered for a
+// day (packages/backend/books.ts).
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type FormEvent } from 'react';
 import { Bar, Crumb, ErrorLine, Failed, Loading, useBusy, useProblem, useTitle } from '../components/common.tsx';
@@ -10,11 +10,15 @@ import { count, dayName, megabytes, thisYearOf } from '../lib/format.ts';
 import { useMe, useQueryParam } from '../lib/nav.ts';
 import { releasesQuery } from '../lib/queries.ts';
 import type { BookPlan, BookStatus, Me } from '../lib/types.ts';
-import { MEMBERS_URL } from '../lib/weekly-thing.ts';
-import { MAX_TITLE } from '../../../packages/book/limits.ts';
+import { MAX_TITLE, type PageSize } from '../../../packages/book/limits.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const PICK = 'Pick a first and last day between your birthday and today, the first no later than the last.';
+const PAGES: [PageSize, string, string][] = [
+  ['6x9', '6 by 9 inches', 'a book’s size, for a printer that binds'],
+  ['letter', 'US Letter', '8½ by 11 inches, for printing at home']
+];
+const pageName = (page?: PageSize) => PAGES.find(([v]) => v === page)?.[1] ?? '';
 
 export function Book() {
   useTitle('Make a book');
@@ -34,21 +38,13 @@ export function Book() {
       <Crumb href="/settings/">Settings</Crumb>
       <h1>Make a book</h1>
       <p className="lede">
-        Your notes from any days you pick, set as a book with their photos, places and weather: a PDF, 6 by 9 inches.
+        Your notes from any days you pick, set as a book with their photos, places and weather: a PDF to read, or to
+        print at 6 by 9 inches or on US Letter.
       </p>
       {(me.isPending || book.isPending) && <Loading />}
       {(me.isError || book.isError) && <Failed />}
-      {p && b && (b.may ? <BookForm p={p} b={b} /> : <Members />)}
+      {p && b && <BookForm p={p} b={b} />}
     </>
-  );
-}
-
-function Members() {
-  return (
-    <p className="hint" id="book-members">
-      Books are a thank-you to Weekly Thing Supporting Members, whose membership gives to a nonprofit each year.{' '}
-      <a href={MEMBERS_URL}>About membership</a>.
-    </p>
   );
 }
 
@@ -65,6 +61,7 @@ function BookForm({ p, b }: { p: Me; b: BookStatus }) {
   const [from, setFrom] = useState(askedFrom);
   const [to, setTo] = useState(askedTo || p.today);
   const [title, setTitle] = useState('');
+  const [page, setPage] = useState<PageSize>(b.page ?? '6x9');
   const [busy, run] = useBusy();
   const problem = useProblem();
   const form = useRef<HTMLFormElement>(null);
@@ -87,7 +84,12 @@ function BookForm({ p, b }: { p: Me; b: BookStatus }) {
     run(async () => {
       problem.clear();
       if (!ok) return problem.show({ error: 'date' }, form.current?.querySelector<HTMLElement>('input[name=from]'));
-      const r = await api<BookStatus>('POST', '/api/book', { from: first, to, ...(title.trim() ? { title } : {}) });
+      const r = await api<BookStatus>('POST', '/api/book', {
+        from: first,
+        to,
+        page,
+        ...(title.trim() ? { title } : {})
+      });
       if (r.status !== 202) return problem.show(r.data, null, form.current);
       await client.invalidateQueries({ queryKey: ['book'] });
     });
@@ -97,7 +99,7 @@ function BookForm({ p, b }: { p: Me; b: BookStatus }) {
     <>
       <BookState b={b} year={year} />
       <form ref={form} id="book-form" className="roomy" noValidate onSubmit={submit} hidden={building}>
-        <fieldset disabled={busy}>
+        <fieldset className="book-fields" disabled={busy}>
           {spans.length > 0 && (
             <label>
               Release
@@ -166,6 +168,26 @@ function BookForm({ p, b }: { p: Me; b: BookStatus }) {
               }}
             />
           </label>
+          <fieldset className="choices">
+            <legend>Page size</legend>
+            {PAGES.map(([v, name, about]) => (
+              <label key={v} className={page === v ? 'choice on' : 'choice'}>
+                <input
+                  type="radio"
+                  name="page"
+                  value={v}
+                  checked={page === v}
+                  onChange={() => {
+                    problem.clear();
+                    setPage(v);
+                  }}
+                />{' '}
+                <span>
+                  {name}, {about}
+                </span>
+              </label>
+            ))}
+          </fieldset>
         </fieldset>
         <div className="stack tight">
           <p className="value" id="book-plan" role="status">
@@ -224,7 +246,7 @@ function BookState({ b, year }: { b: BookStatus; year: number }) {
     const left = b.missing
       ? ` ${count(b.missing, 'photo couldn’t be read and was', 'photos couldn’t be read and were')} left out.`
       : '';
-    line = `Ready: ${name}, ${count(b.pages || 0, 'page', 'pages')}, ${megabytes(b.size || 0)}.${left} The download is here until ${until}.`;
+    line = `Ready: ${name}, ${count(b.pages || 0, 'page', 'pages')}, ${pageName(b.page)}, ${megabytes(b.size || 0)}.${left} The download is here until ${until}.`;
   }
   return (
     <div className="section" id="book-state">

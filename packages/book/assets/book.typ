@@ -1,8 +1,13 @@
-// A Release Notes book: one subscriber's notes for a span of days, as a 6 by
-// 9 inch PDF. Every word comes from /data.json as a string (render.ts), so no
-// note is ever read as markup; this template is the only code. Photos are
-// /media/<file>, already resized and stripped of EXIF by render.ts.
+// A Release Notes book: one subscriber's notes for a span of days, as a PDF
+// at 6 by 9 inches or US Letter (data.page, in inches, from data.ts). Every
+// word comes from /data.json as a string (render.ts), so no note is ever read
+// as markup; this template is the only code. Photos are /media/<file>,
+// already resized and stripped of EXIF by render.ts.
 #let data = json("/data.json")
+#let page-size = data.page
+// Type and space grow with the page: sizes are the 6 by 9's, in points.
+#let k = page-size.scale
+#let pt(n) = n * k * 1pt
 #let ink = rgb("#14163a")
 #let ink2 = rgb("#3b3d63")
 #let ink3 = rgb("#6e7092")
@@ -12,28 +17,33 @@
 // The front matter: the title page, and the contents when there are chapters.
 #let front = if data.chapters.len() > 1 { 2 } else { 1 }
 
-#let version(v, size: 15pt) = text(font: mono, weight: 700, size: size, fill: blue, tracking: -0.02em, v
+#let version(v, size: pt(15)) = text(font: mono, weight: 700, size: size, fill: blue, tracking: -0.02em, v
   .split(".")
   .join(text(fill: orange, ".")))
-#let kicker(s, fill: ink2) = text(font: mono, size: 7pt, tracking: 0.1em, fill: fill, upper(s))
+#let kicker(s, fill: ink2) = text(font: mono, size: pt(7), tracking: 0.1em, fill: fill, upper(s))
 
 #set document(title: data.title, author: "Release Notes")
-#set text(font: ("Bricolage Grotesque", "Twemoji Mozilla"), size: 10.5pt, fill: ink, lang: "en", hyphenate: false)
+#set text(font: ("Bricolage Grotesque", "Twemoji Mozilla"), size: pt(10.5), fill: ink, lang: "en", hyphenate: false)
 #set par(leading: 0.62em, spacing: 0.95em)
 #show link: set text(fill: blue)
-#set page(width: 6in, height: 9in, margin: (inside: 0.8in, outside: 0.65in, top: 0.8in, bottom: 0.85in))
+#set page(width: page-size.width * 1in, height: page-size.height * 1in, margin: (
+  inside: page-size.inside * 1in,
+  outside: page-size.outside * 1in,
+  top: page-size.top * 1in,
+  bottom: page-size.bottom * 1in,
+))
 
-#page(margin: 0.8in, header: none, footer: none)[
-  #v(1.2in)
+#page(margin: page-size.top * 1in, header: none, footer: none)[
+  #v(1.2in * k)
   #kicker("Release Notes")
   #v(0.5em)
-  #text(size: 34pt, weight: 800, data.title)
+  #text(size: pt(34), weight: 800, data.title)
   #v(0.4em)
-  #if data.range != "" { text(size: 12pt, fill: ink2, data.range) }
+  #if data.range != "" { text(size: pt(12), fill: ink2, data.range) }
   #v(0.9em)
-  #version(data.versions, size: 11pt)
+  #version(data.versions, size: pt(11))
   #v(1fr)
-  #text(size: 9pt, fill: ink3, data.counts)
+  #text(size: pt(9), fill: ink3, data.counts)
 ]
 
 #set page(
@@ -48,7 +58,7 @@
   footer: context {
     let n = here().page()
     if n <= front { return }
-    align(if calc.odd(n) { right } else { left }, text(font: mono, size: 7.5pt, fill: ink3, str(n)))
+    align(if calc.odd(n) { right } else { left }, text(font: mono, size: pt(7.5), fill: ink3, str(n)))
   },
 )
 
@@ -58,8 +68,8 @@
     #v(1em)
     #show outline.entry: it => block(above: 0.7em, link(it.element.location(), grid(
       columns: (1fr, auto),
-      text(size: 11pt, it.element.body),
-      text(font: mono, size: 8pt, fill: ink3, str(it.element.location().page())),
+      text(size: pt(11), it.element.body),
+      text(font: mono, size: pt(8), fill: ink3, str(it.element.location().page())),
     )))
     #outline(title: none, depth: 1)
   ]
@@ -67,11 +77,11 @@
 
 #show heading.where(level: 1): it => {
   pagebreak(weak: true)
-  v(1.1in)
+  v(1.1in * k)
   kicker(data.title, fill: ink3)
   v(0.3em)
-  text(size: 26pt, weight: 800, it.body)
-  v(0.9in)
+  text(size: pt(26), weight: 800, it.body)
+  v(0.9in * k)
 }
 
 #let span(s) = {
@@ -105,14 +115,14 @@
         block(above: 0.7em, below: 0.4em, kicker(a.label))
         if "transcript" in a { text(fill: ink2, a.transcript) }
       }
-      if note.files.len() > 0 { block(above: 0.6em, text(size: 8.5pt, fill: ink3, note.files.join(" · "))) }
+      if note.files.len() > 0 { block(above: 0.6em, text(size: pt(8.5), fill: ink3, note.files.join(" · "))) }
     }
   }
 }
 
 #page(header: none, footer: none)[
   #v(1fr)
-  #set text(size: 8.5pt, fill: ink2)
+  #set text(size: pt(8.5), fill: ink2)
   #kicker("Colophon")
   #v(0.6em)
   #for line in data.colophon { par(line) }

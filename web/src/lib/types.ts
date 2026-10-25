@@ -202,15 +202,15 @@ export interface ZipStatus {
   files?: number;
 }
 
-// GET /api/book: whether this account may make a book, and the one it is
-// making or made, offered for a day. `reason: 'empty'` is a book whose days
-// had no notes by the time it was made.
+// GET /api/book: the book this account is making or made, offered for a
+// day. `reason: 'empty'` is a book whose days had no notes by the time it
+// was made.
 export interface BookStatus {
-  may: boolean;
   today: string;
   status: 'none' | 'building' | 'ready' | 'failed';
   from?: string;
   to?: string;
+  page?: '6x9' | 'letter';
   title?: string;
   reason?: 'empty';
   size?: number;

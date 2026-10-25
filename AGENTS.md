@@ -366,13 +366,14 @@ Where things are (each module's design comment has its contract):
 - **The export is a zip** (Jamie, 2026-10-08): the Markdown and JSON plus
   every file. The words alone come straight from `/api/export`.
 - **A book** (Jamie, 2026-10-25: "Approved: build step 1 of the Release
-  Notes book (screen PDF from any date range)"): `/book/` makes a 6 by 9
-  inch PDF of any days the owner picks, typeset by the export worker with
-  Typst. It is a thank-you to Supporting Members (`weekly_thing` `member`;
-  the yearbook was one of the member perks Jamie picked that day) and the
-  configured administrator may make one. One at a time, at most 1,000
-  photos (`packages/book/limits.ts`), offered for a day: `BOOK` beside
-  `EXPORT`, the PDF under `exports/`, gone with the account. Every word
+  Notes book (screen PDF from any date range)"): `/book/` makes a PDF of
+  any days the owner picks, typeset by the export worker with Typst, at 6
+  by 9 inches or on US Letter, the maker's pick (Jamie: "pick US Letter or
+  6x9 for printing"; `PAGES` in `packages/book/data.ts`). Anyone may make
+  one (Jamie, 2026-10-25: "Anyone can make a book without model support.
+  Cheap and easy."). One at a time, at most 1,000 photos
+  (`packages/book/limits.ts`), offered for a day: `BOOK` beside `EXPORT`,
+  the PDF under `exports/`, gone with the account. Every word
   reaches the template as a string, never as markup. Photos are made anew,
   upright, with no EXIF or GPS; a photo's alt text is its description only
   for a subscriber who turned descriptions on. No model writes or reads a

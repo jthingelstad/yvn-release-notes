@@ -1,6 +1,6 @@
 /** Typesets a book (data.ts) to PDF with Typst, in the export worker. Each
- * photo is read once, turned the right way up and made a JPEG of at most
- * 1600px on white, so no EXIF or GPS reaches the PDF; a HEIC is decoded by
+ * photo is read once, turned the right way up and made a JPEG on white no
+ * longer than its page size's `longest`, so no EXIF or GPS reaches the PDF; a HEIC is decoded by
  * libheif in WebAssembly first, since Sharp's prebuilt libvips reads none.
  * A photo that is gone or unreadable is left out and counted. Typst sees an
  * empty workspace holding only /data.json and /media/, with the fonts from
@@ -9,16 +9,12 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { countLine, type BookData, type BookPhoto, type BookPlan } from './data.ts';
+import { countLine, measure, PAGES, type BookData, type BookPhoto, type BookPlan, type Page } from './data.ts';
 
-export const LONGEST = 1600,
+export const LONGEST = PAGES['6x9'].longest,
   QUALITY = 80,
   MAX_PIXELS = 100_000_000;
-/** The text block (6 by 9 inches less the margins in book.typ), in inches. */
-const WIDTH = 4.55,
-  GUTTER = 6 / 72,
-  ONE_HIGH = 4.4,
-  ROW_HIGH = 3.2,
+const GUTTER = 6 / 72,
   /** No photo is stretched below this many pixels an inch. */
   DPI = 100;
 const HEIF = new Set(['image/heic', 'image/heif']);
@@ -38,7 +34,7 @@ export interface Made {
   height: number;
 }
 /** One photo as the book prints it, or null when it can't be read. */
-export async function photo(bytes: Buffer, type: string): Promise<Made | null> {
+export async function photo(bytes: Buffer, type: string, longest = LONGEST): Promise<Made | null> {
   const sharp = (await import('sharp')).default;
   try {
     let source;
@@ -51,7 +47,7 @@ export async function photo(bytes: Buffer, type: string): Promise<Made | null> {
       });
     } else source = sharp(bytes, { limitInputPixels: MAX_PIXELS, failOn: 'none', pages: 1 }).autoOrient();
     const { data, info } = await source
-      .resize({ width: LONGEST, height: LONGEST, fit: 'inside', withoutEnlargement: true })
+      .resize({ width: longest, height: longest, fit: 'inside', withoutEnlargement: true })
       .flatten({ background: '#ffffff' })
       .jpeg({ quality: QUALITY, mozjpeg: true })
       .toBuffer({ resolveWithObject: true });
@@ -62,17 +58,21 @@ export async function photo(bytes: Buffer, type: string): Promise<Made | null> {
 }
 
 /** Photos in rows of two sharing one height across the text block; a lone
- * photo stands on its own, no taller than ONE_HIGH, and a small one keeps
- * near its own size. Widths in inches. */
-export function rows(photos: { file: string; alt?: string; width: number; height: number }[]): BookPhoto[][] {
+ * photo stands on its own, no taller than the page's `one`, and a small one
+ * keeps near its own size. Widths in inches. */
+export function rows(
+  photos: { file: string; alt?: string; width: number; height: number }[],
+  page: Page = PAGES['6x9']
+): BookPhoto[][] {
   const out: BookPhoto[][] = [],
+    width = measure(page),
     // Down, so a row never overruns the text block; the nudge undoes float error.
     round = (n: number) => Math.floor(n * 1000 + 1e-6) / 1000;
   for (let i = 0; i < photos.length; i += 2) {
     const row = photos.slice(i, i + 2),
       ratios = row.map((p) => p.width / p.height);
-    let high = row.length === 1 ? Math.min(ONE_HIGH, WIDTH / ratios[0]!) : (WIDTH - GUTTER) / (ratios[0]! + ratios[1]!);
-    high = Math.min(high, row.length === 1 ? ONE_HIGH : ROW_HIGH, ...row.map((p) => p.height / DPI));
+    let high = row.length === 1 ? Math.min(page.one, width / ratios[0]!) : (width - GUTTER) / (ratios[0]! + ratios[1]!);
+    high = Math.min(high, row.length === 1 ? page.one : page.row, ...row.map((p) => p.height / DPI));
     out.push(row.map((p, j) => ({ file: p.file, w: round(high * ratios[j]!), ...(p.alt ? { alt: p.alt } : {}) })));
   }
   return out;
@@ -101,7 +101,7 @@ export async function renderBook(
       const image = plan.images[next++]!;
       if (options.deadline && clock() > options.deadline) throw new Error('Book photos ran out of time');
       const bytes = await read(image.key),
-        done = bytes && (await photo(bytes, image.type));
+        done = bytes && (await photo(bytes, image.type, plan.data.page.longest));
       if (done) made.set(image.id, done);
     }
   };
@@ -124,7 +124,8 @@ export async function renderBook(
                 alt: i.alt,
                 width: made.get(i.id)!.width,
                 height: made.get(i.id)!.height
-              }))
+              })),
+            plan.data.page
           )
         }))
       }))
@@ -194,6 +195,7 @@ export async function selfTest(): Promise<void> {
     made = await renderBook(
       {
         data: {
+          page: PAGES['6x9'],
           title: 'Self test',
           range: '',
           versions: '0.0.0',

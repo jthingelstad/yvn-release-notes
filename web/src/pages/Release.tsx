@@ -17,7 +17,7 @@ import { givingLine } from '../../../packages/domain/giving.ts';
 export function Release() {
   const go = useGo();
   const me = useMe().data;
-  const mayBook = !!me && !me.new && (me.weekly_thing === 'member' || !!me.admin);
+  const mayBook = !!me && !me.new;
   const v = useQueryParam('v');
   const here = useStillAt('/release/');
   const release = useInfiniteQuery(releaseQuery(v));

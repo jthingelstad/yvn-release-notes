@@ -1,6 +1,5 @@
 // What the pages say for each error the API (or the page) gives.
 import { MAX_PHOTOS, MAX_TITLE } from '../../../packages/book/limits.ts';
-import { MEMBERS_URL } from './weekly-thing.ts';
 
 // A line: text, or strings and links. A link with `back` comes back to this
 // page after signing in again.
@@ -65,11 +64,7 @@ export const SAY: Record<string, Line> = {
   'weekly-thing-by-hand':
     'This address was on the Weekly Thing before and can’t be added again automatically. Email jamie@thingelstad.com to be added by hand.',
   'weekly-thing-off': 'The Weekly Thing isn’t asked about here. Try again later.',
-  'book-members': [
-    'Books are a thank-you to Weekly Thing Supporting Members. ',
-    { href: MEMBERS_URL, text: 'About membership' },
-    '.'
-  ],
+  'book-page': 'Pick a page size: 6 by 9 inches or US Letter.',
   'book-empty': 'There are no notes in those days.',
   'book-photos': `Those days have more photos than one book holds (${MAX_PHOTOS.toLocaleString('en-US')}). Pick fewer days.`,
   'book-failed': 'Couldn’t start the book just now. Try again in a minute.',

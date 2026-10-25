@@ -1,20 +1,16 @@
 /** The book (packages/book): a PDF of the owner's notes for any span of days
- * they pick, built by the export worker as the zip is and offered for a day.
- * Books are a thank-you to Weekly Thing Supporting Members (Jamie,
- * 2026-10-25, picking the yearbook among the member perks); the configured
- * administrator may make one too. One at a time, at most MAX_PHOTOS photos. */
+ * they pick, at 6 by 9 inches or US Letter, built by the export worker as
+ * the zip is and offered for a day. Anyone may make one (Jamie, 2026-10-25:
+ * "Anyone can make a book without model support. Cheap and easy."). One at
+ * a time, at most MAX_PHOTOS photos. */
 import { randomUUID } from 'node:crypto';
 import { SessionService, reject } from './sessions.ts';
-import { isAdmin } from './product-updates.ts';
 import type { Item } from './store-types.ts';
 import { iso, localDay } from '../domain/dates.ts';
 import { json, body, dayFrom } from '../../server/app/requests.ts';
 import { recordActivity } from './activity.ts';
 import { defaultTitle } from '../book/data.ts';
-import { MAX_PHOTOS, MAX_TITLE } from '../book/limits.ts';
-
-export const mayMakeBook = (p: Item, adminUserId?: string): boolean =>
-  p.weekly_thing === 'member' || isAdmin(p, adminUserId);
+import { MAX_PHOTOS, MAX_TITLE, isPageSize, type PageSize } from '../book/limits.ts';
 
 /** What a span holds, from its notes' keys and files alone. */
 async function counted(service: SessionService, uid: string, from: string, to: string) {
@@ -43,6 +39,11 @@ function titleFrom(value: unknown): string | null {
   if ([...title].length > MAX_TITLE || /\p{Cc}/u.test(title)) reject(400, 'title');
   return title || null;
 }
+function pageFrom(value: unknown): PageSize {
+  if (value === undefined || value === null) return '6x9';
+  if (!isPageSize(value)) reject(400, 'book-page');
+  return value;
+}
 
 export async function bookRoutes(
   service: SessionService,
@@ -52,8 +53,7 @@ export async function bookRoutes(
   if (!pattern.startsWith('/api/book')) return null;
   const { uid, profile: p } = await service.account(),
     ctx = service.context,
-    store = ctx.store,
-    may = mayMakeBook(p, ctx.adminUserId);
+    store = ctx.store;
   if (pattern === '/api/book/plan') {
     const { from, to } = span(p, query.get('from'), query.get('to'), ctx.now);
     return json({
@@ -80,18 +80,23 @@ export async function bookRoutes(
     });
   }
   if (service.request.method === 'POST') {
-    if (!may) reject(403, 'book-members');
     if (status === 'building') return json({ status }, 202);
     const b = await body(service.request),
       { from, to } = span(p, b.from, b.to, ctx.now),
       title = titleFrom(b.title),
+      page = pageFrom(b.page),
       held = await counted(service, uid, from, to);
     if (!held.days) reject(400, 'book-empty');
     if (held.photos > MAX_PHOTOS) reject(400, 'book-photos', { photos: held.photos, max_photos: MAX_PHOTOS });
     if (found?.export_key && String(found.export_key).startsWith(`exports/${uid}/`))
       await ctx.objects.remove(String(found.export_key));
     const id = randomUUID().replace(/-/g, '');
-    await store.startExport(uid, id, ctx.now, ctx.now + 86400, 'BOOK', { from, to, ...(title ? { title } : {}) });
+    await store.startExport(uid, id, ctx.now, ctx.now + 86400, 'BOOK', {
+      from,
+      to,
+      page,
+      ...(title ? { title } : {})
+    });
     try {
       await ctx.invocations.invoke(ctx.exportFunction, { user_id: uid, id, kind: 'book' }, true);
     } catch {
@@ -104,11 +109,15 @@ export async function bookRoutes(
     return json({ status: 'building' }, 202);
   }
   return json({
-    may,
     today: localDay(ctx.now, String(p.tz)),
     status,
     ...(status !== 'none'
-      ? { from: found!.from, to: found!.to, ...(found!.title ? { title: found!.title } : {}) }
+      ? {
+          from: found!.from,
+          to: found!.to,
+          page: isPageSize(found!.page) ? found!.page : '6x9',
+          ...(found!.title ? { title: found!.title } : {})
+        }
       : {}),
     ...(status === 'failed' && found!.reason === 'empty' ? { reason: 'empty' } : {}),
     ...(status === 'ready'

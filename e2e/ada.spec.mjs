@@ -342,7 +342,10 @@ test('"Add where I am" asks only as a note is saved, and "Not there" leaves it o
     const ask = navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
     window.asked = 0;
     window.slow = 0;
-    navigator.geolocation.getCurrentPosition = (...args) => (window.asked++, setTimeout(() => ask(...args), window.slow));
+    navigator.geolocation.getCurrentPosition = (...args) => (
+      window.asked++,
+      setTimeout(() => ask(...args), window.slow)
+    );
   });
   const asked = () => page.evaluate(() => window.asked);
   // On unless turned off, so nothing to set. Opening Today asks nothing.
@@ -465,7 +468,6 @@ test('the timeline lists the releases, and a release shows its days oldest first
 });
 
 test('a release makes a book of its days, a PDF to download', async ({ page }) => {
-  // Ada is the dev server's administrator, who may make one.
   await page.goto('/release/?v=4.4');
   await page.getByRole('link', { name: 'Make a book of this release' }).click();
   await expect(page).toHaveURL(/\/book\/\?from=\d{4}-06-14&to=\d{4}-06-13$/);
@@ -473,8 +475,11 @@ test('a release makes a book of its days, a PDF to download', async ({ page }) =
   await expect(page.locator('#book-plan')).toHaveText('1 day · 1 note');
   await expect(page.locator('input[name=title]')).toHaveAttribute('placeholder', '4.4');
   await page.locator('input[name=title]').fill('The bike');
+  await expect(page.getByRole('radio', { name: /^6 by 9 inches/ })).toBeChecked();
+  await page.getByRole('radio', { name: /^US Letter/ }).check();
   await page.getByRole('button', { name: 'Make the book' }).click();
   await expect(page.locator('#book-status')).toContainText('Ready: “The bike”', { timeout: 20_000 });
+  await expect(page.locator('#book-status')).toContainText('US Letter');
   await expect(page.locator('#book-form')).toBeVisible();
   const file = await page.request.get(await page.locator('#book-file').getAttribute('href'));
   expect(file.headers()['content-type']).toBe('application/pdf');
@@ -645,7 +650,9 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
   await expect(page.locator('.lede')).toHaveText('1 note with a place of its own.');
   const map = page.getByRole('region', { name: 'Map of your notes' });
   await expect(map.locator('canvas')).toBeVisible();
-  await expect(page.getByText('Choose a pin or a group to list its notes here. Each version number opens its day.')).toBeVisible();
+  await expect(
+    page.getByText('Choose a pin or a group to list its notes here. Each version number opens its day.')
+  ).toBeVisible();
   // The pin is drawn at the centre once the map has settled.
   const box = await map.boundingBox();
   await expect(async () => {
@@ -671,7 +678,9 @@ test('the map pins notes with a place of their own, and a pin lists its notes', 
   await page.goto('/today/');
   await page.goto('/map/#d=2026-10-07&ll=44.98%2C-93.26');
   await expect(map.locator('canvas')).toBeVisible();
-  await expect(page.getByText('Choose a pin or a group to list its notes here. Each version number opens its day.')).toBeVisible();
+  await expect(
+    page.getByText('Choose a pin or a group to list its notes here. Each version number opens its day.')
+  ).toBeVisible();
   expect(refused).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
 });
@@ -743,7 +752,9 @@ test('the map narrows by words, tag and release, and a group lists every note in
   // A tag, then the words: found by POST, and kept in the # alone.
   await page.getByRole('button', { name: 'Clear filters' }).click();
   await expect(lede).toHaveText('3 notes with a place of their own.');
-  await expect(page.getByText('Choose a pin or a group to list its notes here. Each version number opens its day.')).toBeVisible();
+  await expect(
+    page.getByText('Choose a pin or a group to list its notes here. Each version number opens its day.')
+  ).toBeVisible();
   await tags.selectOption('lake');
   await expect(lede).toHaveText('1 of 3 notes with a place of their own.');
   await expect(releases).toBeVisible();

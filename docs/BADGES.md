@@ -153,7 +153,10 @@ nonprofit:
   badge is stamped with the first day seen and joins the replay in date
   order.
 - **Nothing is taken away.** A year is only ever widened, so a lapsed
-  member keeps every year they gave.
+  member keeps every year they gave. `Store.widenGiving` adds the year and
+  moves each end as separate conditional writes, so a visit and the sender
+  looking at once can neither narrow a year nor drop a new one, and only
+  the lookup that added a year writes its activity row.
 - **Never still to find.** Giving badges are not in `missing`: the shelf
   thanks members and never pitches membership to anyone else.
 - **The nonprofits** are `NONPROFITS`, copied from the Weekly Thing's
@@ -164,7 +167,8 @@ nonprofit:
 - **The birthday** block and the release page thank the member by the
   nonprofits given to while the release ran: "During 5.4 you supported
   Signal as a Weekly Thing Supporting Member. Thank you." That line is a
-  thank-you rather than a badge, so it shows with "Show badges" off too.
+  thank-you rather than a badge, so it shows with "Show badges" off too,
+  and in a release with no notes it is the whole block ("5.4 is closed.").
 
 ### Collectibles
 

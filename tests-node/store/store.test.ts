@@ -808,3 +808,37 @@ test('thumbnail field write uses bounded media index and exact file-number guard
     }
   });
 });
+
+test('giving only ever widens, one conditional step at a time, whatever order lookups land in', async () => {
+  const s = setup(),
+    giving = async () => (await s.profile('u'))?.giving;
+  assert.equal(await s.widenGiving('u', '2026-10-25', undefined), true, 'the first lookup adds the year');
+  assert.deepEqual(await giving(), { 2026: { first: '2026-10-25', last: '2026-10-25' } });
+  const stale = await giving();
+  // Two lookups that both read `stale`: the later day lands first.
+  assert.equal(await s.widenGiving('u', '2026-11-10', stale), false);
+  assert.equal(await s.widenGiving('u', '2026-11-03', stale), false);
+  assert.deepEqual(await giving(), { 2026: { first: '2026-10-25', last: '2026-11-10' } }, 'never narrowed');
+  // Across New Year: January's lookup adds the year, then December's (read
+  // before it) moves 2026 on and leaves 2027 alone.
+  const december = await giving();
+  assert.equal(await s.widenGiving('u', '2027-01-01', december), true);
+  assert.equal(await s.widenGiving('u', '2026-12-31', december), false);
+  assert.deepEqual(await giving(), {
+    2026: { first: '2026-10-25', last: '2026-12-31' },
+    2027: { first: '2027-01-01', last: '2027-01-01' }
+  });
+  // Two lookups adding the same year: one adds it, the other only widens.
+  const both = await giving();
+  assert.equal(await s.widenGiving('u', '2028-01-03', both), true);
+  assert.equal(await s.widenGiving('u', '2028-01-02', both), false);
+  assert.deepEqual(((await giving()) as Item)[2028], { first: '2028-01-02', last: '2028-01-03' });
+  // A day inside what was read writes nothing; a gone profile is never made.
+  assert.equal(await s.widenGiving('u', '2026-11-01', await giving()), false);
+  assert.equal(
+    await s.widenGiving('gone', '2026-10-25', undefined).catch((e: Error) => e.name),
+    'ConditionalCheckFailedException'
+  );
+  assert.equal(await s.widenGiving('gone', '2026-10-25', {}), false);
+  assert.equal(await s.profile('gone'), null);
+});

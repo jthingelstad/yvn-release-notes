@@ -212,12 +212,15 @@ export async function readClosed(
   const v = computeVersion(sub.birthday, day);
   if (v.patch || !v.age) return null;
   const [first, last] = releaseSpan(sub.birthday, v.age - 1),
-    within = index.filter(([d]) => first <= d && d <= last);
-  if (!within.length) return null;
+    within = index.filter(([d]) => first <= d && d <= last),
+    giving = givenDuring(sub.giving, first, last);
+  // A release with no notes closes quietly, unless it gave: then the block
+  // carries the thank-you alone.
+  if (!within.length)
+    return giving.length ? { age: v.age - 1, days: 0, notes: 0, photos: 0, longest: 0, giving } : null;
   try {
     const have = new Set(within.map(([d]) => d)),
-      paused = [...pauseDays(await s.store.pauses(sub.user_id), last)].filter((d) => d >= first),
-      giving = givenDuring(sub.giving, first, last);
+      paused = [...pauseDays(await s.store.pauses(sub.user_id), last)].filter((d) => d >= first);
     return {
       age: v.age - 1,
       days: have.size,
@@ -598,11 +601,11 @@ export async function recheckStanding(
   at: number
 ): Promise<void> {
   if (!s.weeklyThing || !recheckDue(profile, at)) return;
-  let fields: Item;
+  let added = false;
   try {
     const standing = await s.weeklyThing.standing(String(profile.email));
-    fields = standingFields(standing, at, day, profile);
-    await s.store.updateProfile(user, fields);
+    await s.store.updateProfile(user, standingFields(standing, at));
+    if (standing === 'member') added = await s.store.widenGiving(user, day, profile.giving);
     s.log?.({ event: 'weekly-thing', user, standing });
   } catch (e) {
     s.log?.({
@@ -617,7 +620,7 @@ export async function recheckStanding(
     s.store,
     user,
     at,
-    givingEvents(profile, fields),
+    givingEvents(profile, added ? day : null),
     s.log && activityLog(at, (f) => s.log!(f as Parameters<Log>[0]))
   );
 }

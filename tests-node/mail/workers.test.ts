@@ -1082,6 +1082,15 @@ test('the closed release names what a Supporting Member gave to while it ran', a
   assert.ok(!('giving' in (await sender.readClosed(f.services, sub, day, await f.store.noteIndex('u')))!));
 });
 
+test('a release with no notes closes with the thank-you when it gave, and quietly when not', async () => {
+  const f = setup({ birthday: '1972-10-13', giving: { 2026: { first: '2026-01-06', last: '2026-10-01' } } });
+  const sub = (await f.store.getSubscriber('u'))!;
+  const closed = (await sender.readClosed(f.services, sub, day, []))!;
+  assert.deepEqual([closed.days, closed.notes, closed.photos, closed.giving], [0, 0, 0, ['Signal']]);
+  sub.giving = null;
+  assert.equal(await sender.readClosed(f.services, sub, day, []), null);
+});
+
 test('after the email, a standing that is due is looked at again; a member records the year and its badge', async () => {
   const asked: string[] = [],
     f = setup(),

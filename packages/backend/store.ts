@@ -22,7 +22,8 @@
  * minutes and three uses (`turnstile.ts`); no address, only its hash.
  * PROFILE.giving maps a calendar year ("2026") to `{first, last}`, the local
  * days a Weekly Thing lookup saw a Supporting Member (domain/giving.ts):
- * set whole with the standing, only ever widened, gone with the profile.
+ * only ever widened, one conditional step at a time (`widenGiving`), gone
+ * with the profile.
  * USER#<owner> / BADGES holds `seen`, a string set of the badges (`id` or
  * `id:tier`) already celebrated, so the email names each once
  * (docs/BADGES.md). Only ever ADDed to, with the account proof; deleted
@@ -71,6 +72,7 @@ const purposeCondition = {
 };
 const key = (user: string, sk: string): Key => ({ pk: `USER#${user}`, sk });
 import { writtenAt as written } from '../domain/notes.ts';
+import { givingYears } from '../domain/giving.ts';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const conditionFailed = (e: unknown) => e instanceof Error && e.name === 'ConditionalCheckFailedException';
 function reasons(e: unknown): { Code?: string }[] {
@@ -1074,6 +1076,51 @@ export class Store {
       ExpressionAttributeNames: names,
       ...(entries.length ? { ExpressionAttributeValues: values } : {})
     });
+  }
+  /** A Weekly Thing lookup on local `day` answered `member`: the day's year
+   * added to PROFILE.giving, or its first or last day moved out to `day`.
+   * Each step is its own conditional write, so two lookups at once (the
+   * sender's and a visit's) only ever widen it and never put back an older
+   * map. `seen` is the giving read with the profile: what it already covers
+   * can only have widened since, so needs no write. True when this call is
+   * the one that added the year. */
+  async widenGiving(user: string, day: string, seen: unknown): Promise<boolean> {
+    const Key = key(user, 'PROFILE'),
+      year = day.slice(0, 4),
+      had = givingYears(seen).find((g) => String(g.year) === year),
+      names = { '#g': 'giving', '#y': year };
+    if (!had) {
+      if (!seen || typeof seen !== 'object')
+        await this.update(Key, {
+          UpdateExpression: 'SET #g = if_not_exists(#g, :empty)',
+          ConditionExpression: 'attribute_exists(pk)',
+          ExpressionAttributeNames: { '#g': 'giving' },
+          ExpressionAttributeValues: { ':empty': {} }
+        });
+      const added = await this.conditional(() =>
+        this.update(Key, {
+          UpdateExpression: 'SET #g.#y = :span',
+          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#g.#y)',
+          ExpressionAttributeNames: names,
+          ExpressionAttributeValues: { ':span': { first: day, last: day } }
+        })
+      );
+      if (added) return true;
+    }
+    for (const [end, beyond] of [
+      ['first', '>'],
+      ['last', '<']
+    ] as const)
+      if (!had || (end === 'first' ? had.first > day : had.last < day))
+        await this.conditional(() =>
+          this.update(Key, {
+            UpdateExpression: 'SET #g.#y.#e = :d',
+            ConditionExpression: `#g.#y.#e ${beyond} :d`,
+            ExpressionAttributeNames: { ...names, '#e': end },
+            ExpressionAttributeValues: { ':d': day }
+          })
+        );
+    return false;
   }
   async stop(user: string, reason: string, at: string) {
     await this.updateProfile(user, { status: 'stopped', stopped_reason: reason, stopped_at: at });

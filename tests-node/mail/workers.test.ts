@@ -1123,6 +1123,19 @@ test('after the email, a standing that is due is looked at again; a member recor
   assert.ok(String(f.mail.messages[1]!.raw).includes('New badge: Supported Signal'));
 });
 
+test('a failed giving write after the email leaves the standing due, so the next email asks again', async () => {
+  const f = setup(),
+    weeklyThing = { standing: async () => 'member' as const, subscribe: async () => ({ outcome: 'added' as const }) };
+  f.store.widenGiving = async () => {
+    throw Object.assign(new Error('refused'), { name: 'TransactionCanceledException' });
+  };
+  await sender.handler({}, { getRemainingTimeInMillis: () => 60000 }, { ...f.services, weeklyThing });
+  const p = (await f.store.profile('u'))!;
+  assert.ok(!('weekly_thing_at' in p) && !('giving' in p));
+  assert.ok(f.logs.some((l) => l.event === 'weekly-thing-error' && l.error === 'TransactionCanceledException'));
+  assert.equal((await f.store.activityAll('u')).filter((r) => r.kind === 'badge.earned').length, 0);
+});
+
 test('a failed standing lookup after the email is logged and changes nothing', async () => {
   const f = setup(),
     weeklyThing = {

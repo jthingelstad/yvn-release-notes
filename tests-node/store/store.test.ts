@@ -4,6 +4,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { FakeStore, InMemoryDocumentClient } from '../../packages/testing/store.ts';
 import { Store, Subscriber } from '../../packages/backend/store.ts';
+import { withWebProof } from '../../packages/backend/guarded-store.ts';
 import type { Item, DocumentSender } from '../../packages/backend/store-types.ts';
 const profile = {
   pk: 'USER#u',
@@ -839,6 +840,24 @@ test('giving only ever widens, one conditional step at a time, whatever order lo
     await s.widenGiving('gone', '2026-10-25', undefined).catch((e: Error) => e.name),
     'ConditionalCheckFailedException'
   );
-  assert.equal(await s.widenGiving('gone', '2026-10-25', {}), false);
+  await assert.rejects(() => s.widenGiving('gone', '2026-10-25', {}), { name: 'ConditionalCheckFailedException' });
   assert.equal(await s.profile('gone'), null);
+});
+
+test('a visit losing the giving race to the sender reads again and widens; a failed web proof still refuses', async () => {
+  const raw = setup(),
+    giving = async () => (await raw.profile('u'))?.giving;
+  raw.seed({ pk: 'SESSION#hash', sk: 'SESSION', user_id: 'u', expires_at: 200 });
+  // Both read a profile with no 2027; the sender lands first with a later day.
+  assert.equal(await raw.widenGiving('u', '2027-01-02', undefined), true);
+  const web = withWebProof(raw, 'u', 'hash', 100);
+  assert.equal(await web.widenGiving('u', '2027-01-01', undefined), false, 'the sender added the year');
+  assert.deepEqual(await giving(), { 2027: { first: '2027-01-01', last: '2027-01-02' } }, 'the visit’s day kept');
+  // An expired session writes nothing, and says so.
+  const expired = withWebProof(raw, 'u', 'hash', 300),
+    read = await giving();
+  await assert.rejects(() => expired.widenGiving('u', '2027-02-01', read), {
+    name: 'TransactionCanceledException'
+  });
+  assert.deepEqual(await giving(), { 2027: { first: '2027-01-01', last: '2027-01-02' } });
 });

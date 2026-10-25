@@ -156,7 +156,10 @@ nonprofit:
   member keeps every year they gave. `Store.widenGiving` adds the year and
   moves each end as separate conditional writes, so a visit and the sender
   looking at once can neither narrow a year nor drop a new one, and only
-  the lookup that added a year writes its activity row.
+  the lookup that added a year writes its activity row. A step refused
+  because the other got there first (on the web, the guard reports it as a
+  cancelled transaction) is read again and passed. The year is written
+  before the standing's time, so a failed write is asked again next time.
 - **Never still to find.** Giving badges are not in `missing`: the shelf
   thanks members and never pitches membership to anyone else.
 - **The nonprofits** are `NONPROFITS`, copied from the Weekly Thing's

@@ -72,7 +72,7 @@ const purposeCondition = {
 };
 const key = (user: string, sk: string): Key => ({ pk: `USER#${user}`, sk });
 import { writtenAt as written } from '../domain/notes.ts';
-import { givingYears } from '../domain/giving.ts';
+import { givingYears, type GivingYear } from '../domain/giving.ts';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const conditionFailed = (e: unknown) => e instanceof Error && e.name === 'ConditionalCheckFailedException';
 function reasons(e: unknown): { Code?: string }[] {
@@ -1082,13 +1082,33 @@ export class Store {
    * Each step is its own conditional write, so two lookups at once (the
    * sender's and a visit's) only ever widen it and never put back an older
    * map. `seen` is the giving read with the profile: what it already covers
-   * can only have widened since, so needs no write. True when this call is
-   * the one that added the year. */
+   * can only have widened since, so needs no write. A step refused because
+   * another lookup got there first is read again and passed; any other
+   * refusal (a gone profile, the web guard's proofs) is thrown. True when
+   * this call is the one that added the year. */
   async widenGiving(user: string, day: string, seen: unknown): Promise<boolean> {
     const Key = key(user, 'PROFILE'),
       year = day.slice(0, 4),
-      had = givingYears(seen).find((g) => String(g.year) === year),
-      names = { '#g': 'giving', '#y': year };
+      names = { '#g': 'giving', '#y': year },
+      known = (value: unknown) => givingYears(value).find((g) => String(g.year) === year);
+    let had = known(seen);
+    // The web guard (guarded-store.ts) merges its proofs into a PROFILE
+    // write, so it reports this step's refusal as a cancelled transaction.
+    const step = async (
+      input: Omit<UpdateCommandInput, 'TableName' | 'Key'>,
+      done: (now: GivingYear | undefined) => boolean
+    ) => {
+      try {
+        await this.update(Key, input);
+        return true;
+      } catch (e) {
+        if (!conditionFailed(e) && !(e instanceof Error && e.name === 'TransactionCanceledException')) throw e;
+        const now = known((await this.profile(user, true))?.giving);
+        if (!done(now)) throw e;
+        had = now;
+        return false;
+      }
+    };
     if (!had) {
       if (!seen || typeof seen !== 'object')
         await this.update(Key, {
@@ -1097,29 +1117,30 @@ export class Store {
           ExpressionAttributeNames: { '#g': 'giving' },
           ExpressionAttributeValues: { ':empty': {} }
         });
-      const added = await this.conditional(() =>
-        this.update(Key, {
+      const added = await step(
+        {
           UpdateExpression: 'SET #g.#y = :span',
           ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#g.#y)',
           ExpressionAttributeNames: names,
           ExpressionAttributeValues: { ':span': { first: day, last: day } }
-        })
+        },
+        (now) => !!now
       );
       if (added) return true;
     }
-    for (const [end, beyond] of [
-      ['first', '>'],
-      ['last', '<']
-    ] as const)
-      if (!had || (end === 'first' ? had.first > day : had.last < day))
-        await this.conditional(() =>
-          this.update(Key, {
+    for (const end of ['first', 'last'] as const) {
+      const beyond = (g: GivingYear) => (end === 'first' ? g.first > day : g.last < day);
+      if (!had || beyond(had))
+        await step(
+          {
             UpdateExpression: 'SET #g.#y.#e = :d',
-            ConditionExpression: `#g.#y.#e ${beyond} :d`,
+            ConditionExpression: `#g.#y.#e ${end === 'first' ? '>' : '<'} :d`,
             ExpressionAttributeNames: { ...names, '#e': end },
             ExpressionAttributeValues: { ':d': day }
-          })
+          },
+          (now) => !!now && !beyond(now)
         );
+    }
     return false;
   }
   async stop(user: string, reason: string, at: string) {

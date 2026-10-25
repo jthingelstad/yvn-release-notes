@@ -9,6 +9,7 @@ import { Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx'
 import { BadgeIcon } from '../components/icon.tsx';
 import { count, dayName, shortDay, thisYearOf } from '../lib/format.ts';
 import { badgesQuery } from '../lib/queries.ts';
+import { MEMBERS_URL } from '../lib/weekly-thing.ts';
 import type { Badges as BadgesData } from '../lib/types.ts';
 import type { AlbumDay, Track } from '../../../packages/domain/badges.ts';
 
@@ -113,7 +114,15 @@ function Shelf({ b }: { b: BadgesData }) {
               <li className="badge locked" key={m.id || `secret-${i}`}>
                 <Glyph id={m.id} locked />
                 <span className="name">{m.name || 'Secret'}</span>
-                <p>{m.hint}</p>
+                <p>
+                  {m.hint}
+                  {m.shelf === 'giving' && (
+                    <>
+                      {' '}
+                      <a href={MEMBERS_URL}>About membership</a>.
+                    </>
+                  )}
+                </p>
               </li>
             ))}
           </ul>

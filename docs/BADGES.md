@@ -160,8 +160,12 @@ nonprofit:
   because the other got there first (on the web, the guard reports it as a
   cancelled transaction) is read again and passed. The year is written
   before the standing's time, so a failed write is asked again next time.
-- **Never still to find.** Giving badges are not in `missing`: the shelf
-  thanks members and never pitches membership to anyone else.
+- **This year's is still to find** until earned (Jamie, 2026-10-25: "I
+  don't have any issue with the giving badge being in still to find. We
+  should be encouraging people to be a supporting member."). Its hint
+  says this year's nonprofit gets 100% of membership, and the page links
+  the members page beside it. An earlier year can no longer be given, so
+  is never listed.
 - **The nonprofits** are `NONPROFITS`, copied from the Weekly Thing's
   members page data. A year seen before its nonprofit is listed earns its
   badge once it is, told in the next email as usual (no activity row then).
@@ -405,6 +409,9 @@ they are found by writing on those days or not at all.
    ("Yearly giving badge is EXCELLENT! Love that."), with the birthday
    thank-you ("Love the birthday email idea too!"). A model-written daily
    email was set aside ("I like your three ideas WAY more").
+2. **This year's giving badge is still to find** ("We should be
+   encouraging people to be a supporting member"), overturning my first
+   cut that hid it.
 
 ## Jamie's calls (2026-10-20)
 

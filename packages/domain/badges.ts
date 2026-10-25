@@ -9,7 +9,8 @@
  * the note that earned a badge does. Nothing here names a miss.
  * Giving badges (domain/giving.ts) are the one shelf not worked out from
  * notes: one for each year a Weekly Thing lookup saw a Supporting Member,
- * stamped with the first day it did, and never listed as still to find. */
+ * stamped with the first day it did. This year's is still to find until
+ * earned; an earlier year's, no longer given, never is. */
 import { addDays, daysBetween, type Day } from './dates.ts';
 import { computeVersion, releaseName, releaseSpan } from './version.ts';
 import { computeStreak } from './streak.ts';
@@ -166,7 +167,7 @@ export function givingBadge(year: number): BadgeInfo | null {
     givingId(year),
     `Supported ${n.short}`,
     `A Weekly Thing Supporting Member in ${year}, the year membership went to ${n.full}.`,
-    ''
+    `Be a Weekly Thing Supporting Member in ${year}: membership goes 100% to ${n.full} this year.`
   );
 }
 const infoOf = (id: string) => {
@@ -567,17 +568,26 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
     ahead
   };
 
-  const list = order.map((k) => earned.get(k)!).reverse();
+  const list = order.map((k) => earned.get(k)!).reverse(),
+    // This calendar year's giving badge is still to find until earned (Jamie,
+    // 2026-10-25: "We should be encouraging people to be a supporting
+    // member"). An earlier year can no longer be given, so is never listed.
+    givingNow = givingBadge(Number(today.slice(0, 4)));
   return {
     count: list.length,
     earned: list,
     tracks,
     release,
-    missing: BADGES.filter((b) => !earned.has(b.id)).map((b) =>
-      b.secret
-        ? { hint: b.hint, shelf: b.shelf, secret: true }
-        : { id: b.id, name: b.name, hint: b.hint, shelf: b.shelf }
-    )
+    missing: [
+      ...BADGES.filter((b) => !earned.has(b.id)).map((b) =>
+        b.secret
+          ? { hint: b.hint, shelf: b.shelf, secret: true }
+          : { id: b.id, name: b.name, hint: b.hint, shelf: b.shelf }
+      ),
+      ...(givingNow && !earned.has(givingNow.id)
+        ? [{ id: givingNow.id, name: givingNow.name, hint: givingNow.hint, shelf: givingNow.shelf }]
+        : [])
+    ]
   };
 }
 

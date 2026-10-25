@@ -66,7 +66,7 @@ test("Ada's album: the next three special days, never a secret one", () => {
   assert.deepEqual(specialKinds(4, 5, 67, 365), ['straight']);
   assert.deepEqual(specialKinds(5, 4, 45, 365), ['palindrome']);
   assert.equal(b.count, 0);
-  assert.equal(b.missing.length, BADGES.length);
+  assert.equal(b.missing.length, BADGES.length + 1, 'every badge, and this year’s giving one');
   for (const m of b.missing.filter((x) => x.secret))
     assert.deepEqual(Object.keys(m).sort(), ['hint', 'secret', 'shelf']);
 });
@@ -311,7 +311,24 @@ test("a day's collected names, and a release's coverage and special days by kind
   );
 });
 
-test('a giving year is a badge stamped on the first day a member was seen, in order, never still to find', () => {
+test('this year’s giving badge is still to find until earned; an earlier year’s never is', () => {
+  const notes = [note('2026-10-20')],
+    reader = evaluateBadges(facts(notes), '2026-11-03').missing.filter((m) => m.shelf === 'giving');
+  assert.deepEqual(reader, [
+    {
+      id: 'giving-2026',
+      name: 'Supported Signal',
+      hint: 'Be a Weekly Thing Supporting Member in 2026: membership goes 100% to Signal this year.',
+      shelf: 'giving'
+    }
+  ]);
+  const lapsed = [{ year: 2026, first: '2026-10-25', last: '2026-12-01' }],
+    nextYear = evaluateBadges(facts(notes, { giving: lapsed }), '2099-01-06').missing;
+  assert.ok(!nextYear.some((m) => m.shelf === 'giving'), 'no nonprofit named for the year yet');
+  assert.ok(!nextYear.some((m) => m.id === 'giving-2026'), 'an earlier year is never listed');
+});
+
+test('a giving year is a badge stamped on the first day a member was seen, in order', () => {
   const notes = [note('2026-10-20'), note('2026-10-28')],
     giving = [
       { year: 2026, first: '2026-10-25', last: '2026-11-03' },
@@ -326,7 +343,7 @@ test('a giving year is a badge stamped on the first day a member was seen, in or
   const order = b.earned.map((e) => e.key);
   assert.ok(order.indexOf('giving-2026') < order.indexOf('hello'), 'newest first: after the first note, before now');
   assert.ok(!got(b, 'giving-2099'), 'a year with no nonprofit named waits');
-  assert.ok(!b.missing.some((m) => m.shelf === 'giving'), 'never listed as still to find');
+  assert.ok(!b.missing.some((m) => m.shelf === 'giving'), 'earned, so not still to find');
   assert.equal(b.count, evaluateBadges(facts(notes), '2026-11-03').count + 1);
   assert.ok(!got(evaluateBadges(facts(notes, { giving }), '2026-10-24'), 'giving-2026'), 'not before it was seen');
 });

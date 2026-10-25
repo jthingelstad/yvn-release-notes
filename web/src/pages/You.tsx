@@ -114,7 +114,7 @@ function WeeklyThingLine({ p }: { p: Me }) {
         ) : p.weekly_thing === 'reader' ? (
           <>
             Free with your Weekly Thing subscription. <a href={MEMBERS_URL}>Supporting Members</a> give to a nonprofit
-            every year.
+            every year, and each year given earns a <AppLink href="/badges/">badge</AppLink>.
           </>
         ) : p.weekly_thing === 'unconfirmed' ? (
           <>Your Weekly Thing subscription isn’t confirmed yet: look for its email.</>

@@ -9,14 +9,25 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { countLine, measure, PAGES, type BookData, type BookPhoto, type BookPlan, type Page } from './data.ts';
+import {
+  chapterCounts,
+  column,
+  countLine,
+  PAGES,
+  stats,
+  type BookData,
+  type BookPhoto,
+  type BookPlan,
+  type Page
+} from './data.ts';
 
 export const LONGEST = PAGES['6x9'].longest,
   QUALITY = 80,
   MAX_PIXELS = 100_000_000;
 const GUTTER = 6 / 72,
-  /** No photo is stretched below this many pixels an inch. */
-  DPI = 100;
+  /** No photo is stretched below this many pixels an inch: a small one
+   * prints small and sharp. */
+  DPI = 200;
 const HEIF = new Set(['image/heic', 'image/heif']);
 const FONTS = [
   'BricolageGrotesque-Regular.ttf',
@@ -57,15 +68,15 @@ export async function photo(bytes: Buffer, type: string, longest = LONGEST): Pro
   }
 }
 
-/** Photos in rows of two sharing one height across the text block; a lone
- * photo stands on its own, no taller than the page's `one`, and a small one
- * keeps near its own size. Widths in inches. */
+/** Photos in rows of two sharing one height across the notes' column; a
+ * lone photo stands on its own, no taller than the page's `one`, and a small
+ * one keeps near its own size. Widths in inches. */
 export function rows(
   photos: { file: string; alt?: string; width: number; height: number }[],
   page: Page = PAGES['6x9']
 ): BookPhoto[][] {
   const out: BookPhoto[][] = [],
-    width = measure(page),
+    width = column(page),
     // Down, so a row never overruns the text block; the nudge undoes float error.
     round = (n: number) => Math.floor(n * 1000 + 1e-6) / 1000;
   for (let i = 0; i < photos.length; i += 2) {
@@ -114,11 +125,14 @@ export async function renderBook(
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, options.parallel ?? 2) }, work));
+  const shown = (n: { images: { id: string }[] }) => n.images.filter((i) => made.has(i.id)).length;
   const pictured: BookData = {
     ...plan.data,
     counts: countLine(plan, made.size),
+    stats: stats(plan, made.size),
     chapters: plan.data.chapters.map((c) => ({
       ...c,
+      counts: chapterCounts(c.days, shown),
       days: c.days.map((d) => ({
         ...d,
         notes: d.notes.map(({ images, ...n }) => ({
@@ -195,7 +209,14 @@ export async function selfTest(): Promise<void> {
       ['heic', Buffer.from(TINY_HEIC, 'base64')]
     ]),
     note = {
-      paragraphs: [[[{ text: 'Self test ✓ 🛶' }]]],
+      blocks: [
+        { kind: 'head' as const, lines: [[{ text: 'Self test' }]] },
+        {
+          kind: 'list' as const,
+          lines: [[{ text: '✓ 🛶 ' }, { text: '#test', tag: true as const }]],
+          tight: true as const
+        }
+      ],
       photos: [],
       images: [{ id: '1' }, { id: '2' }],
       audio: [],
@@ -209,9 +230,27 @@ export async function selfTest(): Promise<void> {
           range: '',
           versions: '0.0.0',
           counts: '',
+          stats: [{ n: '1', label: 'day' }],
+          strip: { total: 1, noted: [0], marks: [{ at: 0, label: 'Jan' }] },
+          calendar: [{ label: 'Jan 2000', starts: 6, length: 31, first: 1, last: 1, noted: [1] }],
           chapters: [
-            { name: 'Self test', days: [{ day: '2000-01-01', version: '0.0.0', dateline: 'Self test', notes: [note] }] }
+            {
+              name: 'Self test',
+              versions: '0.0.0',
+              counts: '',
+              days: [
+                {
+                  day: '2000-01-01',
+                  version: '0.0.0',
+                  dateline: 'Self test',
+                  date: 'Saturday, January 1',
+                  where: 'Self test',
+                  notes: [note]
+                }
+              ]
+            }
           ],
+          index: { tags: [{ name: '#test', refs: '0' }], places: [], short: '0.0' },
           colophon: ['Self test.']
         },
         images: [

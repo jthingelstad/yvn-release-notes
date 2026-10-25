@@ -76,10 +76,15 @@ nothing there links here yet: that is Jamie's call.
    deleting an account never means losing what was in it.
    **A book** (`/book/`, 2026-10-25) is a PDF of any days the owner picks,
    at 6 by 9 inches or on US Letter, whose type, margins and photos grow
-   with the page: a title page, a contents page of month chapters when
-   there is more than one month, each day under its version and dateline,
-   the notes with their photos, places, voice memo transcripts and file
-   names, and a colophon. The export worker typesets it with Typst from
+   with the page: a title page with every release in the span as a strip
+   and the book's figures, a contents page (months, and a small calendar
+   for a span of 13 months or less) when there is more than one month or an
+   index, a compact opener for each month, each day under its version,
+   date, weather and place (hung in a rail beside the notes on US Letter,
+   stacked above them on the 6 by 9), the notes with their photos first,
+   lists, places, voice memo transcripts and file names, an agent's notes
+   hung from a rule, an index of tags and places by release for three days
+   or more, and a colophon. The export worker typesets it with Typst from
    `packages/book/` (`data.ts` the words, `render.ts` the photos and the
    PDF, `assets/book.typ` the one template), at most 1,000 photos, one book
    at a time, offered for a day, for anyone. The page picks a release or

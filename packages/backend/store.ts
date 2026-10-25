@@ -27,7 +27,11 @@
  * USER#<owner> / BOOK is the PDF book's build (packages/book), as EXPORT is
  * the zip's: the span asked for (`from`, `to`, `title`), and once made its
  * file under exports/ (`export_key`), size, pages and photos, offered for a
- * day. One at a time; deleted with the account like the zip.
+ * day, with `commentary` and `release` (an age) when it asked for Claude's.
+ * One at a time; deleted with the account like the zip.
+ * USER#<owner> / COMMENTARY#<age> counts in `made` the finished books with
+ * Claude's commentary asked for in that release (packages/book/limits.ts),
+ * ADDed in the transaction that finishes the book; deleted with the account.
  * USER#<owner> / BADGES holds `seen`, a string set of the badges (`id` or
  * `id:tier`) already celebrated, so the email names each once
  * (docs/BADGES.md). Only ever ADDed to, with the account proof; deleted
@@ -1663,11 +1667,36 @@ export class Store {
   ) {
     await this.put({ ...fields, ...key(user, slot), id, status: 'building', started_at: now, expires_at: expires });
   }
-  async finishExportGuarded(user: string, id: string, fields: Item, slot: ExportSlot = 'EXPORT'): Promise<boolean> {
+  /** `counted`: a finished book with commentary, counted against that
+   * release (age) in the same write. */
+  async finishExportGuarded(
+    user: string,
+    id: string,
+    fields: Item,
+    slot: ExportSlot = 'EXPORT',
+    counted?: number
+  ): Promise<boolean> {
     return this.provedTransaction([
       this.profileProof(user),
-      { Update: { TableName: this.tableName, Key: key(user, slot), ...finishing(id, fields) } }
+      { Update: { TableName: this.tableName, Key: key(user, slot), ...finishing(id, fields) } },
+      ...(counted === undefined
+        ? []
+        : [
+            {
+              Update: {
+                TableName: this.tableName,
+                Key: key(user, `COMMENTARY#${counted}`),
+                UpdateExpression: 'ADD #m :one',
+                ExpressionAttributeNames: { '#m': 'made' },
+                ExpressionAttributeValues: { ':one': 1 }
+              }
+            }
+          ])
     ]);
+  }
+  /** How many finished books with commentary a release (age) has had. */
+  async commentaryMade(user: string, release: number): Promise<number> {
+    return Number((await this.get(key(user, `COMMENTARY#${release}`)))?.made ?? 0);
   }
   async finishExport(user: string, id: string, fields: Item, slot: ExportSlot = 'EXPORT') {
     return this.conditional(() => this.update(key(user, slot), finishing(id, fields)));

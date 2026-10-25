@@ -1,5 +1,6 @@
-/** /api/book: anyone may make a book, what a span holds, and the build's
- * row, invocation and file. Fictional subscribers and sessions; no live data. */
+/** /api/book: anyone may make a book, what a span holds, the build's row,
+ * invocation and file, and Claude's commentary for Supporting Members.
+ * Fictional subscribers and sessions; no live data. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../../server/app/app.ts';
@@ -155,6 +156,7 @@ test('a book starts its own row, invokes the export worker and is recorded by it
   assert.deepEqual((await call('GET', '/api/book')).data, {
     today: '2026-10-13',
     status: 'building',
+    commentary: { left: 10, max: 10, release: '4.5', max_days: 366 },
     from: '2026-10-12',
     to: '2026-10-13',
     page: '6x9',
@@ -187,6 +189,7 @@ test('a ready book is linked as a PDF download and replaced by the next one', as
   assert.deepEqual((await call('GET', '/api/book')).data, {
     today: '2026-10-13',
     status: 'ready',
+    commentary: { left: 10, max: 10, release: '4.5', max_days: 366 },
     from: '2026-10-12',
     to: '2026-10-12',
     page: 'letter',
@@ -229,4 +232,49 @@ test('a book that could not start, or ran past the worker, says it failed', asyn
   const id = String((await store.export('u', 'BOOK'))!.id);
   await store.finishExport('u', id, { status: 'failed', reason: 'empty', finished_at: ctx.now }, 'BOOK');
   assert.equal((await call('GET', '/api/book')).data.reason, 'empty');
+});
+
+test('a Supporting Member may ask for Claude’s commentary on up to a year, ten finished books a release', async () => {
+  const { store, call, invocations, ctx } = await fixture({ u: 'member', b: 'subscriber' });
+  const book = (extra: Item, token = 'u') =>
+    call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-12', ...extra }, token);
+  // Only for members (and the administrator); anyone else is told whose it is.
+  assert.equal((await call('GET', '/api/book', undefined, 'b')).data.commentary, undefined);
+  const refused = await book({ commentary: true }, 'b');
+  assert.deepEqual([refused.status, refused.data.error], [403, 'book-commentary-members']);
+  for (const [body, status, error] of [
+    [{ commentary: 'yes' }, 400, 'book-commentary'],
+    // 367 days is more than a year.
+    [{ commentary: true, from: '2025-10-12', to: '2026-10-13' }, 400, 'book-commentary-days']
+  ] as const) {
+    const r = await book(body);
+    assert.deepEqual([r.status, r.data.error], [status, error], JSON.stringify(body));
+  }
+  assert.ok(!(await store.export('u', 'BOOK')));
+  assert.equal(invocations.calls.length, 0);
+  // A year exactly is fine, and the tick is kept with the release it counts against.
+  const started = await book({ commentary: true, from: '2025-10-13', to: '2026-10-13' });
+  assert.equal(started.status, 202);
+  const row = (await store.export('u', 'BOOK'))!;
+  assert.deepEqual([row.commentary, row.release], [true, 45]);
+  const activity = store.memory.all().filter((i) => i.pk === 'USER#u' && String(i.sk).startsWith('ACTIVITY#'));
+  assert.deepEqual(
+    activity.map((a) => [a.kind, a.commentary]),
+    [['export.book', true]]
+  );
+  const status = (await call('GET', '/api/book')).data;
+  assert.deepEqual([status.annotated, status.commentary], [true, { left: 10, max: 10, release: '4.5', max_days: 366 }]);
+  // A failure says it was Claude's part.
+  await store.finishExport('u', String(row.id), { status: 'failed', reason: 'commentary', finished_at: now }, 'BOOK');
+  assert.equal((await call('GET', '/api/book')).data.reason, 'commentary');
+  // Ten finished books with commentary use up the release; a book without is still fine.
+  await store.seed({ pk: 'USER#u', sk: 'COMMENTARY#45', made: 10 });
+  assert.equal(((await call('GET', '/api/book')).data.commentary as { left: number }).left, 0);
+  const spent = await book({ commentary: true });
+  assert.deepEqual([spent.status, spent.data.error], [409, 'book-commentary-left']);
+  assert.equal((await book({ commentary: false })).status, 202);
+  assert.equal((await store.export('u', 'BOOK'))!.commentary, undefined);
+  // The administrator may, member or not.
+  ctx.adminUserId = 'b';
+  assert.equal(((await call('GET', '/api/book', undefined, 'b')).data.commentary as { left: number }).left, 10);
 });

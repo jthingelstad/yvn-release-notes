@@ -295,7 +295,9 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
       return ['Started a download of everything'];
     case 'export.book':
       return [
-        e.from && e.to ? `Started a book of ${dayName(e.from, year)} through ${dayName(e.to, year)}` : 'Started a book'
+        (e.from && e.to
+          ? `Started a book of ${dayName(e.from, year)} through ${dayName(e.to, year)}`
+          : 'Started a book') + (e.commentary ? ', with Claude’s commentary' : '')
       ];
     case 'address.created':
       return ['Made your standing address'];

@@ -44,7 +44,8 @@
  * - status.stopped: `reason` (unsubscribed, or bounce or complaint from the
  *   mail service); status.restarted: `reason` (why it had stopped).
  * - signin: `how` (link or code). export.words: `format`; export.zip;
- *   export.book: `from`, `to` (the book's first and last day).
+ *   export.book: `from`, `to` (the book's first and last day), and
+ *   `commentary` when it asked for Claude's.
  * - address.created, address.replaced; calendar.created, calendar.replaced,
  *   calendar.removed: never the address or link.
  * - connection.added: `connection`, `client`, `scopes`; connection.changed:

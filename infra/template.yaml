@@ -37,7 +37,7 @@ Parameters:
   RuntimeSecretName:
     Type: String
     Default: yvn-release-notes-runtime
-    Description: The Secrets Manager secret holding the runtime credentials, ANTHROPIC_API_KEY (photo descriptions) and TURNSTILE_SECRET_KEY (the sign-in Turnstile widget). Kept by hand; no deploy writes it. An empty or missing key means that feature is not set up.
+    Description: The Secrets Manager secret holding the runtime credentials, ANTHROPIC_API_KEY (photo descriptions and book commentary) and TURNSTILE_SECRET_KEY (the sign-in Turnstile widget). Kept by hand; no deploy writes it. An empty or missing key means that feature is not set up.
   TurnstileMode:
     Type: String
     Default: ""
@@ -1525,6 +1525,12 @@ Resources:
                 Action: [s3:PutObject, s3:AbortMultipartUpload, s3:DeleteObject]
                 Resource: !Sub "${MailBucket.Arn}/exports/*"
               - Effect: Allow
+                # The runtime secret, for the Anthropic API key, read only for
+                # a book with Claude's commentary. It is kept by hand outside
+                # the stack; the ?????? is the suffix Secrets Manager adds.
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-??????"
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt ExportLogs.Arn
 
@@ -1562,6 +1568,7 @@ Resources:
           APP_VERSION: !Ref BuildId
           TABLE: !Ref Table
           MAIL_BUCKET: !Ref MailBucket
+          SECRET: !Ref RuntimeSecretName
 
   EventsLogs:
     Type: AWS::Logs::LogGroup

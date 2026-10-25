@@ -3,7 +3,9 @@ import { runtimeSelfTest } from './runtime.ts';
  * preserves file bytes, checks the live owner/build before and after
  * uploading, and removes its own archive if deletion or a newer build wins
  * the race. A book (`kind: 'book'`, packages/book) is built the same way
- * from its own row, BOOK; its renderer loads only when a book is asked for. */
+ * from its own row, BOOK; its renderer loads only when a book is asked for.
+ * A book with commentary has Claude write it while the photos are made, and
+ * reads the API key only then. */
 import { ZipFile } from 'yazl';
 import { mkdtemp, writeFile, stat, rm } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
@@ -11,12 +13,15 @@ import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { build, markdown, filePaths } from '../packages/backend/export.ts';
 import { createObjects, createStore } from '../packages/backend/aws.ts';
 import { missing, safeLog, type Objects, type Log } from '../packages/backend/services.ts';
 import { iso, localDay, validDay } from '../packages/domain/dates.ts';
 import { bookPlan } from '../packages/book/data.ts';
 import { isPageSize } from '../packages/book/limits.ts';
+import { keyFrom } from '../packages/backend/describe.ts';
+import * as commentary from '../packages/book/commentary.ts';
 import type { Store, Item } from '../packages/backend/store.ts';
 export const READY_FOR = 24 * 3600,
   BUILDING_FOR = 16 * 60;
@@ -34,6 +39,8 @@ export interface ExportContext {
   now: number;
   clock?: () => number;
   log?: Log;
+  /** Claude, for a book with commentary; asked for only then. */
+  writer?: () => Promise<commentary.Writer>;
 }
 export async function writeZip(
   path: string,
@@ -162,14 +169,16 @@ export async function runBook(
   context: ExportContext,
   user: string,
   id: string
-): Promise<'ready' | 'replaced' | 'skipped' | 'empty'> {
+): Promise<'ready' | 'replaced' | 'skipped' | 'empty' | 'unusable'> {
   const { store, objects, now } = context,
     clock = context.clock ?? (() => Date.now() / 1000),
     log = context.log ?? safeLog;
   const found = await store.export(user, 'BOOK'),
     profile = await store.profile(user, true),
     from = String(found?.from ?? ''),
-    to = String(found?.to ?? '');
+    to = String(found?.to ?? ''),
+    // The release it counts against, set when it was asked for (books.ts).
+    release = found?.commentary === true && Number.isInteger(found.release) ? Number(found.release) : null;
   if (
     !found ||
     found.id !== id ||
@@ -188,6 +197,7 @@ export async function runBook(
     temp = await mkdtemp(join(tmpdir(), 'release-book-'));
   let size: number, made: { pages: number; photos: number; missing: number };
   try {
+    const today = localDay(now, String(profile.tz));
     const [notes, sky, own] = await Promise.all([
         store.notesBetween(user, from, to),
         store.weatherBetween(user, from, to),
@@ -195,7 +205,7 @@ export async function runBook(
       ]),
       plan = await bookPlan(profile, user, from, to, notes, sky, own, {
         title: typeof found.title === 'string' ? found.title : null,
-        made: localDay(now, String(profile.tz)),
+        made: today,
         page: isPageSize(found.page) ? found.page : '6x9'
       });
     if (!plan.days) {
@@ -208,6 +218,25 @@ export async function runBook(
       log({ event: 'book-empty', user });
       return 'empty';
     }
+    let writing: Promise<commentary.Commentary> | null = null;
+    if (release !== null) {
+      if (!context.writer) throw new Error('Book commentary unavailable');
+      const write = await context.writer(),
+        asked = clock();
+      writing = write(commentary.request(plan.data)).then((answer) => {
+        log({
+          event: 'book-commentary',
+          user,
+          stop: answer.stop ?? 'none',
+          input: answer.usage.input,
+          output: answer.usage.output,
+          seconds: Math.round(clock() - asked)
+        });
+        return commentary.commentaryFrom(answer, plan.data);
+      });
+      // Awaited before typesetting; a photo failing first mustn't leave it unheard.
+      writing.catch(() => {});
+    }
     const { renderBook } = await import('../packages/book/render.ts'),
       book = await renderBook(
         plan,
@@ -219,7 +248,12 @@ export async function runBook(
             throw error;
           }
         },
-        { now, clock, deadline: started + BOOK_PHOTOS_FOR }
+        {
+          now,
+          clock,
+          deadline: started + BOOK_PHOTOS_FOR,
+          ...(writing ? { finish: async (data) => commentary.withCommentary(data, await writing!, today) } : {})
+        }
       ),
       path = join(temp, 'book.pdf');
     await writeFile(path, book.pdf);
@@ -233,8 +267,22 @@ export async function runBook(
     }
     await objects.uploadFile(key, path, { type: 'application/pdf' });
   } catch (error) {
-    await store.finishExportGuarded(user, id, { status: 'failed', finished_at: Math.floor(clock()) }, 'BOOK');
-    log({ event: 'book-failed', user });
+    // Claude's part failing is said so on the page; a refusal or an answer
+    // the book can't use is no fault of the service, and isn't thrown.
+    const claude = error instanceof commentary.Unusable || error instanceof commentary.WriterFailed;
+    await store.finishExportGuarded(
+      user,
+      id,
+      { status: 'failed', ...(claude ? { reason: 'commentary' } : {}), finished_at: Math.floor(clock()) },
+      'BOOK'
+    );
+    log({
+      event: 'book-failed',
+      user,
+      ...(claude ? { cause: (error as Error).name } : {}),
+      ...(error instanceof commentary.WriterFailed && error.status ? { status: error.status } : {})
+    });
+    if (error instanceof commentary.Unusable) return 'unusable';
     throw error;
   } finally {
     await rm(temp, { recursive: true, force: true });
@@ -249,7 +297,9 @@ export async function runBook(
       user,
       id,
       { status: 'ready', finished_at: finished, export_key: key, size, ...made, expires_at: finished + READY_FOR },
-      'BOOK'
+      'BOOK',
+      // A finished book with commentary counts against its release.
+      release ?? undefined
     ))
   ) {
     await objects.remove(key);
@@ -259,7 +309,25 @@ export async function runBook(
   log({ event: 'book-built', user, size, seconds: Math.round((clock() - started) * 10) / 10, ...made });
   return 'ready';
 }
-let runtime: Pick<ExportContext, 'store' | 'objects'> | undefined;
+/** Claude with the runtime secret's key (the photo descriptions' key), read
+ * when a book first asks for commentary. */
+export function claudeFrom(
+  secret: string,
+  client: Pick<SecretsManagerClient, 'send'> = new SecretsManagerClient({}),
+  make: (key: string) => commentary.Writer = commentary.opusWith
+): () => Promise<commentary.Writer> {
+  return async () =>
+    make(
+      await keyFrom(
+        {
+          get: async (id) =>
+            ((await client.send(new GetSecretValueCommand({ SecretId: id }))) as { SecretString?: string }).SecretString
+        },
+        secret
+      )
+    );
+}
+let runtime: Pick<ExportContext, 'store' | 'objects' | 'writer'> | undefined;
 export async function runEvent(
   event: { user_id?: unknown; id?: unknown; kind?: unknown; self_test?: unknown },
   services?: ExportContext
@@ -278,7 +346,11 @@ export async function runEvent(
   )
     throw new Error('Invalid export invocation');
   if (!services) {
-    runtime ??= { store: createStore(process.env.TABLE ?? ''), objects: createObjects(process.env.MAIL_BUCKET ?? '') };
+    runtime ??= {
+      store: createStore(process.env.TABLE ?? ''),
+      objects: createObjects(process.env.MAIL_BUCKET ?? ''),
+      writer: claudeFrom(process.env.SECRET ?? '')
+    };
     services = { ...runtime, now: Math.floor(Date.now() / 1000) };
   }
   return event.kind === 'book' ? runBook(services, event.user_id, event.id) : run(services, event.user_id, event.id);

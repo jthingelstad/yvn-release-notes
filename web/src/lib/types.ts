@@ -212,7 +212,11 @@ export interface BookStatus {
   to?: string;
   page?: '6x9' | 'letter';
   title?: string;
-  reason?: 'empty';
+  // The book asked for Claude's commentary.
+  annotated?: true;
+  reason?: 'empty' | 'commentary';
+  // What a Supporting Member may still add; absent for anyone else.
+  commentary?: { left: number; max: number; release: string; max_days: number };
   size?: number;
   pages?: number;
   photos?: number;
@@ -291,6 +295,7 @@ export interface EventActivity extends ActivityHead {
   reason?: string | null;
   how?: string;
   format?: string;
+  commentary?: boolean;
   scopes?: string;
   when?: string;
   file?: number;

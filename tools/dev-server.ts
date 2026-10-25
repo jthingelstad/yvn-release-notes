@@ -20,6 +20,7 @@ import type { Item } from '../packages/backend/store-types.ts';
 import { localDay, addDays, iso } from '../packages/domain/dates.ts';
 import { found } from '../packages/domain/tags.ts';
 import { runEvent as runExport } from '../workers/export.ts';
+import { fakeWriter } from '../packages/testing/commentary.ts';
 import * as dayone from '../packages/backend/dayone.ts';
 import * as importer from '../packages/backend/importer.ts';
 export function devOptions(args: string[]) {
@@ -314,8 +315,8 @@ export async function main(args = process.argv.slice(2)) {
       const value = payload as Item;
       setTimeout(
         () =>
-          // A zip, or a book (`kind: 'book'`).
-          void runExport(value, { store, objects, now: stamp() }).catch(() =>
+          // A zip, or a book (`kind: 'book'`), its commentary by a fictional Claude.
+          void runExport(value, { store, objects, now: stamp(), writer: async () => fakeWriter }).catch(() =>
             console.log('{"event":"dev-export-failed"}')
           ),
         20

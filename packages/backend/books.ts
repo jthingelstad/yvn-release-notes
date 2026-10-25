@@ -2,7 +2,10 @@
  * they pick, at 6 by 9 inches or US Letter, built by the export worker as
  * the zip is and offered for a day. Anyone may make one (Jamie, 2026-10-25:
  * "Anyone can make a book without model support. Cheap and easy."). One at
- * a time, at most MAX_PHOTOS photos. */
+ * a time, at most MAX_PHOTOS photos. A Supporting Member (or the
+ * administrator) may tick a box to have Claude add commentary
+ * (book/commentary.ts) to a book of up to a year of days: that tick is the
+ * consent for that book alone, and ten finished ones a release are theirs. */
 import { randomUUID } from 'node:crypto';
 import { SessionService, reject } from './sessions.ts';
 import type { Item } from './store-types.ts';
@@ -10,7 +13,21 @@ import { iso, localDay } from '../domain/dates.ts';
 import { json, body, dayFrom } from '../../server/app/requests.ts';
 import { recordActivity } from './activity.ts';
 import { defaultTitle } from '../book/data.ts';
-import { MAX_PHOTOS, MAX_TITLE, isPageSize, type PageSize } from '../book/limits.ts';
+import {
+  COMMENTARY_DAYS,
+  COMMENTARY_PER_RELEASE,
+  MAX_PHOTOS,
+  MAX_TITLE,
+  isPageSize,
+  type PageSize
+} from '../book/limits.ts';
+import { isAdmin } from './product-updates.ts';
+import { addDays } from '../domain/dates.ts';
+import { computeVersion, releaseName } from '../domain/version.ts';
+
+/** Who may add Claude's commentary: a thank-you to Supporting Members. */
+export const mayAnnotate = (p: Item, adminUserId?: string): boolean =>
+  p.weekly_thing === 'member' || isAdmin(p, adminUserId);
 
 /** What a span holds, from its notes' keys and files alone. */
 async function counted(service: SessionService, uid: string, from: string, to: string) {
@@ -53,7 +70,11 @@ export async function bookRoutes(
   if (!pattern.startsWith('/api/book')) return null;
   const { uid, profile: p } = await service.account(),
     ctx = service.context,
-    store = ctx.store;
+    store = ctx.store,
+    today = localDay(ctx.now, String(p.tz)),
+    may = mayAnnotate(p, ctx.adminUserId),
+    // The release this year of life is: what a book with commentary counts against.
+    release = computeVersion(String(p.birthday), today).age;
   if (pattern === '/api/book/plan') {
     const { from, to } = span(p, query.get('from'), query.get('to'), ctx.now);
     return json({
@@ -85,7 +106,14 @@ export async function bookRoutes(
       { from, to } = span(p, b.from, b.to, ctx.now),
       title = titleFrom(b.title),
       page = pageFrom(b.page),
-      held = await counted(service, uid, from, to);
+      annotate = b.commentary === true;
+    if (b.commentary !== undefined && typeof b.commentary !== 'boolean') reject(400, 'book-commentary');
+    if (annotate) {
+      if (!may) reject(403, 'book-commentary-members');
+      if (to > addDays(from, COMMENTARY_DAYS - 1)) reject(400, 'book-commentary-days', { max_days: COMMENTARY_DAYS });
+      if ((await store.commentaryMade(uid, release)) >= COMMENTARY_PER_RELEASE) reject(409, 'book-commentary-left');
+    }
+    const held = await counted(service, uid, from, to);
     if (!held.days) reject(400, 'book-empty');
     if (held.photos > MAX_PHOTOS) reject(400, 'book-photos', { photos: held.photos, max_photos: MAX_PHOTOS });
     if (found?.export_key && String(found.export_key).startsWith(`exports/${uid}/`))
@@ -95,7 +123,8 @@ export async function bookRoutes(
       from,
       to,
       page,
-      ...(title ? { title } : {})
+      ...(title ? { title } : {}),
+      ...(annotate ? { commentary: true, release } : {})
     });
     try {
       await ctx.invocations.invoke(ctx.exportFunction, { user_id: uid, id, kind: 'book' }, true);
@@ -103,23 +132,41 @@ export async function bookRoutes(
       await store.finishExport(uid, id, { status: 'failed', finished_at: ctx.now }, 'BOOK');
       reject(502, 'book-failed');
     }
-    await recordActivity(store, uid, ctx.now, [{ kind: 'export.book', id, fields: { from, to } }], (f) =>
-      service.log(f)
+    await recordActivity(
+      store,
+      uid,
+      ctx.now,
+      [{ kind: 'export.book', id, fields: { from, to, ...(annotate ? { commentary: true } : {}) } }],
+      (f) => service.log(f)
     );
     return json({ status: 'building' }, 202);
   }
   return json({
-    today: localDay(ctx.now, String(p.tz)),
+    today,
     status,
+    // What this member may still add; absent for anyone who may not.
+    ...(may
+      ? {
+          commentary: {
+            left: Math.max(0, COMMENTARY_PER_RELEASE - (await store.commentaryMade(uid, release))),
+            max: COMMENTARY_PER_RELEASE,
+            release: releaseName(release),
+            max_days: COMMENTARY_DAYS
+          }
+        }
+      : {}),
     ...(status !== 'none'
       ? {
           from: found!.from,
           to: found!.to,
           page: isPageSize(found!.page) ? found!.page : '6x9',
-          ...(found!.title ? { title: found!.title } : {})
+          ...(found!.title ? { title: found!.title } : {}),
+          ...(found!.commentary === true ? { annotated: true } : {})
         }
       : {}),
-    ...(status === 'failed' && found!.reason === 'empty' ? { reason: 'empty' } : {}),
+    ...(status === 'failed' && (found!.reason === 'empty' || found!.reason === 'commentary')
+      ? { reason: found!.reason }
+      : {}),
     ...(status === 'ready'
       ? {
           size: Number(found!.size),

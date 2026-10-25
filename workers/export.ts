@@ -16,6 +16,7 @@ import { createObjects, createStore } from '../packages/backend/aws.ts';
 import { missing, safeLog, type Objects, type Log } from '../packages/backend/services.ts';
 import { iso, localDay, validDay } from '../packages/domain/dates.ts';
 import { bookPlan } from '../packages/book/data.ts';
+import { isPageSize } from '../packages/book/limits.ts';
 import type { Store, Item } from '../packages/backend/store.ts';
 export const READY_FOR = 24 * 3600,
   BUILDING_FOR = 16 * 60;
@@ -194,7 +195,8 @@ export async function runBook(
       ]),
       plan = await bookPlan(profile, user, from, to, notes, sky, own, {
         title: typeof found.title === 'string' ? found.title : null,
-        made: localDay(now, String(profile.tz))
+        made: localDay(now, String(profile.tz)),
+        page: isPageSize(found.page) ? found.page : '6x9'
       });
     if (!plan.days) {
       await store.finishExportGuarded(

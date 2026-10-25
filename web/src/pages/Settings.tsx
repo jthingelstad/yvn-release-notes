@@ -424,11 +424,9 @@ function Account({ p }: { p: Me }) {
             </a>
             .
           </p>
-          {(p.weekly_thing === 'member' || p.admin) && (
-            <p className="hint" id="book-link">
-              Or any days you pick as a book, with their photos: <AppLink href="/book/">Make a book</AppLink>.
-            </p>
-          )}
+          <p className="hint" id="book-link">
+            Or any days you pick as a book, with their photos: <AppLink href="/book/">Make a book</AppLink>.
+          </p>
         </section>
         <section className="section settings-account-actions">
           <SignOut />

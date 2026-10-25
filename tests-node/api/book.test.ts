@@ -1,5 +1,5 @@
-/** /api/book: who may make a book, what a span holds, and the build's row,
- * invocation and file. Fictional subscribers and sessions; no live data. */
+/** /api/book: anyone may make a book, what a span holds, and the build's
+ * row, invocation and file. Fictional subscribers and sessions; no live data. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../../server/app/app.ts';
@@ -13,7 +13,7 @@ import { bookKey } from '../../workers/export.ts';
 const now = Date.parse('2026-10-13T17:00:00Z') / 1000,
   origin = 'https://notes.example.com';
 
-async function fixture(standing: Record<string, string | undefined> = { u: 'member', b: 'reader' }) {
+async function fixture(standing: Record<string, string | undefined> = { u: 'member' }) {
   const store = new FakeStore(
       ['u', 'b'].map((uid) => ({
         pk: 'USER#' + uid,
@@ -71,10 +71,10 @@ async function fixture(standing: Record<string, string | undefined> = { u: 'memb
   return { store, objects, invocations, ctx, call };
 }
 
-test('a Supporting Member, or the administrator, may make a book; anyone may see what a span holds', async () => {
-  const { ctx, call, invocations } = await fixture();
+test('anyone may make a book, member or not, and see what a span holds', async () => {
+  const { call, invocations } = await fixture();
+  // b has no Weekly Thing standing on record at all.
   assert.deepEqual((await call('GET', '/api/book', undefined, 'b')).data, {
-    may: false,
     today: '2026-10-13',
     status: 'none'
   });
@@ -89,12 +89,8 @@ test('a Supporting Member, or the administrator, may make a book; anyone may see
     memos: 1,
     max_photos: 1000
   });
-  const refused = await call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-12' }, 'b');
-  assert.deepEqual([refused.status, refused.data.error], [403, 'book-members']);
-  assert.equal(invocations.calls.length, 0);
-  ctx.adminUserId = 'b';
-  assert.equal((await call('GET', '/api/book', undefined, 'b')).data.may, true);
   assert.equal((await call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-12' }, 'b')).status, 202);
+  assert.equal(invocations.calls.length, 1);
 });
 
 test('a book’s days and title are checked before anything is written', async () => {
@@ -107,6 +103,8 @@ test('a book’s days and title are checked before anything is written', async (
     [{ from: '2026-10-12', to: '2026-10-12', title: 'x'.repeat(81) }, 'title'],
     [{ from: '2026-10-12', to: '2026-10-12', title: 'Two\u0007lines' }, 'title'],
     [{ from: '2026-10-12', to: '2026-10-12', title: 7 }, 'title'],
+    [{ from: '2026-10-12', to: '2026-10-12', page: 'a4' }, 'book-page'],
+    [{ from: '2026-10-12', to: '2026-10-12', page: 6 }, 'book-page'],
     [{ from: '2026-10-01', to: '2026-10-11' }, 'book-empty']
   ] as const) {
     const r = await call('POST', '/api/book', body);
@@ -139,8 +137,8 @@ test('a book starts its own row, invokes the export worker and is recorded by it
   assert.deepEqual([started.status, started.data], [202, { status: 'building' }]);
   const row = (await store.export('u', 'BOOK'))!;
   assert.deepEqual(
-    [row.status, row.from, row.to, row.title, row.started_at, row.expires_at],
-    ['building', '2026-10-12', '2026-10-13', 'Lake week', now, now + 86400]
+    [row.status, row.from, row.to, row.page, row.title, row.started_at, row.expires_at],
+    ['building', '2026-10-12', '2026-10-13', '6x9', 'Lake week', now, now + 86400]
   );
   assert.ok(!(await store.export('u')));
   assert.deepEqual(invocations.calls, [
@@ -155,11 +153,11 @@ test('a book starts its own row, invokes the export worker and is recorded by it
   assert.deepEqual((await call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-12' })).status, 202);
   assert.equal(invocations.calls.length, 1);
   assert.deepEqual((await call('GET', '/api/book')).data, {
-    may: true,
     today: '2026-10-13',
     status: 'building',
     from: '2026-10-12',
     to: '2026-10-13',
+    page: '6x9',
     title: 'Lake week'
   });
 });
@@ -167,7 +165,7 @@ test('a book starts its own row, invokes the export worker and is recorded by it
 test('a ready book is linked as a PDF download and replaced by the next one', async () => {
   const { store, objects, call } = await fixture();
   assert.equal((await call('GET', '/api/book/file')).status, 404);
-  await call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-12' });
+  await call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-12', page: 'letter' });
   const id = String((await store.export('u', 'BOOK'))!.id),
     key = bookKey('u', id);
   await objects.put(key, Buffer.from('%PDF-1.7 fictional'), { type: 'application/pdf' });
@@ -187,11 +185,11 @@ test('a ready book is linked as a PDF download and replaced by the next one', as
     'BOOK'
   );
   assert.deepEqual((await call('GET', '/api/book')).data, {
-    may: true,
     today: '2026-10-13',
     status: 'ready',
     from: '2026-10-12',
     to: '2026-10-12',
+    page: 'letter',
     size: 18,
     pages: 4,
     photos: 1,

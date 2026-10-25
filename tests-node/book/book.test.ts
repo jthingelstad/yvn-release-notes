@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
-import { bookPlan, defaultTitle, paragraphs, span } from '../../packages/book/data.ts';
+import { bookPlan, defaultTitle, PAGES, paragraphs, span } from '../../packages/book/data.ts';
 import { photo, renderBook, rows, selfTest } from '../../packages/book/render.ts';
 import { bookKey, runBook } from '../../workers/export.ts';
 import { FakeStore } from '../../packages/testing/store.ts';
@@ -179,12 +179,26 @@ test('photos sit two to a row sharing one height, and a small one is never stret
   );
   const [alone] = rows([{ file: '5.jpg', width: 1200, height: 1600 }]);
   assert.equal(alone![0]!.w, 3.3);
+  // On US Letter the text block is 6.3 inches and a lone photo stands 5.4 tall.
+  const [wide] = rows(
+      [
+        { file: '1.jpg', width: 2000, height: 1333 },
+        { file: '2.jpg', width: 2000, height: 1333 }
+      ],
+      PAGES.letter
+    ),
+    [tall] = rows([{ file: '3.jpg', width: 1500, height: 2000 }], PAGES.letter);
+  assert.ok(Math.abs(wide![0]!.w + wide![1]!.w + 6 / 72 - 6.3) < 0.01);
+  assert.equal(tall![0]!.w, 4.05);
 });
 
 test('a photo is turned upright, shrunk to 1600px on white, and keeps no EXIF', async () => {
   const sideways = await jpeg(3200, 1600, (s) => s.withMetadata({ orientation: 6 })),
     made = (await photo(sideways, 'image/jpeg'))!;
   assert.deepEqual([made.width, made.height], [800, 1600]);
+  // US Letter's photos are made larger, for its wider text block.
+  const big = (await photo(sideways, 'image/jpeg', PAGES.letter.longest))!;
+  assert.deepEqual([big.width, big.height], [1000, 2000]);
   const meta = await sharp(made.body).metadata();
   assert.equal(meta.format, 'jpeg');
   assert.equal(meta.exif, undefined);
@@ -222,14 +236,24 @@ test('a book renders to a tagged PDF, leaving out and counting a photo that is g
   // Title, the days, and the colophon.
   assert.ok(book.pages >= 3);
   assert.ok(book.pdf.includes('/StructTreeRoot'));
+  // Every page is 6 by 9 inches (in points), unless the book is on US Letter.
+  assert.ok(book.pdf.includes('/MediaBox [0 0 432 648]'));
+  const letter = await renderBook({ ...plan, data: { ...plan.data, page: PAGES.letter } }, read, { now });
+  assert.ok(letter.pdf.includes('/MediaBox [0 0 612 792]'));
+  assert.ok(!letter.pdf.includes('/MediaBox [0 0 432 648]'));
   // Past its deadline, a book stops before it typesets.
   await assert.rejects(renderBook(plan, read, { now, deadline: 10, clock: () => 11 }), /ran out of time/);
 });
 
-async function building(from: string, to: string, title?: string) {
+async function building(from: string, to: string, title?: string, page?: string) {
   const s = await subscriber(),
     logs: Item[] = [];
-  await s.store.startExport('u1', 'book-a', now, now + 86400, 'BOOK', { from, to, ...(title ? { title } : {}) });
+  await s.store.startExport('u1', 'book-a', now, now + 86400, 'BOOK', {
+    from,
+    to,
+    ...(title ? { title } : {}),
+    ...(page ? { page } : {})
+  });
   return { ...s, logs, context: { ...s, now, clock: () => now, log: (f: Item) => void logs.push(f) } };
 }
 
@@ -253,6 +277,13 @@ test('the export worker builds the book, offers it for a day and logs counts onl
   // Run again (Lambda retries), it is done already.
   assert.equal(await runBook(context, 'u1', 'book-a'), 'skipped');
   assert.equal(await runBook(context, 'u1', 'book-b'), 'skipped');
+});
+
+test('the worker sets the book at the page size its row names', async () => {
+  const { objects, context } = await building('2026-10-12', '2026-10-13', undefined, 'letter');
+  assert.equal(await runBook(context, 'u1', 'book-a'), 'ready');
+  const pdf = (await objects.get(bookKey('u1', 'book-a'))).body;
+  assert.ok(pdf.includes('/MediaBox [0 0 612 792]'));
 });
 
 test('a book whose days hold no notes ends as empty, with no file', async () => {

@@ -10,9 +10,54 @@ import { longDate } from '../backend/export.ts';
 import { CREDIT, CREDIT_URL } from '../backend/weather.ts';
 import { parseDay } from '../domain/dates.ts';
 import { computeVersion, releaseName, releaseSpan } from '../domain/version.ts';
-import { MAX_PHOTOS } from './limits.ts';
+import { MAX_PHOTOS, type PageSize } from './limits.ts';
 
 export { MAX_PHOTOS, MAX_TITLE } from './limits.ts';
+
+/** A page size's geometry in inches: the page, its margins (inside at the
+ * binding), the tallest lone photo and row of two, the longest side a photo
+ * is made at (enough for 300 pixels an inch across the text block), and its type scale
+ * against the 6 by 9's 10.5 point text. */
+export interface Page {
+  width: number;
+  height: number;
+  inside: number;
+  outside: number;
+  top: number;
+  bottom: number;
+  one: number;
+  row: number;
+  longest: number;
+  scale: number;
+}
+export const PAGES: Record<PageSize, Page> = {
+  '6x9': {
+    width: 6,
+    height: 9,
+    inside: 0.8,
+    outside: 0.65,
+    top: 0.8,
+    bottom: 0.85,
+    one: 4.4,
+    row: 3.2,
+    longest: 1600,
+    scale: 1
+  },
+  letter: {
+    width: 8.5,
+    height: 11,
+    inside: 1.25,
+    outside: 0.95,
+    top: 1,
+    bottom: 1.05,
+    one: 5.4,
+    row: 3.9,
+    longest: 2000,
+    scale: 8 / 7
+  }
+};
+/** The text block's width, in inches. */
+export const measure = (page: Page): number => page.width - page.inside - page.outside;
 
 export interface BookSpan {
   text: string;
@@ -42,6 +87,7 @@ export interface BookDay {
   notes: BookNote[];
 }
 export interface BookData {
+  page: Page;
   title: string;
   range: string;
   versions: string;
@@ -141,7 +187,7 @@ export async function bookPlan(
   notes: Item[],
   sky: Record<string, Item>,
   own: Record<string, Item>,
-  options: { title?: string | null; made: string }
+  options: { title?: string | null; made: string; page?: PageSize }
 ): Promise<BookPlan> {
   const byDay = new Map<string, Item[]>();
   for (const n of notes) {
@@ -213,6 +259,7 @@ export async function bookPlan(
     tally = { days, notes: noteCount, memos: audio };
   return {
     data: {
+      page: PAGES[options.page ?? '6x9'],
       title,
       // The dates, unless they are the title already.
       range: title === range ? '' : range,

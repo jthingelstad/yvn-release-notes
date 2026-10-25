@@ -1072,3 +1072,59 @@ test('events skip unparseable records and no-account addresses without private l
   assert.equal(lines[0]?.users instanceof Array, true);
   assert.ok(!JSON.stringify(f.logs).includes('@'));
 });
+
+test('the closed release names what a Supporting Member gave to while it ran', async () => {
+  const f = setup({ birthday: '1972-10-13', giving: { 2026: { first: '2026-01-06', last: '2026-10-01' } } });
+  f.store.seed(note('2026-10-11', 'one'));
+  const sub = (await f.store.getSubscriber('u'))!;
+  assert.deepEqual((await sender.readClosed(f.services, sub, day, await f.store.noteIndex('u')))!.giving, ['Signal']);
+  sub.giving = null;
+  assert.ok(!('giving' in (await sender.readClosed(f.services, sub, day, await f.store.noteIndex('u')))!));
+});
+
+test('after the email, a standing that is due is looked at again; a member records the year and its badge', async () => {
+  const asked: string[] = [],
+    f = setup(),
+    weeklyThing = {
+      standing: async (email: string) => {
+        asked.push(email);
+        return 'member' as const;
+      },
+      subscribe: async () => ({ outcome: 'added' as const })
+    };
+  let clock = now;
+  const services = { ...f.services, weeklyThing, clock: () => clock };
+  await sender.handler({}, { getRemainingTimeInMillis: () => 60000 }, services);
+  assert.equal(f.mail.messages.length, 1);
+  assert.deepEqual(asked, ['ada@example.com'], 'never asked before the gate: due at once');
+  const p = (await f.store.profile('u'))!;
+  assert.equal(p.weekly_thing, 'member');
+  assert.deepEqual(p.giving, { 2026: { first: day, last: day } });
+  const rows = (await f.store.activityAll('u')).filter((r) => r.kind === 'badge.earned');
+  assert.deepEqual(
+    rows.map((r) => [r.badge, r.name, r.via, r.version, r.day ?? null]),
+    [['giving-2026', 'Supported Signal', 'weekly-thing', String(computeVersion('1972-03-05', day)), null]]
+  );
+  assert.ok(!JSON.stringify(f.logs).includes('@'), 'the address is never logged');
+
+  // The next morning tells it once, and does not ask again within nine days.
+  clock = now + 86_400;
+  await sender.handler({}, { getRemainingTimeInMillis: () => 60000 }, services);
+  assert.equal(asked.length, 1);
+  assert.ok(String(f.mail.messages[1]!.raw).includes('New badge: Supported Signal'));
+});
+
+test('a failed standing lookup after the email is logged and changes nothing', async () => {
+  const f = setup(),
+    weeklyThing = {
+      standing: async () => {
+        throw new Error('Fictional ada@example.com');
+      },
+      subscribe: async () => ({ outcome: 'added' as const })
+    };
+  const result = await sender.handler({}, { getRemainingTimeInMillis: () => 60000 }, { ...f.services, weeklyThing });
+  assert.equal((result.results as Item[])[0]!.outcome, 'sent');
+  assert.ok(!('weekly_thing' in (await f.store.profile('u'))!));
+  assert.ok(f.logs.some((l) => l.event === 'weekly-thing-error'));
+  assert.ok(!JSON.stringify(f.logs).includes('@'));
+});

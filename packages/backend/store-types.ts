@@ -50,6 +50,8 @@ export class Subscriber {
   describe: boolean;
   badges: boolean;
   inbox: string | null;
+  /** The years given as a Weekly Thing Supporting Member (domain/giving.ts). */
+  giving: unknown;
   constructor(item: Item) {
     this.user_id = String(item.pk).replace(/^USER#/, '');
     this.email = String(item.email);
@@ -67,6 +69,7 @@ export class Subscriber {
     this.describe = Boolean(item.describe);
     this.badges = item.badges !== false;
     this.inbox = item.inbox == null ? null : String(item.inbox);
+    this.giving = item.giving ?? null;
   }
   static fromItem(item: Item) {
     return new Subscriber(item);

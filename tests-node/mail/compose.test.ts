@@ -174,3 +174,15 @@ test('badges in the email: the clause beside a special number, one line for what
     /Coverage: rc\. Collected: Pi &#215;3\./
   );
 });
+
+test('the closed release thanks a Supporting Member by the nonprofits given to, and says nothing otherwise', () => {
+  const closed = { age: 54, days: 212, notes: 260, photos: 90, longest: 30 },
+    thanks = 'During 5.4 you supported EFF and Signal as a Weekly Thing Supporting Member. Thank you.';
+  const text = c.closedBody({ ...closed, giving: ['EFF', 'Signal'] });
+  assert.ok(text.includes(`\n${thanks}\nSee 5.4:`), text);
+  assert.ok(c.closedHtml({ ...closed, giving: ['EFF', 'Signal'] }).includes(thanks));
+  for (const none of [closed, { ...closed, giving: [] }]) {
+    assert.ok(!c.closedBody(none).includes('Supporting Member'));
+    assert.ok(!c.closedHtml(none).includes('Supporting Member'));
+  }
+});

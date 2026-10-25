@@ -3,8 +3,9 @@
 // free with the Weekly Thing (Jamie, 2026-10-25: "tout its features and how
 // well it works. Free to use", "framed as better for Weekly Thing supporting
 // members"). Type on paper like the rest: no boxes. Every claim here is
-// something the product does today; Supporting Members get warmth, not a
-// perk, until there is one, and membership is never called a price.
+// something the product does today. Supporting Members get a badge for each
+// year they give and a thank-you on their birthday (domain/giving.ts), and
+// membership is never called a price.
 import type { ReactNode } from 'react';
 import { Digits } from './common.tsx';
 import { MEMBERS_URL, WEEKLY_THING_URL } from '../lib/weekly-thing.ts';
@@ -98,7 +99,8 @@ export function Tour({ hidden }: { hidden: boolean }) {
       </p>
       <p className="sub">
         <strong>Even better as a Supporting Member.</strong> Membership gives 100% to a nonprofit each year, and Release
-        Notes knows its members and says thank you. <a href={MEMBERS_URL}>About membership</a>.
+        Notes marks every year you give with a badge and a thank-you in your birthday email.{' '}
+        <a href={MEMBERS_URL}>About membership</a>.
       </p>
     </section>
   );

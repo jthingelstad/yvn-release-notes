@@ -221,7 +221,11 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
         <>
           Earned <AppLink href="/badges/">{e.name}</AppLink>
         </>,
-        e.day ? `With a note on ${dayName(e.day, year)}.` : undefined
+        e.day
+          ? `With a note on ${dayName(e.day, year)}.`
+          : e.via === 'weekly-thing'
+            ? 'As a Weekly Thing Supporting Member.'
+            : undefined
       ];
     case 'upcoming.added':
       return [

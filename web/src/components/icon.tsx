@@ -57,6 +57,7 @@ import {
   Snowflake,
   Sparkles,
   SquarePen,
+  Star,
   Tags,
   Target,
   Terminal,
@@ -144,10 +145,13 @@ const badges: Record<string, LucideIcon> = {
   pi: Pi,
   leap: Rabbit,
   straight: TrendingUp,
-  major: Crown
+  major: Crown,
+  // Every giving year (giving-2026) wears the Weekly Thing's gold star.
+  giving: Star
 };
 
 export function BadgeIcon({ id }: { id?: string }) {
-  const Glyph = (id && badges[id]) || CircleHelp;
+  const key = id?.startsWith('giving-') ? 'giving' : id;
+  const Glyph = (key && badges[key]) || CircleHelp;
   return <Glyph className="icon" strokeWidth={1.75} aria-hidden="true" focusable="false" />;
 }

@@ -172,6 +172,8 @@ export interface ReleasePage {
   longest: number;
   // absent with badges turned off
   badges?: { coverage: string | null; collected: { id: string; name: string; count: number }[] };
+  // the nonprofits given to as a Supporting Member while it ran
+  giving?: string[];
   tags: { tag: string; notes: number }[];
   days: Day[];
   after?: string | null;
@@ -238,7 +240,7 @@ export interface ReadsActivity extends ActivityHead {
 // row's title is read now: null once the date is gone.
 export interface EventActivity extends ActivityHead {
   kind: string;
-  via?: 'web' | 'email' | 'assistant' | 'import';
+  via?: 'web' | 'email' | 'assistant' | 'import' | 'weekly-thing';
   client?: string;
   day?: string;
   note?: string;

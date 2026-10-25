@@ -5,6 +5,7 @@ import { createStore, createObjects, createMail } from '../../packages/backend/a
 import { safeLog } from '../../packages/backend/services.ts';
 import { report } from '../../packages/backend/census.ts';
 import { fromHeader } from '../../packages/mail/compose.ts';
+import { createWeeklyThing } from '../../packages/backend/weekly-thing.ts';
 import { handler as send, type SenderServices, type SenderEvent, type LambdaContext } from '../send.ts';
 
 let services: SenderServices | undefined;
@@ -24,6 +25,7 @@ export async function handler(event: SenderEvent | null, context: LambdaContext 
       mail: createMail(fromHeader(fromAddress), env('CONFIG_SET'), region),
       fromAddress,
       inboundDomain: env('INBOUND_DOMAIN'),
+      weeklyThing: createWeeklyThing(),
       log: safeLog,
       report
     };

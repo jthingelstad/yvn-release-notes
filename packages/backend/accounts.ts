@@ -10,9 +10,9 @@ import { validCode, digest, clearCookie } from './auth.ts';
 import { keys, thumbKeys } from './media.ts';
 import { OAuthService } from './oauth.ts';
 import { badges } from './badges.ts';
-import { again, eventId, recordActivity } from './activity.ts';
+import { again, eventId, givingEvents, recordActivity } from './activity.ts';
 import type { ActivityEvent } from '../domain/activity.ts';
-import { LookupError, RECHECK_SECONDS, UNCONFIRMED_RECHECK_SECONDS, welcome, type Standing } from './weekly-thing.ts';
+import { LookupError, recheckDue, standingFields, welcome, type Standing } from './weekly-thing.ts';
 /** The settings a change records, each with what it reads as when unset. */
 const SETTINGS: Record<string, unknown> = {
   send_time: null,
@@ -47,23 +47,26 @@ export async function lookUpWeeklyThing(
 }
 /** An account's standing, looked up again once it is `RECHECK_SECONDS` old
  * (Jamie, 2026-10-25: "Re-check like Thingy"), or sooner while a subscription
- * waits to be confirmed. It only changes what the pages say; a failed lookup
- * keeps what was known and asks again on the next visit. */
+ * waits to be confirmed. It changes what the pages say and, for a member,
+ * records the year given (domain/giving.ts); a failed lookup keeps what was
+ * known and asks again on the next visit. The sender looks again too, after
+ * the email (workers/send.ts), for accounts that never open the web. */
 export async function recheckWeeklyThing(service: SessionService, uid: string, p: Item): Promise<Item> {
-  const at = Date.parse(String(p.weekly_thing_at ?? '')) / 1000,
-    every = p.weekly_thing === 'unconfirmed' ? UNCONFIRMED_RECHECK_SECONDS : RECHECK_SECONDS;
-  if (Number.isFinite(at) && service.context.now - at < every) return p;
-  const fields = await lookUpWeeklyThing(service, String(p.email));
-  if (!fields.weekly_thing) return p;
-  return saveWeeklyThing(service, uid, p, fields);
+  if (!recheckDue(p, service.context.now)) return p;
+  const { weekly_thing } = await lookUpWeeklyThing(service, String(p.email));
+  if (!weekly_thing) return p;
+  return saveWeeklyThing(service, uid, p, weekly_thing);
 }
-async function saveWeeklyThing(service: SessionService, uid: string, p: Item, fields: Item): Promise<Item> {
+async function saveWeeklyThing(service: SessionService, uid: string, p: Item, standing: Standing): Promise<Item> {
+  const now = service.context.now,
+    fields = standingFields(standing, now, localDay(now, String(p.tz)), p);
   try {
     await service.context.store.updateProfile(uid, fields);
   } catch {
     service.log({ event: 'weekly-thing-save-error', user: uid });
     return p;
   }
+  await record(service, uid, givingEvents(p, fields));
   return { ...p, ...fields };
 }
 /** Adds the session's verified address to the Weekly Thing, as Thingy offers
@@ -91,11 +94,7 @@ export async function subscribeWeeklyThing(service: SessionService): Promise<{ w
   if (answer.outcome === 'review') reject(409, 'weekly-thing-review');
   if (answer.outcome === 'by-hand') reject(409, 'weekly-thing-by-hand');
   const weekly_thing: Standing = answer.outcome === 'already' ? answer.standing : 'unconfirmed';
-  if (account)
-    await saveWeeklyThing(service, account.uid, account.profile, {
-      weekly_thing,
-      weekly_thing_at: iso(service.context.now)
-    });
+  if (account) await saveWeeklyThing(service, account.uid, account.profile, weekly_thing);
   return { weekly_thing };
 }
 export function replyToken(): string {
@@ -149,11 +148,12 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
       reject(400, 'birthday');
     const email = String(s.email);
     // Release Notes comes with the Weekly Thing (weekly-thing.ts).
-    const weeklyThing = await lookUpWeeklyThing(service, email);
-    if (weeklyThing.weekly_thing === 'unconfirmed') reject(403, 'weekly-thing-unconfirmed');
-    if (weeklyThing.weekly_thing && !welcome(weeklyThing.weekly_thing)) reject(403, 'weekly-thing');
+    const { weekly_thing } = await lookUpWeeklyThing(service, email);
+    if (weekly_thing === 'unconfirmed') reject(403, 'weekly-thing-unconfirmed');
+    if (weekly_thing && !welcome(weekly_thing)) reject(403, 'weekly-thing');
+    const standing = weekly_thing ? standingFields(weekly_thing, ctx.now, today, {}) : {};
     let uid = randomUUID().replace(/-/g, ''),
-      p: Item = { birthday, send_time: time, status: 'active', created_at: iso(ctx.now), ...fields, ...weeklyThing };
+      p: Item = { birthday, send_time: time, status: 'active', created_at: iso(ctx.now), ...fields, ...standing };
     if (!(await store.createSubscriberVerified(uid, email, p, String(s.hash), ctx.now, Number(s.expires_at)))) {
       const existing = await store.userForEmail(email);
       if (!existing) reject(409, 'try-again');
@@ -171,7 +171,10 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
         service.log({ event: 'first-email-failed', user: uid });
       }
       await service.tally('signups');
-      await record(service, uid, [{ kind: 'account.created', id: uid, fields: { via: 'web' } }]);
+      await record(service, uid, [
+        { kind: 'account.created', id: uid, fields: { via: 'web' } },
+        ...givingEvents({ birthday }, standing)
+      ]);
     }
     if (!(await store.claimVerifiedSession(String(s.hash), uid, email, ctx.now, Number(s.expires_at))))
       reject(401, 'signed-out');

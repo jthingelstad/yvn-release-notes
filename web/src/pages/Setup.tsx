@@ -180,8 +180,9 @@ function WeeklyThingGate({
         </p>
       </div>
       <p className="foot">
-        Even better as a Supporting Member: membership gives 100% to a nonprofit each year, and Release Notes knows its
-        members and says thank you. <a href={MEMBERS_URL}>About membership</a>.
+        Even better as a Supporting Member: membership gives 100% to a nonprofit each year, and Release Notes marks
+        every year you give with a badge and a thank-you in your birthday email.{' '}
+        <a href={MEMBERS_URL}>About membership</a>.
       </p>
     </section>
   );

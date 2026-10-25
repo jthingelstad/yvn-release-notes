@@ -310,3 +310,23 @@ test("a day's collected names, and a release's coverage and special days by kind
     'alpha'
   );
 });
+
+test('a giving year is a badge stamped on the first day a member was seen, in order, never still to find', () => {
+  const notes = [note('2026-10-20'), note('2026-10-28')],
+    giving = [
+      { year: 2026, first: '2026-10-25', last: '2026-11-03' },
+      { year: 2099, first: '2099-01-02', last: '2099-01-02' }
+    ],
+    b = evaluateBadges(facts(notes, { giving }), '2026-11-03');
+  const signal = got(b, 'giving-2026')!;
+  assert.equal(signal.name, 'Supported Signal');
+  assert.equal(signal.line, 'A Weekly Thing Supporting Member in 2026, the year membership went to Signal.');
+  assert.equal(signal.shelf, 'giving');
+  assert.deepEqual([signal.earned, signal.day, signal.version], ['2026-10-25', '2026-10-25', v('2026-10-25')]);
+  const order = b.earned.map((e) => e.key);
+  assert.ok(order.indexOf('giving-2026') < order.indexOf('hello'), 'newest first: after the first note, before now');
+  assert.ok(!got(b, 'giving-2099'), 'a year with no nonprofit named waits');
+  assert.ok(!b.missing.some((m) => m.shelf === 'giving'), 'never listed as still to find');
+  assert.equal(b.count, evaluateBadges(facts(notes), '2026-11-03').count + 1);
+  assert.ok(!got(evaluateBadges(facts(notes, { giving }), '2026-10-24'), 'giving-2026'), 'not before it was seen');
+});

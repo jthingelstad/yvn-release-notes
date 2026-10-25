@@ -16,8 +16,13 @@
  * code, with `source: release-notes` (librarian-thing's
  * `apps/librarian/AGENTS.md`, "Release Notes asks like Thingy"). The answer
  * is kept on the profile as one word. A lookup that fails never locks anyone
- * out: sign-up goes ahead and a re-check keeps what was known.
+ * out: sign-up goes ahead and a re-check keeps what was known. A lookup that
+ * answers `member` also records the year in the profile's `giving`
+ * (domain/giving.ts), which earns that year's giving badge.
  */
+import { iso, type Day } from '../domain/dates.ts';
+import { sawMember } from '../domain/giving.ts';
+import type { Item } from './store-types.ts';
 
 export const LIBRARIAN_AUTH = 'https://librarian.thingelstad.com/auth';
 const SOURCE = 'release-notes';
@@ -39,6 +44,19 @@ export type Standing = 'member' | 'reader' | 'unconfirmed' | 'none';
 export const STANDINGS: readonly Standing[] = ['member', 'reader', 'unconfirmed', 'none'];
 /** Standings that may make an account. */
 export const welcome = (s: Standing) => s === 'member' || s === 'reader';
+/** Whether a profile's standing is due a fresh look: `RECHECK_SECONDS` old,
+ * sooner while unconfirmed, or never asked (an account from before the gate). */
+export function recheckDue(p: Item, now: number): boolean {
+  const at = Date.parse(String(p.weekly_thing_at ?? '')) / 1000,
+    every = p.weekly_thing === 'unconfirmed' ? UNCONFIRMED_RECHECK_SECONDS : RECHECK_SECONDS;
+  return !Number.isFinite(at) || now - at >= every;
+}
+/** The profile fields a standing seen at `now` (the account's local `day`)
+ * sets: the standing, when, and for a member the year it gave. */
+export function standingFields(standing: Standing, now: number, day: Day, p: Item): Item {
+  const giving = standing === 'member' ? sawMember(p.giving, day) : null;
+  return { weekly_thing: standing, weekly_thing_at: iso(now), ...(giving ? { giving } : {}) };
+}
 
 /** How asking to be added ended. `added` means Buttondown sent its
  * confirmation email; `review` that its firewall is holding the address for

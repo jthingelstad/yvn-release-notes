@@ -282,3 +282,37 @@ test('an account that asks to be added is looked at again soon after', async () 
   assert.equal((await s.call('GET', '/api/me', s.member)).b.weekly_thing, 'reader');
   assert.equal(wt.asked.length, 2);
 });
+
+test('a Supporting Member records the year given, with its badge, at sign-up and at each look', async () => {
+  const wt = lookup({ 'member@example.com': 'member', 'ada@example.com': 'member' }),
+    s = await setup(wt.weeklyThing);
+  assert.equal((await s.signUp(await s.newcomer('member@example.com'))).r.status, 200);
+  const uid = String(await s.store.userForEmail('member@example.com'));
+  assert.deepEqual((await s.store.profile(uid))!.giving, { 2026: { first: '2026-10-25', last: '2026-10-25' } });
+  assert.deepEqual(
+    (await s.store.activityAll(uid)).filter((r) => r.kind === 'badge.earned').map((r) => [r.badge, r.via, r.name]),
+    [['giving-2026', 'weekly-thing', 'Supported Signal']]
+  );
+
+  // An account from before the gate is looked at on a visit, then nine days on: the year widens, one row.
+  await s.call('GET', '/api/me', s.member);
+  assert.deepEqual((await s.store.profile('u'))!.giving, { 2026: { first: '2026-10-25', last: '2026-10-25' } });
+  s.ctx.now = now + RECHECK_SECONDS;
+  await s.call('GET', '/api/me', s.member);
+  assert.deepEqual((await s.store.profile('u'))!.giving, { 2026: { first: '2026-10-25', last: '2026-11-03' } });
+  assert.equal((await s.store.activityAll('u')).filter((r) => r.kind === 'badge.earned').length, 1);
+  const shelf = await s.call('GET', '/api/badges', s.member);
+  assert.ok((shelf.b.earned as Item[]).some((e) => e.key === 'giving-2026' && e.shelf === 'giving'));
+  assert.ok(!JSON.stringify(s.logs).includes('@example.com'));
+});
+
+test('a reader records no giving, and "Show badges" off records the year with no row', async () => {
+  const reader = await setup(lookup({ 'ada@example.com': 'reader' }).weeklyThing);
+  await reader.call('GET', '/api/me', reader.member);
+  assert.ok(!('giving' in (await reader.store.profile('u'))!));
+
+  const off = await setup(lookup({ 'ada@example.com': 'member' }).weeklyThing, { ...profile, badges: false });
+  await off.call('GET', '/api/me', off.member);
+  assert.ok((await off.store.profile('u'))!.giving);
+  assert.equal((await off.store.activityAll('u')).filter((r) => r.kind === 'badge.earned').length, 0);
+});

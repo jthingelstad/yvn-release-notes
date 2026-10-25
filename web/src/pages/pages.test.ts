@@ -1,9 +1,10 @@
-// The timeline's quiet runs, the pages' polling and the Map's filters.
+// The timeline's quiet runs, the pages' polling, the Map's filters and the book's giving line.
 import { describe, expect, it, vi } from 'vitest';
 import type { Day, Pin } from '../lib/types.ts';
 import { POLL, pollWhileWriting } from '../lib/queries.ts';
 import { groupQuiet } from './Timeline.tsx';
 import { moved, sift, type Live } from './Map.tsx';
+import { givingTo } from './Book.tsx';
 
 const day = (date: string, more: Partial<Day> = {}): Day => ({ date, version: '1.2.3', notes: [], ...more });
 const note = { id: 'w-1', source: 'web' as const, text: 'hi' };
@@ -209,5 +210,13 @@ describe('moved', () => {
     moved(now);
     moved(now);
     expect(map.fitBounds).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('givingTo', () => {
+  it("names the year's nonprofit, or says one goes each year before it is named", () => {
+    expect(givingTo(2026)).toBe('Signal this year');
+    expect(givingTo(2025)).toBe('the Electronic Frontier Foundation this year');
+    expect(givingTo(2099)).toBe('a nonprofit, a different one each year');
   });
 });

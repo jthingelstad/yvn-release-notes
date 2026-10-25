@@ -12,7 +12,8 @@ import { useMe, useQueryParam } from '../lib/nav.ts';
 import { MEMBERS_URL } from '../lib/weekly-thing.ts';
 import { releasesQuery } from '../lib/queries.ts';
 import type { BookPlan, BookStatus, Me } from '../lib/types.ts';
-import { MAX_TITLE, type PageSize } from '../../../packages/book/limits.ts';
+import { COMMENTARY_PER_RELEASE, MAX_TITLE, type PageSize } from '../../../packages/book/limits.ts';
+import { NONPROFITS } from '../../../packages/domain/giving.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const PICK = 'Pick a first and last day between your birthday and today, the first no later than the last.';
@@ -21,6 +22,9 @@ const PAGES: [PageSize, string, string][] = [
   ['letter', 'US Letter', '8½ by 11 inches, for printing at home']
 ];
 const pageName = (page?: PageSize) => PAGES.find(([v]) => v === page)?.[1] ?? '';
+// Where this year's memberships go, before Jamie has named it too.
+export const givingTo = (year: number) =>
+  NONPROFITS[year] ? `${NONPROFITS[year].full} this year` : 'a nonprofit, a different one each year';
 
 export function Book() {
   useTitle('Make a book');
@@ -231,9 +235,27 @@ function BookForm({ p, b }: { p: Me; b: BookStatus }) {
               </p>
             </div>
           ) : (
-            <p className="hint" id="book-commentary-members">
-              Commentary by Claude is a thank-you to <a href={MEMBERS_URL}>Supporting Members</a> of the Weekly Thing.
-            </p>
+            // Shown, off and dimmed, to anyone else, with what membership
+            // brings and where it goes (Jamie, 2026-10-25: "we are raising
+            // money for non-profits, we can be up front about the benefits").
+            <div className="stack tight">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  name="commentary"
+                  checked={false}
+                  disabled
+                  aria-describedby="book-commentary-members"
+                />{' '}
+                Add commentary by Claude
+              </label>
+              <p className="hint" id="book-commentary-members">
+                For Weekly Thing Supporting Members: Claude, an AI from Anthropic, reads the notes and writes an
+                introduction, a few lines to open each month, short notes beside some days and an afterword, in up to{' '}
+                {COMMENTARY_PER_RELEASE} books a release. Membership goes 100% to {givingTo(year)}.{' '}
+                <a href={MEMBERS_URL}>Become a Supporting Member</a>.
+              </p>
+            </div>
           )}
         </fieldset>
         <div className="stack tight">

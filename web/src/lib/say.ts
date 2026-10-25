@@ -70,9 +70,9 @@ export const SAY: Record<string, Line> = {
   'book-photos': `Those days have more photos than one book holds (${MAX_PHOTOS.toLocaleString('en-US')}). Pick fewer days.`,
   'book-failed': 'Couldn’t start the book just now. Try again in a minute.',
   'book-commentary-members': [
-    'Commentary by Claude is a thank-you to ',
-    { href: MEMBERS_URL, text: 'Supporting Members' },
-    ' of the Weekly Thing.'
+    'Commentary by Claude is for Weekly Thing Supporting Members, whose membership goes 100% to a nonprofit. ',
+    { href: MEMBERS_URL, text: 'Become a Supporting Member' },
+    '.'
   ],
   'book-commentary-days': 'Claude comments on up to a year of days at once. Pick fewer days, or leave it off.',
   'book-commentary-left': `That’s this release’s ${COMMENTARY_PER_RELEASE} books with commentary. More come with your birthday.`,

@@ -643,6 +643,12 @@ label.check {
   font-size: 16px;
   cursor: pointer;
 }
+/* A box that can't be ticked here, such as the book's commentary for anyone
+   but a Supporting Member, is dimmed with its words. */
+label.check:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 input[type='checkbox'] {
   accent-color: var(--orange);
   width: 20px;

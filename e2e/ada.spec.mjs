@@ -502,6 +502,30 @@ test('a book can have Claude’s commentary, counted against this release', asyn
   await expect(tick).not.toBeChecked();
 });
 
+test('anyone else sees the commentary box off and dimmed, and what membership brings', async ({ page }) => {
+  // The book as someone who isn't a Supporting Member gets it: no `commentary`.
+  await page.route('**/api/book', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const res = await route.fetch(),
+      { commentary: _, ...book } = await res.json();
+    await route.fulfill({ response: res, json: book });
+  });
+  await page.goto('/book/');
+  const tick = page.getByRole('checkbox', { name: 'Add commentary by Claude' });
+  await expect(tick).toBeDisabled();
+  await expect(tick).not.toBeChecked();
+  const about = page.locator('#book-commentary-members');
+  await expect(about).toContainText('For Weekly Thing Supporting Members');
+  await expect(about).toContainText('Membership goes 100% to');
+  await expect(about.getByRole('link', { name: 'Become a Supporting Member' })).toHaveAttribute(
+    'href',
+    'https://weekly.thingelstad.com/members/'
+  );
+  expect(
+    Number(await page.locator('label.check:has([name=commentary])').evaluate((l) => getComputedStyle(l).opacity))
+  ).toBeLessThan(1);
+});
+
 test('badges open from Today, with this release, the tracks and the shelf', async ({ page }) => {
   await page.goto('/today/');
   const link = page.locator('#badges-link');

@@ -91,7 +91,15 @@ export interface Rendered {
 export async function renderBook(
   plan: BookPlan,
   read: (key: string) => Promise<Buffer | null>,
-  options: { now: number; deadline?: number; clock?: () => number; parallel?: number }
+  options: {
+    now: number;
+    deadline?: number;
+    clock?: () => number;
+    parallel?: number;
+    /** Last words before typesetting, once the photos are made: the
+     * commentary, written meanwhile (commentary.ts). */
+    finish?: (data: BookData) => Promise<BookData>;
+  }
 ): Promise<Rendered> {
   const clock = options.clock ?? (() => Date.now() / 1000),
     made = new Map<string, Made>();
@@ -106,7 +114,7 @@ export async function renderBook(
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, options.parallel ?? 2) }, work));
-  const data: BookData = {
+  const pictured: BookData = {
     ...plan.data,
     counts: countLine(plan, made.size),
     chapters: plan.data.chapters.map((c) => ({
@@ -131,6 +139,7 @@ export async function renderBook(
       }))
     }))
   };
+  const data = options.finish ? await options.finish(pictured) : pictured;
   // A CommonJS package: Node names its exports, a loader may only give default.
   const typst = await import('@myriaddreamin/typst-ts-node-compiler'),
     { NodeCompiler } = typst.NodeCompiler ? typst : (typst as unknown as { default: typeof typst }).default,
@@ -200,7 +209,9 @@ export async function selfTest(): Promise<void> {
           range: '',
           versions: '0.0.0',
           counts: '',
-          chapters: [{ name: 'Self test', days: [{ version: '0.0.0', dateline: 'Self test', notes: [note] }] }],
+          chapters: [
+            { name: 'Self test', days: [{ day: '2000-01-01', version: '0.0.0', dateline: 'Self test', notes: [note] }] }
+          ],
           colophon: ['Self test.']
         },
         images: [

@@ -1,8 +1,10 @@
 // A Release Notes book: one subscriber's notes for a span of days, as a PDF
 // at 6 by 9 inches or US Letter (data.page, in inches, from data.ts). Every
 // word comes from /data.json as a string (render.ts), so no note is ever read
-// as markup; this template is the only code. Photos are /media/<file>,
-// already resized and stripped of EXIF by render.ts.
+// as markup; this template is the only code. Claude's commentary, when the
+// maker asked for it, is set apart: an aside with a rule, or a page of its
+// own. Photos are /media/<file>, already resized and stripped of EXIF by
+// render.ts.
 #let data = json("/data.json")
 #let page-size = data.page
 // Type and space grow with the page: sizes are the 6 by 9's, in points.
@@ -13,6 +15,8 @@
 #let ink3 = rgb("#6e7092")
 #let blue = rgb("#1a4fe0")
 #let orange = rgb("#ff5a1f")
+// Claude's commentary (commentary.ts) hangs from this rule, in ink2.
+#let rule = rgb("#c3d0f5")
 #let mono = "Martian Mono"
 // The front matter: the title page, and the contents when there are chapters.
 #let front = if data.chapters.len() > 1 { 2 } else { 1 }
@@ -89,6 +93,20 @@
     text(fill: ink3, s.text)
   } else { s.text }
 }
+// A piece of Claude's commentary, set apart from the notes.
+#let aside(paragraphs) = block(above: 1.2em, below: 0.4em, inset: (left: 0.9em), stroke: (left: 1.2pt + rule), {
+  block(below: 0.55em, kicker("Claude", fill: ink3))
+  set text(size: pt(9.75), fill: ink2)
+  for p in paragraphs { par(p) }
+})
+// The introduction and afterword: whole pages by Claude, in the contents.
+#let essay(name, paragraphs) = {
+  heading(level: 1, name)
+  block(below: 1.2em, kicker("By Claude", fill: ink3))
+  set text(fill: ink2)
+  for p in paragraphs { par(p) }
+}
+
 #let photos(rows) = for row in rows {
   block(above: 0.8em, below: 0.8em, width: 100%, align(center, stack(
     dir: ltr,
@@ -97,8 +115,14 @@
   )))
 }
 
+#if "introduction" in data {
+  essay("Introduction", data.introduction)
+  if front == 1 { pagebreak() }
+}
+
 #for chapter in data.chapters {
   if front == 2 [= #chapter.name]
+  if "opening" in chapter { aside(chapter.opening) }
   for day in chapter.days {
     block(sticky: true, above: 2.4em, below: 1em)[
       #version(day.version)
@@ -117,8 +141,11 @@
       }
       if note.files.len() > 0 { block(above: 0.6em, text(size: pt(8.5), fill: ink3, note.files.join(" · "))) }
     }
+    if "annotation" in day { aside(day.annotation) }
   }
 }
+
+#if "afterword" in data { essay("Afterword", data.afterword) }
 
 #page(header: none, footer: none)[
   #v(1fr)

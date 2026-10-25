@@ -82,9 +82,13 @@ export interface BookNote {
   files: string[];
 }
 export interface BookDay {
+  /** The day, YYYY-MM-DD, for the commentary to name; never printed. */
+  day: string;
   version: string;
   dateline: string;
   notes: BookNote[];
+  /** Claude's note beside the day, in paragraphs (commentary.ts). */
+  annotation?: string[];
 }
 export interface BookData {
   page: Page;
@@ -92,7 +96,10 @@ export interface BookData {
   range: string;
   versions: string;
   counts: string;
-  chapters: { name: string; days: BookDay[] }[];
+  /** Claude's introduction and afterword, in paragraphs (commentary.ts). */
+  introduction?: string[];
+  chapters: { name: string; days: BookDay[]; opening?: string[] }[];
+  afterword?: string[];
   colophon: string[];
 }
 export interface BookImage {
@@ -250,7 +257,7 @@ export async function bookPlan(
     const dateline = [longDate(day), view.weather ? String(view.weather) : city].filter(Boolean).join(' · '),
       name = monthName(day);
     if (chapters.at(-1)?.name !== name) chapters.push({ name, days: [] });
-    chapters.at(-1)!.days.push({ version: String(view.version), dateline, notes: kept });
+    chapters.at(-1)!.days.push({ day, version: String(view.version), dateline, notes: kept });
   }
   const days = chapters.reduce((sum, c) => sum + c.days.length, 0),
     birthday = String(p.birthday),

@@ -135,13 +135,14 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
 
 The credentials live in one Secrets Manager secret,
 `yvn-release-notes-runtime` (stack parameter `RuntimeSecretName`), a JSON
-object of `ANTHROPIC_API_KEY` (the describer) and `TURNSTILE_SECRET_KEY` (the
-web function), as the Librarian keeps `weekly-thing-librarian-runtime`. Jamie
+object of `ANTHROPIC_API_KEY` (the describer, and the export worker for a
+book's commentary) and `TURNSTILE_SECRET_KEY` (the web function), as the Librarian keeps `weekly-thing-librarian-runtime`. Jamie
 keeps it by hand in the console: the stack does not own it and no deploy
 writes it. Rotate a key by editing the secret: Turnstile picks a new value up
 when a container starts (an empty one is looked for again every five
 minutes, and until then every check records `unconfigured` and goes ahead);
-the describer reads it on each run.
+the describer reads it on each run, and the export worker for each book
+with commentary.
 
 The Weekly Thing gate needs no key: the web function asks the Librarian's
 public `/auth` (`https://librarian.thingelstad.com/auth`, `source:

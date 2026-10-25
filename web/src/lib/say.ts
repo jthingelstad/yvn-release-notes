@@ -1,5 +1,6 @@
 // What the pages say for each error the API (or the page) gives.
-import { MAX_PHOTOS, MAX_TITLE } from '../../../packages/book/limits.ts';
+import { COMMENTARY_PER_RELEASE, MAX_PHOTOS, MAX_TITLE } from '../../../packages/book/limits.ts';
+import { MEMBERS_URL } from './weekly-thing.ts';
 
 // A line: text, or strings and links. A link with `back` comes back to this
 // page after signing in again.
@@ -68,6 +69,13 @@ export const SAY: Record<string, Line> = {
   'book-empty': 'There are no notes in those days.',
   'book-photos': `Those days have more photos than one book holds (${MAX_PHOTOS.toLocaleString('en-US')}). Pick fewer days.`,
   'book-failed': 'Couldn’t start the book just now. Try again in a minute.',
+  'book-commentary-members': [
+    'Commentary by Claude is a thank-you to ',
+    { href: MEMBERS_URL, text: 'Supporting Members' },
+    ' of the Weekly Thing.'
+  ],
+  'book-commentary-days': 'Claude comments on up to a year of days at once. Pick fewer days, or leave it off.',
+  'book-commentary-left': `That’s this release’s ${COMMENTARY_PER_RELEASE} books with commentary. More come with your birthday.`,
   title: `A title is one line of at most ${MAX_TITLE} characters.`
 };
 

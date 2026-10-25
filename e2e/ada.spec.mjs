@@ -13,7 +13,8 @@
 // place, set and cleared, its weather following.
 // The standing address: shown in settings, copied, and replaced.
 // Releases: the Timeline's index, and a release's page, oldest first.
-// Books: one made from a release's page, and its PDF.
+// Books: one made from a release's page, and its PDF; one with commentary
+// by the dev server's fictional Claude, counted against this release.
 // Badges: reached from Today, the release's album, the tracks and the shelf;
 // a save's unlock line, and what a day and a release collected.
 // Activity: what the steps above did, reached from settings, and from the
@@ -484,6 +485,21 @@ test('a release makes a book of its days, a PDF to download', async ({ page }) =
   const file = await page.request.get(await page.locator('#book-file').getAttribute('href'));
   expect(file.headers()['content-type']).toBe('application/pdf');
   expect((await file.body()).subarray(0, 5).toString()).toBe('%PDF-');
+});
+
+test('a book can have Claude’s commentary, counted against this release', async ({ page }) => {
+  await page.goto('/release/?v=4.4');
+  await page.getByRole('link', { name: 'Make a book of this release' }).click();
+  const tick = page.getByRole('checkbox', { name: 'Add commentary by Claude' });
+  await expect(tick).not.toBeChecked();
+  await expect(page.locator('#book-commentary-about')).toContainText('never the photos, recordings or files');
+  await expect(page.locator('#book-commentary-left')).toContainText('10 of 10 left for 4.5');
+  await tick.check();
+  await page.getByRole('button', { name: 'Make the book' }).click();
+  await expect(page.locator('#book-status')).toContainText('with Claude’s commentary', { timeout: 20_000 });
+  await expect(page.locator('#book-status')).toContainText('Ready:', { timeout: 20_000 });
+  await expect(page.locator('#book-commentary-left')).toContainText('9 of 10 left for 4.5');
+  await expect(tick).not.toBeChecked();
 });
 
 test('badges open from Today, with this release, the tracks and the shelf', async ({ page }) => {

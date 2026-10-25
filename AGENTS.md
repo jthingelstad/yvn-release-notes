@@ -376,9 +376,25 @@ Where things are (each module's design comment has its contract):
   the PDF under `exports/`, gone with the account. Every word
   reaches the template as a string, never as markup. Photos are made anew,
   upright, with no EXIF or GPS; a photo's alt text is its description only
-  for a subscriber who turned descriptions on. No model writes or reads a
-  book. Typst's diagnostics can quote the words, so only a count of them is
-  kept and its errors are replaced by one fixed line.
+  for a subscriber who turned descriptions on. Typst's diagnostics can
+  quote the words, so only a count of them is kept and its errors are
+  replaced by one fixed line.
+- **Claude's commentary in a book** (Jamie, 2026-10-25: "As annotation and
+  commentary yes.", "Opus" and "how about 10 books a year (aka, major
+  verison?)"): a Supporting Member, or the administrator, may tick "Add
+  commentary by Claude" for a book, and the tick is the opt-in for that
+  book alone. No other book is read by a model. Claude Opus, through the
+  Anthropic API with the runtime secret's key, reads that book's words as
+  data (the notes, places, weather, file names, and the descriptions and
+  transcripts the subscriber turned on; never a photo, recording or file)
+  and writes an introduction, a few lines opening each month, short notes
+  beside some days and an afterword (`packages/book/commentary.ts`). Its
+  answer is checked field by field and set apart in the PDF, and the
+  colophon says whose it is. At most 10 finished books with it in each
+  release, the year of life it is made in, counted in the finish's own
+  write (`COMMENTARY#<age>`), so one that fails doesn't count; at most 366
+  days a book. Only the stop reason and token counts are logged, never a
+  word sent or written.
 - **Times:** each subscriber has an IANA `tz` and a `send_time` on a quarter
   hour (default 06:00, Jamie 2026-10-07: the email opens the day and replies
   come in through it). The day and the version are computed in their zone.

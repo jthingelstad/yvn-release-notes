@@ -293,13 +293,14 @@ test('the secret loader reads TURNSTILE_SECRET_KEY, retries a missing secret aft
   assert.equal(await createTurnstileSecret('')(), '');
 });
 
-test('the stack points the web function and describer at the runtime secret, and the CSP allows the challenge', async () => {
+test('the stack points the web function, describer and export worker at the runtime secret, and the CSP allows the challenge', async () => {
   const template = await readFile(new URL('../../infra/template.yaml', import.meta.url), 'utf8');
   assert.match(template, /RuntimeSecretName:\n\s+Type: String\n\s+Default: yvn-release-notes-runtime/);
   assert.match(template, /RUNTIME_SECRET: !Ref RuntimeSecretName/);
   assert.match(template, /SECRET: !Ref RuntimeSecretName/);
   assert.doesNotMatch(template, /SECRET: !Ref (Turnstile|Anthropic)SecretName/);
-  assert.equal(template.match(/secret:\$\{RuntimeSecretName\}-\?\?\?\?\?\?/g)?.length, 2);
+  // The web function, the describer and the export worker (a book's commentary).
+  assert.equal(template.match(/secret:\$\{RuntimeSecretName\}-\?\?\?\?\?\?/g)?.length, 3);
   assert.match(template, /TURNSTILE_MODE: !If \[HasTurnstileMode, !Ref TurnstileMode, !Ref AWS::NoValue\]/);
   assert.doesNotMatch(template, /(Turnstile|Anthropic)SecretName/);
   const csp = /ContentSecurityPolicy: !Sub "([^"]+)"/.exec(template)![1]!;

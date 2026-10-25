@@ -57,6 +57,11 @@ describe photos.
   page, and search finds words across every note.
 - **Opt-in extras.** Recordings written out (Amazon Transcribe) and photos
   described for search (Claude), each off until you turn it on.
+- **Books.** Any days you pick, typeset as a PDF to read or to print at 6
+  by 9 inches or on US Letter, with their photos, places and weather.
+  Supporting Members of the Weekly Thing can add Claude's commentary to up
+  to ten a year; ticking it sends that book's words to Anthropic, never its
+  photos, recordings or files.
 - **Bring your journal.** A Day One export can be imported.
 - **Yours to keep.** Export everything any time: a zip with every note, as
   Markdown and JSON, and every photo and recording.

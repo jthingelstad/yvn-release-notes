@@ -1533,7 +1533,7 @@ Resources:
     DependsOn: NativeSourcePolicy
     Properties:
       FunctionName: !Sub "${AWS::StackName}-export"
-      Description: Builds a subscriber's zip export with every photo and recording
+      Description: Builds a subscriber's zip export, or a book of their notes as a PDF
       Runtime: nodejs24.x
       Architectures: [arm64]
       Handler: index.handler
@@ -1541,14 +1541,16 @@ Resources:
         S3Bucket: !Ref NativeSourceBucket
         S3Key: !Sub "native/workers/export/${ExportCode}.zip"
       Role: !GetAtt ExportRole.Arn
-      MemorySize: 1024
+      # A book decodes and resizes up to 1,000 photos (a 12 MP HEIC is about
+      # 1.4 s of a full core) and typesets them; CPU comes with memory.
+      MemorySize: 3008
       Timeout: 900
       # At most two builds at once, whoever asks. A build started past that
       # is throttled, and Lambda tries an async event again for up to six
       # hours (MaximumRetryAttempts counts function errors, not throttles).
       ReservedConcurrentExecutions: 2
-      # The zip is written to local disk before it is uploaded. Billed only
-      # while a build runs.
+      # The zip or book is written to local disk before it is uploaded.
+      # Billed only while a build runs.
       EphemeralStorage:
         Size: 10240
       LoggingConfig:
@@ -2272,7 +2274,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "${AWS::StackName}-export-errors"
-      AlarmDescription: A zip export failed to build. The page says so and offers to try again.
+      AlarmDescription: A zip export or a book failed to build. The page says so and offers to try again.
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions: [{ Name: FunctionName, Value: !Ref ExportFunction }]

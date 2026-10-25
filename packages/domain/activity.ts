@@ -43,7 +43,8 @@
  *   paused day, or null when it ended before it began).
  * - status.stopped: `reason` (unsubscribed, or bounce or complaint from the
  *   mail service); status.restarted: `reason` (why it had stopped).
- * - signin: `how` (link or code). export.words: `format`; export.zip.
+ * - signin: `how` (link or code). export.words: `format`; export.zip;
+ *   export.book: `from`, `to` (the book's first and last day).
  * - address.created, address.replaced; calendar.created, calendar.replaced,
  *   calendar.removed: never the address or link.
  * - connection.added: `connection`, `client`, `scopes`; connection.changed:

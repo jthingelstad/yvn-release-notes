@@ -91,8 +91,12 @@ Where things are (each module's design comment has its contract):
 - `packages/mail/`: MIME parsing and every email. `packages/backend/`: the
   table, sign-in and sessions, files, thumbnails, places, weather, links,
   OAuth, opt-in processing, Day One, exports and the count-only census.
-  Sharp stays in the thumbnail and image code and is packaged only with the
-  describe worker.
+  Sharp stays in the thumbnail and image code and the book's photos, and is
+  packaged only with the describe and export workers; Typst only with the
+  export worker (`NATIVE` in `tools/package-native.ts`).
+- `packages/book/`: the book, a PDF of any span of days (`data.ts` its
+  words, `render.ts` its photos and the PDF, `assets/` the one Typst
+  template and its fonts, with their licenses).
 - `server/app/` is the HTTP API, `server/mcp/` the separate MCP server,
   `workers/` the Event Function handlers, `packages/testing/` the fictional
   fakes, and `tools/dev-server.ts` serves the built app and the real API
@@ -352,12 +356,25 @@ Where things are (each module's design comment has its contract):
 - **Pauses** are dated (`PAUSE#<from>`, at most 60 days) and end on their
   own; stopping does not. Paused days neither break a streak nor add to it.
 - **Deleting an account deletes it**, after a code mailed to the address:
-  raw emails, files, any export, tokens, the standing address, every `USER#`
-  item, every session, the address's codes and the profile. Nothing is kept;
-  the export is offered first. Old file versions expire 30 days later. A
-  deletion code only deletes and a sign-in code only signs in.
+  raw emails, files, any export or book, tokens, the standing address,
+  every `USER#` item, every session, the address's codes and the profile.
+  Nothing is kept; the export is offered first. Old file versions expire 30
+  days later. A deletion code only deletes and a sign-in code only signs in.
 - **The export is a zip** (Jamie, 2026-10-08): the Markdown and JSON plus
   every file. The words alone come straight from `/api/export`.
+- **A book** (Jamie, 2026-10-25: "Approved: build step 1 of the Release
+  Notes book (screen PDF from any date range)"): `/book/` makes a 6 by 9
+  inch PDF of any days the owner picks, typeset by the export worker with
+  Typst. It is a thank-you to Supporting Members (`weekly_thing` `member`;
+  the yearbook was one of the member perks Jamie picked that day) and the
+  configured administrator may make one. One at a time, at most 1,000
+  photos (`packages/book/limits.ts`), offered for a day: `BOOK` beside
+  `EXPORT`, the PDF under `exports/`, gone with the account. Every word
+  reaches the template as a string, never as markup. Photos are made anew,
+  upright, with no EXIF or GPS; a photo's alt text is its description only
+  for a subscriber who turned descriptions on. No model writes or reads a
+  book. Typst's diagnostics can quote the words, so only a count of them is
+  kept and its errors are replaced by one fixed line.
 - **Times:** each subscriber has an IANA `tz` and a `send_time` on a quarter
   hour (default 06:00, Jamie 2026-10-07: the email opens the day and replies
   come in through it). The day and the version are computed in their zone.

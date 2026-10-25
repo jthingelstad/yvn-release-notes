@@ -83,7 +83,7 @@ else if (args[0] === 'status' || args[0] === 'fetch') record('git');`,
   gh: `record('gh'); if (args[0] === 'run') console.log(process.env.FIXTURE_RUNNING ? '1' : '0');
 else console.log(process.env.FIXTURE_RED ? '0' : '1');`,
   npm: `record('npm'); if (process.env.FIXTURE_FAILURE === 'verify' && args.includes('verify')) process.exit(18);
-if (args.includes('--os=linux')) for (const name of ['sharp', '@img/colour', '@img/sharp-linux-arm64', '@img/sharp-libvips-linux-arm64', 'detect-libc', 'semver', 'unrelated']) {
+if (args.includes('--os=linux')) for (const name of ['sharp', '@img/colour', '@img/sharp-linux-arm64', '@img/sharp-libvips-linux-arm64', 'detect-libc', 'semver', '@myriaddreamin/typst-ts-node-compiler', '@myriaddreamin/typst-ts-node-compiler-linux-arm64-gnu', '@myriaddreamin/typst-ts-node-compiler-darwin-arm64', 'unrelated']) {
   fs.mkdirSync(path.join('node_modules', name), { recursive: true }); fs.writeFileSync(path.join('node_modules', name, 'package.json'), '{}'); }
 if (args.includes('verify')) { fs.mkdirSync('dist/web/assets', { recursive: true }); fs.writeFileSync('dist/web/index.html', 'fictional');
   fs.mkdirSync('dist/release', { recursive: true }); fs.writeFileSync('dist/release/index.js', ''); }`
@@ -551,7 +551,7 @@ test('build-release.sh stages only Sharp’s Linux Arm64 closure and refuses to 
       header +
         `const modules = args[args.indexOf('--native-modules') + 1], out = args[args.indexOf('--out') + 1], closure = [];
 for (const name of fs.readdirSync(modules).sort())
-  if (name === '@img') for (const sub of fs.readdirSync(path.join(modules, name)).sort()) closure.push(name + '/' + sub); else closure.push(name);
+  if (name.startsWith('@')) for (const sub of fs.readdirSync(path.join(modules, name)).sort()) closure.push(name + '/' + sub); else closure.push(name);
 record('package', { closure });
 fs.mkdirSync(out, { recursive: true }); fs.writeFileSync(path.join(out, 'manifest.json'), '{}');`
     );
@@ -562,6 +562,8 @@ fs.mkdirSync(out, { recursive: true }); fs.writeFileSync(path.join(out, 'manifes
       '@img/colour',
       '@img/sharp-libvips-linux-arm64',
       '@img/sharp-linux-arm64',
+      '@myriaddreamin/typst-ts-node-compiler',
+      '@myriaddreamin/typst-ts-node-compiler-linux-arm64-gnu',
       'detect-libc',
       'semver',
       'sharp'

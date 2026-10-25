@@ -293,6 +293,10 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
       return [`Downloaded your notes as ${e.format === 'md' ? 'Markdown' : 'JSON'}`];
     case 'export.zip':
       return ['Started a download of everything'];
+    case 'export.book':
+      return [
+        e.from && e.to ? `Started a book of ${dayName(e.from, year)} through ${dayName(e.to, year)}` : 'Started a book'
+      ];
     case 'address.created':
       return ['Made your standing address'];
     case 'address.replaced':

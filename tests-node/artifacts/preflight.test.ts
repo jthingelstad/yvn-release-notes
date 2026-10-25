@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { CloudFormationClient } from '@aws-sdk/client-cloudformation';
 import { S3Client, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { packageRelease, workerNames, type Manifest } from '../../tools/package-native.ts';
+import { SHARP, TYPST, packageRelease, workerNames, type Manifest } from '../../tools/package-native.ts';
 import { codeParameter, keyFor, uploadArtifacts } from '../../tools/native-artifacts.ts';
 
 const commit = 'a'.repeat(40);
@@ -21,8 +21,10 @@ async function built(run: (out: string, manifest: Manifest) => Promise<void>) {
       await mkdir(join(dir, 'build', folder), { recursive: true });
       await writeFile(join(dir, 'build', folder, 'index.js'), `export const name = '${folder}';\n`);
     }
-    await mkdir(join(dir, 'modules/sharp'), { recursive: true });
-    await writeFile(join(dir, 'modules/sharp/package.json'), '{}\n');
+    for (const name of [...SHARP, ...TYPST]) {
+      await mkdir(join(dir, 'modules', name), { recursive: true });
+      await writeFile(join(dir, 'modules', name, 'package.json'), '{}\n');
+    }
     const manifest = await packageRelease(join(dir, 'build'), join(dir, 'modules'), join(dir, 'out'));
     await run(join(dir, 'out'), manifest);
   } finally {

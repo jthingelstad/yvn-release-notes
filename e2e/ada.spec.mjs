@@ -13,6 +13,7 @@
 // place, set and cleared, its weather following.
 // The standing address: shown in settings, copied, and replaced.
 // Releases: the Timeline's index, and a release's page, oldest first.
+// Books: one made from a release's page, and its PDF.
 // Badges: reached from Today, the release's album, the tracks and the shelf;
 // a save's unlock line, and what a day and a release collected.
 // Activity: what the steps above did, reached from settings, and from the
@@ -461,6 +462,23 @@ test('the timeline lists the releases, and a release shows its days oldest first
   // A release not begun goes back to the Timeline.
   await page.goto('/release/?v=9.9');
   await expect(page).toHaveURL(/\/timeline\/$/);
+});
+
+test('a release makes a book of its days, a PDF to download', async ({ page }) => {
+  // Ada is the dev server's administrator, who may make one.
+  await page.goto('/release/?v=4.4');
+  await page.getByRole('link', { name: 'Make a book of this release' }).click();
+  await expect(page).toHaveURL(/\/book\/\?from=\d{4}-06-14&to=\d{4}-06-13$/);
+  await expect(page.locator('select[name=release]')).toHaveValue('4.4');
+  await expect(page.locator('#book-plan')).toHaveText('1 day · 1 note');
+  await expect(page.locator('input[name=title]')).toHaveAttribute('placeholder', '4.4');
+  await page.locator('input[name=title]').fill('The bike');
+  await page.getByRole('button', { name: 'Make the book' }).click();
+  await expect(page.locator('#book-status')).toContainText('Ready: “The bike”', { timeout: 20_000 });
+  await expect(page.locator('#book-form')).toBeVisible();
+  const file = await page.request.get(await page.locator('#book-file').getAttribute('href'));
+  expect(file.headers()['content-type']).toBe('application/pdf');
+  expect((await file.body()).subarray(0, 5).toString()).toBe('%PDF-');
 });
 
 test('badges open from Today, with this release, the tracks and the shelf', async ({ page }) => {

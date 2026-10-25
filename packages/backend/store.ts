@@ -24,6 +24,10 @@
  * days a Weekly Thing lookup saw a Supporting Member (domain/giving.ts):
  * only ever widened, one conditional step at a time (`widenGiving`), gone
  * with the profile.
+ * USER#<owner> / BOOK is the PDF book's build (packages/book), as EXPORT is
+ * the zip's: the span asked for (`from`, `to`, `title`), and once made its
+ * file under exports/ (`export_key`), size, pages and photos, offered for a
+ * day. One at a time; deleted with the account like the zip.
  * USER#<owner> / BADGES holds `seen`, a string set of the badges (`id` or
  * `id:tier`) already celebrated, so the email names each once
  * (docs/BADGES.md). Only ever ADDed to, with the account proof; deleted
@@ -74,6 +78,25 @@ const key = (user: string, sk: string): Key => ({ pk: `USER#${user}`, sk });
 import { writtenAt as written } from '../domain/notes.ts';
 import { givingYears, type GivingYear } from '../domain/giving.ts';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+export type ExportSlot = 'EXPORT' | 'BOOK';
+/** Sets `fields` on a build's row while it is still that build, building. */
+function finishing(id: string, fields: Item) {
+  const entries = Object.entries(fields);
+  return {
+    UpdateExpression: 'SET ' + entries.map((_, i) => `#f${i} = :v${i}`).join(', '),
+    ConditionExpression: '#id = :id AND #s = :b',
+    ExpressionAttributeNames: {
+      '#id': 'id',
+      '#s': 'status',
+      ...Object.fromEntries(entries.map(([k], i) => [`#f${i}`, k]))
+    },
+    ExpressionAttributeValues: {
+      ':id': id,
+      ':b': 'building',
+      ...Object.fromEntries(entries.map(([, v], i) => [`:v${i}`, v]))
+    }
+  };
+}
 const conditionFailed = (e: unknown) => e instanceof Error && e.name === 'ConditionalCheckFailedException';
 function reasons(e: unknown): { Code?: string }[] {
   return (e as { CancellationReasons?: { Code?: string }[] })?.CancellationReasons ?? [];
@@ -1624,54 +1647,30 @@ export class Store {
       throw e;
     }
   }
-  async export(user: string) {
-    return this.get(key(user, 'EXPORT'));
+  /** The zip export (EXPORT) or the PDF book (BOOK): one build of each at a
+   * time, the newer start replacing the older, each finished only by the
+   * build that started it. */
+  async export(user: string, slot: ExportSlot = 'EXPORT') {
+    return this.get(key(user, slot));
   }
-  async startExport(user: string, id: string, now: number, expires: number) {
-    await this.put({ ...key(user, 'EXPORT'), id, status: 'building', started_at: now, expires_at: expires });
+  async startExport(
+    user: string,
+    id: string,
+    now: number,
+    expires: number,
+    slot: ExportSlot = 'EXPORT',
+    fields: Item = {}
+  ) {
+    await this.put({ ...fields, ...key(user, slot), id, status: 'building', started_at: now, expires_at: expires });
   }
-  async finishExportGuarded(user: string, id: string, fields: Item): Promise<boolean> {
-    const entries = Object.entries(fields);
+  async finishExportGuarded(user: string, id: string, fields: Item, slot: ExportSlot = 'EXPORT'): Promise<boolean> {
     return this.provedTransaction([
       this.profileProof(user),
-      {
-        Update: {
-          TableName: this.tableName,
-          Key: key(user, 'EXPORT'),
-          UpdateExpression: 'SET ' + entries.map((_, i) => `#f${i} = :v${i}`).join(', '),
-          ConditionExpression: '#id = :id AND #s = :b',
-          ExpressionAttributeNames: {
-            '#id': 'id',
-            '#s': 'status',
-            ...Object.fromEntries(entries.map(([k], i) => [`#f${i}`, k]))
-          },
-          ExpressionAttributeValues: {
-            ':id': id,
-            ':b': 'building',
-            ...Object.fromEntries(entries.map(([, v], i) => [`:v${i}`, v]))
-          }
-        }
-      }
+      { Update: { TableName: this.tableName, Key: key(user, slot), ...finishing(id, fields) } }
     ]);
   }
-  async finishExport(user: string, id: string, fields: Item) {
-    const entries = Object.entries(fields);
-    return this.conditional(() =>
-      this.update(key(user, 'EXPORT'), {
-        UpdateExpression: 'SET ' + entries.map((_, i) => `#f${i} = :v${i}`).join(', '),
-        ConditionExpression: '#id = :id AND #s = :b',
-        ExpressionAttributeNames: {
-          '#id': 'id',
-          '#s': 'status',
-          ...Object.fromEntries(entries.map(([k], i) => [`#f${i}`, k]))
-        },
-        ExpressionAttributeValues: {
-          ':id': id,
-          ':b': 'building',
-          ...Object.fromEntries(entries.map(([, v], i) => [`:v${i}`, v]))
-        }
-      })
-    );
+  async finishExport(user: string, id: string, fields: Item, slot: ExportSlot = 'EXPORT') {
+    return this.conditional(() => this.update(key(user, slot), finishing(id, fields)));
   }
   async userItems(user: string) {
     return this.rows({ KeyConditionExpression: 'pk = :u', ExpressionAttributeValues: { ':u': `USER#${user}` } });

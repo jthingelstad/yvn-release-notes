@@ -28,15 +28,18 @@ cd "$SRC"
 npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
 npm run verify
 
-# Sharp's Linux Arm64 runtime for the describer: the committed lock installed
-# again for Linux Arm64 in a separate tree, on any build host. Only Sharp's
-# runtime closure is copied; no host binaries or install scripts.
+# The native Linux Arm64 runtimes, Sharp (the describer and the export
+# worker) and Typst (the export worker's books): the committed lock installed
+# again for Linux Arm64 in a separate tree, on any build host. Only their
+# runtime closures are copied, and tools/package-native.ts gives each worker
+# only its own; no host binaries or install scripts.
 cp package.json package-lock.json "$STAGE/"
 (cd "$STAGE" && npm ci --ignore-scripts --omit=dev --os=linux --cpu=arm64 --libc=glibc \
   --no-audit --no-fund --loglevel=error) \
   || { echo "Linux Arm64 runtime staging failed" >&2; exit 1; }
-mkdir -p "$STAGE/native-modules/@img"
-for package in sharp @img/colour @img/sharp-linux-arm64 @img/sharp-libvips-linux-arm64 detect-libc semver; do
+mkdir -p "$STAGE/native-modules/@img" "$STAGE/native-modules/@myriaddreamin"
+for package in sharp @img/colour @img/sharp-linux-arm64 @img/sharp-libvips-linux-arm64 detect-libc semver \
+  @myriaddreamin/typst-ts-node-compiler @myriaddreamin/typst-ts-node-compiler-linux-arm64-gnu; do
   [[ -d "$STAGE/node_modules/$package" && ! -L "$STAGE/node_modules/$package" ]] \
     || { echo "refusing: missing or linked native runtime package $package" >&2; exit 1; }
   cp -R "$STAGE/node_modules/$package" "$STAGE/native-modules/$package"

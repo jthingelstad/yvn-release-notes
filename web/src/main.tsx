@@ -153,6 +153,11 @@ const behind = [
   }),
   createRoute({
     getParentRoute: () => signedInRoute,
+    ...page('/book', () => import('./pages/Book.tsx'), 'Book'),
+    loader: ({ context }: Ctx) => context.queryClient.prefetchQuery(releasesQuery)
+  }),
+  createRoute({
+    getParentRoute: () => signedInRoute,
     ...page('/badges', () => import('./pages/Badges.tsx'), 'Badges'),
     loader: ({ context }: Ctx) => context.queryClient.prefetchQuery(badgesQuery)
   }),

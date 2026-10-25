@@ -202,6 +202,38 @@ export interface ZipStatus {
   files?: number;
 }
 
+// GET /api/book: whether this account may make a book, and the one it is
+// making or made, offered for a day. `reason: 'empty'` is a book whose days
+// had no notes by the time it was made.
+export interface BookStatus {
+  may: boolean;
+  today: string;
+  status: 'none' | 'building' | 'ready' | 'failed';
+  from?: string;
+  to?: string;
+  title?: string;
+  reason?: 'empty';
+  size?: number;
+  pages?: number;
+  photos?: number;
+  missing?: number;
+  built_at?: string;
+  until?: string;
+}
+
+// GET /api/book/plan: what a span of days holds, and the title a book of it
+// gets unless one is typed.
+export interface BookPlan {
+  from: string;
+  to: string;
+  title: string;
+  days: number;
+  notes: number;
+  photos: number;
+  memos: number;
+  max_photos: number;
+}
+
 // GET /api/activity: the account's activity log, newest first, a page at a
 // time; `next` is the `before` of the page after, or null. A mail row keeps
 // `text` only when it wasn't filed and its sender was proven.

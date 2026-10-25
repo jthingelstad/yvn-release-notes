@@ -403,11 +403,15 @@ whether "Show badges" is on or off. Search is in the header, not a tab: a
 name in the rail, named "Search notes" either way; its page opens with the
 box focused when nothing has been asked yet. `/you/` holds Badges (gone
 with "Show badges" off), Activity and Settings, with Sign out on a phone,
-where the rail's button is not. `placeOf` in `components/common.tsx` marks
-each page's place with `aria-current="page"`: Day and Release mark Archive;
-Badges, Activity, Settings, Connect, Pause, Delete and the two admin pages
-mark You; Search and Tag mark the header's search and no tab; Edit as text
-marks Upcoming. The admin pages are never in the navigation.
+where the rail's button is not. The rail adds one place the tabs don't
+(Jamie, 2026-10-25: "on mobile I would put it inside of Archive? On desktop
+I'd put it on it's own in the rail"): "Make a book", below You. On a phone
+the Archive links to it and the book page's crumb leads back there.
+`placeOf` in `components/common.tsx` marks each page's place with
+`aria-current="page"`: Day and Release mark Archive, and so does Book on a
+phone; Badges, Activity, Settings, Connect, Pause, Delete and the two admin
+pages mark You; Search and Tag mark the header's search and no tab; Edit
+as text marks Upcoming. The admin pages are never in the navigation.
 
 **The page system** (2026-10-24, the design refinement canvas,
 https://claude.ai/artifact/D6yGSqSTcDuQAQ7VjwRbhF): one 720px column (the

@@ -57,6 +57,11 @@ export function Timeline() {
           <Icon name="tags" />
           Tags
         </AppLink>
+        {/* The rail has its own "Make a book"; a phone's tabs don't. */}
+        <AppLink className="quiet phone-only" href="/book/">
+          <Icon name="book" />
+          Make a book
+        </AppLink>
       </div>
       <Releases />
 

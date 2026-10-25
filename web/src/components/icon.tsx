@@ -8,6 +8,7 @@ import {
   ArrowLeftRight,
   Award,
   Binary,
+  BookOpen,
   Bot,
   Cake,
   CalendarDays,
@@ -99,7 +100,8 @@ const icons = {
   event: CalendarDays,
   mail: Mail,
   assistant: Bot,
-  download: Download
+  download: Download,
+  book: BookOpen
 };
 export type IconName = keyof typeof icons;
 

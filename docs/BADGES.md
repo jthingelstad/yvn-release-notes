@@ -262,7 +262,8 @@ shows, the page marks it told (`POST /api/badges/seen`), so the email
 doesn't repeat it; a failed mark only means seeing it again next visit.
 A save's refresh doesn't read it again (it would come back told, and
 empty), and signing out forgets it, so another account signing in to the
-same tab hears its own and marks them.
+same tab hears its own and marks them. Turning "Show badges" off drops it
+from the page at once.
 It reads `seen` as the sender does (`untold` in `packages/domain/badges.ts`):
 a track's tiers as the highest, and nothing with "Show badges" off.
 

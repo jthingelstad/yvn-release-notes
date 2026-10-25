@@ -127,12 +127,16 @@
     if start.len() == 0 or n < start.first().location().page() { return }
     if query(heading.where(level: 1)).any(h => h.location().page() == n) { return }
     let index = query(<index>)
+    // The days that open on this page, and the one it goes on with, if any.
     let shown = if index.len() > 0 and n >= index.first().location().page() { () } else {
-      let here-days = query(<day>).filter(m => m.location().page() == n).map(m => m.value)
-      if here-days.len() == 0 {
-        let before = query(selector(<day>).before(here()))
-        if before.len() > 0 { (before.last().value,) } else { () }
-      } else { here-days }
+      let marks = query(<day>)
+      let opening = marks.filter(m => m.location().page() == n)
+      let before = marks.filter(m => m.location().page() < n)
+      let top = page-size.top * 1in + 6pt
+      let continued = (
+        before.len() > 0 and (opening.len() == 0 or opening.first().location().position().y > top)
+      )
+      (if continued { (before.last().value,) } else { () }) + opening.map(m => m.value)
     }
     let range = if shown.len() == 0 { none } else if shown.first() == shown.last() { shown.first() } else {
       shown.first() + " to " + shown.last()

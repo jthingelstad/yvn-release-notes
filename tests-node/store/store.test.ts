@@ -488,7 +488,7 @@ test('a finished book with commentary is counted against its release in the same
   assert.equal(await s.commentaryMade('u', 45), 0);
   assert.deepEqual(s.memory.calls.at(-1), {
     name: 'GetCommand',
-    input: { TableName: 'T', Key: { pk: 'USER#u', sk: 'COMMENTARY#45' } }
+    input: { TableName: 'T', Key: { pk: 'USER#u', sk: 'COMMENTARY#45' }, ConsistentRead: true }
   });
   await s.startExport('u', 'book', 2, 102, 'BOOK', {
     from: '2026-01-03',

@@ -7,12 +7,15 @@ import { api } from '../lib/api.ts';
 import { meQuery, newBadgesQuery } from '../lib/queries.ts';
 import { AppLink } from './common.tsx';
 import { BadgeIcon } from './icon.tsx';
+import type { NewBadges as Untold } from '../lib/types.ts';
 import { NONPROFITS } from '../../../packages/domain/giving.ts';
 
 // At most this many named, the rest a count.
 const SHOWN = 3;
-// What this tab has already marked told, so a page drawn again posts nothing.
-const told = new Set<string>();
+// The answers this tab has marked told, so a page drawn again posts nothing.
+// By answer, not badge: signing out clears the cache, so the next account
+// in this tab gets an answer of its own, and marks its own.
+const told = new WeakSet<Untold>();
 
 // Jamie, 2026-10-25: "when you come to the website and there is a badge
 // since your last visit that should get special attention!" Shown once:
@@ -21,15 +24,14 @@ const told = new Set<string>();
 export function NewBadges() {
   const client = useQueryClient();
   const q = useQuery(newBadgesQuery);
-  const news = q.data?.badges ?? [];
-  const keys = q.data?.keys;
+  const answer = q.data;
+  const news = answer?.badges ?? [];
   useEffect(() => {
-    const fresh = (keys ?? []).filter((k) => !told.has(k));
-    if (!fresh.length) return;
-    fresh.forEach((k) => told.add(k));
+    if (!answer?.keys.length || told.has(answer)) return;
+    told.add(answer);
     // A failed write only means hearing of it again next visit.
-    void api('POST', '/api/badges/seen', { keys: fresh }).catch(() => undefined);
-  }, [keys]);
+    void api('POST', '/api/badges/seen', { keys: answer.keys }).catch(() => undefined);
+  }, [answer]);
   if (!news.length) return null;
   const close = () => client.setQueryData(newBadgesQuery.queryKey, { badges: [], keys: [] });
   const more = news.length - SHOWN;

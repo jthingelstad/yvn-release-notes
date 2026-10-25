@@ -542,7 +542,11 @@ test('a badge earned since the last visit is welcomed once, then marked told', a
     keys: ['giving-2026', 'hello']
   };
   const told = [];
-  await page.route('**/api/badges/new', (route) => route.fulfill({ json: news }));
+  let asked = 0;
+  await page.route('**/api/badges/new', (route) => {
+    asked += 1;
+    return route.fulfill({ json: news });
+  });
   await page.route('**/api/badges/seen', (route) => {
     told.push(route.request().postDataJSON());
     return route.fulfill({ json: { seen: 2 } });
@@ -555,6 +559,16 @@ test('a badge earned since the last visit is welcomed once, then marked told', a
     /^Hello, world, 4\.5\.11Your first note\.$/
   ]);
   await expect.poll(() => told).toEqual([{ keys: ['giving-2026', 'hello'] }]);
+  // A save refreshes the page's data, not this: read again, it would be told
+  // and empty. (The save is answered here, so Ada's day is left as it was.)
+  await page.route('**/api/days/*/notes', (route) =>
+    route.request().method() === 'POST' ? route.fulfill({ status: 201, json: { unlocked: [] } }) : route.continue()
+  );
+  await page.getByRole('textbox', { name: 'Add to today', exact: true }).fill('A note while welcomed.');
+  await page.getByRole('button', { name: 'Save note', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Add to today', exact: true })).toHaveValue('');
+  await expect(welcome).toBeVisible();
+  expect(asked).toBe(1);
   // It stays from page to page, told only the once, until it is closed.
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Archive' }).click();
   await expect(page).toHaveURL(/\/timeline\/$/);
@@ -562,6 +576,33 @@ test('a badge earned since the last visit is welcomed once, then marked told', a
   await welcome.getByRole('button', { name: 'Close' }).click();
   await expect(welcome).toHaveCount(0);
   expect(told).toHaveLength(1);
+});
+
+test('signing out forgets the welcome, so the next account in the tab marks its own', async ({ page }) => {
+  // The rail's Sign out is the desktop layout's.
+  await page.setViewportSize({ width: 1200, height: 900 });
+  const news = {
+    badges: [{ key: 'hello', id: 'hello', name: 'Hello, world', line: 'Your first note.', version: '4.5.11' }],
+    keys: ['hello']
+  };
+  const told = [];
+  await page.route('**/api/badges/new', (route) => route.fulfill({ json: news }));
+  await page.route('**/api/badges/seen', (route) => {
+    told.push(route.request().postDataJSON());
+    return route.fulfill({ json: { seen: 1 } });
+  });
+  // Ada's shared session outlives this sign-out, so /#sign-in finds someone
+  // signed in and goes on in this tab: as another account would, the cache
+  // cleared and the same badge keys earned.
+  await page.route('**/api/auth/signout', (route) => route.fulfill({ json: {} }));
+  await page.goto('/today/');
+  const welcome = page.locator('#welcome-badges');
+  await expect(welcome).toBeVisible();
+  await expect.poll(() => told).toEqual([{ keys: ['hello'] }]);
+  await page.locator('.bar--app .rail-signout').click();
+  await expect(page).toHaveURL(/\/today\/$/);
+  await expect(welcome).toBeVisible();
+  await expect.poll(() => told).toEqual([{ keys: ['hello'] }, { keys: ['hello'] }]);
 });
 
 test('a Supporting Member has a mark in the rail above Sign out', async ({ page }) => {

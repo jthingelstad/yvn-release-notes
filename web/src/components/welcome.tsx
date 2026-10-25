@@ -20,12 +20,14 @@ const told = new WeakSet<Untold>();
 // Jamie, 2026-10-25: "when you come to the website and there is a badge
 // since your last visit that should get special attention!" Shown once:
 // it is marked seen as it shows, so the email doesn't tell it again, and it
-// stays from page to page until it is closed or its page is opened.
+// stays from page to page until it is closed or its page is opened, or
+// "Show badges" is turned off (read once a visit, so the profile says when).
 export function NewBadges() {
   const client = useQueryClient();
   const q = useQuery(newBadgesQuery);
+  const shown = useQuery(meQuery).data?.badges !== false;
   const answer = q.data;
-  const news = answer?.badges ?? [];
+  const news = shown ? (answer?.badges ?? []) : [];
   useEffect(() => {
     if (!answer?.keys.length || told.has(answer)) return;
     told.add(answer);

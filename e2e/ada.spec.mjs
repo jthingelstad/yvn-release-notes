@@ -578,6 +578,40 @@ test('a badge earned since the last visit is welcomed once, then marked told', a
   expect(told).toHaveLength(1);
 });
 
+test('"Show badges" turned off drops a welcome already showing', async ({ page }) => {
+  const news = {
+    badges: [{ key: 'hello', id: 'hello', name: 'Hello, world', line: 'Your first note.', version: '4.5.11' }],
+    keys: ['hello']
+  };
+  await page.route('**/api/badges/new', (route) => route.fulfill({ json: news }));
+  await page.route('**/api/badges/seen', (route) => route.fulfill({ json: { seen: 1 } }));
+  // The setting is answered here, so Ada's own stays on for the tests after.
+  let off = false;
+  await page.route('**/api/me', async (route) => {
+    const req = route.request();
+    if (req.method() === 'PUT') off = req.postDataJSON().badges === false;
+    else if (req.method() !== 'GET' || !off) return route.continue();
+    const me = await (await page.request.get('/api/me')).json();
+    await route.fulfill({ json: { ...me, badges: !off } });
+  });
+  await page.goto('/today/');
+  const welcome = page.locator('#welcome-badges');
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  await expect(welcome).toBeVisible();
+  await nav.getByRole('link', { name: 'You' }).click();
+  await page.locator('#you-settings').click();
+  await expect(page).toHaveURL(/\/settings\/$/);
+  await expect(welcome).toBeVisible();
+  await page.locator('#writing-settings > summary').click();
+  await page.getByLabel('Show badges').setChecked(false);
+  await expect(page.locator('#badges-saved')).toBeVisible();
+  await expect(welcome).toHaveCount(0);
+  await nav.getByRole('link', { name: 'Today' }).click();
+  await expect(page).toHaveURL(/\/today\/$/);
+  await expect(page.getByRole('textbox', { name: 'Add to today', exact: true })).toBeVisible();
+  await expect(welcome).toHaveCount(0);
+});
+
 test('signing out forgets the welcome, so the next account in the tab marks its own', async ({ page }) => {
   // The rail's Sign out is the desktop layout's.
   await page.setViewportSize({ width: 1200, height: 900 });

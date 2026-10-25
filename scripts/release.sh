@@ -5,14 +5,17 @@
 # checked that the commit is main and green. One run releases everything:
 #
 #   1. upload the code zips, each named by its SHA-256 (tools/native-artifacts.ts)
-#   2. one stack update: every function, version and revision of this build,
+#   2. the web app's new files beside the live ones, none overwritten: a page
+#      this stack update starts to serve is there before it does
+#   3. one stack update: every function, version and revision of this build,
 #      and `live` (each worker alias and each web endpoint) moved to them
-#   3. the web endpoints' CloudFront grants (tools/web-platform.ts)
-#   4. the inbound mail check and the web app sync
-#   5. the probe (tools/release-probe.ts): every worker's self-test, both
+#   4. the web endpoints' CloudFront grants (tools/web-platform.ts)
+#   5. the inbound mail check and the web app sync
+#   6. the probe (tools/release-probe.ts): every worker's self-test, both
 #      endpoints' revisions and the API's health through CloudFront
 #
-# A failed stack update rolls itself back and nothing changed. A failed probe
+# A failed stack update rolls itself back and nothing anyone is served
+# changed (step 2's files wait, unserved, for the next sync). A failed probe
 # leaves the release serving: roll back by reverting the merge, which releases
 # the previous code the same way. CloudFormation runs one update at a time, but
 # the web sync and the probe come after it: GitHub queues its own releases
@@ -157,6 +160,25 @@ PARAMETER_OVERRIDES=("BuildId=$COMMIT" "${CODE_PARAMETERS[@]}" "WebDomain=$WEB_D
 [[ -z "$ADMIN_USER_ID_SET" ]] || PARAMETER_OVERRIDES+=("AdminUserId=$ADMIN_USER_ID")
 [[ -z "$TURNSTILE_MODE_SET" ]] || PARAMETER_OVERRIDES+=("TurnstileMode=$TURNSTILE_MODE")
 
+output() {
+  aws cloudformation describe-stacks --stack-name "$STACK" \
+    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+}
+WEB="$BUNDLE/web"
+WEB_BUCKET=$(output WebBucketName)
+mask "$WEB_BUCKET"
+# Before the stack update, what the web bucket does not have yet: this build's
+# script, styles and fonts, and any page new to it (front.html was, which the
+# stack update then serves for /, along with the files it loads). CloudFront
+# serves only what the bucket holds, so a page goes up before the stack points
+# an address at it. Nothing is overwritten or deleted: what is served stays as
+# it was until the web sync below.
+aws s3 sync "$WEB/assets/" "s3://$WEB_BUCKET/assets/" --no-overwrite --only-show-errors \
+  --cache-control 'public, max-age=31536000, immutable'
+aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --no-overwrite --only-show-errors --exclude '*' --include '*.html' \
+  --cache-control 'public, max-age=60'
+echo "new web files staged"
+
 # The template is over CloudFormation's 51,200-byte inline limit, so it goes up
 # through the code bucket (expired after 90 days). The stack acts through its
 # own service role (infra/github-deploy-role.yaml), whoever deploys.
@@ -192,10 +214,6 @@ elif [[ "$ACTIVE" != "$STACK" ]]; then
   echo "WARNING: receipt rule set '$ACTIVE' is active, not $STACK. Replies will not arrive." >&2
 fi
 
-output() {
-  aws cloudformation describe-stacks --stack-name "$STACK" \
-    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
-}
 # The stack's BuildId is the last release's commit. Another release (the Mac's
 # while GitHub's ran, say) may be updating the stack, or have updated it since
 # ours did. While it updates, wait for the stack to settle, up to 30 minutes:
@@ -215,17 +233,15 @@ still_ours() {
   [[ "$live" == "$COMMIT" ]] || refuse "$1: the stack now runs $live, released by another run${2:+; $2}"
 }
 still_ours "before the web sync"
-WEB_BUCKET=$(output WebBucketName)
 WEB_DISTRIBUTION=$(output WebDistributionId)
-mask "$WEB_BUCKET"
 mask "$WEB_DISTRIBUTION"
 # The build's script, styles and fonts first, named by their content so they
 # never change: cached for good. The bucket holds this build alone; a tab still
 # open on an earlier one loads the app again when a page's code is gone
-# (main.tsx). Then index.html, which every address serves (the CloudFront
-# function) and which revalidates within a minute, and the rest (the Home
-# Screen manifest, the icons and the font licences).
-WEB="$BUNDLE/web"
+# (main.tsx). Then the pages, which revalidate within a minute: front.html,
+# which / serves, and index.html, which every other address serves (the
+# CloudFront function). Then the rest (the Home Screen manifest, the icons and
+# the font licences).
 aws s3 sync "$WEB/assets/" "s3://$WEB_BUCKET/assets/" --delete --only-show-errors \
   --cache-control 'public, max-age=31536000, immutable'
 aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include '*.html' \

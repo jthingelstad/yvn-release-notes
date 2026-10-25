@@ -10,8 +10,9 @@ follow; where a step needs Jamie's go, that rule is there too.
   (`.github/workflows/deploy.yml`) follows each green `validate` push run on
   main. It builds the bundle in a job with no credentials or token
   permissions (`scripts/build-release.sh`), then runs `scripts/release.sh` as
-  `ReleaseNotesGitHubDeploy` through OIDC: the code uploaded, one stack
-  update that takes every function and endpoint to the commit, the endpoint
+  `ReleaseNotesGitHubDeploy` through OIDC: the code uploaded, the build's
+  new web files staged beside the live ones, one stack update that takes
+  every function and endpoint to the commit, the endpoint
   grants confirmed, the web app synced, then the probe. Every merge releases
   everything, in about five minutes. "Run workflow" on main releases main's
   tip again. Runs share the `production-deploy` concurrency group (never

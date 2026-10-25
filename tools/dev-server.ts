@@ -435,7 +435,9 @@ export async function main(args = process.argv.slice(2)) {
       path = resolve(root, '.' + pathname);
     if (!path.startsWith(root + '/') && path !== root) return c.text('Not found', 404);
     try {
-      const file = extname(path) ? path : resolve(root, 'index.html'),
+      // As CloudFront does: / is front.html, the front page drawn in for
+      // readers that run no script; any other address but a file, index.html.
+      const file = extname(path) ? path : resolve(root, pathname === '/' ? 'front.html' : 'index.html'),
         bytes = await readFile(file);
       return new Response(bytes, {
         headers: {

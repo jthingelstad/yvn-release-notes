@@ -79,6 +79,18 @@ main {
   display: flex;
   flex-direction: column;
 }
+/* front.html's front page, drawn at build time for readers that run no
+   script (prerender.tsx). Where scripts run the app draws its own in its
+   place, so this one is never seen there, signed in or out; a browser that
+   can't say whether scripts run shows the app alone, as before. */
+main[data-prerendered] {
+  display: none;
+}
+@media (scripting: none) {
+  main[data-prerendered] {
+    display: flex;
+  }
+}
 a {
   color: var(--blue);
   font-weight: 600;

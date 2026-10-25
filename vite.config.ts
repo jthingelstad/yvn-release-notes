@@ -1,17 +1,43 @@
 // The Release Notes web app: React on Vite, one app for every page. The
 // build goes to dist/web, which deploy.sh syncs to the web bucket, where
-// CloudFront answers every address but a file with its index.html.
-// `npm run dev` serves web/ with hot reload and hands the API, and the dev
-// server's stand-ins for S3 and mail, to tools/dev-server.ts (start that
-// first; RN_DEV_API moves it).
+// CloudFront answers / with front.html and every other address but a file
+// with index.html. `npm run dev` serves web/ with hot reload and hands the
+// API, and the dev server's stand-ins for S3 and mail, to
+// tools/dev-server.ts (start that first; RN_DEV_API moves it).
 import react from '@vitejs/plugin-react';
+import { readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { runnerImport, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 const api = process.env.RN_DEV_API || 'http://localhost:8790';
 
+// After the build, front.html: the built index.html with the front page
+// drawn in by the app's own components (web/src/prerender.tsx).
+function frontPage(): Plugin {
+  let root = '',
+    outDir = '';
+  return {
+    name: 'release-notes-front-page',
+    apply: 'build',
+    configResolved(config) {
+      root = config.root;
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    async closeBundle() {
+      const { module } = await runnerImport<typeof import('./web/src/prerender.tsx')>(
+        resolve(root, 'src/prerender.tsx'),
+        { configFile: false, root, logLevel: 'error' }
+      );
+      const index = await readFile(resolve(outDir, 'index.html'), 'utf8');
+      await writeFile(resolve(outDir, 'front.html'), module.withFront(index));
+    }
+  };
+}
+
 export default defineConfig({
   root: 'web',
-  plugins: [react()],
+  plugins: [react(), frontPage()],
   build: {
     outDir: '../dist/web',
     emptyOutDir: true,

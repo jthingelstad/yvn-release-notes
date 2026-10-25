@@ -25,7 +25,12 @@ replaced: "I did think the deploy got obnoxiously complex"):
    `native/mcp/<sha256>.zip` or `native/workers/<name>/<sha256>.zip`. A key is
    written once (If-None-Match) and never changed; one already there is
    checked, not sent again (`tools/native-artifacts.ts`).
-2. **One stack update** with `BuildId` (the commit) and the nine `<Name>Code`
+2. **New web files** go up first, beside the live ones: this build's
+   hashed script, styles and fonts, and any page the web bucket has not had
+   (`front.html`, which the stack's CloudFront function serves for `/`, the
+   first time). Nothing is overwritten or deleted (`--no-overwrite`), so
+   what is served stays as it was until step 5.
+3. **One stack update** with `BuildId` (the commit) and the nine `<Name>Code`
    hashes. `BuildId` is every function's `APP_VERSION` and every revision's
    and version's description, so each release builds a new revision of both
    Web Functions and a new version of every worker, and moves `live` to them:
@@ -35,9 +40,9 @@ replaced: "I did think the deploy got obnoxiously complex"):
    names. Once the update succeeds CloudFormation deletes the revisions and
    versions it replaced; a failed update rolls back to the previous release
    whole.
-3. **The endpoint grants** are confirmed (below).
-4. **The inbound mail rule set** is checked and **the web app** synced.
-5. **The probe** (`tools/release-probe.ts`): every worker's `live` alias is the
+4. **The endpoint grants** are confirmed (below).
+5. **The inbound mail rule set** is checked and **the web app** synced.
+6. **The probe** (`tools/release-probe.ts`): every worker's `live` alias is the
    version the stack published and answers `{"self_test":true}` with this
    build on Node 24 Arm64; each endpoint serves an active revision of this
    build; `/api/health` answers through CloudFront. It reads no subscriber
@@ -63,6 +68,8 @@ stack: while another release is updating it, it waits for the stack to settle
 other update rolled back) and stops if another release has replaced it.
 The newer release syncs its own web app once its stack update is done, so two
 syncs overlap only if a whole stack update fits inside one sync's seconds.
+The staging before the stack update needs no check: it only adds files, and
+the next web sync removes any a rolled-back release left.
 There is no lock across runs: GitHub's role has no lock to take, and the
 overlap needs a break-glass release racing a merge. A release that dies mid-update leaves CloudFormation to finish or
 roll back on its own; once the stack is idle, release main again ("Run

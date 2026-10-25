@@ -1,5 +1,6 @@
 // The page every address is served (CloudFront and the dev server answer
-// any address but a file with it), and the titles the pages give it.
+// any address but a file with it; / has it as front.html, the front page
+// drawn in), and the titles the pages give it.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FRONT_TITLE, titleOf } from './components/common.tsx';

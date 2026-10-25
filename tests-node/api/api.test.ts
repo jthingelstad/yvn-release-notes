@@ -827,7 +827,9 @@ test("a day's own place and repeats in one second each leave a row, the day alon
     assert.deepEqual(Object.keys(row).sort(), ['at', 'day', 'kind', 'pk', 'sk', 'via']);
     assert.deepEqual([row.via, row.day], ['web', '2026-10-12']);
   }
-  const kept = JSON.stringify(rows);
+  // A repeat's key ends in a random hex tail after the day ('2026-10-12.35…'),
+  // which would read as the longitude one time in a hundred: leave tails out.
+  const kept = JSON.stringify(rows).replace(/\.[0-9a-f]{8}"/g, '"');
   for (const hidden of ['Paris', 'France', '48.85', '2.35', 'Private words', 'Changed'])
     assert.ok(!kept.includes(hidden), hidden);
 });

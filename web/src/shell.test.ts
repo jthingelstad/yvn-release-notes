@@ -2,12 +2,15 @@
 // any address but a file with it), and the titles the pages give it.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { titleOf } from './components/common.tsx';
+import { FRONT_TITLE, titleOf } from './components/common.tsx';
 
 describe('titleOf', () => {
   it('titles a page after the product', () => {
-    expect(titleOf('')).toBe('Release Notes');
+    expect(titleOf('')).toBe(FRONT_TITLE);
     expect(titleOf('Today')).toBe('Today: Release Notes');
+  });
+  it('gives the front page the title index.html has, for search', () => {
+    expect(readFileSync('web/index.html', 'utf8')).toContain(`<title>${FRONT_TITLE}</title>`);
   });
 });
 

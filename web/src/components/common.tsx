@@ -274,7 +274,10 @@ export function Failed() {
   );
 }
 
-export const titleOf = (title: string) => (title ? `${title}: Release Notes` : 'Release Notes');
+// The front page (the one title search shows, and web/index.html's too)
+// says what Release Notes is; every other page is named for itself.
+export const FRONT_TITLE = 'Release Notes: a daily journal by email';
+export const titleOf = (title: string) => (title ? `${title}: Release Notes` : FRONT_TITLE);
 
 export function useTitle(title: string | null) {
   useEffect(() => {

@@ -1694,9 +1694,11 @@ export class Store {
           ])
     ]);
   }
-  /** How many finished books with commentary a release (age) has had. */
+  /** How many finished books with commentary a release (age) has had. Read
+   * strongly: this is the only check of the ceiling, and a book asked for as
+   * soon as the tenth finishes must see ten. */
   async commentaryMade(user: string, release: number): Promise<number> {
-    return Number((await this.get(key(user, `COMMENTARY#${release}`)))?.made ?? 0);
+    return Number((await this.get(key(user, `COMMENTARY#${release}`), { ConsistentRead: true }))?.made ?? 0);
   }
   async finishExport(user: string, id: string, fields: Item, slot: ExportSlot = 'EXPORT') {
     return this.conditional(() => this.update(key(user, slot), finishing(id, fields)));

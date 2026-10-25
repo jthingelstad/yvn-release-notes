@@ -26,8 +26,14 @@ nothing there links here yet: that is Jamie's call.
    sentence ("Not right?" opens the fields) and saves it with the city and
    time. "Sign in" (`/#sign-in`) is the email alone. We send a
    link and a six-digit code. The code covers the case where you asked on
-   the laptop and read the mail on the phone. A new address then confirms
-   or picks:
+   the laptop and read the mail on the phone. Under the asking, the tour
+   (`components/tour.tsx`) says what Release Notes does, with a made-up
+   morning's email, and that it is free with the Weekly Thing. A new
+   address must get the Weekly Thing (AGENTS.md, Subscribers and
+   accounts): one that doesn't sees "Subscribe <address> to the Weekly
+   Thing" instead of the form, then confirms from Buttondown's email and
+   taps "Check again"; "Use that one" signs out, back to the front page,
+   the birthday still waiting. Then it confirms or picks:
    - **Birthday**, carried over from the front page.
    - **Location, to the city.** It is chosen from a search, and gives the
      time zone and coordinates rounded to the city (for the day's weather
@@ -520,8 +526,8 @@ or new CSP exception.
 | `GET /api/activity?before=` | the owner's activity log, newest first, 100 rows a page: `email`, `tz`, `today`, `entries` and `next` (the `before` of the next page, or null). Each entry has `id`, `at` and `kind`; a mail row adds `message`, `received_at`, `via` reply or address, `day`, `version`, `subject`, `outcome` filed, not-filed or failed, `reason`, `sender` when it was another address, `text` only for a row not filed whose sender was proven, `attempts` and `notified`; a reads row adds `day`, `client`, `connection`, `calls`, `tools`, `errors` and `last_at`; every other row adds the fields its kind keeps (`packages/domain/activity.ts`), and one naming an Upcoming date (`upcoming`) its `title` as it is now, or null once removed. 400 `before` for anything but a row id or time. No table keys |
 | `GET /api/places?q=` | city search, through Open-Meteo; needs a session |
 | `POST /api/places/here` `{lat, lon, accuracy_m}` | names the device's spot through Amazon Location (told the coordinates alone): `{name, region, country, tz, district, nearby, lat, lon, accuracy_m, from: "device"}`, `name` the city, `district` its neighbourhood when known, `nearby` up to six businesses within the accuracy (50 to 200 m) as `{name, lat, lon, distance_m}`, the spot kept to six places, for a note's `place` (with `venue` set to a picked one; `nearby` is never kept). 404 `place-unnamed` where no city is found, 502 `places-failed`; needs a session |
-| `GET /api/me` | the profile, or `{new: true}` for an address signing up; `inbox` is the standing address; `badges` is "Show badges"; `here` is "Add where I am"; `admin: true` only for the configured administrator |
-| `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `transcribe`, `describe`, `badges`, `here`, `status: "active"` to start again); the birthday cannot change. `badges: true` after `false` counts everything earned meanwhile as seen |
+| `GET /api/me` | the profile, or `{new: true, email, weekly_thing?}` for an address signing up; `inbox` is the standing address; `badges` is "Show badges"; `here` is "Add where I am"; `weekly_thing` is the address's Weekly Thing standing (`member`, `reader`, `unconfirmed`, `none`), absent until a lookup has answered, and looked up again after nine days (ten minutes while unconfirmed); `admin: true` only for the configured administrator |
+| `PUT /api/me` | sign-up (`birthday`, `place`, `send_time`), or settings (`send_time`, `place`, `transcribe`, `describe`, `badges`, `here`, `status: "active"` to start again); the birthday cannot change. `badges: true` after `false` counts everything earned meanwhile as seen. Sign-up answers 403 `weekly-thing` for an address not on the Weekly Thing's list and `weekly-thing-unconfirmed` for one not yet confirmed |
 | `GET /api/export?format=md\|json` | the words alone, as a download (JSON by default), with a `badges` list (a Badges section in Markdown), oldest first |
 | `POST /api/export/zip` | start a zip of everything, photos and recordings too (202); answers with the build already going, if one is |
 | `GET /api/export/zip` | how it is going: `none`, `building`, `failed`, or `ready` with size, files and until |
@@ -558,6 +564,7 @@ or new CSP exception.
 | `POST /api/search` `{q}` | notes with every word or "quoted phrase"; the words never go in a URL |
 | `PUT /api/pause` `{days}` or `{through}` | pause, or change the pause |
 | `DELETE /api/pause` | resume now |
+| `POST /api/me/weekly-thing` | adds the session's verified address to the Weekly Thing through the Librarian (never a typed one; works before the account exists): `{weekly_thing}`, `unconfirmed` once Buttondown has sent its confirmation, or the standing it already had. 409 `weekly-thing-review` (held by Buttondown's firewall) or `weekly-thing-by-hand` (can't be re-added automatically), 503 `weekly-thing-busy`, 404 `weekly-thing-off` with no Weekly Thing configured |
 | `POST /api/me/inbox` | a new standing address in place of the old one, which files nothing from then on; answers `{inbox}`; 409 `try-again` if another tab changed it first |
 | `POST /api/me/delete-code` | mails the account's address a code to confirm deleting |
 | `DELETE /api/me` `{code}` | deletes everything; needs that fresh code |

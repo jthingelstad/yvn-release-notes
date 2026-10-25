@@ -15,6 +15,7 @@ import { FakeObjects, FakeMail, FakeInvocations } from '../../packages/testing/s
 import type { ApiContext } from '../../packages/backend/sessions.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { createTurnstileSecret } from '../../packages/backend/aws.ts';
+import { LIBRARIAN_AUTH, createWeeklyThing } from '../../packages/backend/weekly-thing.ts';
 import * as auth from '../../packages/backend/auth.ts';
 import * as media from '../../packages/backend/media.ts';
 import { zipKey } from '../../workers/export.ts';
@@ -125,6 +126,13 @@ test('the web role grants every request each route and the OAuth endpoints make'
         secret: createTurnstileSecret(aws.env.RUNTIME_SECRET!, REGION, secrets as never),
         fetch: async () => new Response(JSON.stringify({ success: true, hostname: 'notes.example.com' }))
       },
+      // The Weekly Thing is the Librarian's public /auth: no AWS grant at all.
+      weeklyThing: createWeeklyThing(LIBRARIAN_AUTH, (async (_url: string, init: RequestInit) =>
+        Response.json(
+          (JSON.parse(String(init.body)) as Item).action === 'check'
+            ? { status: 'active' }
+            : { status: 'already_subscribed', subscriber_status: 'active' }
+        )) as typeof fetch),
       log: () => undefined
     },
     app = createApp({ context: () => ctx, viewer: () => '192.0.2.1' }),
@@ -176,6 +184,7 @@ test('the web role grants every request each route and the OAuth endpoints make'
   await call('PUT', '/api/me', { status: 'active', send_time: '07:00', place: city, transcribe: true, describe: true });
   assert.equal(aws.requests.filter((r) => r.action === 'ses:DeleteSuppressedDestination').length, 1);
   await call('POST', '/api/me/inbox', {});
+  await call('POST', '/api/me/weekly-thing', {});
   await call('GET', '/api/places?q=Paris');
   const here = (await call('POST', '/api/places/here', { lat: 48.856613, lon: 2.352222, accuracy_m: 12 })).b;
   await call('GET', '/api/activity');

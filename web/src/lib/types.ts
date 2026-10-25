@@ -105,7 +105,14 @@ export interface Me {
   pause_starts: string;
   // the standing address, for a note by email any day (inbound.py)
   inbox?: string;
+  // On the Weekly Thing's list (packages/backend/weekly-thing.ts); absent
+  // until it has been looked up, or when it couldn't be
+  weekly_thing?: WeeklyThing;
 }
+
+// member: a Supporting Member. reader: subscribed. unconfirmed: subscribed,
+// not yet confirmed. none: not on the list.
+export type WeeklyThing = 'member' | 'reader' | 'unconfirmed' | 'none';
 
 export interface Sample {
   version: string;

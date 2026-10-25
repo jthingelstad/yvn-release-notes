@@ -143,6 +143,15 @@ when a container starts (an empty one is looked for again every five
 minutes, and until then every check records `unconfigured` and goes ahead);
 the describer reads it on each run.
 
+The Weekly Thing gate needs no key: the web function asks the Librarian's
+public `/auth` (`https://librarian.thingelstad.com/auth`, `source:
+release-notes`). It logs `weekly-thing` with the standing on each lookup,
+`weekly-thing-error` with the Librarian's status when one fails (sign-up
+then goes ahead), and `weekly-thing-subscribe` with its outcome (`added`,
+`already`, `review`, `by-hand`) or `weekly-thing-subscribe-error`, never the
+address. Subscribes are in the Librarian's ledger and its morning digest
+names the `release-notes form`.
+
 ## Alarms, the dashboard and failures
 
 - Alarms go to SNS `yvn-release-notes-alarms`, which is subscribed to the

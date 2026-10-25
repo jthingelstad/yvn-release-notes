@@ -1,5 +1,13 @@
 import { SessionService, reject } from '../../packages/backend/sessions.ts';
-import { updateAccount, changePause, deleteAccount, replyToken } from '../../packages/backend/accounts.ts';
+import {
+  updateAccount,
+  changePause,
+  deleteAccount,
+  replyToken,
+  lookUpWeeklyThing,
+  recheckWeeklyThing,
+  subscribeWeeklyThing
+} from '../../packages/backend/accounts.ts';
 import { profileView } from '../../packages/backend/views.ts';
 import { isAdmin } from '../../packages/backend/product-updates.ts';
 import * as auth from '../../packages/backend/auth.ts';
@@ -160,13 +168,21 @@ export async function accountRoutes(
     if (method === 'DELETE')
       return json({ ok: true }, 200, { 'set-cookie': await deleteAccount(service, await body(service.request)) });
     const s = await service.signedIn();
-    if (!s.user_id) return json({ new: true, email: s.email });
-    const { profile } = await service.account();
+    // A new address hears whether it may make an account before setup asks
+    // for anything; the save checks again.
+    if (!s.user_id) {
+      const { weekly_thing } = await lookUpWeeklyThing(service, String(s.email));
+      return json({ new: true, email: s.email, ...(weekly_thing ? { weekly_thing } : {}) });
+    }
+    const { uid, profile: stored } = await service.account(),
+      profile = await recheckWeeklyThing(service, uid, stored);
     return json({
       ...profileView(profile, ctx.now, ctx.inboundDomain),
       ...(isAdmin(profile, ctx.adminUserId) ? { admin: true } : {})
     });
   }
+  // "Subscribe this address": the session's verified address, never a typed one.
+  if (pattern === '/api/me/weekly-thing') return json(await subscribeWeeklyThing(service));
   if (pattern === '/api/me/delete-code') {
     const { uid, profile: p } = await service.account(true);
     await service.reserveMail(String(p.email));

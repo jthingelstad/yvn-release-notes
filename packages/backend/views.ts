@@ -30,7 +30,7 @@ export function profileView(p: Item, now: number, inboundDomain: string): Item {
       version: v.toString(),
       pause_starts: pauseStart(p, today)
     };
-  for (const k of ['city', 'region', 'country', 'stopped_reason']) if (p[k]) view[k] = p[k];
+  for (const k of ['city', 'region', 'country', 'stopped_reason', 'weekly_thing']) if (p[k]) view[k] = p[k];
   if (p.inbox) view.inbox = `${p.inbox}@${inboundDomain}`;
   if (String(p.pause_through ?? '') >= today && p.pause_from)
     view.pause = { from: p.pause_from, through: p.pause_through };

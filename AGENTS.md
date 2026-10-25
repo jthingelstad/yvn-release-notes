@@ -13,7 +13,8 @@ The sites link here, and the front page is for search (Jamie, 2026-10-25:
 "Yes we want Release Notes in search where it can be. We also now should
 link YVN to Release Notes so people may find it"). Every other page is the
 signed-in app or an emailed link and stays out of search (`web/public/robots.txt`
-and the noindex in `web/src/main.tsx`).
+and the noindex in `web/src/main.tsx`). It is free with a Weekly Thing
+subscription, and a new account needs one (Subscribers and accounts).
 
 This file holds the rules and the decisions behind them. `docs/OPERATING.md`
 says how to run things and `infra/NATIVE-WEB.md` how a release works. Design
@@ -279,7 +280,49 @@ Where things are (each module's design comment has its contract):
   nothing is written before sign-in. "Sign in" (`/#sign-in`) is the email
   alone; links for signed-out subscribers go there, not to `/`. No
   subscriber is added by hand (retired 2026-10-09: it skipped the city, the
-  tally and the first email).
+  tally and the first email). Under the asking, the tour
+  (`web/src/components/tour.tsx`; Jamie, 2026-10-25: "Release Notws is a
+  hidden gem. Please go ahead and modify its logged out experience to tout
+  its features and how well it works. Free to use.") says what it does.
+  Every claim in it is something the product does today; keep it so as
+  features change.
+- **Release Notes comes with the Weekly Thing** (Jamie, 2026-10-25: "framed
+  as better for Weekly Thing supporting members and also gated by
+  subscribing to Weekly Thing"). A new account's verified address must be
+  on the Weekly Thing's list. The Librarian answers, as it answers Thingy
+  (Jamie: "Don’t go direct to Buttondown. Use the librarians api to see if
+  a member. It should be like Thingy and offer to sign people up directly
+  in release notes."): the server posts its public `/auth` `check` with
+  `source: release-notes` (status only, nothing mailed) and reads the
+  answer in `packages/backend/weekly-thing.ts`. No key: the Librarian
+  treats the source as Thingy's sign-in for Turnstile (librarian-thing's
+  `apps/librarian/AGENTS.md`, "Release Notes asks like Thingy"). A reader
+  or Supporting Member may start. An address not on the list sees
+  "Subscribe <address> to the Weekly Thing" on `/setup/`, which posts
+  `/api/me/weekly-thing`: the Librarian's `subscribe` for the session's
+  verified address, never a typed one, tagged `source:release-notes` in
+  Buttondown. Then it confirms from Buttondown's email and taps "Check
+  again". `PUT /api/me` refuses an address not on the list or not yet
+  confirmed (403 `weekly-thing`, `weekly-thing-unconfirmed`) with nothing
+  written.
+  - Accounts made before the gate keep everything (Jamie: "Keep them").
+  - Every account is looked up again on `GET /api/me` once nine days have
+    passed (Jamie: "Re-check like Thingy"), or ten minutes while a
+    subscription it asked for waits to be confirmed. The answer is kept on
+    the profile as `weekly_thing` (`member`, `reader`, `unconfirmed`,
+    `none`) with `weekly_thing_at`, and changes only what You says: a
+    member is thanked, and anyone who has left keeps their notes and gets
+    one quiet line with the same Subscribe button. Nothing is ever taken
+    away.
+  - Supporting membership is framing only for now (Jamie: "Framing only
+    for now"): no feature differs. Membership fees go 100% to a nonprofit,
+    so no copy calls membership the price of anything here.
+  - A failed lookup never locks anyone out: sign-up goes ahead and a
+    re-check keeps what was known. A failed subscribe asks the reader to
+    try again (503 `weekly-thing-busy`); one Buttondown's firewall holds,
+    or one the list can't take back, is told to email Jamie (409
+    `weekly-thing-review`, `weekly-thing-by-hand`), and the Librarian's
+    morning digest lists it. The address is never logged.
 - **The first email goes at sign-up** (Jamie, 2026-10-08): today's, at once,
   through the sender's `send_now`, with one welcome line; the schedule
   starts the next day.

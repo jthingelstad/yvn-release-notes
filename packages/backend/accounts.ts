@@ -12,6 +12,7 @@ import { OAuthService } from './oauth.ts';
 import { badges } from './badges.ts';
 import { again, eventId, recordActivity } from './activity.ts';
 import type { ActivityEvent } from '../domain/activity.ts';
+import { LookupError, RECHECK_SECONDS, UNCONFIRMED_RECHECK_SECONDS, welcome, type Standing } from './weekly-thing.ts';
 /** The settings a change records, each with what it reads as when unset. */
 const SETTINGS: Record<string, unknown> = {
   send_time: null,
@@ -26,6 +27,77 @@ const SETTINGS: Record<string, unknown> = {
 };
 const record = (service: SessionService, user: string, events: ActivityEvent[]) =>
   recordActivity(service.context.store, user, service.context.now, events, (f) => service.log(f));
+/** An address's Weekly Thing standing as profile fields
+ * (packages/backend/weekly-thing.ts), or nothing when there is no gate or the
+ * lookup failed: a failure never locks anyone out. */
+export async function lookUpWeeklyThing(
+  service: SessionService,
+  email: string
+): Promise<{ weekly_thing?: Standing; weekly_thing_at?: string }> {
+  const lookup = service.context.weeklyThing;
+  if (!lookup) return {};
+  try {
+    const standing = await lookup.standing(email);
+    service.log({ event: 'weekly-thing', standing });
+    return { weekly_thing: standing, weekly_thing_at: iso(service.context.now) };
+  } catch (error) {
+    service.log({ event: 'weekly-thing-error', ...(error instanceof LookupError ? { status: error.status } : {}) });
+    return {};
+  }
+}
+/** An account's standing, looked up again once it is `RECHECK_SECONDS` old
+ * (Jamie, 2026-10-25: "Re-check like Thingy"), or sooner while a subscription
+ * waits to be confirmed. It only changes what the pages say; a failed lookup
+ * keeps what was known and asks again on the next visit. */
+export async function recheckWeeklyThing(service: SessionService, uid: string, p: Item): Promise<Item> {
+  const at = Date.parse(String(p.weekly_thing_at ?? '')) / 1000,
+    every = p.weekly_thing === 'unconfirmed' ? UNCONFIRMED_RECHECK_SECONDS : RECHECK_SECONDS;
+  if (Number.isFinite(at) && service.context.now - at < every) return p;
+  const fields = await lookUpWeeklyThing(service, String(p.email));
+  if (!fields.weekly_thing) return p;
+  return saveWeeklyThing(service, uid, p, fields);
+}
+async function saveWeeklyThing(service: SessionService, uid: string, p: Item, fields: Item): Promise<Item> {
+  try {
+    await service.context.store.updateProfile(uid, fields);
+  } catch {
+    service.log({ event: 'weekly-thing-save-error', user: uid });
+    return p;
+  }
+  return { ...p, ...fields };
+}
+/** Adds the session's verified address to the Weekly Thing, as Thingy offers
+ * to (Jamie: "offer to sign people up directly in release notes"). The
+ * address is the one this session proved with an emailed code, never one
+ * typed here. Answers the standing the pages should show next; an account's
+ * profile keeps it. */
+export async function subscribeWeeklyThing(service: SessionService): Promise<{ weekly_thing: Standing }> {
+  const lookup = service.context.weeklyThing;
+  if (!lookup) reject(404, 'weekly-thing-off');
+  const s = await service.signedIn(),
+    account = s.user_id ? await service.account() : null,
+    email = String(account ? account.profile.email : s.email);
+  let answer;
+  try {
+    answer = await lookup.subscribe(email);
+  } catch (error) {
+    service.log({
+      event: 'weekly-thing-subscribe-error',
+      ...(error instanceof LookupError ? { status: error.status } : {})
+    });
+    reject(503, 'weekly-thing-busy');
+  }
+  service.log({ event: 'weekly-thing-subscribe', outcome: answer.outcome });
+  if (answer.outcome === 'review') reject(409, 'weekly-thing-review');
+  if (answer.outcome === 'by-hand') reject(409, 'weekly-thing-by-hand');
+  const weekly_thing: Standing = answer.outcome === 'already' ? answer.standing : 'unconfirmed';
+  if (account)
+    await saveWeeklyThing(service, account.uid, account.profile, {
+      weekly_thing,
+      weekly_thing_at: iso(service.context.now)
+    });
+  return { weekly_thing };
+}
 export function replyToken(): string {
   const alphabet = 'abcdefghijklmnopqrstuvwxyz234567',
     bytes = randomBytes(15);
@@ -76,8 +148,12 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
     if (typeof birthday !== 'string' || !validDay(birthday) || birthday < '1900-01-01' || birthday > today)
       reject(400, 'birthday');
     const email = String(s.email);
+    // Release Notes comes with the Weekly Thing (weekly-thing.ts).
+    const weeklyThing = await lookUpWeeklyThing(service, email);
+    if (weeklyThing.weekly_thing === 'unconfirmed') reject(403, 'weekly-thing-unconfirmed');
+    if (weeklyThing.weekly_thing && !welcome(weeklyThing.weekly_thing)) reject(403, 'weekly-thing');
     let uid = randomUUID().replace(/-/g, ''),
-      p: Item = { birthday, send_time: time, status: 'active', created_at: iso(ctx.now), ...fields };
+      p: Item = { birthday, send_time: time, status: 'active', created_at: iso(ctx.now), ...fields, ...weeklyThing };
     if (!(await store.createSubscriberVerified(uid, email, p, String(s.hash), ctx.now, Number(s.expires_at)))) {
       const existing = await store.userForEmail(email);
       if (!existing) reject(409, 'try-again');

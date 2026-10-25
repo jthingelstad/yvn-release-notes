@@ -738,3 +738,10 @@ test('the map narrows by words, tag and release, and a group lists every note in
   expect(refused).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
 });
+
+test('You says Release Notes comes with the Weekly Thing', async ({ page }) => {
+  // Ada gets the issues on the dev server's made-up list.
+  await page.goto('/you/');
+  await expect(page.locator('#you-weekly')).toHaveAttribute('data-standing', 'reader');
+  await expect(page.locator('#you-weekly')).toContainText('Free with your Weekly Thing subscription.');
+});

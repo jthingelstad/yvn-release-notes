@@ -47,13 +47,19 @@ export async function lookUpWeeklyThing(
   }
 }
 /** An account's standing, looked up again once it is `RECHECK_SECONDS` old
- * (Jamie, 2026-10-25: "Re-check like Thingy"), or sooner while a subscription
- * waits to be confirmed. It changes what the pages say and, for a member,
+ * (Jamie, 2026-10-25: "Re-check like Thingy"), sooner while a subscription
+ * waits to be confirmed, and on the first visit after a sign-in at
+ * `signedInAt` (a session's `created_at`). It changes what the pages say and, for a member,
  * records the year given (domain/giving.ts); a failed lookup keeps what was
  * known and asks again on the next visit. The sender looks again too, after
  * the email (workers/send.ts), for accounts that never open the web. */
-export async function recheckWeeklyThing(service: SessionService, uid: string, p: Item): Promise<Item> {
-  if (!recheckDue(p, service.context.now)) return p;
+export async function recheckWeeklyThing(
+  service: SessionService,
+  uid: string,
+  p: Item,
+  signedInAt?: number
+): Promise<Item> {
+  if (!recheckDue(p, service.context.now, signedInAt)) return p;
   const { weekly_thing } = await lookUpWeeklyThing(service, String(p.email));
   if (!weekly_thing) return p;
   return saveWeeklyThing(service, uid, p, weekly_thing);

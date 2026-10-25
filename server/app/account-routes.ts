@@ -174,8 +174,8 @@ export async function accountRoutes(
       const { weekly_thing } = await lookUpWeeklyThing(service, String(s.email));
       return json({ new: true, email: s.email, ...(weekly_thing ? { weekly_thing } : {}) });
     }
-    const { uid, profile: stored } = await service.account(),
-      profile = await recheckWeeklyThing(service, uid, stored);
+    const { uid, profile: stored, session } = await service.account(),
+      profile = await recheckWeeklyThing(service, uid, stored, Number(session.created_at));
     return json({
       ...profileView(profile, ctx.now, ctx.inboundDomain),
       ...(isAdmin(profile, ctx.adminUserId) ? { admin: true } : {})

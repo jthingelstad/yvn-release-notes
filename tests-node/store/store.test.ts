@@ -433,6 +433,56 @@ test('zip builds finish only their own current building item', async () => {
   assert.equal(await s.finishExport('u', 'second', { status: 'failed' }), false);
   assert.equal((await s.export('u'))?.size, 99);
 });
+test('a book build is its own row beside the zip, with exact native SDK requests', async () => {
+  const s = setup();
+  await s.startExport('u', 'zip', 1, 100);
+  s.memory.calls.length = 0;
+  await s.startExport('u', 'book', 2, 102, 'BOOK', { from: '2026-01-03', to: '2026-10-25', title: 'A year' });
+  assert.deepEqual(s.memory.calls[0], {
+    name: 'PutCommand',
+    input: {
+      TableName: 'T',
+      Item: {
+        from: '2026-01-03',
+        to: '2026-10-25',
+        title: 'A year',
+        pk: 'USER#u',
+        sk: 'BOOK',
+        id: 'book',
+        status: 'building',
+        started_at: 2,
+        expires_at: 102
+      }
+    }
+  });
+  s.memory.calls.length = 0;
+  assert.equal(await s.finishExportGuarded('u', 'book', { status: 'ready', pages: 9 }, 'BOOK'), true);
+  assert.deepEqual((s.memory.calls[0]!.input as { TransactItems?: unknown[] }).TransactItems?.[1], {
+    Update: {
+      TableName: 'T',
+      Key: { pk: 'USER#u', sk: 'BOOK' },
+      UpdateExpression: 'SET #f0 = :v0, #f1 = :v1',
+      ConditionExpression: '#id = :id AND #s = :b',
+      ExpressionAttributeNames: { '#id': 'id', '#s': 'status', '#f0': 'status', '#f1': 'pages' },
+      ExpressionAttributeValues: { ':id': 'book', ':b': 'building', ':v0': 'ready', ':v1': 9 }
+    }
+  });
+  s.memory.calls.length = 0;
+  assert.equal(await s.finishExport('u', 'book', { status: 'failed' }, 'BOOK'), false);
+  assert.deepEqual(s.memory.calls[0], {
+    name: 'UpdateCommand',
+    input: {
+      TableName: 'T',
+      Key: { pk: 'USER#u', sk: 'BOOK' },
+      UpdateExpression: 'SET #f0 = :v0',
+      ConditionExpression: '#id = :id AND #s = :b',
+      ExpressionAttributeNames: { '#id': 'id', '#s': 'status', '#f0': 'status' },
+      ExpressionAttributeValues: { ':id': 'book', ':b': 'building', ':v0': 'failed' }
+    }
+  });
+  assert.equal((await s.export('u'))?.id, 'zip');
+  assert.equal((await s.export('u', 'BOOK'))?.pages, 9);
+});
 test('login purpose isolation, newest-code indexing and legacy signin compatibility', async () => {
   const s = setup();
   await s.putLogin('s', 'ada@example.com', 'eh', 'ch', 10, 50);

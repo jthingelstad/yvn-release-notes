@@ -19,7 +19,7 @@ import type { ApiContext } from '../packages/backend/sessions.ts';
 import type { Item } from '../packages/backend/store-types.ts';
 import { localDay, addDays, iso } from '../packages/domain/dates.ts';
 import { found } from '../packages/domain/tags.ts';
-import { run as runExport } from '../workers/export.ts';
+import { runEvent as runExport } from '../workers/export.ts';
 import * as dayone from '../packages/backend/dayone.ts';
 import * as importer from '../packages/backend/importer.ts';
 export function devOptions(args: string[]) {
@@ -314,7 +314,8 @@ export async function main(args = process.argv.slice(2)) {
       const value = payload as Item;
       setTimeout(
         () =>
-          void runExport({ store, objects, now: stamp() }, String(value.user_id), String(value.id)).catch(() =>
+          // A zip, or a book (`kind: 'book'`).
+          void runExport(value, { store, objects, now: stamp() }).catch(() =>
             console.log('{"event":"dev-export-failed"}')
           ),
         20

@@ -1,6 +1,8 @@
 /** Deterministic deployment ZIPs from an already built, committed tree.
- * HTTP bundles contain only ordinary index.js + ESM metadata. Native image
- * libraries are added explicitly for the isolated description worker. */
+ * HTTP bundles contain only ordinary index.js + ESM metadata. Native
+ * packages are added by name, from the Linux Arm64 tree
+ * scripts/build-release.sh stages, only to the workers that load them
+ * (NATIVE), with a bundle's own assets/ (the export worker's book fonts). */
 import { ZipFile } from 'yazl';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { readdir, lstat, readFile, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -9,16 +11,46 @@ import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import { resolve, join, relative, sep } from 'node:path';
 const stamp = new Date(1980, 0, 1, 0, 0, 0);
+/** Sharp's runtime closure, for the describer's thumbnails and the book's photos. */
+export const SHARP = [
+  '@img/colour',
+  '@img/sharp-libvips-linux-arm64',
+  '@img/sharp-linux-arm64',
+  'detect-libc',
+  'semver',
+  'sharp'
+] as const;
+/** Typst, which typesets the export worker's books. */
+export const TYPST = [
+  '@myriaddreamin/typst-ts-node-compiler',
+  '@myriaddreamin/typst-ts-node-compiler-linux-arm64-gnu'
+] as const;
+export const NATIVE: Partial<Record<(typeof workerNames)[number], readonly string[]>> = {
+  describe: SHARP,
+  export: [...SHARP, ...TYPST]
+};
 export async function packageBundle(
   directory: string,
   destination: string,
-  nativeModules?: string
+  nativeModules?: string,
+  packages?: readonly string[]
 ): Promise<{ sha256: string; codeSha256: string }> {
   const zip = new ZipFile();
   const output = zip.outputStream as Readable;
   const done = pipeline(output, createWriteStream(destination));
   void done.catch(() => undefined);
   zip.on('error', (error) => output.destroy(error));
+  const add = (path: string, name: string) =>
+    zip.addFile(path, name, { mtime: stamp, forceDosTimestamp: true, mode: 0o100644 });
+  const walk = async (root: string, folder: string, prefix: string) => {
+    for (const name of (await readdir(folder)).sort()) {
+      const path = join(folder, name),
+        info = await lstat(path);
+      if (info.isSymbolicLink()) throw new Error('Native package contains a symlink');
+      if (info.isDirectory()) await walk(root, path, prefix);
+      else if (info.isFile()) add(path, prefix + relative(root, path).split(sep).join('/'));
+    }
+  };
   try {
     zip.addBuffer(await readFile(join(directory, 'index.js')), 'index.js', {
       mtime: stamp,
@@ -30,23 +62,21 @@ export async function packageBundle(
       forceDosTimestamp: true,
       mode: 0o100644
     });
+    const assets = join(directory, 'assets'),
+      found = await lstat(assets).catch(() => null);
+    if (found?.isSymbolicLink()) throw new Error('Bundle assets contain a symlink');
+    if (found?.isDirectory()) await walk(directory, assets, '');
     if (nativeModules) {
       if ((await lstat(nativeModules)).isSymbolicLink()) throw new Error('Native package contains a symlink');
-      const walk = async (folder: string) => {
-        for (const name of (await readdir(folder)).sort()) {
-          const path = join(folder, name),
-            info = await lstat(path);
-          if (info.isSymbolicLink()) throw new Error('Native package contains a symlink');
-          if (info.isDirectory()) await walk(path);
-          else if (info.isFile())
-            zip.addFile(path, 'node_modules/' + relative(nativeModules, path).split(sep).join('/'), {
-              mtime: stamp,
-              forceDosTimestamp: true,
-              mode: 0o100644
-            });
+      if (!packages) await walk(nativeModules, nativeModules, 'node_modules/');
+      else
+        for (const name of [...packages].sort()) {
+          const root = join(nativeModules, name),
+            info = await lstat(root).catch(() => null);
+          if (!info?.isDirectory() || info.isSymbolicLink())
+            throw new Error(`Native package ${name} is missing or linked`);
+          await walk(nativeModules, root, 'node_modules/');
         }
-      };
-      await walk(nativeModules);
     }
     zip.end();
     await done;
@@ -83,7 +113,8 @@ export async function packageWorkers(buildDirectory: string, outputDirectory: st
       ...(await packageBundle(
         resolve(buildDirectory, 'dist/workers', kind),
         path,
-        kind === 'describe' ? nativeModules : undefined
+        NATIVE[kind] ? nativeModules : undefined,
+        NATIVE[kind]
       ))
     });
   }

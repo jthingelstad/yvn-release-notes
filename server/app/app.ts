@@ -9,6 +9,7 @@ import { adminRoutes } from './admin-routes.ts';
 import { upcomingRoutes } from './upcoming-routes.ts';
 import { BASE_MAP, mapRoutes } from './map-routes.ts';
 import { exportRoutes } from '../../packages/backend/exports.ts';
+import { bookRoutes } from '../../packages/backend/books.ts';
 import { errorFields } from '../../packages/backend/services.ts';
 import { json, trustedViewer } from './requests.ts';
 export interface AppOptions {
@@ -34,6 +35,10 @@ export const ROUTES: [string, string][] = [
   ['GET', '/api/export/zip'],
   ['POST', '/api/export/zip'],
   ['GET', '/api/export/zip/file'],
+  ['GET', '/api/book'],
+  ['POST', '/api/book'],
+  ['GET', '/api/book/plan'],
+  ['GET', '/api/book/file'],
   ['GET', '/api/today'],
   ['GET', '/api/upcoming'],
   ['POST', '/api/upcoming'],
@@ -142,6 +147,7 @@ export function createApp(options: AppOptions = {}): Hono {
             (await upcomingRoutes(service, matched.path, args)) ??
             (await mapRoutes(service, matched.path, args)) ??
             (await exportRoutes(service, matched.path, url.searchParams)) ??
+            (await bookRoutes(service, matched.path, url.searchParams)) ??
             json({ error: 'not-found' }, 404);
         }
       }

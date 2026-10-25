@@ -1,7 +1,9 @@
 import { runtimeSelfTest } from './runtime.ts';
-/** Zip export worker. Uses temporary disk and bounded object reads, preserves
- * file bytes, checks the live owner/build before and after uploading, and
- * removes its own archive if deletion or a newer build wins the race. */
+/** Zip export and book worker. Uses temporary disk and bounded object reads,
+ * preserves file bytes, checks the live owner/build before and after
+ * uploading, and removes its own archive if deletion or a newer build wins
+ * the race. A book (`kind: 'book'`, packages/book) is built the same way
+ * from its own row, BOOK; its renderer loads only when a book is asked for. */
 import { ZipFile } from 'yazl';
 import { mkdtemp, writeFile, stat, rm } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
@@ -12,13 +14,21 @@ import { join } from 'node:path';
 import { build, markdown, filePaths } from '../packages/backend/export.ts';
 import { createObjects, createStore } from '../packages/backend/aws.ts';
 import { missing, safeLog, type Objects, type Log } from '../packages/backend/services.ts';
-import { iso, validDay } from '../packages/domain/dates.ts';
+import { iso, localDay, validDay } from '../packages/domain/dates.ts';
+import { bookPlan } from '../packages/book/data.ts';
 import type { Store, Item } from '../packages/backend/store.ts';
 export const READY_FOR = 24 * 3600,
   BUILDING_FOR = 16 * 60;
 export const zipKey = (user: string, id: string) => `exports/${user}/${id}.zip`;
+export const bookKey = (user: string, id: string) => `exports/${user}/${id}.pdf`;
+/** A book stops fetching photos this long after it starts, leaving time to
+ * typeset and upload inside the function's fifteen minutes. */
+export const BOOK_PHOTOS_FOR = 12 * 60;
 export interface ExportContext {
-  store: Pick<Store, 'export' | 'exportItems' | 'finishExportGuarded' | 'profile'>;
+  store: Pick<
+    Store,
+    'export' | 'exportItems' | 'finishExportGuarded' | 'profile' | 'notesBetween' | 'weatherBetween' | 'placesBetween'
+  >;
   objects: Objects;
   now: number;
   clock?: () => number;
@@ -146,24 +156,130 @@ export async function run(context: ExportContext, user: string, id: string): Pro
   log({ event: 'export-built', user, size, seconds: Math.round((clock() - started) * 10) / 10, ...counts });
   return 'ready';
 }
+/** One book: the span on its BOOK row, typeset to a PDF under exports/. */
+export async function runBook(
+  context: ExportContext,
+  user: string,
+  id: string
+): Promise<'ready' | 'replaced' | 'skipped' | 'empty'> {
+  const { store, objects, now } = context,
+    clock = context.clock ?? (() => Date.now() / 1000),
+    log = context.log ?? safeLog;
+  const found = await store.export(user, 'BOOK'),
+    profile = await store.profile(user, true),
+    from = String(found?.from ?? ''),
+    to = String(found?.to ?? '');
+  if (
+    !found ||
+    found.id !== id ||
+    found.status !== 'building' ||
+    !validDay(from) ||
+    !validDay(to) ||
+    !profile ||
+    profile.mcp_deleting ||
+    profile.deleting
+  ) {
+    log({ event: 'book-skipped', user });
+    return 'skipped';
+  }
+  const started = clock(),
+    key = bookKey(user, id),
+    temp = await mkdtemp(join(tmpdir(), 'release-book-'));
+  let size: number, made: { pages: number; photos: number; missing: number };
+  try {
+    const [notes, sky, own] = await Promise.all([
+        store.notesBetween(user, from, to),
+        store.weatherBetween(user, from, to),
+        store.placesBetween(user, from, to)
+      ]),
+      plan = await bookPlan(profile, user, from, to, notes, sky, own, {
+        title: typeof found.title === 'string' ? found.title : null,
+        made: localDay(now, String(profile.tz))
+      });
+    if (!plan.days) {
+      await store.finishExportGuarded(
+        user,
+        id,
+        { status: 'failed', reason: 'empty', finished_at: Math.floor(clock()) },
+        'BOOK'
+      );
+      log({ event: 'book-empty', user });
+      return 'empty';
+    }
+    const { renderBook } = await import('../packages/book/render.ts'),
+      book = await renderBook(
+        plan,
+        async (stored) => {
+          try {
+            return (await objects.get(stored)).body;
+          } catch (error) {
+            if (missing(error)) return null;
+            throw error;
+          }
+        },
+        { now, clock, deadline: started + BOOK_PHOTOS_FOR }
+      ),
+      path = join(temp, 'book.pdf');
+    await writeFile(path, book.pdf);
+    size = book.pdf.length;
+    made = { pages: book.pages, photos: book.photos, missing: book.missing };
+    const current = await store.profile(user, true),
+      build = await store.export(user, 'BOOK');
+    if (!current || current.mcp_deleting || current.deleting || build?.id !== id || build.status !== 'building') {
+      log({ event: 'book-replaced', user });
+      return 'replaced';
+    }
+    await objects.uploadFile(key, path, { type: 'application/pdf' });
+  } catch (error) {
+    await store.finishExportGuarded(user, id, { status: 'failed', finished_at: Math.floor(clock()) }, 'BOOK');
+    log({ event: 'book-failed', user });
+    throw error;
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+  const finished = Math.floor(clock()),
+    live = await store.profile(user, true);
+  if (
+    !live ||
+    live.deleting ||
+    live.mcp_deleting ||
+    !(await store.finishExportGuarded(
+      user,
+      id,
+      { status: 'ready', finished_at: finished, export_key: key, size, ...made, expires_at: finished + READY_FOR },
+      'BOOK'
+    ))
+  ) {
+    await objects.remove(key);
+    log({ event: 'book-replaced', user });
+    return 'replaced';
+  }
+  log({ event: 'book-built', user, size, seconds: Math.round((clock() - started) * 10) / 10, ...made });
+  return 'ready';
+}
 let runtime: Pick<ExportContext, 'store' | 'objects'> | undefined;
 export async function runEvent(
-  event: { user_id?: unknown; id?: unknown; self_test?: unknown },
+  event: { user_id?: unknown; id?: unknown; kind?: unknown; self_test?: unknown },
   services?: ExportContext
 ) {
-  if (runtimeSelfTest(event)) return runtimeSelfTest(event);
+  const self = runtimeSelfTest(event);
+  if (self) {
+    await (await import('../packages/book/render.ts')).selfTest();
+    return self;
+  }
   if (
     typeof event.user_id !== 'string' ||
     !/^[a-zA-Z0-9_-]{1,100}$/.test(event.user_id) ||
     typeof event.id !== 'string' ||
-    !/^[a-zA-Z0-9_-]{1,100}$/.test(event.id)
+    !/^[a-zA-Z0-9_-]{1,100}$/.test(event.id) ||
+    (event.kind !== undefined && event.kind !== 'book')
   )
     throw new Error('Invalid export invocation');
   if (!services) {
     runtime ??= { store: createStore(process.env.TABLE ?? ''), objects: createObjects(process.env.MAIL_BUCKET ?? '') };
     services = { ...runtime, now: Math.floor(Date.now() / 1000) };
   }
-  return run(services, event.user_id, event.id);
+  return event.kind === 'book' ? runBook(services, event.user_id, event.id) : run(services, event.user_id, event.id);
 }
 
 /** Node 24 promise-only entrypoint; dependency injection belongs to runEvent. */

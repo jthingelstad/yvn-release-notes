@@ -18,7 +18,7 @@ import { createTurnstileSecret } from '../../packages/backend/aws.ts';
 import { LIBRARIAN_AUTH, createWeeklyThing } from '../../packages/backend/weekly-thing.ts';
 import * as auth from '../../packages/backend/auth.ts';
 import * as media from '../../packages/backend/media.ts';
-import { zipKey } from '../../workers/export.ts';
+import { bookKey, zipKey } from '../../workers/export.ts';
 import { nameSpot } from '../../packages/backend/places.ts';
 import { geoMaps } from '../../packages/backend/maps.ts';
 import { REDIRECT, VERIFIER } from '../oauth/fixtures.ts';
@@ -261,6 +261,28 @@ test('the web role grants every request each route and the OAuth endpoints make'
   await call('GET', '/api/export/zip/file', undefined, 302);
   await call('POST', '/api/export/zip', {}, 202);
   assert.ok(files.calls.some((c) => c.operation === 'remove' && c.key === zipKey('u', build)));
+
+  // A book, for a Supporting Member: planned, invoked as the zip is, linked
+  // once ready, then replaced.
+  await aws.aside(store, null, async () => {
+    store.seed({ ...store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!, weekly_thing: 'member' });
+  });
+  await call('GET', `/api/book/plan?from=${day}&to=${day}`);
+  await call('POST', '/api/book', { from: day, to: day, title: 'Lake days' }, 202);
+  const book = String(store.memory.read({ pk: 'USER#u', sk: 'BOOK' })!.id);
+  await aws.aside(store, null, async () => {
+    await store.finishExportGuarded(
+      'u',
+      book,
+      { status: 'ready', finished_at: now, export_key: bookKey('u', book), size: 3, expires_at: now + 86400 },
+      'BOOK'
+    );
+  });
+  await files.put(bookKey('u', book), pdf, { type: 'application/pdf' });
+  await call('GET', '/api/book');
+  await call('GET', '/api/book/file', undefined, 302);
+  await call('POST', '/api/book', { from: day, to: day }, 202);
+  assert.ok(files.calls.some((c) => c.operation === 'remove' && c.key === bookKey('u', book)));
 
   // An MCP connection, made through the public OAuth endpoints and managed here.
   const registered = (await (

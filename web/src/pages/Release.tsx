@@ -9,13 +9,15 @@ import { DayList } from '../components/days.tsx';
 import { Icon } from '../components/icon.tsx';
 import { ApiError } from '../lib/api.ts';
 import { count, listed, longDate } from '../lib/format.ts';
-import { useGo, useQueryParam, useStillAt } from '../lib/nav.ts';
+import { useGo, useMe, useQueryParam, useStillAt } from '../lib/nav.ts';
 import { releaseQuery, releasesQuery } from '../lib/queries.ts';
 import type { ReleasePage } from '../lib/types.ts';
 import { givingLine } from '../../../packages/domain/giving.ts';
 
 export function Release() {
   const go = useGo();
+  const me = useMe().data;
+  const mayBook = !!me && !me.new && (me.weekly_thing === 'member' || !!me.admin);
   const v = useQueryParam('v');
   const here = useStillAt('/release/');
   const release = useInfiniteQuery(releaseQuery(v));
@@ -74,6 +76,13 @@ export function Release() {
           {head.giving && head.giving.length > 0 && (
             <p className="meta release-giving" id="release-giving">
               {givingLine(head.v, head.giving)}
+            </p>
+          )}
+          {mayBook && head.days_with_notes > 0 && (
+            <p className="meta" id="release-book">
+              <AppLink href={`/book/?from=${head.from}&to=${head.through < head.today ? head.through : head.today}`}>
+                Make a book of this release
+              </AppLink>
             </p>
           )}
           {head.tags.length > 0 && (

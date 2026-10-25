@@ -8,6 +8,20 @@
       name="description"
       content="A daily email with your version number. Reply, and your reply becomes that day's release notes."
     />
+    <!-- Only the front page is for search and sharing: every other address
+         serves this same file, and main.tsx marks those pages noindex. -->
+    <link rel="canonical" href="https://notes.yourversionnumber.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Your Version Number" />
+    <meta property="og:title" content="Release Notes" />
+    <meta
+      property="og:description"
+      content="A daily email with your version number. Reply, and your reply becomes that day's release notes."
+    />
+    <meta property="og:url" content="https://notes.yourversionnumber.com/" />
+    <meta property="og:image" content="https://notes.yourversionnumber.com/brand/release-notes-paper-512.png" />
+    <meta property="og:image:alt" content="The Release Notes mark: a blue V and an orange dot over two lines" />
+    <meta name="twitter:card" content="summary" />
     <!-- Added to a Home Screen, it opens on Today as an app of its own. -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/icon-16.png" sizes="16x16" type="image/png" />

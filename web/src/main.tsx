@@ -244,6 +244,20 @@ declare module '@tanstack/react-router' {
 // A page count for each page shown.
 router.subscribe('onResolved', ({ toLocation }) => countPage(toLocation.pathname));
 
+// Search keeps the front page alone (Jamie, 2026-10-25: "we want Release
+// Notes in search where it can be"). Every other address serves the same
+// index.html, a missing page included, so the app marks it noindex here.
+router.subscribe('onResolved', ({ toLocation }) => {
+  let robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
+  if (toLocation.pathname === '/') return robots?.remove();
+  if (!robots) {
+    robots = document.createElement('meta');
+    robots.name = 'robots';
+    document.head.append(robots);
+  }
+  robots.content = 'noindex';
+});
+
 // A new page says so, as a page load would: focus goes to its heading, so a
 // screen reader reads it and Tab starts from the top. Not when the page has
 // put focus somewhere itself, nor for a change of ?query or #hash alone.

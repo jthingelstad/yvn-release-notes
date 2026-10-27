@@ -1220,7 +1220,9 @@ Resources:
       RetentionInDays: 90
 
   # The distribution's access log, kept 14 days like the other sites'. The
-  # fields leave out the client IP and the query string.
+  # fields leave out the client IP, the query string and the path: a private
+  # calendar link is its token in the path (/api/calendar/<token>.ics), and
+  # that link is never logged.
   WebAccessLogs:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -1249,7 +1251,6 @@ Resources:
       RecordFields:
         - timestamp(ms)
         - cs-method
-        - cs-uri-stem
         - sc-status
         - sc-bytes
         - sc-range-start

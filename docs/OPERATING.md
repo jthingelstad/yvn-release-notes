@@ -199,8 +199,9 @@ names the `release-notes form`.
   reaching the total takes many networks.
 - The distribution's access log is the log group
   `/yvn-release-notes/web-access`, kept 14 days: one JSON line per request
-  with the path, status, bytes, timing, edge result and user agent, never the
-  client's address or the query string (where OAuth codes travel). Logs
+  with the method, status, bytes, timing, edge result and user agent, never
+  the client's address, the query string (where OAuth codes travel) or the
+  path (a calendar link is its token). Logs
   Insights: `` stats count() by `sc-status` ``.
 
 ## DNS

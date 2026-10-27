@@ -81,3 +81,12 @@ test('role names agree with the release scripts and tools', async () => {
   assert.match(template, /RoleName: ReleaseNotesCloudFormation\n/);
   assert.match(template, /AllowedValues: \[yvn-release-notes\]/);
 });
+
+test('the service role may make only its own stack-named access-log pieces', () => {
+  assert.match(statement('Logs'), /log-group:\/\$\{ApplicationStackName\}\/\*"$/m);
+  const delivery = statement('AccessLogDelivery');
+  assert.match(delivery, /delivery-source:\$\{ApplicationStackName\}-\*"/);
+  assert.match(delivery, /delivery-destination:\$\{ApplicationStackName\}-\*"/);
+  assert.doesNotMatch(delivery, /logs:\*|Resource: "\*"/);
+  assert.match(statement('AccessLogGroupPolicy'), /^\s+Action: logs:PutResourcePolicy$/m);
+});

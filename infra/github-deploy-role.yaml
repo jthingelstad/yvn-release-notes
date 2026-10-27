@@ -123,10 +123,50 @@ Resources:
                 Resource:
                   - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ApplicationStackName}-*"
                   - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda-web/${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ApplicationStackName}/*"
               - Sid: LogsUnscoped
                 Effect: Allow
                 Action: [logs:DescribeLogGroups, logs:DescribeMetricFilters, logs:ListTagsForResource]
                 Resource: "*"
+              # The web distribution's access log (/<stack>/web-access): a CloudWatch Logs
+              # delivery from CloudFront (Jamie, 2026-10-26: "Approved: widen the
+              # ReleaseNotesCloudFormation service role in the yvn-release-notes-deploy stack to
+              # create the /yvn-release-notes/web-access log group and CloudFront access-log
+              # deliveries"). A delivery's id is generated, so deliveries are delivery:*; the
+              # Describe calls and the log-group resource policy the delivery writes have no
+              # narrower resource. cloudfront:AllowVendedLogDeliveryForResource is under Distribution.
+              - Sid: AccessLogDelivery
+                Effect: Allow
+                Action:
+                  - logs:PutDeliverySource
+                  - logs:GetDeliverySource
+                  - logs:DeleteDeliverySource
+                  - logs:PutDeliveryDestination
+                  - logs:GetDeliveryDestination
+                  - logs:DeleteDeliveryDestination
+                  - logs:CreateDelivery
+                  - logs:GetDelivery
+                  - logs:DeleteDelivery
+                  - logs:UpdateDeliveryConfiguration
+                  - logs:TagResource
+                  - logs:UntagResource
+                  - logs:ListTagsForResource
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:delivery-source:${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:delivery-destination:${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:delivery:*"
+              - Sid: AccessLogDeliveryUnscoped
+                Effect: Allow
+                Action:
+                  - logs:DescribeDeliveries
+                  - logs:DescribeDeliverySources
+                  - logs:DescribeDeliveryDestinations
+                  - logs:DescribeResourcePolicies
+                Resource: "*"
+              - Sid: AccessLogGroupPolicy
+                Effect: Allow
+                Action: logs:PutResourcePolicy
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
               - Sid: AlarmsAndDashboard
                 Effect: Allow
                 Action: cloudwatch:*

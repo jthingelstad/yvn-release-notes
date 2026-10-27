@@ -197,6 +197,11 @@ names the `release-notes form`.
   breaks the alarm): nobody can sign in until the hour turns. The narrower
   limits are checked first and a refused request counts against none, so
   reaching the total takes many networks.
+- The distribution's access log is the log group
+  `/yvn-release-notes/web-access`, kept 14 days: one JSON line per request
+  with the path, status, bytes, timing, edge result and user agent, never the
+  client's address or the query string (where OAuth codes travel). Logs
+  Insights: `` stats count() by `sc-status` ``.
 
 ## DNS
 

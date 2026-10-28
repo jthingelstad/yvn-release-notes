@@ -1589,7 +1589,8 @@ main:has(.bar--app) h1:not(.vnum) {
   gap: 0 0.4em;
   margin-top: 4px;
 }
-.day-facts > p {
+.day-facts > p,
+#lived {
   margin: 0;
   font-size: 15px;
 }

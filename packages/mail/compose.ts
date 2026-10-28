@@ -5,8 +5,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import * as links from '../backend/links.ts';
 import { withoutClosing } from '../domain/tags.ts';
-import { daysBetween } from '../domain/dates.ts';
-import { computeVersion, releaseName, releaseSpan, type Version } from '../domain/version.ts';
+import { computeVersion, lifeCount, livedText, releaseName, type Version } from '../domain/version.ts';
 import type { Streak } from '../domain/streak.ts';
 import { codePointLength, codePointSlice, pythonRstrip, pythonTrim } from '../domain/unicode.ts';
 import { UPDATE_LABEL, type ProductUpdate } from '../domain/product-updates.ts';
@@ -144,16 +143,7 @@ export const birthdayLine = (v: Version) =>
 export const nextRelease = (v: Version) => `${Math.floor((v.age + 1) / 10)}.${(v.age + 1) % 10}.0`;
 export const ships = (v: Version) => (v.daysUntil === 1 ? 'tomorrow' : `in ${v.daysUntil} days`);
 export const countdown = (v: Version) => `${nextRelease(v)} ships ${ships(v)}.`;
-/** Weeks and days lived, a nod to Four Thousand Weeks. Both count from 1, so
- * the day you were born is Week 1, Day 1 (the version counts from 0). */
-export function lifeCount(v: Version, birthday: string): [number, number] {
-  const lived = daysBetween(birthday, releaseSpan(birthday, v.age)[0]) + v.patch;
-  return [Math.floor(lived / 7) + 1, lived + 1];
-}
-export const lifeLine = (v: Version, birthday: string, dash = '\u2014') =>
-  lifeCount(v, birthday)
-    .map((n, i) => `${i ? 'Day' : 'Week'} ${n.toLocaleString('en-US')}`)
-    .join(` ${dash} `);
+export const lifeLine = (v: Version, birthday: string, dash?: string) => livedText(lifeCount(v, birthday), dash);
 export const daysPhrase = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`;
 export function clockPhrase(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number);

@@ -3,7 +3,7 @@ import { SessionService, reject } from '../../packages/backend/sessions.ts';
 import { dayView, mediaLinks } from '../../packages/backend/views.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { localDay, addDays, iso } from '../../packages/domain/dates.ts';
-import { computeVersion, releaseAge, releaseName, releaseSpan } from '../../packages/domain/version.ts';
+import { computeVersion, lifeCount, releaseAge, releaseName, releaseSpan } from '../../packages/domain/version.ts';
 import { pauseDays, computeStreak } from '../../packages/domain/streak.ts';
 import { searchedText } from '../../packages/domain/search.ts';
 import { rounded } from '../../packages/backend/places.ts';
@@ -73,6 +73,7 @@ export async function archiveRoutes(
       tz: p.tz,
       dots: rounded((v.patch / v.cycleDays) * 24),
       next: { version: `${Math.floor((v.age + 1) / 10)}.${(v.age + 1) % 10}.0`, date: addDays(today, v.daysUntil) },
+      lived: lifeCount(v, String(p.birthday)),
       streak: { current: s.current, longest: s.longest, today: have.has(today) }
     });
     if (paused.has(today)) view.paused_through = p.pause_through;

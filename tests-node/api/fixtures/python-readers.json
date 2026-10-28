@@ -156,6 +156,10 @@
           "version": "4.6.0",
           "date": "2027-06-14"
         },
+        "lived": {
+          "week": 2366,
+          "day": 16558
+        },
         "streak": {
           "current": 1,
           "longest": 1,

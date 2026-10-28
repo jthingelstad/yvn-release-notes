@@ -64,6 +64,8 @@ export interface Today extends Day {
   tz: string;
   dots: number;
   next: { version: string; date: string };
+  // Weeks and days lived, both from 1.
+  lived: { week: number; day: number };
   streak: Streak;
   paused_through?: string;
 }

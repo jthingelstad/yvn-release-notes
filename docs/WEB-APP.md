@@ -477,6 +477,15 @@ or new CSP exception.
   router marks every other page `noindex` as it resolves, since they all
   serve `index.html`. Those pages stay crawlable: a page robots.txt blocks
   can still be listed, because its `noindex` is never read.
+- The sitemap's `<lastmod>` for `/` is the day the front page's words last
+  changed. `tests-node/front-page.test.ts` holds a hash of what the built
+  front page says (title, description, the drawn words) beside that day,
+  and fails when the words change until both, and the sitemap, are moved
+  to the day the change goes live. Never a build date: search ignores a
+  `lastmod` that is always now. `robots.txt` and `sitemap.xml` go up named
+  UTF-8 and are served with their own CSP (`PlainFilesHeadersPolicy`), which
+  lets the browser's viewer style the XML; under the app's CSP Chrome shows
+  it unstyled, with "..." where it folds.
 - The signed-in pages sit behind one gate in `main.tsx` that has the
   profile before any of them shows. Each page's data (`lib/queries.ts`)
   loads before it shows, from the moment its link is pointed at. Every

@@ -6,9 +6,11 @@
  * sharing card, and no robots line. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { DomUtils, parseDocument } from 'htmlparser2';
 import { build } from 'vite';
 
 const out = await mkdtemp(join(tmpdir(), 'yvn-front-page-'));
@@ -87,4 +89,40 @@ test('the drawn front page has no script, no inline style and nothing the open p
 test('robots.txt and the sitemap are built as they are written', async () => {
   for (const file of ['robots.txt', 'sitemap.xml'])
     assert.equal(await readFile(join(out, file), 'utf8'), await readFile(resolve('web/public', file), 'utf8'), file);
+});
+
+/** What the front page says to search: its title, its description and the
+ * words drawn into #app, as text. Markup, styles and the build's file names
+ * can change without it. */
+function said(html: string) {
+  const doc = parseDocument(html);
+  const title = DomUtils.textContent(DomUtils.findOne((e) => e.name === 'title', doc.children)!);
+  const description = DomUtils.findOne((e) => e.name === 'meta' && e.attribs.name === 'description', doc.children)!
+    .attribs.content;
+  const app = DomUtils.textContent(parseDocument(parts(html).app).children);
+  return [title, description, app].map((text) => text!.replace(/\s+/g, ' ').trim()).join('\n');
+}
+
+/** The front page's words when they last changed, and the day that reached
+ * the site. sitemap.xml gives that day as / 's <lastmod>, which search reads
+ * only while it stays true. */
+const FRONT_PAGE = {
+  said: '046b2966c726331e1b1e6399f4aea41c4f9b0ec086d28213bd9e8a737d0b6e94',
+  lastmod: '2026-10-25'
+};
+
+test('the sitemap’s <lastmod> for / is the day the front page’s words last changed', async () => {
+  const sitemap = await readFile(resolve('web/public/sitemap.xml'), 'utf8');
+  assert.deepEqual(
+    Array.from(sitemap.matchAll(/<lastmod>([^<]+)<\/lastmod>/g), (m) => m[1]),
+    [FRONT_PAGE.lastmod]
+  );
+  assert.match(FRONT_PAGE.lastmod, /^\d{4}-\d{2}-\d{2}$/);
+  const hash = createHash('sha256').update(said(front)).digest('hex');
+  assert.equal(
+    hash,
+    FRONT_PAGE.said,
+    'The front page says something new. Set FRONT_PAGE.said to the hash above and FRONT_PAGE.lastmod, with the ' +
+      '<lastmod> in web/public/sitemap.xml, to the day (US Central) this change reaches the site.'
+  );
 });

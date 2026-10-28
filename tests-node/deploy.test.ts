@@ -244,11 +244,21 @@ test('the web files staged before the stack update are only added: nothing serve
       ['--exclude', '*', '--include', '*.html']
     );
     // The web sync after it makes the bucket this build's alone, as before.
-    assert.equal(after.length, 3);
+    assert.equal(after.length, 5);
     for (const sync of after) {
       assert.ok(sync.args.includes('--delete'), sync.args.join(' '));
       assert.ok(!sync.args.includes('--no-overwrite'), sync.args.join(' '));
     }
+    // robots.txt and sitemap.xml go up alone, each with its type and UTF-8.
+    const flag = (sync: Event, name: string) => sync.args[sync.args.indexOf(name) + 1];
+    assert.ok(['robots.txt', 'sitemap.xml'].every((file) => after[2]!.args.join(' ').includes(`--exclude ${file}`)));
+    assert.deepEqual(
+      after.slice(3).map((sync) => [flag(sync, '--include'), flag(sync, '--content-type')]),
+      [
+        ['robots.txt', 'text/plain; charset=utf-8'],
+        ['sitemap.xml', 'application/xml; charset=utf-8']
+      ]
+    );
   });
 });
 

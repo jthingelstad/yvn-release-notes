@@ -1219,7 +1219,7 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-web"
       RetentionInDays: 90
 
-  # The distribution's access log, kept 14 days like the other sites'. The
+  # The distribution's access log, kept 24 months like the other sites'. The
   # fields leave out the client IP, the query string and the path: a private
   # calendar link is its token in the path (/api/calendar/<token>.ics), and
   # that link is never logged.
@@ -1227,7 +1227,7 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/${AWS::StackName}/web-access"
-      RetentionInDays: 14
+      RetentionInDays: 731
 
   WebAccessLogSource:
     Type: AWS::Logs::DeliverySource

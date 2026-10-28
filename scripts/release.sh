@@ -241,13 +241,18 @@ mask "$WEB_DISTRIBUTION"
 # (main.tsx). Then the pages, which revalidate within a minute: front.html,
 # which / serves, and index.html, which every other address serves (the
 # CloudFront function). Then the rest (the Home Screen manifest, the icons and
-# the font licences).
+# the font licences), and robots.txt and sitemap.xml, each named UTF-8 (S3
+# would guess the type alone).
 aws s3 sync "$WEB/assets/" "s3://$WEB_BUCKET/assets/" --delete --only-show-errors \
   --cache-control 'public, max-age=31536000, immutable'
 aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include '*.html' \
   --cache-control 'public, max-age=60'
 aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*.html' --exclude 'assets/*' \
-  --cache-control 'public, max-age=600'
+  --exclude robots.txt --exclude sitemap.xml --cache-control 'public, max-age=600'
+aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include robots.txt \
+  --cache-control 'public, max-age=600' --content-type 'text/plain; charset=utf-8'
+aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include sitemap.xml \
+  --cache-control 'public, max-age=600' --content-type 'application/xml; charset=utf-8'
 aws cloudfront create-invalidation --distribution-id "$WEB_DISTRIBUTION" --paths '/*' \
   --query Invalidation.Id --output text >/dev/null
 echo "web app synced and invalidated"

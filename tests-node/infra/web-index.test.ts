@@ -42,3 +42,28 @@ test('the distribution’s root object is front.html too, whichever runs first',
   assert.match(distribution, /\n {8}DefaultRootObject: front\.html\n/);
   assert.equal(template.match(/DefaultRootObject:/g)?.length, 1);
 });
+
+test('robots.txt and sitemap.xml get a CSP that lets the browser’s own viewer style them, and nothing else', () => {
+  const behaviors = template.slice(template.indexOf('        CacheBehaviors:\n'));
+  for (const path of ['/robots.txt', '/sitemap.xml']) {
+    const behavior = new RegExp(`- PathPattern: ${path.replace('.', '\\.')}\\n((?: {12}.*\\n)+)`).exec(behaviors)?.[1];
+    assert.ok(behavior, path);
+    assert.match(behavior, /TargetOriginId: web\n/);
+    assert.match(behavior, /CachePolicyId: !Ref WebCachePolicy\n/);
+    assert.match(behavior, /ResponseHeadersPolicyId: !Ref PlainFilesHeadersPolicy\n/);
+  }
+  const policy = /\n {2}PlainFilesHeadersPolicy:\n((?: {4}.*\n|\n)+?)\n {2}\S/.exec(template)![1]!;
+  const csp = /ContentSecurityPolicy: "([^"]+)"/.exec(policy)![1]!;
+  // Chrome's XML viewer styles inline and draws its fold arrows as data: images.
+  assert.equal(
+    csp,
+    "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
+  );
+  for (const header of [
+    'ContentTypeOptions:',
+    'FrameOption: DENY',
+    'ReferrerPolicy: same-origin',
+    'AccessControlMaxAgeSec: 63072000'
+  ])
+    assert.ok(policy.includes(header), header);
+});

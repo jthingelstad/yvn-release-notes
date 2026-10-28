@@ -1118,6 +1118,41 @@ Resources:
               Value: "microphone=(self), camera=(), geolocation=(self), payment=(), usb=()"
               Override: true
 
+  # robots.txt and sitemap.xml are read by people too, in the browser's own
+  # viewer, which styles an XML file inline and draws its arrows from data:
+  # images. The app's CSP refuses both, and Chrome then shows the sitemap as
+  # an unstyled tree with "..." where it would fold. These two files run no
+  # script and load nothing, so they get a CSP that allows only that viewer;
+  # the other headers are the app's.
+  PlainFilesHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "${AWS::StackName}-plain"
+        Comment: Security headers for robots.txt and sitemap.xml
+        SecurityHeadersConfig:
+          ContentSecurityPolicy:
+            ContentSecurityPolicy: "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; frame-ancestors 'none'; base-uri 'none'"
+            Override: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: same-origin
+            Override: true
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 63072000
+            IncludeSubdomains: false
+            Preload: false
+            Override: true
+        CustomHeadersConfig:
+          Items:
+            - Header: Permissions-Policy
+              Value: "microphone=(), camera=(), geolocation=(), payment=(), usb=()"
+              Override: true
+
   # Static assets and both private HTTP origins share one distribution.
   WebDistribution:
     Type: AWS::CloudFront::Distribution
@@ -1169,6 +1204,23 @@ Resources:
             - EventType: viewer-request
               FunctionARN: !GetAtt WebIndexFunction.FunctionMetadata.FunctionARN
         CacheBehaviors:
+          # The two plain files, as the default serves them but for the CSP.
+          - PathPattern: /robots.txt
+            TargetOriginId: web
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: !Ref WebCachePolicy
+            ResponseHeadersPolicyId: !Ref PlainFilesHeadersPolicy
+          - PathPattern: /sitemap.xml
+            TargetOriginId: web
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: !Ref WebCachePolicy
+            ResponseHeadersPolicyId: !Ref PlainFilesHeadersPolicy
           # Every dynamic response is no-store; OAC signs the private HTTP origins.
           - PathPattern: /api/*
             TargetOriginId: native-app

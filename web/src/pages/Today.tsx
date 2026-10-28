@@ -7,6 +7,7 @@ import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
 import { DayWhere } from '../components/where.tsx';
 import { count, dayName } from '../lib/format.ts';
+import { livedText } from '../../../packages/domain/version.ts';
 import { useHashParam, useMe } from '../lib/nav.ts';
 import { badgesQuery, todayQuery } from '../lib/queries.ts';
 import type { Me, Today as TodayData } from '../lib/types.ts';
@@ -52,6 +53,10 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
         </p>
         <StreakLine s={t.streak}>{me?.badges !== false && <BadgesLink />}</StreakLine>
       </div>
+      {/* Weeks and days lived, a nod to Four Thousand Weeks; the email has it too. */}
+      <p className="hint" id="lived">
+        {livedText(t.lived)}
+      </p>
       <p className="hint" id="paused" hidden={!t.paused_through}>
         {t.paused_through && `Emails paused through ${dayName(t.paused_through)}. Notes still count.`}
       </p>

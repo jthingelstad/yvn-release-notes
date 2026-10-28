@@ -33,6 +33,15 @@ export function computeVersion(birthday: Day, today: Day): Version {
   };
 }
 
+/** Weeks and days lived, a nod to Four Thousand Weeks. Both count from 1, so
+ * the day you were born is Week 1, Day 1 (the version counts from 0). */
+export function lifeCount(v: Version, birthday: Day): { week: number; day: number } {
+  const lived = daysBetween(birthday, releaseSpan(birthday, v.age)[0]) + v.patch;
+  return { week: Math.floor(lived / 7) + 1, day: lived + 1 };
+}
+export const livedText = (l: { week: number; day: number }, dash = '\u2014') =>
+  `Week ${l.week.toLocaleString('en-US')} ${dash} Day ${l.day.toLocaleString('en-US')}`;
+
 export function sameDayBefore(birthday: Day, today: Day): Day[] {
   const born = parseDay(birthday),
     version = computeVersion(birthday, today),

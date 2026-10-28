@@ -195,3 +195,15 @@ test('a release with no notes that gave closes with the thank-you alone', () => 
   assert.ok(html.includes(thanks));
   assert.ok(!html.includes('with notes'), 'no count of nothing');
 });
+test('weeks and days lived count from 1 on the birth day, leap birthdays included', () => {
+  const line = (birthday: string, day: string) => c.lifeLine(computeVersion(birthday, day), birthday);
+  assert.equal(line('1990-06-15', '1990-06-15'), 'Week 1 — Day 1');
+  assert.equal(line('1990-06-15', '1990-06-22'), 'Week 2 — Day 8');
+  assert.equal(line('2000-02-29', '2001-02-28'), 'Week 53 — Day 366');
+  assert.equal(line('2000-02-29', '2001-03-01'), 'Week 53 — Day 367');
+  assert.equal(line('1972-03-05', '2026-10-28'), 'Week 2,852 — Day 19,961');
+  assert.equal(
+    c.lifeLine(computeVersion('1972-03-05', '2026-10-28'), '1972-03-05', '&mdash;'),
+    'Week 2,852 &mdash; Day 19,961'
+  );
+});

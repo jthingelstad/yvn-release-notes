@@ -5,7 +5,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import * as links from '../backend/links.ts';
 import { withoutClosing } from '../domain/tags.ts';
-import { computeVersion, releaseName, type Version } from '../domain/version.ts';
+import { daysBetween } from '../domain/dates.ts';
+import { computeVersion, releaseName, releaseSpan, type Version } from '../domain/version.ts';
 import type { Streak } from '../domain/streak.ts';
 import { codePointLength, codePointSlice, pythonRstrip, pythonTrim } from '../domain/unicode.ts';
 import { UPDATE_LABEL, type ProductUpdate } from '../domain/product-updates.ts';
@@ -143,6 +144,16 @@ export const birthdayLine = (v: Version) =>
 export const nextRelease = (v: Version) => `${Math.floor((v.age + 1) / 10)}.${(v.age + 1) % 10}.0`;
 export const ships = (v: Version) => (v.daysUntil === 1 ? 'tomorrow' : `in ${v.daysUntil} days`);
 export const countdown = (v: Version) => `${nextRelease(v)} ships ${ships(v)}.`;
+/** Weeks and days lived, a nod to Four Thousand Weeks. Both count from 1, so
+ * the day you were born is Week 1, Day 1 (the version counts from 0). */
+export function lifeCount(v: Version, birthday: string): [number, number] {
+  const lived = daysBetween(birthday, releaseSpan(birthday, v.age)[0]) + v.patch;
+  return [Math.floor(lived / 7) + 1, lived + 1];
+}
+export const lifeLine = (v: Version, birthday: string, dash = '\u2014') =>
+  lifeCount(v, birthday)
+    .map((n, i) => `${i ? 'Day' : 'Week'} ${n.toLocaleString('en-US')}`)
+    .join(` ${dash} `);
 export const daysPhrase = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`;
 export function clockPhrase(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number);
@@ -350,7 +361,7 @@ export function body(v: Version, birthday: string, o: BodyOptions = {}): string 
   if (o.yesterday) text += yesterdayBody(birthday, o.yesterday);
   if (o.past) text += pastBody(v, birthday, o.past);
   return (
-    `${opening}\n\nReply any time today: what happened, what you made, who you saw.\nWhatever you send back becomes the release notes for ${v}.\nPhotos and voice memos work too.\nReply as often as you like; it all adds up to today's notes.\n\n${text}${countdown(v)}\n${SITE}/birthday/?p=${birthday}\n\n-- \nRelease Notes, from Your Version Number\n` +
+    `${opening}\n\nReply any time today: what happened, what you made, who you saw.\nWhatever you send back becomes the release notes for ${v}.\nPhotos and voice memos work too.\nReply as often as you like; it all adds up to today's notes.\n\n${text}${countdown(v)}\n${lifeLine(v, birthday)}\n${SITE}/birthday/?p=${birthday}\n\n-- \nRelease Notes, from Your Version Number\n` +
     (o.inbox ? `Write any day, no reply needed: ${o.inbox}\n` : '') +
     `Pause or manage: ${APP}/settings/\n` +
     (o.token ? `Unsubscribe: ${unsubscribeLink(o.token)}\n` : '') +
@@ -624,6 +635,7 @@ ${partyHtml}${specialHtml}
 ${yearDots(v)}
 <p class="ink-2" style="margin:8px 0 0;font-family:${FONT};font-size:15px;line-height:1.45;color:${INK_2};">
 <span class="ink" style="font-family:${MONO};font-weight:700;color:${INK};">${escape(nextRelease(v))}</span> ships ${escape(ships(v))}. <a class="link" href="${escape(link)}" style="color:${BLUE};font-weight:700;text-decoration:underline;">See your number</a>
+<br>${lifeLine(v, birthday, '&mdash;')}
 </p>
 </td></tr>
 

@@ -1,7 +1,7 @@
 /** Exact DynamoDB shapes for API tokens and their writes (docs/API.md): the
  * token list, the owner's revoke with its 30-day pointer, a client's own
- * revoke, the token proof, a token's note added, changed and deleted, the
- * pinned tags and the recent tags' read. The fake table runs the same
+ * revoke, the token proof, a token's note added, changed and deleted, its
+ * files and upload count, the pinned tags and the recent tags' read. The fake table runs the same
  * requests in tests-node/api/v1.test.ts; these pin what goes to AWS. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -228,6 +228,136 @@ test('a token’s change goes only to its own note, from the words and revision 
         }
       ]
     ]);
+  }
+});
+
+test('a token’s files prove media:write too, and new ones go after those the note had when read', async () => {
+  const files = {
+      ConditionCheck: {
+        ...tokenProof.ConditionCheck,
+        ConditionExpression: tokenProof.ConditionCheck.ConditionExpression + ' AND contains(#s, :also0)',
+        ExpressionAttributeValues: { ...tokenProof.ConditionCheck.ExpressionAttributeValues, ':also0': 'media:write' }
+      }
+    },
+    entry = { n: 1, kind: 'image', type: 'image/png', size: 9, key: 'media/u/files/f.png' };
+  {
+    const { store, only } = recorder(),
+      fresh = { ...note, media: [entry] };
+    assert.equal(await store.apiNoteCommit(fresh, null, receipt, audit, rate, null, token, 100), true);
+    assert.deepEqual(only(), [
+      [
+        'TransactWriteCommand',
+        {
+          TransactItems: [
+            profileProof,
+            files,
+            { Put: { TableName: 'T', Item: fresh, ConditionExpression: 'attribute_not_exists(pk)' } },
+            ...receipts(null)
+          ]
+        }
+      ]
+    ]);
+  }
+  for (const had of [0, 2]) {
+    const { store, only } = recorder(),
+      old = { ...note, ...(had ? { media: [entry, { ...entry, n: 2 }] } : {}) },
+      added = [{ ...entry, n: had + 1 }],
+      changed = { ...note, updated_at: 200, revision: 'r2', media: [...((old.media as Item[]) ?? []), ...added] };
+    assert.equal(await store.apiNoteCommit(changed, old, receipt, audit, rate, previous, token, 100, added), true);
+    assert.deepEqual(only(), [
+      [
+        'TransactWriteCommand',
+        {
+          TransactItems: [
+            profileProof,
+            files,
+            {
+              Update: {
+                TableName: 'T',
+                Key: { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n' },
+                UpdateExpression:
+                  'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next, ' +
+                  'media = list_append(if_not_exists(media, :none), :m)',
+                ConditionExpression:
+                  '#src = :api AND #c = :token AND #t = :old AND #r = :revision AND ' +
+                  'attribute_not_exists(updated_at) AND ' +
+                  (had ? 'size(media) = :had' : '(attribute_not_exists(media) OR size(media) = :had)'),
+                ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection', '#src': 'source' },
+                ExpressionAttributeValues: {
+                  ':api': 'api',
+                  ':token': 'a',
+                  ':old': 'Coffee #walks',
+                  ':revision': 'r1',
+                  ':text': 'Coffee #walks',
+                  ':tags': ['walks'],
+                  ':links': [],
+                  ':updated_at': 200,
+                  ':next': 'r2',
+                  ':m': added,
+                  ':none': [],
+                  ':had': had
+                }
+              }
+            },
+            ...receipts(previous)
+          ]
+        }
+      ]
+    ]);
+  }
+});
+
+test('a token’s upload form counts with the web’s, in the transaction that proves account and token', async () => {
+  const { store, only } = recorder(),
+    day = Math.floor(100_000 / 86400);
+  assert.equal(await store.apiUploadCount(token, 100_000, 500, 200, 2000), 'ok');
+  await store.countUpload('u', day, 500, 200, 2000);
+  const count = {
+    Key: { pk: `RATE#upload:u#${day}`, sk: 'RATE' },
+    UpdateExpression: 'ADD n :one, #b :size SET expires_at = :exp',
+    ConditionExpression: 'attribute_not_exists(pk) OR (n < :files AND #b <= :room)',
+    ExpressionAttributeNames: { '#b': 'bytes' },
+    ExpressionAttributeValues: { ':one': 1, ':size': 500, ':exp': (day + 2) * 86400, ':files': 200, ':room': 1500 }
+  };
+  assert.deepEqual(only(), [
+    [
+      'TransactWriteCommand',
+      {
+        TransactItems: [
+          profileProof,
+          {
+            ConditionCheck: {
+              ...tokenProof.ConditionCheck,
+              ConditionExpression: tokenProof.ConditionCheck.ConditionExpression + ' AND contains(#s, :also0)',
+              ExpressionAttributeValues: {
+                ':revision': 2,
+                ':now': 100_000,
+                ':scope': 'notes:write',
+                ':also0': 'media:write'
+              }
+            }
+          },
+          { Update: { TableName: 'T', ...count } }
+        ]
+      }
+    ],
+    ['UpdateCommand', { TableName: 'T', ...count }]
+  ]);
+});
+
+test('the fake table says whether the count or the token refused an upload form', async () => {
+  const row = { pk: 'USER#u', sk: 'APITOKEN#a', ...token, scope: 'notes:write media:write' },
+    s = new FakeStore([{ pk: 'USER#u', sk: 'PROFILE', email: 'ada@example.com' }, row], 'T');
+  assert.equal(await s.apiUploadCount(row, 100, 600, 2, 1000), 'ok');
+  assert.equal(await s.apiUploadCount(row, 100, 600, 2, 1000), 'limited', 'over the bytes');
+  assert.equal(await s.apiUploadCount(row, 100, 400, 2, 1000), 'ok');
+  assert.equal(await s.apiUploadCount(row, 100, 1, 2, 1000), 'limited', 'over the files');
+  for (const narrower of [
+    { ...row, scope: 'notes:write' },
+    { ...row, revoked: true }
+  ]) {
+    s.seed(narrower);
+    assert.equal(await s.apiUploadCount(row, 200_000, 1, 2, 1000), 'retry');
   }
 });
 

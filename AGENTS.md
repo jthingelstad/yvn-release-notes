@@ -761,7 +761,8 @@ Where things are (each module's design comment has its contract):
   the bearer and commits the note, the live grant, an idempotency receipt,
   the daily quota and a content-free audit together. Capture alone keeps an
   agent's files (S3 puts under `media/*/files/`), and removes them when no
-  note took them; no byte or file name is logged. No MCP token
+  note took them; a token's uploads it checks under `media/*/api/*` alone,
+  never the web's `media/*/web/*`. No byte or file name is logged. No MCP token
   authenticates a web write. Activity records hold no arguments or returned
   content, and nothing logs note text.
 - **Disconnecting revokes at once**; what was already shared, and unexpired
@@ -779,7 +780,9 @@ Where things are (each module's design comment has its contract):
 `docs/API.md` has the design and the phases; phase 1 (tokens, text notes,
 tags, the activity log), phase 2 (the OpenAPI file and the guide's
 `/guide/tokens/`, `/guide/api/` and `/guide/api/clients/`) and phase 4
-(Upcoming and its reminders) are built.
+(Upcoming and its reminders) are built. Phase 3's capture side (forms,
+files on a token's notes, a note's place, Here) and its role change are
+in; no route reaches them until its `/v1` routes and guide land.
 
 - **`/v1` is the MCP function's**, under its reader role, and every write
   goes to the capture function, as an agent's does. Only an API token opens

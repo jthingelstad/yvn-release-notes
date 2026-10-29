@@ -37,7 +37,8 @@ const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/,
   // The longest base64 the byte cap allows: every file's padding rounds up.
   MAX_CHARS = Math.ceil(MAX_INLINE_BYTES / 3) * 4 + 4 * MAX_INLINE_FILES;
 export const TOO_LARGE = `Send at most ${MAX_INLINE_FILES} files and 4 MB together in one call: add more with notes_attach, a few at a time, or ask the user to upload larger files on the web.`;
-const TYPES =
+/** The types a file may be, in an agent's and a token's words. */
+export const FILE_TYPES =
   'Send a photo (JPEG, PNG, GIF, WebP or HEIC), a recording (M4A, AAC, MP3, WAV, OGG, WebM or FLAC) or a PDF, with its MIME type in type.';
 /** The tool's `files` argument, checked whole before anything is kept. */
 export function inlineFiles(value: unknown): InlineFile[] {
@@ -66,7 +67,7 @@ export function inlineFiles(value: unknown): InlineFile[] {
   for (const file of value as Array<{ name?: string; type: string; data: string }>) {
     const name = fileName(file.name ?? ''),
       type = file.type.length <= 100 ? media.uploadType(file.type, name) : null;
-    if (!type || !Object.hasOwn(media.UPLOADABLE, type)) throw new ToolError('file_type', TYPES);
+    if (!type || !Object.hasOwn(media.UPLOADABLE, type)) throw new ToolError('file_type', FILE_TYPES);
     if (!file.data || file.data.length % 4 !== 0 || !BASE64.test(file.data))
       throw new ToolError(
         'invalid_arguments',

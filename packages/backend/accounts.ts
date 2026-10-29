@@ -4,7 +4,7 @@ import { photoOf } from './profile-photo.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { SessionService, reject } from './sessions.ts';
 import type { Item, Key } from './store-types.ts';
-import { chosen, clean, devicePlace, object } from './places.ts';
+import { chosen, clean, notePlaceOf } from './places.ts';
 import { iso, localDay, validDay, addDays, daysBetween } from '../domain/dates.ts';
 import { profileView, pauseStart } from './views.ts';
 import { validCode, digest, clearCookie } from './auth.ts';
@@ -140,10 +140,9 @@ export function chosenPlace(raw: unknown): Item {
   return { ...chosen(p) };
 }
 /** A note's place: a city from the search, or the spot a device gave
- * ("Here", `POST /api/places/here`), kept exact. */
+ * ("Here", `POST /api/places/here`), kept exact (places.notePlaceOf). */
 export function notePlace(raw: unknown): Item {
-  if (object(raw)?.from !== 'device') return chosenPlace(raw);
-  const p = devicePlace(raw);
+  const p = notePlaceOf(raw);
   if (!p) reject(400, 'place');
   return p;
 }

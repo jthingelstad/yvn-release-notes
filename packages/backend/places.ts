@@ -199,6 +199,15 @@ export function devicePlace(raw: unknown): PlaceRecord | null {
   return { ...out, ...spot, from: 'device' };
 }
 
+/** A note's place: a city from the search, or the spot a device gave
+ * ("Here"), kept exact; null when it is neither. The web and a token's note
+ * (`/v1`) take the same. */
+export function notePlaceOf(raw: unknown): PlaceRecord | null {
+  if (object(raw)?.from === 'device') return devicePlace(raw);
+  const city = clean(raw);
+  return city ? { ...chosen(city) } : null;
+}
+
 /** A business or landmark near a device's spot, offered to name a note by
  * ("Caribou Coffee, Minneapolis"), never chosen for it: the nearest one is
  * as often a bus stop or a car park as where someone sat. */

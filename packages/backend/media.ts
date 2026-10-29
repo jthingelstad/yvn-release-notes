@@ -118,7 +118,11 @@ export function uploadType(contentType: string, filename: string): string | null
     return 'application/pdf';
   return mediaType(type, filename);
 }
-export const uploadKey = (user: string, id: string, type: string) => `media/${user}/web/${id}.${extension(type)}`;
+/** Where a signed form puts a file before a note takes it: `web` for the
+ * web's, `api` for a token's (`POST /v1/uploads`), so the capture function's
+ * role reaches only a token's. Both are tagged pending and expire in a day. */
+export const uploadKey = (user: string, id: string, type: string, from: 'web' | 'api' = 'web') =>
+  `media/${user}/${from}/${id}.${extension(type)}`;
 export const keptKey = (user: string, id: string, type: string) => `media/${user}/files/${id}.${extension(type)}`;
 export const key = (user: string, day: string, id: string, n: number, type: string) =>
   `media/${user}/${day}/${id}/${n}.${extension(type)}`;

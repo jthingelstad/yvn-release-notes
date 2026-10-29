@@ -29,15 +29,16 @@ export const TOKEN_EXPIRY: Record<string, number | null> = { '90d': 90 * 86400, 
 export const TOKEN_FORMAT = /^rn_[A-Za-z0-9_-]{43}$/;
 export const tokenKey = (id: string): string => 'APITOKEN#' + id;
 /** `/v1`'s daily limits in UTC, separate from MCP's: notes made, other
- * changes and Upcoming saves per account across its tokens, reads per
- * token. */
-export const V1_LIMITS = { create: 100, change: 200, upcoming: 50, reads: 2000 } as const;
+ * changes, Upcoming saves and spots named (Here) per account across its
+ * tokens, reads per token. Files count with the web's (uploads.ts). */
+export const V1_LIMITS = { create: 100, change: 200, upcoming: 50, here: 100, reads: 2000 } as const;
 /** The most Upcoming dates one `/v1` save adds, changes and removes, as for
  * an agent. */
 export const V1_UPCOMING_MAX = 50;
 /** What a token without the scope a request needs is told. */
 export const SCOPE_REFUSALS: Record<string, string> = {
   'notes:write': "This token can't add notes. Make a token with Add notes ticked.",
+  'media:write': "This token can't add files. Make a token with Add files ticked.",
   upcoming: "This token can't read or change Upcoming. Make a token with Upcoming ticked.",
   activity: "This token can't read the activity log. Make a token that may read it."
 };

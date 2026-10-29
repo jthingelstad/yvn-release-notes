@@ -377,24 +377,37 @@ subject, mail words, another sender or a settings value.
 
 - **`POST /v1/uploads`** `{name, type, size}`, `media:write`. One signed S3
   form for one file, under the web's limits: 50 MB a file, 20 files a note,
-  200 uploads and 2 GB a day per account, each form good for five minutes.
-  A client asks for the form just before it uploads. The client then posts
-  the file straight to S3, and names the upload in the note's `uploads` or
-  in **`POST /v1/notes/{date}/{id}/media`** `{uploads}` on a note this token
-  wrote. Thumbnails, EXIF place, and the owner's opted-in transcripts and
+  200 uploads and 2 GB a day per account (one count with the web's), each
+  form good for five minutes. It answers 201 with the `upload` id, its
+  `type`, the form's `url` and `fields`, and `expires_in`. It has no
+  receipt: a retry gets a new form, and an unused one expires. A client
+  asks for the form just before it uploads. The client then posts the file
+  straight to S3, and names the upload as `{upload, type, name}` in the
+  note's `uploads`, or in `POST /v1/notes/{date}/{id}/media` with
+  `{uploads}` on a note this token wrote (a change, for the daily count).
+  Thumbnails, EXIF place, and the owner's opted-in transcripts and
   descriptions follow, as for a web upload.
+- **A note takes its files as the web's does**: each checked against the
+  bytes that arrived, then copied to a kept key. The pending file goes only
+  once the note has its copy, so a write refused or lost before it lands
+  leaves the upload for a retry with the same Idempotency-Key, and a note
+  takes each upload once.
 - **`GET /v1/places?q=`** is the web's city search. **`POST
 /v1/places/here`** `{lat, lon, accuracy_m}` gives the spot, its
-  neighbourhood and up to six nearby businesses, as the web's Here does.
-  Each answer carries a `place` handle that a note sends back. Both need
-  `notes:write`.
+  neighbourhood and up to six nearby businesses, as the web's Here does,
+  as `{place, nearby}`. A note sends a `place` back as it came, the Here one
+  with `venue` set to a `nearby` name if the owner picks one. Both need
+  `notes:write`. Each Here is a paid lookup, so an account names 100 spots
+  a UTC day through its tokens.
 - **The one infrastructure change, flagged.** Signed forms and the attach
   step after them run in the web server today, under a session. The MCP
   function's roles were built without upload rights. Phase 3 lets the
-  capture function sign forms for the pending prefix and run the same
-  attach, with the same checks. That is a role change in
-  `infra/template.yaml`, shipped through a normal deploy and reviewed as
-  its own PR.
+  capture function sign forms for its own pending prefix,
+  `media/<user>/api/`, and run the same attach, with the same checks. That
+  is a role change in `infra/template.yaml` (that prefix's form, read,
+  copy and delete rights, ListBucket so a missing upload reads as missing,
+  the account's upload count, and ReverseGeocode for Here), shipped through
+  a normal deploy and reviewed as its own PR before any route reaches it.
 - **HEIC photos get no thumbnail** (AGENTS.md, Thumbnails), so they never
   reach the email. Changelog sends the photo picker's compatible JPEG, with
   place and time kept (Jamie's calls). Other clients should do the same.

@@ -7,8 +7,13 @@
  * wrote itself. With `upcoming`, it lists nothing here but saves and removes
  * Upcoming dates as an agent does (workers/capture.ts, writeUpcoming): all
  * or nothing, from the revision it read, with a dry run that writes
- * nothing. */
+ * nothing. With `media:write`, it signs forms for files under the owner's
+ * media/<user>/api/ (uploads.ts), counted with the web's, and a note takes
+ * them as a web note does: checked against the bytes that arrived, copied
+ * to a kept key, and the pending file removed only once the note has its
+ * copy. Here names a device's spot as the web's Here does. */
 import { randomUUID } from 'node:crypto';
+import { GeoPlacesClient } from '@aws-sdk/client-geo-places';
 import type { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import { digest } from '../packages/backend/auth.ts';
 import {
@@ -22,11 +27,22 @@ import {
 import { live, type OAuthRow } from '../packages/backend/oauth.ts';
 import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
 import { addedEvents, earnedBy, unlockedBy } from '../packages/backend/badges.ts';
-import { keys as mediaKeys } from '../packages/backend/media.ts';
-import { search } from '../packages/backend/places.ts';
-import { safeLog } from '../packages/backend/services.ts';
+import { keys as mediaKeys, MAX_FILES } from '../packages/backend/media.ts';
+import { nameSpot, notePlaceOf, search, spotOf, type SpotNames } from '../packages/backend/places.ts';
+import { errorFields, safeLog } from '../packages/backend/services.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
 import { pinnedTags, pinsOf, tagRow, type TagRowStore } from '../packages/backend/tag-row.ts';
+import {
+  claimUploads,
+  dropCopies,
+  FORM_SECONDS,
+  UPLOAD_BYTES_A_DAY,
+  uploadForm,
+  uploadRequest,
+  UPLOADS_A_DAY,
+  type Claimed,
+  type UploadRequest
+} from '../packages/backend/uploads.ts';
 import {
   checkToken,
   SCOPE_REFUSALS,
@@ -53,6 +69,7 @@ import type { ActivityEvent } from '../packages/domain/activity.ts';
 import type { Unlocked } from '../packages/domain/badges.ts';
 import { agentUpcomingView, editRevision } from '../server/mcp/reader.ts';
 import { fingerprint, object, type Arguments, type SafeLog } from '../server/mcp/common.ts';
+import { FILE_TYPES } from '../server/mcp/files.ts';
 import type { CaptureContext } from './capture.ts';
 
 type Ops = NonNullable<TransactWriteCommandInput['TransactItems']>;
@@ -69,8 +86,16 @@ export interface ApiStore extends TokenReads, TagRowStore {
     rate: OAuthRow,
     previous: OAuthRow | null,
     token: OAuthRow,
-    now: number
+    now: number,
+    added?: readonly OAuthRow[]
   ): Promise<boolean>;
+  apiUploadCount(
+    token: OAuthRow,
+    now: number,
+    size: number,
+    maxFiles: number,
+    maxBytes: number
+  ): Promise<'ok' | 'limited' | 'retry'>;
   apiNoteDelete(
     old: OAuthRow,
     receipt: OAuthRow,
@@ -86,17 +111,28 @@ export interface ApiStore extends TokenReads, TagRowStore {
 
 /** The operations the router hands on, each with its body's fields. */
 export const API_WRITES: Record<string, readonly string[]> = {
-  'notes.create': ['text', 'date', 'written_at'],
+  'notes.create': ['text', 'date', 'written_at', 'place', 'uploads'],
   'notes.edit': ['date', 'id', 'text', 'revision'],
   'notes.append': ['date', 'id', 'text'],
+  'notes.media': ['date', 'id', 'uploads'],
   'notes.delete': ['date', 'id'],
+  'uploads.start': ['name', 'type', 'size'],
+  'places.here': ['lat', 'lon', 'accuracy_m'],
   'tags.pinned': ['pinned'],
   'upcoming.batch': ['add', 'change', 'remove', 'dry_run'],
   'upcoming.delete': ['id', 'revision'],
   'token.revoke': []
 };
 
-const scopeFor = (op: string) => (op.startsWith('upcoming.') ? 'upcoming' : 'notes:write');
+const scopeFor = (op: string) =>
+  op.startsWith('upcoming.')
+    ? 'upcoming'
+    : op === 'uploads.start' || op === 'notes.media'
+      ? 'media:write'
+      : 'notes:write';
+
+/** Here's naming client, made on first use, as the web's is. */
+let geo: GeoPlacesClient | undefined;
 
 /** A refusal in `/v1`'s own words (docs/API.md, Errors). */
 export class ApiRefusal extends Error {
@@ -123,10 +159,12 @@ const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-
 /** Seconds until the UTC day ends, when every daily count starts again. */
 export const untilUtcMidnight = (now: number): number => (Math.floor(now / 86400) + 1) * 86400 - now;
 
-function text(args: Arguments): string {
+/** The note's words; a note with files may have none. */
+function text(args: Arguments, optional = false): string {
+  if (optional && !Object.hasOwn(args, 'text')) return '';
   if (typeof args.text !== 'string') throw new ApiRefusal('text_required', 'Send the note as text.', { field: 'text' });
   const value = pythonTrim(args.text.replace(/\r\n/g, '\n'));
-  if (!value) throw new ApiRefusal('text_required', 'Write some text for the note.', { field: 'text' });
+  if (!value && !optional) throw new ApiRefusal('text_required', 'Write some text for the note.', { field: 'text' });
   return value;
 }
 function tooLong(value: string): void {
@@ -144,6 +182,14 @@ function shape(op: string, args: Arguments): void {
       throw new ApiRefusal('invalid_request', 'dry_run is true or false.', { field: 'dry_run' });
     return;
   }
+  if (op === 'uploads.start') {
+    for (const field of ['name', 'type'])
+      if (Object.hasOwn(args, field) && (typeof args[field] !== 'string' || codePointLength(String(args[field])) > 255))
+        throw new ApiRefusal('invalid_request', `${field} is a string.`, { field });
+    return;
+  }
+  // The spot is checked whole, as the web's Here checks it.
+  if (op === 'places.here') return;
   if (op === 'upcoming.delete') {
     if (typeof args.id !== 'string' || !args.id || codePointLength(args.id) > 80)
       throw new ApiRefusal('invalid_request', 'id is a string.', { field: 'id' });
@@ -183,6 +229,21 @@ function upcomingRefusal(error: ApiError): ApiRefusal {
   return new ApiRefusal('invalid_request', (UPCOMING_HINTS[error.error] ?? "That date isn't right.") + where, extra);
 }
 
+/** A refused file in `/v1`'s words (uploads.ts says which). */
+function uploadRefusal(error: ApiError): ApiRefusal {
+  if (error.error === 'file-type') return new ApiRefusal('invalid_request', FILE_TYPES, { field: 'type' });
+  if (error.error === 'file-size')
+    return new ApiRefusal('invalid_request', "size is the file's exact size in bytes.", { field: 'size' });
+  if (error.error === 'file-too-big')
+    return new ApiRefusal('too_large', 'A file can be at most 50 MB.', { field: 'size' });
+  return new ApiRefusal(
+    'invalid_request',
+    "An upload isn't there or doesn't match what arrived. Each is {upload, type} as POST /v1/uploads answered, " +
+      'sent after the file was posted to its form; a note takes each once.',
+    { field: 'uploads' }
+  );
+}
+
 export async function writeApi(
   context: CaptureContext,
   event: Arguments,
@@ -220,7 +281,106 @@ export async function writeApi(
   }
 
   if (!scopesOf(token).includes(scopeFor(op))) throw new ApiRefusal('scope_required', SCOPE_REFUSALS[scopeFor(op)]!);
+  const withFiles = op === 'notes.media' || (op === 'notes.create' && Object.hasOwn(args, 'uploads'));
+  if (withFiles && !scopesOf(token).includes('media:write'))
+    throw new ApiRefusal('scope_required', SCOPE_REFUSALS['media:write']!);
   shape(op, args);
+  // A token checked again after its write was refused: still live and the
+  // same revision, or refused as it now is.
+  const stillLive = async () => {
+    const fresh = await checkToken(store, context.origin, now, 'Bearer ' + String(event.token ?? ''));
+    if (!fresh.ok) throw new ApiRefusal(fresh.code, '');
+    if (fresh.token.revision !== token.revision) throw new ApiRefusal('token_revoked', '');
+  };
+
+  // A signed form for one file, counted with the web's uploads. No receipt:
+  // a retry gets a new form, as on the web, and an unused one expires.
+  if (op === 'uploads.start') {
+    let request: UploadRequest;
+    try {
+      request = uploadRequest(args);
+    } catch (error) {
+      if (error instanceof ApiError) throw uploadRefusal(error);
+      throw error;
+    }
+    if (!context.objects) throw new Error('Files service missing');
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const counted = await store.apiUploadCount(token, now, request.size, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY);
+      if (counted === 'limited')
+        throw new ApiRefusal(
+          'rate_limited',
+          `That's today's ${UPLOADS_A_DAY} files or 2 GB of uploads for this account. Try again after midnight UTC.`,
+          { retry_after: untilUtcMidnight(now) }
+        );
+      if (counted === 'ok')
+        return {
+          status: 201,
+          body: { ...(await uploadForm(context.objects, uid, request, 'api')), expires_in: FORM_SECONDS },
+          replayed: false
+        };
+      await stillLive();
+    }
+    throw new ApiRefusal('busy', 'Try again shortly.');
+  }
+
+  // Here: a device's spot named for a note, as the web's Here names it, with
+  // the businesses near enough to offer. Counted, since each is a paid
+  // lookup; it writes nothing else, so it has no receipt.
+  if (op === 'places.here') {
+    const spot = spotOf(args);
+    if (!spot)
+      throw new ApiRefusal('invalid_request', 'Send lat and lon in degrees, and accuracy_m in metres if you have it.', {
+        field: 'lat'
+      });
+    const hereKey = `WRITERATE#v1-here#${Math.floor(now / 86400)}`,
+      cap = V1_LIMITS.here;
+    let remaining = -1;
+    for (let attempt = 0; attempt < 5 && remaining < 0; attempt++) {
+      const previous = await store.mcpGet('MCPMETA#' + uid, hereKey),
+        count = Number(previous?.n ?? 0);
+      if (count >= cap)
+        throw new ApiRefusal(
+          'rate_limited',
+          `That's today's ${cap} spots named through tokens. Try again after midnight UTC.`,
+          { retry_after: untilUtcMidnight(now) }
+        );
+      const row = {
+        pk: 'MCPMETA#' + uid,
+        sk: hereKey,
+        n: count + 1,
+        expires_at: (Math.floor(now / 86400) + 2) * 86400
+      };
+      if (await store.mcpCommit([[row, previous ? Number(previous.revision) : null]], uid)) remaining = cap - count - 1;
+      else await stillLive();
+    }
+    if (remaining < 0) throw new ApiRefusal('busy', 'Try again shortly.');
+    let named: SpotNames | null;
+    try {
+      named = await (context.nameSpot ?? ((s) => nameSpot(s, (geo ??= new GeoPlacesClient({})))))(spot);
+    } catch (error) {
+      (options.log ?? safeLog)({ event: 'here-error', user: uid, ...errorFields(error) });
+      throw new ApiRefusal('unavailable', 'Naming the spot is unavailable. Try again shortly.');
+    }
+    if (!named?.city)
+      throw new ApiRefusal('not_found', "Couldn't find a city for that spot. Search for one with GET /v1/places?q=.");
+    return {
+      status: 200,
+      body: {
+        place: {
+          name: named.city,
+          region: named.region ?? '',
+          country: named.country ?? '',
+          ...(named.tz ? { tz: named.tz } : {}),
+          ...(named.district ? { district: named.district } : {}),
+          ...spot,
+          from: 'device'
+        },
+        nearby: named.nearby
+      },
+      replayed: false,
+      limit: { limit: cap, remaining, reset: untilUtcMidnight(now) }
+    };
+  }
   const key = typeof event.key === 'string' && event.key ? event.key : randomUUID(),
     receiptKey = 'CAPTURE#' + tid + '#' + digest(key),
     hash = fingerprint({ api: op, arguments: args }),
@@ -300,275 +460,362 @@ export async function writeApi(
   if (op === 'upcoming.batch' && args.dry_run === true)
     return { status: 200, body: upcomingBody(await upcomingChanges(), true), replayed: false };
 
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const receipt = await store.mcpGet('USER#' + uid, receiptKey);
-    if (live(receipt, now)) {
-      if (receipt.request_hash !== hash)
+  // Files a note takes, checked and copied once, on the first attempt that
+  // gets past the receipt and the count. The pending files go once a note
+  // has its copies; copies no note took go instead, unless the commit's
+  // answer was lost and its receipt says it may have landed (an orphan file
+  // beats a note without its file).
+  let claimed: Claimed | undefined,
+    committed = false,
+    unsure = false;
+  try {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const receipt = await store.mcpGet('USER#' + uid, receiptKey);
+      if (live(receipt, now)) {
+        if (receipt.request_hash !== hash)
+          throw new ApiRefusal(
+            'idempotency_mismatch',
+            'That Idempotency-Key went with a different request. Use a new key for a new request.'
+          );
+        const saved = JSON.parse(String(receipt.result)) as { status: number; body: OAuthRow | null };
+        return { status: saved.status, body: saved.body, replayed: true };
+      }
+      const previous = await store.mcpGet('MCPMETA#' + uid, rateKey),
+        count = Number(previous?.n ?? 0);
+      const reset = untilUtcMidnight(now);
+      if (count >= cap)
         throw new ApiRefusal(
-          'idempotency_mismatch',
-          'That Idempotency-Key went with a different request. Use a new key for a new request.'
+          'rate_limited',
+          limitName === 'create'
+            ? `That's today's ${cap} notes through tokens. Try again after midnight UTC.`
+            : limitName === 'upcoming'
+              ? `That's today's ${cap} Upcoming saves through tokens. Try again after midnight UTC.`
+              : `That's today's ${cap} changes through tokens. Try again after midnight UTC.`,
+          { retry_after: reset }
         );
-      const saved = JSON.parse(String(receipt.result)) as { status: number; body: OAuthRow | null };
-      return { status: saved.status, body: saved.body, replayed: true };
-    }
-    const previous = await store.mcpGet('MCPMETA#' + uid, rateKey),
-      count = Number(previous?.n ?? 0);
-    const reset = untilUtcMidnight(now);
-    if (count >= cap)
-      throw new ApiRefusal(
-        'rate_limited',
-        limitName === 'create'
-          ? `That's today's ${cap} notes through tokens. Try again after midnight UTC.`
-          : limitName === 'upcoming'
-            ? `That's today's ${cap} Upcoming saves through tokens. Try again after midnight UTC.`
-            : `That's today's ${cap} changes through tokens. Try again after midnight UTC.`,
-        { retry_after: reset }
-      );
-    const rate = {
-        pk: 'MCPMETA#' + uid,
-        sk: rateKey,
-        n: count + 1,
-        revision: Number(previous?.revision ?? 0) + 1,
-        expires_at: (Math.floor(now / 86400) + 2) * 86400
-      },
-      limit = { limit: cap, remaining: cap - count - 1, reset },
-      audit = (fields: OAuthRow) => ({
-        pk: 'MCPMETA#' + uid,
-        sk: `LOG#${String(now).padStart(12, '0')}#${randomUUID().replace(/-/g, '')}`,
-        at: now,
-        tool: 'v1:' + op,
-        outcome: 'ok',
-        connection: tid,
-        client: name,
-        ...fields,
-        expires_at: now + 14 * 86400
-      }),
-      receiptFor = (status: number, body: OAuthRow | null) => ({
-        pk: 'USER#' + uid,
-        sk: receiptKey,
-        request_hash: hash,
-        result: JSON.stringify({ status, body }),
-        expires_at: now + V1_RECEIPT_SECONDS
-      });
+      const rate = {
+          pk: 'MCPMETA#' + uid,
+          sk: rateKey,
+          n: count + 1,
+          revision: Number(previous?.revision ?? 0) + 1,
+          expires_at: (Math.floor(now / 86400) + 2) * 86400
+        },
+        limit = { limit: cap, remaining: cap - count - 1, reset },
+        audit = (fields: OAuthRow) => ({
+          pk: 'MCPMETA#' + uid,
+          sk: `LOG#${String(now).padStart(12, '0')}#${randomUUID().replace(/-/g, '')}`,
+          at: now,
+          tool: 'v1:' + op,
+          outcome: 'ok',
+          connection: tid,
+          client: name,
+          ...fields,
+          expires_at: now + 14 * 86400
+        }),
+        receiptFor = (status: number, body: OAuthRow | null) => ({
+          pk: 'USER#' + uid,
+          sk: receiptKey,
+          request_hash: hash,
+          result: JSON.stringify({ status, body }),
+          expires_at: now + V1_RECEIPT_SECONDS
+        });
 
-    let landed: boolean, answer: ApiAnswer, after: () => Promise<void>;
-    if (op === 'tags.pinned') {
-      const pins = pinnedTags(args.pinned);
-      if (!pins) throw new ApiRefusal('invalid_request', 'pinned is a list of up to 12 tags.', { field: 'pinned' });
-      const old = Array.isArray(profile.pinned_tags) ? pinsOf(profile) : null,
-        row = await tagRow(store, uid, { ...profile, pinned_tags: pins }, today),
-        body = { ...row };
-      landed = await store.setPins(uid, pins, old, [
-        ...store.tokenProof(token, now, 'notes:write'),
-        ...store.agentReceipts(receiptFor(200, body), audit({}), rate, previous, now)
-      ]);
-      answer = { status: 200, body, replayed: false, limit };
-      after = async () => {
-        if (JSON.stringify(old ?? []) !== JSON.stringify(pins))
+      let landed: boolean, answer: ApiAnswer, after: () => Promise<void>;
+      if (op === 'tags.pinned') {
+        const pins = pinnedTags(args.pinned);
+        if (!pins) throw new ApiRefusal('invalid_request', 'pinned is a list of up to 12 tags.', { field: 'pinned' });
+        const old = Array.isArray(profile.pinned_tags) ? pinsOf(profile) : null,
+          row = await tagRow(store, uid, { ...profile, pinned_tags: pins }, today),
+          body = { ...row };
+        landed = await store.setPins(uid, pins, old, [
+          ...store.tokenProof(token, now, 'notes:write'),
+          ...store.agentReceipts(receiptFor(200, body), audit({}), rate, previous, now)
+        ]);
+        answer = { status: 200, body, replayed: false, limit };
+        after = async () => {
+          if (JSON.stringify(old ?? []) !== JSON.stringify(pins))
+            await record([
+              {
+                kind: 'settings.changed',
+                id: again('pinned_tags'),
+                fields: {
+                  via: 'token',
+                  token: name,
+                  ...(client ? { client } : {}),
+                  changes: [{ field: 'pinned_tags', from: old ?? [], to: pins }]
+                }
+              }
+            ]);
+        };
+      } else if (op === 'upcoming.batch' || op === 'upcoming.delete') {
+        const changes = await upcomingChanges(),
+          status = op === 'upcoming.delete' ? 204 : 200,
+          body = status === 204 ? null : upcomingBody(changes, false),
+          named = (events: readonly ActivityEvent[]) =>
+            events.map((e) => ({ ...e, fields: { ...e.fields, token: name } }));
+        landed = (
+          await context.store.upcomingBatch(uid, changes, [
+            ...store.tokenProof(token, now, 'upcoming'),
+            ...store.agentReceipts(receiptFor(status, body), audit({ count: changes.length }), rate, previous, now)
+          ])
+        ).ok;
+        answer = { status, body, replayed: false, limit };
+        after = async () => {
+          // Dates added count toward the Roadmap, as from anywhere else.
+          const won = await earnedBy(context.store, uid, profile, now, addedEvents(changes, now, tz), {
+            via: 'token',
+            ...(client ? { client } : {}),
+            log: (f) => (options.log ?? safeLog)(f)
+          });
+          if (body && profile.badges !== false)
+            answer.body = { ...body, unlocked: won.unlocked.map((u) => ({ key: u.key, name: u.name })) };
+          await record([...named(upcomingEvents(changes, 'token', client ?? undefined)), ...named(won.events)]);
+        };
+      } else if (op === 'notes.delete') {
+        const old = await own(),
+          d = String(args.date),
+          id = String(args.id),
+          files = mediaKeys(old as NoteRecord);
+        landed = await store.apiNoteDelete(
+          old,
+          receiptFor(204, null),
+          audit({ date: d, note_id: id }),
+          rate,
+          previous,
+          token,
+          now
+        );
+        answer = { status: 204, body: null, replayed: false, limit };
+        after = async () => {
+          // The capture role may remove only what was uploaded; a token's notes
+          // have nothing else.
+          const ours = files.filter((k) => k.startsWith(`media/${uid}/files/`));
+          if (ours.length && context.objects) await Promise.allSettled(ours.map((k) => context.objects!.remove(k)));
           await record([
             {
-              kind: 'settings.changed',
-              id: again('pinned_tags'),
+              kind: 'note.deleted',
+              id: again(id),
               fields: {
                 via: 'token',
                 token: name,
                 ...(client ? { client } : {}),
-                changes: [{ field: 'pinned_tags', from: old ?? [], to: pins }]
+                day: d,
+                note: id,
+                files: ((old.media as OAuthRow[] | undefined) ?? []).length
               }
             }
           ]);
-      };
-    } else if (op === 'upcoming.batch' || op === 'upcoming.delete') {
-      const changes = await upcomingChanges(),
-        status = op === 'upcoming.delete' ? 204 : 200,
-        body = status === 204 ? null : upcomingBody(changes, false),
-        named = (events: readonly ActivityEvent[]) =>
-          events.map((e) => ({ ...e, fields: { ...e.fields, token: name } }));
-      landed = (
-        await context.store.upcomingBatch(uid, changes, [
-          ...store.tokenProof(token, now, 'upcoming'),
-          ...store.agentReceipts(receiptFor(status, body), audit({ count: changes.length }), rate, previous, now)
-        ])
-      ).ok;
-      answer = { status, body, replayed: false, limit };
-      after = async () => {
-        // Dates added count toward the Roadmap, as from anywhere else.
-        const won = await earnedBy(context.store, uid, profile, now, addedEvents(changes, now, tz), {
-          via: 'token',
-          ...(client ? { client } : {}),
-          log: (f) => (options.log ?? safeLog)(f)
-        });
-        if (body && profile.badges !== false)
-          answer.body = { ...body, unlocked: won.unlocked.map((u) => ({ key: u.key, name: u.name })) };
-        await record([...named(upcomingEvents(changes, 'token', client ?? undefined)), ...named(won.events)]);
-      };
-    } else if (op === 'notes.delete') {
-      const old = await own(),
-        d = String(args.date),
-        id = String(args.id),
-        files = mediaKeys(old as NoteRecord);
-      landed = await store.apiNoteDelete(
-        old,
-        receiptFor(204, null),
-        audit({ date: d, note_id: id }),
-        rate,
-        previous,
-        token,
-        now
-      );
-      answer = { status: 204, body: null, replayed: false, limit };
-      after = async () => {
-        // The capture role may remove only what was uploaded; a token's notes
-        // have nothing else.
-        const ours = files.filter((k) => k.startsWith(`media/${uid}/files/`));
-        if (ours.length && context.objects) await Promise.allSettled(ours.map((k) => context.objects!.remove(k)));
-        await record([
-          {
-            kind: 'note.deleted',
-            id: again(id),
-            fields: {
-              via: 'token',
+        };
+      } else {
+        let words = op === 'notes.media' ? '' : text(args, withFiles),
+          old: OAuthRow | null = null,
+          typed = now,
+          d: string,
+          place: OAuthRow | null = null;
+        if (op === 'notes.create') {
+          if (Object.hasOwn(args, 'written_at')) {
+            const at = String(args.written_at),
+              seconds = Date.parse(at) / 1000;
+            if (!RFC3339.test(at) || !Number.isFinite(seconds))
+              throw new ApiRefusal('invalid_request', 'written_at is an RFC 3339 time.', { field: 'written_at' });
+            if (seconds > now + 300)
+              throw new ApiRefusal('invalid_request', 'written_at is in the future.', { field: 'written_at' });
+            // A minute or two ahead of this clock is still now.
+            typed = Math.min(Math.floor(seconds), now);
+          }
+          // Words typed offline file to the day they were typed, unless a date
+          // says otherwise.
+          d = day(Object.hasOwn(args, 'date') ? args.date : localDay(typed, tz));
+          if (Object.hasOwn(args, 'place')) {
+            place = notePlaceOf(args.place);
+            if (!place)
+              throw new ApiRefusal(
+                'invalid_request',
+                'place is a city from GET /v1/places, or the place POST /v1/places/here answered, sent back as it came.',
+                { field: 'place' }
+              );
+          }
+        } else {
+          old = await own();
+          d = String(args.date);
+          if (op === 'notes.edit' && editRevision(old) !== args.revision)
+            throw new ApiRefusal(
+              'revision_mismatch',
+              'This note changed since it was read. Read it again and redo the edit from its current text.',
+              { revision: editRevision(old) }
+            );
+          if (op === 'notes.append') words = String(old.text ?? '') + '\n\n' + words;
+          if (op === 'notes.media') words = String(old.text ?? '');
+        }
+        tooLong(words);
+        const before = (old?.media as OAuthRow[] | undefined) ?? [];
+        if (withFiles && Array.isArray(args.uploads) && before.length + args.uploads.length > MAX_FILES)
+          throw new ApiRefusal(
+            'invalid_request',
+            `A note can hold ${MAX_FILES} files and this one has ${before.length}; send the rest with another note.`,
+            { field: 'uploads' }
+          );
+        if (withFiles && !claimed) {
+          if (!context.objects) throw new Error('Files service missing');
+          try {
+            claimed = await claimUploads(context.objects, uid, args.uploads, 'api');
+          } catch (error) {
+            if (error instanceof ApiError) throw uploadRefusal(error);
+            throw error;
+          }
+        }
+        // Numbered after the note's last file, as the web numbers them.
+        const first = Math.max(0, ...before.map((m) => Number(m.n))) + 1,
+          added = (claimed?.entries ?? []).map((f, i) => ({ n: first + i, ...f }));
+        const note: OAuthRow = old
+          ? { pk: old.pk, sk: old.sk }
+          : {
+              pk: 'USER#' + uid,
+              sk: `NOTE#${d}#t-${randomUUID().replace(/-/g, '')}`,
+              source: 'api',
+              connection: tid,
               token: name,
               ...(client ? { client } : {}),
-              day: d,
-              note: id,
-              files: ((old.media as OAuthRow[] | undefined) ?? []).length
+              written_at: iso(typed),
+              tz,
+              version: computeVersion(birthday, d).toString(),
+              ...(place ? { place } : {})
+            };
+        Object.assign(note, {
+          text: words,
+          tags: found(words),
+          // New files change no words, so the links keep the titles they have.
+          links:
+            op === 'notes.media'
+              ? ((old?.links as Link[] | undefined) ?? [])
+              : await collect(words, { keep: old?.links as Link[] | undefined, fetch: titleOnce }),
+          revision: Number(old?.revision ?? 0) + 1
+        });
+        if (old) note.updated_at = iso(now);
+        if (added.length) note.media = [...before, ...added];
+        const id = String(note.sk).split('#').slice(2).join('#'),
+          full = { ...old, ...note },
+          body: OAuthRow = {
+            note: {
+              id,
+              date: d,
+              version: String(full.version ?? computeVersion(birthday, d).toString()),
+              revision: editRevision(full),
+              files: ((full.media as OAuthRow[] | undefined) ?? []).length,
+              token: String(full.token ?? name)
             }
-          }
-        ]);
-      };
-    } else {
-      let words = text(args),
-        old: OAuthRow | null = null,
-        typed = now,
-        d: string;
-      if (op === 'notes.create') {
-        if (Object.hasOwn(args, 'written_at')) {
-          const at = String(args.written_at),
-            seconds = Date.parse(at) / 1000;
-          if (!RFC3339.test(at) || !Number.isFinite(seconds))
-            throw new ApiRefusal('invalid_request', 'written_at is an RFC 3339 time.', { field: 'written_at' });
-          if (seconds > now + 300)
-            throw new ApiRefusal('invalid_request', 'written_at is in the future.', { field: 'written_at' });
-          // A minute or two ahead of this clock is still now.
-          typed = Math.min(Math.floor(seconds), now);
+          };
+        const status = old ? 200 : 201;
+        try {
+          landed = await store.apiNoteCommit(
+            note,
+            old,
+            receiptFor(status, body),
+            audit({ date: d, note_id: id, ...(added.length ? { files: added.length } : {}) }),
+            rate,
+            previous,
+            token,
+            now,
+            old && added.length ? added : undefined
+          );
+        } catch (error) {
+          unsure = true;
+          throw error;
         }
-        // Words typed offline file to the day they were typed, unless a date
-        // says otherwise.
-        d = day(Object.hasOwn(args, 'date') ? args.date : localDay(typed, tz));
-      } else {
-        old = await own();
-        d = String(args.date);
-        if (op === 'notes.edit' && editRevision(old) !== args.revision)
+        answer = { status, body, replayed: false, limit };
+        after = async () => {
+          let unlocked: Unlocked[] = [];
+          if (profile.badges !== false)
+            try {
+              unlocked = await unlockedBy(context.store, uid, profile, today, full, old, [], (f) =>
+                (options.log ?? safeLog)(f)
+              );
+            } catch {
+              (options.log ?? safeLog)({ event: 'badges-error', user: uid, date: d });
+            }
+          if (profile.badges !== false)
+            answer.body = { ...body, unlocked: unlocked.map((u) => ({ key: u.key, name: u.name })) };
+          await record([
+            // As the web records them: new files on a note are note.files.
+            op === 'notes.media'
+              ? {
+                  kind: 'note.files',
+                  id: again(id),
+                  fields: {
+                    via: 'token',
+                    token: name,
+                    ...(client ? { client } : {}),
+                    day: d,
+                    note: id,
+                    added: added.length
+                  }
+                }
+              : {
+                  kind: old ? 'note.edited' : 'note.added',
+                  id: old ? again(id) : id,
+                  fields: {
+                    via: 'token',
+                    token: name,
+                    ...(client ? { client } : {}),
+                    day: d,
+                    note: id,
+                    version: full.version,
+                    ...(added.length ? { files: added.length } : {})
+                  }
+                },
+            ...badgeEvents(unlocked, 'token', d, id, client).map((e) => ({
+              ...e,
+              fields: { ...e.fields, token: name }
+            }))
+          ]);
+        };
+      }
+      if (landed) {
+        committed = true;
+        await after();
+        return answer;
+      }
+      // A lost race on the receipt or the count goes round again; a token or
+      // account that changed is told as such.
+      const now2 = await checkToken(store, context.origin, now, 'Bearer ' + String(event.token ?? ''));
+      if (!now2.ok) throw new ApiRefusal(now2.code, '');
+      if (now2.token.revision !== token.revision) throw new ApiRefusal('token_revoked', '');
+      if (op.startsWith('notes.') && op !== 'notes.create') {
+        // The note itself may have moved on (a web edit meanwhile).
+        const current = await store.note(uid, String(args.date), String(args.id), true);
+        if (!current) throw new ApiRefusal('not_found', 'There is no note with that date and id.');
+        if (op === 'notes.edit' && editRevision(current) !== args.revision)
           throw new ApiRefusal(
             'revision_mismatch',
             'This note changed since it was read. Read it again and redo the edit from its current text.',
-            { revision: editRevision(old) }
+            { revision: editRevision(current) }
           );
-        if (op === 'notes.append') words = String(old.text ?? '') + '\n\n' + words;
       }
-      tooLong(words);
-      const note: OAuthRow = old
-        ? { pk: old.pk, sk: old.sk }
-        : {
-            pk: 'USER#' + uid,
-            sk: `NOTE#${d}#t-${randomUUID().replace(/-/g, '')}`,
-            source: 'api',
-            connection: tid,
-            token: name,
-            ...(client ? { client } : {}),
-            written_at: iso(typed),
-            tz,
-            version: computeVersion(birthday, d).toString()
-          };
-      Object.assign(note, {
-        text: words,
-        tags: found(words),
-        links: await collect(words, { keep: old?.links as Link[] | undefined, fetch: titleOnce }),
-        revision: Number(old?.revision ?? 0) + 1
-      });
-      if (old) note.updated_at = iso(now);
-      const id = String(note.sk).split('#').slice(2).join('#'),
-        full = { ...old, ...note },
-        body: OAuthRow = {
-          note: {
-            id,
-            date: d,
-            version: String(full.version ?? computeVersion(birthday, d).toString()),
-            revision: editRevision(full),
-            token: String(full.token ?? name)
-          }
-        };
-      const status = old ? 200 : 201;
-      landed = await store.apiNoteCommit(
-        note,
-        old,
-        receiptFor(status, body),
-        audit({ date: d, note_id: id }),
-        rate,
-        previous,
-        token,
-        now
-      );
-      answer = { status, body, replayed: false, limit };
-      after = async () => {
-        let unlocked: Unlocked[] = [];
-        if (profile.badges !== false)
-          try {
-            unlocked = await unlockedBy(context.store, uid, profile, today, full, old, [], (f) =>
-              (options.log ?? safeLog)(f)
-            );
-          } catch {
-            (options.log ?? safeLog)({ event: 'badges-error', user: uid, date: d });
-          }
-        if (profile.badges !== false)
-          answer.body = { ...body, unlocked: unlocked.map((u) => ({ key: u.key, name: u.name })) };
-        await record([
-          {
-            kind: old ? 'note.edited' : 'note.added',
-            id: old ? again(id) : id,
-            fields: {
-              via: 'token',
-              token: name,
-              ...(client ? { client } : {}),
-              day: d,
-              note: id,
-              version: full.version
-            }
-          },
-          ...badgeEvents(unlocked, 'token', d, id, client).map((e) => ({
-            ...e,
-            fields: { ...e.fields, token: name }
-          }))
-        ]);
-      };
+      // Pins changed on the web meanwhile: read them again.
+      if (op === 'tags.pinned') {
+        const fresh = await store.mcpProfile(uid);
+        if (fresh) Object.assign(profile, { pinned_tags: fresh.pinned_tags });
+        if (fresh && !Object.hasOwn(fresh, 'pinned_tags')) delete profile.pinned_tags;
+      }
     }
-    if (landed) {
-      await after();
-      return answer;
-    }
-    // A lost race on the receipt or the count goes round again; a token or
-    // account that changed is told as such.
-    const now2 = await checkToken(store, context.origin, now, 'Bearer ' + String(event.token ?? ''));
-    if (!now2.ok) throw new ApiRefusal(now2.code, '');
-    if (now2.token.revision !== token.revision) throw new ApiRefusal('token_revoked', '');
-    if (op.startsWith('notes.') && op !== 'notes.create') {
-      // The note itself may have moved on (a web edit meanwhile).
-      const current = await store.note(uid, String(args.date), String(args.id), true);
-      if (!current) throw new ApiRefusal('not_found', 'There is no note with that date and id.');
-      if (op === 'notes.edit' && editRevision(current) !== args.revision)
-        throw new ApiRefusal(
-          'revision_mismatch',
-          'This note changed since it was read. Read it again and redo the edit from its current text.',
-          { revision: editRevision(current) }
-        );
-    }
-    // Pins changed on the web meanwhile: read them again.
-    if (op === 'tags.pinned') {
-      const fresh = await store.mcpProfile(uid);
-      if (fresh) Object.assign(profile, { pinned_tags: fresh.pinned_tags });
-      if (fresh && !Object.hasOwn(fresh, 'pinned_tags')) delete profile.pinned_tags;
+    throw new ApiRefusal('busy', 'Try again shortly with the same Idempotency-Key.');
+  } finally {
+    if (claimed && context.objects) {
+      const objects = context.objects;
+      if (committed) await Promise.allSettled(claimed.pending.map((p) => objects.remove(p.key, p.version)));
+      else if (!(unsure && (await mayHaveLanded(store, uid, receiptKey, hash))))
+        await dropCopies(objects, claimed.entries);
     }
   }
-  throw new ApiRefusal('busy', 'Try again shortly with the same Idempotency-Key.');
+}
+
+/** Whether a commit whose answer was lost wrote this request's receipt. A
+ * failed read counts as landed, as for an agent (workers/capture.ts). */
+async function mayHaveLanded(store: ApiStore, uid: string, key: string, hash: string): Promise<boolean> {
+  try {
+    const receipt = await store.mcpGet('USER#' + uid, key);
+    return Boolean(receipt && receipt.request_hash === hash);
+  } catch {
+    return true;
+  }
 }

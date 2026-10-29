@@ -41,7 +41,7 @@ import { fileFeedback, newFeedbackId, type FeedbackStore } from '../packages/bac
 import { InlineImageError, inlineImages } from '../packages/backend/inline-images.ts';
 import { feedbackFields, SCREENSHOTS_MAX } from '../packages/domain/feedback.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
-import { chosen, search, type City } from '../packages/backend/places.ts';
+import { chosen, search, type City, type Spot, type SpotNames } from '../packages/backend/places.ts';
 import {
   prepareUpcomingBatch,
   resolvePlace,
@@ -90,8 +90,11 @@ export interface CaptureContext extends ReaderContext {
   store: CaptureStore;
   /** City search for a destination written as text; Open-Meteo by default. */
   geocode?: (q: string) => Promise<City[]>;
-  /** The private bucket, for files an agent sends; nothing else is read. */
+  /** The private bucket: files an agent sends, and a token's uploads under
+   * media/<user>/api/, read only to check them. */
   objects?: Objects;
+  /** Names a device's spot for a token's Here; Amazon Location by default. */
+  nameSpot?: (spot: Spot) => Promise<SpotNames | null>;
 }
 export interface CaptureOptions {
   fetchTitle?: TitleFetcher;

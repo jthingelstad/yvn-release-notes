@@ -672,7 +672,8 @@ test('badges open from Today, with this release, the tracks and the shelf', asyn
   ).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('#badges-lede')).toContainText('Latest:');
   await expect(page.locator('#coverage')).toContainText('with notes in 4.5 so far');
-  await expect(page.locator('#tracks .track')).toHaveCount(4);
+  await expect(page.locator('#tracks .track')).toHaveCount(5);
+  await expect(page.locator('#track-roadmap')).toContainText('Roadmap');
   await expect(page.locator('#track-delivery .tiers')).toHaveAttribute('aria-label', /^\d of 5 tiers$/);
   await expect(page.locator('#collected')).toContainText('Hello, world');
   // A secret still to find shows its hint, never its name.

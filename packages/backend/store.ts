@@ -38,8 +38,11 @@
  * ADDed in the transaction that finishes the book; deleted with the account.
  * USER#<owner> / BADGES holds `seen`, a string set of the badges (`id` or
  * `id:tier`) already celebrated, so the email names each once
- * (docs/BADGES.md). Only ever ADDed to, with the account proof; deleted
- * with the account and never exported.
+ * (docs/BADGES.md), and `eggs`, the easter eggs found (domain/eggs.ts),
+ * each ADDed only if absent in the transaction that writes its one
+ * `egg.found` row, so two pages finding it at once write one. Only ever
+ * ADDed to, with the account proof; deleted with the account and never
+ * exported.
  * USER#<owner> / ACTIVITY#<ISO time>#<kind>#<id> is the activity log
  * (`domain/activity.ts`, docs/WEB-APP.md): one row for each thing that
  * happened to the account, kept for its life, in the export, shown only to
@@ -1755,6 +1758,25 @@ export class Store {
           ExpressionAttributeValues: { ':s': new Set(badges), ':t': at }
         }
       }
+    ]);
+  }
+  /** An easter egg found: `egg` ADDed to BADGES' `eggs` only if absent,
+   * with `rows` (its `egg.found` row and any badge rows) and the account
+   * proof, all or nothing. False when it was found before, or the account
+   * is gone or going. */
+  async findEgg(user: string, egg: string, rows: readonly Item[], at: string): Promise<boolean> {
+    return this.provedTransaction([
+      this.profileProof(user),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, 'BADGES'),
+          UpdateExpression: 'ADD eggs :e SET updated_at = :t',
+          ConditionExpression: 'attribute_not_exists(eggs) OR NOT contains(eggs, :egg)',
+          ExpressionAttributeValues: { ':e': new Set([egg]), ':egg': egg, ':t': at }
+        }
+      },
+      ...rows.map((row) => this.putOperation(row, { ConditionExpression: 'attribute_not_exists(pk)' }))
     ]);
   }
   async putWeather(user: string, day: string, fields: Item) {

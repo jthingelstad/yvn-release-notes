@@ -1584,3 +1584,17 @@ test('an easter egg is found once: one row, its secret first unlocked, nothing a
   );
   assert.equal(t.store.memory.all().filter((i) => i.kind === 'badge.earned').length, 0);
 });
+test('two tabs finding an egg at once write one row and one unlock', async () => {
+  const s = await setup(),
+    both = await Promise.all([
+      s.call('POST', '/api/eggs', { egg: 'rtfm' }),
+      s.call('POST', '/api/eggs', { egg: 'rtfm' })
+    ]);
+  assert.deepEqual(
+    both.map((a) => a.r.status),
+    [200, 200]
+  );
+  assert.equal(both.filter((a) => (a.b as Item).unlocked).length, 1);
+  assert.equal(s.store.memory.all().filter((i) => i.kind === 'egg.found').length, 1);
+  assert.equal(s.store.memory.all().filter((i) => i.kind === 'badge.earned').length, 1);
+});

@@ -5,7 +5,7 @@ description: Keys that let an app or a script add notes as you, what each one ma
 
 ## What a token is
 
-A token is a key you make for one app or script, so it can add notes as you: a line typed in a terminal, a shortcut on your phone, a script that writes a note when a job is done. It works only with [the API](/guide/api/). It can't sign in, change your settings or read your notes.
+A token is a key you make for one app or script, so it can add notes as you: a line typed in a terminal, a shortcut on your phone, a script that writes a note when a job is done. It works only with [the API](/guide/api/). It can't sign in or change your settings, and the only notes it can read are the ones it added, as they stand now: change one on the web and the token reads your change.
 
 For now only Jamie sees API tokens in Settings, to try them first. They open to every account after that.
 
@@ -27,7 +27,7 @@ Treat a token like a password. Anyone who has it can add notes as you, so keep i
 
 A note a token adds is yours, in your own voice. On the web it shows "via" the token's name, like "via Terminal", and nothing marks it in the email. It counts toward your streak like a note you typed, and you can edit or delete it like any other.
 
-A token can change or delete only the notes it added itself, never your others. Your [activity log](/activity/) shows each thing a token did, by its name.
+A token can read, change or delete only the notes it added itself, never your others. Your [activity log](/activity/) shows each thing a token did, by its name.
 
 ## Revoking one
 

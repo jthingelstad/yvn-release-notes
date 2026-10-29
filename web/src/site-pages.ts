@@ -173,7 +173,7 @@ export function llmsTxt(pages: Page[]): string {
     '',
     '## Scripts and apps',
     '',
-    `Scripts and apps add notes through the API at ${ORIGIN}/v1, with an API token the subscriber makes in Settings. For now only Jamie can make one; tokens open to every account after that. A token adds notes in the subscriber’s own voice and never reads them. ${ORIGIN}/v1/openapi.json describes every request and needs no token, and ${ORIGIN}/guide/api/ is the guide.`,
+    `Scripts and apps add notes through the API at ${ORIGIN}/v1, with an API token the subscriber makes in Settings. For now only Jamie can make one; tokens open to every account after that. A token adds notes in the subscriber’s own voice and can read back only the notes it added. ${ORIGIN}/v1/openapi.json describes every request and needs no token, and ${ORIGIN}/guide/api/ is the guide.`,
     ''
   ].join('\n');
 }

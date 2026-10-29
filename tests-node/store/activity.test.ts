@@ -221,3 +221,51 @@ test('badges read only the activity rows that earn one, with the fields they nee
   await s.badgeActivity('u');
   assert.equal((s.memory.calls[0]!.input as { ConsistentRead?: boolean }).ConsistentRead, undefined);
 });
+
+test('an egg is claimed on BADGES with its rows and the account proof, once', async () => {
+  const s = new FakeStore([profile], 'T'),
+    row = (id: string) => ({
+      pk: 'USER#u',
+      sk: `ACTIVITY#2026-10-29T12:00:00.000Z#egg.found#${id}`,
+      kind: 'egg.found',
+      at: '2026-10-29T12:00:00.000Z',
+      via: 'web',
+      egg: 'rtfm'
+    }),
+    at = '2026-10-29T12:00:00.000Z';
+  s.memory.calls.length = 0;
+  assert.equal(await s.findEgg('u', 'rtfm', [row('a')], at), true);
+  assert.deepEqual(s.memory.calls, [
+    {
+      name: 'TransactWriteCommand',
+      input: {
+        TransactItems: [
+          proof,
+          {
+            Update: {
+              TableName: 'T',
+              Key: { pk: 'USER#u', sk: 'BADGES' },
+              UpdateExpression: 'ADD eggs :e SET updated_at = :t',
+              ConditionExpression: 'attribute_not_exists(eggs) OR NOT contains(eggs, :egg)',
+              ExpressionAttributeValues: { ':e': new Set(['rtfm']), ':egg': 'rtfm', ':t': at }
+            }
+          },
+          { Put: { TableName: 'T', Item: row('a'), ConditionExpression: 'attribute_not_exists(pk)' } }
+        ]
+      }
+    }
+  ]);
+  // Found again, under another row id (a second tab): nothing written.
+  assert.equal(await s.findEgg('u', 'rtfm', [row('b')], at), false);
+  assert.equal(s.memory.all().filter((i) => i.kind === 'egg.found').length, 1);
+  // Another egg is its own.
+  assert.equal(await s.findEgg('u', 'developer', [{ ...row('c'), egg: 'developer' }], at), true);
+  assert.deepEqual([...(s.memory.read({ pk: 'USER#u', sk: 'BADGES' })!.eggs as Set<string>)].sort(), [
+    'developer',
+    'rtfm'
+  ]);
+  // A deleting account writes nothing.
+  s.seed({ ...profile, mcp_deleting: true });
+  s.memory.calls.length = 0;
+  assert.equal(await s.findEgg('u', 'konami', [{ ...row('d'), egg: 'konami' }], at), false);
+});

@@ -229,12 +229,43 @@ test('the moment a local day reaches a send time, with the offset then, across D
   assert.equal(localMoment('2026-10-13', '06:00', 'UTC'), '2026-10-13T06:00:00+00:00');
   assert.equal(localMoment('2026-10-13', '06:15', 'Asia/Kolkata'), '2026-10-13T06:15:00+05:30');
   assert.equal(localMoment('2026-10-13', '23:45', 'Pacific/Chatham'), '2026-10-13T23:45:00+13:45');
-  // The days the clocks change: a skipped time is the first quarter hour
-  // after the jump, and a repeated one the first time round.
+  // The days the clocks change: a skipped time is the moment of the jump,
+  // and a repeated one the first time round, on either side of UTC.
   assert.equal(localMoment('2026-03-08', '06:00', 'America/Chicago'), '2026-03-08T06:00:00-05:00');
   assert.equal(localMoment('2026-03-08', '02:30', 'America/Chicago'), '2026-03-08T03:00:00-05:00');
   assert.equal(localMoment('2026-11-01', '01:30', 'America/Chicago'), '2026-11-01T01:30:00-05:00');
   assert.equal(localMoment('2026-11-01', '06:00', 'America/Chicago'), '2026-11-01T06:00:00-06:00');
+  assert.equal(localMoment('2026-03-29', '02:30', 'Europe/Berlin'), '2026-03-29T03:00:00+02:00');
+  assert.equal(localMoment('2026-03-29', '03:00', 'Europe/Berlin'), '2026-03-29T03:00:00+02:00');
+  assert.equal(localMoment('2026-10-25', '02:30', 'Europe/Berlin'), '2026-10-25T02:30:00+02:00');
+  assert.equal(localMoment('2026-10-25', '03:00', 'Europe/Berlin'), '2026-10-25T03:00:00+01:00');
+  assert.equal(localMoment('2026-10-04', '02:15', 'Australia/Sydney'), '2026-10-04T03:00:00+11:00');
+  assert.equal(localMoment('2026-04-05', '02:30', 'Australia/Sydney'), '2026-04-05T02:30:00+11:00');
+  // Lord Howe moves its clocks by half an hour.
+  assert.equal(localMoment('2026-04-05', '01:45', 'Australia/Lord_Howe'), '2026-04-05T01:45:00+11:00');
+  assert.equal(localMoment('2026-10-04', '02:15', 'Australia/Lord_Howe'), '2026-10-04T02:30:00+11:00');
+  // Each is the first quarter hour the sender finds its clock there.
+  for (const [day, time, zone] of [
+    ['2026-03-29', '02:30', 'Europe/Berlin'],
+    ['2026-10-25', '02:30', 'Europe/Berlin'],
+    ['2026-03-08', '02:30', 'America/Chicago'],
+    ['2026-11-01', '01:30', 'America/Chicago'],
+    ['2026-10-04', '02:15', 'Australia/Lord_Howe']
+  ] as const) {
+    const at = Date.parse(localMoment(day, time, zone)) / 1000,
+      [h, m] = time.split(':').map(Number),
+      reads = (t: number) => {
+        const [d, clock] = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: zone,
+          dateStyle: 'short',
+          timeStyle: 'short'
+        })
+          .format(new Date(t * 1000))
+          .split(' ');
+        return d === day && clock! >= `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      };
+    assert.ok(reads(at) && !reads(at - 900), `${zone} ${day} ${time}`);
+  }
   for (const bad of ['6:00', '24:00', '06:60', 'x'])
     assert.throws(() => localMoment('2026-10-13', bad, 'America/Chicago'), RangeError, bad);
 });

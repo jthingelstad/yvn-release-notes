@@ -45,6 +45,8 @@ describe('PlacePicker', () => {
       expect(screen.getByRole('option', { name: /Minnetonka/ }).getAttribute('aria-selected')).toBe('true')
     );
     expect(onClear).not.toHaveBeenCalled();
+    // The pick closes the list on itself.
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([expect.stringContaining('Minnetonka')]);
 
     // Changing the text after a pick undoes it.
     await userEvent.type(box, 'x');

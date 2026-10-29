@@ -1,7 +1,8 @@
 // The city field on setup and settings: a search over /api/places, as a
 // React Aria autocomplete. The arrow keys move through the places, Enter
 // picks, and a screen reader hears each one (the field points at the
-// active place). The places stay on the page under the field; React Aria's
+// active place). The places sit on the page under the field, and a pick
+// leaves only itself there; React Aria's
 // ComboBox would want a popover, and hides the rest of the page while open.
 // Calls onPick(place) with the choice, and onClear() when the text changes
 // after a pick. "No city by that name" and failures go to the picker's
@@ -78,6 +79,9 @@ export function PlacePicker({
     const p = places.find((p) => placeKey(p) === key);
     if (!p) return;
     setPicked(p);
+    // Only the pick stays, so the list closes on it (on a phone the rest
+    // read as a dropdown that wouldn't go away).
+    setPlaces([p]);
     setQ(p.name);
     onPick(p);
   };

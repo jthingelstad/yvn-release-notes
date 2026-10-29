@@ -5,7 +5,8 @@ export const SITE_LINKS = [
   ['/how-it-works/', 'How it works'],
   ['/guide/', 'Guide'],
   ['/faq/', 'FAQ'],
-  ['/privacy/', 'Privacy']
+  ['/privacy/', 'Privacy'],
+  ['/changelog/', 'Changelog']
 ] as const;
 
 export function SiteLinks({ current = '', hidden, id }: { current?: string; hidden?: boolean; id?: string }) {

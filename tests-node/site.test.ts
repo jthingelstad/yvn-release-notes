@@ -15,8 +15,9 @@ import { build } from 'vite';
 import { MAX_PAUSE_DAYS } from '../packages/backend/accounts.ts';
 import { LOGIN_TTL, SESSION_IDLE } from '../packages/backend/auth.ts';
 import { SCOPES as GRANTED } from '../packages/backend/oauth.ts';
-import { COMMENTARY_PER_RELEASE } from '../packages/book/limits.ts';
+import { COMMENTARY_PER_RELEASE, PAGE_SIZES } from '../packages/book/limits.ts';
 import { BADGES } from '../packages/domain/badges.ts';
+import { SCREENSHOTS_MAX } from '../packages/domain/feedback.ts';
 import { MAX_NOTE } from '../packages/domain/notes.ts';
 import { UPCOMING_SHOWN } from '../packages/domain/upcoming.ts';
 import { DOTS, PHOTOS_AN_EMAIL, PHOTOS_A_DAY } from '../packages/mail/compose.ts';
@@ -59,10 +60,19 @@ function said(page: string) {
   return [title, description, text(article(page))].join('\n');
 }
 
-test('site/ has the pages phase 1 promised, and site/sitemap.json lists / and each of them', () => {
+test('site/ has the pages phases 1 and 4 promised, and site/sitemap.json lists / and each of them', () => {
   assert.deepEqual(
     pages.map((p) => p.path),
-    ['/how-it-works/', '/guide/', '/guide/start/', '/guide/the-email/', '/guide/replying/', '/faq/', '/privacy/']
+    [
+      '/how-it-works/',
+      '/guide/',
+      '/guide/start/',
+      '/guide/the-email/',
+      '/guide/replying/',
+      '/faq/',
+      '/privacy/',
+      '/changelog/'
+    ]
   );
   assert.deepEqual(Object.keys(dates), ['/', ...pages.map((p) => p.path)]);
 });
@@ -189,6 +199,8 @@ async function checkedPhrases() {
     `up to ${PHOTOS_A_DAY} for a day and ${PHOTOS_AN_EMAIL} in all`,
     `up to ${UPCOMING_SHOWN} at a time`,
     `up to ${COMMENTARY_PER_RELEASE} books a release`,
+    `${PAGE_SIZES[0].replace('x', ' by ')} inches`,
+    `up to ${SCREENSHOTS_MAX} screenshots`,
     `1 to ${MAX_PAUSE_DAYS} days`,
     `within ${versions} days`,
     `at most ${MAX_INLINE_FILES} files and ${MAX_INLINE_BYTES / 1024 / 1024} MB a call`
@@ -219,6 +231,8 @@ test('every number on the pages and in llms.txt is the product’s own', async (
         used.add(phrase);
         left = left.replaceAll(phrase, '');
       }
+    // The changelog's dates: each release's day, and the launch's.
+    if (from === '/changelog/') left = left.replace(/\b(?:October|November|December) \d{1,2}(?:, 2026)?\b/g, '');
     left = left
       .replace(/\b\d+\.\d+\.\d+\b/g, '') // versions, which are examples
       .replace(/#[a-z][a-z0-9-]*/g, ''); // a hashtag's example

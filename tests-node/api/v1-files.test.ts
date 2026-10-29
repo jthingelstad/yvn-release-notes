@@ -2,19 +2,22 @@
  * function runs them: a signed form under the owner's media/<user>/api/,
  * counted with the web's uploads; a note that takes the uploaded files as a
  * web note does, removing the pending file only once it has its copy; files
- * added to a token's own note; a note's place; and Here. Fictional account
- * and fake bucket only. */
+ * added to a token's own note; a note's place; and Here. Then the routes
+ * that reach them, and the city search the router answers itself.
+ * Fictional account and fake bucket only. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createMcpApp } from '../../server/mcp/app.ts';
+import { API_VERSION } from '../../server/mcp/v1.ts';
 import { captureNote } from '../../workers/capture.ts';
-import { Tokens, V1_LIMITS } from '../../packages/backend/tokens.ts';
+import { SCOPE_REFUSALS, Tokens, V1_LIMITS } from '../../packages/backend/tokens.ts';
 import * as media from '../../packages/backend/media.ts';
 import { FORM_SECONDS, UPLOADS_A_DAY } from '../../packages/backend/uploads.ts';
-import type { Spot, SpotNames } from '../../packages/backend/places.ts';
+import type { City, Spot, SpotNames } from '../../packages/backend/places.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { FakeObjects } from '../../packages/testing/services.ts';
 import { png } from '../../packages/testing/images.ts';
-import { fixture, NOW } from '../oauth/fixtures.ts';
+import { fixture, NOW, ORIGIN } from '../oauth/fixtures.ts';
 
 const TODAY = '2026-10-13',
   DAY = Math.floor(NOW / 86400),
@@ -442,4 +445,122 @@ test('Here names a device’s spot as the web does, and a note keeps that place 
   assert.equal(limited.retry_after, (DAY + 1) * 86400 - NOW);
   const reader = await make(s.ctx, ['activity'], 'Reader');
   assert.equal((await s.write(reader.token, 'places.here', spot)).error, 'scope_required');
+});
+
+test('the routes reach files and Here through capture, and the router answers the city search', async () => {
+  const s = setup(),
+    asked: string[] = [],
+    PARIS: City[] = [
+      { name: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 },
+      { name: 'Paris', region: 'Texas', country: 'United States', tz: 'America/Chicago', lat: 33.66, lon: -95.56 }
+    ],
+    ctx = Object.assign(s.ctx, {
+      geocode: async (q: string) => {
+        asked.push(q);
+        if (q === 'down') throw new Error('Search down');
+        return q.toLowerCase() === 'paris' ? PARIS : [];
+      }
+    }),
+    app = createMcpApp({
+      context: () => ctx,
+      capture: (e) => captureNote(e, ctx, { fetchTitle: () => null, log: () => {} }),
+      log: () => {}
+    }),
+    t = await make(ctx),
+    plain = await make(ctx, ['notes:write'], 'Plain'),
+    dates = await make(ctx, ['upcoming'], 'Dates'),
+    call = async (method: string, path: string, token: string, body?: unknown, accept?: string) => {
+      const r = await app.request(ORIGIN + path, {
+          method,
+          headers: {
+            authorization: 'Bearer ' + token,
+            ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+            ...(accept ? { accept } : {})
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) })
+        }),
+        text = await r.text();
+      let json: OAuthRow = {};
+      try {
+        json = JSON.parse(text) as OAuthRow;
+      } catch {
+        /* A line of text. */
+      }
+      return { r, status: r.status, text, json, error: (json.error ?? {}) as OAuthRow };
+    };
+
+  // A form, from the route: the capture function signs it.
+  const bytes = png(),
+    started = await call('POST', '/v1/uploads', t.token, { name: 'lake.png', type: 'image/png', size: bytes.length });
+  assert.equal(started.status, 201, started.text);
+  assert.equal(started.r.headers.get('api-version'), API_VERSION);
+  assert.deepEqual(Object.keys(started.json).sort(), ['expires_in', 'fields', 'type', 'upload', 'url']);
+  assert.equal(started.json.expires_in, FORM_SECONDS);
+  const key = String((started.json.fields as OAuthRow).key);
+  assert.ok(key.startsWith('media/u/api/'), key);
+  await s.objects.put(key, bytes, { type: 'image/png', tags: { outcome: 'pending' } });
+  const line = await call('POST', '/v1/uploads', t.token, { type: 'image/png', size: 9 }, 'text/plain');
+  assert.match(line.text, /^Upload [0-9a-f]{32}\. Its form's url and fields come in the JSON answer\.\n$/);
+  const refused = await call('POST', '/v1/uploads', plain.token, { type: 'image/png', size: 9 });
+  assert.deepEqual(
+    [refused.status, refused.error.code, refused.error.message],
+    [403, 'scope_required', SCOPE_REFUSALS['media:write']]
+  );
+
+  // A note takes it, then a second file through the media route.
+  const created = await call('POST', '/v1/notes', t.token, {
+    uploads: [{ upload: started.json.upload, type: 'image/png', name: 'lake.png' }]
+  });
+  assert.equal(created.status, 201, created.text);
+  const note = created.json.note as OAuthRow;
+  assert.equal(note.files, 1);
+  const second = await upload(s, t.token, 'application/pdf', PDF, 'map.pdf'),
+    path = `/v1/notes/${String(note.date)}/${String(note.id)}/media`,
+    added = await call('POST', path, t.token, { uploads: [second] }, 'text/plain');
+  assert.equal(added.status, 200, added.text);
+  assert.equal(added.text, `Changed in ${String(note.version)}.\n`);
+  assert.equal((notes(s)[0]!.media as unknown[]).length, 2);
+  // A token without files is refused at the router; the route takes POST alone.
+  const other = await call('POST', path, plain.token, { uploads: [second] });
+  assert.equal(other.error.code, 'scope_required');
+  assert.equal((await call('GET', path, t.token)).status, 405);
+
+  // The city search, answered by the router with any token that may add notes.
+  const found = await call('GET', '/v1/places?q=%20Paris%20', plain.token);
+  assert.equal(found.status, 200, found.text);
+  assert.deepEqual(found.json, { places: PARIS });
+  assert.deepEqual(asked, ['Paris']);
+  assert.equal(
+    (await call('GET', '/v1/places?q=paris', plain.token, undefined, 'text/plain')).text,
+    'Paris, Ile-de-France, France\nParis, Texas, United States\n'
+  );
+  assert.equal(
+    (await call('GET', '/v1/places?q=Nowhere', plain.token, undefined, 'text/plain')).text,
+    'No city by that name.\n'
+  );
+  for (const q of ['', 'P', 'x'.repeat(81)]) {
+    const bad = await call('GET', '/v1/places?q=' + q, plain.token);
+    assert.deepEqual([bad.status, bad.error.code, bad.error.field], [400, 'invalid_request', 'q'], q);
+  }
+  assert.deepEqual(asked.length, 3, 'a refused query is never searched');
+  const down = await call('GET', '/v1/places?q=down', plain.token);
+  assert.deepEqual([down.status, down.error.code], [503, 'unavailable']);
+  assert.equal((await call('GET', '/v1/places?q=Paris', dates.token)).error.code, 'scope_required');
+
+  // Here, through capture, with its count in the headers and its line.
+  const spot = { lat: 44.9877531, lon: -93.2650119, accuracy_m: 12.4 },
+    here = await call('POST', '/v1/places/here', plain.token, spot);
+  assert.equal(here.status, 200, here.text);
+  assert.equal((here.json.place as OAuthRow).district, 'North Loop');
+  assert.deepEqual(here.json.nearby, NAMED.nearby);
+  assert.equal(here.r.headers.get('ratelimit-limit'), String(V1_LIMITS.here));
+  assert.equal(here.r.headers.get('ratelimit-remaining'), String(V1_LIMITS.here - 1));
+  assert.equal(
+    (await call('POST', '/v1/places/here', plain.token, spot, 'text/plain')).text,
+    'North Loop, Minneapolis, Minnesota, United States. Nearby: Corner Coffee.\n'
+  );
+  const badSpot = await call('POST', '/v1/places/here', plain.token, { lat: 95, lon: 0 });
+  assert.deepEqual([badSpot.status, badSpot.error.code, badSpot.error.field], [400, 'invalid_request', 'lat']);
+  assert.equal((await call('POST', '/v1/places/here', dates.token, spot)).error.code, 'scope_required');
+  assert.equal((await call('GET', '/v1/places/here', plain.token)).status, 405);
 });

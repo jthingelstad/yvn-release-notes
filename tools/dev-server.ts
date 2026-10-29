@@ -468,7 +468,7 @@ export async function main(args = process.argv.slice(2)) {
   // sandbox for anyone building a client. It lives only in this process.
   const sandbox = await new Tokens({ store, origin, now: stamp() }).make('u1', {
     name: 'Dev sandbox',
-    scopes: ['notes:write', 'upcoming', 'activity'],
+    scopes: ['notes:write', 'media:write', 'upcoming', 'activity'],
     expiry: 'never'
   });
   console.log(`Release Notes locally: ${origin}/ (fictional in-memory data)`);

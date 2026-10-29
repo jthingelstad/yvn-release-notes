@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
-    "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. Notes come from the owner, shown with “via <token name>”. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 128 KB. Any answer is one short line instead with `Accept: text/plain`.\n\nEvery write takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days.\n\nA day in UTC, an account may add 100 notes, make 200 other changes and save Upcoming 50 times across its tokens, and each token may read 2,000 times.",
+    "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 128 KB. Any answer is one short line instead with `Accept: text/plain`.\n\nEvery write takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.2.0",
+        "date": "2026-10-29",
+        "summary": "Files and places: with the media:write scope, a signed form for each photo, recording or PDF, and files on a new note or added to one this token wrote; and a new note’s place, from the city search or from Here, which names a device’s spot and the businesses near it."
+      },
       {
         "version": "1.1.0",
         "date": "2026-10-29",
@@ -85,7 +90,7 @@
       "post": {
         "operationId": "createNote",
         "summary": "Add a note",
-        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. A `text/plain` body is the note’s text alone. With neither `date` nor `written_at`, it files to today.",
+        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. A `text/plain` body is the note’s text alone. With neither `date` nor `written_at`, it files to today. With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came.",
         "requestBody": {
           "required": true,
           "content": {
@@ -418,6 +423,255 @@
               "pattern": "^[A-Za-z0-9_.-]{1,80}$"
             }
           },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      }
+    },
+    "/v1/notes/{date}/{id}/media": {
+      "post": {
+        "operationId": "addNoteFiles",
+        "summary": "Add files to a note this token wrote",
+        "description": "Uploads from `POST /v1/uploads`, each checked against the bytes that arrived, up to 20 files on a note in all. It counts as a change. A note takes each upload once; a write refused or lost before it lands leaves the uploads for a retry with the same Idempotency-Key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteMedia"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: Changed in 4.5.137."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "media:write"
+            ]
+          }
+        ],
+        "x-scope": "media:write"
+      }
+    },
+    "/v1/uploads": {
+      "post": {
+        "operationId": "startUpload",
+        "summary": "A signed form for one file",
+        "description": "A photo, recording or PDF of up to 50 MB, its exact size given. Post the file to `url` as `multipart/form-data`, with every one of `fields` and then the file as `file`, within `expires_in` seconds, then name the upload in a note's `uploads`. An account takes 200 files and 2 GB a UTC day, with the web's. It has no receipt: a retry gets a new form, and an unused one expires.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadStart"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadForm"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: The upload’s id."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "media:write"
+            ]
+          }
+        ],
+        "x-scope": "media:write"
+      }
+    },
+    "/v1/places": {
+      "get": {
+        "operationId": "searchPlaces",
+        "summary": "Find a city by name, for a note’s place",
+        "description": "The web’s city search. Send one of the answers as a note’s `place`, as it came.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "A city’s name, like Zürich.",
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 80
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Places"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: One line a city."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      }
+    },
+    "/v1/places/here": {
+      "post": {
+        "operationId": "nameHere",
+        "summary": "Name the spot a device is at, for a note’s place",
+        "description": "The city and neighbourhood, and the businesses Amazon Location finds within the accuracy (50 to 200 m), up to 6. Send `place` back as a note’s place, with `venue` set to one `nearby` name if the owner picks one; nothing is picked for them. An account names 100 spots a UTC day across its tokens. Nothing is kept until a note takes the place.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Spot"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Here"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: The spot’s names, then what is nearby."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
           {
             "$ref": "#/components/parameters/Idempotency-Key"
           }
@@ -1104,14 +1358,24 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.1.0"
+            "example": "1.2.0"
           }
         }
       },
       "NoteCreate": {
         "type": "object",
-        "required": [
-          "text"
+        "description": "Text, files or both.",
+        "anyOf": [
+          {
+            "required": [
+              "text"
+            ]
+          },
+          {
+            "required": [
+              "uploads"
+            ]
+          }
         ],
         "additionalProperties": false,
         "properties": {
@@ -1130,6 +1394,283 @@
             "type": "string",
             "format": "date-time",
             "description": "When the words were typed, at most five minutes ahead. A note queued offline files to the day it was typed and is ordered by it."
+          },
+          "uploads": {
+            "$ref": "#/components/schemas/Uploads"
+          },
+          "place": {
+            "$ref": "#/components/schemas/NotePlace"
+          }
+        }
+      },
+      "NoteMedia": {
+        "type": "object",
+        "required": [
+          "uploads"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "uploads": {
+            "$ref": "#/components/schemas/Uploads"
+          }
+        }
+      },
+      "Uploads": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 20,
+        "description": "Files posted to forms from `POST /v1/uploads`, each once. Needs `media:write`.",
+        "items": {
+          "type": "object",
+          "required": [
+            "upload",
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "upload": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$",
+              "description": "The id the form came with."
+            },
+            "type": {
+              "type": "string",
+              "description": "The `type` the form came with."
+            },
+            "name": {
+              "type": "string",
+              "description": "The file’s name, shown with it; a long one is shortened."
+            }
+          }
+        }
+      },
+      "UploadStart": {
+        "type": "object",
+        "required": [
+          "type",
+          "size"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "The file’s name, which helps tell its type."
+          },
+          "type": {
+            "type": "string",
+            "example": "image/jpeg",
+            "description": "A photo, recording or PDF’s media type."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 52428800,
+            "description": "Its exact size in bytes."
+          }
+        }
+      },
+      "UploadForm": {
+        "type": "object",
+        "required": [
+          "upload",
+          "type",
+          "url",
+          "fields",
+          "expires_in"
+        ],
+        "properties": {
+          "upload": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "type": {
+            "type": "string",
+            "description": "The type it was signed for: name the upload with it."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Where to post the file."
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Every one goes in the form, before the file."
+          },
+          "expires_in": {
+            "type": "integer",
+            "const": 300,
+            "description": "Seconds the form is good for."
+          }
+        }
+      },
+      "City": {
+        "type": "object",
+        "required": [
+          "name",
+          "region",
+          "country",
+          "tz",
+          "lat",
+          "lon"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "tz": {
+            "type": "string",
+            "example": "Europe/Zurich"
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          }
+        }
+      },
+      "Places": {
+        "type": "object",
+        "required": [
+          "places"
+        ],
+        "properties": {
+          "places": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/City"
+            }
+          }
+        }
+      },
+      "Spot": {
+        "type": "object",
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "accuracy_m": {
+            "type": "number",
+            "minimum": 0,
+            "description": "The device’s accuracy, in metres."
+          }
+        }
+      },
+      "DevicePlace": {
+        "type": "object",
+        "required": [
+          "name",
+          "lat",
+          "lon",
+          "from"
+        ],
+        "description": "A spot, kept to six decimal places, with its names.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The city."
+          },
+          "region": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "tz": {
+            "type": "string"
+          },
+          "district": {
+            "type": "string",
+            "description": "The neighbourhood, which names the note by default."
+          },
+          "venue": {
+            "type": "string",
+            "description": "A `nearby` name the owner picked."
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          },
+          "accuracy_m": {
+            "type": "number"
+          },
+          "from": {
+            "type": "string",
+            "const": "device"
+          }
+        }
+      },
+      "NotePlace": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/City"
+          },
+          {
+            "$ref": "#/components/schemas/DevicePlace"
+          }
+        ]
+      },
+      "Here": {
+        "type": "object",
+        "required": [
+          "place",
+          "nearby"
+        ],
+        "properties": {
+          "place": {
+            "$ref": "#/components/schemas/DevicePlace"
+          },
+          "nearby": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "lat",
+                "lon",
+                "distance_m"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "example": "Corner Coffee"
+                },
+                "lat": {
+                  "type": "number"
+                },
+                "lon": {
+                  "type": "number"
+                },
+                "distance_m": {
+                  "type": "number"
+                }
+              }
+            }
           }
         }
       },
@@ -1200,6 +1741,11 @@
               "revision": {
                 "type": "string",
                 "description": "Opaque: send it back unchanged."
+              },
+              "files": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "How many files the note has."
               },
               "token": {
                 "type": "string",

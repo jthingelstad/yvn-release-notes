@@ -1,11 +1,11 @@
 ---
 title: The API
-description: Add notes and keep Upcoming dates from a terminal, a script or an app, with the requests, the errors, the limits and recipes to copy.
+description: Add notes, files and places, and keep Upcoming dates, from a terminal, a script or an app, with the requests, the errors, the limits and recipes to copy.
 ---
 
 ## The idea
 
-Anything that can send a web request can add a note: a terminal, a script, a home automation, an app. Send a token you made (see [API tokens](/guide/tokens/)) and some words, and they become a note on today's release, in your own voice. A token can keep your [Upcoming](/guide/upcoming/) dates too, and read the reminders each morning brings, so an app can remind you on your phone.
+Anything that can send a web request can add a note: a terminal, a script, a home automation, an app. Send a token you made (see [API tokens](/guide/tokens/)) and some words, and they become a note on today's release, in your own voice, with photos, recordings and PDFs if you like, and where you were. A token can keep your [Upcoming](/guide/upcoming/) dates too, and read the reminders each morning brings, so an app can remind you on your phone.
 
 Every request goes to `https://notes.yourversionnumber.com/v1`, and `/v1/openapi.json` there describes the whole API for tools that read OpenAPI, with no token needed. For now only Jamie can make tokens; they open to every account after that.
 
@@ -34,13 +34,17 @@ It answers with one line: `Filed in 5.2.113.`
 ## The requests
 
 - `GET /v1/me`: today's date and version, the versions for the next 14 days, your streak, your time zone, when your email goes, and this token's name, what it may do and when it expires. Never your birthday. Any token may ask.
-- `POST /v1/notes`: add a note. Send `{"text": "…"}`, or the words alone as `text/plain`. Hashtags in the words are its tags, and links get their names, as on the web. `date` puts it on an earlier day, back to your birthday. `written_at` is the moment the words were typed: a note sent late files to the day it was typed. With neither, it's today's. The answer has the note's `id`, `date`, `version` and `revision`.
+- `POST /v1/notes`: add a note. Send `{"text": "…"}`, or the words alone as `text/plain`. Hashtags in the words are its tags, and links get their names, as on the web. `date` puts it on an earlier day, back to your birthday. `written_at` is the moment the words were typed: a note sent late files to the day it was typed. With neither, it's today's. `uploads` gives it files (see [Photos, recordings and PDFs](#photos-recordings-and-pdfs)), and then it needs no words. `place` says where it was (see [Places](#places)). The answer has the note's `id`, `date`, `version` and `revision`, and how many `files` it has.
 - `GET /v1/notes/{date}/{id}`: one note this token added, with its text, `revision` and `written_at`.
 - `PUT /v1/notes/{date}/{id}`: replace its text. Send `{"text": "…", "revision": "…"}` with the revision you read; a note changed since, on the web say, is refused with the current one.
 - `POST /v1/notes/{date}/{id}/append`: add a paragraph to it, with `{"text": "…"}`.
+- `POST /v1/notes/{date}/{id}/media`: add files to it, with `{"uploads": […]}`.
+- `POST /v1/uploads`: a form to upload one file to, before a note takes it.
 - `DELETE /v1/notes/{date}/{id}`: delete it.
 - `GET /v1/tags`: your tag row, the pinned tags and then up to 20 recent ones, the tags used most in the last 30 days. Any token may ask.
 - `PUT /v1/tags/pinned`: replace your pinned tags, with `{"pinned": ["house", "work"]}`, up to 12 tags. They're the same ones the web shows under the note box.
+- `GET /v1/places`: the cities by a name, like `?q=Zürich`, for a note's place.
+- `POST /v1/places/here`: the city, neighbourhood and businesses nearby for the spot a device is at, for a note's place.
 - `GET /v1/upcoming`: your Upcoming dates, soonest first, each with its `id`, its `revision`, its `next` date and the line the email says about it. A trip or event that's over is left out and only counted, as `past_left_out`.
 - `POST /v1/upcoming/batch`: add, change and remove dates together, up to 50 dates a request, as `{"add": […], "change": […], "remove": […]}`. It saves all or nothing: if one date isn't right, none is saved, and `field` names the one, like `add[1]`. With `"dry_run": true` it checks everything and finds each trip's city, and saves nothing. The answer lists what was `added`, in the order you sent it, then what was `changed` and `removed`.
 - `GET /v1/upcoming/reminders`: the reminders each morning's email carries, day by day, for the next 14 days, or up to 31 days ahead with `days`. Each day has `send_at`, the moment that morning's email is due, and each reminder the date's `id` as `upcoming`, the day it falls on as `date`, and its `when` and `line`, as the email says them. A date with its email reminders turned off isn't there; a paused email doesn't change the list.
@@ -48,7 +52,7 @@ It answers with one line: `Filed in 5.2.113.`
 - `GET /v1/activity`: your activity log, newest first, without any words: no note text, no email's subject or sender, no setting's value. `after` gives only rows newer than one you've seen, and `before`, with the `next` from the answer, the page older. `kinds` keeps some kinds, like `note,mail`, and `limit` sets how many rows a page holds.
 - `DELETE /v1/token`: this token revokes itself. Any token may ask.
 
-Adding, changing and deleting notes and pinning tags need a token that may add notes, and only ever touch the notes that same token added. Upcoming needs a token that may read and change your Upcoming dates; it reaches all of them, not only the ones it added, and no other token reaches them. The activity log needs a token that may read it.
+Adding, changing and deleting notes, pinning tags and finding places need a token that may add notes, and only ever touch the notes that same token added. Files need a token that may add files too, which comes only with adding notes. Upcoming needs a token that may read and change your Upcoming dates; it reaches all of them, not only the ones it added, and no other token reaches them. The activity log needs a token that may read it.
 
 ## Errors
 
@@ -70,12 +74,12 @@ Act on the code, and show the sentence. Here is each one, with its HTTP status:
 - `scope_required` (403): this token may not do that.
 - `not_yours` (403): this token didn't add that note.
 - `origin_refused` (403): the API isn't for web pages in a browser.
-- `not_found` (404): there is no such request, or no such note or date.
+- `not_found` (404): there is no such request, or no such note or date, or no city for the spot sent to Here.
 - `method_not_allowed` (405): that request doesn't take that method.
 - `revision_mismatch` (409): the note or date changed since you read it. For a note, `revision` is its current one; for a date, read `GET /v1/upcoming` again.
 - `account_closing` (409): the account is being deleted.
 - `busy` (409): try again shortly, with the same `Idempotency-Key`.
-- `too_large` (413): the request is over 128 KB.
+- `too_large` (413): the request is over 128 KB, or a file is over its limit, 50 MB a file.
 - `idempotency_mismatch` (422): that `Idempotency-Key` went with a different request.
 - `rate_limited` (429): a limit for the day is reached, and `Retry-After` says how many seconds to wait.
 - `unavailable` (503): try again shortly, with the same `Idempotency-Key`.
@@ -86,7 +90,44 @@ On a bad connection you can't always tell whether a note arrived. Send an `Idemp
 
 ## Limits
 
-Each day, from midnight UTC, an account may add 100 notes, make 200 other changes (appends, edits, deletes and pinned tags) and save Upcoming 50 times, across all its tokens, and each token may read 2,000 times. An Upcoming dry run counts as a read. Past a limit the answer is `rate_limited`, with `Retry-After`. Every write says where it stands in `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`.
+Each day, from midnight UTC, an account may add 100 notes, make 200 other changes (appends, edits, deletes, files added to a note and pinned tags), save Upcoming 50 times and name 100 spots with Here, across all its tokens, and each token may read 2,000 times. An Upcoming dry run and a city search count as reads. Uploads count with the web's: 200 files and 2 GB a day. Past a limit the answer is `rate_limited`, with `Retry-After`. Every write says where it stands in `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`.
+
+## Photos, recordings and PDFs
+
+A file goes in three steps:
+
+1. Ask for a form with `POST /v1/uploads`, giving the file's `type`, like `image/jpeg`, its exact `size` in bytes, and its `name` if it has one. The answer has the upload's id as `upload`, the `type` it was signed for, and a `url` and its `fields`.
+2. Post the file to that `url` within 5 minutes, as `multipart/form-data`: every one of the `fields`, then the file itself, last, as `file`.
+3. Name it in a note's `uploads`, as `{"upload": "…", "type": "image/jpeg", "name": "lake.jpg"}`: on `POST /v1/notes` for a new note, or on `POST /v1/notes/{date}/{id}/media` to add it to one this token added.
+
+```sh
+form=$(curl -fsS https://notes.yourversionnumber.com/v1/uploads \
+  -H "Authorization: Bearer $RN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$(jq -n --argjson size "$(wc -c < lake.jpg)" '{name: "lake.jpg", type: "image/jpeg", size: $size}')")
+curl -fsS "$(jq -r .url <<<"$form")" \
+  $(jq -r '.fields | to_entries[] | "--form-string \(.key)=\(.value)"' <<<"$form") \
+  -F file=@lake.jpg
+curl -fsS https://notes.yourversionnumber.com/v1/notes \
+  -H "Authorization: Bearer $RN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/plain" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  --data "$(jq '{text: "The lake at dawn #lake", uploads: [{upload, type, name: "lake.jpg"}]}' <<<"$form")"
+```
+
+Release Notes checks each file against what arrived, then keeps it with the note, as it keeps one you add on the web: a photo gets its thumbnail and, on a note with no place of its own, the place it was taken, and photos and recordings get the descriptions and transcripts you've turned on. A note can have up to 20 files, at 50 MB a file. A note takes each upload once, and an upload no note takes is gone after a day. A form has no `Idempotency-Key`: if an upload fails, ask for a new one.
+
+Send photos as JPEG, PNG or WebP where you can. A HEIC photo is kept, with its time and place, but gets no thumbnail, so it never shows in the email.
+
+## Places
+
+A note's `place` says where it was. Send one of two things, as it came:
+
+- **A city** from `GET /v1/places?q=Zürich`, which answers the cities by that name, each with its `region`, `country`, time zone and spot. Pick the right one: two cities can share a name.
+- **The spot a device is at**, from `POST /v1/places/here`. Send `lat` and `lon` in degrees, and the device's `accuracy_m` in metres if it has one. The answer's `place` has the spot's city and its neighbourhood as `district`, and `nearby` lists up to 6 businesses within the accuracy. If the person picks one, send the place with `venue` set to its name; nothing is picked for them. The spot is kept to six decimal places, and nothing is kept until a note takes it.
+
+On the web, a note with a spot links to your map. A note with no place shows the day's city, or your home's.
 
 ## Upcoming dates
 

@@ -14,7 +14,9 @@ import { DomUtils, parseDocument } from 'htmlparser2';
 import { build } from 'vite';
 import { MAX_PAUSE_DAYS } from '../packages/backend/accounts.ts';
 import { MAX_FILES, MAX_UPLOAD } from '../packages/backend/media.ts';
+import { NEARBY_MAX } from '../packages/backend/places.ts';
 import { MAX_A_DAY } from '../packages/backend/transcribe.ts';
+import { FORM_SECONDS, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY } from '../packages/backend/uploads.ts';
 import {
   TOKEN_EXPIRY,
   TOKEN_NAME_MAX,
@@ -293,6 +295,10 @@ async function checkedPhrases() {
     `${V1_LIMITS.change} other changes`,
     `${V1_LIMITS.reads.toLocaleString('en-US')} times`,
     `save Upcoming ${V1_LIMITS.upcoming} times`,
+    `name ${V1_LIMITS.here} spots`,
+    `within ${FORM_SECONDS / 60} minutes`,
+    `${UPLOADS_A_DAY} files and ${UPLOAD_BYTES_A_DAY / 1024 ** 3} GB a day`,
+    `up to ${NEARBY_MAX} businesses`,
     `up to ${V1_UPCOMING_MAX} dates a request`,
     `up to ${REMINDER_DAYS_MAX} days ahead`,
     `up to ${RECENT_MAX} recent ones`,

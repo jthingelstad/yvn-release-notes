@@ -222,6 +222,8 @@ export interface SpotNames extends PlaceRecord {
   district?: string;
   nearby: Venue[];
 }
+/** The most businesses Here offers. */
+export const NEARBY_MAX = 6;
 // Kinds no one is "at" when they write a note.
 const PASSING = /^(bus_stop|parking|ev_charging|atm|consumer_services|business_services|commercial|industrial)/;
 /** The nearest few within the browser's accuracy, kept between a short
@@ -274,7 +276,7 @@ export async function nameSpot(spot: Spot, client = new GeoPlacesClient({})): Pr
       lon: rounded(lon, SPOT_DIGITS),
       distance_m: row.Distance!
     });
-    if (found.nearby.length === 6) break;
+    if (found.nearby.length === NEARBY_MAX) break;
   }
   return found;
 }

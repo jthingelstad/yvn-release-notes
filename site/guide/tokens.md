@@ -5,7 +5,7 @@ description: Keys that let an app or a script add notes as you, what each one ma
 
 ## What a token is
 
-A token is a key you make for one app or script, so it can add notes as you: a line typed in a terminal, a shortcut on your phone, a script that writes a note when a job is done. It works only with [the API](/guide/api/). It can't sign in or change your settings, and the only notes it can read are the ones it added, as they stand now: change one on the web and the token reads your change. If you allow it, a token can keep your [Upcoming](/guide/upcoming/) dates too, so an app can show them and remind you of them.
+A token is a key you make for one app or script, so it can add notes as you: a line typed in a terminal, a shortcut on your phone, a script that writes a note when a job is done. It works only with [the API](/guide/api/). It can't sign in or change your settings, and the only notes it can read are the ones it added, as they stand now: change one on the web and the token reads your change. If you allow it, a token can add photos, recordings and PDFs to the notes it adds, and keep your [Upcoming](/guide/upcoming/) dates, so an app can show them and remind you of them.
 
 For now only Jamie sees API tokens in Settings, to try them first. They open to every account after that.
 
@@ -14,7 +14,7 @@ For now only Jamie sees API tokens in Settings, to try them first. They open to 
 Signed in, open Settings, then **API tokens** and **Make a token**:
 
 - **Name** it for where it will live, like "Changelog on my iPhone" or "Terminal", up to 40 characters. No two of your tokens share a name.
-- Tick what **it may** do: **Add notes, and change or delete the notes it adds**, **Read and change your Upcoming dates and their reminders**, and **Read the activity log, without any words from it**.
+- Tick what **it may** do: **Add notes, and change or delete the notes it adds**; **Add files to the notes it adds: photos, recordings and PDFs**, which comes only with adding notes; **Read and change your Upcoming dates and their reminders**; and **Read the activity log, without any words from it**.
 - Pick when it **expires**: in 90 days, in a year, or never.
 
 Every token can read your version, today's date and your tags, whatever you tick. You can have up to 20 tokens at a time.

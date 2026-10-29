@@ -73,6 +73,19 @@ test("Ada's album: the next three special days, never a secret one", () => {
     assert.deepEqual(Object.keys(m).sort(), ['hint', 'secret', 'shelf']);
 });
 
+test('API release: the first note through a token, which is no Web release', () => {
+  const none = evaluateBadges(facts([note('2026-10-28')]), '2026-10-29');
+  assert.ok(!got(none, 'api'));
+  assert.ok(none.missing.some((m) => m.id === 'api'));
+  const b = evaluateBadges(
+    facts([note('2026-10-28', { source: 'email', reply: true }), note('2026-10-29', { source: 'api' })]),
+    '2026-10-29'
+  );
+  assert.equal(got(b, 'api')!.day, '2026-10-29');
+  assert.ok(!got(b, 'web'));
+  assert.ok(!b.missing.some((m) => m.id === 'api'));
+});
+
 test('a first week: firsts, and Continuous delivery stamped with the day it came true', () => {
   const notes = [
     note('2026-10-05', { source: 'email', reply: true, words: 12 }),

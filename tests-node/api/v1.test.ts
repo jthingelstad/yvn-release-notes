@@ -464,6 +464,13 @@ test('a token earns badges in the owner voice, said once', async () => {
   });
   assert.ok(Array.isArray(first.json!.unlocked), first.text);
   for (const u of first.json!.unlocked as OAuthRow[]) assert.deepEqual(Object.keys(u).sort(), ['key', 'name']);
+  // The first note through a token earns API release; the next earns it no more.
+  assert.ok(
+    (first.json!.unlocked as OAuthRow[]).some((u) => u.key === 'api'),
+    first.text
+  );
+  const second = await call(app, 'POST', '/v1/notes', { token: made.token, body: { text: 'Second words' } });
+  assert.ok(!((second.json!.unlocked ?? []) as OAuthRow[]).some((u) => u.key === 'api'), second.text);
   // With badges off there is no unlock list at all.
   ctx.store.seed({ ...ctx.store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!, badges: false });
   const off = await call(app, 'POST', '/v1/notes', { token: made.token, body: { text: 'More' } });

@@ -560,6 +560,12 @@ or new CSP exception.
   and one would only risk an old build. On an iPhone the Home Screen app keeps its own
   cookies, so the emailed link signs in Safari, not the app; there the
   sign-in page points at the code.
+  The manifest's colours are the dark theme's navy (Jamie, 2026-10-28):
+  an installed Android app paints the strip under the system navigation
+  bar in the manifest's one colour, which can't follow dark mode, and navy
+  was picked over a white strip under the dark page. The page draws under
+  that bar (`viewport-fit=cover`) and pads its foot with the safe-area
+  insets.
 - **Page counts** (`lib/pagecount.ts`) go to Tinylytics on each page shown,
   without the embed script: the page's address without its query string,
   and on a visit's first page the referring site's origin only. No

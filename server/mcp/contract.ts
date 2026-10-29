@@ -94,9 +94,15 @@ const KEY: JsonSchema = {
   pattern: '^[A-Za-z0-9_-]+$'
 };
 export const MCP_CONTRACT: McpContract = {
-  server_version: '1.8.0',
+  server_version: '1.8.1',
   protocol_versions: ['2025-06-18', '2025-03-26'],
   changes: [
+    {
+      version: '1.8.1',
+      date: '2026-10-28',
+      summary:
+        'notes_activity adds the profile photo being set, changed or removed (kind photo), never the image; kinds takes photo.'
+    },
     {
       version: '1.8.0',
       date: '2026-10-28',
@@ -1042,6 +1048,7 @@ export const MCP_CONTRACT: McpContract = {
                 'status',
                 'signin',
                 'export',
+                'photo',
                 'address',
                 'calendar',
                 'connection',
@@ -1049,7 +1056,7 @@ export const MCP_CONTRACT: McpContract = {
               ]
             },
             minItems: 1,
-            maxItems: 19,
+            maxItems: 20,
             uniqueItems: true
           },
           limit: {

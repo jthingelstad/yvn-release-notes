@@ -4,6 +4,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, type ReactNode } from 'react';
 import { AppLink, Bar, Digits, ErrorLine, RailSignOut, useBusy, useProblem, useTitle } from '../components/common.tsx';
+import { Avatar } from '../components/avatar.tsx';
 import { Icon, type IconName } from '../components/icon.tsx';
 import { clock, count } from '../lib/format.ts';
 import { badgesQuery, meQuery } from '../lib/queries.ts';
@@ -18,7 +19,10 @@ export function You() {
   return (
     <>
       <Bar />
-      <h1>You</h1>
+      <div className="you-head">
+        {me?.photo && <Avatar photo={me.photo} className="avatar--you" />}
+        <h1>You</h1>
+      </div>
       <p className="lede">What you’ve earned, what happened, and how it’s set up.</p>
       {me && !me.new && <Status p={me} />}
       {me && !me.new && <WeeklyThingLine p={me} />}

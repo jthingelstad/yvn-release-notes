@@ -69,7 +69,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 73);
+  assert.equal(ROUTES.length, 76);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -271,8 +271,13 @@ test('account deletion requires purpose-separated code and removes all user obje
   await s.objects.put('raw/fictional', Buffer.from('fixture'), { type: 'text/plain' });
   await s.objects.put('media/u/staged/orphan.pdf', Buffer.from('%PDF-fixture'), { type: 'application/pdf' });
   await s.objects.put('exports/u/orphan.zip', Buffer.from('zip'), { type: 'application/zip' });
+  // The profile photo goes by its PROFILE pointer, before the last sweep.
+  await s.store.setPhoto('u', { key: 'media/u/profile/p.jpg', at: 'then', size: 4, side: 512 }, null);
+  await s.objects.put('media/u/profile/p.jpg', Buffer.from('face'), { type: 'image/jpeg' });
   const deleted = await s.call('DELETE', '/api/me', { code: '222222' });
   assert.equal(deleted.r.status, 200);
+  const removals = s.objects.calls.filter((c) => c.operation === 'remove').map((c) => c.key);
+  assert.ok(removals.indexOf('media/u/profile/p.jpg') < removals.indexOf('media/u/staged/orphan.pdf'));
   assert.deepEqual(await s.objects.list('media/u/'), []);
   assert.deepEqual(await s.objects.list('exports/u/'), []);
   assert.equal(await s.store.profile('u'), null);
@@ -1329,4 +1334,125 @@ test('"Add where I am" is a setting, on until turned off, and recorded as a chan
   assert.equal((await s.call('PUT', '/api/me', { here: 'yes' })).r.status, 400);
   const row = s.store.memory.all().find((i) => i.kind === 'settings.changed')!;
   assert.deepEqual(row.changes, [{ field: 'here', from: true, to: false }]);
+});
+
+// A JPEG as a canvas makes it: SOI, a JFIF APP0, the frame and the scan.
+// `extra` goes before the frame (an EXIF APP1, say).
+function jpeg(width: number, height = width, extra: Buffer[] = [], pad = 200) {
+  const app0 = Buffer.from([0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]),
+    sof = Buffer.alloc(19);
+  sof.writeUInt16BE(0xffc0, 0);
+  sof.writeUInt16BE(17, 2);
+  sof[4] = 8;
+  sof.writeUInt16BE(height, 5);
+  sof.writeUInt16BE(width, 7);
+  sof[9] = 3;
+  const sos = Buffer.from([0xff, 0xda, 0, 12, 3, 1, 0, 2, 0x11, 3, 0x11, 0, 0x3f, 0]);
+  return Buffer.concat([
+    Buffer.from([0xff, 0xd8]),
+    app0,
+    ...extra,
+    sof,
+    sos,
+    Buffer.alloc(pad, 0x55),
+    Buffer.from([0xff, 0xd9])
+  ]);
+}
+const EXIF = Buffer.concat([Buffer.from([0xff, 0xe1, 0, 8]), Buffer.from('Exif\0\0', 'latin1')]);
+async function photoUpload(s: Awaited<ReturnType<typeof setup>>, bytes: Buffer, type = 'image/jpeg') {
+  const r = await s.call('POST', '/api/uploads', { name: 'me.jpg', type, size: bytes.length });
+  assert.equal(r.r.status, 200);
+  const upload = r.b as Item;
+  await s.objects.put((upload.fields as Item).key as string, bytes, { type, tags: { outcome: 'pending' } });
+  return { upload: upload.upload, type: upload.type };
+}
+test('a profile photo is checked, kept under its own key, shown by a signed redirect and replaced or removed', async () => {
+  const s = await setup(),
+    first = await s.call('PUT', '/api/me/photo', await photoUpload(s, jpeg(512)));
+  assert.equal(first.r.status, 200);
+  const me = first.b as Item,
+    kept = (await s.store.profile('u'))!.photo as Item;
+  assert.deepEqual(me.photo, { at: '2026-10-13T12:00:00Z' });
+  assert.match(String(kept.key), /^media\/u\/profile\/[0-9a-f]{32}\.jpg$/);
+  assert.equal(kept.side, 512);
+  assert.ok(!JSON.stringify(me).includes('media/'), 'no key in the answer');
+  assert.deepEqual(await s.objects.list('media/u/web/'), [], 'the upload is gone');
+  assert.equal((await s.objects.tags(String(kept.key))).outcome, 'profile');
+  assert.deepEqual(((await s.call('GET', '/api/me')).b as Item).photo, { at: '2026-10-13T12:00:00Z' });
+  const shown = await s.call('GET', '/api/me/photo');
+  assert.equal(shown.r.status, 302);
+  assert.equal(shown.r.headers.get('cache-control'), 'no-store');
+  assert.ok(shown.r.headers.get('location')!.startsWith('https://files.example.test/'));
+  assert.ok(shown.r.headers.get('location')!.includes(encodeURIComponent(String(kept.key))));
+  assert.equal((await s.call('GET', '/api/me/photo', undefined, '')).r.status, 401);
+
+  const second = await s.call('PUT', '/api/me/photo', await photoUpload(s, jpeg(256)));
+  assert.equal(second.r.status, 200);
+  const replaced = (await s.store.profile('u'))!.photo as Item;
+  assert.notEqual(replaced.key, kept.key);
+  assert.deepEqual(await s.objects.list('media/u/'), [replaced.key], 'the old photo is deleted');
+
+  const removed = await s.call('DELETE', '/api/me/photo');
+  assert.equal(removed.r.status, 200);
+  assert.equal((removed.b as Item).photo, undefined);
+  assert.equal((await s.store.profile('u'))!.photo, undefined);
+  assert.deepEqual(await s.objects.list('media/u/'), []);
+  assert.equal((await s.call('GET', '/api/me/photo')).r.status, 404);
+  assert.equal((await s.call('DELETE', '/api/me/photo')).r.status, 200, 'nothing to remove is fine');
+  const rows = s.store.memory
+    .all()
+    .filter((i) => String(i.kind).startsWith('photo.'))
+    .sort((a, b) => (String(a.sk) < String(b.sk) ? -1 : 1));
+  // One clock for the whole test, so the rows sort by kind.
+  assert.deepEqual(
+    rows.map((r) => [r.kind, r.via]),
+    [
+      ['photo.changed', 'web'],
+      ['photo.removed', 'web'],
+      ['photo.set', 'web']
+    ]
+  );
+  assert.ok(!JSON.stringify(rows).includes('media/'), 'the log never names the file');
+  assert.ok(!JSON.stringify(s.logs).includes('media/'));
+});
+test('a profile photo must be a square canvas JPEG of the right size, with no EXIF, from an Origin', async () => {
+  const s = await setup(),
+    refused = async (bytes: Buffer, error: string, type = 'image/jpeg') => {
+      const r = await s.call('PUT', '/api/me/photo', await photoUpload(s, bytes, type));
+      assert.equal(r.r.status, 400, error);
+      assert.equal((r.b as Item).error, error);
+    };
+  await refused(jpeg(512, 384), 'photo-size');
+  await refused(jpeg(64), 'photo-size');
+  await refused(jpeg(1024), 'photo-size');
+  await refused(jpeg(512, 512, [EXIF]), 'photo-metadata');
+  await refused(jpeg(512, 512, [], 300 * 1024), 'photo-too-big');
+  await refused(
+    Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), Buffer.alloc(40)]),
+    'photo-type',
+    'image/png'
+  );
+  await refused(Buffer.concat([Buffer.from('GIF89a'), Buffer.alloc(40)]), 'photo-type');
+  assert.equal(
+    (await s.call('PUT', '/api/me/photo', { upload: 'f'.repeat(32), type: 'image/jpeg' })).r.status,
+    400,
+    'no such upload'
+  );
+  const upload = await photoUpload(s, jpeg(512));
+  assert.equal((await s.call('PUT', '/api/me/photo', upload, s.token, false)).r.status, 403);
+  assert.equal((await s.store.profile('u'))!.photo, undefined);
+  assert.ok(s.logs.every((l) => l.event !== 'photo'));
+});
+test('a photo replaced by another tab first is refused, and the copy just made is removed', async () => {
+  const s = await setup(),
+    upload = await photoUpload(s, jpeg(512));
+  s.store.memory.beforeSend = (command) => {
+    if (command instanceof TransactWriteCommand && JSON.stringify(command.input).includes('#photo'))
+      s.store.seed({ ...profile, photo: { key: 'media/u/profile/other.jpg', at: 'then' } });
+  };
+  const r = await s.call('PUT', '/api/me/photo', upload);
+  assert.equal(r.r.status, 409);
+  assert.equal((r.b as Item).error, 'try-again');
+  assert.deepEqual(await s.objects.list('media/u/'), []);
+  assert.equal(((await s.store.profile('u'))!.photo as Item).key, 'media/u/profile/other.jpg');
 });

@@ -21,6 +21,7 @@ import { checkTurnstile, turnstileClient, turnstileToken } from '../../packages/
 import { activityId, activityView, titled } from '../../packages/domain/activity.ts';
 import { eventId, recordActivity } from '../../packages/backend/activity.ts';
 import { spotOf, type SpotNames } from '../../packages/backend/places.ts';
+import { photoLink, removePhoto, setPhoto } from '../../packages/backend/profile-photo.ts';
 import { json, body } from './requests.ts';
 const ACTIVITY_SHOWN = 100;
 export async function accountRoutes(
@@ -180,6 +181,13 @@ export async function accountRoutes(
       ...profileView(profile, ctx.now, ctx.inboundDomain),
       ...(isAdmin(profile, ctx.adminUserId) ? { admin: true } : {})
     });
+  }
+  if (pattern === '/api/me/photo') {
+    // The profile photo (profile-photo.ts): set or replaced from a checked
+    // upload, removed, or shown by a redirect to a fresh signed link.
+    if (method === 'PUT') return json(await setPhoto(service, await body(service.request)));
+    if (method === 'DELETE') return json(await removePhoto(service));
+    return json({}, 302, { location: await photoLink(service) });
   }
   // "Subscribe this address": the session's verified address, never a typed one.
   if (pattern === '/api/me/weekly-thing') return json(await subscribeWeeklyThing(service));

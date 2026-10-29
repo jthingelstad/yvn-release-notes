@@ -1,5 +1,6 @@
 /** Account settings and deletion stay behind the email-verified session.
  * Deletion blocks MCP first; private objects precede table/profile removal. */
+import { photoOf } from './profile-photo.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { SessionService, reject } from './sessions.ts';
 import type { Item, Key } from './store-types.ts';
@@ -320,6 +321,8 @@ export async function deleteAccount(service: SessionService, b: Item): Promise<s
       rows.flatMap((i) => [
         ...(String(i.raw_key ?? '').startsWith('raw/') ? [String(i.raw_key)] : []),
         ...keys(i),
+        // The profile photo (profile-photo.ts), on PROFILE.
+        ...(photoOf(i, uid) ? [photoOf(i, uid)!] : []),
         ...(String(i.export_key ?? '').startsWith(`exports/${uid}/`) ? [String(i.export_key)] : [])
       ]);
   for (const key of files(items)) await ctx.objects.remove(key);

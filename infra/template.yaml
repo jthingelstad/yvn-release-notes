@@ -1409,8 +1409,11 @@ Resources:
                 Resource: !Sub "${MailBucket.Arn}/media/*/web/*"
               - Effect: Allow
                 # Where that copy is kept, tagged kept: no form writes here.
+                # A profile photo's copy is kept under profile/ (profile-photo.ts).
                 Action: [s3:PutObject, s3:PutObjectTagging]
-                Resource: !Sub "${MailBucket.Arn}/media/*/files/*"
+                Resource:
+                  - !Sub "${MailBucket.Arn}/media/*/files/*"
+                  - !Sub "${MailBucket.Arn}/media/*/profile/*"
               - Effect: Allow
                 # A new zip export replaces the last; deleting the account
                 # deletes it.

@@ -110,6 +110,9 @@ export interface Me {
   // On the Weekly Thing's list (packages/backend/weekly-thing.ts); absent
   // until it has been looked up, or when it couldn't be
   weekly_thing?: WeeklyThing;
+  // The profile photo, when there is one: when it was set, never where it
+  // is kept. The page shows it from /api/me/photo (lib/photo.ts).
+  photo?: { at: string };
 }
 
 // member: a Supporting Member. reader: subscribed. unconfirmed: subscribed,

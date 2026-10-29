@@ -2,7 +2,9 @@
  * leaving out reply addresses, raw keys, session tokens and SDK bookkeeping.
  * Markdown groups days under their birthday-to-birthday release. Badges are
  * worked out at export time from the same rows, oldest first. The JSON holds
- * the activity log, oldest first, as its owner sees it on the web. */
+ * the activity log, oldest first, as its owner sees it on the web. The zip
+ * carries the profile photo (profile-photo.ts) as profile-photo.jpg, named in
+ * the JSON's profile as `photo` and in the Markdown under the title. */
 import { localDay, parseDay, validDay, validTimezone } from '../domain/dates.ts';
 import { combine, placeLabel, writtenAt, type NoteRecord, type PlaceRecord } from '../domain/notes.ts';
 import { computeVersion, releaseName } from '../domain/version.ts';
@@ -97,7 +99,19 @@ export function filePaths(items: readonly Item[], owner?: string): FilePaths {
   }
   return out;
 }
-export function build(items: readonly Item[], exportedAt: string, files?: FilePaths): ExportData {
+/** The profile photo, for the zip: only the owner's own object. */
+export function photoFile(items: readonly Item[], owner: string): ExportFile | null {
+  const p = items.find((i) => i.sk === 'PROFILE'),
+    photo = object(p?.photo);
+  if (!photo || typeof photo.key !== 'string' || !photo.key.startsWith(`media/${owner}/profile/`)) return null;
+  return { path: 'profile-photo.jpg', kind: 'image', type: 'image/jpeg', key: photo.key, set_at: photo.at ?? null };
+}
+export function build(
+  items: readonly Item[],
+  exportedAt: string,
+  files?: FilePaths,
+  photo?: ExportFile | null
+): ExportData {
   const hasFiles = files !== undefined && Object.keys(files).length > 0;
   let profile: Item = {};
   const days: Item[] = [],
@@ -155,6 +169,7 @@ export function build(items: readonly Item[], exportedAt: string, files?: FilePa
         ...Object.fromEntries(Object.entries(item).filter(([k]) => !['pk', 'sk'].includes(k)))
       });
   }
+  if (photo) profile.photo = { path: photo.path, set_at: photo.set_at ?? null };
   if (typeof profile.birthday === 'string')
     for (const n of notes) n.version ||= computeVersion(profile.birthday, n.date).toString();
   const epoch = Date.parse(exportedAt),
@@ -233,6 +248,8 @@ export function markdown(data: ExportData): string {
   lines.push(`Exported ${data.exported_at.slice(0, 10)}${profile.email ? ` for ${profile.email}` : ''}.`);
   const born = typeof profile.birthday === 'string' ? profile.birthday : null;
   if (born) lines.push('', `Born ${longDate(born)}: that day was 0.0.0.`);
+  const photo = object(profile.photo);
+  if (photo && typeof photo.path === 'string') lines.push('', `![Profile photo](${photo.path})`);
   if (data.upcoming?.length) {
     lines.push('', '## Upcoming', '', 'Saved plans and personal dates.');
     for (const entry of data.upcoming) {

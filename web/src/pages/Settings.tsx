@@ -14,6 +14,7 @@ import {
   useProblem,
   useTitle
 } from '../components/common.tsx';
+import { Avatar } from '../components/avatar.tsx';
 import { Connections } from '../components/connections.tsx';
 import { Icon } from '../components/icon.tsx';
 import { SendTimeSelect, ZipExport } from '../components/fields.tsx';
@@ -23,6 +24,7 @@ import { api } from '../lib/api.ts';
 import { BUILD, buildCommit, buildVersion } from '../lib/build.ts';
 import { clock, longDate, pauseLine, zoneName, zoneShortDate, zoneTime } from '../lib/format.ts';
 import { useMe, useSignedInAs } from '../lib/nav.ts';
+import { PHOTO_ACCEPT, removePhoto, setPhoto } from '../lib/photo.ts';
 import { signedIn } from '../lib/storage.ts';
 import type { Me } from '../lib/types.ts';
 
@@ -168,6 +170,93 @@ function Inbox({ p }: { p: Me }) {
       <p className="aside saved" id="inbox-copied" role="status" hidden={!copied}>
         Copied.
       </p>
+      <ErrorLine line={problem.line} />
+    </section>
+  );
+}
+
+// The profile photo (lib/photo.ts): made square here, with no camera
+// details, and shown only to you.
+function ProfilePhoto({ p }: { p: Me }) {
+  const client = useQueryClient();
+  const problem = useProblem();
+  const [busy, run] = useBusy();
+  const [line, setLine] = useState('');
+  const picker = useRef<HTMLInputElement>(null);
+  const chooseButton = useRef<HTMLButtonElement>(null);
+  const removeButton = useRef<HTMLButtonElement>(null);
+
+  const done = (me: Me) => client.setQueryData(['me'], { ...p, ...me, photo: me.photo });
+
+  const pick = (file: File | undefined) =>
+    run(async () => {
+      problem.clear();
+      if (!file) return;
+      const out = await setPhoto(file, setLine);
+      setLine('');
+      if ('problem' in out) return problem.show(out.problem, chooseButton.current);
+      done(out.me);
+    });
+
+  const remove = () =>
+    run(async () => {
+      problem.clear();
+      if (!window.confirm('Remove your profile photo?')) return;
+      const out = await removePhoto();
+      if ('problem' in out) return problem.show(out.problem, removeButton.current);
+      done(out.me);
+    });
+
+  return (
+    <section className="section" id="profile-photo">
+      <h3>Profile photo</h3>
+      <div className="photo-row">
+        <Avatar photo={p.photo} className="avatar--settings" />
+        <div>
+          <p className="hint">
+            Shown only to you, beside You. It’s cut to a square from the middle, with no camera details or location.
+          </p>
+          <div className="row">
+            <button
+              ref={chooseButton}
+              className="quiet"
+              type="button"
+              id="photo-choose"
+              disabled={busy}
+              onClick={() => picker.current?.click()}
+            >
+              {p.photo ? 'Change' : 'Add a photo'}
+            </button>
+            <input
+              ref={picker}
+              type="file"
+              id="photo-file"
+              accept={PHOTO_ACCEPT}
+              hidden
+              onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                e.currentTarget.value = '';
+                pick(file);
+              }}
+            />
+            {p.photo && (
+              <button
+                ref={removeButton}
+                className="quiet"
+                type="button"
+                id="photo-remove"
+                disabled={busy}
+                onClick={remove}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+          <p className="hint loading" role="status" hidden={!line}>
+            {line}
+          </p>
+        </div>
+      </div>
       <ErrorLine line={problem.line} />
     </section>
   );
@@ -399,7 +488,12 @@ function Account({ p }: { p: Me }) {
         </p>
       </SettingsGroup>
       <Connections />
-      <SettingsGroup id="account-settings" title="Your account" description="Birthday, export, sign out or delete">
+      <SettingsGroup
+        id="account-settings"
+        title="Your account"
+        description="Photo, birthday, export, sign out or delete"
+      >
+        <ProfilePhoto p={p} />
         <section className="section">
           <h3>Birthday</h3>
           <p className="value" data-field="birthday">

@@ -1,11 +1,14 @@
 // Small pieces every page uses: the bar, the version number, links, the
 // lines that say something went wrong or is loading.
+import { useQuery } from '@tanstack/react-query';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { sayFor, type Line, type Problem } from '../lib/say.ts';
 import { api } from '../lib/api.ts';
 import { useSignedInAs } from '../lib/nav.ts';
+import { meQuery } from '../lib/queries.ts';
 import { Icon, type IconName } from './icon.tsx';
+import { Avatar } from './avatar.tsx';
 import { BrandMark } from './brand-mark.tsx';
 import { NewBadges, RailMember } from './welcome.tsx';
 import { signedIn, store } from '../lib/storage.ts';
@@ -61,6 +64,12 @@ export function placeOf(path: string, rail = true) {
         : path;
 }
 
+// The You tab's glyph: the profile photo once there is one.
+function YouGlyph() {
+  const me = useQuery(meQuery).data;
+  return <Avatar photo={me?.photo} className="avatar--nav" />;
+}
+
 // Whether the bar is the rail: wider than site.css's 760px phone layout.
 // Drawn at build time for front.html, whose bar has no places, there is no
 // screen to ask, so it says the rail.
@@ -111,7 +120,7 @@ export function Bar({ nav = true, current, children }: { nav?: boolean; current?
           <nav className="primary-nav" aria-label="Main navigation">
             {NAV.filter(([to]) => rail || to !== RAIL_ONLY).map(([to, name, icon]) => (
               <Link key={to} to={to} aria-current={here === to ? 'page' : undefined} activeProps={{}}>
-                <Icon name={icon as IconName} />
+                {to === '/you/' ? <YouGlyph /> : <Icon name={icon as IconName} />}
                 <span>{name}</span>
               </Link>
             ))}

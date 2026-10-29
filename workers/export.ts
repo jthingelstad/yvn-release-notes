@@ -14,7 +14,7 @@ import { Readable } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
-import { build, markdown, filePaths } from '../packages/backend/export.ts';
+import { build, markdown, filePaths, photoFile } from '../packages/backend/export.ts';
 import { createObjects, createStore } from '../packages/backend/aws.ts';
 import { missing, safeLog, type Objects, type Log } from '../packages/backend/services.ts';
 import { iso, localDay, validDay } from '../packages/domain/dates.ts';
@@ -52,7 +52,8 @@ export async function writeZip(
   const stamp = iso(now),
     top = `release-notes-${stamp.slice(0, 10)}/`,
     files = filePaths(items, owner),
-    data = build(items, stamp, files),
+    photo = photoFile(items, owner),
+    data = build(items, stamp, files, photo),
     zip = new ZipFile();
   const temp = await mkdtemp(join(tmpdir(), 'release-files-')),
     counts = { files: 0, missing: 0 };
@@ -74,6 +75,18 @@ export async function writeZip(
       mtime: new Date(now * 1000),
       compress: true
     });
+    if (photo) {
+      if (outputError) throw outputError;
+      try {
+        const local = join(temp, 'profile-photo');
+        await writeFile(local, (await objects.get(photo.key)).body);
+        zip.addFile(local, top + photo.path, { mtime: new Date(now * 1000), compress: false });
+        counts.files++;
+      } catch (error) {
+        if (!missing(error)) throw error;
+        counts.missing++;
+      }
+    }
     for (const entries of Object.values(files))
       for (const f of entries) {
         if (outputError) throw outputError;

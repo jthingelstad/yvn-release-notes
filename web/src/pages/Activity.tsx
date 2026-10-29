@@ -147,6 +147,7 @@ const GLYPHS: Record<string, IconName> = {
   signin: 'you',
   account: 'you',
   export: 'download',
+  photo: 'you',
   address: 'mail',
   calendar: 'calendar',
   connection: 'assistant'
@@ -300,6 +301,12 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
           ? `Started a book of ${dayName(e.from, year)} through ${dayName(e.to, year)}`
           : 'Started a book') + (e.commentary ? ', with Claude’s commentary' : '')
       ];
+    case 'photo.set':
+      return ['Added your profile photo'];
+    case 'photo.changed':
+      return ['Changed your profile photo', 'The old one was deleted.'];
+    case 'photo.removed':
+      return ['Removed your profile photo', 'It was deleted.'];
     case 'address.created':
       return ['Made your standing address'];
     case 'address.replaced':

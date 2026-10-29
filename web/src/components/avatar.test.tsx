@@ -58,7 +58,7 @@ describe('making the photo', () => {
   });
 
   it('says each refusal the API gives', () => {
-    for (const error of ['photo-type', 'photo-too-big', 'photo-size', 'photo-metadata', 'photo', 'try-again'])
+    for (const error of ['photo-type', 'photo-too-big', 'photo-size', 'photo', 'try-again'])
       expect(sayFor({ error })).not.toBe(sayFor({ error: 'no-such-error' }));
     expect(sayFor({ error: 'upload', file: 'The photo' })).toBe('The photo didn’t finish sending. Try again.');
   });

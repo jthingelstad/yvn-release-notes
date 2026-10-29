@@ -75,7 +75,7 @@ main {
   max-width: 42rem;
   min-height: 100vh;
   margin: 0 auto;
-  padding: 28px 24px 40px;
+  padding: 28px 24px calc(40px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
 }
@@ -1819,7 +1819,8 @@ main:has(.bar--app) h1:not(.vnum) {
     justify-content: space-around;
     gap: 0;
     background: var(--paper);
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    padding: 10px calc(12px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom))
+      calc(12px + env(safe-area-inset-left));
     border-top: 1px solid var(--rule);
   }
   .bar--app .primary-nav a {

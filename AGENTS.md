@@ -444,6 +444,13 @@ Where things are (each module's design comment has its contract):
   **nothing remote**; `tests-node/mail/` holds both. Preview by
   screenshotting `htmlBody()`; for phone width use a 390px iframe in a wider
   window, since headless Chrome will not lay out below ~500px.
+- **The sender's logo** (Jamie, 2026-10-28: the cake beside our email
+  should be "the Release Notes icon we now have"): mail clients that read
+  BIMI (Fastmail does without a certificate, since our DMARC is
+  `p=reject`) show `web/public/brand/release-notes-bimi.svg`, the mark in
+  SVG Tiny PS on paper, under 16 KB, named by `default._bimi` in the
+  yourversionnumber.com zone. Without that record a client falls back to
+  the site's cake favicon. Keep the file's name and format.
 - **The number stands alone.** No decades/years/days breakdown under it
   (Jamie, 2026-10-07: "super redundant"). Below it: 24 text dots for how far
   through the year, the ask, then the streak.

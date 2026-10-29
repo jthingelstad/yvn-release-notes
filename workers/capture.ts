@@ -55,6 +55,7 @@ import { safeLog } from '../packages/backend/services.ts';
 import { activityKey, activityTime } from '../packages/domain/activity.ts';
 import type { Unlocked } from '../packages/domain/badges.ts';
 import type { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
+import { ApiRefusal, writeApi, type ApiStore } from './api-writes.ts';
 import {
   failure,
   fingerprint,
@@ -65,7 +66,7 @@ import {
   type SafeLog
 } from '../server/mcp/common.ts';
 type Ops = NonNullable<TransactWriteCommandInput['TransactItems']>;
-export interface CaptureStore extends ReaderStore, Omit<FeedbackStore, 'mcpProfile' | 'putActivity'> {
+export interface CaptureStore extends ReaderStore, ApiStore, Omit<FeedbackStore, 'mcpProfile' | 'putActivity'> {
   agentFiling(receipt: OAuthRow, audit: OAuthRow, now: number): Ops;
   upcomingBatch(uid: string, changes: readonly UpcomingChange[], extra: Ops): Promise<{ ok: boolean; applied: number }>;
   agentProof(family: OAuthRow, now: number, scope: string | readonly string[]): Ops;
@@ -694,6 +695,15 @@ export async function captureNote(
   options: CaptureOptions = {}
 ): Promise<OAuthRow> {
   let uid = 'unknown';
+  // A /v1 write (server/mcp/v1.ts) answers in the API's own shape.
+  if (object(event) && typeof event.api === 'string')
+    try {
+      return { ...(await writeApi(context, event, options)) };
+    } catch (error) {
+      if (error instanceof ApiRefusal) return { error: error.code, message: error.detail, ...error.extra };
+      failure(context.now, uid, options.log, error);
+      return { error: 'unavailable', message: 'Try again shortly with the same Idempotency-Key.' };
+    }
   try {
     const input = object(event) ? event : {},
       token = input.token ?? '',

@@ -61,6 +61,9 @@ follow; where a step needs Jamie's go, that rule is there too.
   `node --import tsx tools/dev-server.ts --fake-places --fake-links`. It
   serves `dist/web` and the real Hono HTTP/MCP API against in-memory fakes,
   captures mail at `/dev-mail/`, and starts with fictional ada@example.com.
+  It serves `/v1` too, and prints an API token for that account at start
+  (`curl -H "Authorization: Bearer rn_..." localhost:8790/v1/me`), the
+  sandbox for Changelog and any other client (docs/API.md).
   Fake places/weather and link titles prevent external fetches.
   `--dayone ZIP` imports into those fakes first. For hot reload, start it
   with `--port 8790`, then `npm run dev` (Vite on 5173, forwarding `/api` and

@@ -230,6 +230,19 @@ Resources:
           Cookies: [__Host-rn]
         QueryStringsConfig: { QueryStringBehavior: all }
 
+  # /v1 (docs/API.md) on the MCP origin: no cookie at all, and the two
+  # headers a write needs, its Idempotency-Key and the User-Agent's product.
+  NativeApiRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub "${AWS::StackName}-native-api"
+        HeadersConfig:
+          HeaderBehavior: whitelist
+          Headers: [Origin, Content-Type, Accept, Idempotency-Key, User-Agent]
+        CookiesConfig: { CookieBehavior: none }
+        QueryStringsConfig: { QueryStringBehavior: all }
+
   # Form-encoded scopes arrive with + for spaces. Web Function OAC signature
   # validation rejects that wire form; canonicalize spaces before signing.
   # Only OAuth uses this function; values and repeated parameters are preserved.
@@ -1261,6 +1274,15 @@ Resources:
             # The custom cache/request policies preserve bearer and MCP headers.
             # The cookie is ignored by the separate MCP handler.
             OriginRequestPolicyId: !Ref NativeHttpRequestPolicy
+          # The public API, served by the MCP function (server/mcp/v1.ts).
+          - PathPattern: /v1/*
+            TargetOriginId: native-mcp
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: !Ref NativeHttpCachePolicy
+            OriginRequestPolicyId: !Ref NativeApiRequestPolicy
           - PathPattern: /oauth/*
             TargetOriginId: native-app
             ViewerProtocolPolicy: redirect-to-https
@@ -2550,7 +2572,8 @@ Resources:
                 ["ReleaseNotes", "EmailNotes", {"label": "By email"}],
                 ["ReleaseNotes", "WebNotes", {"label": "On the web"}],
                 ["ReleaseNotes", "ImportedNotes", {"label": "Imported"}],
-                ["ReleaseNotes", "AgentNotes", {"label": "Added by agents"}]
+                ["ReleaseNotes", "AgentNotes", {"label": "Added by agents"}],
+                ["ReleaseNotes", "ApiNotes", {"label": "Through API tokens"}]
               ]}},
             {"type": "metric", "x": 12, "y": 15, "width": 12, "height": 6, "properties": {
               "title": "Subscribers and writers", "view": "timeSeries", "region": "${AWS::Region}",

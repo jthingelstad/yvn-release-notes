@@ -49,6 +49,13 @@ Every write proves the writer owns the subscriber's address:
   stopped subscriber's address files nothing. The address itself is never
   logged; mail to it shows in the activity log like any reply.
 
+- **By a token** (Jamie, 2026-10-29; docs/API.md): a key the owner makes,
+  names and scopes in that session (Settings, API tokens; the configured
+  administrator alone until tokens open to everyone), shown once and kept
+  as its SHA-256, opening `/v1` only. The capture function checks it again
+  and proves the live account and token in the same transaction as each
+  write, and a token changes only the notes it wrote.
+
 Each subscriber's data is their own. Do not add an endpoint that writes
 without these ownership proofs.
 
@@ -755,6 +762,31 @@ Where things are (each module's design comment has its contract):
   `node --import tsx tools/export-mcp-contract.ts`; every tool change is a
   new `server_version` with a `changes` entry, since clients cache the tool
   list (`docs/MCP.md`, When tools change).
+
+## API tokens and `/v1` (2026-10-29)
+
+`docs/API.md` has the design and the phases; phase 1 (tokens, text notes,
+tags, the activity log) is built.
+
+- **`/v1` is the MCP function's**, under its reader role, and every write
+  goes to the capture function, as an agent's does. Only an API token opens
+  it: no cookie, and no MCP access token. No token authenticates a web route
+  or `/mcp`, and `/oauth/revoke` never ends one.
+- **A token writes in the owner's voice**: `source` `api`, no `author`, its
+  name as `token` and the User-Agent's product as `client`. The web shows
+  "via <name>"; the email shows nothing. It counts like a web note.
+- **No token value in any log or answer** after the one at its making. The
+  activity log records each write ("note added via <name>") without words,
+  and a token with `activity` reads the log trimmed of every word
+  (`tokenActivityView`: no mail subject, words or sender, no settings
+  value).
+- **Deleting an account** blocks token writes first (`mcp_deleting`), then
+  removes every token and its pointer with the agent connections.
+- **Offered scopes** are `notes:write` and `activity`; `media:write` and
+  `upcoming` come with phases 3 and 4. There is no `notes:read` in v1.
+- **Test with the dev server's fictional account**, which prints a token at
+  start. Live checks are read-only (a 401 without a token, health); the
+  first live note through a token is Jamie's to send.
 
 ## Landing changes
 

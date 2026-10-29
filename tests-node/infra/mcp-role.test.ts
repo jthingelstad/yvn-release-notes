@@ -4,12 +4,14 @@
  * role's, held to it as well) (tests-node/infra/grants.ts). */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { handleMcp, type McpOptions } from '../../server/mcp/app.ts';
+import { createMcpApp, handleMcp, type McpOptions } from '../../server/mcp/app.ts';
 import type { MediaReader } from '../../server/mcp/reader.ts';
 import { captureNote } from '../../workers/capture.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { fixture, connected, note, ORIGIN } from '../oauth/fixtures.ts';
 import { Recorder, functionArn, REGION, ACCOUNT, STACK } from './grants.ts';
+import { Tokens } from '../../packages/backend/tokens.ts';
+import { FakeObjects } from '../../packages/testing/services.ts';
 
 test('the MCP role grants every request each tool makes', async () => {
   const aws = new Recorder('NativeMcpRevision'),
@@ -99,4 +101,59 @@ test('the MCP role grants every request each tool makes', async () => {
     `logs:CreateLogStream arn:aws:logs:${REGION}:${ACCOUNT}:log-group:/aws/lambda-web/${STACK}-mcp-native.local:*`,
     `logs:PutLogEvents arn:aws:logs:${REGION}:${ACCOUNT}:log-group:/aws/lambda-web/${STACK}-mcp-native.local:*`
   ]);
+});
+
+/** `/v1` (server/mcp/v1.ts) under the same role: the token check, the read
+ * count, each read route, and every write handed to the capture function,
+ * whose own requests are held to the capture role. */
+test('the MCP and capture roles grant every request /v1 makes', async () => {
+  const aws = new Recorder('NativeMcpRevision'),
+    capture = new Recorder('CaptureFunction'),
+    ctx = { ...fixture(), objects: new FakeObjects() },
+    // Tokens are made on the web, under its own role.
+    made = (await new Tokens({ store: ctx.store, origin: ctx.origin, now: ctx.now }).make('u', {
+      name: 'Changelog',
+      scopes: ['notes:write', 'activity'],
+      expiry: 'never'
+    })) as OAuthRow & { token: string },
+    options: McpOptions = {
+      context: () => ctx,
+      capture: (event) => {
+        aws.add('capture', 'lambda:InvokeFunction', functionArn(aws.env.CAPTURE_FUNCTION!));
+        return aws.aside(ctx.store, capture, () =>
+          captureNote(event, { ...ctx, objects: capture.objects(ctx.objects) }, { fetchTitle: () => null })
+        );
+      },
+      log: () => undefined
+    },
+    app = createMcpApp(options),
+    v1 = async (method: string, path: string, body?: OAuthRow, status = 200) => {
+      const response = await app.request(ORIGIN + path, {
+        method,
+        headers: {
+          authorization: 'Bearer ' + made.token,
+          'content-type': 'application/json',
+          'idempotency-key': method + path
+        },
+        ...(body ? { body: JSON.stringify(body) } : {})
+      });
+      const text = await response.text();
+      assert.equal(response.status, status, `${method} ${path}: ${text}`);
+      return text ? (JSON.parse(text) as OAuthRow) : {};
+    };
+  aws.watch(ctx.store);
+  await v1('GET', '/v1/me');
+  await v1('GET', '/v1/tags');
+  const shown = (await v1('POST', '/v1/notes', { text: 'Dinner #home' }, 201)).note as OAuthRow,
+    path = `/v1/notes/${String(shown.date)}/${String(shown.id)}`;
+  await v1('GET', path);
+  const appended = (await v1('POST', path + '/append', { text: 'Walk' })).note as OAuthRow;
+  await v1('PUT', path, { text: 'Dinner and a walk', revision: appended.revision });
+  await v1('PUT', '/v1/tags/pinned', { pinned: ['home'] });
+  await v1('GET', '/v1/activity');
+  await v1('DELETE', path, undefined, 204);
+  await v1('DELETE', '/v1/token', undefined, 204);
+
+  assert.ok(aws.granted().some((r) => r.via === 'capture'));
+  assert.ok(capture.granted().some((r) => r.via === 'TransactWriteCommand ConditionCheck'));
 });

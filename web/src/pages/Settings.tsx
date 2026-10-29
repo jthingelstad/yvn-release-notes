@@ -16,6 +16,7 @@ import {
 } from '../components/common.tsx';
 import { Avatar } from '../components/avatar.tsx';
 import { Connections } from '../components/connections.tsx';
+import { ApiTokens } from '../components/api-tokens.tsx';
 import { Icon } from '../components/icon.tsx';
 import { SendTimeSelect, ZipExport } from '../components/fields.tsx';
 import { PlacePicker } from '../components/placepicker.tsx';
@@ -494,6 +495,7 @@ function Account({ p }: { p: Me }) {
         </p>
       </SettingsGroup>
       <Connections />
+      {p.admin && <ApiTokens />}
       <SettingsGroup
         id="account-settings"
         title="Your account"

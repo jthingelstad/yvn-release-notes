@@ -54,11 +54,17 @@ Filed in 4.5.137.
 
 ## Tokens
 
-A token is a family of a new kind, `token`, beside the OAuth families in
-`packages/backend/oauth.ts`. Its storage, revocation and deletion work as
-they do for OAuth, but it has no refresh.
+A token is the owner's own key, with no refresh (`packages/backend/tokens.ts`).
+It is a `USER#` row, `APITOKEN#<id>`, so the capture function, which writes
+only `USER#` rows, proves it in the same transaction as each write, as it
+proves an agent's grant. Its hash points back from `OAUTHACCESS#<hash>`
+(`kind` `token`, resource `<origin>/v1`), which the MCP bearer check never
+accepts, tracked under `OAUTHUSER#` so the account's deletion removes it with
+the agent connections. No role changes: the MCP and capture roles already
+read and write those prefixes (`tests-node/infra/mcp-role.test.ts` holds
+`/v1` to both).
 
-- **Made in Settings, under Connections.** A web session is required. The
+- **Made in Settings, under API tokens.** A web session is required. The
   owner gives it:
   - a **name**: 1 to 40 code points, unique among the account's live
     tokens. It is the token's identity: "Terminal", "Changelog on my
@@ -66,14 +72,19 @@ they do for OAuth, but it has no refresh.
   - its **scopes** (below);
   - an **expiry** of 90 days, 1 year (the default) or never.
 - **Shown once:** `rn_` followed by 43 base64url characters (256 random
-  bits, `newToken()`), with a copy button and a QR code for Changelog to
-  scan. The prefix makes a leaked token easy to find in a repo or a log.
-  Only its SHA-256 hash is stored.
+  bits, `newToken()`), with a copy button. The prefix makes a leaked token
+  easy to find in a repo or a log. Only its SHA-256 hash is stored. (A QR
+  code for Changelog to scan waits for the app's camera; it is pasted for
+  now.)
 - **At most 20 live tokens** an account.
-- **Settings lists each one** next to the agent connections, with its name,
-  scopes, when it was made, when it was last used (by day, updated at most
-  once an hour) and when it expires. Revoke ends it on the next request.
-  Scopes don't change in place: make a new token and revoke the old one.
+- **Settings lists each one** after the agent connections, with its name,
+  scopes, when it was made, the day it was last used (from each call's
+  content-free record, as a connection's is) and when it expires. Revoke
+  ends it on the next request. Scopes don't change in place: make a new
+  token and revoke the old one.
+- **An ended token says so.** Its row goes, and its pointer stays 30 days
+  marked `revoked`, so its client hears `token_revoked`, not
+  `token_unknown`, and knows to sign in again.
 - **A token ends** when:
   - the owner revokes it;
   - it revokes itself (`DELETE /v1/token`, a client's sign out);
@@ -84,14 +95,15 @@ they do for OAuth, but it has no refresh.
   and through MCP. `GET /v1/me` reports the status, so a client can say why
   no email is coming.
 - **Activity rows:**
-  - `connection.added` (`connection`, the name as `client`, `scopes` and
-    `token: true`) when a token is made;
+  - `connection.added` (`connection`, the name as `client` and as `token`,
+    and `scopes`) when a token is made;
   - `connection.removed` with `reason` `owner`, or `client` when it revoked
     itself. Nothing writes a row when a token expires; Settings shows it as
     expired.
   - A token's reads are one row a token a local day, as an agent's are
     (calls, never arguments or results).
-- **Who sees Tokens:** only the admin at first (a constant in code). It
+- **Who sees Tokens:** only the configured administrator at first
+  (`AdminUserId`; `/api/tokens` answers anyone else 403 `admin-only`). It
   opens to every subscriber in a later PR, once the guide pages are live
   and Jamie has used a token (Jamie's calls, 1).
 
@@ -121,7 +133,9 @@ terminal is the owner's own words that only came _via_ something.
 ## Where it runs
 
 `/v1/*` is served by the MCP Web Function (`server/mcp`), behind a new
-CloudFront behavior to the same origin. The function already does three
+CloudFront behavior to the same origin: HTTPS only (an API client is never
+redirected), and its own origin request policy, which forwards no cookie
+and adds the `Idempotency-Key` and `User-Agent` a write needs. The function already does three
 things the API needs:
 
 - checks bearer tokens with strong reads;
@@ -284,14 +298,16 @@ It answers 201:
     "id": "t-3f9c0a6e1b2d4c5e8f7a9b0c1d2e3f40",
     "date": "2026-10-28",
     "version": "4.5.136",
-    "revision": 1,
+    "revision": "076263bf596e19962d84b076",
     "token": "Terminal"
   },
   "unlocked": [{ "key": "api", "name": "API release" }]
 }
 ```
 
-`unlocked` is present only while Show badges is on.
+`unlocked` is present only while Show badges is on, and never on a replay:
+it was said the first time. A `revision` is an opaque string, as MCP's is;
+send it back unchanged.
 
 **`GET`, `PUT`, `DELETE /v1/notes/{date}/{id}`** and **`POST
 /v1/notes/{date}/{id}/append`**, `notes:write`. These work only on a note
@@ -304,8 +320,8 @@ and edits are.
   read. A note changed since is a 409, `revision_mismatch`, with the
   current revision. No history is kept, as for web edits.
 - `POST .../append {text}` adds a paragraph.
-- `DELETE` removes the note and its files, as a web delete does. This is
-  new: MCP has no delete. A token writes in the owner's voice, and an app
+- `DELETE` removes the note and the files uploaded with it (a token's note
+  has no others), as a web delete does. This is new: MCP has no delete. A token writes in the owner's voice, and an app
   needs to undo a mistake it just sent.
 
 **`GET /v1/tags`**, any scope. The tag row:
@@ -561,7 +577,7 @@ which holds its own design.
 
 | Version | Adds                                                                                                                                                                 | Needs   |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| 0.1     | Log with text and the tag row, the version header, the offline queue, today's activity with edit and delete, the Activity screen, sign-in by pasted or scanned token | phase 1 |
+| 0.1     | Log with text and the tag row, the version header, the offline queue, today's activity with edit and delete, the Activity screen, sign-in by pasted token            | phase 1 |
 | 0.2     | photos, the camera, voice memos, Here, the share extension                                                                                                           | phase 3 |
 | 0.3     | the Upcoming screen, reminder and activity notifications, the optional daily prompt                                                                                  | phase 4 |
 | 0.4     | App Intents, the Action Button, a Control Center control, widgets                                                                                                    | nothing |

@@ -2,7 +2,7 @@
  * capture. Rendering keeps provenance; stored keys/coordinates are private. */
 import { pythonTrim } from './unicode.ts';
 export const MAX_NOTE = 20_000;
-export const SOURCES = ['email', 'web', 'import', 'agent'] as const;
+export const SOURCES = ['email', 'web', 'import', 'agent', 'api'] as const;
 export interface PlaceRecord {
   label?: string;
   venue?: string;

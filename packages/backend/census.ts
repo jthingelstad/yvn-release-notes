@@ -18,6 +18,7 @@ const METRICS = [
   'WebNotes',
   'ImportedNotes',
   'AgentNotes',
+  'ApiNotes',
   'NotesWithMedia',
   'Writers7',
   'Writers30'
@@ -80,12 +81,14 @@ export function counts(items: Item[], now: number): Counts {
     const notes = rows.filter((row) => String(row.sk).startsWith('NOTE#')),
       web = notes.filter((row) => row.source === 'web').length,
       imported = notes.filter((row) => row.source === 'import').length,
-      agent = notes.filter((row) => row.source === 'agent').length;
+      agent = notes.filter((row) => row.source === 'agent').length,
+      api = notes.filter((row) => row.source === 'api').length;
     totals.Notes! += notes.length;
     totals.WebNotes! += web;
     totals.ImportedNotes! += imported;
     totals.AgentNotes! += agent;
-    totals.EmailNotes! += notes.length - web - imported - agent;
+    totals.ApiNotes! += api;
+    totals.EmailNotes! += notes.length - web - imported - agent - api;
     totals.NotesWithMedia! += notes.filter(hasMedia).length;
     const profile = rows.find((row) => row.sk === 'PROFILE');
     if (!profile?.tz) continue;

@@ -55,7 +55,12 @@
  * - connection.added: `connection`, `client`, `scopes`; connection.changed:
  *   `connection`, `client`, `from`, `to`; connection.removed: `connection`,
  *   `client`, `reason` (owner; client, when it revoked its own token; or
- *   token-reuse, when a used refresh token came back and ended it).
+ *   token-reuse, when a used refresh token came back and ended it). An API
+ *   token's rows also carry `token`, its name (docs/API.md).
+ * - Through an API token (via `token`): note rows and the badges they earn
+ *   carry `token`, the token's name, and `client`, the product its
+ *   User-Agent named; its reads row too, and settings.changed when it
+ *   changed the pinned tags.
  * - feedback.filed: `feedback` (its id), `feedback_kind` (bug, idea, question or
  *   other), `follows` (the item it follows, if any), `screenshots` (a
  *   count); feedback.answered (via `admin`): `feedback`, `status` (what the
@@ -122,7 +127,7 @@ export function activityKey(at: string, kind: string, id: string): string {
 export const activityId = (sk: string): string => sk.slice(ACTIVITY.length);
 
 const MAIL = ['message', 'received_at', 'via', 'day', 'version', 'subject', 'outcome', 'reason', 'sender', 'text'];
-const READS = ['day', 'client', 'connection', 'calls', 'tools', 'errors', 'last_at'];
+const READS = ['day', 'via', 'client', 'token', 'connection', 'calls', 'tools', 'errors', 'last_at'];
 
 /** A row as its owner sees it, on the web and in the export: no table keys,
  * revisions or expiry. */
@@ -162,4 +167,26 @@ export function agentActivityView(row: Row): Row {
     text = view.text == null ? null : codePointSlice(String(view.text), 0, 2000),
     cut = subject !== view.subject || text !== view.text;
   return { ...view, subject, text, ...(cut ? { cut: true } : {}) };
+}
+
+const MAIL_KEPT = ['message', 'received_at', 'via', 'day', 'version', 'outcome', 'reason'];
+
+/** What a token with the `activity` scope reads (docs/API.md): the owner's
+ * view with every word taken out. A mail row keeps neither subject, words
+ * nor sender; a settings change names only its fields. */
+export function tokenActivityView(row: Row): Row {
+  const view = activityView(row);
+  if (view.kind === 'mail')
+    return {
+      id: view.id,
+      at: view.at,
+      kind: view.kind,
+      ...Object.fromEntries(MAIL_KEPT.filter((k) => view[k] != null).map((k) => [k, view[k]]))
+    };
+  if (view.kind === 'settings.changed' && Array.isArray(view.changes))
+    return {
+      ...view,
+      changes: (view.changes as Row[]).map((c) => ({ field: c && typeof c === 'object' ? c.field : null }))
+    };
+  return view;
 }

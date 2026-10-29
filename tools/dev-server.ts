@@ -13,6 +13,7 @@ import { simpleParser } from 'mailparser';
 import { createApp } from '../server/app/app.ts';
 import { createMcpApp } from '../server/mcp/app.ts';
 import { captureNote } from '../workers/capture.ts';
+import { Tokens } from '../packages/backend/tokens.ts';
 import { listen } from '../server/shared/listen.ts';
 import { FakeStore } from '../packages/testing/store.ts';
 import { FakeObjects, FakeMail, FakeInvocations } from '../packages/testing/services.ts';
@@ -375,6 +376,7 @@ export async function main(args = process.argv.slice(2)) {
       capture: (e) => captureNote(e, context(), { fetchTitle: () => null })
     });
   app.all('/mcp', (c) => mcp.fetch(c.req.raw));
+  app.all('/v1/*', (c) => mcp.fetch(c.req.raw));
   app.all('/api/*', (c) => api.fetch(c.req.raw));
   app.all('/oauth/*', (c) => api.fetch(c.req.raw));
   app.all('/.well-known/*', (c) => api.fetch(c.req.raw));
@@ -462,7 +464,15 @@ export async function main(args = process.argv.slice(2)) {
       return c.text('Build the web app first', 404);
     }
   });
+  // A ready-made API token for the fictional account (docs/API.md), the
+  // sandbox for anyone building a client. It lives only in this process.
+  const sandbox = await new Tokens({ store, origin, now: stamp() }).make('u1', {
+    name: 'Dev sandbox',
+    scopes: ['notes:write', 'activity'],
+    expiry: 'never'
+  });
   console.log(`Release Notes locally: ${origin}/ (fictional in-memory data)`);
+  console.log(`API token for the fictional account: ${String(sandbox.token)} (try ${origin}/v1/me)`);
   return listen(app, `127.0.0.1:${port}`);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

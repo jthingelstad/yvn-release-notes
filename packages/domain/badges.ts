@@ -10,8 +10,14 @@
  * Giving badges (domain/giving.ts) are the one shelf not worked out from
  * notes: one for each year a Weekly Thing lookup saw a Supporting Member,
  * stamped with the first day it did. This year's is still to find until
- * earned; an earlier year's, no longer given, never is. */
-import { addDays, daysBetween, type Day } from './dates.ts';
+ * earned; an earlier year's, no longer given, never is.
+ * Events (`BadgeEvent`, badgeEventsOf) are the firsts earned outside notes
+ * (Jamie, 2026-10-29): a profile photo set, feedback sent, feedback marked
+ * done, a book asked for, a note an agent edited, and the Roadmap track's
+ * dates added to Upcoming. They come from the activity log, FEEDBACK# and
+ * UPCOMING#, join the replay in time order, and are never taken away: a
+ * photo removed or a date deleted keeps what it earned. */
+import { addDays, daysBetween, localDay, validTimezone, type Day } from './dates.ts';
 import { computeVersion, releaseName, releaseSpan } from './version.ts';
 import { computeStreak } from './streak.ts';
 import { fold } from './unicode.ts';
@@ -39,7 +45,10 @@ export const TRACKS = [
   { id: 'delivery', name: 'Continuous delivery', at: [3, 7, 30, 100, 365] },
   { id: 'cadence', name: 'Cadence', at: [2, 4, 12, 26, 52] },
   { id: 'patches', name: 'Patches shipped', at: [10, 50, 100, 365, 1000] },
-  { id: 'coverage', name: 'Coverage', at: [25, 50, 75, 90, 100] }
+  { id: 'coverage', name: 'Coverage', at: [25, 50, 75, 90, 100] },
+  // Dates added to Upcoming, all time (Jamie, 2026-10-29: "A series for how
+  // many you add that progress through some milestones").
+  { id: 'roadmap', name: 'Roadmap', at: [1, 5, 15, 40, 100] }
 ] as const;
 export type TrackId = (typeof TRACKS)[number]['id'];
 export const BADGES: readonly BadgeInfo[] = [
@@ -58,9 +67,15 @@ export const BADGES: readonly BadgeInfo[] = [
     'pair',
     'Pair programming',
     'A note added by an agent you connected.',
-    'Connect an agent in Settings and ask it to add a note.'
+    'Connect an agent in Settings and ask it to add or edit a note.'
   ),
-  badge('first', 'assets', 'Release assets', 'Added a photo.', 'Add a photo to a note, here or by email.'),
+  badge(
+    'first',
+    'assets',
+    'Release assets',
+    'Added a photo.',
+    'Add a photo to a note, here, by email or through an agent.'
+  ),
   badge('first', 'audio', 'Audio changelog', 'Added a voice memo.', 'Record a voice memo, or send one by email.'),
   badge('first', 'geotagged', 'Geotagged', 'Said where a note was.', 'Say where a note was, or send a photo.'),
   badge('first', 'tag', 'git tag', 'Used a hashtag.', 'Add a #hashtag to a note.'),
@@ -79,6 +94,29 @@ export const BADGES: readonly BadgeInfo[] = [
     'Backport',
     'Wrote about a day at least a month back.',
     'Write about a day at least 30 days back.'
+  ),
+  // The firsts earned outside notes (BadgeEvent).
+  badge('first', 'signed', 'Signed commit', 'Added a profile photo.', 'Add a profile photo in Settings.'),
+  badge(
+    'first',
+    'issue',
+    'Issue opened',
+    'Sent feedback.',
+    'Send Jamie feedback from the You tab, or ask a connected agent to.'
+  ),
+  badge(
+    'first',
+    'merged',
+    'Merged upstream',
+    'Feedback you sent was marked done.',
+    'Send feedback that gets built or fixed.'
+  ),
+  badge(
+    'first',
+    'tarball',
+    'Tarball',
+    'Made a book of your notes.',
+    'Make a book of your notes, from the Archive or a release’s page.'
   ),
   badge(
     'craft',
@@ -202,7 +240,89 @@ export interface BadgeFacts {
   paused: ReadonlySet<Day>;
   /** The profile's giving years (domain/giving.ts). */
   giving?: readonly GivingYear[];
+  /** What happened outside notes that earns a badge (badgeEventsOf). */
+  events?: readonly BadgeEvent[];
 }
+/** Something done outside notes that earns a badge: `day` is the local day
+ * it happened and `at` its time, which orders it among notes that day. `key`
+ * names what it came from (an activity row's key, a feedback item or answer,
+ * an Upcoming entry), so a save can leave its own out to see what it earned;
+ * the Roadmap counts `upcoming` events by key, once each. */
+export type BadgeEventKind = 'signed' | 'issue' | 'merged' | 'tarball' | 'pair' | 'upcoming';
+export interface BadgeEvent {
+  kind: BadgeEventKind;
+  day: Day;
+  at: string;
+  key: string;
+}
+/** The badge each kind earns; `upcoming` counts toward the Roadmap. */
+const EVENT_BADGE: Record<Exclude<BadgeEventKind, 'upcoming'>, string> = {
+  signed: 'signed',
+  issue: 'issue',
+  merged: 'merged',
+  tarball: 'tarball',
+  pair: 'pair'
+};
+/** The badges events earn or help earn (Pair programming comes from notes
+ * too). */
+export const EVENT_BADGES: ReadonlySet<string> = new Set([...Object.values(EVENT_BADGE), 'roadmap']);
+export interface EventSources {
+  /** Activity rows (sk, kind, at, via, upcoming). */
+  activity?: readonly Record<string, unknown>[];
+  /** FEEDBACK# items: filed, and each answer's status. */
+  feedback?: readonly { id: string; filed_at: string; answers: readonly { at: string; status: string }[] }[];
+  /** UPCOMING# entries now saved. */
+  upcoming?: readonly { id: string; created_at?: unknown }[];
+  /** PROFILE.photo.at, for a photo whose photo.set row was never written. */
+  photoAt?: unknown;
+}
+/** The events in a person's stored rows, each time made the local day in
+ * `zone`: Signed commit from photo.set (else the photo's own time), Issue
+ * opened from each item filed, Merged upstream from each answer that set
+ * `done`, Tarball from export.book, Pair programming from a note.edited by
+ * an agent, and one Roadmap event per Upcoming entry ever added, the union
+ * by id of upcoming.added rows (from 2026-10-21) and the entries saved now,
+ * each at its earliest known time. A date deleted keeps its row, so the
+ * count never falls. */
+export function badgeEventsOf(src: EventSources, zone: string): BadgeEvent[] {
+  const tz = validTimezone(zone) ? zone : 'UTC',
+    out: BadgeEvent[] = [],
+    dayOf = (at: unknown): Day | null => {
+      const epoch = typeof at === 'string' ? Date.parse(at) : NaN;
+      return Number.isFinite(epoch) ? localDay(Math.floor(epoch / 1000), tz) : null;
+    },
+    add = (kind: BadgeEventKind, at: unknown, key: string) => {
+      const day = dayOf(at);
+      if (day) out.push({ kind, day, at: String(at), key });
+    },
+    added = new Map<string, string>(),
+    earliest = (id: string, at: unknown) => {
+      if (typeof at === 'string' && dayOf(at) && (!added.has(id) || Date.parse(at) < Date.parse(added.get(id)!)))
+        added.set(id, at);
+    };
+  let photoRow = false;
+  for (const row of src.activity ?? []) {
+    const kind = row.kind,
+      key = String(row.sk);
+    if (kind === 'photo.set') {
+      photoRow = true;
+      add('signed', row.at, key);
+    } else if (kind === 'export.book') add('tarball', row.at, key);
+    else if (kind === 'note.edited' && row.via === 'assistant') add('pair', row.at, key);
+    else if (kind === 'upcoming.added' && typeof row.upcoming === 'string') earliest(row.upcoming, row.at);
+  }
+  if (!photoRow && src.photoAt) add('signed', src.photoAt, 'photo');
+  for (const f of src.feedback ?? []) {
+    add('issue', f.filed_at, `feedback:${f.id}`);
+    f.answers.forEach((a, i) => {
+      if (a.status === 'done') add('merged', a.at, `feedback:${f.id}:${i}`);
+    });
+  }
+  for (const e of src.upcoming ?? []) earliest(e.id, e.created_at);
+  for (const [id, at] of added) add('upcoming', at, upcomingEventKey(id));
+  return out;
+}
+export const upcomingEventKey = (id: string) => `upcoming:${id}`;
 export interface Earned {
   key: string;
   id: string;
@@ -409,18 +529,42 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
   };
   const home = facts.homeCountry ? fold(facts.homeCountry) : '';
 
-  // Giving years join the replay on the first day each was seen.
-  const giving = (facts.giving ?? [])
-    .filter((g) => givingBadge(g.year) && g.first >= birthday && g.first <= today)
-    .sort((a, b) => cmp(a.first, b.first));
-  let gave = 0;
-  const giveUpTo = (day: Day) => {
-    for (; gave < giving.length && giving[gave]!.first <= day; gave++)
-      give(givingId(giving[gave]!.year), giving[gave]!.first);
+  // Giving years join the replay on the first day each was seen, and events
+  // (badgeEventsOf) on the day they happened, in time order among that day's
+  // notes. Never before the birthday, never after today.
+  const roadmap = new Set<string>(),
+    timed: { day: Day; at: string; run: () => void }[] = [
+      ...(facts.giving ?? [])
+        .filter((g) => givingBadge(g.year) && g.first >= birthday && g.first <= today)
+        .map((g) => ({ day: g.first, at: '', run: () => give(givingId(g.year), g.first) })),
+      ...(facts.events ?? [])
+        .filter((e) => e.day >= birthday)
+        .map((e) => {
+          const day = e.day > today ? today : e.day;
+          return {
+            day,
+            at: e.at,
+            run: () => {
+              if (e.kind !== 'upcoming') return give(EVENT_BADGE[e.kind], day);
+              roadmap.add(e.key);
+              tiers('roadmap', roadmap.size, day);
+            }
+          };
+        })
+    ].sort((a, b) => cmp(a.day, b.day) || cmp(a.at, b.at));
+  let ran = 0;
+  const giveUpTo = (day: Day, at?: string) => {
+    for (
+      ;
+      ran < timed.length &&
+      (timed[ran]!.day < day || (timed[ran]!.day === day && (at === undefined || timed[ran]!.at <= at)));
+      ran++
+    )
+      timed[ran]!.run();
   };
 
   for (const { n, w } of notes) {
-    giveUpTo(w);
+    giveUpTo(w, n.at);
     const fresh = !have.has(n.day);
     give('hello', w);
     if (n.source === 'email' && n.reply) give('ack', w);
@@ -531,7 +675,8 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
     track('delivery', days.best, streak.current),
     track('cadence', weeks.best, cadence),
     track('patches', have.size, have.size),
-    { ...track('coverage', percent(bestAge), percent(v.age)), release: releaseName(bestAge) }
+    { ...track('coverage', percent(bestAge), percent(v.age)), release: releaseName(bestAge) },
+    track('roadmap', roadmap.size, roadmap.size)
   ];
 
   // This release: coverage so far, its special days collected, and the next
@@ -657,5 +802,6 @@ function trackLine(id: TrackId, at: number): string {
   if (id === 'delivery') return `${at} days in a row with a note.`;
   if (id === 'cadence') return `${at} weeks in a row with notes on four days or more.`;
   if (id === 'patches') return `${at.toLocaleString('en-US')} days with notes.`;
+  if (id === 'roadmap') return at === 1 ? 'Added a date to Upcoming.' : `${at} dates added to Upcoming.`;
   return `Notes on ${at}% of one release’s days.`;
 }

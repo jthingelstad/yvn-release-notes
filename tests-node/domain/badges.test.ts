@@ -4,6 +4,7 @@ import { addDays, type Day } from '../../packages/domain/dates.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
 import {
   album,
+  badgeEventsOf,
   BADGES,
   collectedOn,
   evaluateBadges,
@@ -11,6 +12,7 @@ import {
   specialKinds,
   unlocked,
   weekEnd,
+  type BadgeEvent,
   type BadgeFacts,
   type BadgeNote,
   type Badges
@@ -346,4 +348,190 @@ test('a giving year is a badge stamped on the first day a member was seen, in or
   assert.ok(!b.missing.some((m) => m.shelf === 'giving'), 'earned, so not still to find');
   assert.equal(b.count, evaluateBadges(facts(notes), '2026-11-03').count + 1);
   assert.ok(!got(evaluateBadges(facts(notes, { giving }), '2026-10-24'), 'giving-2026'), 'not before it was seen');
+});
+
+// The firsts earned outside notes and the Roadmap (docs/BADGES.md), from
+// fictional activity rows, feedback and Upcoming entries.
+const row = (at: string, kind: string, extra: Record<string, unknown> = {}) => ({
+  sk: `ACTIVITY#${at}#${kind}#r${at.slice(11, 19)}`,
+  kind,
+  at,
+  ...extra
+});
+const CHICAGO = 'America/Chicago';
+
+test('each first outside notes is stamped with its own day, in the profile’s zone', () => {
+  const events = badgeEventsOf(
+      {
+        activity: [
+          // 01:30 UTC on the 12th is still the 11th in Chicago.
+          row('2026-10-12T01:30:00.000Z', 'photo.set', { via: 'web' }),
+          row('2026-10-13T15:00:00.000Z', 'export.book'),
+          row('2026-10-14T15:00:00.000Z', 'note.edited', { via: 'web' }),
+          row('2026-10-15T15:00:00.000Z', 'note.edited', { via: 'assistant' })
+        ],
+        feedback: [
+          {
+            id: 'f1',
+            filed_at: '2026-10-16T15:00:00Z',
+            answers: [{ at: '2026-10-17T15:00:00Z', status: 'needs_info' }]
+          },
+          { id: 'f2', filed_at: '2026-10-18T15:00:00Z', answers: [{ at: '2026-10-19T15:00:00Z', status: 'done' }] }
+        ]
+      },
+      CHICAGO
+    ),
+    b = evaluateBadges(facts([], { events }), '2026-10-20');
+  for (const [key, day] of [
+    ['signed', '2026-10-11'],
+    ['tarball', '2026-10-13'],
+    ['pair', '2026-10-15'],
+    ['issue', '2026-10-16'],
+    ['merged', '2026-10-19']
+  ] as const) {
+    const e = got(b, key);
+    assert.deepEqual([e?.day, e?.earned, e?.version, e?.shelf], [day, day, v(day), 'first'], key);
+  }
+  assert.equal(got(b, 'signed')!.name, 'Signed commit');
+  assert.equal(got(b, 'issue')!.line, 'Sent feedback.');
+  assert.equal(got(b, 'merged')!.line, 'Feedback you sent was marked done.');
+  assert.equal(got(b, 'tarball')!.line, 'Made a book of your notes.');
+  // A web edit is no pair; only the agent's edit, on the 15th.
+  assert.equal(got(b, 'pair')!.day, '2026-10-15');
+  assert.ok(!b.missing.some((m) => ['signed', 'issue', 'merged', 'tarball', 'pair'].includes(String(m.id))));
+});
+
+test('Merged upstream needs a done answer; feedback alone, or answered otherwise, is only Issue opened', () => {
+  const ask = (status: string) =>
+      evaluateBadges(
+        facts([], {
+          events: badgeEventsOf(
+            {
+              feedback: [
+                { id: 'f', filed_at: '2026-10-16T15:00:00Z', answers: [{ at: '2026-10-17T15:00:00Z', status }] }
+              ]
+            },
+            CHICAGO
+          )
+        }),
+        '2026-10-20'
+      ),
+    hints = Object.fromEntries(evaluateBadges(facts([]), '2026-10-20').missing.map((m) => [m.id, m.hint]));
+  for (const status of ['answered', 'needs_info', 'open']) {
+    const b = ask(status);
+    assert.ok(got(b, 'issue'), status);
+    assert.ok(!got(b, 'merged'), status);
+  }
+  assert.equal(got(ask('done'), 'merged')!.day, '2026-10-17');
+  assert.equal(hints.merged, 'Send feedback that gets built or fixed.');
+  assert.equal(hints.signed, 'Add a profile photo in Settings.');
+  assert.equal(hints.tarball, 'Make a book of your notes, from the Archive or a release’s page.');
+  assert.equal(hints.assets, 'Add a photo to a note, here, by email or through an agent.');
+  assert.equal(hints.pair, 'Connect an agent in Settings and ask it to add or edit a note.');
+  assert.match(String(hints.issue), /You tab/);
+});
+
+test('a photo removed keeps Signed commit; a photo with no row counts from the profile', () => {
+  // Set, then removed: the profile has no photo now, the row stays.
+  const kept = badgeEventsOf(
+    { activity: [row('2026-10-12T15:00:00.000Z', 'photo.set'), row('2026-10-13T15:00:00.000Z', 'photo.removed')] },
+    CHICAGO
+  );
+  assert.equal(got(evaluateBadges(facts([], { events: kept }), '2026-10-20'), 'signed')!.day, '2026-10-12');
+  // A photo whose row was never written is dated by the profile's own time.
+  const fallback = badgeEventsOf({ activity: [], photoAt: '2026-10-14T15:00:00Z' }, CHICAGO);
+  assert.equal(got(evaluateBadges(facts([], { events: fallback }), '2026-10-20'), 'signed')!.day, '2026-10-14');
+  // With a row, the profile's time (a later change) is not a second event.
+  assert.equal(
+    badgeEventsOf(
+      { activity: [row('2026-10-12T15:00:00.000Z', 'photo.set')], photoAt: '2026-10-18T15:00:00Z' },
+      CHICAGO
+    ).length,
+    1
+  );
+});
+
+test('the Roadmap counts dates ever added at 1, 5, 15, 40 and 100, by id, and never falls', () => {
+  const added = (n: number, from = 0) =>
+      Array.from({ length: n }, (_, i) =>
+        row(`2026-10-${String(1 + ((from + i) % 28)).padStart(2, '0')}T15:00:00.000Z`, 'upcoming.added', {
+          upcoming: `e${from + i}`
+        })
+      ),
+    roadmap = (b: Badges) => b.tracks.find((t) => t.id === 'roadmap')!;
+  for (const [n, level] of [
+    [0, null],
+    [1, 'alpha'],
+    [4, 'alpha'],
+    [5, 'beta'],
+    [15, 'rc'],
+    [39, 'rc'],
+    [40, 'stable'],
+    [100, 'LTS']
+  ] as const) {
+    const b = evaluateBadges(facts([], { events: badgeEventsOf({ activity: added(n) }, CHICAGO) }), '2026-10-30'),
+      t = roadmap(b);
+    assert.deepEqual([t.best, t.now, t.level?.toLowerCase() ?? null], [n, n, level?.toLowerCase() ?? null], String(n));
+  }
+  const one = evaluateBadges(facts([], { events: badgeEventsOf({ activity: added(1) }, CHICAGO) }), '2026-10-30');
+  assert.equal(got(one, 'roadmap:alpha')!.line, 'Added a date to Upcoming.');
+  assert.equal(got(one, 'roadmap:alpha')!.day, '2026-10-01');
+  const five = evaluateBadges(facts([], { events: badgeEventsOf({ activity: added(5) }, CHICAGO) }), '2026-10-30');
+  assert.equal(got(five, 'roadmap:beta')!.line, '5 dates added to Upcoming.');
+  assert.equal(got(five, 'roadmap:beta')!.day, '2026-10-05', 'the day the fifth was added');
+
+  // The union: a row and a saved entry for the same date count once, at the
+  // earlier time; an entry from before the log counts by created_at; a date
+  // since deleted (a row, no entry) still counts.
+  const events = badgeEventsOf(
+    {
+      activity: [
+        row('2026-10-22T15:00:00.000Z', 'upcoming.added', { upcoming: 'kept' }),
+        row('2026-10-23T15:00:00.000Z', 'upcoming.added', { upcoming: 'deleted' }),
+        row('2026-10-24T15:00:00.000Z', 'upcoming.removed', { upcoming: 'deleted' })
+      ],
+      upcoming: [
+        { id: 'kept', created_at: '2026-10-21T15:00:00Z' },
+        { id: 'old', created_at: '2026-10-14T15:00:00Z' }
+      ]
+    },
+    CHICAGO
+  );
+  assert.deepEqual(events.map((e) => [e.key, e.day]).sort(), [
+    ['upcoming:deleted', '2026-10-23'],
+    ['upcoming:kept', '2026-10-21'],
+    ['upcoming:old', '2026-10-14']
+  ]);
+  assert.equal(roadmap(evaluateBadges(facts([], { events }), '2026-10-30')).best, 3);
+  // Upcoming touches nothing else: no note, day, streak or count.
+  const b = evaluateBadges(facts([], { events }), '2026-10-30');
+  assert.deepEqual(
+    b.tracks.filter((t) => t.id !== 'roadmap').map((t) => t.best),
+    [0, 0, 0, 0]
+  );
+  assert.deepEqual(
+    b.earned.map((e) => e.key),
+    ['roadmap:alpha']
+  );
+});
+
+test('events join the replay in time order among the notes, never before the birthday or after today', () => {
+  const notes = [note('2026-10-12', { at: '2026-10-12T18:00:00Z' })],
+    events: BadgeEvent[] = [
+      { kind: 'signed', day: '2026-10-12', at: '2026-10-12T17:00:00.000Z', key: 'a' },
+      { kind: 'tarball', day: '2026-10-12', at: '2026-10-12T19:00:00.000Z', key: 'b' },
+      { kind: 'issue', day: '2099-01-01', at: '2099-01-01T12:00:00.000Z', key: 'c' },
+      { kind: 'merged', day: '1980-01-01', at: '1980-01-01T12:00:00.000Z', key: 'd' }
+    ],
+    b = evaluateBadges(facts(notes, { events }), '2026-10-20'),
+    order = b.earned.map((e) => e.key).reverse();
+  // Oldest first: the photo before the note's badges, the book after them.
+  assert.equal(order[0], 'signed');
+  assert.ok(order.indexOf('hello') < order.indexOf('tarball'));
+  assert.equal(got(b, 'issue')!.day, '2026-10-20', 'a time past today is today');
+  assert.ok(!got(b, 'merged'), 'nothing before the birthday');
+  // And they unlock like a note: before, without the event; after, with it.
+  const without = evaluateBadges(facts(notes), '2026-10-20'),
+    gained = unlocked(without, b).map((u) => u.key);
+  assert.deepEqual(gained.sort(), ['issue', 'signed', 'tarball']);
 });

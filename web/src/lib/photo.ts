@@ -7,7 +7,7 @@
 import { api } from './api.ts';
 import { sendFiles } from './files.ts';
 import type { Problem } from './say.ts';
-import type { Me } from './types.ts';
+import type { Me, Unlocked } from './types.ts';
 
 export const PHOTO_SIDE = 512;
 export const PHOTO_MAX = 256 * 1024;
@@ -86,8 +86,12 @@ export async function makePhoto(file: File): Promise<{ blob: Blob } | { problem:
 }
 
 // Made, sent to the bucket as an upload, then set as the photo. Returns the
-// profile as the API now has it, or a problem.
-export async function setPhoto(file: File, tell: (text: string) => void): Promise<{ me: Me } | { problem: Problem }> {
+// profile as the API now has it and what the first photo earned (Signed
+// commit), or a problem.
+export async function setPhoto(
+  file: File,
+  tell: (text: string) => void
+): Promise<{ me: Me; unlocked: Unlocked[] } | { problem: Problem }> {
   tell('Making the photo…');
   const made = await makePhoto(file);
   if ('problem' in made) return made;
@@ -96,9 +100,13 @@ export async function setPhoto(file: File, tell: (text: string) => void): Promis
   // The upload lines name a file first ("… didn’t finish sending").
   if (out.problem) return { problem: { error: out.problem.error, file: 'The photo' } };
   tell('Saving…');
-  const r = await api<Me>('PUT', '/api/me/photo', { upload: out.sent[0].upload, type: 'image/jpeg' });
+  const r = await api<Me & { unlocked?: Unlocked[] }>('PUT', '/api/me/photo', {
+    upload: out.sent[0].upload,
+    type: 'image/jpeg'
+  });
   if (!r.ok) return { problem: { ...r.data, file: 'The photo' } };
-  return { me: r.data };
+  const { unlocked = [], ...me } = r.data;
+  return { me, unlocked };
 }
 
 export async function removePhoto(): Promise<{ me: Me } | { problem: Problem }> {

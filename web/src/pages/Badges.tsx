@@ -219,6 +219,16 @@ function TrackRow({ t }: { t: Track }) {
       </>
     );
     now = t.next ? `${upper(t.next.level)} at ${t.next.at.toLocaleString('en-US')}: ${t.next.at - t.best} to go.` : '';
+  } else if (t.id === 'roadmap') {
+    // Dates ever added to Upcoming; a deleted one still counts.
+    best = t.best ? (
+      <>
+        <strong>{count(t.best, 'date', 'dates')}</strong> added to Upcoming{since}.
+      </>
+    ) : (
+      'Dates added to Upcoming.'
+    );
+    now = t.next ? `${upper(t.next.level)} at ${t.next.at.toLocaleString('en-US')}: ${t.next.at - t.best} to go.` : '';
   } else {
     best = t.best ? (
       <>

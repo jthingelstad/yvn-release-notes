@@ -135,7 +135,12 @@ test('a book’s days and title are checked before anything is written', async (
 test('a book starts its own row, invokes the export worker and is recorded by its days', async () => {
   const { store, call, invocations } = await fixture();
   const started = await call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-13', title: '  Lake   week ' });
-  assert.deepEqual([started.status, started.data], [202, { status: 'building' }]);
+  // The first book asked for earns Tarball, told here and so seen.
+  assert.deepEqual(
+    [started.status, started.data],
+    [202, { status: 'building', unlocked: [{ id: 'tarball', key: 'tarball', name: 'Tarball', version: '4.5.121' }] }]
+  );
+  assert.ok((await store.seenBadges('u')).has('tarball'));
   const row = (await store.export('u', 'BOOK'))!;
   assert.deepEqual(
     [row.status, row.from, row.to, row.page, row.title, row.started_at, row.expires_at],
@@ -147,11 +152,16 @@ test('a book starts its own row, invokes the export worker and is recorded by it
   ]);
   const activity = store.memory.all().filter((i) => i.pk === 'USER#u' && String(i.sk).startsWith('ACTIVITY#'));
   assert.deepEqual(
-    activity.map((a) => [a.kind, a.from, a.to]),
-    [['export.book', '2026-10-12', '2026-10-13']]
+    activity.map((a) => [a.kind, a.from, a.to, a.badge, a.via, a.day, a.note]),
+    [
+      ['export.book', '2026-10-12', '2026-10-13', undefined, undefined, undefined, undefined],
+      ['badge.earned', undefined, undefined, 'tarball', 'web', undefined, undefined]
+    ]
   );
   // One at a time: a second ask while it builds starts nothing.
-  assert.deepEqual((await call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-12' })).status, 202);
+  assert.deepEqual((await call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-12' })).data, {
+    status: 'building'
+  });
   assert.equal(invocations.calls.length, 1);
   assert.deepEqual((await call('GET', '/api/book')).data, {
     today: '2026-10-13',
@@ -209,9 +219,15 @@ test('a ready book is linked as a PDF download and replaced by the next one', as
     link.searchParams.get('disposition'),
     'attachment; filename="release-notes-2026-10-12-to-2026-10-12.pdf"'
   );
-  assert.equal((await call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-13' })).status, 202);
+  // The next book earns nothing again: Tarball is had once.
+  const next = await call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-13' });
+  assert.deepEqual([next.status, next.data], [202, { status: 'building' }]);
   assert.ok(objects.calls.some((c) => c.operation === 'remove' && c.key === key));
   assert.notEqual((await store.export('u', 'BOOK'))!.id, id);
+  assert.equal(
+    store.memory.all().filter((i) => i.pk === 'USER#u' && i.kind === 'badge.earned' && i.badge === 'tarball').length,
+    1
+  );
 });
 
 test('a book that could not start, or ran past the worker, says it failed', async () => {
@@ -259,8 +275,11 @@ test('a Supporting Member may ask for Claude’s commentary on up to a year, ten
   assert.deepEqual([row.commentary, row.release], [true, 45]);
   const activity = store.memory.all().filter((i) => i.pk === 'USER#u' && String(i.sk).startsWith('ACTIVITY#'));
   assert.deepEqual(
-    activity.map((a) => [a.kind, a.commentary]),
-    [['export.book', true]]
+    activity.map((a) => [a.kind, a.commentary ?? a.badge]),
+    [
+      ['export.book', true],
+      ['badge.earned', 'tarball']
+    ]
   );
   const status = (await call('GET', '/api/book')).data;
   assert.deepEqual([status.annotated, status.commentary], [true, { left: 10, max: 10, release: '4.5', max_days: 366 }]);

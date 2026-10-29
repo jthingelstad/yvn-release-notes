@@ -94,9 +94,15 @@ const KEY: JsonSchema = {
   pattern: '^[A-Za-z0-9_-]+$'
 };
 export const MCP_CONTRACT: McpContract = {
-  server_version: '1.9.0',
+  server_version: '1.10.0',
   protocol_versions: ['2025-06-18', '2025-03-26'],
   changes: [
+    {
+      version: '1.10.0',
+      date: '2026-10-29',
+      summary:
+        'notes_badges adds four firsts earned outside notes (Signed commit for a profile photo, Issue opened for feedback sent, Merged upstream for feedback marked done, Tarball for a book made), counts a note an agent edited toward Pair programming, and has a fifth track, Roadmap, for dates ever added to Upcoming.'
+    },
     {
       version: '1.9.0',
       date: '2026-10-28',
@@ -946,7 +952,7 @@ export const MCP_CONTRACT: McpContract = {
       name: 'notes_badges',
       title: 'Badges',
       description:
-        "Badges for writing regularly, worked out from dates, sources, files, places, weather, hashtags and word counts, never from what a note says: earned (newest first, each stamped with the version it came true on), tracks with levels and progress, this release's special days collected and ahead, and those still to find with hints. If the user turned off Show badges, show_badges is false and nothing else comes back; do not bring badges up.",
+        "Badges for writing regularly, worked out from dates, sources, files, places, weather, hashtags and word counts, never from what a note says, and a few firsts from the rest of the account (a profile photo, feedback sent and feedback marked done, a book made, a note an agent edited): earned (newest first, each stamped with the version it came true on), tracks with levels and progress (Roadmap counts dates ever added to Upcoming, deleted ones included), this release's special days collected and ahead, and those still to find with hints. If the user turned off Show badges, show_badges is false and nothing else comes back; do not bring badges up.",
       inputSchema: {
         type: 'object',
         properties: {},

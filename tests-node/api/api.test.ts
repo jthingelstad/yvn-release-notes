@@ -791,14 +791,17 @@ test('each change on the web leaves its activity row, never words, titles, addre
       'status.restarted'
     ]
   );
-  // The first note's badges, with it, from the web.
+  // The first note's badges, with it, from the web; the first date added
+  // to Upcoming earns Roadmap alpha once, with no day or note, and the
+  // second date adds nothing.
   assert.deepEqual(
     by('badge.earned').map((r) => [r.badge, r.name, r.via, r.day, r.note]),
     [
       ['commit', 'Commit message', 'web', '2026-10-12', id],
       ['hello', 'Hello, world', 'web', '2026-10-12', id],
       ['hotfix', 'Hotfix', 'web', '2026-10-12', id],
-      ['web', 'Web release', 'web', '2026-10-12', id]
+      ['web', 'Web release', 'web', '2026-10-12', id],
+      ['roadmap', 'Roadmap alpha', 'web', undefined, undefined]
     ]
   );
   assert.deepEqual(
@@ -1414,6 +1417,39 @@ test('a profile photo is checked, kept under its own key, shown by a signed redi
   );
   assert.ok(!JSON.stringify(rows).includes('media/'), 'the log never names the file');
   assert.ok(!JSON.stringify(s.logs).includes('media/'));
+});
+test('the first profile photo earns Signed commit once, told in Settings, and removing it keeps the badge', async () => {
+  const s = await setup(),
+    first = await s.call('PUT', '/api/me/photo', await photoUpload(s, jpeg(512)));
+  assert.equal(first.r.status, 200);
+  assert.deepEqual(
+    ((first.b as Item).unlocked as Item[]).map((u) => [u.id, u.name]),
+    [['signed', 'Signed commit']]
+  );
+  assert.ok((await s.store.seenBadges('u')).has('signed'), 'Settings shows it, so the email does not');
+  s.ctx.now += 1;
+  const changed = await s.call('PUT', '/api/me/photo', await photoUpload(s, jpeg(256)));
+  assert.equal((changed.b as Item).unlocked, undefined, 'a change earns nothing');
+  s.ctx.now += 1;
+  await s.call('DELETE', '/api/me/photo');
+  s.ctx.now += 1;
+  const again = await s.call('PUT', '/api/me/photo', await photoUpload(s, jpeg(256)));
+  assert.equal((again.b as Item).unlocked, undefined, 'a photo set again earns nothing');
+  const earned = s.store.memory.all().filter((i) => i.kind === 'badge.earned');
+  assert.deepEqual(
+    earned.map((r) => [r.badge, r.via, r.day, r.note]),
+    [['signed', 'web', undefined, undefined]]
+  );
+  // Removed, the badge stays.
+  await s.call('DELETE', '/api/me/photo');
+  const shelf = (await s.call('GET', '/api/badges')).b as Item;
+  assert.ok((shelf.earned as Item[]).some((e) => e.id === 'signed'));
+  // Badges off: nothing earned, nothing written.
+  const t = await setup();
+  await t.call('PUT', '/api/me', { badges: false });
+  const quiet = await t.call('PUT', '/api/me/photo', await photoUpload(t, jpeg(512)));
+  assert.equal((quiet.b as Item).unlocked, undefined);
+  assert.equal(t.store.memory.all().filter((i) => i.kind === 'badge.earned').length, 0);
 });
 test("a profile photo with EXIF, XMP, IPTC or a comment is kept without them, as Safari's canvas writes EXIF", async () => {
   const s = await setup(),

@@ -31,6 +31,8 @@ import type { Item } from './store-types.ts';
 import * as media from './media.ts';
 import { profileView } from './views.ts';
 import { eventId, recordActivity } from './activity.ts';
+import { earnedBy, freshEvent } from './badges.ts';
+import { activityKey, activityTime } from '../domain/activity.ts';
 import { iso } from '../domain/dates.ts';
 import { object } from './places.ts';
 
@@ -126,14 +128,25 @@ export async function setPhoto(service: SessionService, b: Item): Promise<Item> 
     }
     if (old) await objects.remove(old);
     service.log({ event: 'photo', user: uid, outcome: old ? 'changed' : 'set' });
-    await recordActivity(
-      ctx.store,
-      uid,
-      ctx.now,
-      [{ kind: old ? 'photo.changed' : 'photo.set', id: eventId(), fields: { via: 'web' } }],
-      (f) => service.log(f)
+    // The first photo ever set earns Signed commit (docs/BADGES.md), seen
+    // here: Settings shows the unlock line.
+    const kind = old ? 'photo.changed' : 'photo.set',
+      row = eventId(),
+      won = old
+        ? { unlocked: [], events: [] }
+        : await earnedBy(
+            ctx.store,
+            uid,
+            p,
+            ctx.now,
+            [freshEvent('signed', activityKey(activityTime(ctx.now), kind, row), ctx.now, p.tz)],
+            { via: 'web', seen: true, log: (f) => service.log(f) }
+          );
+    await recordActivity(ctx.store, uid, ctx.now, [{ kind, id: row, fields: { via: 'web' } }, ...won.events], (f) =>
+      service.log(f)
     );
-    return profileView({ ...p, photo }, ctx.now, ctx.inboundDomain);
+    const view = profileView({ ...p, photo }, ctx.now, ctx.inboundDomain);
+    return won.unlocked.length ? { ...view, unlocked: won.unlocked } : view;
   } catch (error) {
     if (missing(error)) reject(400, 'upload');
     throw error;

@@ -162,3 +162,53 @@ test('an export reads every account row and the daily reads, never other assista
     ['USER#u PROFILE', 'MCPMETA#u ACTIVITY#2026-10-12T05:00:00.000Z#reads#f']
   );
 });
+
+test('badges read only the activity rows that earn one, with the fields they need', async () => {
+  const s = new FakeStore([profile], 'T'),
+    row = (kind: string, id: string, extra: Record<string, unknown> = {}) =>
+      s.seed({
+        pk: 'USER#u',
+        sk: `ACTIVITY#2026-10-12T10:00:00.000Z#${kind}#${id}`,
+        kind,
+        at: '2026-10-12T10:00:00.000Z',
+        ...extra
+      });
+  row('photo.set', 'p', { via: 'web' });
+  row('photo.removed', 'q', { via: 'web' });
+  row('export.book', 'b', { from: '2026-10-01', to: '2026-10-12' });
+  row('upcoming.added', 'e', { via: 'web', upcoming: 'e' });
+  row('upcoming.removed', 'e2', { via: 'web', upcoming: 'e' });
+  row('note.edited', 'n1', { via: 'web', day: '2026-10-12', note: 'w-a' });
+  row('note.edited', 'n2', { via: 'assistant', client: 'Claude', day: '2026-10-12', note: 'w-a' });
+  row('mail', 'm', { via: 'email', subject: 'Fictional' });
+  s.memory.calls.length = 0;
+  const rows = await s.badgeActivity('u', true);
+  assert.deepEqual(s.memory.calls, [
+    {
+      name: 'QueryCommand',
+      input: {
+        TableName: 'T',
+        KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
+        FilterExpression: '#k = :photo OR #k = :book OR #k = :added OR (#k = :edited AND #v = :assistant)',
+        ProjectionExpression: 'sk, #k, #a, #v, #u',
+        ExpressionAttributeNames: { '#k': 'kind', '#a': 'at', '#v': 'via', '#u': 'upcoming' },
+        ExpressionAttributeValues: {
+          ':p': 'USER#u',
+          ':s': 'ACTIVITY#',
+          ':photo': 'photo.set',
+          ':book': 'export.book',
+          ':added': 'upcoming.added',
+          ':edited': 'note.edited',
+          ':assistant': 'assistant'
+        },
+        ConsistentRead: true
+      }
+    }
+  ]);
+  assert.deepEqual(rows.map((r) => r.kind).sort(), ['export.book', 'note.edited', 'photo.set', 'upcoming.added']);
+  // Only the projected fields come back: no note, client or dates.
+  assert.deepEqual(Object.keys(rows.find((r) => r.kind === 'note.edited')!).sort(), ['at', 'kind', 'sk', 'via']);
+  s.memory.calls.length = 0;
+  await s.badgeActivity('u');
+  assert.equal((s.memory.calls[0]!.input as { ConsistentRead?: boolean }).ConsistentRead, undefined);
+});

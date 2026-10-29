@@ -50,7 +50,9 @@ import {
 } from '../packages/backend/upcoming.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
 import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
-import { unlockedBy } from '../packages/backend/badges.ts';
+import { addedEvents, earnedBy, freshEvent, unlockedBy } from '../packages/backend/badges.ts';
+import { safeLog } from '../packages/backend/services.ts';
+import { activityKey, activityTime } from '../packages/domain/activity.ts';
 import type { Unlocked } from '../packages/domain/badges.ts';
 import type { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import {
@@ -372,11 +374,17 @@ async function recordNote(
   log?: SafeLog
 ): Promise<void> {
   const uid = String(family.user_id),
-    id = String(note.sk).split('#').slice(2).join('#');
+    id = String(note.sk).split('#').slice(2).join('#'),
+    edit = name !== 'notes_attach' && old,
+    row = name === 'notes_attach' || old ? again(id) : id,
+    // A note an agent edited earns Pair programming too (docs/BADGES.md).
+    fresh = edit
+      ? [freshEvent('pair', activityKey(activityTime(context.now), 'note.edited', row), context.now, profile.tz)]
+      : [];
   let unlocked: Unlocked[] = [];
   if (profile.badges !== false)
     try {
-      unlocked = await unlockedBy(context.store, uid, profile, today, note, old);
+      unlocked = await unlockedBy(context.store, uid, profile, today, note, old, fresh, (f) => (log ?? safeLog)(f));
     } catch {
       (log ?? ((f) => console.log(JSON.stringify(f))))({ event: 'badges-error', user: uid, date: day });
     }
@@ -389,12 +397,12 @@ async function recordNote(
       name === 'notes_attach'
         ? {
             kind: 'note.files',
-            id: again(id),
+            id: row,
             fields: { via: 'assistant', client: family.client_name, day, note: id, added: files }
           }
         : {
             kind: old ? 'note.edited' : 'note.added',
-            id: old ? again(id) : id,
+            id: row,
             fields: {
               via: 'assistant',
               client: family.client_name,
@@ -535,11 +543,20 @@ export async function writeUpcoming(
       ...context.store.agentReceipts(newReceipt, audit, rate, previous, context.now)
     ]);
     if (outcome.ok) {
+      // Dates added count toward the Roadmap: rows only, told in the email.
+      const won = await earnedBy(
+        context.store,
+        uid,
+        reader.profile,
+        context.now,
+        addedEvents(changes, context.now, reader.profile.tz),
+        { via: 'assistant', client: family.client_name, log: (f) => (options.log ?? safeLog)(f) }
+      );
       await recordActivity(
         context.store,
         uid,
         context.now,
-        upcomingEvents(changes, 'assistant', family.client_name),
+        [...upcomingEvents(changes, 'assistant', family.client_name), ...won.events],
         activityLog(context.now, options.log)
       );
       return { ...shown, ...flag, replayed: false };
@@ -596,6 +613,7 @@ export async function writeFeedback(
     );
   }
   if (screenshots.length && !context.objects) throw new Error('Objects service missing');
+  const profile = await context.store.mcpProfile(uid);
   for (let attempt = 0; attempt < 5; attempt++) {
     const receipt = await context.store.mcpGet('USER#' + uid, key);
     if (live(receipt, context.now)) {
@@ -623,7 +641,13 @@ export async function writeFeedback(
     const objects = context.objects,
       putOnly = { put: objects ? objects.put.bind(objects) : async () => undefined };
     const outcome = await fileFeedback(
-      { store: context.store, objects: putOnly, now: context.now },
+      {
+        store: context.store,
+        objects: putOnly,
+        now: context.now,
+        // Issue opened: rows only, told in the email.
+        ...(profile ? { badges: { store: context.store, profile, seen: false } } : {})
+      },
       uid,
       { ...fields, screenshots, via: 'assistant', client: String(family.client_name ?? '') || null, connection: fid },
       (item) => [
@@ -652,11 +676,11 @@ export async function writeFeedback(
       throw new ToolError('not_found', "follows names no item of the user's; read notes_my_feedback for ids.");
     if (outcome.reason === 'too-many') throw new ToolError('invalid_arguments', SCREENSHOT_HINTS['image-count']!);
     const current = await context.store.mcpGet('OAUTHFAMILY#' + fid),
-      profile = await context.store.mcpProfile(uid);
+      now = await context.store.mcpProfile(uid);
     if (
       !live(current, context.now) ||
-      !profile ||
-      profile.mcp_deleting ||
+      !now ||
+      now.mcp_deleting ||
       current.revision !== family.revision ||
       !String(current.scope).split(/\s+/).includes('notes:read')
     )

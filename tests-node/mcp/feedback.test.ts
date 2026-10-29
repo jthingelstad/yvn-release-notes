@@ -84,6 +84,13 @@ test('an assistant files feedback with a stripped screenshot, replays exactly an
   );
   const rows = s.ctx.store.memory.all();
   assert.equal(rows.filter((r) => String(r.sk).startsWith('FEEDBACK#')).length, 1);
+  // The first item earns Issue opened, once (the replay writes nothing), by
+  // the assistant, never marked seen: the email tells of it.
+  assert.deepEqual(
+    rows.filter((r) => r.kind === 'badge.earned').map((r) => [r.badge, r.via, r.client, r.day, r.note]),
+    [['issue', 'assistant', 'Assistant', undefined, undefined]]
+  );
+  assert.deepEqual(await s.ctx.store.seenBadges('u'), new Set());
   const audit = rows.filter((r) => String(r.pk) === 'MCPMETA#u' && String(r.sk).startsWith('LOG#'));
   assert.ok(audit.some((r) => r.tool === 'notes_send_feedback' && r.feedback_id === view.id));
   assert.ok(!JSON.stringify(rows.filter((r) => String(r.sk).startsWith('ACTIVITY#'))).includes('quoted phrase'));

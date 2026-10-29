@@ -11,7 +11,8 @@ import { count, dayName, megabytes, thisYearOf } from '../lib/format.ts';
 import { useMe, useQueryParam } from '../lib/nav.ts';
 import { MEMBERS_URL } from '../lib/weekly-thing.ts';
 import { releasesQuery } from '../lib/queries.ts';
-import type { BookPlan, BookStatus, Me } from '../lib/types.ts';
+import type { BookPlan, BookStatus, Me, Unlocked } from '../lib/types.ts';
+import { UnlockLine } from '../components/unlock.tsx';
 import { COMMENTARY_PER_RELEASE, MAX_TITLE, type PageSize } from '../../../packages/book/limits.ts';
 import { NONPROFITS } from '../../../packages/domain/giving.ts';
 
@@ -71,6 +72,8 @@ function BookForm({ p, b }: { p: Me; b: BookStatus }) {
   const [title, setTitle] = useState('');
   const [page, setPage] = useState<PageSize>(b.page ?? '6x9');
   const [annotate, setAnnotate] = useState(false);
+  // What the first book earned (Tarball), shown while it builds.
+  const [won, setWon] = useState<Unlocked[]>([]);
   const c = b.commentary;
   const [busy, run] = useBusy();
   const problem = useProblem();
@@ -96,8 +99,9 @@ function BookForm({ p, b }: { p: Me; b: BookStatus }) {
     e.preventDefault();
     run(async () => {
       problem.clear();
+      setWon([]);
       if (!ok) return problem.show({ error: 'date' }, form.current?.querySelector<HTMLElement>('input[name=from]'));
-      const r = await api<BookStatus>('POST', '/api/book', {
+      const r = await api<BookStatus & { unlocked?: Unlocked[] }>('POST', '/api/book', {
         from: first,
         to,
         page,
@@ -107,6 +111,7 @@ function BookForm({ p, b }: { p: Me; b: BookStatus }) {
       if (r.status !== 202) return problem.show(r.data, null, form.current);
       // The tick is consent for that book alone.
       setAnnotate(false);
+      setWon(r.data.unlocked ?? []);
       await client.invalidateQueries({ queryKey: ['book'] });
     });
   };
@@ -114,6 +119,7 @@ function BookForm({ p, b }: { p: Me; b: BookStatus }) {
   return (
     <>
       <BookState b={b} year={year} />
+      <UnlockLine items={won} />
       <form ref={form} id="book-form" className="roomy" noValidate onSubmit={submit} hidden={building}>
         <fieldset className="book-fields" disabled={busy}>
           {spans.length > 0 && (

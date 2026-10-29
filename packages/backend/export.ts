@@ -134,7 +134,8 @@ export function build(
   photo?: ExportFile | null
 ): ExportData {
   const hasFiles = files !== undefined && Object.keys(files).length > 0;
-  let profile: Item = {};
+  let profile: Item = {},
+    stored: Item = {};
   const days: Item[] = [],
     notes: ExportNote[] = [],
     pauses: Item[] = [],
@@ -145,9 +146,10 @@ export function build(
     feedback: Item[] = [];
   for (const item of items) {
     const sk = String(item.sk);
-    if (sk === 'PROFILE')
+    if (sk === 'PROFILE') {
+      stored = item;
       profile = Object.fromEntries(PROFILE_FIELDS.filter((k) => k in item).map((k) => [k, item[k]]));
-    else if (sk.startsWith('DAY#'))
+    } else if (sk.startsWith('DAY#'))
       days.push({ date: sk.slice(4), version: item.version ?? null, sent_at: item.sent_at ?? null });
     else if (sk.startsWith('NOTE#')) {
       const [, day, id] = sk.split('#'),
@@ -211,8 +213,10 @@ export function build(
     for (const n of notes) n.version ||= computeVersion(profile.birthday, n.date).toString();
   const epoch = Date.parse(exportedAt),
     badges: ExportBadge[] =
-      validDay(profile.birthday) && validTimezone(profile.tz) && Number.isFinite(epoch) && notes.length
-        ? badgesOf(items, profile, localDay(Math.floor(epoch / 1000), String(profile.tz)))
+      // The stored profile, for its giving years and photo time: what the page
+      // shows, notes or none.
+      validDay(profile.birthday) && validTimezone(profile.tz) && Number.isFinite(epoch)
+        ? badgesOf(items, stored, localDay(Math.floor(epoch / 1000), String(profile.tz)))
             .earned.reverse()
             .map((e) => ({
               id: e.id,

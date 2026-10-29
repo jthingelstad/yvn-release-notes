@@ -12,6 +12,8 @@ import type { Item } from './store-types.ts';
 import { iso, localDay } from '../domain/dates.ts';
 import { json, body, dayFrom } from '../../server/app/requests.ts';
 import { recordActivity } from './activity.ts';
+import { earnedBy, freshEvent } from './badges.ts';
+import { activityKey, activityTime } from '../domain/activity.ts';
 import { defaultTitle } from '../book/data.ts';
 import {
   COMMENTARY_DAYS,
@@ -132,14 +134,24 @@ export async function bookRoutes(
       await store.finishExport(uid, id, { status: 'failed', finished_at: ctx.now }, 'BOOK');
       reject(502, 'book-failed');
     }
+    // The first book asked for earns Tarball (docs/BADGES.md), seen here:
+    // the Book page shows the unlock line.
+    const won = await earnedBy(
+      store,
+      uid,
+      p,
+      ctx.now,
+      [freshEvent('tarball', activityKey(activityTime(ctx.now), 'export.book', id), ctx.now, p.tz)],
+      { via: 'web', seen: true, log: (f) => service.log(f) }
+    );
     await recordActivity(
       store,
       uid,
       ctx.now,
-      [{ kind: 'export.book', id, fields: { from, to, ...(annotate ? { commentary: true } : {}) } }],
+      [{ kind: 'export.book', id, fields: { from, to, ...(annotate ? { commentary: true } : {}) } }, ...won.events],
       (f) => service.log(f)
     );
-    return json({ status: 'building' }, 202);
+    return json(won.unlocked.length ? { status: 'building', unlocked: won.unlocked } : { status: 'building' }, 202);
   }
   return json({
     today,

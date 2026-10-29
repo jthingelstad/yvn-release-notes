@@ -455,8 +455,11 @@ Where things are (each module's design comment has its contract):
 - **Personal dates** (2026-10-13): `/upcoming/` keeps private birthdays,
   anniversaries, trips and events, managed by the owner in their
   email-verified session. They are saved plans, never journal entries, and
-  touch no streak, count or note search. A trip does not move the
-  subscriber's home, forecast or note places (switching is deferred).
+  touch no streak, count or note search. The one exception is the Roadmap
+  badge track, which counts dates added (Jamie, 2026-10-29: "I do think
+  using upcoming should get badges"); nothing else counts them. A trip
+  does not move the subscriber's home, forecast or note places (switching
+  is deferred).
 - **Reminders** travel only in the daily email, at most three due entries
   with a link to all. A failed read never holds the send. No catch-up,
   extra messages, tracking or model-generated prompts.
@@ -516,7 +519,10 @@ Where things are (each module's design comment has its contract):
   unlock line counts too, and so does the web's welcome back, Jamie,
   2026-10-25: "when you come to the website and there is a badge since your
   last visit that should get special attention!"; docs/BADGES.md). "Show
-  badges" off drops all of it.
+  badges" off drops all of it. Four firsts are earned outside notes (Jamie,
+  2026-10-29): Signed commit (a profile photo), Issue opened (feedback
+  sent), Merged upstream (feedback marked done) and Tarball (a book), with
+  the Roadmap track for Upcoming; docs/BADGES.md has them.
 - **A birthday closes the release** (2026-10-12): that day's email sums up
   the year of life just ended in one short block ("5.4 is closed": days with
   notes, notes, photos, the longest streak) and links its page,

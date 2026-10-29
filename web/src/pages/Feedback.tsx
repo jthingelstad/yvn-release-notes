@@ -10,7 +10,8 @@ import { api, get } from '../lib/api.ts';
 import { meQuery } from '../lib/queries.ts';
 import { prepare, type Ready } from '../lib/screenshots.ts';
 import { zoneShortDate } from '../lib/format.ts';
-import type { FeedbackView } from '../lib/types.ts';
+import type { FeedbackView, Unlocked } from '../lib/types.ts';
+import { UnlockLine } from '../components/unlock.tsx';
 import {
   FEEDBACK_KIND_NAMES,
   FEEDBACK_KINDS,
@@ -48,7 +49,9 @@ export function Feedback() {
     [follows, setFollows] = useState<FeedbackView | null>(null),
     [shots, setShots] = useState<Ready[]>([]);
   const [problem, setProblem] = useState<string | null>(null),
-    [notice, setNotice] = useState('');
+    [notice, setNotice] = useState(''),
+    // What the first item earned (Issue opened), beside the notice.
+    [won, setWon] = useState<Unlocked[]>([]);
   const [busy, run] = useBusy(),
     client = useQueryClient(),
     form = useRef<HTMLFormElement>(null),
@@ -83,7 +86,8 @@ export function Feedback() {
     run(async () => {
       setProblem(null);
       setNotice('');
-      const answer = await api<FeedbackView>('POST', '/api/feedback', {
+      setWon([]);
+      const answer = await api<FeedbackView & { unlocked?: Unlocked[] }>('POST', '/api/feedback', {
         kind,
         text,
         ...(follows ? { follows: follows.id } : {}),
@@ -102,6 +106,7 @@ export function Feedback() {
       setShots([]);
       setFollows(null);
       setNotice('Sent. Jamie reads every one, and you’ll get an email when there’s an answer.');
+      setWon(answer.data.unlocked ?? []);
     });
   };
 
@@ -181,6 +186,7 @@ export function Feedback() {
             {notice}
           </p>
         )}
+        <UnlockLine items={won} />
         <button className="go" type="submit" disabled={busy || left <= 0}>
           Send to Jamie
         </button>

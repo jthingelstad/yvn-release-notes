@@ -13,6 +13,11 @@
  * - Answering appends one answer with the status it sets, then mails the
  *   filer once, only while their account is active, and records both in the
  *   activity log. A failed email never undoes the answer.
+ * - Badges (docs/BADGES.md): the first item filed earns Issue opened, and
+ *   the first answer that sets one of the account's items `done` earns
+ *   Merged upstream. Given `badges`, each works out what it earned and
+ *   writes the badge.earned rows with its own row (the filer's channel; an
+ *   answer's via admin, told in the filer's next email).
  *
  * Nothing here logs the words of an item or an answer, or an address. */
 import { randomBytes } from 'node:crypto';
@@ -29,8 +34,11 @@ import {
 } from '../domain/feedback.ts';
 import { feedbackAnswerMessage } from '../mail/compose.ts';
 import { recordActivity } from './activity.ts';
+import { earnedBy, freshEvent, type BadgeStore } from './badges.ts';
+import type { Unlocked } from '../domain/badges.ts';
+import type { Item } from './store-types.ts';
 import { INLINE_TYPES, type InlineImage } from './inline-images.ts';
-import type { Mail, Objects } from './services.ts';
+import { safeLog, type Mail, type Objects } from './services.ts';
 import type { Store } from './store.ts';
 import type { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 
@@ -59,13 +67,21 @@ export interface Filing {
   connection?: string | null;
 }
 export type FileOutcome =
-  { ok: true; item: FeedbackItem } | { ok: false; reason: 'limit' | 'follows' | 'conflict' | 'too-many' };
+  | { ok: true; item: FeedbackItem; unlocked: Unlocked[] }
+  | { ok: false; reason: 'limit' | 'follows' | 'conflict' | 'too-many' };
+/** The reads badges take, the filer's profile, and whether the caller's page
+ * shows the unlock line (then they are marked seen). */
+export interface FeedbackBadges {
+  store: BadgeStore & Partial<Pick<Store, 'addSeenBadges'>>;
+  profile: Item;
+  seen: boolean;
+}
 
 /** Files one item for `owner`. `proofs` makes an agent's proofs for the item
  * (live grant and account, receipt, audit); the web's session proof is added
  * by its guarded store. */
 export async function fileFeedback(
-  deps: { store: FeedbackStore; objects: FeedbackObjects; now: number; log?: Log },
+  deps: { store: FeedbackStore; objects: FeedbackObjects; now: number; log?: Log; badges?: FeedbackBadges },
   owner: string,
   filing: Filing,
   proofs: ((item: FeedbackItem) => Ops) | null = null,
@@ -112,6 +128,21 @@ export async function fileFeedback(
       if (filing.follows && !(await store.feedbackItem(owner, filing.follows))) return { ok: false, reason: 'follows' };
       return { ok: false, reason: 'conflict' };
     }
+    const won = deps.badges
+      ? await earnedBy(
+          deps.badges.store,
+          owner,
+          deps.badges.profile,
+          now,
+          [freshEvent('issue', `feedback:${id}`, now, deps.badges.profile.tz)],
+          {
+            via: filing.via,
+            ...(filing.via === 'assistant' && filing.client ? { client: filing.client } : {}),
+            seen: deps.badges.seen,
+            log: deps.log ?? safeLog
+          }
+        )
+      : { unlocked: [], events: [] };
     await recordActivity(
       store,
       owner,
@@ -128,12 +159,13 @@ export async function fileFeedback(
             ...(filing.follows ? { follows: filing.follows } : {}),
             screenshots: stored.length
           }
-        }
+        },
+        ...won.events
       ],
       deps.log
     );
     deps.log?.({ event: 'feedback', user: owner, action: 'filed', via: filing.via, screenshots: stored.length });
-    return { ok: true, item };
+    return { ok: true, item, unlocked: won.unlocked };
   } catch (error) {
     await forget(objects, stored);
     throw error;
@@ -179,7 +211,7 @@ export type AnswerOutcome =
 /** One answer from the administrator, then one email to the filer while
  * their account is active. */
 export async function answerFeedback(
-  deps: { store: FeedbackStore; mail: Mail; from: string; now: number; log?: Log },
+  deps: { store: FeedbackStore; mail: Mail; from: string; now: number; log?: Log; badges?: BadgeStore },
   owner: string,
   id: string,
   revision: number,
@@ -220,6 +252,19 @@ export async function answerFeedback(
     } catch {
       mail = 'failed';
     }
+  // A `done` earns the filer Merged upstream; never marked seen, so their
+  // next email tells of it.
+  const won =
+    deps.badges && profile && answer.status === 'done'
+      ? await earnedBy(
+          deps.badges,
+          owner,
+          profile,
+          now,
+          [freshEvent('merged', `feedback:${id}:${item.answers.length}`, now, profile.tz)],
+          { via: 'admin', log: deps.log ?? safeLog }
+        )
+      : { events: [] };
   await recordActivity(
     store,
     owner,
@@ -229,7 +274,8 @@ export async function answerFeedback(
         kind: 'feedback.answered',
         id: `${id}.${answered.answers.length}`,
         fields: { via: 'admin', feedback: id, status: answer.status, mail }
-      }
+      },
+      ...won.events
     ],
     deps.log
   );

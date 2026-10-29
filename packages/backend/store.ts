@@ -1505,20 +1505,22 @@ export class Store {
     return this.get(key(user, sk), { ConsistentRead: true });
   }
   /** The activity rows badges read (docs/BADGES.md, the firsts earned
-   * outside notes): photo.set, export.book, upcoming.added, and note.edited
-   * by an assistant, oldest first, with only the fields they need. */
+   * outside notes): photo.set, export.book, upcoming.added, egg.found (an
+   * easter egg, domain/eggs.ts), and note.edited by an assistant, oldest
+   * first, with only the fields they need. */
   async badgeActivity(user: string, consistent = false): Promise<Item[]> {
     return this.rows({
       KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
-      FilterExpression: '#k = :photo OR #k = :book OR #k = :added OR (#k = :edited AND #v = :assistant)',
-      ProjectionExpression: 'sk, #k, #a, #v, #u',
-      ExpressionAttributeNames: { '#k': 'kind', '#a': 'at', '#v': 'via', '#u': 'upcoming' },
+      FilterExpression: '#k = :photo OR #k = :book OR #k = :added OR #k = :egg OR (#k = :edited AND #v = :assistant)',
+      ProjectionExpression: 'sk, #k, #a, #v, #u, #e',
+      ExpressionAttributeNames: { '#k': 'kind', '#a': 'at', '#v': 'via', '#u': 'upcoming', '#e': 'egg' },
       ExpressionAttributeValues: {
         ':p': `USER#${user}`,
         ':s': ACTIVITY,
         ':photo': 'photo.set',
         ':book': 'export.book',
         ':added': 'upcoming.added',
+        ':egg': 'egg.found',
         ':edited': 'note.edited',
         ':assistant': 'assistant'
       },

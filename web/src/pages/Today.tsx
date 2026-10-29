@@ -1,6 +1,7 @@
 // Today's number, its notes, and the form to add one.
 import { useQuery } from '@tanstack/react-query';
-import { AppLink, Bar, Digits, Failed, Loading, useTitle } from '../components/common.tsx';
+import { AppLink, Bar, Failed, Loading, useTitle } from '../components/common.tsx';
+import { VersionTap } from '../components/developer.tsx';
 import { StreakLine } from '../components/days.tsx';
 import { Icon } from '../components/icon.tsx';
 import { NoteForm } from '../components/noteform.tsx';
@@ -38,9 +39,7 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
       <p className="dateline" id="date">
         {dayName(t.date)}
       </p>
-      <h1 className="vnum huge tight" id="v">
-        <Digits v={t.version} named />
-      </h1>
+      <VersionTap version={t.version} today={t.date} birthday={me?.birthday} tz={me?.tz ?? t.tz} />
       <p className="dots" id="dots" aria-hidden="true">
         {Array.from({ length: 24 }, (_, i) => (
           <span key={i} className={i < t.dots ? 'on' : ''} />

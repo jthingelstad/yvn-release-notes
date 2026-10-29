@@ -268,6 +268,32 @@ nothing there links here yet: that is Jamie's call.
     The export zip carries it as `profile-photo.jpg`; deleting the
     account deletes it. Not in the email, which loads nothing remote, nor
     the administrator's overview, nor MCP's `notes_account`.
+14. **Easter eggs** (Jamie, 2026-10-29: "Approved: build the Developer
+    mode, Status code and RTFM easter eggs in Release Notes, with the
+    status line in the email on those mornings"; docs/BADGES.md, Easter
+    eggs). Nothing in the tour, the front page or help copy mentions them.
+    - **Developer mode**: Today's number is a `<button>` that looks
+      exactly like the number, named by the version
+      (`web/src/components/developer.tsx`, `web/src/lib/developer.ts`).
+      Seven taps in a row (Enter and Space count; a gap over 2 seconds
+      starts over) turn it on; from the fourth a polite live region under
+      the number counts down ("3 taps from being a developer."). It is
+      kept in this browser's localStorage, never on the server, with
+      "Leave developer mode". The panel under the number, in mono, shows
+      the version in hex, binary and Roman numerals (zero is N), uptime
+      in seconds since local midnight of the birthday, how far through
+      today's patch, and `git log --oneline` of the last ten days with
+      notes, read from `GET /api/days` as the Archive reads it, each hash
+      worked out from the day's first note id. The first turn on posts
+      `POST /api/eggs` `{egg: "developer"}`; a failure changes nothing.
+    - **RTFM**: `/man/` is Release Notes as a man page,
+      RELEASE-NOTES(1), for anyone, noindex like every page but `/`.
+      Its clues: a comment in `web/index.html`, a comment in
+      `robots.txt` (no rule) and a line on the 404 page. Opened signed
+      in, it posts `{egg: "rtfm"}`; signed out it posts nothing.
+    - Each found egg is one `egg.found` activity row (via `web`), ever,
+      and with "Show badges" on its secret first ("Developer mode",
+      "RTFM") with the unlock line.
 
 ## Defaults (Jamie can change any)
 
@@ -382,7 +408,7 @@ notes.yourversionnumber.com
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/badges/`, `/map/`, `/search/`,
-  `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/you/`, `/settings/`, `/activity/` (`/mail-log/` redirects there), `/book/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/feedback/`, `/admin/`, `/admin-users/`, `/admin-feedback/`.
+  `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/you/`, `/settings/`, `/activity/` (`/mail-log/` redirects there), `/book/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/feedback/`, `/admin/`, `/admin-users/`, `/admin-feedback/`, `/man/`.
   `/connect/` approves an external agent request whose opaque id stays in the fragment. With no request it shows the MCP address to add, with Copy; with one, the request's question is the title, what it shares as a list, each extra approval as a ruled checkbox row, and the retention paragraphs in full above Allow.
   `/feedback/` sends Jamie feedback and shows the answers (Feedback); `/admin/` manages product updates; `/admin-users/` shows subscriber metadata; `/admin-feedback/` is the feedback queue. Administration is visible in settings only to the configured administrator.
 
@@ -656,6 +682,7 @@ or new CSP exception.
 | `GET /api/badges`                                                                       | the subscriber's badges as of their `today` (with `tz` and today's `version`): `count`; `earned`, newest first, each with `key` (`id`, or `id:level` for a track tier), `name`, `line`, `shelf` (`track`, `first`, `craft`, `collectible` or `giving`, a year given as a Supporting Member, `giving-2026`), `earned` (the day it came true), and the `day` and `version` it is stamped with (a collectible's special day); `tracks` (`tier` 0-5, `level`, `best`, `now`, `since`, `next`); `release`, this release's `days`, `percent`, coverage `level`, `next` only while it can still be reached, `following` (the next release and its date), its `collected` special days and the next three `ahead` (never a secret one); `missing`, what is still to find, a secret one as its `hint` alone. Read from the notes' stored fields, never their text |
 | `GET /api/badges/new`                                                                   | what was earned and not yet told (`seen`), in the order earned, one tier a track (its highest): `badges`, each with `key`, `id`, `name`, `line` and `version`, and `keys`, every untold key a track's lower tiers included; empty while "Show badges" is off. The page shows it once, on the first signed-in page of a visit |
 | `POST /api/badges/seen`                                                                 | mark `keys` (at most 500, each an earned badge's key; anything else is left out) as told, so the email doesn't tell them again: `seen`, how many (400 `badges-seen`; nothing while "Show badges" is off) |
+| `POST /api/eggs` `{egg}`                                                                | an easter egg found (`developer` or `rtfm`, docs/BADGES.md): one `egg.found` activity row the first time, nothing after; `unlocked` when it earned a badge and "Show badges" is on, and nothing about any other egg (400 `egg` for any other name) |
 | `GET /api/map/notes`                                                                    | the Map page's pins: each note with a place of its own and coordinates, as `date`, `id`, `lat`, `lon`, `place` (its label), `exact` (a device or photo spot, not a chosen city), `tags` (its hashtags), `release` (the release its day falls in, as `4.5`), `version` (its day's, as `4.5.113`) and `text` (its first 140 characters); `notes`, how many notes there are in all                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `POST /api/map/search` `{q}`                                                            | which pins have every word or "quoted phrase", matched as `POST /api/search` matches, as `found` (`date` and `id` alone) with the `terms`; the words never go in a URL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `GET /api/map/style/{scheme}`                                                           | Amazon Location's Standard style, `Light` or `Dark`, with its tiles, glyphs and sprite pointed at the routes below; any other source is dropped. Kept by the browser for a day                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |

@@ -315,6 +315,8 @@ export interface EventActivity extends ActivityHead {
   photos?: number;
   app?: string;
   notes?: number;
+  // egg.found: which easter egg (packages/domain/eggs.ts)
+  egg?: string;
 }
 export type ActivityEntry = MailActivity | ReadsActivity | EventActivity;
 export interface Activity {

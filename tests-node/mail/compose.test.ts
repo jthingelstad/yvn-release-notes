@@ -207,3 +207,34 @@ test('weeks and days lived count from 1 on the birth day, leap birthdays include
     'Week 2,852 &mdash; Day 19,961'
   );
 });
+test('a status patch has its status line beside the number, after the round clause, badges on or off', () => {
+  const at = (birthday: string, day: string) => computeVersion(birthday, day),
+    ok = at('1972-03-05', '2026-09-21'),
+    found = at('1986-03-05', '2026-03-09'),
+    teapot = at('1985-03-05', '2026-03-13'),
+    moved = at('1972-03-05', '2026-12-31');
+  assert.deepEqual([ok, found, teapot, moved].map(String), ['5.4.200', '4.0.4', '4.1.8', '5.4.301']);
+  assert.equal(c.besideNumber(ok, true), '5.4.200 is a round number. 200 OK.');
+  assert.equal(c.besideNumber(ok, false), '200 OK.');
+  assert.equal(c.besideNumber(found, true), '4.0.4 reads the same both ways. 404 Not Found.');
+  assert.equal(c.besideNumber(found, false), '404 Not Found.');
+  assert.equal(c.besideNumber(teapot, false), '418 I’m a teapot.');
+  assert.equal(c.besideNumber(moved, false), '301 Moved Permanently.');
+  assert.equal(c.besideNumber(at('1972-03-05', '2026-09-22'), false), '201 Created.');
+  assert.equal(c.besideNumber(at('1972-03-05', '2026-09-23'), true), null, '5.4.202 is no status');
+  // Text and HTML, with badges on and off; it never asks for a note.
+  const on = { badges: { news: [] } };
+  assert.match(c.body(ok, '1972-03-05', on), /^You're 5\.4\.200 today\. 5\.4\.200 is a round number\. 200 OK\.\n/);
+  assert.match(c.body(ok, '1972-03-05', { badges: null }), /^You're 5\.4\.200 today\. 200 OK\.\n/);
+  assert.match(
+    c.htmlBody(ok, '1972-03-05', '2026-09-21', on),
+    /id="special-day"[^>]*>5\.4\.200 is a round number\. 200 OK\.<\/p>/
+  );
+  assert.match(c.htmlBody(ok, '1972-03-05', '2026-09-21', {}), /id="special-day"[^>]*>200 OK\.<\/p>/);
+  const html = c.htmlBody(teapot, '1985-03-05', '2026-03-13', {});
+  assert.match(html, /id="special-day"[^>]*>418 I&#8217;m a teapot\.<\/p>/);
+  assert.ok(Array.from(html).every((ch) => ch.codePointAt(0)! <= 127));
+  assert.match(c.body(found, '1986-03-05', {}), /^You're 4\.0\.4 today\. 404 Not Found\.\n/);
+  // An ordinary day has no line.
+  assert.ok(!c.htmlBody(at('1972-03-05', '2026-09-23'), '1972-03-05', '2026-09-23', {}).includes('special-day'));
+});

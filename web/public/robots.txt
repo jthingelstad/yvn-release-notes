@@ -6,5 +6,6 @@ User-agent: *
 Disallow: /api/
 Disallow: /oauth/
 Disallow: /mcp
+# RTFM: /man/
 
 Sitemap: https://notes.yourversionnumber.com/sitemap.xml

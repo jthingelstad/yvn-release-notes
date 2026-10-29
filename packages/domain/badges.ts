@@ -16,12 +16,17 @@
  * done, a book asked for, a note an agent edited, and the Roadmap track's
  * dates added to Upcoming. They come from the activity log, FEEDBACK# and
  * UPCOMING#, join the replay in time order, and are never taken away: a
- * photo removed or a date deleted keeps what it earned. */
+ * photo removed or a date deleted keeps what it earned. The easter eggs
+ * found on the web (domain/eggs.ts) are events too, from their egg.found
+ * rows; the status-code versions are collectibles, and wherever a special
+ * day is named, Status code carries its meaning ("Status code (304 Not
+ * Modified)"). */
 import { addDays, daysBetween, localDay, validTimezone, type Day } from './dates.ts';
 import { computeVersion, releaseName, releaseSpan } from './version.ts';
 import { computeStreak } from './streak.ts';
 import { fold } from './unicode.ts';
 import { NONPROFITS, givingId, givingYearOf, type GivingYear } from './giving.ts';
+import { STATUS_PATCHES, STATUS_VERSIONS, isEgg } from './eggs.ts';
 
 export type Shelf = 'track' | 'first' | 'craft' | 'collectible' | 'giving';
 export interface BadgeInfo {
@@ -118,6 +123,9 @@ export const BADGES: readonly BadgeInfo[] = [
     'Made a book of your notes.',
     'Make a book of your notes, from the Archive or a release’s page.'
   ),
+  // The easter eggs found on the web (domain/eggs.ts), secret until found.
+  badge('first', 'developer', 'Developer mode', 'Tapped your version seven times.', 'Tap, tap, tap…', true),
+  badge('first', 'rtfm', 'RTFM', 'Read the manual.', 'Read the manual.', true),
   badge(
     'craft',
     'fullstack',
@@ -192,6 +200,10 @@ export const BADGES: readonly BadgeInfo[] = [
     true
   ),
   badge('collectible', 'straight', 'Straight', 'Digits that count up by one.', '1, 2, 3…', true),
+  // The versions that read as an HTTP status (domain/eggs.ts).
+  badge('collectible', 'status', 'Status code', 'A patch that is an HTTP status.', 'Some patches have a status.', true),
+  badge('collectible', 'found', 'Found', '4.0.4, and yet here you are.', 'Lost and found.', true),
+  badge('collectible', 'teapot', 'I’m a teapot', '4.1.8. Short and stout.', 'Short and stout.', true),
   badge('collectible', 'major', 'Major release', 'A note on x.0.0. Once a decade.', 'Write on x.0.0. Once a decade.')
 ];
 const INFO = new Map(BADGES.map((b) => [b.id, b]));
@@ -248,7 +260,7 @@ export interface BadgeFacts {
  * names what it came from (an activity row's key, a feedback item or answer,
  * an Upcoming entry), so a save can leave its own out to see what it earned;
  * the Roadmap counts `upcoming` events by key, once each. */
-export type BadgeEventKind = 'signed' | 'issue' | 'merged' | 'tarball' | 'pair' | 'upcoming';
+export type BadgeEventKind = 'signed' | 'issue' | 'merged' | 'tarball' | 'pair' | 'upcoming' | 'developer' | 'rtfm';
 export interface BadgeEvent {
   kind: BadgeEventKind;
   day: Day;
@@ -261,13 +273,15 @@ const EVENT_BADGE: Record<Exclude<BadgeEventKind, 'upcoming'>, string> = {
   issue: 'issue',
   merged: 'merged',
   tarball: 'tarball',
-  pair: 'pair'
+  pair: 'pair',
+  developer: 'developer',
+  rtfm: 'rtfm'
 };
 /** The badges events earn or help earn (Pair programming comes from notes
  * too). */
 export const EVENT_BADGES: ReadonlySet<string> = new Set([...Object.values(EVENT_BADGE), 'roadmap']);
 export interface EventSources {
-  /** Activity rows (sk, kind, at, via, upcoming). */
+  /** Activity rows (sk, kind, at, via, upcoming, egg). */
   activity?: readonly Record<string, unknown>[];
   /** FEEDBACK# items: filed, and each answer's status. */
   feedback?: readonly { id: string; filed_at: string; answers: readonly { at: string; status: string }[] }[];
@@ -280,7 +294,8 @@ export interface EventSources {
  * `zone`: Signed commit from photo.set (else the photo's own time), Issue
  * opened from each item filed, Merged upstream from each answer that set
  * `done`, Tarball from export.book, Pair programming from a note.edited by
- * an agent, and one Roadmap event per Upcoming entry ever added, the union
+ * an agent, an easter egg's first from its egg.found row (domain/eggs.ts),
+ * and one Roadmap event per Upcoming entry ever added, the union
  * by id of upcoming.added rows (from 2026-10-21) and the entries saved now,
  * each at its earliest known time. A date deleted keeps its row, so the
  * count never falls. */
@@ -310,6 +325,7 @@ export function badgeEventsOf(src: EventSources, zone: string): BadgeEvent[] {
     } else if (kind === 'export.book') add('tarball', row.at, key);
     else if (kind === 'note.edited' && row.via === 'assistant') add('pair', row.at, key);
     else if (kind === 'upcoming.added' && typeof row.upcoming === 'string') earliest(row.upcoming, row.at);
+    else if (kind === 'egg.found' && isEgg(row.egg)) add(row.egg, row.at, key);
   }
   if (!photoRow && src.photoAt) add('signed', src.photoAt, 'photo');
   for (const f of src.feedback ?? []) {
@@ -408,9 +424,19 @@ export function specialKinds(major: number, minor: number, patch: number, cycle:
   if (patch === 314) kinds.add('pi');
   if (patch === 365) kinds.add('leap');
   if ([...digits].every((c, i) => !i || Number(c) === Number(digits[i - 1]) + 1)) kinds.add('straight');
+  if (STATUS_PATCHES[patch]) kinds.add('status');
+  for (const [id, s] of Object.entries(STATUS_VERSIONS))
+    if (major === s.major && minor === s.minor && patch === s.patch) kinds.add(id);
   if (patch === 0 && minor === 0) kinds.add('major');
   return [...kinds].sort((a, b) => ORDER.get(a)! - ORDER.get(b)!);
 }
+/** A special day's name: the catalog's, and for Status code with its
+ * meaning beside it ("Status code (304 Not Modified)"). */
+export function kindName(kind: string, patch: number): string {
+  const name = INFO.get(kind)!.name;
+  return kind === 'status' && STATUS_PATCHES[patch] ? `${name} (${patch} ${STATUS_PATCHES[patch]})` : name;
+}
+const patchOf = (version: string) => Number(version.split('.')[2]);
 /** A release's special days, in order, each with every kind it is. */
 export function album(birthday: Day, age: number): SpecialDay[] {
   const [first] = releaseSpan(birthday, age),
@@ -687,7 +713,7 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
     target = reached < 5 ? needed(TRACKS[3].at[reached]!, v.cycleDays) : 0;
   const named = (d: SpecialDay, all: boolean): AlbumDay => {
     const ids = d.kinds.filter((k) => all || !INFO.get(k)!.secret);
-    return { day: d.day, version: d.version, ids, names: ids.map((k) => INFO.get(k)!.name) };
+    return { day: d.day, version: d.version, ids, names: ids.map((k) => kindName(k, patchOf(d.version))) };
   };
   const ahead = [...album(birthday, v.age), ...album(birthday, v.age + 1)]
     .filter((d) => d.day >= today && !have.has(d.day))
@@ -769,11 +795,12 @@ export function unlocked(before: Badges, after: Badges): Unlocked[] {
  * "Collected here"). */
 export function collectedOn(birthday: Day, day: Day): string[] {
   const v = computeVersion(birthday, day);
-  return specialKinds(v.major, v.minor, v.patch, v.cycleDays).map((k) => INFO.get(k)!.name);
+  return specialKinds(v.major, v.minor, v.patch, v.cycleDays).map((k) => kindName(k, v.patch));
 }
 
 /** One release's badges, for its page head: the coverage tier its days with
- * notes reached, and the special days collected, by kind, with how many. */
+ * notes reached, and the special days collected, by kind, with how many;
+ * Status code once for each status, by its name with the meaning. */
 export function releaseBadges(
   birthday: Day,
   age: number,
@@ -784,14 +811,19 @@ export function releaseBadges(
   let days = 0;
   for (const d of have) if (d >= first && d <= last) days++;
   const reached = TRACKS[3].at.filter((t) => days >= needed(t, cycle)).length,
-    counts = new Map<string, number>();
+    counts = new Map<string, { id: string; name: string; count: number }>();
   for (const d of album(birthday, age))
-    if (have.has(d.day)) for (const k of d.kinds) counts.set(k, (counts.get(k) ?? 0) + 1);
+    if (have.has(d.day))
+      for (const k of d.kinds) {
+        const name = kindName(k, patchOf(d.version)),
+          c = counts.get(name) ?? { id: k, name, count: 0 };
+        c.count++;
+        counts.set(name, c);
+      }
   return {
     coverage: reached ? LEVELS[reached - 1]! : null,
-    collected: [...counts]
-      .sort(([a], [b]) => ORDER.get(a)! - ORDER.get(b)!)
-      .map(([id, count]) => ({ id, name: INFO.get(id)!.name, count }))
+    // In catalog order; the album's own order (by patch) within a kind.
+    collected: [...counts.values()].sort((a, b) => ORDER.get(a.id)! - ORDER.get(b.id)!)
   };
 }
 

@@ -151,7 +151,8 @@ const GLYPHS: Record<string, IconName> = {
   address: 'mail',
   calendar: 'calendar',
   connection: 'assistant',
-  feedback: 'feedback'
+  feedback: 'feedback',
+  egg: 'badges'
 };
 
 function Row({ e, l }: { e: ActivityEntry; l: ActivityData }) {
@@ -346,6 +347,8 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
             : 'Jamie answered your feedback',
         e.mail === 'sent' ? 'The answer was emailed to you too.' : undefined
       ];
+    case 'egg.found':
+      return [e.egg === 'developer' ? 'Became a developer' : e.egg === 'rtfm' ? 'Read the manual' : 'Found something'];
     case 'account.created':
       return ['Joined Release Notes'];
     default:

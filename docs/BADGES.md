@@ -7,7 +7,8 @@ Release page lines and the export. Step 3 is built: the "Show badges"
 setting, the `BADGES` item, the baseline tool, both email lines and the
 birthday block. The launch product update is Jamie's to write. Step 4 is
 built: `notes_badges` for agents. Four firsts earned outside notes and
-the Roadmap track followed on 2026-10-29 (Jamie's calls, 2026-10-29).
+the Roadmap track followed on 2026-10-29 (Jamie's calls, 2026-10-29), and
+the easter eggs the same day (Easter eggs).
 
 Release Notes works when people write most days. Badges should make
 showing up feel good and make the version number more fun to live with,
@@ -129,6 +130,8 @@ Most of these land in the first week. Each one points at a feature.
 | Issue opened     | Sending feedback, on the web or through an agent                          |
 | Merged upstream  | Feedback you sent marked done                                             |
 | Tarball          | Making a book of your notes                                               |
+| Developer mode   | Secret: "Tap, tap, tap…". Tapping your version seven times (Easter eggs)  |
+| RTFM             | Secret: "Read the manual.". Reading the manual at `/man/` (Easter eggs)   |
 
 The last four are the first firsts earned outside notes. They are read
 from the activity log (`photo.set`, `export.book`, falling back to the
@@ -222,6 +225,9 @@ until earned.
 | Pi (secret: "Irrational.")                        | .314                                               | Yearly              |
 | Leap patch (secret: "Not every release has one.") | .365, only in a release with a February 29         | About 1 year in 4   |
 | Straight (secret: "1, 2, 3…")                     | Digits counting up by one: 4.5.67                  | A few in a lifetime |
+| Status code (secret: "Some patches have a status.") | An HTTP status: .100, .101, .200, .201, .204, .301, .304 or .307 | Up to 8 a year |
+| Found (secret: "Lost and found.")                 | 4.0.4, once                                        | Once                |
+| I’m a teapot (secret: "Short and stout.")         | 4.1.8, once                                        | Once                |
 | Major release                                     | x.0.0                                              | Once a decade       |
 
 **Each release has an album.** Every release has its own set of special
@@ -324,6 +330,13 @@ secret), one clause beside the number states a fact about it:
 
 It never asks for a note; the number is the point. On a birthday the email
 already celebrates the release, so Release day needs no clause.
+
+**On a status patch** (Easter eggs), one more short line follows that
+clause, or stands alone beside the number, whatever "Show badges" says:
+
+> 5.4.200 is a round number. 200 OK.
+
+> 404 Not Found.
 
 ### Birthdays
 
@@ -444,6 +457,49 @@ they are found by writing on those days or not at all.
 - **Dashboard:** nothing new. Notes per day by source already show whether
   people write more.
 
+## Easter eggs
+
+Jamie, 2026-10-29: "Those are all amazing. I love them all." and
+"Approved: build the Developer mode, Status code and RTFM easter eggs in
+Release Notes, with the status line in the email on those mornings". The
+tour, the front page and help copy never mention them; finding them is the
+point. With "Show badges" off every egg still works: only the badges,
+unlock lines and badge rows are left out.
+
+- **Developer mode** (web). Today's number is a button that looks exactly
+  like the number. Seven taps in a row, none more than 2 seconds apart
+  (Enter and Space count), turn it on; from the fourth a polite live
+  region counts down ("3 taps from being a developer."), the seventh says
+  "You are now a developer." and later taps "No need, you are already a
+  developer.". It is kept in the browser, never on the server, with
+  "Leave developer mode". The panel under the number shows the version in
+  hex, binary and Roman numerals (zero is N), uptime in seconds since
+  local midnight of the birthday, how far through today's patch, and
+  `git log --oneline` of the last ten days with notes, each a hash worked
+  out from the note id, the version and its first few words. The first
+  turn on earns the secret first Developer mode.
+- **Status codes** (badges and the email). Patches that are HTTP statuses
+  (.100 Continue, .101 Switching Protocols, .200 OK, .201 Created, .204 No
+  Content, .301 Moved Permanently, .304 Not Modified, .307 Temporary
+  Redirect) earn the secret collectible Status code once, and each is an
+  album entry in its release, named with its meaning: "Status code (304
+  Not Modified)". Two versions happen once a life: 4.0.4 is Found and
+  4.1.8 is I’m a teapot. None is ever in Ahead. The email adds one line
+  beside the number on those mornings ("200 OK.", "404 Not Found.",
+  "418 I’m a teapot."), with badges on or off, and it never asks for a note
+  (`packages/domain/eggs.ts`).
+- **RTFM** (web). `/man/` is RELEASE-NOTES(1), the product as a Unix man
+  page, readable by anyone and noindex. The clues are a comment in
+  `index.html`, a comment in `robots.txt` and "Lost? Try man
+  release-notes" on the 404 page. Opened signed in, it earns the secret
+  first RTFM.
+
+A found egg is one `egg.found` activity row (via `web`, field `egg`),
+written once ever by `POST /api/eggs`, which knows only these two names
+and answers nothing about any other egg. Agents find nothing new: the MCP
+tools' descriptions name no egg, and `notes_badges` shows the secrets by
+their hint until earned.
+
 ## Build order
 
 1. Domain, facts, `GET /api/badges` and the Badges page, with links from
@@ -461,6 +517,12 @@ they are found by writing on those days or not at all.
    2026-10-20: "add read-only MCP tools to Release Notes for badges, the
    mail log, releases, on this day and account settings under
    notes:read"). **Built 2026-10-20.**
+
+## Jamie's calls (2026-10-29, easter eggs)
+
+1. "Those are all amazing. I love them all."
+2. "Approved: build the Developer mode, Status code and RTFM easter eggs in
+   Release Notes, with the status line in the email on those mornings"
 
 ## Jamie's calls (2026-10-29)
 

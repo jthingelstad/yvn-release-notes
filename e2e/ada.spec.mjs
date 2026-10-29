@@ -17,6 +17,7 @@
 // by the dev server's fictional Claude, counted against this release.
 // Badges: reached from Today, the release's album, the tracks and the shelf;
 // a save's unlock line, and what a day and a release collected.
+// Easter eggs: developer mode from Today's number, and the manual.
 // Activity: what the steps above did, reached from settings, and from the
 // mail log's old address.
 import { test, expect } from '@playwright/test';
@@ -723,6 +724,32 @@ test('a past special day: the unlock, the Day page line and the release head', a
   await page.goto('/release/?v=4.5');
   await expect(page.locator('#release-badges')).toContainText('Collected: Release day');
 });
+test('easter eggs: seven taps make a developer, and the manual is read', async ({ page }) => {
+  await page.goto('/today/');
+  const number = page.locator('#v-tap');
+  await expect(number).toHaveAccessibleName(/^Version \d+\.\d+\.\d+$/);
+  for (let i = 0; i < 4; i++) await number.click();
+  await expect(page.locator('#dev-say')).toHaveText('3 taps from being a developer.');
+  for (let i = 0; i < 3; i++) await number.click();
+  await expect(page.locator('#dev-say')).toHaveText('You are now a developer.');
+  await expect(page.locator('#dev-panel')).toBeVisible();
+  await expect(page.locator('#dev-roman')).toHaveText(/^[IVXLCDMN]+\.[IVXLCDMN]+\.[IVXLCDMN]+$/);
+  await expect(page.locator('#dev-log')).toContainText(/[0-9a-f]{7} \d+\.\d+\.\d+/);
+  await expect(page.locator('#dev-unlock')).toContainText('Unlocked: Developer mode');
+  // Kept in this browser, until left.
+  await page.reload();
+  await expect(page.locator('#dev-panel')).toBeVisible();
+  await page.getByRole('button', { name: 'Leave developer mode' }).click();
+  await expect(page.locator('#dev-panel')).toHaveCount(0);
+  // The 404 page's clue, then the manual.
+  await page.goto('/no-such-page/');
+  await page.getByRole('link', { name: 'man release-notes' }).click();
+  await expect(page).toHaveURL(/\/man\/$/);
+  await expect(page.locator('#man')).toContainText('RELEASE-NOTES(1)');
+  await expect(page.getByRole('heading', { name: 'BUGS' })).toBeVisible();
+  await expect(page.locator('#unlock')).toContainText('Unlocked: RTFM');
+});
+
 test('"Show badges" off hides their links and lines, and on brings them back', async ({ page }) => {
   const me = await (await page.request.get('/api/me')).json();
   let first = me.today.slice(0, 4) + me.birthday.slice(4);

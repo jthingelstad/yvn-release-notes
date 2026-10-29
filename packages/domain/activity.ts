@@ -30,7 +30,7 @@
  *   save on the web, by an assistant or by email; a giving year's (via
  *   `weekly-thing`, domain/giving.ts) has no `day` or `note`, nor has one
  *   earned outside notes (a profile photo, feedback sent or marked done
- *   (via `admin`), a book, a date added to Upcoming; docs/BADGES.md).
+ *   (via `admin`), a book, a date added to Upcoming, an easter egg; docs/BADGES.md).
  * - import.notes (one a run that imported anything, even one that stopped
  *   partway): `app` (dayone), `notes`, `files` (of those notes).
  * - email.sent: `day`, `version`; reminder (one per reminder due that
@@ -60,6 +60,8 @@
  *   other), `follows` (the item it follows, if any), `screenshots` (a
  *   count); feedback.answered (via `admin`): `feedback`, `status` (what the
  *   answer set), `mail` (sent, failed or not-sent). Never the words.
+ * - egg.found (via `web`): `egg`, the easter egg found (developer or rtfm,
+ *   domain/eggs.ts), one row an egg ever, written by `POST /api/eggs`.
  * - account.created. */
 import { codePointSlice } from './unicode.ts';
 
@@ -91,6 +93,7 @@ export const ACTIVITY_FAMILIES = [
   'calendar',
   'connection',
   'feedback',
+  'egg',
   'account'
 ] as const;
 export const familyOf = (kind: string): string => kind.split('.')[0]!;

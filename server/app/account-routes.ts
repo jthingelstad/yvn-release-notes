@@ -22,6 +22,7 @@ import { activityId, activityView, titled } from '../../packages/domain/activity
 import { eventId, recordActivity } from '../../packages/backend/activity.ts';
 import { spotOf, type SpotNames } from '../../packages/backend/places.ts';
 import { photoLink, removePhoto, setPhoto } from '../../packages/backend/profile-photo.ts';
+import { findEgg } from '../../packages/backend/eggs.ts';
 import { json, body } from './requests.ts';
 const ACTIVITY_SHOWN = 100;
 export async function accountRoutes(
@@ -189,6 +190,8 @@ export async function accountRoutes(
     if (method === 'DELETE') return json(await removePhoto(service));
     return json({}, 302, { location: await photoLink(service) });
   }
+  // An easter egg found on the page (backend/eggs.ts): once an egg.
+  if (pattern === '/api/eggs') return json(await findEgg(service, await body(service.request)));
   // "Subscribe this address": the session's verified address, never a typed one.
   if (pattern === '/api/me/weekly-thing') return json(await subscribeWeeklyThing(service));
   if (pattern === '/api/me/delete-code') {

@@ -181,6 +181,7 @@ test('badges read only the activity rows that earn one, with the fields they nee
   row('note.edited', 'n1', { via: 'web', day: '2026-10-12', note: 'w-a' });
   row('note.edited', 'n2', { via: 'assistant', client: 'Claude', day: '2026-10-12', note: 'w-a' });
   row('mail', 'm', { via: 'email', subject: 'Fictional' });
+  row('egg.found', 'g', { via: 'web', egg: 'rtfm' });
   s.memory.calls.length = 0;
   const rows = await s.badgeActivity('u', true);
   assert.deepEqual(s.memory.calls, [
@@ -189,15 +190,16 @@ test('badges read only the activity rows that earn one, with the fields they nee
       input: {
         TableName: 'T',
         KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
-        FilterExpression: '#k = :photo OR #k = :book OR #k = :added OR (#k = :edited AND #v = :assistant)',
-        ProjectionExpression: 'sk, #k, #a, #v, #u',
-        ExpressionAttributeNames: { '#k': 'kind', '#a': 'at', '#v': 'via', '#u': 'upcoming' },
+        FilterExpression: '#k = :photo OR #k = :book OR #k = :added OR #k = :egg OR (#k = :edited AND #v = :assistant)',
+        ProjectionExpression: 'sk, #k, #a, #v, #u, #e',
+        ExpressionAttributeNames: { '#k': 'kind', '#a': 'at', '#v': 'via', '#u': 'upcoming', '#e': 'egg' },
         ExpressionAttributeValues: {
           ':p': 'USER#u',
           ':s': 'ACTIVITY#',
           ':photo': 'photo.set',
           ':book': 'export.book',
           ':added': 'upcoming.added',
+          ':egg': 'egg.found',
           ':edited': 'note.edited',
           ':assistant': 'assistant'
         },
@@ -205,7 +207,14 @@ test('badges read only the activity rows that earn one, with the fields they nee
       }
     }
   ]);
-  assert.deepEqual(rows.map((r) => r.kind).sort(), ['export.book', 'note.edited', 'photo.set', 'upcoming.added']);
+  assert.deepEqual(rows.map((r) => r.kind).sort(), [
+    'egg.found',
+    'export.book',
+    'note.edited',
+    'photo.set',
+    'upcoming.added'
+  ]);
+  assert.equal(rows.find((r) => r.kind === 'egg.found')!.egg, 'rtfm');
   // Only the projected fields come back: no note, client or dates.
   assert.deepEqual(Object.keys(rows.find((r) => r.kind === 'note.edited')!).sort(), ['at', 'kind', 'sk', 'via']);
   s.memory.calls.length = 0;

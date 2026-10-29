@@ -1,29 +1,43 @@
 /** The capture function's role allows every DynamoDB request its write tools
- * make, and the one S3 put feedback screenshots need. A missing grant (Query, for Upcoming writes, 2026-10-17) only showed up
- * live, as `temporarily_unavailable`. Each tool runs against the fake table and
- * every recorded request is held to the role (tests-node/infra/grants.ts). */
+ * and `/v1`'s writes make, and the S3 and Location requests their files and
+ * Here need. A missing grant (Query, for Upcoming writes, 2026-10-17) only
+ * showed up live, as `temporarily_unavailable`. Each tool and `/v1` write
+ * runs against the fake table and bucket, and every recorded request is held
+ * to the role (tests-node/infra/grants.ts). */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { captureNote } from '../../workers/capture.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { fixture, connected } from '../oauth/fixtures.ts';
 import { b64, png } from '../../packages/testing/images.ts';
-import { Recorder } from './grants.ts';
+import { Recorder, REGION } from './grants.ts';
 import { FakeObjects } from '../../packages/testing/services.ts';
 import { testImage } from '../../packages/backend/describe.ts';
+import { nameSpot } from '../../packages/backend/places.ts';
+import { Tokens } from '../../packages/backend/tokens.ts';
 
 type Input = Record<string, unknown>;
 test('the capture role grants every DynamoDB and S3 request the write tools make', async () => {
   const aws = new Recorder('CaptureFunction'),
     ctx = fixture(),
     a = await connected(ctx, true, true, 'u', true, true),
-    objects = aws.objects(new FakeObjects()),
+    bucket = new FakeObjects(),
+    objects = aws.objects(bucket),
+    context = {
+      ...ctx,
+      objects,
+      geocode: async () => [],
+      // Naming a device's spot, the real adapter as IAM authorizes it.
+      nameSpot: (spot: { lat: number; lon: number }) =>
+        nameSpot(spot, {
+          async send() {
+            aws.add('places.nameSpot', 'geo-places:ReverseGeocode', `arn:aws:geo-places:${REGION}::provider/default`);
+            return { ResultItems: [{ Address: { Locality: 'Paris', Country: { Code2: 'FR', Name: 'France' } } }] };
+          }
+        } as never)
+    },
     run = (tool: string, args: Input) =>
-      captureNote(
-        { token: a.token, tool, arguments: args },
-        { ...ctx, objects, geocode: async () => [] },
-        { fetchTitle: () => null }
-      ),
+      captureNote({ token: a.token, tool, arguments: args }, context, { fetchTitle: () => null }),
     photo = [{ name: 'p.png', type: 'image/png', data: testImage().toString('base64') }];
   aws.watch(ctx.store);
   const created = await run('notes_create', { date: '2026-10-07', text: 'Dinner', idempotency_key: 'c' });
@@ -72,6 +86,63 @@ test('the capture role grants every DynamoDB and S3 request the write tools make
     idempotency_key: 'fb'
   });
   assert.equal(sent.replayed, false, JSON.stringify(sent));
+
+  // A token's writes (`/v1`, workers/api-writes.ts). The token is made on
+  // the web, outside this role.
+  const token = String(
+      (
+        await aws.aside(ctx.store, null, () =>
+          new Tokens({ store: ctx.store, origin: ctx.origin, now: ctx.now }).make('u', {
+            name: 'Changelog',
+            scopes: ['notes:write', 'media:write', 'upcoming'],
+            expiry: 'never'
+          })
+        )
+      ).token
+    ),
+    api = async (op: string, args: Input, key: string | null = null) =>
+      (await captureNote({ api: op, token, arguments: args, key }, context, { fetchTitle: () => null })) as OAuthRow,
+    // A form signed (PutObject and PutObjectTagging, as the role), and the
+    // file posted to it by the client, outside the role.
+    upload = async () => {
+      const form = await api('uploads.start', { name: 'p.png', type: 'image/png', size: testImage().length }),
+        body = form.body as OAuthRow;
+      assert.equal(form.status, 201, JSON.stringify(form));
+      await bucket.put(String((body.fields as OAuthRow).key), testImage(), {
+        type: 'image/png',
+        tags: { outcome: 'pending' }
+      });
+      return [{ upload: body.upload, type: 'image/png' }];
+    };
+  // A note that takes an upload: its first bytes, that version's tags and
+  // size, the copy to files/, then the pending version deleted.
+  const lake = { text: 'Lake', uploads: await upload() },
+    tokenNote = await api('notes.create', lake, 'v1');
+  assert.equal(tokenNote.status, 201, JSON.stringify(tokenNote));
+  const ref = (tokenNote.body as OAuthRow).note as OAuthRow,
+    at = { date: ref.date, id: ref.id };
+  assert.equal((await api('notes.create', lake, 'v1')).replayed, true);
+  assert.equal((await api('notes.media', { ...at, uploads: await upload() })).status, 200);
+  // An upload that never arrived reads as missing only with ListBucket.
+  const never = await api('notes.media', { ...at, uploads: [{ upload: 'f'.repeat(32), type: 'image/png' }] });
+  assert.equal(never.field, 'uploads', JSON.stringify(never));
+  const appendedV1 = await api('notes.append', { ...at, text: 'Swim' });
+  assert.equal(appendedV1.status, 200, JSON.stringify(appendedV1));
+  const editedV1 = await api('notes.edit', {
+    ...at,
+    text: 'Lake and a swim',
+    revision: ((appendedV1.body as OAuthRow).note as OAuthRow).revision
+  });
+  assert.equal(editedV1.status, 200, JSON.stringify(editedV1));
+  assert.equal((await api('places.here', { lat: 48.856613, lon: 2.352222, accuracy_m: 12 })).status, 200);
+  assert.equal((await api('tags.pinned', { pinned: ['lake'] })).status, 200);
+  const dates = await api('upcoming.batch', { add: [draft] });
+  assert.equal(dates.status, 200, JSON.stringify(dates));
+  const date = ((dates.body as OAuthRow).added as OAuthRow[])[0]!;
+  assert.equal((await api('upcoming.delete', { id: date.id, revision: date.revision })).status, 204);
+  // Deleting the note deletes its kept files.
+  assert.equal((await api('notes.delete', at)).status, 204);
+  assert.equal((await api('token.revoke', {})).status, 204);
 
   const made = aws.granted();
   assert.ok(made.some((r) => r.action === 'dynamodb:Query'));

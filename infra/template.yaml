@@ -1600,17 +1600,54 @@ Resources:
                 Condition:
                   ForAllValues:StringLike:
                     dynamodb:LeadingKeys: ["USER#*"]
+              # A token's upload form (POST /v1/uploads) counts one more file
+              # on the account's day, with the web's (uploads.ts).
+              - Effect: Allow
+                Action: [dynamodb:UpdateItem]
+                Resource: !GetAtt Table.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ["RATE#upload:*"]
               # An assistant's feedback screenshots (notes_send_feedback),
               # stripped of metadata first; put only, never read or deleted.
               - Effect: Allow
                 Action: s3:PutObject
                 Resource: !Sub "${MailBucket.Arn}/media/*/feedback/*"
               - Effect: Allow
-                # Files an agent sends with a note (media:write), kept where a
-                # web upload's checked copy is, tagged kept, and removed again
-                # when no note takes them. Nothing is read.
+                # Files an agent sends with a note (media:write), and a
+                # token's checked uploads, kept where a web upload's checked
+                # copy is, tagged kept, and removed again when no note takes
+                # them or the token deletes its note. Nothing here is read.
                 Action: [s3:PutObject, s3:PutObjectTagging, s3:DeleteObject]
                 Resource: !Sub "${MailBucket.Arn}/media/*/files/*"
+              - Effect: Allow
+                # A token's files (POST /v1/uploads, uploads.ts), as the web
+                # role takes the web's: signs the form that sends one
+                # straight to the bucket under media/<user>/api/, tagged
+                # pending (the form posts as this role, so it needs the put
+                # and the tag), reads its first bytes and that version's tags
+                # and size, copies that version to files/, and deletes it
+                # once a note has the copy. Never the web's media/<user>/web/.
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectTagging
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetObjectVersionTagging
+                  - s3:DeleteObjectVersion
+                Resource: !Sub "${MailBucket.Arn}/media/*/api/*"
+              - Effect: Allow
+                # S3 answers a read of an upload that never arrived 404 only
+                # to a role that may list the bucket, and a read carries no
+                # prefix to narrow this by (as for the web role). This
+                # function never lists.
+                Action: s3:ListBucket
+                Resource: !GetAtt MailBucket.Arn
+              - Effect: Allow
+                # A token's Here (POST /v1/places/here): names a device's
+                # spot, as the web's Here does (places.nameSpot).
+                Action: geo-places:ReverseGeocode
+                Resource: !Sub "arn:${AWS::Partition}:geo-places:${AWS::Region}::provider/default"
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt CaptureLogs.Arn

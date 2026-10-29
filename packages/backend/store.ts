@@ -2115,24 +2115,26 @@ export class Store {
     }
     throw Object.assign(new Error('Mail reservation conflicted'), { name: 'TransactionConflictException' });
   }
+  /** One more file on the account's uploads a UTC day, the web's and every
+   * token's together, while it stays under both caps. */
+  private uploadCount(user: string, day: number, size: number, maxFiles: number, maxBytes: number) {
+    return {
+      Key: { pk: `RATE#upload:${user}#${day}`, sk: 'RATE' },
+      UpdateExpression: 'ADD n :one, #b :size SET expires_at = :exp',
+      ConditionExpression: 'attribute_not_exists(pk) OR (n < :files AND #b <= :room)',
+      ExpressionAttributeNames: { '#b': 'bytes' },
+      ExpressionAttributeValues: {
+        ':one': 1,
+        ':size': size,
+        ':exp': (day + 2) * 86400,
+        ':files': maxFiles,
+        ':room': maxBytes - size
+      }
+    };
+  }
   async countUpload(user: string, day: number, size: number, maxFiles: number, maxBytes: number) {
-    return this.conditional(() =>
-      this.update(
-        { pk: `RATE#upload:${user}#${day}`, sk: 'RATE' },
-        {
-          UpdateExpression: 'ADD n :one, #b :size SET expires_at = :exp',
-          ConditionExpression: 'attribute_not_exists(pk) OR (n < :files AND #b <= :room)',
-          ExpressionAttributeNames: { '#b': 'bytes' },
-          ExpressionAttributeValues: {
-            ':one': 1,
-            ':size': size,
-            ':exp': (day + 2) * 86400,
-            ':files': maxFiles,
-            ':room': maxBytes - size
-          }
-        }
-      )
-    );
+    const { Key, ...count } = this.uploadCount(user, day, size, maxFiles, maxBytes);
+    return this.conditional(() => this.update(Key, count));
   }
   async takeLock(name: string, holder: string, now: number, forSeconds: number) {
     return this.conditional(() =>
@@ -2588,9 +2590,15 @@ export class Store {
     rate: Item,
     previous: Item | null,
     token: Item,
-    now: number
+    now: number,
+    added?: readonly Item[]
   ) {
-    const ops: Ops = [this.profileProof(String(token.user_id)), ...this.tokenProof(token, now, 'notes:write')];
+    // Files ride on a note: their write proves media:write as well.
+    const files = Boolean(added?.length || (!old && Array.isArray(note.media) && note.media.length)),
+      ops: Ops = [
+        this.profileProof(String(token.user_id)),
+        ...this.tokenProof(token, now, files ? ['notes:write', 'media:write'] : 'notes:write')
+      ];
     if (old) {
       const values: Item = {
         ':api': 'api',
@@ -2604,14 +2612,25 @@ export class Store {
         ':next': note.revision
       };
       if (old.updated_at) values[':edited'] = old.updated_at;
+      // New files go after the ones the note had when read, as an agent's do
+      // (captureCommit): a file added on the web meanwhile refuses this.
+      const had = ((old.media as Item[] | undefined) ?? []).length;
+      if (added?.length) Object.assign(values, { ':m': added, ':none': [], ':had': had });
       ops.push({
         Update: {
           TableName: this.tableName,
           Key: { pk: String(note.pk), sk: String(note.sk) },
-          UpdateExpression: 'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next',
+          UpdateExpression:
+            'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next' +
+            (added?.length ? ', media = list_append(if_not_exists(media, :none), :m)' : ''),
           ConditionExpression:
             '#src = :api AND #c = :token AND #t = :old AND #r = :revision AND ' +
-            (old.updated_at ? 'updated_at = :edited' : 'attribute_not_exists(updated_at)'),
+            (old.updated_at ? 'updated_at = :edited' : 'attribute_not_exists(updated_at)') +
+            (added?.length
+              ? had
+                ? ' AND size(media) = :had'
+                : ' AND (attribute_not_exists(media) OR size(media) = :had)'
+              : ''),
           ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection', '#src': 'source' },
           ExpressionAttributeValues: values
         }
@@ -2619,6 +2638,32 @@ export class Store {
     } else ops.push(this.putOperation(note, { ConditionExpression: 'attribute_not_exists(pk)' }));
     ops.push(...this.agentReceipts(receipt, audit, rate, previous, now));
     return this.transact(ops);
+  }
+  /** A token's signed form (`POST /v1/uploads`): the live account and token
+   * with `media:write`, and one more file on the account's daily uploads,
+   * counted with the web's. Says what refused it: the count (`limited`), or
+   * the account, the token or a race (`retry`, to check the token again). */
+  async apiUploadCount(
+    token: Item,
+    now: number,
+    size: number,
+    maxFiles: number,
+    maxBytes: number
+  ): Promise<'ok' | 'limited' | 'retry'> {
+    const user = String(token.user_id),
+      { Key, ...count } = this.uploadCount(user, Math.floor(now / 86400), size, maxFiles, maxBytes),
+      ops: Ops = [
+        this.profileProof(user),
+        ...this.tokenProof(token, now, ['notes:write', 'media:write']),
+        { Update: { TableName: this.tableName, Key, ...count } }
+      ];
+    try {
+      await this.client.send(new TransactWriteCommand({ TransactItems: ops }));
+      return 'ok';
+    } catch (e) {
+      if (!conflict(e)) throw e;
+      return reasons(e)[ops.length - 1]?.Code === 'ConditionalCheckFailed' ? 'limited' : 'retry';
+    }
   }
   /** A token deletes its own note, as it read it, with the same proofs. */
   async apiNoteDelete(

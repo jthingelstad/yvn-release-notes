@@ -313,9 +313,14 @@ that metric and uncaught Lambda Errors from both reader and writer.
 Metadata transaction conflicts retry within bounded CAS loops. Invalid tool arguments remain
 structured tool errors and do not count as infrastructure failures.
 The capture function has no public route or function URL, no SES, model,
-OAuth-write or invocation permission. Its S3 grant is PutObject,
-PutObjectTagging and DeleteObject under `media/*/files/*` alone, for the
-files it keeps and the ones no note took; it reads nothing. Only its role
+OAuth-write or invocation permission. For an agent's files its S3 grant is
+PutObject, PutObjectTagging and DeleteObject under `media/*/files/*`, for
+the files it keeps and the ones no note took; it reads none of them. A
+token's uploads (`/v1`, docs/API.md, Phase 3) add the web role's checks
+under `media/*/api/*` alone (sign the pending form, read the first bytes
+and that version's tags and size, copy it, delete that version), ListBucket
+so an upload that never arrived reads as missing, an UpdateItem on the
+account's `RATE#upload:` day, and ReverseGeocode for Here. Only its role
 can write USER note/receipt fields; note and grant conditions constrain the
 code's writes. The reader itself still cannot write USER rows. The MCP
 request may be up to 6,000,000 bytes. Append and edit update only text,

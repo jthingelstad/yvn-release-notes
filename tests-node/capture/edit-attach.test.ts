@@ -372,3 +372,33 @@ test('a write that cannot commit removes the files it kept', async () => {
   assert.equal(removed.key, put.key);
   await assert.rejects(() => ctx.objects.get(put.key), { name: 'NoSuchKey' });
 });
+
+test('a commit whose answer is lost keeps the files when its receipt shows it landed, and drops them when not', async () => {
+  const { ctx, connect } = setup(),
+    a = await connect(),
+    commit = ctx.store.captureCommit.bind(ctx.store),
+    args = (k: string) => ({ text: 'Kept', files: [{ type: 'image/jpeg', data: b64(JPEG) }], idempotency_key: k }),
+    run = (k: string) =>
+      captureNote({ token: a.token, tool: 'notes_create', arguments: args(k) }, ctx, { fetchTitle: noFetch });
+  // DynamoDB commits, then the response is lost.
+  ctx.store.captureCommit = async (...rest) => {
+    await commit(...rest);
+    throw Object.assign(new Error('socket hang up'), { name: 'TimeoutError' });
+  };
+  assert.equal((await run('lost')).error, 'temporarily_unavailable');
+  const [put] = ctx.objects.calls.filter((c) => c.operation === 'put');
+  assert.ok(!ctx.objects.calls.some((c) => c.operation === 'remove'));
+  assert.ok((await ctx.objects.get(put!.key)).body);
+  ctx.store.captureCommit = commit;
+  const retry = await run('lost');
+  assert.equal(retry.replayed, true);
+  const stored = (await ctx.store.allNotes('u')).find((n) => n.text === 'Kept')!;
+  assert.equal((stored.media as OAuthRow[])[0]!.key, put!.key);
+  // It throws before anything landed: the receipt is absent, so the file goes.
+  ctx.store.captureCommit = async () => {
+    throw Object.assign(new Error('throttled'), { name: 'ProvisionedThroughputExceededException' });
+  };
+  assert.equal((await run('never')).error, 'temporarily_unavailable');
+  const second = ctx.objects.calls.filter((c) => c.operation === 'put')[1]!;
+  await assert.rejects(() => ctx.objects.get(second.key), { name: 'NoSuchKey' });
+});

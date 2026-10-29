@@ -133,7 +133,9 @@ export async function writeCapture(
     titles = new Map<string, PageMeta | null>();
   let place: OAuthRow | undefined,
     kept: OAuthRow[] | null = null,
-    committed = false;
+    committed = false,
+    // A commit that threw may still have landed (a lost response).
+    unsure = false;
   const titleOnce: TitleFetcher = async (url) => {
     if (!titles.has(url)) {
       if (titles.size >= MAX_FETCHES) return null;
@@ -261,8 +263,9 @@ export async function writeCapture(
           ...(added.length ? { files: added.length } : {}),
           expires_at: context.now + 14 * 86400
         };
-      if (
-        await context.store.captureCommit(
+      let landed: boolean;
+      try {
+        landed = await context.store.captureCommit(
           note,
           old,
           newReceipt,
@@ -272,8 +275,12 @@ export async function writeCapture(
           family,
           context.now,
           old && added.length ? added : undefined
-        )
-      ) {
+        );
+      } catch (error) {
+        unsure = true;
+        throw error;
+      }
+      if (landed) {
         committed = true;
         await recordNote(
           context,
@@ -303,7 +310,20 @@ export async function writeCapture(
     throw new ToolError('busy', 'Try again shortly with exactly the same idempotency_key and arguments.');
   } finally {
     // A file no note took; one already numbered into a committed note stays.
-    if (kept && !committed) await dropFiles(context.objects!, kept);
+    // After a commit that threw, only this write's receipt, read strongly,
+    // says whether the note took them; if that cannot be read, they stay.
+    if (kept && !committed && !(unsure && (await mayHaveLanded(context, uid, key, hash))))
+      await dropFiles(context.objects!, kept);
+  }
+}
+/** Whether a commit whose answer was lost wrote this request's receipt. A
+ * failed read counts as landed: an orphan file beats a note without its file. */
+async function mayHaveLanded(context: CaptureContext, uid: string, key: string, hash: string): Promise<boolean> {
+  try {
+    const receipt = await context.store.mcpGet('USER#' + uid, key);
+    return Boolean(receipt && receipt.request_hash === hash);
+  } catch {
+    return true;
   }
 }
 /** A note's place from a city written as text, kept as one chosen on the

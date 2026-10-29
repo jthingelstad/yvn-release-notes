@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { simpleParser } from 'mailparser';
 import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects, FakeMail } from '../../packages/testing/services.ts';
+import * as media from '../../packages/backend/media.ts';
 import { Subscriber, type Item } from '../../packages/backend/store.ts';
 import * as sender from '../../workers/send.ts';
 import * as inbound from '../../workers/inbound.ts';
@@ -630,7 +631,7 @@ test('unknown token/recipient, empty body, and authenticated hostile nesting are
 });
 test('unsupported attachments still file raw-only notes; refused media remains listed', async () => {
   const raw =
-      'From: ada@example.com\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=p.pdf\r\n\r\n%PDF-test\r\n--b\r\nContent-Type: image/jpeg\r\nContent-Disposition: attachment; filename=bad.jpg\r\n\r\nnot an image\r\n--b--',
+      'From: ada@example.com\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: application/zip\r\nContent-Disposition: attachment; filename=p.zip\r\n\r\nPK-test\r\n--b\r\nContent-Type: image/jpeg\r\nContent-Disposition: attachment; filename=bad.jpg\r\n\r\nnot an image\r\n--b--',
     f = await replyFixture(raw);
   await inbound.process(ses(), f.services);
   const n = (await f.store.dayNotes('u', '2026-10-11'))[0]!;
@@ -638,6 +639,25 @@ test('unsupported attachments still file raw-only notes; refused media remains l
   assert.equal((n.attachments as Item[]).length, 2);
   assert.equal((n.attachments as Item[])[1]?.refused, true);
   assert.equal(n.media, undefined);
+});
+test('a PDF attached to a reply is kept on its note, with its name, like a web upload', async () => {
+  const raw =
+      'From: ada@example.com\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nThe menu\r\n--b\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=menu.pdf\r\n\r\n%PDF-test\r\n--b--',
+    f = await replyFixture(raw);
+  await inbound.process(ses(), f.services);
+  const n = (await f.store.dayNotes('u', '2026-10-11'))[0]!;
+  assert.equal(n.text, 'The menu');
+  assert.deepEqual(n.media, [
+    {
+      n: 1,
+      kind: 'file',
+      type: 'application/pdf',
+      size: 9,
+      key: 'media/u/2026-10-11/synthetic-id/1.pdf',
+      name: 'menu.pdf'
+    }
+  ]);
+  assert.equal(media.others(n as never), 0);
 });
 test('media storage failure retries before note commit, stable copies produce one kept note', async () => {
   const audio = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(1200)]).toString('base64'),

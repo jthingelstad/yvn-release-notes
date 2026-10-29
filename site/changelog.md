@@ -11,6 +11,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 - A new track, Roadmap, for the dates you add to Upcoming, climbing from alpha to LTS like the others.
 - [The guide](/guide/), open to anyone before signing up: How it works, Getting started, the morning email, Replying, the FAQ and Privacy, and a page for every feature, from photos to agents. [Features](/features/) lists them all, a line each.
 - Send Jamie feedback from You: something wrong, an idea or a question, with up to 3 screenshots. Jamie reads every item, and the answer comes by email.
+- PDFs attached to a reply, or mailed to your own address, now stay with their note, as photos and voice memos do.
 - This page.
 
 ## 0.0.21 · October 28

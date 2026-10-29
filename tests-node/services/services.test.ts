@@ -198,6 +198,25 @@ test("Here's naming offers what is near, never a bus stop or a car park, and fal
   assert.deepEqual((sent[1]!.Filter as Record<string, unknown>).IncludePlaceTypes, ['Locality']);
   assert.equal(await nameSpot({ lat: 0, lon: 0 }, client([[], []]) as never), null);
 });
+test('an emailed PDF kept before 2026-10-29 is still "in the email"; one kept since, or a web file, is not', () => {
+  const pdf = { content_type: 'application/pdf', filename: 'p.pdf', size: 20 },
+    zip = { content_type: 'application/zip', filename: 'a.zip', size: 20 };
+  // Before: the PDF stayed in the raw mail, and the note has no file of its own.
+  assert.equal(media.others({ attachments: [pdf, zip] }), 2);
+  // A file added on the web to the same note doesn't stand in for it.
+  assert.equal(
+    media.others({ attachments: [pdf], media: [{ n: 1, kind: 'file', key: 'media/u/files/x.pdf' }] } as never),
+    1
+  );
+  // Since: kept from the email, keyed by its day and message.
+  assert.equal(
+    media.others({
+      attachments: [pdf, zip, { ...pdf, refused: true }],
+      media: [{ n: 1, kind: 'file', key: 'media/u/2026-10-29/m/1.pdf' }]
+    } as never),
+    2
+  );
+});
 test('media checks bytes, drops logos and limits files without losing raw attachment order', () => {
   const parts = [
     { type: 'image/jpeg', filename: 'forged.jpg', data: Buffer.alloc(30000) },
@@ -208,10 +227,25 @@ test('media checks bytes, drops logos and limits files without losing raw attach
   assert.equal(media.found(parts, refused).length, 20);
   assert.deepEqual(refused, [0, 22, 23]);
   assert.equal(media.uploadType('audio/webm;codecs=opus', 'memo.webm'), 'audio/webm');
-  assert.equal(media.mediaType('application/pdf', 'a.pdf'), null);
+  assert.equal(media.mediaType('application/pdf', 'a.pdf'), 'application/pdf');
+  assert.equal(media.mediaType('application/octet-stream', 'Scan.PDF'), 'application/pdf');
+  assert.equal(media.mediaType('application/zip', 'a.zip'), null);
   assert.equal(media.uploadType('', 'a.pdf'), 'application/pdf');
   assert.deepEqual(media.imageSize(png(800, 600)), [800, 600]);
   assert.equal(media.imageSize(png(1, 1).subarray(0, 12)), null);
+  // A PDF of any size is kept, named as the web names files; a fake one is refused.
+  const pdfRefused: number[] = [];
+  assert.deepEqual(
+    media.found(
+      [
+        { type: 'application/pdf', filename: 'C:\\scans\\menu.pdf', data: Buffer.from('%PDF-1.7 tiny') },
+        { type: 'application/pdf', filename: 'fake.pdf', data: Buffer.from('not a pdf') }
+      ],
+      pdfRefused
+    ),
+    [['application/pdf', Buffer.from('%PDF-1.7 tiny'), 'menu.pdf']]
+  );
+  assert.deepEqual(pdfRefused, [1]);
   assert.deepEqual(media.keys({ media: [{ kind: 'image', key: 'media/u1/files/a.jpg' }, { key: 'raw/no' }] }), [
     'media/u1/files/a.jpg',
     'media/u1/files/a.thumb.jpg'

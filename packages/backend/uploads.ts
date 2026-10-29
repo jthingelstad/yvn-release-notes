@@ -5,20 +5,7 @@ import { SessionService, reject } from './sessions.ts';
 import type { Item } from './store-types.ts';
 import { missing } from './services.ts';
 import * as media from './media.ts';
-import { pythonTrim, codePointSlice } from '../domain/unicode.ts';
-export const fileName = (value: unknown): string =>
-  typeof value === 'string'
-    ? codePointSlice(
-        pythonTrim(
-          value
-            .split(/[\\/]/)
-            .at(-1)!
-            .replace(/[\p{C}\p{Z}]/gu, (c) => (c === ' ' ? ' ' : ''))
-        ),
-        0,
-        120
-      )
-    : '';
+export const fileName = media.fileName;
 export async function startUpload(service: SessionService, b: Item): Promise<Item> {
   const { uid } = await service.account(),
     ctype = media.uploadType(typeof b.type === 'string' ? b.type : '', typeof b.name === 'string' ? b.name : '');

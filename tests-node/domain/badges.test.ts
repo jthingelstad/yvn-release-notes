@@ -300,7 +300,10 @@ test("a day's collected names, and a release's coverage and special days by kind
     coverage: null,
     collected: [
       { id: 'release-day', name: 'Release day', count: 1 },
-      { id: 'round', name: 'Round number', count: 2 }
+      { id: 'round', name: 'Round number', count: 2 },
+      // Status code once for each status, named with its meaning.
+      { id: 'status', name: 'Status code (100 Continue)', count: 1 },
+      { id: 'status', name: 'Status code (200 OK)', count: 1 }
     ]
   });
   const every = new Set(Array.from({ length: 365 }, (_, i) => addDays(start, i))),
@@ -534,4 +537,112 @@ test('events join the replay in time order among the notes, never before the bir
   const without = evaluateBadges(facts(notes), '2026-10-20'),
     gained = unlocked(without, b).map((u) => u.key);
   assert.deepEqual(gained.sort(), ['issue', 'signed', 'tarball']);
+});
+
+// Easter eggs (docs/BADGES.md): status patches, Found and I’m a teapot.
+test('every status patch is a Status code, named with its meaning; 4.0.4 and 4.1.8 happen once', () => {
+  const meanings: [number, string][] = [
+    [100, 'Continue'],
+    [101, 'Switching Protocols'],
+    [200, 'OK'],
+    [201, 'Created'],
+    [204, 'No Content'],
+    [301, 'Moved Permanently'],
+    [304, 'Not Modified'],
+    [307, 'Temporary Redirect']
+  ];
+  for (const [patch, meaning] of meanings) {
+    assert.ok(specialKinds(5, 3, patch, 365).includes('status'), String(patch));
+    const day = addDays('2026-03-14', patch);
+    assert.equal(v(day), `3.9.${patch}`);
+    assert.ok(collectedOn(ADA, day).includes(`Status code (${patch} ${meaning})`), String(patch));
+  }
+  for (const patch of [102, 202, 302, 404, 418]) assert.ok(!specialKinds(5, 3, patch, 365).includes('status'));
+  // A round number and a status both: the round clause and the album say so.
+  assert.deepEqual(collectedOn(ADA, addDays('2026-03-14', 200)), ['Round number', 'Status code (200 OK)']);
+  assert.deepEqual(specialKinds(4, 0, 4, 366), ['palindrome', 'found']);
+  assert.deepEqual(specialKinds(4, 1, 8, 366), ['teapot']);
+  // Only the exact version: 5.0.4 is no Found, 4.2.8 no teapot.
+  assert.ok(!specialKinds(5, 0, 4, 365).includes('found'));
+  assert.ok(!specialKinds(4, 2, 8, 365).includes('teapot'));
+  const found = '2027-03-18',
+    teapot = '2028-03-22';
+  assert.deepEqual([v(found), v(teapot)], ['4.0.4', '4.1.8']);
+  const b = evaluateBadges(facts([note(found), note(teapot)]), teapot);
+  assert.deepEqual(
+    [got(b, 'found')?.name, got(b, 'found')?.line, got(b, 'found')?.version],
+    ['Found', '4.0.4, and yet here you are.', '4.0.4']
+  );
+  assert.deepEqual(
+    [got(b, 'teapot')?.name, got(b, 'teapot')?.line, got(b, 'teapot')?.version],
+    ['I’m a teapot', '4.1.8. Short and stout.', '4.1.8']
+  );
+  assert.deepEqual(collectedOn(ADA, teapot), ['I’m a teapot']);
+});
+
+test('Status code is earned once and collected in every album; secrets never show Ahead', () => {
+  const lastYear = addDays('2025-03-14', 304),
+    thisYear = addDays('2026-03-14', 100);
+  assert.deepEqual([v(lastYear), v(thisYear)], ['3.8.304', '3.9.100']);
+  const b = evaluateBadges(facts([note(lastYear), note(thisYear)]), '2026-10-20');
+  assert.equal(got(b, 'status')!.version, '3.8.304');
+  assert.equal(b.earned.filter((e) => e.id === 'status').length, 1, 'one lifetime badge');
+  assert.deepEqual(
+    b.release.collected.filter((c) => c.ids.includes('status')),
+    [
+      {
+        day: thisYear,
+        version: '3.9.100',
+        ids: ['round', 'status'],
+        names: ['Round number', 'Status code (100 Continue)']
+      }
+    ]
+  );
+  // The 4.0 release ahead: 4.0.4 is a palindrome too, but Found is never announced.
+  const early = evaluateBadges(facts([]), '2027-03-15');
+  for (const a of early.release.ahead)
+    assert.ok(!a.ids.some((id) => ['status', 'found', 'teapot'].includes(id)), a.version);
+  assert.deepEqual(early.release.ahead[0], {
+    day: '2027-03-18',
+    version: '4.0.4',
+    ids: ['palindrome'],
+    names: ['Palindrome']
+  });
+  const beforeRound = evaluateBadges(facts([]), addDays('2027-03-14', 99));
+  assert.ok(beforeRound.release.ahead.some((a) => a.version === '4.0.100' && a.ids.join() === 'round'));
+  // Unearned, each is its hint alone.
+  const none = evaluateBadges(facts([]), '2026-10-20');
+  for (const hint of ['Some patches have a status.', 'Lost and found.', 'Short and stout.', 'Tap, tap, tap…'])
+    assert.ok(
+      none.missing.some((m) => m.secret && m.hint === hint),
+      hint
+    );
+});
+
+test('an egg found earns its secret first once; an unknown egg earns nothing', () => {
+  const events = badgeEventsOf(
+      {
+        activity: [
+          row('2026-10-12T15:00:00.000Z', 'egg.found', { via: 'web', egg: 'developer' }),
+          row('2026-10-13T15:00:00.000Z', 'egg.found', { via: 'web', egg: 'rtfm' }),
+          row('2026-10-14T15:00:00.000Z', 'egg.found', { via: 'web', egg: 'konami' })
+        ]
+      },
+      CHICAGO
+    ),
+    b = evaluateBadges(facts([], { events }), '2026-10-20');
+  assert.deepEqual(
+    events.map((e) => e.kind),
+    ['developer', 'rtfm']
+  );
+  const dev = got(b, 'developer')!,
+    rtfm = got(b, 'rtfm')!;
+  assert.deepEqual(
+    [dev.name, dev.line, dev.day, dev.shelf],
+    ['Developer mode', 'Tapped your version seven times.', '2026-10-12', 'first']
+  );
+  assert.deepEqual([rtfm.name, rtfm.line, rtfm.day], ['RTFM', 'Read the manual.', '2026-10-13']);
+  const none = evaluateBadges(facts([]), '2026-10-20');
+  assert.ok(none.missing.some((m) => m.secret && m.hint === 'Read the manual.'));
+  assert.ok(!none.missing.some((m) => m.id === 'developer' || m.id === 'rtfm'));
 });

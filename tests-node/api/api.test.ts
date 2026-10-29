@@ -69,7 +69,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 82);
+  assert.equal(ROUTES.length, 83);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -485,21 +485,34 @@ test('a saved note answers with what it unlocked; days and releases say what the
   assert.deepEqual(await s.store.seenBadges('u'), new Set(['hello', 'web', 'commit']));
   assert.deepEqual((await read('POST', '/api/days/2026-10-13/notes', { text: 'Again' })).unlocked, []);
   // 4.4.100 imported, then 4.5.100 filled in: a hotfix, a twin, and this
-  // release's round number for the album.
+  // release's round number and status code (100 Continue) for the album.
   await s.store.putNote('u', '2025-09-22', 'd1', { text: 'Old', source: 'import', written_at: '2025-09-22T18:00:00Z' });
   const late = await s.call('POST', '/api/days/2026-09-22/notes', { text: 'Filled in', tz: 'America/Chicago' });
   assert.deepEqual((late.b as Item).unlocked, [
     { key: 'hotfix', id: 'hotfix', name: 'Hotfix', version: '4.5.121' },
     { key: 'compatible', id: 'compatible', name: 'Backward compatible', version: '4.5.100' },
-    { key: 'round@2026-09-22', id: 'round', name: 'Round number', version: '4.5.100', album: true }
+    { key: 'round@2026-09-22', id: 'round', name: 'Round number', version: '4.5.100', album: true },
+    {
+      key: 'status@2026-09-22',
+      id: 'status',
+      name: 'Status code (100 Continue)',
+      version: '4.5.100',
+      album: true
+    }
   ]);
   // A special day collected again is not a badge: it is not kept as seen.
   assert.deepEqual(await s.store.seenBadges('u'), new Set(['hello', 'web', 'commit', 'hotfix', 'compatible']));
-  assert.deepEqual((await read('GET', '/api/days/2026-09-22')).collected, ['Round number']);
+  assert.deepEqual((await read('GET', '/api/days/2026-09-22')).collected, [
+    'Round number',
+    'Status code (100 Continue)'
+  ]);
   assert.ok(!('collected' in (await read('GET', '/api/days/2026-09-21'))));
   assert.deepEqual((await read('GET', '/api/releases/4.5')).badges, {
     coverage: null,
-    collected: [{ id: 'round', name: 'Round number', count: 1 }]
+    collected: [
+      { id: 'round', name: 'Round number', count: 1 },
+      { id: 'status', name: 'Status code (100 Continue)', count: 1 }
+    ]
   });
   assert.deepEqual((await read('GET', '/api/releases/4.3')).badges, { coverage: null, collected: [] });
   for (const words of ['Short', 'Filled', 'Old']) assert.ok(!JSON.stringify((late.b as Item).unlocked).includes(words));
@@ -551,7 +564,10 @@ test('"Show badges" off hides every badge line; back on, what was earned meanwhi
   const earned = ((await read('GET', '/api/badges')).earned as Item[]).map((e) => e.key);
   assert.equal((await read('PUT', '/api/me', { badges: true })).badges, true);
   assert.deepEqual(await s.store.seenBadges('u'), new Set(earned));
-  assert.deepEqual((await read('GET', '/api/days/2026-09-22')).collected, ['Round number']);
+  assert.deepEqual((await read('GET', '/api/days/2026-09-22')).collected, [
+    'Round number',
+    'Status code (100 Continue)'
+  ]);
   // Saving it on again, or once more, adds nothing new.
   s.store.memory.calls.length = 0;
   await read('PUT', '/api/me', { badges: true });
@@ -1506,4 +1522,65 @@ test('a photo replaced by another tab first is refused, and the copy just made i
   assert.equal((r.b as Item).error, 'try-again');
   assert.deepEqual(await s.objects.list('media/u/'), []);
   assert.equal(((await s.store.profile('u'))!.photo as Item).key, 'media/u/profile/other.jpg');
+});
+test('an easter egg is found once: one row, its secret first unlocked, nothing about another egg', async () => {
+  const s = await setup(),
+    eggRows = () => s.store.memory.all().filter((i) => i.kind === 'egg.found'),
+    first = await s.call('POST', '/api/eggs', { egg: 'developer' });
+  assert.equal(first.r.status, 200);
+  assert.deepEqual(
+    ((first.b as Item).unlocked as Item[]).map((u) => [u.id, u.name]),
+    [['developer', 'Developer mode']]
+  );
+  assert.deepEqual(
+    eggRows().map((r) => [r.egg, r.via]),
+    [['developer', 'web']]
+  );
+  assert.ok((await s.store.seenBadges('u')).has('developer'), 'the page shows it, so the email does not');
+  assert.deepEqual(
+    s.store.memory
+      .all()
+      .filter((i) => i.kind === 'badge.earned')
+      .map((r) => [r.badge, r.via]),
+    [['developer', 'web']]
+  );
+  // Found again: nothing written, the same answer.
+  s.ctx.now += 1;
+  const again = await s.call('POST', '/api/eggs', { egg: 'developer' });
+  assert.deepEqual(again.b, { ok: true });
+  assert.equal(eggRows().length, 1);
+  // Refused: an unknown egg, no Origin, signed out. None writes, none says more.
+  const unknown = await s.call('POST', '/api/eggs', { egg: 'konami' });
+  assert.deepEqual([unknown.r.status, (unknown.b as Item).error], [400, 'egg']);
+  assert.equal(JSON.stringify(unknown.b).includes('rtfm'), false);
+  assert.equal((await s.call('POST', '/api/eggs', { egg: 'rtfm' }, s.token, false)).r.status, 403);
+  assert.equal((await s.call('POST', '/api/eggs', { egg: 'rtfm' }, '')).r.status, 401);
+  assert.equal(eggRows().length, 1);
+  // RTFM likewise; the shelf now has both.
+  s.ctx.now += 1;
+  const rtfm = await s.call('POST', '/api/eggs', { egg: 'rtfm' });
+  assert.deepEqual(
+    ((rtfm.b as Item).unlocked as Item[]).map((u) => u.id),
+    ['rtfm']
+  );
+  const shelf = (await s.call('GET', '/api/badges')).b as Item;
+  for (const id of ['developer', 'rtfm'])
+    assert.ok(
+      (shelf.earned as Item[]).some((e) => e.id === id),
+      id
+    );
+  assert.ok(!JSON.stringify(s.logs).includes('Developer mode'));
+  // Badges off: the egg still counts as found, but nothing is unlocked or earned.
+  const t = await setup();
+  await t.call('PUT', '/api/me', { badges: false });
+  const quiet = await t.call('POST', '/api/eggs', { egg: 'rtfm' });
+  assert.deepEqual(quiet.b, { ok: true });
+  assert.deepEqual(
+    t.store.memory
+      .all()
+      .filter((i) => i.kind === 'egg.found')
+      .map((r) => r.egg),
+    ['rtfm']
+  );
+  assert.equal(t.store.memory.all().filter((i) => i.kind === 'badge.earned').length, 0);
 });

@@ -522,7 +522,9 @@ Where things are (each module's design comment has its contract):
   badges" off drops all of it. Four firsts are earned outside notes (Jamie,
   2026-10-29): Signed commit (a profile photo), Issue opened (feedback
   sent), Merged upstream (feedback marked done) and Tarball (a book), with
-  the Roadmap track for Upcoming; docs/BADGES.md has them.
+  the Roadmap track for Upcoming; docs/BADGES.md has them. On a status
+  patch one more line follows the clause, badges on or off ("200 OK.",
+  Easter eggs).
 - **A birthday closes the release** (2026-10-12): that day's email sums up
   the year of life just ended in one short block ("5.4 is closed": days with
   notes, notes, photos, the longest streak) and links its page,
@@ -561,6 +563,23 @@ Where things are (each module's design comment has its contract):
   Scheduling is explicit and separate from saving; cancelling cannot
   retract a sent email. No extra sends or catch-up; updates are never
   personal notes.
+
+### Easter eggs
+
+- **Three easter eggs** (Jamie, 2026-10-29: "Those are all amazing. I love
+  them all." and "Approved: build the Developer mode, Status code and RTFM
+  easter eggs in Release Notes, with the status line in the email on those
+  mornings"): Developer mode (seven taps on Today's number, kept in the
+  browser), Status codes (secret collectibles on HTTP-status patches, with
+  a status line in that morning's email) and RTFM (`/man/`, the product as
+  a man page). docs/BADGES.md, Easter eggs, has them.
+- **Keep them secret.** The tour, the front page, help copy and the MCP
+  tool descriptions never mention them; the clues are the ones built (the
+  comments in `web/index.html` and `robots.txt`, the 404 page's line).
+  Every line of `/man/` is true of the product today, as the tour's are;
+  keep it so as features change.
+- They work with "Show badges" off; only badges, unlock lines and badge
+  rows are left out. A found egg is one `egg.found` activity row, ever.
 
 ### Privacy and security
 

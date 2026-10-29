@@ -7,10 +7,12 @@ import type { Unlocked } from '../lib/types.ts';
 import { AppLink } from './common.tsx';
 import { BadgeIcon } from './icon.tsx';
 
-export function UnlockLine({ items }: { items: Unlocked[] }) {
+// `id` sets another where a page has two (Today: the note form's and
+// developer mode's).
+export function UnlockLine({ items, id = 'unlock' }: { items: Unlocked[]; id?: string }) {
   const first = items[0];
   return (
-    <p className="unlock" id="unlock" role="status" hidden={!first}>
+    <p className="unlock" id={id} role="status" hidden={!first}>
       {first && (
         <>
           {/* Keyed, so the stamp plays again for the next one. */}

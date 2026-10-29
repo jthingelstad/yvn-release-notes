@@ -10,6 +10,12 @@ export function NotFound() {
       <p className="lede">
         That address isn’t a page of Release Notes. <AppLink href="/">Start at the front page</AppLink>.
       </p>
+      <p className="hint spaced" id="rtfm">
+        Lost? Try{' '}
+        <AppLink className="mono" href="/man/">
+          man release-notes
+        </AppLink>
+      </p>
     </>
   );
 }

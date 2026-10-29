@@ -100,7 +100,8 @@ const frontRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', com
 const open = [
   page('/signin', () => import('./pages/SignIn.tsx'), 'SignIn'),
   page('/setup', () => import('./pages/Setup.tsx'), 'Setup'),
-  page('/unsubscribe', () => import('./pages/Unsubscribe.tsx'), 'Unsubscribe')
+  page('/unsubscribe', () => import('./pages/Unsubscribe.tsx'), 'Unsubscribe'),
+  page('/man', () => import('./pages/Man.tsx'), 'Man')
 ].map((p) => createRoute({ getParentRoute: () => rootRoute, ...p }));
 
 // The gate: signed in, with a profile, before any page behind it shows.

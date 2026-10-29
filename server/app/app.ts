@@ -59,6 +59,7 @@ export const ROUTES: [string, string][] = [
   ['GET', '/api/badges'],
   ['GET', '/api/badges/new'],
   ['POST', '/api/badges/seen'],
+  ['POST', '/api/eggs'],
   ['GET', '/api/map/notes'],
   ['POST', '/api/map/search'],
   ['GET', '/api/map/style/{scheme}'],

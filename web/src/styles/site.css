@@ -3000,3 +3000,109 @@ fieldset.book-fields {
   max-height: 160px;
   object-fit: contain;
 }
+
+/* Developer mode (components/developer.tsx): the number is a button that
+   looks exactly like the number, and the panel under it is type on paper,
+   in mono, with no boxes. */
+.vnum-tap {
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  color: inherit;
+  text-align: inherit;
+  background: none;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  cursor: default;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.dev-say {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.dev-panel {
+  margin: 16px 0 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.dev-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0 16px;
+  margin: 0;
+}
+.dev-facts dt {
+  color: var(--ink-3);
+}
+.dev-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.dev-prompt {
+  margin: 14px 0 0;
+  color: var(--ink-3);
+}
+.dev-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dev-log li {
+  overflow-wrap: anywhere;
+}
+.dev-hash {
+  color: var(--orange-ink);
+}
+.dev-panel .quiet {
+  font-family: var(--font);
+}
+
+/* The manual (pages/Man.tsx): a man page, type on paper, in mono. */
+.man {
+  margin-top: 40px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.man b {
+  font-weight: 700;
+}
+.man-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin: 0;
+  color: var(--ink-3);
+}
+.man-foot {
+  margin-top: 40px;
+}
+.man-section h2 {
+  margin: 28px 0 4px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.man-body {
+  padding-left: 4ch;
+}
+.man-body p {
+  margin: 0 0 10px;
+}
+.man-body dl {
+  margin: 0;
+}
+.man-body dd {
+  margin: 0 0 10px 4ch;
+  color: var(--ink-2);
+}

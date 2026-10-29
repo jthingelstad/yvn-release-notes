@@ -11,6 +11,7 @@ import { codePointLength, codePointSlice, pythonRstrip, pythonTrim } from '../do
 import { UPDATE_LABEL, type ProductUpdate } from '../domain/product-updates.ts';
 import type { UpcomingSection } from '../domain/upcoming.ts';
 import { specialKinds } from '../domain/badges.ts';
+import { statusLine } from '../domain/eggs.ts';
 import { givingLine } from '../domain/giving.ts';
 export const SITE = 'https://yourversionnumber.com',
   APP = 'https://notes.yourversionnumber.com';
@@ -215,6 +216,14 @@ export function specialLine(v: Version): string | null {
     ];
   return said.length ? `${v} ${said.join(' and ')}.` : null;
 }
+/** What stands beside the number: the special-day clause with "Show badges"
+ * on, then the status line on a version that reads as an HTTP status ("200
+ * OK.", domain/eggs.ts), shown whatever "Show badges" says, since it is a
+ * fact about the number, as the giving thank-you is. Never asks for a note. */
+export function besideNumber(v: Version, badges: boolean): string | null {
+  const said = [badges ? specialLine(v) : null, statusLine(v)].filter((s): s is string => !!s);
+  return said.length ? said.join(' ') : null;
+}
 const closedGiving = (c: Closed) => (c.giving?.length ? givingLine(releaseName(c.age), c.giving) : null);
 export const closedBody = (c: Closed) => {
   const giving = closedGiving(c);
@@ -335,7 +344,7 @@ export const unsubscribeLink = (token: string) => `${APP}/unsubscribe/#t=${token
 export function body(v: Version, birthday: string, o: BodyOptions = {}): string {
   let opening = `You're ${v} today.`;
   if (birthdayLine(v)) opening += ' ' + birthdayLine(v);
-  const special = o.badges ? specialLine(v) : null,
+  const special = besideNumber(v, !!o.badges),
     news = o.badges ? newsLine(o.badges.news) : null;
   if (special) opening += ' ' + special;
   if (o.forecast) opening += '\n' + o.forecast;
@@ -580,9 +589,9 @@ export function htmlBody(v: Version, birthday: string, day: string, o: BodyOptio
     partyHtml = party
       ? `<p class="party" style="margin:16px 0 0;font-family:${FONT};font-size:20px;font-weight:800;color:${PINK_INK};">${escape(party)}</p>`
       : '',
-    special = o.badges ? specialLine(v) : null,
+    special = besideNumber(v, !!o.badges),
     specialHtml = special
-      ? `<p class="ink-2" id="special-day" style="margin:16px 0 0;font-family:${FONT};font-size:17px;line-height:1.45;color:${INK_2};">${escape(special)}</p>`
+      ? `<p class="ink-2" id="special-day" style="margin:16px 0 0;font-family:${FONT};font-size:17px;line-height:1.45;color:${INK_2};">${asciiHtml(special)}</p>`
       : '',
     link = `${SITE}/birthday/?p=${birthday}`,
     inlineV = vs.replace(/\./g, `<span class="sep" style="color:${ORANGE_INK};">.</span>`),

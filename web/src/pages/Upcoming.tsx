@@ -528,7 +528,7 @@ function UpcomingForm({
             maxLength={MAX_TAG + 1}
             list="upcoming-tags"
             aria-describedby="upcoming-tag-help"
-            placeholder="#sps"
+            placeholder="#family"
             onChange={(e) => setTag(e.target.value)}
           />
         </label>
@@ -538,7 +538,7 @@ function UpcomingForm({
           ))}
         </datalist>
         <p className="hint" id="upcoming-tag-help">
-          One tag to group related dates, like #sps. Write a note from a tagged date to start today’s draft with that
+          One tag to group related dates, like #family. Write a note from a tagged date to start today’s draft with that
           hashtag.
         </p>
         {annual(kind) ? (

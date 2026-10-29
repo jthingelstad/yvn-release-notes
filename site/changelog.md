@@ -12,11 +12,12 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 - [The guide](/guide/), open to anyone before signing up: How it works, Getting started, the morning email, Replying, the FAQ and Privacy, and a page for every feature, from photos to agents. [Features](/features/) lists them all, a line each.
 - Send Jamie feedback from You: something wrong, an idea or a question, with up to 3 screenshots. Jamie reads every item, and the answer comes by email.
 - PDFs attached to a reply, or mailed to your own address, now stay with their note, as photos and voice memos do.
+- A row of tags under the note box: tap one to add its hashtag, tap again to take it out. Pin the ones you use most, and the rest follow by how often you've used them lately.
 - This page.
 
 ## 0.0.21 · October 28
 
-- Under the countdown in the email, and on Today: which week and day of your life this is. A nod to *Four Thousand Weeks*.
+- Under the countdown in the email, and on Today: which week and day of your life this is. A nod to _Four Thousand Weeks_.
 - Add a profile photo in Settings. It shows on the You tab, and your browser strips its location and other details before it's sent.
 - An agent you've let add notes can now fix a note it wrote, and, with a separate OK, attach photos, voice memos and PDFs to it.
 - Smaller things: mail apps that show sender logos show the Release Notes mark. On Android, the Home Screen app fills the screen, and the calendar link explains how to add it. The foot of Settings shows the build number, counted like this page.

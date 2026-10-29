@@ -56,6 +56,7 @@ import {
   PartyPopper,
   Pencil,
   Pi,
+  Pin,
   Plane,
   Rabbit,
   Repeat,
@@ -103,6 +104,7 @@ const icons = {
   next: ChevronRight,
   calendar: CalendarDays,
   tags: Tags,
+  pin: Pin,
   text: FileText,
   reload: RotateCw,
   write: SquarePen,
@@ -112,6 +114,7 @@ const icons = {
   event: CalendarDays,
   mail: Mail,
   assistant: Bot,
+  api: Terminal,
   download: Download,
   book: BookOpen,
   feedback: MessageSquareText

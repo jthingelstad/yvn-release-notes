@@ -15,6 +15,7 @@ import type {
   Note,
   ReleasePage,
   Releases,
+  TagRow,
   TaggedDays,
   Today
 } from './types.ts';
@@ -110,6 +111,11 @@ export const tagQuery = (tag: string | null) =>
 export const tagsQuery = queryOptions({
   queryKey: ['tags'],
   queryFn: () => get<{ tags: { tag: string; days: number }[] }>('/api/tags')
+});
+
+export const tagRowQuery = queryOptions({
+  queryKey: ['tag-row'],
+  queryFn: () => get<TagRow>('/api/tag-row')
 });
 
 // The day asked for (?d=), if it is one there can be notes for, else

@@ -11,6 +11,7 @@ import {
 import { profileView } from '../../packages/backend/views.ts';
 import { admin, isAdmin } from '../../packages/backend/product-updates.ts';
 import { Tokens } from '../../packages/backend/tokens.ts';
+import { pinnedTags, pinsOf, tagRow } from '../../packages/backend/tag-row.ts';
 import * as auth from '../../packages/backend/auth.ts';
 import { OAuthService } from '../../packages/backend/oauth.ts';
 import { iso, localDay, validDay, validTimezone, anniversary, parseDay } from '../../packages/domain/dates.ts';
@@ -265,6 +266,32 @@ export async function accountRoutes(
       ...spot,
       from: 'device'
     });
+  }
+  // The tag row (backend/tag-row.ts): pinned tags, the same here and through
+  // every API token, then the most used of the last 30 days.
+  if (pattern === '/api/tag-row') {
+    const { uid, profile: p } = await service.account(),
+      today = localDay(ctx.now, String(p.tz));
+    if (method !== 'PUT') return json(await tagRow(ctx.store, uid, p, today));
+    const pins = pinnedTags((await body(service.request))?.pinned);
+    if (!pins) reject(400, 'pins');
+    const old = Array.isArray(p.pinned_tags) ? pinsOf(p) : null;
+    if (!(await ctx.store.setPins(uid, pins, old))) reject(409, 'try-again');
+    if (JSON.stringify(old ?? []) !== JSON.stringify(pins))
+      await recordActivity(
+        ctx.store,
+        uid,
+        ctx.now,
+        [
+          {
+            kind: 'settings.changed',
+            id: eventId(),
+            fields: { via: 'web', changes: [{ field: 'pinned_tags', from: old ?? [], to: pins }] }
+          }
+        ],
+        (f) => service.log(f)
+      );
+    return json(await tagRow(ctx.store, uid, { ...p, pinned_tags: pins }, today));
   }
   if (pattern === '/api/me/inbox') {
     const { uid, profile: p } = await service.account(),

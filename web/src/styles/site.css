@@ -1744,6 +1744,62 @@ main:has(.bar--app) h1:not(.vnum) {
   font-weight: 700;
   text-decoration: none;
 }
+/* The tag row under a note's box (tag-row.tsx), and Search's tags while
+   pinning: hashtags as words, pressed when written in the note (or pinned). */
+.tag-picks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 18px;
+  margin-top: 2px;
+}
+.tag-picks .tags {
+  margin: 0;
+  gap: 0 18px;
+}
+.tag-picks .quiet,
+.tag-pins .quiet {
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: underline;
+}
+.tag-picks .quiet[aria-pressed='true'],
+.tag-pins .quiet[aria-pressed='true'] {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+.tag-picks .quiet[aria-pressed] .icon,
+.tag-pins .quiet .icon {
+  width: 16px;
+  height: 16px;
+}
+.tag-picks .quiet.more {
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.tag-picks .quiet.more .icon {
+  width: 16px;
+  height: 16px;
+}
+.tag-picks .error {
+  flex-basis: 100%;
+}
+.tag-pins li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.tag-pins .quiet {
+  font-size: inherit;
+}
+.pin-lede {
+  margin: 8px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 12px;
+}
 .saved-notes {
   margin-top: 56px;
 }

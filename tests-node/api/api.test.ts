@@ -69,7 +69,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 86);
+  assert.equal(ROUTES.length, 88);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -1353,6 +1353,46 @@ test('"Add where I am" is a setting, on until turned off, and recorded as a chan
   assert.equal((await s.call('PUT', '/api/me', { here: 'yes' })).r.status, 400);
   const row = s.store.memory.all().find((i) => i.kind === 'settings.changed')!;
   assert.deepEqual(row.changes, [{ field: 'here', from: true, to: false }]);
+});
+
+test('the tag row: pinned tags first, then the last 30 days', async () => {
+  const s = await setup();
+  const note = (sk: string, tags: string[]) =>
+    s.store.seed({ pk: 'USER#u', sk, text: tags.map((t) => '#' + t).join(' '), tags, source: 'web' });
+  note('NOTE#2026-10-12#w-1', ['running', 'trip']);
+  note('NOTE#2026-10-10#w-2', ['running']);
+  note('NOTE#2026-09-01#w-3', ['ancient']);
+  assert.deepEqual((await s.call('GET', '/api/tag-row')).b, {
+    pinned: [],
+    recent: [
+      { tag: 'running', count: 2, last_used: '2026-10-12' },
+      { tag: 'trip', count: 1, last_used: '2026-10-12' }
+    ],
+    window_days: 30
+  });
+  const set = await s.call('PUT', '/api/tag-row', { pinned: ['#Trip', 'cabin', 'trip'] });
+  assert.equal(set.r.status, 200);
+  assert.deepEqual(set.b, {
+    pinned: ['trip', 'cabin'],
+    recent: [{ tag: 'running', count: 2, last_used: '2026-10-12' }],
+    window_days: 30
+  });
+  assert.deepEqual(s.store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!.pinned_tags, ['trip', 'cabin']);
+  const rows = () => s.store.memory.all().filter((i) => i.kind === 'settings.changed');
+  assert.equal(rows().length, 1);
+  assert.equal(rows()[0]!.via, 'web');
+  assert.deepEqual(rows()[0]!.changes, [{ field: 'pinned_tags', from: [], to: ['trip', 'cabin'] }]);
+  // The same pins again change nothing and log nothing.
+  assert.equal((await s.call('PUT', '/api/tag-row', { pinned: ['trip', 'cabin'] })).r.status, 200);
+  assert.equal(rows().length, 1);
+  for (const pinned of [Array.from({ length: 13 }, (_, i) => 't' + i), 'trip', ['#'], [3], undefined]) {
+    const r = await s.call('PUT', '/api/tag-row', { pinned });
+    assert.equal(r.r.status, 400, JSON.stringify(pinned));
+    assert.equal((r.b as Item).error, 'pins');
+  }
+  assert.deepEqual(s.store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!.pinned_tags, ['trip', 'cabin']);
+  assert.equal((await s.call('GET', '/api/tag-row', undefined, '')).r.status, 401);
+  assert.equal((await s.call('PUT', '/api/tag-row', { pinned: [] }, s.token, false)).r.status, 403);
 });
 
 // A JPEG as a canvas makes it: SOI, a JFIF APP0, the frame and the scan.

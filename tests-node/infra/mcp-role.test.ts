@@ -11,7 +11,10 @@ import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { fixture, connected, note, ORIGIN } from '../oauth/fixtures.ts';
 import { Recorder, functionArn, REGION, ACCOUNT, STACK } from './grants.ts';
 import { Tokens } from '../../packages/backend/tokens.ts';
+import * as places from '../../packages/backend/places.ts';
+import { V1_ROUTES } from '../../server/mcp/v1.ts';
 import { FakeObjects } from '../../packages/testing/services.ts';
+import { png } from '../../packages/testing/images.ts';
 
 test('the MCP role grants every request each tool makes', async () => {
   const aws = new Recorder('NativeMcpRevision'),
@@ -105,35 +108,54 @@ test('the MCP role grants every request each tool makes', async () => {
 
 /** `/v1` (server/mcp/v1.ts) under the same role: the token check, the read
  * count, each read route, and every write handed to the capture function,
- * whose own requests are held to the capture role. */
+ * whose own requests are held to the capture role. Every route is called. */
 test('the MCP and capture roles grant every request /v1 makes', async () => {
+  let calls = 0;
   const aws = new Recorder('NativeMcpRevision'),
     capture = new Recorder('CaptureFunction'),
-    ctx = { ...fixture(), objects: new FakeObjects() },
+    ctx = {
+      ...fixture(),
+      objects: new FakeObjects(),
+      // The city search is Open-Meteo, over the internet, with no grant.
+      geocode: async () => [
+        { name: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 }
+      ]
+    },
     // Tokens are made on the web, under its own role.
     made = (await new Tokens({ store: ctx.store, origin: ctx.origin, now: ctx.now }).make('u', {
       name: 'Changelog',
-      scopes: ['notes:write', 'activity'],
+      scopes: ['notes:write', 'media:write', 'upcoming', 'activity'],
       expiry: 'never'
     })) as OAuthRow & { token: string },
+    // Here's naming, the real adapter as IAM authorizes it, in capture.
+    nameSpot = (spot: { lat: number; lon: number }) =>
+      places.nameSpot(spot, {
+        async send() {
+          capture.add('places.nameSpot', 'geo-places:ReverseGeocode', `arn:aws:geo-places:${REGION}::provider/default`);
+          return { ResultItems: [{ Address: { Locality: 'Paris', Country: { Code2: 'FR', Name: 'France' } } }] };
+        }
+      } as never),
     options: McpOptions = {
       context: () => ctx,
       capture: (event) => {
         aws.add('capture', 'lambda:InvokeFunction', functionArn(aws.env.CAPTURE_FUNCTION!));
         return aws.aside(ctx.store, capture, () =>
-          captureNote(event, { ...ctx, objects: capture.objects(ctx.objects) }, { fetchTitle: () => null })
+          captureNote(event, { ...ctx, objects: capture.objects(ctx.objects), nameSpot }, { fetchTitle: () => null })
         );
       },
       log: () => undefined
     },
     app = createMcpApp(options),
+    called = new Set<string>(),
     v1 = async (method: string, path: string, body?: OAuthRow, status = 200) => {
+      const route = V1_ROUTES.find((r) => r.method === method && r.path.test(new URL(ORIGIN + path).pathname));
+      if (route) called.add(route.name);
       const response = await app.request(ORIGIN + path, {
         method,
         headers: {
           authorization: 'Bearer ' + made.token,
           'content-type': 'application/json',
-          'idempotency-key': method + path
+          'idempotency-key': `${method} ${path} ${++calls}`
         },
         ...(body ? { body: JSON.stringify(body) } : {})
       });
@@ -150,10 +172,39 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
   const appended = (await v1('POST', path + '/append', { text: 'Walk' })).note as OAuthRow;
   await v1('PUT', path, { text: 'Dinner and a walk', revision: appended.revision });
   await v1('PUT', '/v1/tags/pinned', { pinned: ['home'] });
+  // A file: the form signed in capture, posted by the client outside any
+  // role, then taken by a new note and added to this one.
+  const upload = async () => {
+    const bytes = png(),
+      form = await v1('POST', '/v1/uploads', { name: 'p.png', type: 'image/png', size: bytes.length }, 201);
+    await ctx.objects.put(String((form.fields as OAuthRow).key), bytes, {
+      type: 'image/png',
+      tags: { outcome: 'pending' }
+    });
+    return [{ upload: form.upload, type: 'image/png' }];
+  };
+  const pictured = (await v1('POST', '/v1/notes', { uploads: await upload() }, 201)).note as OAuthRow;
+  await v1('POST', path + '/media', { uploads: await upload() });
+  await v1('GET', '/v1/places?q=Paris');
+  await v1('POST', '/v1/places/here', { lat: 48.856613, lon: 2.352222 });
+  const dates = (await v1('POST', '/v1/upcoming/batch', {
+    add: [{ kind: 'birthday', title: 'Mom', date: '11-04', year: 1955 }]
+  })) as { added: OAuthRow[] };
+  await v1('GET', '/v1/upcoming');
+  await v1('GET', '/v1/upcoming/reminders');
+  await v1(
+    'DELETE',
+    `/v1/upcoming/${String(dates.added[0]!.id)}?revision=${String(dates.added[0]!.revision)}`,
+    undefined,
+    204
+  );
   await v1('GET', '/v1/activity');
   await v1('DELETE', path, undefined, 204);
+  await v1('DELETE', `/v1/notes/${String(pictured.date)}/${String(pictured.id)}`, undefined, 204);
   await v1('DELETE', '/v1/token', undefined, 204);
 
+  assert.deepEqual([...called].sort(), V1_ROUTES.map((r) => r.name).sort(), 'every route is called');
   assert.ok(aws.granted().some((r) => r.via === 'capture'));
   assert.ok(capture.granted().some((r) => r.via === 'TransactWriteCommand ConditionCheck'));
+  assert.ok(capture.granted().some((r) => r.action === 'geo-places:ReverseGeocode'));
 });

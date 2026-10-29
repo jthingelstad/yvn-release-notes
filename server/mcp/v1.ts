@@ -7,21 +7,29 @@
 import { activityId, ACTIVITY_FAMILIES, familyOf, tokenActivityView, titled } from '../../packages/domain/activity.ts';
 import { addDays, iso, localDay, localMoment, validDay } from '../../packages/domain/dates.ts';
 import { writtenAt, type NoteRecord } from '../../packages/domain/notes.ts';
+import { codePointLength, pythonTrim } from '../../packages/domain/unicode.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { remindersFor, UPCOMING_MAX, upcomingViews } from '../../packages/domain/upcoming.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
+import { search, type City } from '../../packages/backend/places.ts';
 import { tagRow, type TagRowStore } from '../../packages/backend/tag-row.ts';
 import { checkToken, clientProduct, SCOPE_REFUSALS, scopesOf, V1_LIMITS } from '../../packages/backend/tokens.ts';
 import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.1.0';
+export const API_VERSION = '1.2.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. A new version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.2.0',
+    date: '2026-10-29',
+    summary:
+      'Files and places: with the media:write scope, a signed form for each photo, recording or PDF, and files on a new note or added to one this token wrote; and a new note’s place, from the city search or from Here, which names a device’s spot and the businesses near it.'
+  },
   {
     version: '1.1.0',
     date: '2026-10-29',
@@ -45,6 +53,7 @@ export const REMINDER_DAYS_MAX = 31;
 
 const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
   APPEND = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/append$/,
+  MEDIA = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/media$/,
   UPCOMING = /^\/v1\/upcoming\/([A-Za-z0-9_-]{1,80})$/;
 
 /** Every route: method, path, name, and the scope it needs (none: any token). */
@@ -65,6 +74,22 @@ export const V1_ROUTES: readonly {
     path: APPEND,
     template: '/v1/notes/{date}/{id}/append',
     name: 'notes.append',
+    scope: 'notes:write'
+  },
+  {
+    method: 'POST',
+    path: MEDIA,
+    template: '/v1/notes/{date}/{id}/media',
+    name: 'notes.media',
+    scope: 'media:write'
+  },
+  { method: 'POST', path: /^\/v1\/uploads$/, template: '/v1/uploads', name: 'uploads.start', scope: 'media:write' },
+  { method: 'GET', path: /^\/v1\/places$/, template: '/v1/places', name: 'places', scope: 'notes:write' },
+  {
+    method: 'POST',
+    path: /^\/v1\/places\/here$/,
+    template: '/v1/places/here',
+    name: 'places.here',
     scope: 'notes:write'
   },
   { method: 'GET', path: /^\/v1\/tags$/, template: '/v1/tags', name: 'tags', scope: null },
@@ -209,6 +234,9 @@ async function readQuota(context: ReaderContext, uid: string, tid: string): Prom
   throw new Error('Read count unavailable');
 }
 
+/** A place as one line: its names that are set, most local first. */
+const placeLine = (names: unknown[]) => names.filter((n) => typeof n === 'string' && n).join(', ');
+
 const until = (now: number) => (Math.floor(now / 86400) + 1) * 86400 - now;
 
 export async function handleV1(request: Request, options: McpOptions): Promise<Response> {
@@ -218,7 +246,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
   try {
     context = await options.context();
     const store = context.store as V1Store,
-      now = context.now;
+      now = context.now,
+      cities = context.geocode ?? search;
     if (request.headers.has('origin') && request.headers.get('origin') !== context.origin)
       return refuse('origin_refused', asText);
     const path = new URL(request.url).pathname,
@@ -325,6 +354,15 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         line =
           `${dry ? 'Checked, nothing saved' : 'Saved'}: ${n('added')} added, ${n('changed')} changed, ${n('removed')} removed.` +
           (unlocked.length ? ` Unlocked: ${unlocked.map((u) => String(u.name)).join(', ')}.` : '');
+      } else if (asText && route.name === 'uploads.start')
+        line = `Upload ${String(body?.upload)}. Its form's url and fields come in the JSON answer.`;
+      else if (asText && route.name === 'places.here') {
+        const place = object(body?.place) ? body.place : {},
+          nearby = Array.isArray(body?.nearby) ? (body.nearby as OAuthRow[]) : [];
+        line =
+          placeLine([place.district, place.name, place.region, place.country]) +
+          '.' +
+          (nearby.length ? ` Nearby: ${nearby.map((v) => String(v.name)).join(', ')}.` : '');
       } else if (asText)
         line =
           route.name === 'tags.pinned'
@@ -420,6 +458,23 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
       }
       const url = new URL(request.url),
         q = url.searchParams;
+      if (route.name === 'places') {
+        // The web's city search, for a note's place (docs/API.md, Phase 3).
+        const words = pythonTrim(q.get('q') ?? '');
+        if (codePointLength(words) < 2 || codePointLength(words) > 80)
+          return { code: 'invalid_request', message: "q is a city's name, 2 to 80 characters.", extra: { field: 'q' } };
+        let found: City[];
+        try {
+          found = await cities(words);
+        } catch {
+          return { code: 'unavailable', message: 'The city search is unavailable. Try again shortly.' };
+        }
+        return {
+          status: 200,
+          body: { places: found },
+          line: found.map((c) => placeLine([c.name, c.region, c.country])).join('\n') || 'No city by that name.'
+        };
+      }
       if (route.name === 'upcoming.reminders') {
         // The reminders each morning's email carries (remindersFor), all of
         // them, for an app to show at the moment that email is due.

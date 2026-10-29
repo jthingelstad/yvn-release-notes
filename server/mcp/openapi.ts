@@ -9,6 +9,9 @@
 import { createHash } from 'node:crypto';
 import { ACTIVITY_FAMILIES } from '../../packages/domain/activity.ts';
 import { MAX_NOTE } from '../../packages/domain/notes.ts';
+import { MAX_FILES, MAX_UPLOAD } from '../../packages/backend/media.ts';
+import { NEARBY_MAX } from '../../packages/backend/places.ts';
+import { FORM_SECONDS, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY } from '../../packages/backend/uploads.ts';
 import { PINS_MAX, RECENT_DAYS, RECENT_MAX } from '../../packages/backend/tag-row.ts';
 import { V1_LIMITS, V1_RECEIPT_SECONDS, V1_UPCOMING_MAX } from '../../packages/backend/tokens.ts';
 import { MAX_TAG } from '../../packages/domain/tags.ts';
@@ -32,7 +35,9 @@ const OPERATIONS: Record<string, Doc> = {
     summary: 'Add a note',
     description:
       "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. " +
-      'A `text/plain` body is the note’s text alone. With neither `date` nor `written_at`, it files to today.',
+      'A `text/plain` body is the note’s text alone. With neither `date` nor `written_at`, it files to today. ' +
+      'With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a ' +
+      'city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came.',
     requestBody: {
       required: true,
       content: {
@@ -67,6 +72,54 @@ const OPERATIONS: Record<string, Doc> = {
     summary: 'Add a paragraph to a note this token wrote',
     requestBody: { required: true, content: { 'application/json': { schema: ref('NoteAppend') } } },
     responses: { '200': answer('NoteWritten', 'Changed in 4.5.137.', true) }
+  },
+  'notes.media': {
+    operationId: 'addNoteFiles',
+    summary: 'Add files to a note this token wrote',
+    description:
+      `Uploads from \`POST /v1/uploads\`, each checked against the bytes that arrived, up to ${MAX_FILES} files on ` +
+      'a note in all. It counts as a change. A note takes each upload once; a write refused or lost before it ' +
+      'lands leaves the uploads for a retry with the same Idempotency-Key.',
+    requestBody: { required: true, content: { 'application/json': { schema: ref('NoteMedia') } } },
+    responses: { '200': answer('NoteWritten', 'Changed in 4.5.137.', true) }
+  },
+  'uploads.start': {
+    operationId: 'startUpload',
+    summary: 'A signed form for one file',
+    description:
+      `A photo, recording or PDF of up to ${MAX_UPLOAD / 1024 / 1024} MB, its exact size given. Post the file to ` +
+      '`url` as `multipart/form-data`, with every one of `fields` and then the file as `file`, within ' +
+      `\`expires_in\` seconds, then name the upload in a note's \`uploads\`. An account takes ${UPLOADS_A_DAY} ` +
+      `files and ${UPLOAD_BYTES_A_DAY / 1024 ** 3} GB a UTC day, with the web's. It has no receipt: a retry gets a ` +
+      'new form, and an unused one expires.',
+    requestBody: { required: true, content: { 'application/json': { schema: ref('UploadStart') } } },
+    responses: { '201': answer('UploadForm', 'The upload’s id.') }
+  },
+  places: {
+    operationId: 'searchPlaces',
+    summary: 'Find a city by name, for a note’s place',
+    description: 'The web’s city search. Send one of the answers as a note’s `place`, as it came.',
+    parameters: [
+      {
+        name: 'q',
+        in: 'query',
+        required: true,
+        description: 'A city’s name, like Zürich.',
+        schema: { type: 'string', minLength: 2, maxLength: 80 }
+      }
+    ],
+    responses: { '200': answer('Places', 'One line a city.') }
+  },
+  'places.here': {
+    operationId: 'nameHere',
+    summary: 'Name the spot a device is at, for a note’s place',
+    description:
+      'The city and neighbourhood, and the businesses Amazon Location finds within the accuracy (50 to 200 m), ' +
+      `up to ${NEARBY_MAX}. Send \`place\` back as a note’s place, with \`venue\` set to one \`nearby\` name if ` +
+      `the owner picks one; nothing is picked for them. An account names ${V1_LIMITS.here} spots a UTC day across ` +
+      'its tokens. Nothing is kept until a note takes the place.',
+    requestBody: { required: true, content: { 'application/json': { schema: ref('Spot') } } },
+    responses: { '200': answer('Here', 'The spot’s names, then what is nearby.', true) }
   },
   tags: {
     operationId: 'getTags',
@@ -238,7 +291,8 @@ const SCHEMAS: Record<string, Doc> = {
   },
   NoteCreate: {
     type: 'object',
-    required: ['text'],
+    description: 'Text, files or both.',
+    anyOf: [{ required: ['text'] }, { required: ['uploads'] }],
     additionalProperties: false,
     properties: {
       text,
@@ -249,6 +303,121 @@ const SCHEMAS: Record<string, Doc> = {
         description:
           'When the words were typed, at most five minutes ahead. A note queued offline files to the day it ' +
           'was typed and is ordered by it.'
+      },
+      uploads: ref('Uploads'),
+      place: ref('NotePlace')
+    }
+  },
+  NoteMedia: {
+    type: 'object',
+    required: ['uploads'],
+    additionalProperties: false,
+    properties: { uploads: ref('Uploads') }
+  },
+  Uploads: {
+    type: 'array',
+    minItems: 1,
+    maxItems: MAX_FILES,
+    description: 'Files posted to forms from `POST /v1/uploads`, each once. Needs `media:write`.',
+    items: {
+      type: 'object',
+      required: ['upload', 'type'],
+      additionalProperties: false,
+      properties: {
+        upload: { type: 'string', pattern: '^[0-9a-f]{32}$', description: 'The id the form came with.' },
+        type: { type: 'string', description: 'The `type` the form came with.' },
+        name: { type: 'string', description: 'The file’s name, shown with it; a long one is shortened.' }
+      }
+    }
+  },
+  UploadStart: {
+    type: 'object',
+    required: ['type', 'size'],
+    additionalProperties: false,
+    properties: {
+      name: { type: 'string', maxLength: 255, description: 'The file’s name, which helps tell its type.' },
+      type: { type: 'string', example: 'image/jpeg', description: 'A photo, recording or PDF’s media type.' },
+      size: { type: 'integer', minimum: 1, maximum: MAX_UPLOAD, description: 'Its exact size in bytes.' }
+    }
+  },
+  UploadForm: {
+    type: 'object',
+    required: ['upload', 'type', 'url', 'fields', 'expires_in'],
+    properties: {
+      upload: { type: 'string', pattern: '^[0-9a-f]{32}$' },
+      type: { type: 'string', description: 'The type it was signed for: name the upload with it.' },
+      url: { type: 'string', format: 'uri', description: 'Where to post the file.' },
+      fields: {
+        type: 'object',
+        additionalProperties: { type: 'string' },
+        description: 'Every one goes in the form, before the file.'
+      },
+      expires_in: { type: 'integer', const: FORM_SECONDS, description: 'Seconds the form is good for.' }
+    }
+  },
+  City: {
+    type: 'object',
+    required: ['name', 'region', 'country', 'tz', 'lat', 'lon'],
+    properties: {
+      name: { type: 'string' },
+      region: { type: 'string' },
+      country: { type: 'string' },
+      tz: { type: 'string', example: 'Europe/Zurich' },
+      lat: { type: 'number' },
+      lon: { type: 'number' }
+    }
+  },
+  Places: {
+    type: 'object',
+    required: ['places'],
+    properties: { places: { type: 'array', items: ref('City') } }
+  },
+  Spot: {
+    type: 'object',
+    required: ['lat', 'lon'],
+    additionalProperties: false,
+    properties: {
+      lat: { type: 'number', minimum: -90, maximum: 90 },
+      lon: { type: 'number', minimum: -180, maximum: 180 },
+      accuracy_m: { type: 'number', minimum: 0, description: 'The device’s accuracy, in metres.' }
+    }
+  },
+  DevicePlace: {
+    type: 'object',
+    required: ['name', 'lat', 'lon', 'from'],
+    description: 'A spot, kept to six decimal places, with its names.',
+    properties: {
+      name: { type: 'string', description: 'The city.' },
+      region: { type: 'string' },
+      country: { type: 'string' },
+      tz: { type: 'string' },
+      district: { type: 'string', description: 'The neighbourhood, which names the note by default.' },
+      venue: { type: 'string', description: 'A `nearby` name the owner picked.' },
+      lat: { type: 'number' },
+      lon: { type: 'number' },
+      accuracy_m: { type: 'number' },
+      from: { type: 'string', const: 'device' }
+    }
+  },
+  NotePlace: { anyOf: [ref('City'), ref('DevicePlace')] },
+  Here: {
+    type: 'object',
+    required: ['place', 'nearby'],
+    properties: {
+      place: ref('DevicePlace'),
+      nearby: {
+        type: 'array',
+        maxItems: NEARBY_MAX,
+        items: {
+          type: 'object',
+          required: ['name', 'lat', 'lon', 'distance_m'],
+          properties: {
+            name: { type: 'string', example: 'Corner Coffee' },
+            lat: { type: 'number' },
+            lon: { type: 'number' },
+            distance_m: { type: 'number' }
+          }
+        }
       }
     }
   },
@@ -271,6 +440,7 @@ const SCHEMAS: Record<string, Doc> = {
           date: day,
           version,
           revision: { type: 'string', description: 'Opaque: send it back unchanged.' },
+          files: { type: 'integer', minimum: 0, description: 'How many files the note has.' },
           token: { type: 'string', description: 'The token’s name, as “via” shows it.' }
         }
       },
@@ -536,14 +706,17 @@ export function openApi(): Doc {
       summary: 'Add notes to Release Notes from anywhere: a terminal, a script or an app.',
       description: [
         'Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. ' +
-          'Notes come from the owner, shown with “via <token name>”. With the `upcoming` scope, a token keeps ' +
-          'Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.',
+          'Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, ' +
+          'recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` ' +
+          'scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at ' +
+          '/guide/api/.',
         `Bodies are JSON in UTF-8, at most ${V1_BODY / 1024} KB. Any answer is one short line instead with ` +
           '`Accept: text/plain`.',
         `Every write takes an optional \`Idempotency-Key\`; its receipt answers the same request again for ` +
           `${V1_RECEIPT_SECONDS / 86400} days.`,
-        `A day in UTC, an account may add ${V1_LIMITS.create} notes, make ${V1_LIMITS.change} other changes and ` +
-          `save Upcoming ${V1_LIMITS.upcoming} times across its tokens, and each token may read ` +
+        `A day in UTC, an account may add ${V1_LIMITS.create} notes, make ${V1_LIMITS.change} other changes, ` +
+          `save Upcoming ${V1_LIMITS.upcoming} times and name ${V1_LIMITS.here} spots across its tokens, and ` +
+          `upload ${UPLOADS_A_DAY} files with the web's; each token may read ` +
           `${V1_LIMITS.reads.toLocaleString('en-US')} times.`
       ].join('\n\n'),
       'x-changes': API_CHANGES

@@ -19,6 +19,13 @@ Keep every note on the device the moment it's written, then send it. With no con
 - Send `written_at`, the moment the words were typed. A note typed just before midnight and sent just after files to the day it was typed.
 - After a timeout, `busy` or `unavailable`, try again later with the same key, waiting longer each time. Take a note out of the queue only when it was filed, or on an answer that trying again can't fix, like `text_required` or `too_large`, and show the person why.
 
+## Files and places
+
+- Keep a photo, recording or PDF on the device with its note, and ask for its form only as you send it: a form is good within 5 minutes. Post the file, then send the note with its `uploads` and the note's own `Idempotency-Key`, as always.
+- An upload no note takes is gone after a day. If the note is still queued by then, ask for a new form and post the file again.
+- Send photos as JPEG, PNG or WebP. On an iPhone, convert a HEIC before you send it, or it gets no thumbnail and never shows in the email.
+- Ask before reading where the device is, and read it only when the person asks to add where they are. Offer the `nearby` businesses from Here as choices, and never pick one for them: the nearest is as often a bus stop.
+
 ## Take the version from the server
 
 Never work out a version on the device. `GET /v1/me` gives today's version and the versions for the next 14 days, each on its date in the account's own time zone, so midnight, a birthday and a trip abroad all come out right. Every answer also says today's version in `Release-Notes-Version`, and each note's answer says the version it was filed in: show that one.
@@ -53,4 +60,4 @@ The API's `/v1/openapi.json` describes every request and answer, for tools that 
 
 ## Try it without an account
 
-Release Notes' code is public, at [github.com/jthingelstad/yvn-release-notes](https://github.com/jthingelstad/yvn-release-notes). Its development server, `tools/dev-server.ts`, runs the same API against a made-up account and prints a token for it when it starts. An Android emulator reaches it at `10.0.2.2`.
+Release Notes' code is public, at [github.com/jthingelstad/yvn-release-notes](https://github.com/jthingelstad/yvn-release-notes). Its development server, `tools/dev-server.ts`, runs the same API against a made-up account and prints a token for it when it starts. An Android emulator reaches it at `10.0.2.2`. There, a form's `url` is a path on the development server itself, so add the server's address in front of it.

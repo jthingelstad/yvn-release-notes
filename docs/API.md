@@ -1,7 +1,7 @@
 # Tokens, the public API and Changelog
 
 Designed 2026-10-29, with Jamie's calls made the same day (at the end,
-under "Jamie's calls"). Phases 1, 2 and 4 are built (2026-10-29); the build
+under "Jamie's calls"). Phases 1 to 4 are built (2026-10-29); the build
 order is under "Phases".
 
 Jamie, 2026-10-29: the idea is "enabling and kind of embracing the techie,
@@ -174,8 +174,8 @@ There is no new DNS record, certificate or function.
 | Scope         | Opens                                                                                           | From            |
 | ------------- | ----------------------------------------------------------------------------------------------- | --------------- |
 | `notes:write` | creating notes; appending to, editing, reading and deleting notes this token wrote; pinned tags | MCP             |
-| `media:write` | files on this token's notes (phase 3); only beside `notes:write`                                | MCP             |
-| `upcoming`    | Upcoming dates and their reminders (phase 4)                                                    | MCP             |
+| `media:write` | files on this token's notes; only beside `notes:write`                                          | MCP             |
+| `upcoming`    | Upcoming dates and their reminders                                                              | MCP             |
 | `activity`    | the activity log, trimmed of words                                                              | new, `/v1` only |
 
 - **Every token can** read `/v1/me` and the owner's tags, and can revoke
@@ -283,7 +283,7 @@ minor version on its day. `status` is `active` or `stopped`.
 { "text": "Ran the river loop #running", "date": "2026-10-28", "written_at": "2026-10-28T23:58:40-05:00" }
 ```
 
-- `text` is required in phase 1. From phase 3 a note may be only `uploads`.
+- `text` or `uploads` is required: a note may be only its files.
   Hashtags in the text are its tags, and links get their titles fetched
   once, as on the web.
 - `date` is optional, any day from the birthday through today.
@@ -291,7 +291,7 @@ minor version on its day. `status` is `active` or `stopped`.
   more than five minutes in the future. A note queued offline at 11:58pm
   and sent at 12:05am files to the day it was typed, in the account's zone,
   unless `date` says otherwise. It also orders the note within its day.
-- `place` and `uploads` come in phase 3.
+- `uploads` (with `media:write`) and `place` are as under Phase 3.
 - With neither `date` nor `written_at`, the note files to today.
 
 It answers 201:

@@ -16,9 +16,11 @@ interface ApiToken {
   expired: boolean;
   last_used: number | null;
 }
-// What a token may be given today. Files (media:write) come with phase 3.
+// What a token may be given. Files go only on the notes it adds, so Add
+// files comes only with Add notes.
 const OFFERED: [string, string][] = [
   ['notes:write', 'Add notes, and change or delete the notes it adds'],
+  ['media:write', 'Add files to the notes it adds: photos, recordings and PDFs'],
   ['upcoming', 'Read and change your Upcoming dates and their reminders'],
   ['activity', 'Read the activity log, without any words from it']
 ];
@@ -146,8 +148,13 @@ export function ApiTokens() {
                 <input
                   type="checkbox"
                   checked={scopes.includes(scope)}
+                  disabled={scope === 'media:write' && !scopes.includes('notes:write')}
                   onChange={(e) =>
-                    setScopes((now) => (e.target.checked ? [...now, scope] : now.filter((s) => s !== scope)))
+                    setScopes((now) =>
+                      e.target.checked
+                        ? [...now, scope]
+                        : now.filter((s) => s !== scope && !(scope === 'notes:write' && s === 'media:write'))
+                    )
                   }
                 />{' '}
                 {said}

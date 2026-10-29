@@ -779,10 +779,9 @@ Where things are (each module's design comment has its contract):
 
 `docs/API.md` has the design and the phases; phase 1 (tokens, text notes,
 tags, the activity log), phase 2 (the OpenAPI file and the guide's
-`/guide/tokens/`, `/guide/api/` and `/guide/api/clients/`) and phase 4
-(Upcoming and its reminders) are built. Phase 3's capture side (forms,
-files on a token's notes, a note's place, Here) and its role change are
-in; no route reaches them until its `/v1` routes and guide land.
+`/guide/tokens/`, `/guide/api/` and `/guide/api/clients/`), phase 3
+(signed forms, files on a token's notes, a note's place, the city search
+and Here) and phase 4 (Upcoming and its reminders) are built.
 
 - **`/v1` is the MCP function's**, under its reader role, and every write
   goes to the capture function, as an agent's does. Only an API token opens
@@ -798,8 +797,9 @@ in; no route reaches them until its `/v1` routes and guide land.
   value).
 - **Deleting an account** blocks token writes first (`mcp_deleting`), then
   removes every token and its pointer with the agent connections.
-- **Offered scopes** are `notes:write`, `upcoming` and `activity`;
-  `media:write` comes with phase 3. There is no `notes:read` in v1.
+- **Offered scopes** are `notes:write`, `media:write` (only beside
+  `notes:write`, for files on the notes the token wrote, kept as web
+  uploads are), `upcoming` and `activity`. There is no `notes:read` in v1.
   `upcoming` keeps MCP's rules (revisions, dry runs, all or nothing, 50
   dates a request, past one-time dates left out) and reaches every date,
   as MCP's does, with its own count of 50 saves a UTC day across tokens;

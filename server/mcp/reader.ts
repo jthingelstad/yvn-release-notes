@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { newToken } from '../../packages/backend/auth.ts';
 import { type OAuthContext, type OAuthRow, type OAuthStore } from '../../packages/backend/oauth.ts';
 import { segments, type Link } from '../../packages/backend/links.ts';
+import type { City } from '../../packages/backend/places.ts';
 import { localDay, localStart, validDay, validTimezone, parseDay, addDays } from '../../packages/domain/dates.ts';
 import {
   ACTIVITY,
@@ -61,6 +62,8 @@ export interface MediaReader {
 export interface ReaderContext extends OAuthContext {
   store: ReaderStore;
   media?: MediaReader;
+  /** The city search (`places.search`), injected by tests and the dev server. */
+  geocode?: (q: string) => Promise<City[]>;
 }
 export type Content = { type: string; mimeType: string; data: string };
 /** The longest code-point prefix of `text` whose JSON takes at most `budget`

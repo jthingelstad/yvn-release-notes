@@ -13,6 +13,12 @@ description: How to get the most out of Release Notes, a page at a time.
 
 {guide}
 
+## Apps and scripts
+
+- [API tokens](/guide/tokens/): keys that let an app or a script add notes as you.
+- [The API](/guide/api/): add notes from a terminal, a script or an app.
+- [Building a client](/guide/api/clients/): how an app that adds notes should behave.
+
 ## Other pages
 
 - [Features](/features/): everything Release Notes does, a line each.

@@ -17,8 +17,22 @@ import { editRevision, record, type ReaderContext, type ReaderStore } from './re
 import type { McpOptions } from './app.ts';
 
 export const API_VERSION = '1.0.0';
+/** What each version changed, newest first, served as the OpenAPI file's
+ * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
+ * here with its date. A new version starts with its entry. */
+export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.0.0',
+    date: '2026-10-29',
+    summary:
+      'The first version: who the token is and the days ahead, text notes, tags and pinned tags, and the activity log.'
+  }
+];
 /** A request body's ceiling, which a 20,000-character note fits well within. */
 export const V1_BODY = 128 * 1024;
+/** How many days `/v1/me` gives versions for, today first: enough for a
+ * phone to show the version and fire reminders offline for two weeks. */
+export const ME_DAYS = 14;
 
 const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
   APPEND = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/append$/;
@@ -55,7 +69,8 @@ export const V1_ROUTES: readonly {
   { method: 'DELETE', path: /^\/v1\/token$/, template: '/v1/token', name: 'token.revoke', scope: null }
 ];
 
-const STATUS: Record<string, number> = {
+/** Every error code and its status (docs/API.md, Errors). */
+export const V1_ERRORS: Record<string, number> = {
   invalid_request: 400,
   text_required: 400,
   date_out_of_range: 400,
@@ -91,7 +106,7 @@ const MESSAGES: Record<string, string> = {
 };
 const SCOPE_MESSAGES: Record<string, string> = {
   'notes:write': "This token can't add notes. Make a token with Add notes ticked.",
-  activity: "This token can't read the activity log. Make a token with Activity ticked."
+  activity: "This token can't read the activity log. Make a token that may read it."
 };
 
 type V1Store = ReaderStore & TagRowStore;
@@ -114,7 +129,7 @@ function respond(status: number, body: unknown, plain: string | null, headers: H
 }
 
 function refuse(code: string, asText: boolean, headers: Headers = {}, detail = '', extra: OAuthRow = {}): Response {
-  const status = STATUS[code] ?? 400,
+  const status = V1_ERRORS[code] ?? 400,
     message = detail || MESSAGES[code] || 'That request was refused.',
     more: Headers = { ...headers };
   if (status === 401) more['www-authenticate'] = 'Bearer realm="Release Notes"';
@@ -301,7 +316,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
             paused_until: paused,
             status: profile.status ?? 'active',
             show_badges: profile.badges !== false,
-            days: Array.from({ length: 14 }, (_, i) => {
+            days: Array.from({ length: ME_DAYS }, (_, i) => {
               const date = addDays(today, i);
               return { date, version: computeVersion(birthday, date).toString() };
             }),

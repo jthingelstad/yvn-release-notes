@@ -1,8 +1,8 @@
 # Tokens, the public API and Changelog
 
 Designed 2026-10-29, with Jamie's calls made the same day (at the end,
-under "Jamie's calls"). Nothing here is built yet. The build order is under
-"Phases".
+under "Jamie's calls"). Phases 1 and 2 are built (2026-10-29); the build
+order is under "Phases".
 
 Jamie, 2026-10-29: the idea is "enabling and kind of embracing the techie,
 kind of geeky aspect of release notes", and making it "even easier to get
@@ -150,11 +150,15 @@ There is no new DNS record, certificate or function.
 | Bearer tokens on the web server's `/api` | No. The web role can write everything, it breaks the bearer rule, and `/api` is the React app's private API, whose shape changes with the app. |
 | A third Web Function                     | No. More infrastructure for no separation the first lacks.                                                                                     |
 
-- **Contract first,** as MCP is. `contracts/api-surface.json` is generated
-  from the route definitions and served as OpenAPI 3.1 at
-  `/v1/openapi.json`, which needs no token. Its `info.version` and an `x-changes` ledger say what
-  changed, and tests refuse drift between the routes, the contract and the
-  docs.
+- **Contract first,** as MCP is. `server/mcp/openapi.ts` builds OpenAPI 3.1
+  from the route definitions and the constants, served at
+  `/v1/openapi.json`, which needs no token, and
+  `node --import tsx tools/export-api-contract.ts` writes it to
+  `contracts/api-surface.json`. Its `info.version` is `API_VERSION` and its
+  `x-changes` is `API_CHANGES` (`server/mcp/v1.ts`), which say what changed.
+  `contracts/api-versions.json` keeps each version's digest, so a change
+  under a version already recorded is refused, and tests refuse drift
+  between the routes, the contract and the guide.
 - **`/v1` only ever gains things:** new endpoints, new optional fields, new
   error codes. A breaking change would be `/v2`. Deprecations are announced
   in `x-changes`, with a date.
@@ -575,13 +579,13 @@ which holds its own design.
   - background URLSession for the queue;
   - App Intents, widgets and a share extension later.
 
-| Version | Adds                                                                                                                                                                 | Needs   |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| 0.1     | Log with text and the tag row, the version header, the offline queue, today's activity with edit and delete, the Activity screen, sign-in by pasted token            | phase 1 |
-| 0.2     | photos, the camera, voice memos, Here, the share extension                                                                                                           | phase 3 |
-| 0.3     | the Upcoming screen, reminder and activity notifications, the optional daily prompt                                                                                  | phase 4 |
-| 0.4     | App Intents, the Action Button, a Control Center control, widgets                                                                                                    | nothing |
-| 1.0     | OAuth sign-in, the App Store                                                                                                                                         | phase 5 |
+| Version | Adds                                                                                                                                                      | Needs   |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 0.1     | Log with text and the tag row, the version header, the offline queue, today's activity with edit and delete, the Activity screen, sign-in by pasted token | phase 1 |
+| 0.2     | photos, the camera, voice memos, Here, the share extension                                                                                                | phase 3 |
+| 0.3     | the Upcoming screen, reminder and activity notifications, the optional daily prompt                                                                       | phase 4 |
+| 0.4     | App Intents, the Action Button, a Control Center control, widgets                                                                                         | nothing |
+| 1.0     | OAuth sign-in, the App Store                                                                                                                              | phase 5 |
 
 TestFlight and the App Store wait for the paid Apple Developer Program.
 Until then, builds go on a device from Xcode. For the App Store it needs:
@@ -634,7 +638,7 @@ These land with phase 1, and the reminder rule with phase 4:
 - **Logs:** a captured log run never contains a token, note text or a file
   name.
 - **The contract:** routes, `contracts/api-surface.json` and the guide pages
-  agree (`tests-node/docs/`).
+  agree (`tests-node/api/openapi.test.ts`, `tests-node/site.test.ts`).
 - **The dev server's** `/v1` passes the same suite as the fakes.
 
 ## Phases

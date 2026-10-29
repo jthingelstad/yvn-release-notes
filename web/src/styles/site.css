@@ -3214,6 +3214,18 @@ fieldset.book-fields {
 .doc-body code {
   font-family: var(--mono);
   font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+/* A recipe to copy (the API guide): set in type like the rest, scrolling
+   sideways on a narrow screen rather than wrapping a command. */
+.doc-body pre {
+  margin: 12px 0 0;
+  overflow-x: auto;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.doc-body pre code {
+  font-size: 13px;
 }
 .site-links {
   display: flex;

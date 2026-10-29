@@ -442,7 +442,8 @@ notes.yourversionnumber.com
   `/guide/address/`, `/guide/photos-and-voice/`, `/guide/places-and-map/`,
   `/guide/tags-and-search/`, `/guide/upcoming/`, `/guide/badges/`,
   `/guide/agents/`, `/guide/book/`, `/guide/export/`,
-  `/guide/pause-and-stop/`, `/guide/delete/`), `/faq/`, `/privacy/` and
+  `/guide/pause-and-stop/`, `/guide/delete/`, and for apps and scripts
+  `/guide/tokens/`, `/guide/api/` and `/guide/api/clients/`), `/faq/`, `/privacy/` and
   `/changelog/` (Release Notes for Release Notes, which the version at the
   foot of Settings links to). Each is a
   Markdown file in `site/` drawn into its own `index.html` at build time,

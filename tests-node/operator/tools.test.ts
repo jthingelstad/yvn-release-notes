@@ -13,7 +13,7 @@ import { report as tally } from '../../tools/tally.ts';
 import { report as readNotes } from '../../tools/read-notes.ts';
 import { fill as fillLinks } from '../../tools/fill-link-titles.ts';
 import { fill as fillWeather } from '../../tools/fill-weather.ts';
-import { extract } from '../../tools/extract-media.ts';
+import { extract, extractAll } from '../../tools/extract-media.ts';
 import { baseline } from '../../tools/badges-baseline.ts';
 import { privatePlanDirectory, savePlans, report, sampleWeather } from '../../tools/import-dayone.ts';
 import { plan } from '../../packages/backend/dayone.ts';
@@ -244,6 +244,92 @@ test('successful media backfill tags references note and repeats without replaci
   objects.calls.length = 0;
   assert.equal((await extract(store, objects, 'u', true)).already_done, 1);
   assert.deepEqual(objects.calls, []);
+});
+const withPdf = Buffer.from(
+  raw
+    .toString()
+    .replace(
+      '--X--',
+      [
+        '--X',
+        'Content-Type: application/pdf',
+        'Content-Disposition: attachment; filename="menu.pdf"',
+        '',
+        '%PDF-1.4 fictional menu',
+        '--X--'
+      ].join('\r\n')
+    )
+);
+const voiceKept = {
+  n: 1,
+  kind: 'audio',
+  type: 'audio/wav',
+  size: 4012,
+  key: 'media/u/2026-10-10/n/1.wav'
+};
+const pdfNote = (extra: Record<string, unknown> = {}) => ({
+  ...note(),
+  raw_key: 'raw/m1',
+  attachments: [
+    { filename: 'voice.wav', content_type: 'audio/wav' },
+    { filename: 'menu.pdf', content_type: 'application/pdf' }
+  ],
+  ...extra
+});
+test('media backfill appends an emailed PDF to a note that already has media, once', async () => {
+  const store = new FakeStore([p, pdfNote({ media: [voiceKept] })]),
+    objects = new FakeObjects();
+  await objects.put('raw/m1', withPdf, { type: 'message/rfc822' });
+  const dry = await extract(store, objects, 'u');
+  assert.deepEqual([dry.notes_filled, dry.files, dry.pdfs, dry.already_done], [1, 1, 1, 0]);
+  assert.deepEqual(await objects.list('media/'), []);
+  const done = await extract(store, objects, 'u', true);
+  assert.deepEqual([done.notes_filled, done.pdfs], [1, 1]);
+  const saved = (await store.note('u', '2026-10-10', 'n'))?.media as Record<string, unknown>[];
+  assert.deepEqual(saved, [
+    voiceKept,
+    {
+      n: 2,
+      kind: 'file',
+      type: 'application/pdf',
+      size: 23,
+      key: 'media/u/2026-10-10/n/2.pdf',
+      name: 'menu.pdf'
+    }
+  ]);
+  assert.deepEqual(await objects.tags('media/u/2026-10-10/n/2.pdf'), { outcome: 'note' });
+  objects.calls.length = 0;
+  assert.equal((await extract(store, objects, 'u', true)).already_done, 1);
+  assert.deepEqual(objects.calls, []);
+});
+test('media backfill leaves a web-added PDF alone and loses a race without touching the note', async () => {
+  const web = { n: 2, kind: 'file', type: 'application/pdf', size: 5, key: 'media/u/files/f1.pdf', name: 'x.pdf' };
+  const store = new FakeStore([p, pdfNote({ media: [voiceKept, web] })]),
+    objects = new FakeObjects();
+  await objects.put('raw/m1', withPdf, { type: 'message/rfc822' });
+  assert.equal((await extract(store, objects, 'u')).pdfs, 1);
+  store.memory.beforeSend = (command) => {
+    if (command instanceof TransactWriteCommand)
+      store.seed(pdfNote({ media: [voiceKept, web, { ...web, n: 3, key: 'media/u/files/f2.pdf' }] }));
+  };
+  const lost = await extract(store, objects, 'u', true);
+  assert.deepEqual([lost.notes_filled, lost.files, lost.pdfs], [0, 0, 0]);
+  assert.equal(((await store.note('u', '2026-10-10', 'n'))?.media as unknown[] | undefined)?.length, 3);
+  assert.deepEqual(await objects.list('media/'), []);
+});
+test('media backfill --all sums every subscriber and skips deleting accounts', async () => {
+  const q = { ...p, pk: 'USER#v', email: 'grace@example.com' },
+    gone = { ...p, pk: 'USER#w', email: 'hopper@example.com', mcp_deleting: true };
+  const store = new FakeStore([p, q, gone, pdfNote({ media: [voiceKept] }), { ...pdfNote(), pk: q.pk }]),
+    objects = new FakeObjects();
+  await objects.put('raw/m1', withPdf, { type: 'message/rfc822' });
+  const all = await extractAll(store, objects);
+  assert.deepEqual(
+    [all.subscribers, all.skipped, all.notes_filled, all.files, all.pdfs, all.dry_run],
+    [3, 1, 2, 3, 2, true]
+  );
+  assert.equal(hasWrites(store), false);
+  assert.ok(!JSON.stringify(all).includes('@'));
 });
 test('Day One report and bounded weather sampling expose counts only and never write', async () => {
   const store = new FakeStore([p]),

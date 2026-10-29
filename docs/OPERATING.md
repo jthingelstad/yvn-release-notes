@@ -90,6 +90,10 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
   (`tools/extract-media.ts`, `tools/fill-link-titles.ts`,
   `tools/fill-weather.ts`) take `EMAIL [--dry-run]` and default to planning
   only. Run the dry run first; `--write` is the live run.
+  `tools/extract-media.ts --all` runs every subscriber and prints the sums
+  only. It also gives a note that already has media the PDFs its email
+  carried and it lacks (emailed PDFs were raw-only before October 29,
+  2026), appended after its files; one added on the web never counts.
 - Thumbnails for photos kept before they existed: invoke the describe
   function with `{"thumbs_all": "*", "dry_run": true}` (or one user id) to
   count them; the real run drops `dry_run`. It hands itself on near its

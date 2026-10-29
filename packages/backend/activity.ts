@@ -75,12 +75,13 @@ export const upcomingEvents = (changes: readonly UpcomingChange[], via: string, 
     fields: { via, ...(client ? { client } : {}), upcoming: (next ?? previous)!.id }
   }));
 /** One row per badge a save earned (packages/domain/activity.ts), never the
- * special days it collected. */
+ * special days it collected. One earned outside notes (a photo, feedback, a
+ * book, a date in Upcoming) names no day or note: pass null. */
 export function badgeEvents(
   unlocked: readonly Unlocked[],
   via: string,
-  day: string,
-  note: string,
+  day: string | null,
+  note: string | null,
   client?: unknown
 ): ActivityEvent[] {
   return unlocked
@@ -95,8 +96,8 @@ export function badgeEvents(
         key: u.key,
         name: u.name,
         version: u.version,
-        day,
-        note
+        ...(day ? { day } : {}),
+        ...(note ? { note } : {})
       }
     }));
 }

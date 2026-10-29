@@ -48,6 +48,7 @@ export interface ReaderStore extends OAuthStore {
     o: { before?: string; from?: string; limit: number }
   ): Promise<{ rows: OAuthRow[]; more: boolean }>;
   activityAll(uid: string, from?: string): Promise<OAuthRow[]>;
+  badgeActivity(uid: string, consistent?: boolean): Promise<OAuthRow[]>;
   dayPlace(uid: string, day: string, consistent?: boolean): Promise<OAuthRow | null>;
   weatherBetween(uid: string, first: string, last: string, consistent?: boolean): Promise<Record<string, OAuthRow>>;
   feedbackItems(uid: string): Promise<FeedbackItem[]>;
@@ -765,7 +766,10 @@ export class Reader {
           },
           content
         ];
-      const facts = await badgeFacts(this.context.store, this.uid, this.profile, this.today, undefined, true);
+      const facts = await badgeFacts(this.context.store, this.uid, this.profile, this.today, {
+        consistent: true,
+        ...(this.context.log ? { log: this.context.log } : {})
+      });
       return [{ ...head, ...evaluateBadges(facts, this.today) }, content];
     }
     if (name === 'notes_mail_log') {

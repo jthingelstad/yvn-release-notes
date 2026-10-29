@@ -6,7 +6,8 @@ evaluator, `GET /api/badges`, the Badges page, the unlock line, the Day and
 Release page lines and the export. Step 3 is built: the "Show badges"
 setting, the `BADGES` item, the baseline tool, both email lines and the
 birthday block. The launch product update is Jamie's to write. Step 4 is
-built: `notes_badges` for agents.
+built: `notes_badges` for agents. Four firsts earned outside notes and
+the Roadmap track followed on 2026-10-29 (Jamie's calls, 2026-10-29).
 
 Release Notes works when people write most days. Badges should make
 showing up feel good and make the version number more fun to live with,
@@ -72,7 +73,7 @@ And three new ones:
 
 ### Tracks
 
-Four tracks, each with five tiers: **alpha, beta, rc, stable, LTS**.
+Five tracks, each with five tiers: **alpha, beta, rc, stable, LTS**.
 
 | Track               | Counts                                       | alpha | beta |  rc | stable |   LTS |
 | ------------------- | -------------------------------------------- | ----: | ---: | --: | -----: | ----: |
@@ -80,6 +81,7 @@ Four tracks, each with five tiers: **alpha, beta, rc, stable, LTS**.
 | Cadence             | Weeks in a row with notes on at least 4 days |     2 |    4 |  12 |     26 |    52 |
 | Patches shipped     | Days with notes, all time                    |    10 |   50 | 100 |    365 | 1,000 |
 | Coverage            | Share of one release's days with notes       |   25% |  50% | 75% |    90% |  100% |
+| Roadmap             | Dates added to Upcoming, all time            |     1 |    5 |  15 |     40 |   100 |
 
 - **Continuous delivery** is the existing streak (`packages/domain/streak.ts`)
   with today included, so a note saved today counts at once. Late notes
@@ -96,6 +98,13 @@ Four tracks, each with five tiers: **alpha, beta, rc, stable, LTS**.
   only rises during a release, so it is never lost, and every birthday
   starts a new one. The track shows the best release's tier; the page also
   shows the current release.
+- **Roadmap** (Jamie, 2026-10-29) counts the distinct Upcoming dates ever
+  added: every `upcoming.added` row in the activity log and every
+  `UPCOMING#` entry's `created_at`, joined by the entry's id, so a date
+  counts once however it came in. Deleting a date takes nothing away, so
+  best and now are the same number and it never falls. Its line reads
+  "Added a date to Upcoming." for one, else "N dates added to Upcoming.".
+  Upcoming counts toward nothing else: no streak, count or other badge.
 
 ### Firsts
 
@@ -116,6 +125,23 @@ Most of these land in the first week. Each one points at a feature.
 | Commit message   | A note of twenty words or fewer. Small commits ship.                      |
 | Hotfix           | Filling in a day after it ended, for a day that had no note (not imports) |
 | Backport         | A note for a day at least 30 days back (not imports)                      |
+| Signed commit    | Adding a profile photo                                                    |
+| Issue opened     | Sending feedback, on the web or through an agent                          |
+| Merged upstream  | Feedback you sent marked done                                             |
+| Tarball          | Making a book of your notes                                               |
+
+The last four are the first firsts earned outside notes. They are read
+from the activity log (`photo.set`, `export.book`, falling back to the
+profile photo's own time when no row says when it was set), `FEEDBACK#`
+(when an item was filed, and the first answer that marked one done) and,
+for the Roadmap, `UPCOMING#`. Like a track's tier, they are never taken
+away: removing the photo keeps Signed commit. Pair programming is also
+earned by an agent editing a note (a `note.edited` row through an
+assistant), so it stays when that note is deleted. Each time becomes its
+day in the subscriber's zone, clamped to today, and joins the replay in
+order (`badgeEventsOf`). A failed read of any of these leaves its badges
+out, logs a scrubbed `badge-facts-partial` line (user id and which read)
+and never fails the badges, nor writes a `badge.earned` row for them.
 
 ### Craft and conditions
 
@@ -246,6 +272,15 @@ earned in an earlier one, reads "Collected: Round number, 5.5.200". A badge
 celebrated here is not repeated in the email (from step 3, through
 `seen`).
 
+The firsts outside notes and the Roadmap get the same line where they are
+earned: under the photo in Settings, under Feedback's notice, on Book once
+it is asked for, and under Upcoming's and Upcoming as text's notices. Those
+answers carry `unlocked` only when something was earned. A date added or
+feedback filed by an agent, and Merged upstream (earned when Jamie marks an
+item done), write their `badge.earned` rows only, through `assistant` or
+`admin`, and are told in the next email or the welcome back; no email is
+sent for them.
+
 ### Welcome back
 
 A badge earned away from the web (a reply by email, an agent's note, a
@@ -360,6 +395,8 @@ they are found by writing on those days or not at all.
   file adds counts from when the note was written. Collectibles name the special version they were collected on
   ("Palindrome, 4.1.314") and record when they were written separately.
 - **`packages/backend/badges.ts`**: `badgeFacts(store, user, profile, today)` reads the
+  activity rows badges use (`Store.badgeActivity`), `FEEDBACK#` and
+  `UPCOMING#` for the firsts outside notes and the Roadmap, and
   person's `NOTE#` rows (dates, written and received times, source,
   whether an email note has a `subject`: a reply always keeps one, the
   standing address never does; author, media kinds, place city and
@@ -425,6 +462,20 @@ they are found by writing on those days or not at all.
    mail log, releases, on this day and account settings under
    notes:read"). **Built 2026-10-20.**
 
+## Jamie's calls (2026-10-29)
+
+1. **Four firsts and two hints** ("Approved: add the Signed commit, Issue
+   opened, Merged upstream and Tarball badges and the two hint edits to
+   Release Notes, with no baseline run"). The hints: Release assets reads
+   "Add a photo to a note, here, by email or through an agent." and Pair
+   programming "Connect an agent in Settings and ask it to add or edit a
+   note." With no baseline run, anyone who already qualifies is told once,
+   in their next email or the web's welcome back.
+2. **The Roadmap track** ("Only thing I'd change is I do think using
+   upcoming should get badges. A series for how many you add that progress
+   through some milestones. Could be a reference tos. Roadmap to continue
+   our theme."): tiers at 1, 5, 15, 40 and 100 dates added.
+
 ## Jamie's calls (2026-10-25)
 
 1. **Giving badges** from the Supporting Member perks suggested that day
@@ -458,5 +509,8 @@ they are found by writing on those days or not at all.
 - **Notifications beyond the daily email.**
 - **Badges that judge content** ("wrote about gratitude"). That needs a
   model to read notes, and journals should not be graded.
-- **Badges for Upcoming.** Saved dates are plans, not journal entries, and
-  they never count toward anything.
+- **Badges for Upcoming** was here until Jamie, 2026-10-29: "Only thing
+  I'd change is I do think using upcoming should get badges. A series for
+  how many you add that progress through some milestones. Could be a
+  reference tos. Roadmap to continue our theme." The Roadmap track counts
+  dates added; Upcoming still counts toward nothing else.

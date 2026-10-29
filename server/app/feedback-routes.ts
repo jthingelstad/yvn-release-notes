@@ -44,7 +44,7 @@ export async function feedbackRoutes(
 ): Promise<Response | null> {
   if (pattern.startsWith('/api/admin/feedback')) return adminFeedback(service, pattern, args);
   if (!pattern.startsWith('/api/feedback')) return null;
-  const { uid } = await service.account(),
+  const { uid, profile: p } = await service.account(),
     ctx = service.context,
     store = ctx.store;
   if (pattern === '/api/feedback/{id}/screenshots/{n}') {
@@ -69,18 +69,26 @@ export async function feedbackRoutes(
     if (!(error instanceof InlineImageError)) throw error;
     reject(400, 'feedback-' + error.reason, error.index >= 0 ? { index: error.index } : {});
   }
-  const outcome = await fileFeedback({ store, objects: ctx.objects, now: ctx.now, log: (f) => service.log(f) }, uid, {
-    ...fields,
-    screenshots,
-    via: 'web'
-  });
+  // The Feedback page shows the unlock line for Issue opened.
+  const outcome = await fileFeedback(
+    {
+      store,
+      objects: ctx.objects,
+      now: ctx.now,
+      log: (f) => service.log(f),
+      badges: { store, profile: p, seen: true }
+    },
+    uid,
+    { ...fields, screenshots, via: 'web' }
+  );
   if (!outcome.ok) {
     if (outcome.reason === 'limit') reject(429, 'feedback-limit');
     if (outcome.reason === 'follows') reject(400, 'feedback-follows');
     if (outcome.reason === 'too-many') reject(400, 'feedback-image-count');
     reject(409, 'feedback-conflict');
   }
-  return json(feedbackView(outcome.item), 201);
+  const view = feedbackView(outcome.item);
+  return json(outcome.unlocked.length ? { ...view, unlocked: outcome.unlocked } : view, 201);
 }
 
 async function adminFeedback(service: SessionService, pattern: string, args: string[]): Promise<Response> {
@@ -104,7 +112,7 @@ async function adminFeedback(service: SessionService, pattern: string, args: str
   if (typeof fields === 'string') reject(...REFUSALS[fields]!);
   if (!Number.isSafeInteger(value.revision)) reject(409, 'feedback-changed');
   const outcome = await answerFeedback(
-    { store, mail: ctx.mail, from: ctx.from, now: ctx.now, log: (f) => service.log(f) },
+    { store, mail: ctx.mail, from: ctx.from, now: ctx.now, log: (f) => service.log(f), badges: store },
     owner,
     id,
     Number(value.revision),

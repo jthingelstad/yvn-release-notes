@@ -125,9 +125,22 @@ test('filing stores stripped screenshots privately, lists them and links them on
   assert.equal((await f.call('GET', `/api/feedback/${filed.data.id}/screenshots/4`)).status, 404);
   assert.equal((await f.call('GET', '/api/feedback/not-an-id/screenshots/1')).status, 404);
 
-  // The activity row says what happened, never the words.
+  // The first item filed earns Issue opened, told on the page and so seen.
+  assert.deepEqual(
+    filed.data.unlocked.map((u: Record<string, unknown>) => [u.id, u.name]),
+    [['issue', 'Issue opened']]
+  );
+  assert.ok((await f.store.seenBadges('b')).has('issue'));
+  // The activity row says what happened, never the words, and the badge's
+  // row goes with it, naming no day or note.
   const rows = f.store.memory.all().filter((i) => String(i.sk).startsWith('ACTIVITY#') && i.pk === 'USER#b');
-  assert.equal(rows.length, 1);
+  assert.deepEqual(
+    rows.map((r) => [r.kind, r.badge, r.via, r.day, r.note]),
+    [
+      ['feedback.filed', undefined, 'web', undefined, undefined],
+      ['badge.earned', 'issue', 'web', undefined, undefined]
+    ]
+  );
   assert.equal(rows[0]!.kind, 'feedback.filed');
   assert.equal(rows[0]!.feedback_kind, 'bug');
   assert.equal(rows[0]!.screenshots, 2);
@@ -278,4 +291,24 @@ test('the administrator reads the queue, answers once per revision and mails onl
   );
   assert.equal(failed.status, 201);
   assert.equal(failed.data.mail, 'failed');
+  // A `done` earns the filer Merged upstream (a question does not), in their
+  // own log via admin, not seen, so their next email tells of it; a second
+  // `done` earns nothing more.
+  const again = await f.call(
+    'POST',
+    `/api/admin/feedback/b/${b.data.id}/answers`,
+    { text: 'Fixed again', status: 'done', revision: 3 },
+    'u'
+  );
+  assert.equal(again.status, 201);
+  assert.equal(again.data.unlocked, undefined);
+  const merged = (owner: string) =>
+    f.store.memory
+      .all()
+      .filter((i) => i.pk === `USER#${owner}` && i.kind === 'badge.earned' && i.badge === 'merged')
+      .map((r) => [r.via, r.name, r.day, r.note]);
+  assert.deepEqual(merged('b'), [['admin', 'Merged upstream', undefined, undefined]]);
+  assert.deepEqual(merged('s'), [['admin', 'Merged upstream', undefined, undefined]]);
+  assert.ok(!(await f.store.seenBadges('b')).has('merged'));
+  assert.equal(merged('u').length, 0);
 });

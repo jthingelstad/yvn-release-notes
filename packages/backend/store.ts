@@ -1504,6 +1504,27 @@ export class Store {
   async mailEntry(user: string, sk: string): Promise<Item | null> {
     return this.get(key(user, sk), { ConsistentRead: true });
   }
+  /** The activity rows badges read (docs/BADGES.md, the firsts earned
+   * outside notes): photo.set, export.book, upcoming.added, and note.edited
+   * by an assistant, oldest first, with only the fields they need. */
+  async badgeActivity(user: string, consistent = false): Promise<Item[]> {
+    return this.rows({
+      KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
+      FilterExpression: '#k = :photo OR #k = :book OR #k = :added OR (#k = :edited AND #v = :assistant)',
+      ProjectionExpression: 'sk, #k, #a, #v, #u',
+      ExpressionAttributeNames: { '#k': 'kind', '#a': 'at', '#v': 'via', '#u': 'upcoming' },
+      ExpressionAttributeValues: {
+        ':p': `USER#${user}`,
+        ':s': ACTIVITY,
+        ':photo': 'photo.set',
+        ':book': 'export.book',
+        ':added': 'upcoming.added',
+        ':edited': 'note.edited',
+        ':assistant': 'assistant'
+      },
+      ...(consistent ? { ConsistentRead: true } : {})
+    });
+  }
   /** One page of the activity log, newest first: the rows below `before` (a
    * row's id, or an ISO time) and from `from` (an ISO time) on, merged from
    * the account's rows and its assistants' daily reads. `more` says older

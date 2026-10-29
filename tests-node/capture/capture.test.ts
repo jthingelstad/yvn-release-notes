@@ -5,6 +5,7 @@ import { captureNote } from '../../workers/capture.ts';
 import { OAuthService, type OAuthRow } from '../../packages/backend/oauth.ts';
 import { asciiJson, fingerprint } from '../../server/mcp/common.ts';
 import { fixture, connected, note, NOW } from '../oauth/fixtures.ts';
+import { badges as shelf } from '../../packages/backend/badges.ts';
 const noFetch = () => null;
 test('create/append and exact retries preserve original safe result and content-free audit', async () => {
   const ctx = fixture(),
@@ -299,9 +300,19 @@ test('an Upcoming batch commits entries, count, receipt, audit, daily count and 
   const rows = (logged.TransactItems as OAuthRow[]).slice(1).map((op) => (op.Put as OAuthRow).Item as OAuthRow),
     saved = await ctx.store.upcomingEntries('u');
   assert.deepEqual(
-    rows.map((r) => [r.kind, r.via, r.client, r.upcoming]).sort(),
+    rows
+      .filter((r) => r.kind !== 'badge.earned')
+      .map((r) => [r.kind, r.via, r.client, r.upcoming])
+      .sort(),
     saved.map((e) => ['upcoming.added', 'assistant', a.family.client_name, e.id]).sort()
   );
+  // The first dates added earn Roadmap alpha in the same write, by the
+  // assistant, never marked seen: the email tells of it.
+  assert.deepEqual(
+    rows.filter((r) => r.kind === 'badge.earned').map((r) => [r.key, r.via, r.client, r.day, r.note]),
+    [['roadmap:alpha', 'assistant', a.family.client_name, undefined, undefined]]
+  );
+  assert.equal((await ctx.store.seenBadges('u')).size, 0);
   assert.doesNotMatch(JSON.stringify(rows), /Alex|Concert/);
   assert.equal((await ctx.store.mcpProfile('u'))!.upcoming_count, 2);
   const rate = ctx.store.memory.all().find((i) => String(i.sk).startsWith('WRITERATE#upcoming#'));
@@ -362,6 +373,14 @@ test("an assistant's notes and the badges they earn are in the activity log once
   // Not marked seen: the email still tells of them.
   assert.deepEqual(await ctx.store.seenBadges('u'), new Set());
   assert.doesNotMatch(JSON.stringify(rows), /Dinner|walk|lake/);
+  // The agent's edit (the append) is kept as its own Pair programming
+  // event: with the note gone, the badge stays, on the day of the note.
+  const profile = (await ctx.store.mcpProfile('u'))!,
+    pair = () => shelf(ctx.store, 'u', profile, '2026-10-13').then((b) => b.earned.find((e) => e.id === 'pair'));
+  assert.ok(await pair());
+  await ctx.store.deleteNote('u', String(shown.date), String(shown.id));
+  assert.equal((await ctx.store.allNotes('u')).length, 0);
+  assert.equal((await pair())?.day, '2026-10-13');
 
   // With "Show badges" off, the note is logged and no badge is.
   const quiet = fixture();

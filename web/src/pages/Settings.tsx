@@ -20,13 +20,14 @@ import { Icon } from '../components/icon.tsx';
 import { SendTimeSelect, ZipExport } from '../components/fields.tsx';
 import { PlacePicker } from '../components/placepicker.tsx';
 import { SettingsGroup } from '../components/settings-group.tsx';
+import { UnlockLine } from '../components/unlock.tsx';
 import { api } from '../lib/api.ts';
 import { BUILD, buildCommit, buildVersion } from '../lib/build.ts';
 import { clock, longDate, pauseLine, zoneName, zoneShortDate, zoneTime } from '../lib/format.ts';
 import { useMe, useSignedInAs } from '../lib/nav.ts';
 import { PHOTO_ACCEPT, removePhoto, setPhoto } from '../lib/photo.ts';
 import { signedIn } from '../lib/storage.ts';
-import type { Me } from '../lib/types.ts';
+import type { Me, Unlocked } from '../lib/types.ts';
 
 const STOPPED: Record<string, string> = {
   unsubscribed: 'Stopped, because you unsubscribed.',
@@ -182,6 +183,8 @@ function ProfilePhoto({ p }: { p: Me }) {
   const problem = useProblem();
   const [busy, run] = useBusy();
   const [line, setLine] = useState('');
+  // What the first photo earned (Signed commit), under the buttons.
+  const [won, setWon] = useState<Unlocked[]>([]);
   const picker = useRef<HTMLInputElement>(null);
   const chooseButton = useRef<HTMLButtonElement>(null);
   const removeButton = useRef<HTMLButtonElement>(null);
@@ -191,11 +194,13 @@ function ProfilePhoto({ p }: { p: Me }) {
   const pick = (file: File | undefined) =>
     run(async () => {
       problem.clear();
+      setWon([]);
       if (!file) return;
       const out = await setPhoto(file, setLine);
       setLine('');
       if ('problem' in out) return problem.show(out.problem, chooseButton.current);
       done(out.me);
+      setWon(out.unlocked);
     });
 
   const remove = () =>
@@ -257,6 +262,7 @@ function ProfilePhoto({ p }: { p: Me }) {
           </p>
         </div>
       </div>
+      <UnlockLine items={won} />
       <ErrorLine line={problem.line} />
     </section>
   );

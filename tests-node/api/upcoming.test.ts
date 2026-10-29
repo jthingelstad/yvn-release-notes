@@ -246,6 +246,12 @@ test('a batch previews with dry_run, resolves destinations by text, applies as o
   f.ctx.geocode = async (q) => (q.toLowerCase() === 'paris' ? [place, texas] : []);
   const first = (await f.call('POST', undefined, birthday)).data as Item,
     second = (await f.call('POST', undefined, { kind: 'event', title: 'Concert', date: '2026-10-01' })).data as Item;
+  // The first date added earns Roadmap alpha, told on the page; the second
+  // earns nothing.
+  assert.deepEqual(first.unlocked, [
+    { id: 'roadmap', key: 'roadmap:alpha', name: 'Roadmap alpha', version: '4.5.121' }
+  ]);
+  assert.equal(second.unlocked, undefined);
   const batch = {
     add: [
       { kind: 'trip', title: 'Holiday', date: '2026-12-05', end_date: '2026-12-12', place: 'Paris, Texas' },
@@ -307,7 +313,27 @@ test('a batch previews with dry_run, resolves destinations by text, applies as o
   // Apply.
   const applied = await f.call('POST', '/api/upcoming/batch', batch);
   assert.equal(applied.status, 200, JSON.stringify(applied.data));
-  assert.deepEqual(applied.data, { ok: true, add: 3, change: 1, remove: 1 });
+  // Five dates added in all, one of them removed in the same batch: the
+  // Roadmap counts what was added, so beta comes now.
+  assert.deepEqual(applied.data, {
+    ok: true,
+    add: 3,
+    change: 1,
+    remove: 1,
+    unlocked: [{ id: 'roadmap', key: 'roadmap:beta', name: 'Roadmap beta', version: '4.5.121' }]
+  });
+  assert.deepEqual(
+    f.store.memory
+      .all()
+      .filter((i) => i.pk === 'USER#u' && i.kind === 'badge.earned')
+      .map((r) => [r.key, r.via])
+      .sort(),
+    [
+      ['roadmap:alpha', 'web'],
+      ['roadmap:beta', 'web']
+    ]
+  );
+  assert.ok((await f.store.seenBadges('u')).has('roadmap:beta'));
   const entries = await f.store.upcomingEntries('u');
   assert.deepEqual(entries.map((e) => e.title).toSorted(), ['Alex', 'Holiday', 'Sam', 'Spring']);
   assert.equal(entries.find((e) => e.id === first.id)!.revision, 2);

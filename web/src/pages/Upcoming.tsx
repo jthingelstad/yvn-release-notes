@@ -22,7 +22,8 @@ import { subscribeHref } from '../lib/calendar.ts';
 import { upcomingQuery } from '../lib/queries.ts';
 import { NAMES, PROBLEMS, problemFor } from '../lib/upcoming.ts';
 import { shortDay } from '../lib/format.ts';
-import type { Place } from '../lib/types.ts';
+import type { Place, Unlocked } from '../lib/types.ts';
+import { UnlockLine } from '../components/unlock.tsx';
 import {
   annual,
   defaultReminders,
@@ -53,7 +54,9 @@ export function Upcoming() {
   // undefined: closed; null: new; a saved entry: editing that revision.
   const [selected, setSelected] = useState<UpcomingView | null | undefined>(undefined);
   const [problem, setProblem] = useState<string | null>(null),
-    [notice, setNotice] = useState('');
+    [notice, setNotice] = useState(''),
+    // What a date added earned (the Roadmap), under the notice.
+    [won, setWon] = useState<Unlocked[]>([]);
   const [busy, run] = useBusy(),
     heading = useRef<HTMLHeadingElement>(null),
     focusLater = useFocusLater();
@@ -80,6 +83,7 @@ export function Upcoming() {
     setSelected(entry);
     setProblem(null);
     setNotice('');
+    setWon([]);
     focusLater(() => heading.current);
   }
   async function remove(entry: UpcomingView) {
@@ -87,6 +91,7 @@ export function Upcoming() {
     await run(async () => {
       setProblem(null);
       setNotice('');
+      setWon([]);
       const answer = await api('DELETE', '/api/upcoming/' + entry.id, { revision: entry.revision });
       await client.invalidateQueries({ queryKey: upcomingQuery.queryKey });
       if (!answer.ok) return setProblem(problemFor(answer.data.error));
@@ -224,10 +229,11 @@ export function Upcoming() {
               run={run}
               onCancel={() => setSelected(undefined)}
               onDelete={selected ? () => remove(selected) : undefined}
-              onSaved={async () => {
+              onSaved={async (unlocked) => {
                 setSelected(undefined);
                 await client.invalidateQueries({ queryKey: upcomingQuery.queryKey });
                 setNotice('Date saved.');
+                setWon(unlocked);
               }}
             />
           )}
@@ -235,6 +241,7 @@ export function Upcoming() {
           <p className="hint" role="status">
             {notice}
           </p>
+          <UnlockLine items={won} />
           <section className="section wide" aria-label="Upcoming dates">
             {entries.length > 0 && (
               <>
@@ -451,7 +458,8 @@ function UpcomingForm({
   onCancel: () => void;
   /** A saved date's Delete, at the form's foot. */
   onDelete?: () => void;
-  onSaved: () => Promise<void>;
+  /** Saved, with what it earned. */
+  onSaved: (unlocked: Unlocked[]) => Promise<void>;
 }) {
   const [kind, setKind] = useState<UpcomingKind>(entry?.kind ?? initialKind),
     [title, setTitle] = useState(entry?.title ?? ''),
@@ -493,7 +501,7 @@ function UpcomingForm({
         ...(entry ? { revision: entry.revision } : {})
       });
       if (!answer.ok) return setProblem(problemFor(answer.data.error));
-      await onSaved();
+      await onSaved((answer.data as { unlocked?: Unlocked[] }).unlocked ?? []);
     });
   }
   const [month, day] = (annual(kind) ? date : today.slice(5)).split('-');

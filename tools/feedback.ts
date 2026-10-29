@@ -17,6 +17,7 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { answerFeedback, feedbackQueue, type FeedbackStore } from '../packages/backend/feedback.ts';
+import type { BadgeStore } from '../packages/backend/badges.ts';
 import { createMail } from '../packages/backend/aws.ts';
 import { INLINE_TYPES } from '../packages/backend/inline-images.ts';
 import { answerFields, feedbackView } from '../packages/domain/feedback.ts';
@@ -64,7 +65,7 @@ export async function show(
 }
 
 export async function answer(
-  deps: { store: FeedbackStore; mail: Mail; now: number },
+  deps: { store: FeedbackStore & BadgeStore; mail: Mail; now: number },
   owner: string,
   id: string,
   value: { text: unknown; status: unknown },
@@ -84,7 +85,7 @@ export async function answer(
       answers: item.answers.length + 1
     };
   const outcome = await answerFeedback(
-    { store: deps.store, mail: deps.mail, from: FROM, now: deps.now },
+    { store: deps.store, mail: deps.mail, from: FROM, now: deps.now, badges: deps.store },
     owner,
     id,
     item.revision,

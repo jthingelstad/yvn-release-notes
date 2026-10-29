@@ -122,7 +122,9 @@ nothing there links here yet: that is Jamie's call.
     Linked from the streak line on Today and from You. Worked out on each read from stored fields
     (`packages/domain/badges.ts`); the one thing stored is `seen`, what
     has already been celebrated. A note saved on Today or another day
-    says what it unlocked under the form; a Day page says what its
+    says what it unlocked under the form (as do a first profile photo in
+    Settings, feedback sent, a book asked for and dates added to Upcoming
+    or Upcoming as text); a Day page says what its
     special day collected ("Collected here: Palindrome."), a release's
     head its coverage and special days, and both exports list the
     badges, oldest first. "Show badges" off in Settings hides the links,
@@ -695,6 +697,17 @@ or new CSP exception.
 | `DELETE /api/admin/updates/{id}` `{revision}`                                           | administrator only: delete a draft                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `POST /api/admin/updates/{id}/schedule` `{date,revision}`                               | administrator only: reserve one date with a saved text snapshot; dates cannot precede the administrator's today; 409 for an occupied date or stale revision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `DELETE /api/admin/updates/{id}/schedule` `{revision}`                                  | administrator only: cancel its schedule and return to a draft; does not retract emails already sent                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+**Badges earned outside notes** (2026-10-29, `docs/BADGES.md`): `PUT
+/api/me/photo` (Signed commit, the first photo only), `POST /api/feedback`
+(Issue opened), `POST /api/book` (Tarball), `POST /api/upcoming` and `POST
+/api/upcoming/batch` (the Roadmap, for dates added) also answer with
+`unlocked`, in the same shape as a note's, but only when something was
+earned; with nothing earned, badges off or a failed read the field is left
+out. What they answer becomes `seen`, and the same write records one
+`badge.earned` row per badge. `POST
+/api/admin/feedback/{owner}/{id}/answers` marking an item done earns the
+filer Merged upstream: rows only, via `admin`, told in their next email.
 
 ## Upcoming
 

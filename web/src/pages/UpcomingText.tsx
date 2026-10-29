@@ -7,6 +7,8 @@ import { AppLink, Bar, Crumb, Failed, Loading, useBusy, useFocusLater, useTitle 
 import { api } from '../lib/api.ts';
 import { upcomingQuery } from '../lib/queries.ts';
 import { NAMES, problemFor } from '../lib/upcoming.ts';
+import { UnlockLine } from '../components/unlock.tsx';
+import type { Unlocked } from '../lib/types.ts';
 import type { UpcomingEntry } from '../../../packages/domain/upcoming.ts';
 import {
   batchFor,
@@ -46,6 +48,8 @@ export function UpcomingText() {
     [problems, setProblems] = useState<TextProblem[]>([]),
     [preview, setPreview] = useState<Preview | null>(null),
     [notice, setNotice] = useState(''),
+    // What the dates added earned (the Roadmap), under the notice.
+    [won, setWon] = useState<Unlocked[]>([]),
     heading = useRef<HTMLHeadingElement>(null),
     entries = query.data?.entries ?? [],
     shown = text ?? upcomingText(entries);
@@ -55,6 +59,7 @@ export function UpcomingText() {
     setPreview(null);
     setProblems([]);
     setNotice('');
+    setWon([]);
   }
   async function check() {
     const parsed = parseUpcomingText(shown);
@@ -88,7 +93,8 @@ export function UpcomingText() {
   async function apply() {
     if (!preview) return;
     await run(async () => {
-      const answer = await api<{ add: number; change: number; remove: number }>(
+      setWon([]);
+      const answer = await api<{ add: number; change: number; remove: number; unlocked?: Unlocked[] }>(
         'POST',
         '/api/upcoming/batch',
         preview.batch
@@ -101,6 +107,7 @@ export function UpcomingText() {
       setPreview(null);
       setText(null);
       setNotice(`Applied: ${counted(answer.data)}.`);
+      setWon(answer.data.unlocked ?? []);
     });
   }
   return (
@@ -161,6 +168,7 @@ export function UpcomingText() {
               {notice}
             </p>
           )}
+          <UnlockLine items={won} />
           {preview && (
             <section className="section upcoming-plan" aria-labelledby="plan-heading">
               <h2 id="plan-heading" ref={heading} tabIndex={-1}>

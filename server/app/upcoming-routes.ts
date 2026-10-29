@@ -9,6 +9,7 @@ import { calendarEvents, ics } from '../../packages/domain/calendar.ts';
 import { iso, localDay } from '../../packages/domain/dates.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { eventId, recordActivity, upcomingEvents } from '../../packages/backend/activity.ts';
+import { addedEvents, earnedBy } from '../../packages/backend/badges.ts';
 import { body, json } from './requests.ts';
 
 export const CALENDAR_NAME = 'Release Notes';
@@ -54,11 +55,19 @@ export async function upcomingRoutes(
       });
     const outcome = await store.upcomingBatch(uid, changes);
     service.log({ event: 'upcoming', user: uid, action: 'batch', ...count, applied: outcome.applied });
-    await recordActivity(store, uid, ctx.now, upcomingEvents(changes.slice(0, outcome.applied), 'web'), (f) =>
+    const applied = changes.slice(0, outcome.applied),
+      // Dates added count toward the Roadmap; seen only when the page hears
+      // of it (a refused batch shows no unlock line).
+      won = await earnedBy(store, uid, profile, ctx.now, addedEvents(applied, ctx.now, profile.tz), {
+        via: 'web',
+        seen: outcome.ok,
+        log: (f) => service.log(f)
+      });
+    await recordActivity(store, uid, ctx.now, [...upcomingEvents(applied, 'web'), ...won.events], (f) =>
       service.log(f)
     );
     if (!outcome.ok) reject(409, 'upcoming-conflict', { applied: outcome.applied });
-    return json({ ok: true, ...count });
+    return json({ ok: true, ...count, ...(won.unlocked.length ? { unlocked: won.unlocked } : {}) });
   }
   const previous = pattern === '/api/upcoming' ? null : await store.upcoming(uid, args[0]!);
   if (pattern !== '/api/upcoming' && !previous) reject(404, 'upcoming-missing');
@@ -76,9 +85,20 @@ export async function upcomingRoutes(
           updated_at: at
         };
   if (!(await store.saveUpcoming(uid, next, previous))) reject(409, 'upcoming-conflict');
-  await recordActivity(store, uid, ctx.now, upcomingEvents([{ previous, next }], 'web'), (f) => service.log(f));
+  const won = await earnedBy(store, uid, profile, ctx.now, addedEvents([{ previous, next }], ctx.now, profile.tz), {
+    via: 'web',
+    seen: true,
+    log: (f) => service.log(f)
+  });
+  await recordActivity(store, uid, ctx.now, [...upcomingEvents([{ previous, next }], 'web'), ...won.events], (f) =>
+    service.log(f)
+  );
   service.log({ event: 'upcoming', user: uid, action: method === 'DELETE' ? 'remove' : previous ? 'edit' : 'create' });
-  return json(next ? { ...next, occurrence: occurrence(next, today) } : { ok: true }, previous ? 200 : 201);
+  const unlocked = won.unlocked.length ? { unlocked: won.unlocked } : {};
+  return json(
+    next ? { ...next, occurrence: occurrence(next, today), ...unlocked } : { ok: true },
+    previous ? 200 : 201
+  );
 }
 
 /** The feed link (AGENTS.md, Upcoming): 120 random bits naming the owner, made

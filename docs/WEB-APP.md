@@ -437,8 +437,12 @@ notes.yourversionnumber.com
   `/connect/` approves an external agent request whose opaque id stays in the fragment. With no request it shows the MCP address to add, with Copy; with one, the request's question is the title, what it shares as a list, each extra approval as a ruled checkbox row, and the retention paragraphs in full above Allow.
   `/feedback/` sends Jamie feedback and shows the answers (Feedback); `/admin/` manages product updates; `/admin-users/` shows subscriber metadata; `/admin-feedback/` is the feedback queue. Administration is visible in settings only to the configured administrator.
 
-- **Public pages**: `/how-it-works/`, `/guide/`, `/guide/start/`,
-  `/guide/the-email/`, `/guide/replying/`, `/faq/`, `/privacy/` and
+- **Public pages**: `/how-it-works/`, `/features/`, `/guide/` and its
+  pages (`/guide/start/`, `/guide/the-email/`, `/guide/replying/`,
+  `/guide/address/`, `/guide/photos-and-voice/`, `/guide/places-and-map/`,
+  `/guide/tags-and-search/`, `/guide/upcoming/`, `/guide/badges/`,
+  `/guide/agents/`, `/guide/book/`, `/guide/export/`,
+  `/guide/pause-and-stop/`, `/guide/delete/`), `/faq/`, `/privacy/` and
   `/changelog/` (Release Notes for Release Notes, which the version at the
   foot of Settings links to). Each is a
   Markdown file in `site/` drawn into its own `index.html` at build time,
@@ -584,8 +588,8 @@ or new CSP exception.
   XML; under the app's CSP Chrome shows it unstyled, with "..." where it
   folds.
 - **Public pages** (Jamie, 2026-10-29, phase 1 of the signed-out site):
-  How it works, the guide, the FAQ, Privacy and the changelog (phase 4)
-  are Markdown in `site/`,
+  How it works, Features and the guide (phase 3), the FAQ, Privacy and the
+  changelog (phase 4) are Markdown in `site/`,
   each opening with a `title:` and a `description:`; `site/faq.md` is
   `/faq/` and `site/guide/index.md` is `/guide/`. After the app's build,
   `vite.config.ts` runs `web/src/site.tsx`, which draws each, read by
@@ -598,6 +602,13 @@ or new CSP exception.
   the pages are counted as the app's are. The same build writes
   `sitemap.xml` (from `site/sitemap.json`, which also sets the order) and
   `llms.txt` (the pages, the MCP address and each scope in plain words).
+  The features are one typed list, `lib/features.ts` (each one's head,
+  line and guide page): the front page's tour draws the ones it shows, and
+  a paragraph of `{features}` in a page's Markdown becomes every feature,
+  linked to its guide page (`/features/`), and one of `{guide}` the guide
+  pages they link, by group, leaving out any linked above it (`/guide/`).
+  So the tour and the docs say the same thing, and a changed line moves
+  both pages' hashes.
   A new page is a Markdown file and a line in `site/sitemap.json`; a new
   section is also a line in `WebIndexFunction`'s `PUBLIC`
   (`tests-node/infra/web-index.test.ts` holds the two together). A

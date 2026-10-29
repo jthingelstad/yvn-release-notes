@@ -12,7 +12,7 @@ that was a fun way to build them, not because of a rule (Jamie, 2026-10-08:
 The sites link here, and the front page is for search (Jamie, 2026-10-25:
 "Yes we want Release Notes in search where it can be. We also now should
 link YVN to Release Notes so people may find it"). So are the public pages
-beside it: How it works, the guide, the FAQ, Privacy and the changelog
+beside it: How it works, Features, the guide, the FAQ, Privacy and the changelog
 (`site/`, drawn by `web/src/site.tsx`; Public site and guide). Every other page is the
 signed-in app or an emailed link and stays out of search (`web/public/robots.txt`
 and the noindex in `web/src/main.tsx`). `/` alone is served as `front.html`,
@@ -317,10 +317,14 @@ Where things are (each module's design comment has its contract):
   (docs/WEB-APP.md, What it does).
 - **Public site and guide** (Jamie, 2026-10-29: "Approved: build phase 1 of
   the Release Notes signed-out site and guide, with my calls 1-8 as
-  recommended"): How it works, the guide (`/guide/`, `/guide/start/`,
-  `/guide/the-email/`, `/guide/replying/`), the FAQ and Privacy are
-  Markdown in `site/`, built into their own pages (docs/WEB-APP.md, Public
-  pages). The tour's rule holds for them, and for `llms.txt`: every claim
+  recommended", and "Approved: build phases 2-5 of the Release Notes
+  public site"): How it works, Features, the guide (`/guide/`, a page for
+  getting started, the email and replying, and one for each feature), the
+  FAQ and Privacy are Markdown in `site/`, built into their own pages
+  (docs/WEB-APP.md, Public pages). The features are one list,
+  `web/src/lib/features.ts`, which the tour, `/features/` and `/guide/`
+  all draw: change a feature there, and the tour and the docs change
+  together. The tour's rule holds for them, and for `llms.txt`: every claim
   is something the product does today, in the tour's voice (plain, second
   person, Jamie in the third person), and each number is checked against
   its constant in `tests-node/site.test.ts`. **A PR that changes something

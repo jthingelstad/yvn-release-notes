@@ -12,7 +12,7 @@ Reply as often as you like. Each reply is its own note, and together they are th
 ## What a reply can carry
 
 - **Words**, up to 20,000 characters a note.
-- **Photos, voice memos and PDFs**, attached as usual. They stay with their note.
+- **Photos and voice memos**, attached as usual. They stay with their note. A PDF stays in the original email, which is kept whole; add it on the web to keep it with the note. [Photos, voice memos and PDFs](/guide/photos-and-voice/) has more.
 - **Tags**: write a hashtag anywhere, like #maine-2016, and the note has that tag.
 - **Links**: a link shows by the name of the page it points to.
 

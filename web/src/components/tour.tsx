@@ -5,9 +5,11 @@
 // members"). Type on paper like the rest: no boxes. Every claim here is
 // something the product does today. Supporting Members get a badge for each
 // year they give and a thank-you on their birthday (domain/giving.ts), and
-// membership is never called a price.
+// membership is never called a price. The features come from one list,
+// lib/features.ts, which /features/ and /guide/ read too.
 import type { ReactNode } from 'react';
 import { Digits } from './common.tsx';
+import { tourGroups } from '../lib/features.ts';
 import { emailDate, MADE_UP, type Morning } from '../lib/sample.ts';
 import { MEMBERS_URL, WEEKLY_THING_URL } from '../lib/weekly-thing.ts';
 
@@ -39,40 +41,15 @@ export function Tour({ hidden, morning = MADE_UP }: { hidden: boolean; morning?:
       <SampleEmail m={morning} />
 
       <h2 className="big tour-head">Everything a journal needs.</h2>
-      <Group head="Write it however it comes">
-        <Feature head="Reply, or write on the web.">
-          Answer from any mail app, or write here, today or any day back to your birthday.
-        </Feature>
-        <Feature head="Photos, voice memos and PDFs.">
-          Attach them to a reply or add them on the web. They stay with their day.
-        </Feature>
-        <Feature head="An address of your own.">Mail a note any day, no reply needed.</Feature>
-        <Feature head="On your Home Screen.">Add it to your phone and it opens like an app.</Feature>
-        <Feature head="Your assistant, if you like.">
-          Connect Claude or ChatGPT to read your notes, and to add to them only if you allow it.
-        </Feature>
-      </Group>
-      <Group head="See it come back">
-        <Feature head="Yesterday, confirmed.">
-          Each morning shows what you sent the day before, so you know it all arrived.
-        </Feature>
-        <Feature head="On this day.">What you wrote on this same day in every earlier release.</Feature>
-        <Feature head="A birthday closes the release.">The year just ended, summed up, with a page of its own.</Feature>
-        <Feature head="Streaks, counts and badges.">Quiet ones. Miss a day and nothing scolds you.</Feature>
-        <Feature head="Weather and places.">
-          Your days keep their weather. A note can keep exactly where it was, on your own map.
-        </Feature>
-        <Feature head="Upcoming.">
-          Birthdays, anniversaries and trips, remembered in the morning email and in your calendar.
-        </Feature>
-      </Group>
-      <Group head="Find it, and keep it">
-        <Feature head="Tags and search.">
-          #hashtags in any note, and search across every word. Turn it on, and what you said in a voice memo and what’s
-          in a photo are found too.
-        </Feature>
-        <Feature head="Yours to take.">Export everything as a zip, files and all, or delete it, any time.</Feature>
-      </Group>
+      {tourGroups().map((g) => (
+        <Group key={g.head} head={g.head}>
+          {g.features.map((f) => (
+            <Feature key={f.head} head={f.head}>
+              {f.line}
+            </Feature>
+          ))}
+        </Group>
+      ))}
 
       <h2 className="big tour-head">It just works.</h2>
       <ul className="tour-list">

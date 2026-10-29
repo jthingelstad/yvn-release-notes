@@ -433,6 +433,14 @@ Where things are (each module's design comment has its contract):
   filer once, only while their account is active, with no tracking. The
   activity log records filing and answering, never the words. Feedback is
   in the export and goes with the account (docs/WEB-APP.md, Feedback).
+- **Claude answers feedback without asking each time** (Jamie, 2026-10-29:
+  "Claude may answer feedback through tools/feedback.ts answer --write
+  without asking each time"). An agent may run `answer --write` on its own
+  judgment: read the item and its screenshots first, run the dry run, and
+  answer only what it has fixed, checked or can answer truthfully. A
+  question of policy or product is still Jamie's: answer `needs_info` or
+  leave the item open and ask him. The standing go covers answers only,
+  never another operator tool's `--write`.
 - **Screenshots** (Jamie, 2026-10-28: "Make sure a user or agent submitting
   feedback can attach a screenshot."): up to 3 an item, PNG, JPEG or WebP
   (a HEIC where the browser can turn it into one), 768 KiB each, kept under
@@ -737,7 +745,8 @@ us-east-1, and Node 24 (`/opt/homebrew/opt/node@24/bin` first on PATH here).
   still once per local day; never fake the clock with `now` to do it.
 - **Every live write by an operator tool needs Jamie's go**: an import, a
   fill-in script's `--write`, the real `thumbs_all` run, the badges
-  baseline's `--write`. Run the dry run first.
+  baseline's `--write`. Run the dry run first. The one standing go is
+  `tools/feedback.ts answer --write` (Feedback).
 - `tools/read-notes.ts` prints note text: run it only for the subscriber's
   own notes; agents do not run it to check things. `tools/subscribers.ts`
   prints addresses, so its output stays on this Mac.

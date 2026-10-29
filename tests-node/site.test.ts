@@ -15,7 +15,14 @@ import { build } from 'vite';
 import { MAX_PAUSE_DAYS } from '../packages/backend/accounts.ts';
 import { MAX_FILES, MAX_UPLOAD } from '../packages/backend/media.ts';
 import { MAX_A_DAY } from '../packages/backend/transcribe.ts';
-import { TOKEN_EXPIRY, TOKEN_NAME_MAX, TOKENS_MAX, V1_LIMITS, V1_RECEIPT_SECONDS } from '../packages/backend/tokens.ts';
+import {
+  TOKEN_EXPIRY,
+  TOKEN_NAME_MAX,
+  TOKENS_MAX,
+  V1_LIMITS,
+  V1_RECEIPT_SECONDS,
+  V1_UPCOMING_MAX
+} from '../packages/backend/tokens.ts';
 import { LOGIN_TTL, SESSION_IDLE } from '../packages/backend/auth.ts';
 import { SCOPES as GRANTED } from '../packages/backend/oauth.ts';
 import { COMMENTARY_DAYS, COMMENTARY_PER_RELEASE, MAX_PHOTOS, PAGE_SIZES } from '../packages/book/limits.ts';
@@ -28,7 +35,7 @@ import { PINS_MAX, RECENT_DAYS, RECENT_MAX } from '../packages/backend/tag-row.t
 import { UPCOMING_MAX, UPCOMING_SHOWN } from '../packages/domain/upcoming.ts';
 import { DOTS, PHOTOS_AN_EMAIL, PHOTOS_A_DAY } from '../packages/mail/compose.ts';
 import { MAX_INLINE_BYTES, MAX_INLINE_FILES } from '../server/mcp/files.ts';
-import { ME_DAYS, V1_BODY, V1_ERRORS, V1_ROUTES } from '../server/mcp/v1.ts';
+import { ME_DAYS, REMINDER_DAYS_MAX, V1_BODY, V1_ERRORS, V1_ROUTES } from '../server/mcp/v1.ts';
 import { FEATURES } from '../web/src/lib/features.ts';
 import { shareTags } from '../web/src/lib/share-card.ts';
 import { ORIGIN, SCOPES, readPages, sitemapDates } from '../web/src/site-pages.ts';
@@ -285,6 +292,9 @@ async function checkedPhrases() {
     `add ${V1_LIMITS.create} notes`,
     `${V1_LIMITS.change} other changes`,
     `${V1_LIMITS.reads.toLocaleString('en-US')} times`,
+    `save Upcoming ${V1_LIMITS.upcoming} times`,
+    `up to ${V1_UPCOMING_MAX} dates a request`,
+    `up to ${REMINDER_DAYS_MAX} days ahead`,
     `up to ${RECENT_MAX} recent ones`,
     `newest ${SEARCH_DAYS} days`,
     `up to ${UPCOMING_MAX} dates`,

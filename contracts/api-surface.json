@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
-    "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. Notes come from the owner, shown with “via <token name>”. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 128 KB. Any answer is one short line instead with `Accept: text/plain`.\n\nEvery write takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days.\n\nA day in UTC, an account may add 100 notes and make 200 other changes across its tokens, and each token may read 2,000 times.",
+    "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. Notes come from the owner, shown with “via <token name>”. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 128 KB. Any answer is one short line instead with `Accept: text/plain`.\n\nEvery write takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days.\n\nA day in UTC, an account may add 100 notes, make 200 other changes and save Upcoming 50 times across its tokens, and each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.1.0",
+        "date": "2026-10-29",
+        "summary": "Upcoming, with the upcoming scope: list the dates ahead, add, change and remove up to 50 at once (all or nothing, with a dry run), remove one, and read the reminders each morning carries for up to 31 days ahead, with when the email is due."
+      },
       {
         "version": "1.0.0",
         "date": "2026-10-29",
@@ -598,6 +603,217 @@
         "x-scope": "activity"
       }
     },
+    "/v1/upcoming": {
+      "get": {
+        "operationId": "getUpcoming",
+        "summary": "The Upcoming dates ahead",
+        "description": "Every saved birthday, anniversary, trip and event, soonest first, with its next date and the line the email uses. A one-time date already over is left out and counted in `past_left_out`, since it still takes one of the account's 200.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpcomingList"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: One line a date: its next date and its line."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "upcoming"
+            ]
+          }
+        ],
+        "x-scope": "upcoming"
+      }
+    },
+    "/v1/upcoming/batch": {
+      "post": {
+        "operationId": "saveUpcoming",
+        "summary": "Add, change and remove up to 50 Upcoming dates at once",
+        "description": "All or nothing: if any entry has a problem, nothing is saved and the error names it (`field` is like `change[2]`). A change replaces the saved date from the `revision` the client read; one changed since is a 409 `revision_mismatch`. A trip’s destination is text the city search knows, like \"Paris, Texas\". With `dry_run`, it checks everything and finds the cities but saves nothing, and counts as a read.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpcomingBatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpcomingSaved"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: Saved: 2 added, 1 changed, 0 removed."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "upcoming"
+            ]
+          }
+        ],
+        "x-scope": "upcoming"
+      }
+    },
+    "/v1/upcoming/reminders": {
+      "get": {
+        "operationId": "getReminders",
+        "summary": "The reminders each morning carries, for the days ahead",
+        "description": "Each day with a reminder due, from today: the reminders the morning email carries for dates with `email` on (all of them, where the email shows three), each with the email’s own `when` and `line`, and `send_at`, when that morning’s email is due. An app schedules them as notifications and reads again when it opens.",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "How many days from today, today included.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 31,
+              "default": 14
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reminders"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: One line a reminder: its day, when and line."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "upcoming"
+            ]
+          }
+        ],
+        "x-scope": "upcoming"
+      }
+    },
+    "/v1/upcoming/{id}": {
+      "delete": {
+        "operationId": "deleteUpcoming",
+        "summary": "Remove one Upcoming date",
+        "description": "From the revision the client read: a date changed since is a 409 `revision_mismatch`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "description": "The revision last read.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed.",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "upcoming"
+            ]
+          }
+        ],
+        "x-scope": "upcoming"
+      }
+    },
     "/v1/token": {
       "delete": {
         "operationId": "revokeToken",
@@ -888,7 +1104,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.0.0"
+            "example": "1.1.0"
           }
         }
       },
@@ -1122,6 +1338,365 @@
             "maxItems": 12,
             "items": {
               "type": "string"
+            }
+          }
+        }
+      },
+      "UpcomingFields": {
+        "type": "object",
+        "description": "A date as it is saved. A change sends every field again, as it should be.",
+        "required": [
+          "kind",
+          "title",
+          "date"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "birthday",
+              "anniversary",
+              "trip",
+              "event"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "One line."
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One word, like family."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^(?:\\d{4}-)?\\d{2}-\\d{2}$",
+            "description": "MM-DD for a birthday or anniversary; YYYY-MM-DD for a trip (its first day) or an event."
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A birthday’s or anniversary’s first year, so the line can say which one it is."
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "description": "A day in the account’s own time zone."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A trip’s last day, on or after `date`."
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A trip’s destination: \"Zürich\", or \"Paris, Texas\" to choose among cities of one name."
+          },
+          "email": {
+            "type": "boolean",
+            "default": true,
+            "description": "Remind in the morning email (and so in apps)."
+          },
+          "reminders": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 365
+            },
+            "description": "Days before to remind; by default 7, 1 and 0 (a trip 14, 1 and 0)."
+          }
+        }
+      },
+      "Upcoming": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/UpcomingFields"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "revision",
+              "next",
+              "status",
+              "line"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "description": "Send it back to change or remove the date."
+              },
+              "next": {
+                "type": "string",
+                "format": "date",
+                "description": "Its next date, or today while a trip is on."
+              },
+              "through": {
+                "type": "string",
+                "format": "date",
+                "description": "A trip’s last day this time."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "upcoming",
+                  "today",
+                  "ongoing",
+                  "past"
+                ]
+              },
+              "line": {
+                "type": "string",
+                "example": "Mom turns 7.0.0. A major release."
+              }
+            }
+          }
+        ]
+      },
+      "UpcomingList": {
+        "type": "object",
+        "required": [
+          "today",
+          "entries",
+          "past_left_out",
+          "max_entries"
+        ],
+        "properties": {
+          "today": {
+            "type": "string",
+            "format": "date",
+            "description": "A day in the account’s own time zone."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Upcoming"
+            }
+          },
+          "past_left_out": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_entries": {
+            "type": "integer",
+            "const": 200
+          }
+        }
+      },
+      "UpcomingBatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "At most 50 entries in all, and at least one.",
+        "properties": {
+          "add": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpcomingFields"
+            }
+          },
+          "change": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/UpcomingFields"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "revision"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "remove": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "revision"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "dry_run": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "UpcomingSaved": {
+        "type": "object",
+        "required": [
+          "dry_run",
+          "added",
+          "changed",
+          "removed"
+        ],
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "added": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Upcoming"
+            },
+            "description": "In the order they were sent, with their ids."
+          },
+          "changed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Upcoming"
+            }
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The ids removed."
+          },
+          "unlocked": {
+            "type": "array",
+            "description": "Badges this save earned, only while Show badges is on, and never on a replay.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Reminders": {
+        "type": "object",
+        "required": [
+          "from",
+          "through",
+          "days"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date",
+            "description": "A day in the account’s own time zone."
+          },
+          "through": {
+            "type": "string",
+            "format": "date",
+            "description": "A day in the account’s own time zone."
+          },
+          "days": {
+            "type": "array",
+            "description": "Only the days with a reminder due.",
+            "items": {
+              "type": "object",
+              "required": [
+                "date",
+                "send_at",
+                "reminders"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date",
+                  "description": "A day in the account’s own time zone."
+                },
+                "send_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When that morning’s email is due, with the account’s offset that day."
+                },
+                "reminders": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "upcoming",
+                      "date",
+                      "when",
+                      "line"
+                    ],
+                    "properties": {
+                      "upcoming": {
+                        "type": "string",
+                        "description": "The date’s id."
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "The day it falls on."
+                      },
+                      "when": {
+                        "type": "string",
+                        "example": "In 7 days"
+                      },
+                      "line": {
+                        "type": "string",
+                        "example": "Mom turns 7.0.0. A major release."
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }

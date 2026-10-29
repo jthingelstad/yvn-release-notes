@@ -1,7 +1,7 @@
 # Tokens, the public API and Changelog
 
 Designed 2026-10-29, with Jamie's calls made the same day (at the end,
-under "Jamie's calls"). Phases 1 and 2 are built (2026-10-29); the build
+under "Jamie's calls"). Phases 1, 2 and 4 are built (2026-10-29); the build
 order is under "Phases".
 
 Jamie, 2026-10-29: the idea is "enabling and kind of embracing the techie,
@@ -417,6 +417,8 @@ subject, mail words, another sender or a settings value.
 
   ```json
   {
+    "from": "2026-10-28",
+    "through": "2026-11-10",
     "days": [
       {
         "date": "2026-11-04",
@@ -424,6 +426,7 @@ subject, mail words, another sender or a settings value.
         "reminders": [
           {
             "upcoming": "0b6f2c9e-4d1a-4f3b-9c8e-2a7d5e1f6b30",
+            "date": "2026-11-11",
             "when": "In 7 days",
             "line": "Mom turns 7.0.0. A major release."
           }
@@ -432,6 +435,10 @@ subject, mail words, another sender or a settings value.
     ]
   }
   ```
+
+  `date` is the day the entry falls on; a day with nothing due is left
+  out. Reminders follow each entry's `email` flag, and not the account's
+  pauses or stop, so a phone reminds while the email rests.
 
   The server stays the one place that knows the reminder rules and leap
   days, so an iPhone app, an Android app and the email can't disagree.

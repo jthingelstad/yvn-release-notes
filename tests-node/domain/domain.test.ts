@@ -7,6 +7,7 @@ import {
   daysBetween,
   iso,
   localDay,
+  localMoment,
   localStart,
   parseDay,
   validDay,
@@ -220,4 +221,20 @@ test("a local day's first instant, across offsets, DST and days that start at 1a
     assert.equal(localDay(localStart(day, tz), tz), day);
     assert.equal(localDay(localStart(day, tz) - 1, tz), addDays(day, -1));
   }
+});
+
+test('the moment a local day reaches a send time, with the offset then, across DST', () => {
+  assert.equal(localMoment('2026-10-13', '06:30', 'America/Chicago'), '2026-10-13T06:30:00-05:00');
+  assert.equal(localMoment('2026-11-04', '06:30', 'America/Chicago'), '2026-11-04T06:30:00-06:00');
+  assert.equal(localMoment('2026-10-13', '06:00', 'UTC'), '2026-10-13T06:00:00+00:00');
+  assert.equal(localMoment('2026-10-13', '06:15', 'Asia/Kolkata'), '2026-10-13T06:15:00+05:30');
+  assert.equal(localMoment('2026-10-13', '23:45', 'Pacific/Chatham'), '2026-10-13T23:45:00+13:45');
+  // The days the clocks change: a skipped time is the first quarter hour
+  // after the jump, and a repeated one the first time round.
+  assert.equal(localMoment('2026-03-08', '06:00', 'America/Chicago'), '2026-03-08T06:00:00-05:00');
+  assert.equal(localMoment('2026-03-08', '02:30', 'America/Chicago'), '2026-03-08T03:00:00-05:00');
+  assert.equal(localMoment('2026-11-01', '01:30', 'America/Chicago'), '2026-11-01T01:30:00-05:00');
+  assert.equal(localMoment('2026-11-01', '06:00', 'America/Chicago'), '2026-11-01T06:00:00-06:00');
+  for (const bad of ['6:00', '24:00', '06:60', 'x'])
+    assert.throws(() => localMoment('2026-10-13', bad, 'America/Chicago'), RangeError, bad);
 });

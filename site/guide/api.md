@@ -1,11 +1,11 @@
 ---
 title: The API
-description: Add notes from a terminal, a script or an app, with the requests, the errors, the limits and recipes to copy.
+description: Add notes and keep Upcoming dates from a terminal, a script or an app, with the requests, the errors, the limits and recipes to copy.
 ---
 
 ## The idea
 
-Anything that can send a web request can add a note: a terminal, a script, a home automation, an app. Send a token you made (see [API tokens](/guide/tokens/)) and some words, and they become a note on today's release, in your own voice.
+Anything that can send a web request can add a note: a terminal, a script, a home automation, an app. Send a token you made (see [API tokens](/guide/tokens/)) and some words, and they become a note on today's release, in your own voice. A token can keep your [Upcoming](/guide/upcoming/) dates too, and read the reminders each morning brings, so an app can remind you on your phone.
 
 Every request goes to `https://notes.yourversionnumber.com/v1`, and `/v1/openapi.json` there describes the whole API for tools that read OpenAPI, with no token needed. For now only Jamie can make tokens; they open to every account after that.
 
@@ -41,10 +41,14 @@ It answers with one line: `Filed in 5.2.113.`
 - `DELETE /v1/notes/{date}/{id}`: delete it.
 - `GET /v1/tags`: your tag row, the pinned tags and then up to 20 recent ones, the tags used most in the last 30 days. Any token may ask.
 - `PUT /v1/tags/pinned`: replace your pinned tags, with `{"pinned": ["house", "work"]}`, up to 12 tags. They're the same ones the web shows under the note box.
+- `GET /v1/upcoming`: your Upcoming dates, soonest first, each with its `id`, its `revision`, its `next` date and the line the email says about it. A trip or event that's over is left out and only counted, as `past_left_out`.
+- `POST /v1/upcoming/batch`: add, change and remove dates together, up to 50 dates a request, as `{"add": […], "change": […], "remove": […]}`. It saves all or nothing: if one date isn't right, none is saved, and `field` names the one, like `add[1]`. With `"dry_run": true` it checks everything and finds each trip's city, and saves nothing. The answer lists what was `added`, in the order you sent it, then what was `changed` and `removed`.
+- `GET /v1/upcoming/reminders`: the reminders each morning's email carries, day by day, for the next 14 days, or up to 31 days ahead with `days`. Each day has `send_at`, the moment that morning's email is due, and each reminder the date's `id` as `upcoming`, the day it falls on as `date`, and its `when` and `line`, as the email says them. A date with its email reminders turned off isn't there; a paused email doesn't change the list.
+- `DELETE /v1/upcoming/{id}`: remove one date, with the revision you read as `?revision=`.
 - `GET /v1/activity`: your activity log, newest first, without any words: no note text, no email's subject or sender, no setting's value. `after` gives only rows newer than one you've seen, and `before`, with the `next` from the answer, the page older. `kinds` keeps some kinds, like `note,mail`, and `limit` sets how many rows a page holds.
 - `DELETE /v1/token`: this token revokes itself. Any token may ask.
 
-Adding, changing and deleting notes and pinning tags need a token that may add notes, and only ever touch the notes that same token added. The activity log needs a token that may read it.
+Adding, changing and deleting notes and pinning tags need a token that may add notes, and only ever touch the notes that same token added. Upcoming needs a token that may read and change your Upcoming dates; it reaches all of them, not only the ones it added, and no other token reaches them. The activity log needs a token that may read it.
 
 ## Errors
 
@@ -66,9 +70,9 @@ Act on the code, and show the sentence. Here is each one, with its HTTP status:
 - `scope_required` (403): this token may not do that.
 - `not_yours` (403): this token didn't add that note.
 - `origin_refused` (403): the API isn't for web pages in a browser.
-- `not_found` (404): there is no such request, or no such note.
+- `not_found` (404): there is no such request, or no such note or date.
 - `method_not_allowed` (405): that request doesn't take that method.
-- `revision_mismatch` (409): the note changed since you read it, and `revision` is its current one.
+- `revision_mismatch` (409): the note or date changed since you read it. For a note, `revision` is its current one; for a date, read `GET /v1/upcoming` again.
 - `account_closing` (409): the account is being deleted.
 - `busy` (409): try again shortly, with the same `Idempotency-Key`.
 - `too_large` (413): the request is over 128 KB.
@@ -82,7 +86,21 @@ On a bad connection you can't always tell whether a note arrived. Send an `Idemp
 
 ## Limits
 
-Each day, from midnight UTC, an account may add 100 notes and make 200 other changes (appends, edits, deletes and pinned tags), across all its tokens, and each token may read 2,000 times. Past a limit the answer is `rate_limited`, with `Retry-After`. Every write says where it stands in `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`.
+Each day, from midnight UTC, an account may add 100 notes, make 200 other changes (appends, edits, deletes and pinned tags) and save Upcoming 50 times, across all its tokens, and each token may read 2,000 times. An Upcoming dry run counts as a read. Past a limit the answer is `rate_limited`, with `Retry-After`. Every write says where it stands in `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`.
+
+## Upcoming dates
+
+Each date has a `kind` (birthday, anniversary, trip or event), a `title` on one line, and a `date`: month and day, `MM-DD`, for a birthday or anniversary, and the full `YYYY-MM-DD` for an event or a trip's first day. A birthday or anniversary may have its first `year`, so the line can say which one it is. A trip has an `end_date` and a `place`, its destination, like "Zürich" or "Paris, Texas". `tag` groups dates, `reminders` are the days before to remind, and `"email": false` keeps a date's reminders out of the morning email, and so out of `GET /v1/upcoming/reminders`. [Upcoming](/guide/upcoming/) says how each works, and `/v1/openapi.json` has every field.
+
+```sh
+curl https://notes.yourversionnumber.com/v1/upcoming/batch \
+  -H "Authorization: Bearer $RN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  --data '{"add": [{"kind": "birthday", "title": "Mom", "date": "11-04", "year": 1955}]}'
+```
+
+To change a date, send its `id` and `revision` in `change`, with every field again as it should be. To remove one, send its `id` and `revision` in `remove`.
 
 ## From the terminal
 

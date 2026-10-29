@@ -4,7 +4,10 @@
  * token in the same transaction as the write, its 7-day receipt, its
  * content-free audit row and the account's daily count. A token writes in
  * the owner's voice (`source` api, no `author`), and changes only notes it
- * wrote itself. */
+ * wrote itself. With `upcoming`, it lists nothing here but saves and removes
+ * Upcoming dates as an agent does (workers/capture.ts, writeUpcoming): all
+ * or nothing, from the revision it read, with a dry run that writes
+ * nothing. */
 import { randomUUID } from 'node:crypto';
 import type { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
 import { digest } from '../packages/backend/auth.ts';
@@ -17,19 +20,38 @@ import {
   type TitleFetcher
 } from '../packages/backend/links.ts';
 import { live, type OAuthRow } from '../packages/backend/oauth.ts';
-import { activityLog, again, badgeEvents, recordActivity } from '../packages/backend/activity.ts';
-import { unlockedBy } from '../packages/backend/badges.ts';
+import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
+import { addedEvents, earnedBy, unlockedBy } from '../packages/backend/badges.ts';
 import { keys as mediaKeys } from '../packages/backend/media.ts';
+import { search } from '../packages/backend/places.ts';
 import { safeLog } from '../packages/backend/services.ts';
+import { ApiError } from '../packages/backend/sessions.ts';
 import { pinnedTags, pinsOf, tagRow, type TagRowStore } from '../packages/backend/tag-row.ts';
-import { checkToken, scopesOf, V1_LIMITS, V1_RECEIPT_SECONDS, type TokenReads } from '../packages/backend/tokens.ts';
+import {
+  checkToken,
+  SCOPE_REFUSALS,
+  scopesOf,
+  V1_LIMITS,
+  V1_RECEIPT_SECONDS,
+  V1_UPCOMING_MAX,
+  type TokenReads
+} from '../packages/backend/tokens.ts';
+import {
+  batchShape,
+  prepareUpcomingBatch,
+  UPCOMING_HINTS,
+  type UpcomingBatch,
+  type UpcomingChange
+} from '../packages/backend/upcoming.ts';
 import { iso, localDay, validDay } from '../packages/domain/dates.ts';
 import { MAX_NOTE, type NoteRecord } from '../packages/domain/notes.ts';
 import { found } from '../packages/domain/tags.ts';
+import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
 import { codePointLength, pythonTrim } from '../packages/domain/unicode.ts';
 import { computeVersion } from '../packages/domain/version.ts';
+import type { ActivityEvent } from '../packages/domain/activity.ts';
 import type { Unlocked } from '../packages/domain/badges.ts';
-import { editRevision } from '../server/mcp/reader.ts';
+import { agentUpcomingView, editRevision } from '../server/mcp/reader.ts';
 import { fingerprint, object, type Arguments, type SafeLog } from '../server/mcp/common.ts';
 import type { CaptureContext } from './capture.ts';
 
@@ -69,8 +91,12 @@ export const API_WRITES: Record<string, readonly string[]> = {
   'notes.append': ['date', 'id', 'text'],
   'notes.delete': ['date', 'id'],
   'tags.pinned': ['pinned'],
+  'upcoming.batch': ['add', 'change', 'remove', 'dry_run'],
+  'upcoming.delete': ['id', 'revision'],
   'token.revoke': []
 };
+
+const scopeFor = (op: string) => (op.startsWith('upcoming.') ? 'upcoming' : 'notes:write');
 
 /** A refusal in `/v1`'s own words (docs/API.md, Errors). */
 export class ApiRefusal extends Error {
@@ -113,9 +139,48 @@ function shape(op: string, args: Arguments): void {
   for (const field of Object.keys(args))
     if (!API_WRITES[op]!.includes(field))
       throw new ApiRefusal('invalid_request', `${field} isn't a field here.`, { field });
+  if (op === 'upcoming.batch') {
+    if (Object.hasOwn(args, 'dry_run') && typeof args.dry_run !== 'boolean')
+      throw new ApiRefusal('invalid_request', 'dry_run is true or false.', { field: 'dry_run' });
+    return;
+  }
+  if (op === 'upcoming.delete') {
+    if (typeof args.id !== 'string' || !args.id || codePointLength(args.id) > 80)
+      throw new ApiRefusal('invalid_request', 'id is a string.', { field: 'id' });
+    if (!Number.isSafeInteger(args.revision) || Number(args.revision) < 1)
+      throw new ApiRefusal('invalid_request', 'Send the revision you read, a whole number.', { field: 'revision' });
+    return;
+  }
   for (const field of ['date', 'id', 'revision', 'written_at'])
     if (Object.hasOwn(args, field) && (typeof args[field] !== 'string' || codePointLength(String(args[field])) > 80))
       throw new ApiRefusal('invalid_request', `${field} is a string.`, { field });
+}
+
+/** A refused date in `/v1`'s words, naming the entry (`change[2]`). */
+function upcomingRefusal(error: ApiError): ApiRefusal {
+  const list = error.extra.list,
+    at = typeof list === 'string' && typeof error.extra.index === 'number' ? `${list}[${error.extra.index}]` : null,
+    field = at ?? (error.error === 'upcoming-batch' ? 'add' : null),
+    where = at ? ` (${at})` : '',
+    extra = field ? { field } : {};
+  if (error.error === 'places-failed')
+    return new ApiRefusal(
+      'unavailable',
+      'The city search is unavailable. Try again shortly with the same Idempotency-Key.'
+    );
+  if (error.error === 'upcoming-missing')
+    return new ApiRefusal(
+      'not_found',
+      `There is no saved date with that id${where}. GET /v1/upcoming lists the current ones.`,
+      extra
+    );
+  if (error.error === 'upcoming-changed')
+    return new ApiRefusal(
+      'revision_mismatch',
+      `That date changed since you read it${where}. Read GET /v1/upcoming again and redo the change.`,
+      extra
+    );
+  return new ApiRefusal('invalid_request', (UPCOMING_HINTS[error.error] ?? "That date isn't right.") + where, extra);
 }
 
 export async function writeApi(
@@ -154,13 +219,12 @@ export async function writeApi(
     return { status: 204, body: null, replayed: false };
   }
 
-  if (!scopesOf(token).includes('notes:write'))
-    throw new ApiRefusal('scope_required', "This token can't add notes. Make a token with Add notes ticked.");
+  if (!scopesOf(token).includes(scopeFor(op))) throw new ApiRefusal('scope_required', SCOPE_REFUSALS[scopeFor(op)]!);
   shape(op, args);
   const key = typeof event.key === 'string' && event.key ? event.key : randomUUID(),
     receiptKey = 'CAPTURE#' + tid + '#' + digest(key),
     hash = fingerprint({ api: op, arguments: args }),
-    limitName = op === 'notes.create' ? 'create' : 'change',
+    limitName = op === 'notes.create' ? 'create' : op.startsWith('upcoming.') ? 'upcoming' : 'change',
     cap = V1_LIMITS[limitName],
     rateKey = `WRITERATE#v1-${limitName}#${Math.floor(now / 86400)}`,
     titles = new Map<string, PageMeta | null>();
@@ -192,6 +256,49 @@ export async function writeApi(
       throw new ApiRefusal('not_yours', 'A token changes only the notes it wrote.');
     return old;
   };
+  // Upcoming: the dates a save would change, checked as a whole against
+  // what is saved now, and what it answers.
+  const upcomingChanges = async (): Promise<UpcomingChange[]> => {
+    let batch: UpcomingBatch;
+    try {
+      if (op === 'upcoming.delete') batch = { add: [], change: [], remove: [{ id: args.id, revision: args.revision }] };
+      else {
+        const lists = { ...args };
+        delete lists.dry_run;
+        batch = batchShape(lists);
+      }
+      const size = batch.add.length + batch.change.length + batch.remove.length;
+      if (!size) throw new ApiRefusal('invalid_request', 'Send at least one date to add, change or remove.');
+      if (size > V1_UPCOMING_MAX)
+        throw new ApiRefusal('invalid_request', `Send at most ${V1_UPCOMING_MAX} dates a request.`, { field: 'add' });
+      return (
+        await prepareUpcomingBatch(
+          batch,
+          await context.store.upcomingEntries(uid),
+          today,
+          iso(now),
+          context.geocode ?? search
+        )
+      ).changes;
+    } catch (error) {
+      if (error instanceof ApiError) throw upcomingRefusal(error);
+      throw error;
+    }
+  };
+  const upcomingBody = (changes: readonly UpcomingChange[], dry: boolean): OAuthRow => {
+    const view = (c: UpcomingChange) =>
+      agentUpcomingView({ ...(c.next as UpcomingEntry), occurrence: occurrence(c.next!, today) });
+    return {
+      dry_run: dry,
+      added: changes.filter((c) => !c.previous).map(view),
+      changed: changes.filter((c) => c.previous && c.next).map(view),
+      removed: changes.filter((c) => !c.next).map((c) => c.previous!.id)
+    };
+  };
+  // A dry run checks the dates, cities found, and writes nothing: no
+  // receipt, no count.
+  if (op === 'upcoming.batch' && args.dry_run === true)
+    return { status: 200, body: upcomingBody(await upcomingChanges(), true), replayed: false };
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const receipt = await store.mcpGet('USER#' + uid, receiptKey);
@@ -212,7 +319,9 @@ export async function writeApi(
         'rate_limited',
         limitName === 'create'
           ? `That's today's ${cap} notes through tokens. Try again after midnight UTC.`
-          : `That's today's ${cap} changes through tokens. Try again after midnight UTC.`,
+          : limitName === 'upcoming'
+            ? `That's today's ${cap} Upcoming saves through tokens. Try again after midnight UTC.`
+            : `That's today's ${cap} changes through tokens. Try again after midnight UTC.`,
         { retry_after: reset }
       );
     const rate = {
@@ -268,6 +377,30 @@ export async function writeApi(
               }
             }
           ]);
+      };
+    } else if (op === 'upcoming.batch' || op === 'upcoming.delete') {
+      const changes = await upcomingChanges(),
+        status = op === 'upcoming.delete' ? 204 : 200,
+        body = status === 204 ? null : upcomingBody(changes, false),
+        named = (events: readonly ActivityEvent[]) =>
+          events.map((e) => ({ ...e, fields: { ...e.fields, token: name } }));
+      landed = (
+        await context.store.upcomingBatch(uid, changes, [
+          ...store.tokenProof(token, now, 'upcoming'),
+          ...store.agentReceipts(receiptFor(status, body), audit({ count: changes.length }), rate, previous, now)
+        ])
+      ).ok;
+      answer = { status, body, replayed: false, limit };
+      after = async () => {
+        // Dates added count toward the Roadmap, as from anywhere else.
+        const won = await earnedBy(context.store, uid, profile, now, addedEvents(changes, now, tz), {
+          via: 'token',
+          ...(client ? { client } : {}),
+          log: (f) => (options.log ?? safeLog)(f)
+        });
+        if (body && profile.badges !== false)
+          answer.body = { ...body, unlocked: won.unlocked.map((u) => ({ key: u.key, name: u.name })) };
+        await record([...named(upcomingEvents(changes, 'token', client ?? undefined)), ...named(won.events)]);
       };
     } else if (op === 'notes.delete') {
       const old = await own(),
@@ -419,7 +552,7 @@ export async function writeApi(
     const now2 = await checkToken(store, context.origin, now, 'Bearer ' + String(event.token ?? ''));
     if (!now2.ok) throw new ApiRefusal(now2.code, '');
     if (now2.token.revision !== token.revision) throw new ApiRefusal('token_revoked', '');
-    if (op !== 'tags.pinned' && op !== 'notes.create') {
+    if (op.startsWith('notes.') && op !== 'notes.create') {
       // The note itself may have moved on (a web edit meanwhile).
       const current = await store.note(uid, String(args.date), String(args.id), true);
       if (!current) throw new ApiRefusal('not_found', 'There is no note with that date and id.');

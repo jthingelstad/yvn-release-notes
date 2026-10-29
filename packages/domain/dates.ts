@@ -85,13 +85,9 @@ export function localDay(epochSeconds: number, timezone: string): Day {
   return formatDay(Number(get('year')), Number(get('month')), Number(get('day')));
 }
 
-/** The first instant (epoch seconds) of a subscriber-local day: its local
- * midnight, or where a zone skips midnight, the first local moment after it. */
-export function localStart(value: Day, timezone: string): number {
-  const { year, month, day } = parseDay(value);
-  if (!validTimezone(timezone)) throw new RangeError('Invalid timezone');
-  const wall = utc(year, month, day).getTime() / 1000,
-    format = new Intl.DateTimeFormat('en-US', {
+/** How far a zone's clock is ahead of UTC at an instant, in seconds. */
+function offsetAt(epoch: number, timezone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       hourCycle: 'h23',
       year: 'numeric',
@@ -100,19 +96,44 @@ export function localStart(value: Day, timezone: string): number {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
-    }),
-    offset = (epoch: number) => {
-      const parts = format.formatToParts(new Date(epoch * 1000)),
-        get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
-      const shown = utc(get('year'), get('month'), get('day')).getTime() / 1000;
-      return shown + get('hour') * 3600 + get('minute') * 60 + get('second') - epoch;
-    };
-  let start = wall - offset(wall);
-  start = wall - offset(start);
+    }).formatToParts(new Date(epoch * 1000)),
+    get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  const shown = utc(get('year'), get('month'), get('day')).getTime() / 1000;
+  return shown + get('hour') * 3600 + get('minute') * 60 + get('second') - epoch;
+}
+
+/** The first instant (epoch seconds) of a subscriber-local day: its local
+ * midnight, or where a zone skips midnight, the first local moment after it. */
+export function localStart(value: Day, timezone: string): number {
+  const { year, month, day } = parseDay(value);
+  if (!validTimezone(timezone)) throw new RangeError('Invalid timezone');
+  const wall = utc(year, month, day).getTime() / 1000;
+  let start = wall - offsetAt(wall, timezone);
+  start = wall - offsetAt(start, timezone);
   // Midnight fell in a gap: step back to the day's first quarter hour.
   while (localDay(start - 900, timezone) === value) start -= 900;
   while (localDay(start, timezone) < value) start += 900;
   return start;
+}
+
+/** When a subscriber-local day's clock reaches a time ("06:30"), in RFC 3339
+ * with the zone's offset then: the moment the morning email is due, as the
+ * sender's quarter-hour ticks find it. A time the clock skips is the first
+ * quarter hour after the change, and a time it shows twice is the first. */
+export function localMoment(value: Day, time: string, timezone: string): string {
+  const { year, month, day } = parseDay(value),
+    [h, m] = time.split(':').map(Number);
+  if (!validTimezone(timezone) || !/^\d{2}:\d{2}$/.test(time) || h! > 23 || m! > 59)
+    throw new RangeError('Invalid time or timezone');
+  const wall = utc(year, month, day).getTime() / 1000 + h! * 3600 + m! * 60;
+  let at = wall - offsetAt(wall, timezone);
+  at = wall - offsetAt(at, timezone);
+  while (at + offsetAt(at, timezone) < wall) at += 900;
+  const offset = offsetAt(at, timezone),
+    shown = new Date((at + offset) * 1000).toISOString().slice(0, 19),
+    sign = offset < 0 ? '-' : '+',
+    abs = Math.abs(offset);
+  return `${shown}${sign}${String(Math.floor(abs / 3600)).padStart(2, '0')}:${String(Math.floor((abs % 3600) / 60)).padStart(2, '0')}`;
 }
 
 export function iso(epochSeconds: number): string {

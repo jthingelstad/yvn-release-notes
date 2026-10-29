@@ -23,13 +23,21 @@ Keep every note on the device the moment it's written, then send it. With no con
 
 Never work out a version on the device. `GET /v1/me` gives today's version and the versions for the next 14 days, each on its date in the account's own time zone, so midnight, a birthday and a trip abroad all come out right. Every answer also says today's version in `Release-Notes-Version`, and each note's answer says the version it was filed in: show that one.
 
+## Reminders on the phone
+
+Don't work out a reminder on the device either. `GET /v1/upcoming/reminders` says which reminders each morning brings, in the email's own words, and when that morning's email is due, as `send_at`, so a reminder on the phone comes with the email and says the same. Schedule them as the device's own notifications, from what it last read:
+
+- Read two weeks ahead, the default, and read again each time the app opens and whenever the platform lets it refresh in the background. An iPhone keeps only so many waiting notifications for an app, and two weeks fits.
+- Replace everything you scheduled with each read. A date that was changed, removed or had its email reminders turned off is no longer in the answer.
+- Ask before turning reminders on, and keep them off until the person does.
+
 ## Errors and limits
 
 - Act on the `code`, never the wording, and show the `message` when the person has to do something.
 - On `rate_limited`, wait the seconds `Retry-After` says. The queue holds the rest.
 - On `token_missing`, `token_unknown`, `token_revoked` or `token_expired`, stop sending, keep the queue, and ask for a new token.
 - On `scope_required`, say what the token can't do: the `message` says it in words the person can read.
-- On `revision_mismatch`, the note was changed somewhere else, on the web say. Read it again before changing it.
+- On `revision_mismatch`, the note or date was changed somewhere else, on the web say. Read it again before changing it.
 
 ## Name your client
 

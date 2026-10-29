@@ -506,9 +506,17 @@ Where things are (each module's design comment has its contract):
   using upcoming should get badges"); nothing else counts them. A trip
   does not move the subscriber's home, forecast or note places (switching
   is deferred).
-- **Reminders** travel only in the daily email, at most three due entries
-  with a link to all. A failed read never holds the send. No catch-up,
-  extra messages, tracking or model-generated prompts.
+- **Reminders** travel in the daily email and in any app the owner turns
+  them on in, with the email's own lines (Jamie, 2026-10-29: "Reminders are
+  going to show up in other places. The daily email is already doing too
+  much work."). The email carries at most three due entries with a link to
+  all; a failed read never holds the send. An app reads them from
+  `GET /v1/upcoming/reminders` (`remindersFor`, with each morning's
+  `send_at`) and schedules them on the device; the server sends nothing
+  more. No catch-up, tracking or model-generated prompts. The guide's
+  Upcoming, email and pause pages still say reminders come only in the
+  morning email, true while tokens are the administrator's alone; they
+  change when tokens open.
 - Entries (`UPCOMING#<id>`) are written with atomic revision and capacity
   checks and the session and account proof, are in every owner export and
   go with the account. Never log titles, dates or destinations. Note scopes
@@ -530,7 +538,8 @@ Where things are (each module's design comment has its contract):
   "the user can add in their calendar"): `/api/calendar/<token>.ics`, with
   the standing address's checks (120 random bits, `CALENDAR#`, "New link",
   gone with the account) and no session: the link is the proof, so it is
-  never logged or exported. No alarms; reminders travel only in the email.
+  never logged or exported. No alarms: reminders travel in the email and
+  in apps the owner turns them on in, never the calendar.
 
 ### The email
 
@@ -768,8 +777,9 @@ Where things are (each module's design comment has its contract):
 ## API tokens and `/v1` (2026-10-29)
 
 `docs/API.md` has the design and the phases; phase 1 (tokens, text notes,
-tags, the activity log) and phase 2 (the OpenAPI file and the guide's
-`/guide/tokens/`, `/guide/api/` and `/guide/api/clients/`) are built.
+tags, the activity log), phase 2 (the OpenAPI file and the guide's
+`/guide/tokens/`, `/guide/api/` and `/guide/api/clients/`) and phase 4
+(Upcoming and its reminders) are built.
 
 - **`/v1` is the MCP function's**, under its reader role, and every write
   goes to the capture function, as an agent's does. Only an API token opens
@@ -785,8 +795,12 @@ tags, the activity log) and phase 2 (the OpenAPI file and the guide's
   value).
 - **Deleting an account** blocks token writes first (`mcp_deleting`), then
   removes every token and its pointer with the agent connections.
-- **Offered scopes** are `notes:write` and `activity`; `media:write` and
-  `upcoming` come with phases 3 and 4. There is no `notes:read` in v1.
+- **Offered scopes** are `notes:write`, `upcoming` and `activity`;
+  `media:write` comes with phase 3. There is no `notes:read` in v1.
+  `upcoming` keeps MCP's rules (revisions, dry runs, all or nothing, 50
+  dates a request, past one-time dates left out) and reaches every date,
+  as MCP's does, with its own count of 50 saves a UTC day across tokens;
+  a dry run counts as a read. Its activity rows carry the token's name.
 - **When `/v1` changes**, regenerate the contract with
   `node --import tsx tools/export-api-contract.ts`. Every change is a new
   `API_VERSION` with its `API_CHANGES` entry (`server/mcp/v1.ts`), or the

@@ -875,8 +875,10 @@ All occurrences/reminder selection use the subscriber's local daily-email date.
 A compact **Upcoming** section follows streak/lifetime counts, before history,
 in both plain text and HTML. At most three due entries show, today's before
 future dates, with a link to the complete list and the number of additional due
-entries. Empty sections disappear. Reminders travel only in the existing daily
-email: no extra sends, catch-up messages, tracking or changed reply ownership.
+entries. Empty sections disappear. Reminders travel in the existing daily
+email, and in apps the owner turns them on in, which read the same lines from
+`GET /v1/upcoming/reminders` (docs/API.md): no extra sends from the server,
+catch-up messages, tracking or changed reply ownership.
 Optional read failures omit Upcoming without holding the daily email. Pauses,
 stopped accounts and the daily-send claim retain their existing behavior.
 
@@ -918,7 +920,7 @@ and annual dates once a year from last year through three years ahead, each
 birthday with the version it turns that year (a leap day on March 1 outside leap
 years, as in the email) and a known anniversary with its count of years. A tag
 and "A major release." go in the description, a destination in the location.
-No alarms: reminders travel only in the daily email. Entries' own update times
+No alarms: reminders travel in the daily email and in apps, never the feed. Entries' own update times
 stamp the events (`DTSTAMP`, `LAST-MODIFIED`, `SEQUENCE` is the revision), so an
 unchanged feed reads the same twice and calendar apps update in place. The
 token is never logged (reads log the owner and a count) and never exported; a

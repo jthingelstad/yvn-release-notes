@@ -5,22 +5,29 @@
  * cookie, and no MCP access token, is ever read here. Not for browsers: no
  * CORS, and any Origin but the site's is refused. */
 import { activityId, ACTIVITY_FAMILIES, familyOf, tokenActivityView, titled } from '../../packages/domain/activity.ts';
-import { addDays, iso, localDay, validDay } from '../../packages/domain/dates.ts';
+import { addDays, iso, localDay, localMoment, validDay } from '../../packages/domain/dates.ts';
 import { writtenAt, type NoteRecord } from '../../packages/domain/notes.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
+import { remindersFor, UPCOMING_MAX, upcomingViews } from '../../packages/domain/upcoming.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { tagRow, type TagRowStore } from '../../packages/backend/tag-row.ts';
-import { checkToken, clientProduct, scopesOf, V1_LIMITS } from '../../packages/backend/tokens.ts';
+import { checkToken, clientProduct, SCOPE_REFUSALS, scopesOf, V1_LIMITS } from '../../packages/backend/tokens.ts';
 import { failure, object } from './common.ts';
-import { editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
+import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.0.0';
+export const API_VERSION = '1.1.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. A new version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.1.0',
+    date: '2026-10-29',
+    summary:
+      'Upcoming, with the upcoming scope: list the dates ahead, add, change and remove up to 50 at once (all or nothing, with a dry run), remove one, and read the reminders each morning carries for up to 31 days ahead, with when the email is due.'
+  },
   {
     version: '1.0.0',
     date: '2026-10-29',
@@ -33,9 +40,12 @@ export const V1_BODY = 128 * 1024;
 /** How many days `/v1/me` gives versions for, today first: enough for a
  * phone to show the version and fire reminders offline for two weeks. */
 export const ME_DAYS = 14;
+/** How far ahead `/v1/upcoming/reminders` reads: a month of mornings. */
+export const REMINDER_DAYS_MAX = 31;
 
 const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
-  APPEND = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/append$/;
+  APPEND = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/append$/,
+  UPCOMING = /^\/v1\/upcoming\/([A-Za-z0-9_-]{1,80})$/;
 
 /** Every route: method, path, name, and the scope it needs (none: any token). */
 export const V1_ROUTES: readonly {
@@ -66,6 +76,22 @@ export const V1_ROUTES: readonly {
     scope: 'notes:write'
   },
   { method: 'GET', path: /^\/v1\/activity$/, template: '/v1/activity', name: 'activity', scope: 'activity' },
+  { method: 'GET', path: /^\/v1\/upcoming$/, template: '/v1/upcoming', name: 'upcoming', scope: 'upcoming' },
+  {
+    method: 'POST',
+    path: /^\/v1\/upcoming\/batch$/,
+    template: '/v1/upcoming/batch',
+    name: 'upcoming.batch',
+    scope: 'upcoming'
+  },
+  {
+    method: 'GET',
+    path: /^\/v1\/upcoming\/reminders$/,
+    template: '/v1/upcoming/reminders',
+    name: 'upcoming.reminders',
+    scope: 'upcoming'
+  },
+  { method: 'DELETE', path: UPCOMING, template: '/v1/upcoming/{id}', name: 'upcoming.delete', scope: 'upcoming' },
   { method: 'DELETE', path: /^\/v1\/token$/, template: '/v1/token', name: 'token.revoke', scope: null }
 ];
 
@@ -103,10 +129,6 @@ const MESSAGES: Record<string, string> = {
   busy: 'Try again shortly with the same Idempotency-Key.',
   too_large: 'A request can be at most 128 KB.',
   unavailable: 'Try again shortly with the same Idempotency-Key.'
-};
-const SCOPE_MESSAGES: Record<string, string> = {
-  'notes:write': "This token can't add notes. Make a token with Add notes ticked.",
-  activity: "This token can't read the activity log. Make a token that may read it."
 };
 
 type V1Store = ReaderStore & TagRowStore;
@@ -219,12 +241,12 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
       params = (route.path.exec(path) ?? []).slice(1);
     uid = String(token.user_id);
     if (route.scope && !scopes.includes(route.scope))
-      return refuse('scope_required', asText, headers, SCOPE_MESSAGES[route.scope]);
+      return refuse('scope_required', asText, headers, SCOPE_REFUSALS[route.scope]);
 
     // Writes go on to the capture function, which proves the token again.
     if (route.method !== 'GET') {
       let args: OAuthRow = {};
-      if (route.name !== 'notes.delete' && route.name !== 'token.revoke') {
+      if (route.method !== 'DELETE') {
         const raw = await bodyText(request).catch(() => undefined);
         if (raw === null) return refuse('too_large', asText, headers);
         if (raw === undefined) return refuse('invalid_request', asText, headers, 'Send the body as UTF-8.');
@@ -242,7 +264,22 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         } else if (route.name === 'notes.create') args = { text: raw };
         else return refuse('invalid_request', asText, headers, 'Send a JSON body with Content-Type: application/json.');
       }
-      if (params.length) Object.assign(args, { date: params[0], id: params[1] });
+      // The path's own fields ({date}, {id}) win over the body's.
+      [...route.template.matchAll(/\{(\w+)\}/g)].forEach((m, i) => (args[m[1]!] = params[i]));
+      if (route.name === 'upcoming.delete') {
+        const revision = new URL(request.url).searchParams.get('revision');
+        if (revision === null || !/^[1-9]\d{0,14}$/.test(revision))
+          return refuse('invalid_request', asText, headers, 'Send the revision you read, as ?revision=.', {
+            field: 'revision'
+          });
+        args.revision = Number(revision);
+      }
+      // A dry run reads and writes nothing, so it counts as a read.
+      const dry = route.name === 'upcoming.batch' && args.dry_run === true;
+      if (dry && !(await readQuota(context, uid, tid)))
+        return refuse('rate_limited', asText, headers, `That's today's ${V1_LIMITS.reads} reads for this token.`, {
+          retry_after: until(now)
+        });
       const key = request.headers.get('idempotency-key');
       if (key !== null && !/^[\x20-\x7e]{1,128}$/.test(key.trim()))
         return refuse(
@@ -271,6 +308,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         body = (captured.body ?? null) as OAuthRow | null,
         limit = object(captured.limit) ? captured.limit : null,
         extra: Headers = { ...headers };
+      if (dry && !(await record(context, family, 'v1:' + route.name, 'ok', tz)))
+        options.log?.({ event: 'activity-unrecorded', kind: 'reads', user: uid });
       if (captured.replayed) extra['idempotent-replayed'] = 'true';
       if (limit)
         Object.assign(extra, {
@@ -281,7 +320,12 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
       const note = object(body?.note) ? body.note : null,
         unlocked = Array.isArray(body?.unlocked) ? (body.unlocked as OAuthRow[]) : [];
       let line: string | null = null;
-      if (asText)
+      if (asText && route.name === 'upcoming.batch') {
+        const n = (list: string) => (Array.isArray(body?.[list]) ? (body[list] as unknown[]).length : 0);
+        line =
+          `${dry ? 'Checked, nothing saved' : 'Saved'}: ${n('added')} added, ${n('changed')} changed, ${n('removed')} removed.` +
+          (unlocked.length ? ` Unlocked: ${unlocked.map((u) => String(u.name)).join(', ')}.` : '');
+      } else if (asText)
         line =
           route.name === 'tags.pinned'
             ? ((body?.pinned as string[] | undefined) ?? []).map((t) => '#' + t).join(' ') || 'No pinned tags.'
@@ -360,15 +404,58 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
           line: String(item.text ?? '')
         };
       }
-      // The activity log, trimmed of words (packages/domain/activity.ts).
-      const url = new URL(request.url),
-        q = url.searchParams,
-        cursor = (field: string) => {
-          const value = q.get(field);
-          if (value === null) return undefined;
-          if (!/^\d{4}-\d{2}-\d{2}T[\d:.]+Z#[a-z.]+#[A-Za-z0-9_.-]{1,120}$/.test(value)) throw new Error(field);
-          return value;
+      if (route.name === 'upcoming') {
+        // As an agent's upcoming_list: a one-time date already over is left
+        // out and only counted, since it still takes one of the account's.
+        const all = upcomingViews(await store.upcomingEntries(uid), today),
+          views = all
+            .filter((v) => v.occurrence.status !== 'past')
+            .toSorted((x, y) => x.occurrence.date.localeCompare(y.occurrence.date) || x.title.localeCompare(y.title))
+            .map(agentUpcomingView);
+        return {
+          status: 200,
+          body: { today, entries: views, past_left_out: all.length - views.length, max_entries: UPCOMING_MAX },
+          line: views.map((v) => `${String(v.next)} ${String(v.line)}`).join('\n') || 'Nothing upcoming.'
         };
+      }
+      const url = new URL(request.url),
+        q = url.searchParams;
+      if (route.name === 'upcoming.reminders') {
+        // The reminders each morning's email carries (remindersFor), all of
+        // them, for an app to show at the moment that email is due.
+        const days = q.get('days') === null ? ME_DAYS : Number(q.get('days'));
+        if (!Number.isInteger(days) || days < 1 || days > REMINDER_DAYS_MAX)
+          return {
+            code: 'invalid_request',
+            message: `days is 1 to ${REMINDER_DAYS_MAX}.`,
+            extra: { field: 'days' }
+          };
+        const entries = await store.upcomingEntries(uid),
+          sendTime = String(profile.send_time ?? '06:00'),
+          through = addDays(today, days - 1),
+          out = Array.from({ length: days }, (_, i) => addDays(today, i))
+            .map((date) => ({ date, due: remindersFor(entries, date).due }))
+            .filter((d) => d.due.length)
+            .map(({ date, due }) => ({
+              date,
+              send_at: localMoment(date, sendTime, tz),
+              reminders: due.map((r) => ({ upcoming: r.id, date: r.date, when: r.when, line: r.line }))
+            }));
+        return {
+          status: 200,
+          body: { from: today, through, days: out },
+          line:
+            out.flatMap((d) => d.reminders.map((r) => `${d.date} ${r.when}: ${r.line}`)).join('\n') ||
+            `No reminders through ${through}.`
+        };
+      }
+      // The activity log, trimmed of words (packages/domain/activity.ts).
+      const cursor = (field: string) => {
+        const value = q.get(field);
+        if (value === null) return undefined;
+        if (!/^\d{4}-\d{2}-\d{2}T[\d:.]+Z#[a-z.]+#[A-Za-z0-9_.-]{1,120}$/.test(value)) throw new Error(field);
+        return value;
+      };
       let before: string | undefined, after: string | undefined;
       try {
         before = cursor('before');

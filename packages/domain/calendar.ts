@@ -1,8 +1,8 @@
 /** The private iCalendar feed of a subscriber's Upcoming dates: one all-day
  * event per trip or one-time event, and one per year of an annual date, so a
  * birthday carries the version it turns that year. Dates roll a leap day to
- * March 1 as the email does. No alarms: reminders travel only in the daily
- * email. Unchanged entries serialize identically, so calendar apps that poll
+ * March 1 as the email does. No alarms: reminders travel in the daily email
+ * and in apps (`/v1/upcoming/reminders`), never here. Unchanged entries serialize identically, so calendar apps that poll
  * the feed update their copies in place. Runs in Node and the browser. */
 import { addDays, anniversary, parseDay } from './dates.ts';
 import { annual, anniversaryYears, birthdayVersion, majorRelease, type UpcomingEntry } from './upcoming.ts';

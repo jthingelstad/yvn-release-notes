@@ -89,6 +89,24 @@ export function upcomingContent(value: Item, today: string) {
   };
 }
 
+/** What each refusal of a date asks for, in words an agent or a script's
+ * author can act on (workers/capture.ts, workers/api-writes.ts). */
+export const UPCOMING_HINTS: Record<string, string> = {
+  'upcoming-fields': 'Use only the fields in the schema; an id needs its revision, and a new entry has neither.',
+  'upcoming-kind': 'kind is birthday, anniversary, trip or event.',
+  'upcoming-title': `Give a title of up to ${UPCOMING_TITLE_MAX} characters on one line.`,
+  'upcoming-tag': `A tag is one word of letters, numbers and hyphens, up to ${MAX_TAG} characters.`,
+  'upcoming-date': 'A birthday or anniversary date is MM-DD; a trip or event date is YYYY-MM-DD.',
+  'upcoming-year': 'A year goes with a birthday or anniversary and is not after today.',
+  'upcoming-end': 'A trip has an end_date on or after its date; other kinds have none.',
+  'upcoming-place':
+    'A trip needs a destination the city search knows, like "Zürich" or "Paris, Texas"; other kinds have none.',
+  'upcoming-email': 'email is true or false.',
+  'upcoming-reminders': 'reminders are up to six different days from 0 to 365.',
+  'upcoming-limit': `The account can hold ${UPCOMING_MAX} saved dates.`,
+  'upcoming-batch': 'Send at most 50 entries per call.'
+};
+
 /** A batch of adds, changes and removes (the text editor, and agents through
  * `workers/capture.ts`) validated as a whole before anything is written. A
  * destination may be a city object from the picker or text, "Name" or

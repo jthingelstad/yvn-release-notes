@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMcpApp, handleMcp, type McpOptions } from '../../server/mcp/app.ts';
-import { V1_ROUTES } from '../../server/mcp/v1.ts';
+import { API_VERSION, V1_ROUTES } from '../../server/mcp/v1.ts';
 import { captureNote } from '../../workers/capture.ts';
 import { Tokens, TOKEN_FORMAT, TOKENS_MAX, V1_LIMITS, clientProduct } from '../../packages/backend/tokens.ts';
 import { OAuthService, publicOAuth, type OAuthRow } from '../../packages/backend/oauth.ts';
@@ -179,7 +179,7 @@ test('the bearer rule: /v1 takes an API token alone, /mcp never takes one', asyn
   assert.equal(ok.json!.version, VERSION);
   assert.equal(ok.json!.today, TODAY);
   assert.equal(ok.response.headers.get('release-notes-version'), VERSION);
-  assert.equal(ok.response.headers.get('api-version'), '1.0.0');
+  assert.equal(ok.response.headers.get('api-version'), API_VERSION);
   assert.equal(ok.response.headers.get('cache-control'), 'no-store');
   assert.equal(ok.response.headers.get('access-control-allow-origin'), null);
   // The birthday is never sent.
@@ -219,7 +219,9 @@ test('the bearer rule: /v1 takes an API token alone, /mcp never takes one', asyn
 
 test('routes, methods and scopes', async () => {
   const { ctx, app } = setup(),
-    bare = await make(ctx, { name: 'Bare', scopes: ['upcoming'] });
+    bare = await make(ctx, { name: 'Bare', scopes: ['upcoming'] }),
+    // A token always has some scope, so each route is tried with one without its own.
+    other = await make(ctx, { name: 'Other', scopes: ['activity'] });
   assert.equal((await call(app, 'GET', '/v1/nothing', { token: bare.token })).error.code, 'not_found');
   const wrong = await call(app, 'PATCH', '/v1/notes/2026-10-13/t-1', { token: bare.token });
   assert.equal(wrong.status, 405);
@@ -230,7 +232,7 @@ test('routes, methods and scopes', async () => {
   for (const route of V1_ROUTES.filter((r) => r.scope)) {
     const path = route.template.replace('{date}', TODAY).replace('{id}', 't-x'),
       r = await call(app, route.method, path, {
-        token: bare.token,
+        token: route.scope === 'upcoming' ? other.token : bare.token,
         ...(route.method === 'GET' ? {} : { body: { text: 'Hi' } })
       });
     assert.equal(r.status, 403, route.name);

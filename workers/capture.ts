@@ -46,7 +46,8 @@ import {
   prepareUpcomingBatch,
   resolvePlace,
   type UpcomingBatch,
-  type UpcomingChange
+  type UpcomingChange,
+  UPCOMING_HINTS
 } from '../packages/backend/upcoming.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
 import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
@@ -419,21 +420,6 @@ async function recordNote(
   );
 }
 /** What each refusal means to an agent, by the API's own error codes. */
-const HINTS: Record<string, string> = {
-  'upcoming-fields': 'Use only the fields in the schema; an id needs its revision, and a new entry has neither.',
-  'upcoming-kind': 'kind is birthday, anniversary, trip or event.',
-  'upcoming-title': 'Give a title of up to 120 characters on one line.',
-  'upcoming-tag': 'A tag is one word of letters, numbers and hyphens, up to 50 characters.',
-  'upcoming-date': 'A birthday or anniversary date is MM-DD; a trip or event date is YYYY-MM-DD.',
-  'upcoming-year': 'A year goes with a birthday or anniversary and is not after today.',
-  'upcoming-end': 'A trip has an end_date on or after its date; other kinds have none.',
-  'upcoming-place':
-    'A trip needs a destination the city search knows, like "Zürich" or "Paris, Texas"; other kinds have none.',
-  'upcoming-email': 'email is true or false.',
-  'upcoming-reminders': 'reminders are up to six different days from 0 to 365.',
-  'upcoming-limit': 'The account can hold 200 saved dates.',
-  'upcoming-batch': 'Send at most 50 entries per call.'
-};
 /** Up to 50 Upcoming dates added, changed or removed as one transaction with
  * the same receipt, audit, daily count and live-grant proof as a note. */
 export async function writeUpcoming(
@@ -494,7 +480,7 @@ export async function writeUpcoming(
         throw new ToolError('conflict', `That date changed since you listed it${where}; read upcoming_list again.`);
       if (error.error === 'upcoming-missing')
         throw new ToolError('not_found', `No saved date has that id${where}; read upcoming_list for current ids.`);
-      throw new ToolError('invalid_arguments', (HINTS[error.error] ?? error.error) + where);
+      throw new ToolError('invalid_arguments', (UPCOMING_HINTS[error.error] ?? error.error) + where);
     }
     const shown: OAuthRow =
       name === 'upcoming_save'

@@ -16,10 +16,10 @@ interface ApiToken {
   expired: boolean;
   last_used: number | null;
 }
-// What a token may be given today. Files (media:write) and Upcoming come
-// with their phases.
+// What a token may be given today. Files (media:write) come with phase 3.
 const OFFERED: [string, string][] = [
   ['notes:write', 'Add notes, and change or delete the notes it adds'],
+  ['upcoming', 'Read and change your Upcoming dates and their reminders'],
   ['activity', 'Read the activity log, without any words from it']
 ];
 const EXPIRY: [string, string][] = [

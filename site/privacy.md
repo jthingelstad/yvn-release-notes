@@ -17,7 +17,7 @@ Only what each job needs:
 
 - **Email** is sent and received through Amazon.
 - **Your city** goes to Open-Meteo for the weather. Never your notes.
-- **"Add where I am"**, if you turn it on, sends the spot where you saved a note to Amazon Location, to name the city.
+- **Places:** "Here" and "Add where I am" send the spot where you saved a note to Amazon Location, to name the neighbourhood and nearby places. A photo that carries its own location sends that spot the same way. Only the spot, never the note.
 - **Signing in** checks for bots with Cloudflare Turnstile.
 - **Signing up** checks your address against the Weekly Thing's list, and looks again now and then.
 
@@ -27,7 +27,7 @@ Nothing you write goes to a model unless you turn it on. "Write out what I say" 
 
 ## Agents, only with your consent
 
-You can connect an agent such as Claude or ChatGPT to your notes. It asks for each kind of access, you approve it, and you can disconnect it in Settings at any time. Every read it makes is listed in your Activity.
+You can connect an agent such as Claude or ChatGPT to your notes. It asks for each kind of access, you approve it, and you can disconnect it in Settings at any time. Its reads show in your Activity, one line for each agent each day.
 
 ## No tracking
 

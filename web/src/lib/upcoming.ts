@@ -9,7 +9,7 @@ export const NAMES: Record<UpcomingKind, string> = {
 };
 export const PROBLEMS: Record<string, string> = {
   'upcoming-title': 'Add a name or title, up to 120 characters, on one line.',
-  'upcoming-tag': 'Use one tag, up to 50 characters, with letters, numbers and hyphens. For example, #sps.',
+  'upcoming-tag': 'Use one tag, up to 50 characters, with letters, numbers and hyphens. For example, #family.',
   'upcoming-date': 'Choose a valid date.',
   'upcoming-year': 'Use a valid original year and date, no later than today. You can leave the year empty.',
   'upcoming-end': 'Choose an end date on or after the start date.',

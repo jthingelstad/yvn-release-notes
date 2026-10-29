@@ -45,9 +45,14 @@ export interface McpContract {
   tools: ToolDefinition[];
 }
 export const MCP_CONTRACT: McpContract = {
-  server_version: '1.7.0',
+  server_version: '1.7.1',
   protocol_versions: ['2025-06-18', '2025-03-26'],
   changes: [
+    {
+      version: '1.7.1',
+      date: '2026-10-28',
+      summary: "upcoming_save's tag example is family, a word anyone might use."
+    },
     {
       version: '1.7.0',
       date: '2026-10-24',
@@ -1413,7 +1418,7 @@ export const MCP_CONTRACT: McpContract = {
                 },
                 tag: {
                   type: ['string', 'null'],
-                  description: 'One word, like sps; null for none',
+                  description: 'One word, like family; null for none',
                   maxLength: 50
                 },
                 date: {

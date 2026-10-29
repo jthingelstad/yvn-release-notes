@@ -18,6 +18,7 @@ import {
 import { useHashParam } from '../lib/nav.ts';
 import { MAX_TAG } from '../../../packages/domain/tags.ts';
 import { api } from '../lib/api.ts';
+import { subscribeHref } from '../lib/calendar.ts';
 import { upcomingQuery } from '../lib/queries.ts';
 import { NAMES, PROBLEMS, problemFor } from '../lib/upcoming.ts';
 import { shortDay } from '../lib/format.ts';
@@ -389,7 +390,7 @@ function CalendarLink({
       )}
       <div className="row calendar-actions">
         {calendar && (
-          <a className="quiet" href={calendar.replace(/^https?:/, 'webcal:')} id="calendar-subscribe">
+          <a className="quiet" href={subscribeHref(calendar)} id="calendar-subscribe">
             Subscribe
           </a>
         )}
@@ -415,8 +416,8 @@ function CalendarLink({
         Copied.
       </p>
       <p className="meta" hidden={!calendar}>
-        On an iPhone, iPad or Mac, Subscribe opens Calendar. Elsewhere, add a calendar from a URL. Anyone with the link
-        can read these dates.
+        On an iPhone, iPad or Mac, Subscribe opens Calendar; on Android, Google Calendar. Elsewhere, add a calendar from
+        a URL. Anyone with the link can read these dates.
       </p>
       <ErrorLine line={problem.line} />
     </section>

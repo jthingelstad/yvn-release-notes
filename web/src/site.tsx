@@ -1,5 +1,5 @@
-// The public pages: How it works, the guide, the FAQ and Privacy. Each is a
-// Markdown file in site/ that opens with its title and description as front
+// The public pages: How it works, the guide, the FAQ, Privacy and the
+// changelog. Each is a Markdown file in site/ that opens with its title and description as front
 // matter; site/faq.md is /faq/ and site/guide/index.md is /guide/. After the
 // app's build (vite.config.ts) this draws each into plain HTML at
 // dist/web/<path>/index.html: one Markdown library (markdown-it, a dev

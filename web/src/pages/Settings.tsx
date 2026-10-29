@@ -555,15 +555,20 @@ function Account({ p }: { p: Me }) {
 }
 
 // Which build of the app this is, for telling an installed app that hasn't
-// reloaded from the live one: its version (lib/build.ts) and its commit.
+// reloaded from the live one: its version (lib/build.ts), linked to the
+// changelog that numbers releases the same way, and its commit.
 function BuildLine({ tz }: { tz: string }) {
   const commit = buildCommit();
   return (
     <p className="meta settings-build" id="build">
       Release Notes{' '}
-      <span className="mono" title="Release Notes’ own version number, counted from its launch on October 7, 2026">
+      <a
+        href="/changelog/"
+        className="mono"
+        title="Release Notes’ own version number, counted from its launch on October 7, 2026. What each release added."
+      >
         {buildVersion()}
-      </span>
+      </a>
       , build{' '}
       {commit ? (
         <a href={commit.url} className="mono">

@@ -43,7 +43,7 @@ test('every other address but a file is index.html, the empty app', () => {
     '//',
     // Only the sections there are pages for: these are still the app's.
     '/features/',
-    '/changelog/',
+    '/changelogs/',
     '/faqs/',
     '/guides/',
     '/privacy-policy',

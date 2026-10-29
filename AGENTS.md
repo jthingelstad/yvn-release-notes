@@ -12,8 +12,8 @@ that was a fun way to build them, not because of a rule (Jamie, 2026-10-08:
 The sites link here, and the front page is for search (Jamie, 2026-10-25:
 "Yes we want Release Notes in search where it can be. We also now should
 link YVN to Release Notes so people may find it"). So are the public pages
-beside it: How it works, the guide, the FAQ and Privacy (`site/`, drawn by
-`web/src/site.tsx`; Public site and guide). Every other page is the
+beside it: How it works, the guide, the FAQ, Privacy and the changelog
+(`site/`, drawn by `web/src/site.tsx`; Public site and guide). Every other page is the
 signed-in app or an emailed link and stays out of search (`web/public/robots.txt`
 and the noindex in `web/src/main.tsx`). `/` alone is served as `front.html`,
 the front page drawn in at build time for search and previews that run no
@@ -322,7 +322,16 @@ Where things are (each module's design comment has its contract):
   is something the product does today, in the tour's voice (plain, second
   person, Jamie in the third person), and each number is checked against
   its constant in `tests-node/site.test.ts`. **A PR that changes something
-  a subscriber sees updates its guide page in the same PR.** Privacy says
+  a subscriber sees updates its guide page, and the changelog, in the same
+  PR.** The changelog (`site/changelog.md`, `/changelog/`, "Release Notes for
+  Release Notes"; Jamie, 2026-10-29: "Approved: publish the Release Notes
+  changelog backfill as drafted, with answers 1-7 and the two tweaks as
+  recommended") has one entry per day something a subscriber notices went
+  live, under Release Notes' own version for that day (`lib/build.ts`:
+  0.0.0 is 2026-10-07, counted in US Central), newest first. Entries say
+  what you can do now, in the tour's voice; internal work stays out, and a
+  later change rewrites an older entry that is no longer true rather than
+  leaving it. Privacy says
   plainly that Jamie, as the operator, can read what is stored. The guide
   index links only pages that exist; badges are named only from public
   shelves ("a few are secret"). The first email's welcome line links

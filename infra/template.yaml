@@ -1056,7 +1056,7 @@ Resources:
         Comment: Serve the app for every address that is not a file or a public page
         Runtime: cloudfront-js-2.0
       FunctionCode: |
-        var PUBLIC = ['/faq/', '/guide/', '/how-it-works/', '/privacy/'];
+        var PUBLIC = ['/changelog/', '/faq/', '/guide/', '/how-it-works/', '/privacy/'];
         function handler(event) {
           var request = event.request;
           var uri = request.uri;

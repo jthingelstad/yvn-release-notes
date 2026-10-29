@@ -14,8 +14,8 @@ sessions/grants carried over from the Python version unchanged.
 Release Notes has a standalone web app at `notes.yourversionnumber.com`. The
 birthday and work sites at `yourversionnumber.com` stay as they are; their
 home and 404 pages link here. Beside the app, a few public pages say what
-Release Notes is and how to use it: How it works, the guide, the FAQ and
-Privacy (Public pages, below).
+Release Notes is and how to use it: How it works, the guide, the FAQ,
+Privacy and the changelog (Public pages, below).
 
 ## What it does
 
@@ -438,7 +438,9 @@ notes.yourversionnumber.com
   `/feedback/` sends Jamie feedback and shows the answers (Feedback); `/admin/` manages product updates; `/admin-users/` shows subscriber metadata; `/admin-feedback/` is the feedback queue. Administration is visible in settings only to the configured administrator.
 
 - **Public pages**: `/how-it-works/`, `/guide/`, `/guide/start/`,
-  `/guide/the-email/`, `/guide/replying/`, `/faq/`, `/privacy/`. Each is a
+  `/guide/the-email/`, `/guide/replying/`, `/faq/`, `/privacy/` and
+  `/changelog/` (Release Notes for Release Notes, which the version at the
+  foot of Settings links to). Each is a
   Markdown file in `site/` drawn into its own `index.html` at build time,
   outside the app (Public pages, under Front end).
 
@@ -582,7 +584,8 @@ or new CSP exception.
   XML; under the app's CSP Chrome shows it unstyled, with "..." where it
   folds.
 - **Public pages** (Jamie, 2026-10-29, phase 1 of the signed-out site):
-  How it works, the guide, the FAQ and Privacy are Markdown in `site/`,
+  How it works, the guide, the FAQ, Privacy and the changelog (phase 4)
+  are Markdown in `site/`,
   each opening with a `title:` and a `description:`; `site/faq.md` is
   `/faq/` and `site/guide/index.md` is `/guide/`. After the app's build,
   `vite.config.ts` runs `web/src/site.tsx`, which draws each, read by

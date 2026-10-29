@@ -46,6 +46,21 @@ export function Connections() {
       if (!r.ok) return problem.show('Couldn’t disconnect. Try again.');
       await client.invalidateQueries({ queryKey: ['mcp-connections'] });
     });
+  const allowFiles = (c: Connection) =>
+    run(async () => {
+      problem.clear();
+      if (
+        !window.confirm(
+          `Let ${c.client_name} add photos, recordings and PDFs to the notes it creates, when you ask it to? Your transcription and photo description choices apply to them.`
+        )
+      )
+        return;
+      const r = await api('POST', '/api/mcp/connections/' + encodeURIComponent(c.id) + '/scope', {
+        scope: 'media:write'
+      });
+      if (!r.ok) return problem.show('Couldn’t change this connection. Reload and try again.');
+      await client.invalidateQueries({ queryKey: ['mcp-connections'] });
+    });
   const allowUpcoming = (c: Connection) =>
     run(async () => {
       problem.clear();
@@ -81,12 +96,22 @@ export function Connections() {
             {c.scope.includes('media:read') ? 'Notes, photos and recordings' : 'Notes and existing transcripts'}.
             Connected {when(c.created_at)}.
           </p>
-          {c.scope.includes('notes:write') && <p>Can add notes and append to notes this connection created.</p>}
+          {c.scope.includes('notes:write') && (
+            <p>
+              Can add notes, and append to or rewrite notes this connection created
+              {c.scope.includes('media:write') ? ', with photos, recordings and PDFs' : ''}.
+            </p>
+          )}
           {c.scope.includes('upcoming') && <p>Can read and change your Upcoming dates.</p>}
           {c.last_used && <p className="hint">Last used {when(c.last_used)}.</p>}
           {!c.scope.includes('upcoming') && (
             <button type="button" className="quiet" disabled={busy} onClick={() => allowUpcoming(c)}>
               Allow Upcoming for {c.client_name}
+            </button>
+          )}
+          {c.scope.includes('notes:write') && !c.scope.includes('media:write') && (
+            <button type="button" className="quiet" disabled={busy} onClick={() => allowFiles(c)}>
+              Allow files for {c.client_name}
             </button>
           )}
           {c.scope.includes('notes:write') && (

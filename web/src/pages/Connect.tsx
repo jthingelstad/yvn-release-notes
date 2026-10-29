@@ -23,6 +23,7 @@ export function Connect() {
   });
   const [media, setMedia] = useState(false);
   const [write, setWrite] = useState(false);
+  const [files, setFiles] = useState(false);
   const [upcoming, setUpcoming] = useState(false);
   const [busy, run] = useBusy();
   const problem = useProblem();
@@ -34,6 +35,7 @@ export function Connect() {
         approve,
         media,
         write,
+        files: write && files,
         upcoming
       });
       if (!r.ok)
@@ -88,8 +90,21 @@ export function Connect() {
             )}
             {write && (
               <p className="hint">
-                The agent can create notes and append to notes this connection created. They show who added them. It
-                cannot rewrite your notes or delete anything. Turn off adding in Settings without stopping reads.
+                The agent can create notes and append to notes this connection created, and rewrite those notes when you
+                ask. They show who added them. It cannot rewrite your notes or delete anything. Turn off adding in
+                Settings without stopping reads.
+              </p>
+            )}
+            {write && (
+              <label className="check">
+                <input type="checkbox" checked={files} onChange={(e) => setFiles(e.target.checked)} /> Also allow adding
+                photos, recordings and PDFs to those notes
+              </label>
+            )}
+            {write && files && (
+              <p className="hint">
+                Files it adds are kept like the ones you upload: thumbnails are made, a photo’s place is read, and your
+                own transcription and photo description choices apply to them.
               </p>
             )}
             <label className="check">

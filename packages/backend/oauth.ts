@@ -25,7 +25,7 @@ export interface OAuthContext {
   now: number;
   log?: Log;
 }
-export const SCOPES = ['media:read', 'notes:read', 'notes:write', 'upcoming'];
+export const SCOPES = ['media:read', 'media:write', 'notes:read', 'notes:write', 'upcoming'];
 export const ACCESS_SECONDS = 3600,
   REFRESH_SECONDS = 30 * 86400;
 export class OAuthError extends Error {
@@ -45,8 +45,11 @@ export function live(item: OAuthRow | null | undefined, now: number): item is OA
 const row = (pk: string, fields: OAuthRow = {}): OAuthRow => ({ pk, sk: 'STATE', ...fields });
 const tracked = (item: OAuthRow, uid: string): OAuthRow =>
   row(`OAUTHUSER#${uid}`, { sk: `ROW#${item.pk}`, target: item.pk, expires_at: item.expires_at });
-/** Scopes an owner can add to a live connection from Settings. */
-const GRANTABLE = ['upcoming'];
+/** Scopes an owner can add to a live connection from Settings, and what each
+ * needs the connection to have already: files ride on adding notes. */
+const GRANTABLE: Record<string, string | null> = { upcoming: null, 'media:write': 'notes:write' };
+/** What "Turn off adding" takes away: adding notes, and files with it. */
+const ADDING = ['notes:write', 'media:write'];
 const scopes = (value: unknown): string[] =>
   String(value ?? '')
     .split(/\s+/)
@@ -214,10 +217,16 @@ export class OAuthService {
       typeof body.approve !== 'boolean' ||
       typeof (Object.hasOwn(body, 'media') ? body.media : false) !== 'boolean' ||
       typeof (Object.hasOwn(body, 'write') ? body.write : false) !== 'boolean' ||
-      typeof (Object.hasOwn(body, 'upcoming') ? body.upcoming : false) !== 'boolean'
+      typeof (Object.hasOwn(body, 'upcoming') ? body.upcoming : false) !== 'boolean' ||
+      typeof (Object.hasOwn(body, 'files') ? body.files : false) !== 'boolean'
     )
       fail();
     if (body.write && !scopes(item.scope).includes('notes:write')) fail('invalid_scope');
+    // Adding files (media:write, Jamie 2026-10-28: "the mcp interface doesn't
+    // allow an agent to add an image or attachment") is offered with adding
+    // notes, whatever else the client asked for, as Upcoming is, and only
+    // ever granted with it.
+    if (body.files && !body.write) fail('invalid_scope');
     // Upcoming is offered on every consent screen whatever the client asked for
     // (Jamie, 2026-10-17: the connect screen "does not reference anything for
     // upcoming"): clients re-request the scopes they were first granted, and
@@ -226,6 +235,7 @@ export class OAuthService {
       'notes:read' +
       (body.media && scopes(item.scope).includes('media:read') ? ' media:read' : '') +
       (body.write ? ' notes:write' : '') +
+      (body.files ? ' media:write' : '') +
       (body.upcoming ? ' upcoming' : '');
     const code = newToken(),
       fid = newToken();
@@ -271,7 +281,7 @@ export class OAuthService {
       if (!live(item, this.context.now) || item.user_id !== uid || !scopes(item.scope).includes('notes:write'))
         return { ok: true };
       const to = scopes(item.scope)
-        .filter((s) => s !== 'notes:write')
+        .filter((s) => !ADDING.includes(s))
         .join(' ');
       if (await this.context.store.mcpCommit([[{ ...item, scope: to }, Number(item.revision)]], uid)) {
         await this.record(uid, 'connection.changed', item, { via: 'web', from: item.scope, to });
@@ -285,12 +295,14 @@ export class OAuthService {
    * email-verified session is the consent, as it is on /connect/; the family
    * row is the live grant, so the existing token sees it on its next request. */
   async grant(uid: string, fid: string, scope: unknown): Promise<{ ok: true; scope: string }> {
-    if (typeof scope !== 'string' || !GRANTABLE.includes(scope)) fail('invalid_scope');
+    if (typeof scope !== 'string' || !Object.hasOwn(GRANTABLE, scope)) fail('invalid_scope');
     for (let attempt = 0; attempt < 5; attempt++) {
       const item = await this.context.store.mcpGet('OAUTHFAMILY#' + fid);
       if (!live(item, this.context.now) || item.user_id !== uid) fail('not_found', 404);
-      const current = scopes(item.scope);
+      const current = scopes(item.scope),
+        needs = GRANTABLE[scope];
       if (current.includes(scope)) return { ok: true, scope: current.join(' ') };
+      if (needs && !current.includes(needs)) fail('invalid_scope');
       const next = [...current, scope];
       if (await this.context.store.mcpCommit([[{ ...item, scope: next.join(' ') }, Number(item.revision)]], uid)) {
         await this.record(uid, 'connection.changed', item, { via: 'web', from: item.scope, to: next.join(' ') });

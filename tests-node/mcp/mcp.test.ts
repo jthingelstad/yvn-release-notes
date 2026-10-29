@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createMcpApp, handleMcp, type McpOptions } from '../../server/mcp/app.ts';
+import { createMcpApp, handleMcp, MAX_BODY, type McpOptions } from '../../server/mcp/app.ts';
+import { FakeObjects } from '../../packages/testing/services.ts';
+import { testImage } from '../../packages/backend/describe.ts';
 import { Reader, quota } from '../../server/mcp/reader.ts';
 import { ToolError, asciiJson, validate, MAX_MEDIA } from '../../server/mcp/common.ts';
 import { MCP_CONTRACT, TOOLS, TOOL_SCOPES, VERSION, toolsDigest } from '../../server/mcp/contract.ts';
@@ -449,6 +451,86 @@ test('notes_create keeps a city the user named as the note place, as Where on th
   assert.equal((notes[0]!.place as OAuthRow).region, 'Texas');
 });
 
+test('notes_edit and files go through capture; files need media:write, checked before capture is asked', async () => {
+  const ctx = fixture(),
+    objects = new FakeObjects(),
+    text = await connected(ctx),
+    files = await connected(ctx, true, true, 'u', false, true),
+    invoked: string[] = [],
+    opts: McpOptions = {
+      context: () => ctx,
+      capture: (e) => (
+        invoked.push((e as { tool: string }).tool),
+        captureNote(e, { ...ctx, objects }, { fetchTitle: () => null })
+      ),
+      log: () => {}
+    },
+    photo = [{ name: 'p.png', type: 'image/png', data: testImage().toString('base64') }];
+  const refused = await rpc(ctx, text.token, 'notes_create', { text: 'X', files: photo, idempotency_key: 'f' }, opts);
+  assert.equal(refused.value!.error, 'scope_required');
+  assert.match(String(refused.value!.next_step), /adding files/);
+  assert.equal(
+    (
+      await rpc(
+        ctx,
+        text.token,
+        'notes_attach',
+        { date: '2026-10-13', id: 'x', files: photo, idempotency_key: 'a' },
+        opts
+      )
+    ).value!.error,
+    'scope_required'
+  );
+  assert.deepEqual(invoked, []);
+  const made = (await rpc(ctx, files.token, 'notes_create', { text: 'Pier', files: photo, idempotency_key: 'c' }, opts))
+    .value!.note as OAuthRow;
+  assert.deepEqual(
+    (made.media as OAuthRow[]).map((m) => [m.n, m.kind, m.type]),
+    [[1, 'image', 'image/png']]
+  );
+  assert.ok(!JSON.stringify(made).includes('media/u/'));
+  const attached = (
+    await rpc(
+      ctx,
+      files.token,
+      'notes_attach',
+      { date: made.date, id: made.id, files: photo, idempotency_key: 't' },
+      opts
+    )
+  ).value!.note as OAuthRow;
+  assert.deepEqual(
+    (attached.media as OAuthRow[]).map((m) => m.n),
+    [1, 2]
+  );
+  // notes_get_note carries the revision notes_edit needs.
+  const read = (await rpc(ctx, files.token, 'notes_get_note', { date: made.date, id: made.id }, opts)).value!;
+  const revision = String((read.note as OAuthRow | undefined)?.revision ?? read.revision);
+  assert.match(revision, /^[0-9a-f]{24}$/, JSON.stringify(read).slice(0, 200));
+  const edited = await rpc(
+    ctx,
+    files.token,
+    'notes_edit',
+    { date: made.date, id: made.id, text: 'Pier at dusk', revision, idempotency_key: 'e' },
+    opts
+  );
+  assert.equal((edited.value!.note as OAuthRow).text, 'Pier at dusk', JSON.stringify(edited.value));
+  // The text-only connection cannot edit another connection's note.
+  assert.equal(
+    (
+      await rpc(
+        ctx,
+        text.token,
+        'notes_edit',
+        { date: made.date, id: made.id, text: 'Mine now', revision, idempotency_key: 'x' },
+        opts
+      )
+    ).value!.error,
+    'forbidden_not_author'
+  );
+  const gone = (await rpc(ctx, files.token, 'notes_delete', { date: made.date, id: made.id }, opts)).body;
+  assert.ok(gone.error || gone.result?.isError, 'there is no MCP delete');
+  assert.ok(MAX_BODY < 6_291_456);
+});
 test('explicit null JSON-RPC params and tool arguments are invalid rather than missing', async () => {
   const ctx = fixture(),
     a = await connected(ctx),
@@ -509,7 +591,9 @@ test('Upcoming tools need the upcoming scope; list pages saved dates with occurr
       tools.map((t) => t.name),
       TOOLS.map((t) => t.name)
     );
-    for (const t of tools) assert.equal(t.granted, t.scope === 'upcoming' ? upcoming : true, String(t.name));
+    // Neither connection approved adding files (media:write).
+    for (const t of tools)
+      assert.equal(t.granted, t.scope === 'upcoming' ? upcoming : t.scope !== 'media:write', String(t.name));
     assert.equal((context.changes as OAuthRow[])[0]!.version, VERSION);
     assert.match(String(context.instructions), /refresh this connector/);
   }
@@ -1128,7 +1212,8 @@ test('a past day of long Unicode notes fits one page with at least one whole pre
 });
 test('every tool change ships as a new server version with a changes entry', async () => {
   assert.deepEqual(Object.keys(TOOL_SCOPES).sort(), TOOLS.map((t) => t.name).sort());
-  for (const scope of Object.values(TOOL_SCOPES)) assert.match(scope, /^(notes:read|notes:write|upcoming)$/);
+  for (const scope of Object.values(TOOL_SCOPES))
+    assert.match(scope, /^(notes:read|notes:write|media:write|upcoming)$/);
   assert.equal(MCP_CONTRACT.changes[0]?.version, VERSION, 'add a changes entry for the new server_version');
   assert.equal(new Set(MCP_CONTRACT.changes.map((c) => c.version)).size, MCP_CONTRACT.changes.length);
   const versions = JSON.parse(await readFile('contracts/mcp-versions.json', 'utf8')) as Record<string, string>;

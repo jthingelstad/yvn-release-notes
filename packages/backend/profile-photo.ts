@@ -7,8 +7,11 @@
  * (`POST /api/uploads`, a signed form for its exact type and size), and
  * `PUT /api/me/photo` checks the pending upload before keeping it: a JPEG by
  * its bytes, at most PHOTO_MAX, square, PHOTO_MIN to PHOTO_SIDE pixels a
- * side, with no APP1 (EXIF, XMP) or APP13 (IPTC) segment, so a photo sent
- * around the page's canvas is refused rather than kept with its GPS.
+ * side. Its APP1 (EXIF, XMP), APP13 (IPTC) and comment segments are cut out
+ * before it is kept (`stripMetadata`), so nothing that could hold GPS is
+ * stored, whatever sent it. Refusing them instead turned away every iPhone:
+ * Safari's canvas writes a small EXIF block of its own (2026-10-28, Jamie:
+ * "I should be able to just add a photo from my phone").
  *
  * Kept at media/<owner>/profile/<id>.jpg, tagged outcome=profile (no
  * lifecycle rule expires it), and named by PROFILE.photo `{key, at, size,
@@ -43,30 +46,39 @@ export function photoOf(profile: Item | null | undefined, user: string): string 
   return typeof key === 'string' && key.startsWith(`media/${user}/profile/`) ? key : null;
 }
 
-/** Whether a JPEG's segments before its image data carry metadata a canvas
- * never writes: APP1 (EXIF or XMP, where GPS lives) or APP13 (IPTC). A file
- * that cannot be walked counts as carrying it. */
-export function jpegMetadata(data: Buffer): boolean {
-  if (data.length < 4 || data[0] !== 0xff || data[1] !== 0xd8) return true;
+/** Segments that can hold who, where or with what a photo was taken. */
+const METADATA = new Set([0xe1, 0xed, 0xfe]);
+
+/** The JPEG with its APP1 (EXIF or XMP, where GPS lives), APP13 (IPTC) and
+ * comment segments cut out of the headers before the image data; everything
+ * else, colour profile included, is kept byte for byte. Null for a file whose
+ * headers cannot be walked. */
+export function stripMetadata(data: Buffer): Buffer | null {
+  if (data.length < 4 || data[0] !== 0xff || data[1] !== 0xd8) return null;
+  const kept: Buffer[] = [data.subarray(0, 2)];
   let i = 2;
   while (i + 4 <= data.length) {
-    if (data[i] !== 0xff) return true;
+    if (data[i] !== 0xff) return null;
     const marker = data[i + 1]!;
     if (marker === 0xff) {
       i++;
       continue;
     }
-    if (marker === 0xda) return false; // the image data starts
-    if (marker === 0xe1 || marker === 0xed) return true;
+    if (marker === 0xda) {
+      kept.push(data.subarray(i)); // the image data, to the end
+      return Buffer.concat(kept);
+    }
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      kept.push(data.subarray(i, i + 2));
       i += 2;
       continue;
     }
     const length = data.readUInt16BE(i + 2);
-    if (length < 2) return true;
+    if (length < 2 || i + 2 + length > data.length) return null;
+    if (!METADATA.has(marker)) kept.push(data.subarray(i, i + 2 + length));
     i += 2 + length;
   }
-  return true;
+  return null;
 }
 
 /** The photo checked and kept: `upload` and `type` from `POST /api/uploads`. */
@@ -80,7 +92,10 @@ export async function setPhoto(service: SessionService, b: Item): Promise<Item> 
   const upload = media.uploadKey(uid, id, PHOTO_TYPE);
   let version: string;
   try {
-    const got = await objects.get(upload, { range: `bytes=0-${media.HEAD - 1}`, maxBytes: media.HEAD });
+    const got = await objects.get(upload, { maxBytes: PHOTO_MAX }).catch((error: unknown) => {
+      if (error instanceof RangeError) reject(400, 'photo-too-big');
+      throw error;
+    });
     if (!got.version) reject(400, 'upload');
     version = got.version;
     const [tags, head] = await Promise.all([objects.tags(upload, version), objects.head(upload, version)]);
@@ -89,11 +104,12 @@ export async function setPhoto(service: SessionService, b: Item): Promise<Item> 
     if (head.size < 1 || head.size > PHOTO_MAX) reject(400, 'photo-too-big');
     const size = media.imageSize(got.body);
     if (!size || size[0] !== size[1] || size[0] < PHOTO_MIN || size[0] > PHOTO_SIDE) reject(400, 'photo-size');
-    if (jpegMetadata(got.body)) reject(400, 'photo-metadata');
+    const clean = stripMetadata(got.body);
+    if (!clean) reject(400, 'photo-type');
     const old = photoOf(p, uid),
       key = photoKey(uid, randomUUID().replace(/-/g, '')),
-      photo = { key, at: iso(ctx.now), size: head.size, side: size[0] };
-    await objects.copy(upload, version, key, { type: PHOTO_TYPE, tags: { outcome: 'profile' } });
+      photo = { key, at: iso(ctx.now), size: clean.length, side: size[0] };
+    await objects.put(key, clean, { type: PHOTO_TYPE, tags: { outcome: 'profile' } });
     await objects.remove(upload, version);
     let kept = false;
     try {

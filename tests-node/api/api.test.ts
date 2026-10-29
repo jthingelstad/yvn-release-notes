@@ -1415,7 +1415,23 @@ test('a profile photo is checked, kept under its own key, shown by a signed redi
   assert.ok(!JSON.stringify(rows).includes('media/'), 'the log never names the file');
   assert.ok(!JSON.stringify(s.logs).includes('media/'));
 });
-test('a profile photo must be a square canvas JPEG of the right size, with no EXIF, from an Origin', async () => {
+test("a profile photo with EXIF, XMP, IPTC or a comment is kept without them, as Safari's canvas writes EXIF", async () => {
+  const s = await setup(),
+    gps = Buffer.concat([Buffer.from([0xff, 0xe1, 0, 20]), Buffer.from('Exif\0\0GPS 44.9 -93', 'latin1')]),
+    xmp = Buffer.concat([Buffer.from([0xff, 0xe1, 0, 9]), Buffer.from('<x:xmp>', 'latin1')]),
+    iptc = Buffer.from([0xff, 0xed, 0, 4, 1, 2]),
+    comment = Buffer.concat([Buffer.from([0xff, 0xfe, 0, 7]), Buffer.from('hello', 'latin1')]),
+    icc = Buffer.concat([Buffer.from([0xff, 0xe2, 0, 8]), Buffer.from('ICC_P\0', 'latin1')]),
+    sent = jpeg(512, 512, [EXIF, gps, xmp, icc, iptc, comment]),
+    r = await s.call('PUT', '/api/me/photo', await photoUpload(s, sent));
+  assert.equal(r.r.status, 200);
+  const key = ((await s.store.profile('u'))!.photo as Item).key as string,
+    kept = (await s.objects.get(key)).body;
+  assert.deepEqual(kept, jpeg(512, 512, [icc]), 'only the metadata segments are cut; the colour profile stays');
+  for (const word of ['Exif', 'GPS', 'xmp', 'hello']) assert.ok(!kept.includes(Buffer.from(word, 'latin1')), word);
+  assert.equal(((await s.store.profile('u'))!.photo as Item).size, kept.length);
+});
+test('a profile photo must be a square JPEG of the right size, from an Origin', async () => {
   const s = await setup(),
     refused = async (bytes: Buffer, error: string, type = 'image/jpeg') => {
       const r = await s.call('PUT', '/api/me/photo', await photoUpload(s, bytes, type));
@@ -1425,7 +1441,6 @@ test('a profile photo must be a square canvas JPEG of the right size, with no EX
   await refused(jpeg(512, 384), 'photo-size');
   await refused(jpeg(64), 'photo-size');
   await refused(jpeg(1024), 'photo-size');
-  await refused(jpeg(512, 512, [EXIF]), 'photo-metadata');
   await refused(jpeg(512, 512, [], 300 * 1024), 'photo-too-big');
   await refused(
     Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), Buffer.alloc(40)]),

@@ -52,7 +52,6 @@ export const SAY: Record<string, Line> = {
   'photo-type': 'That isn’t a photo this page made. Try again.',
   'photo-too-big': 'That photo came out too large to keep. Try another.',
   'photo-size': 'That photo isn’t the shape this page makes. Try again.',
-  'photo-metadata': 'That photo still carried its camera details, so it wasn’t kept. Try again.',
   photo: 'There’s no profile photo yet.',
   'try-again': 'That didn’t save. Try again.',
   'too-many-files': 'A note holds up to 20 files.',

@@ -75,6 +75,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "esbuild": "0.28.2",
     "happy-dom": "^21.0.4",
+    "markdown-it": "15.0.3",
     "oxlint": "^1.87.0",
     "prettier": "^3.9.10",
     "tsx": "4.23.15",

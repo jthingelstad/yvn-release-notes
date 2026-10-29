@@ -37,6 +37,17 @@ export function You() {
         <Row href="/settings/" id="you-settings" icon="settings" name="Settings">
           Daily email, writing and search, agents, your account
         </Row>
+        <li>
+          {/* A page outside the app (site/guide/), so a plain link, not the router's. */}
+          <a href="/guide/" id="you-help">
+            <Icon name="help" />
+            <span>
+              <span className="you-name">Help</span>
+              <span className="hint">The guide: getting started, the morning email, replying</span>
+            </span>
+            <Icon name="next" />
+          </a>
+        </li>
       </ul>
       <RailSignOut className="quiet you-signout" />
     </>

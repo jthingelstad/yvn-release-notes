@@ -239,20 +239,23 @@ mask "$WEB_DISTRIBUTION"
 # never change: cached for good. The bucket holds this build alone; a tab still
 # open on an earlier one loads the app again when a page's code is gone
 # (main.tsx). Then the pages, which revalidate within a minute: front.html,
-# which / serves, and index.html, which every other address serves (the
-# CloudFront function). Then the rest (the Home Screen manifest, the icons and
-# the font licences), and robots.txt and sitemap.xml, each named UTF-8 (S3
+# which / serves, each public page's index.html (site/), which its address
+# serves, and index.html, which every other address serves (the CloudFront
+# function). Then the rest (the Home Screen manifest, the icons and the font
+# licences), and robots.txt, sitemap.xml and llms.txt, each named UTF-8 (S3
 # would guess the type alone).
 aws s3 sync "$WEB/assets/" "s3://$WEB_BUCKET/assets/" --delete --only-show-errors \
   --cache-control 'public, max-age=31536000, immutable'
 aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include '*.html' \
   --cache-control 'public, max-age=60'
 aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*.html' --exclude 'assets/*' \
-  --exclude robots.txt --exclude sitemap.xml --cache-control 'public, max-age=600'
+  --exclude robots.txt --exclude sitemap.xml --exclude llms.txt --cache-control 'public, max-age=600'
 aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include robots.txt \
   --cache-control 'public, max-age=600' --content-type 'text/plain; charset=utf-8'
 aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include sitemap.xml \
   --cache-control 'public, max-age=600' --content-type 'application/xml; charset=utf-8'
+aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --delete --only-show-errors --exclude '*' --include llms.txt \
+  --cache-control 'public, max-age=600' --content-type 'text/plain; charset=utf-8'
 aws cloudfront create-invalidation --distribution-id "$WEB_DISTRIBUTION" --paths '/*' \
   --query Invalidation.Id --output text >/dev/null
 echo "web app synced and invalidated"

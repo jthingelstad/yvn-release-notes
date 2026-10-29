@@ -3106,3 +3106,69 @@ fieldset.book-fields {
   margin: 0 0 10px 4ch;
   color: var(--ink-2);
 }
+
+/* The public pages (site/, drawn by site.tsx): How it works, the guide, the
+   FAQ and Privacy. Type on paper like the front page: the same bar and foot,
+   the words between them in reading measure. */
+.doc h1 {
+  margin-top: 56px;
+}
+.doc-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 40px;
+  font-size: 15px;
+  text-decoration: none;
+}
+.doc-crumb .icon {
+  width: 18px;
+  height: 18px;
+}
+.doc-crumb + h1 {
+  margin-top: 16px;
+}
+.doc-body {
+  margin-top: 8px;
+}
+.doc-body h2 {
+  margin: 44px 0 0;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.doc-body p,
+.doc-body ul,
+.doc-body ol {
+  margin: 12px 0 0;
+}
+.doc-body ul,
+.doc-body ol {
+  padding-left: 1.25em;
+}
+.doc-body li + li {
+  margin-top: 6px;
+}
+.doc-body code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+}
+.site-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.site-links a {
+  text-decoration: none;
+}
+.site-links a:hover,
+.site-links a[aria-current='page'] {
+  text-decoration: underline;
+}
+.site-links a[aria-current='page'] {
+  color: var(--ink);
+}

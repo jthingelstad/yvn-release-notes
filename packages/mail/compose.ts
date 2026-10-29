@@ -150,6 +150,11 @@ export function clockPhrase(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number);
   return `${((h! + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h! < 12 ? 'AM' : 'PM'}`;
 }
+/** The first email's welcome ends with one link to the guide's first page
+ * (Jamie's call 6, 2026-10-29): there and nowhere else, never in the daily
+ * email's foot. */
+export const GUIDE_START = `${APP}/guide/start/`,
+  GUIDE_HELP = 'Help getting started';
 export const welcomeLine = (sendTime: string, from: string) =>
   `Welcome to Release Notes. This first one is today's; from tomorrow it comes every day at ${clockPhrase(sendTime)}. Add ${from} to your contacts so it never lands in junk.`;
 export function streakLines(v: Version, s: Streak): [string, string] {
@@ -348,7 +353,7 @@ export function body(v: Version, birthday: string, o: BodyOptions = {}): string 
     news = o.badges ? newsLine(o.badges.news) : null;
   if (special) opening += ' ' + special;
   if (o.forecast) opening += '\n' + o.forecast;
-  if (o.welcome) opening = o.welcome + '\n\n' + opening;
+  if (o.welcome) opening = `${o.welcome} ${GUIDE_HELP}: ${GUIDE_START}\n\n` + opening;
   if (o.productUpdate)
     opening += `\n\n${UPDATE_LABEL}\n${o.productUpdate.title}\n\n${links.plain(o.productUpdate.text, o.productUpdate.links)}`;
   let text = o.streak ? streakLines(v, o.streak).join(' ') + '\n' : '';
@@ -596,7 +601,7 @@ export function htmlBody(v: Version, birthday: string, day: string, o: BodyOptio
     link = `${SITE}/birthday/?p=${birthday}`,
     inlineV = vs.replace(/\./g, `<span class="sep" style="color:${ORANGE_INK};">.</span>`),
     welcomeHtml = welcome
-      ? `<tr><td class="ink" style="padding:0 0 32px;font-family:${FONT};font-size:17px;line-height:1.5;color:${INK};">${asciiHtml(welcome)}</td></tr>\n`
+      ? `<tr><td class="ink" style="padding:0 0 32px;font-family:${FONT};font-size:17px;line-height:1.5;color:${INK};">${asciiHtml(welcome)} <a class="link" href="${GUIDE_START}" style="color:${BLUE};font-weight:700;text-decoration:underline;white-space:nowrap;">${GUIDE_HELP}</a></td></tr>\n`
       : '',
     forecastHtml = forecast ? `<br><span class="ink-2" style="color:${INK_2};">${asciiHtml(forecast)}</span>` : '',
     meta = (href: string, label: string) =>

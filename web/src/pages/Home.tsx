@@ -6,6 +6,7 @@
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { BirthdayFields, emptyMdy, mdyOf, mdyValue, type Mdy } from '../components/fields.tsx';
+import { SiteLinks } from '../components/site-links.tsx';
 import { Tour } from '../components/tour.tsx';
 import {
   Bar,
@@ -498,6 +499,7 @@ export function Home({ prerender = false }: { prerender?: boolean }) {
         against the Weekly Thing’s list, and looks again now and then. Page counts by Tinylytics, without cookies. From{' '}
         <a href="https://yourversionnumber.com/">Your Version Number</a>.
       </p>
+      <SiteLinks id="home-links" hidden={!shows('ask', 'number', 'signin')} />
     </>
   );
 }

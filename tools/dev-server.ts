@@ -3,6 +3,7 @@
  * Repeated --dayone ZIP previews use the real bounded planner/importer with
  * Ada's fake account. Importing this module starts no server or timers. */
 import { Hono } from 'hono';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -428,6 +429,8 @@ export async function main(args = process.argv.slice(2)) {
       '.png': 'image/png',
       '.ico': 'image/x-icon',
       '.webmanifest': 'application/manifest+json',
+      '.txt': 'text/plain; charset=utf-8',
+      '.xml': 'application/xml; charset=utf-8',
       '.woff2': 'font/woff2'
     };
   app.get('*', async (c) => {
@@ -436,8 +439,16 @@ export async function main(args = process.argv.slice(2)) {
     if (!path.startsWith(root + '/') && path !== root) return c.text('Not found', 404);
     try {
       // As CloudFront does: / is front.html, the front page drawn in for
-      // readers that run no script; any other address but a file, index.html.
-      const file = extname(path) ? path : resolve(root, pathname === '/' ? 'front.html' : 'index.html'),
+      // readers that run no script; a public page (site/) is its own
+      // index.html, and its address without the final slash is sent to it;
+      // any other address but a file, index.html.
+      const page = !extname(path) && pathname !== '/' ? resolve(path, 'index.html') : null;
+      if (page && existsSync(page) && !pathname.endsWith('/')) return c.redirect(pathname + '/', 301);
+      const file = extname(path)
+          ? path
+          : page && existsSync(page)
+            ? page
+            : resolve(root, pathname === '/' ? 'front.html' : 'index.html'),
         bytes = await readFile(file);
       return new Response(bytes, {
         headers: {

@@ -90,6 +90,7 @@ const icons = {
   badges: Award,
   activity: Activity,
   settings: Settings,
+  help: CircleHelp,
   files: Paperclip,
   record: Mic,
   where: MapPin,

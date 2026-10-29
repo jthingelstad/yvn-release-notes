@@ -12,8 +12,10 @@ persisted account/note contracts, email ownership proof and existing
 sessions/grants carried over from the Python version unchanged.
 
 Release Notes has a standalone web app at `notes.yourversionnumber.com`. The
-birthday and work sites at `yourversionnumber.com` stay as they are, and
-nothing there links here yet: that is Jamie's call.
+birthday and work sites at `yourversionnumber.com` stay as they are; their
+home and 404 pages link here. Beside the app, a few public pages say what
+Release Notes is and how to use it: How it works, the guide, the FAQ and
+Privacy (Public pages, below).
 
 ## What it does
 
@@ -412,6 +414,11 @@ notes.yourversionnumber.com
   `/connect/` approves an external agent request whose opaque id stays in the fragment. With no request it shows the MCP address to add, with Copy; with one, the request's question is the title, what it shares as a list, each extra approval as a ruled checkbox row, and the retention paragraphs in full above Allow.
   `/feedback/` sends Jamie feedback and shows the answers (Feedback); `/admin/` manages product updates; `/admin-users/` shows subscriber metadata; `/admin-feedback/` is the feedback queue. Administration is visible in settings only to the configured administrator.
 
+- **Public pages**: `/how-it-works/`, `/guide/`, `/guide/start/`,
+  `/guide/the-email/`, `/guide/replying/`, `/faq/`, `/privacy/`. Each is a
+  Markdown file in `site/` drawn into its own `index.html` at build time,
+  outside the app (Public pages, under Front end).
+
 - **A pause** starts on the next day an email would go (today, unless
   today's has gone) and runs 1 to 60 days. It is `PAUSE#<from>` with
   `through`, and the profile carries the latest one (`pause_from`,
@@ -516,7 +523,9 @@ or new CSP exception.
 
 - CloudFront's function answers every address that is not a file with
   `index.html`, and the router shows the page; `/` alone it answers with
-  `front.html` (the dev server does the same).
+  `front.html`, and an address under a public page's section with that
+  page's own `index.html`, sending one without its final slash to it (a
+  301). The dev server does the same.
 - `front.html` is `index.html` with the front page drawn into `#app` at
   build time (`web/src/prerender.tsx`, from `vite.config.ts`), so search
   and link previews that run no script read what the page says. It is
@@ -529,22 +538,48 @@ or new CSP exception.
   address keeps `index.html`'s empty `#app`, so none of them says the front
   page's words. `tests-node/front-page.test.ts` builds both pages and
   `e2e/front.spec.mjs` reads them in Chromium, with scripts and without.
-- Search sees the front page alone. `index.html` carries its canonical
-  link and share tags (the paper mark as the image), and `front.html` the
-  same head; `web/public/robots.txt` keeps crawlers off the API, OAuth and
-  MCP addresses and names `sitemap.xml`, which lists `/` only, and the
-  router marks every other page `noindex` as it resolves, since they all
-  serve `index.html`. Those pages stay crawlable: a page robots.txt blocks
-  can still be listed, because its `noindex` is never read.
-- The sitemap's `<lastmod>` for `/` is the day the front page's words last
-  changed. `tests-node/front-page.test.ts` holds a hash of what the built
-  front page says (title, description, the drawn words) beside that day,
-  and fails when the words change until both, and the sitemap, are moved
-  to the day the change goes live. Never a build date: search ignores a
-  `lastmod` that is always now. `robots.txt` and `sitemap.xml` go up named
-  UTF-8 and are served with their own CSP (`PlainFilesHeadersPolicy`), which
-  lets the browser's viewer style the XML; under the app's CSP Chrome shows
-  it unstyled, with "..." where it folds.
+- Search sees the front page and the public pages alone. `index.html`
+  carries the front page's canonical link and share tags (the paper mark
+  as the image), and `front.html` the same head; each public page has its
+  own. `web/public/robots.txt` keeps crawlers off the API, OAuth and MCP
+  addresses and names `sitemap.xml`, which lists `/` and the public pages,
+  and the router marks every other page `noindex` as it resolves, since
+  they all serve `index.html`. Those pages stay crawlable: a page
+  robots.txt blocks can still be listed, because its `noindex` is never
+  read.
+- Each sitemap `<lastmod>` is the day that page's words last changed.
+  `site/sitemap.json` holds, for `/` and each public page, a hash of what
+  the built page says (title, description and its words) beside that day;
+  `tests-node/front-page.test.ts` (for `/`) and `tests-node/site.test.ts`
+  fail when the words change until both are moved to the day the change
+  goes live. Never a build date: search ignores a `lastmod` that is always
+  now. `robots.txt`, `sitemap.xml` and `llms.txt` go up named UTF-8;
+  `robots.txt` and `sitemap.xml` are served with their own CSP
+  (`PlainFilesHeadersPolicy`), which lets the browser's viewer style the
+  XML; under the app's CSP Chrome shows it unstyled, with "..." where it
+  folds.
+- **Public pages** (Jamie, 2026-10-29, phase 1 of the signed-out site):
+  How it works, the guide, the FAQ and Privacy are Markdown in `site/`,
+  each opening with a `title:` and a `description:`; `site/faq.md` is
+  `/faq/` and `site/guide/index.md` is `/guide/`. After the app's build,
+  `vite.config.ts` runs `web/src/site.tsx`, which draws each, read by
+  `web/src/site-pages.ts` with markdown-it (raw HTML off), inside a React
+  shell (`renderToStaticMarkup`):
+  the front page's bar, stylesheet and foot, the row of public links
+  (`components/site-links.tsx`, also at the foot of `/`), and its own
+  canonical and share tags. The app's script never loads on them; the one
+  script is `assets/count-<hash>.js`, bundled from `lib/pagecount.ts` so
+  the pages are counted as the app's are. The same build writes
+  `sitemap.xml` (from `site/sitemap.json`, which also sets the order) and
+  `llms.txt` (the pages, the MCP address and each scope in plain words).
+  A new page is a Markdown file and a line in `site/sitemap.json`; a new
+  section is also a line in `WebIndexFunction`'s `PUBLIC`
+  (`tests-node/infra/web-index.test.ts` holds the two together). A
+  mistyped address under a section gets the bucket's bare 404.
+  `tests-node/site.test.ts` builds them and checks every link, every
+  number against its constant, and that no page names an Easter egg or a
+  secret badge. You's Help row links `/guide/`, and the first email's
+  welcome line `/guide/start/`.
 - The signed-in pages sit behind one gate in `main.tsx` that has the
   profile before any of them shows. Each page's data (`lib/queries.ts`)
   loads before it shows, from the moment its link is pointed at. Every
@@ -928,7 +963,15 @@ sign in against production or write live data to verify a release. Read-only
 live checks may inspect public health/discovery and unauthenticated origin
 protection; the release probe invokes workers only with `{"self_test":true}`.
 
-## DNS (Namecheap, by Jamie)
+## DNS (Route 53, as code)
+
+`yourversionnumber.com` is a Route 53 hosted zone, and every record in it is
+code in the zone's CloudFormation stack in `~/Projects/projects-sysadmin`
+(`config/dns-<zone>-stack.yaml`; `docs/DNS-MIGRATION.md` there). Never edit a
+record in the console. Namecheap stays the registrar. Two records serve this
+app, both in that stack today. Jamie decided (2026-10-28, "Product repos")
+that a site's records move into its own repo's stack, each move a change of
+its own; this repo's have not moved yet:
 
 1. The ACM validation CNAME for `notes.yourversionnumber.com` (requested
    2026-10-08; read it from ACM, not from here).

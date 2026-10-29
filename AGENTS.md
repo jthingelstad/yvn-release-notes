@@ -11,7 +11,9 @@ that was a fun way to build them, not because of a rule (Jamie, 2026-10-08:
 "This is a hobby project. It's just fun."). This product stores data.
 The sites link here, and the front page is for search (Jamie, 2026-10-25:
 "Yes we want Release Notes in search where it can be. We also now should
-link YVN to Release Notes so people may find it"). Every other page is the
+link YVN to Release Notes so people may find it"). So are the public pages
+beside it: How it works, the guide, the FAQ and Privacy (`site/`, drawn by
+`web/src/site.tsx`; Public site and guide). Every other page is the
 signed-in app or an emailed link and stays out of search (`web/public/robots.txt`
 and the noindex in `web/src/main.tsx`). `/` alone is served as `front.html`,
 the front page drawn in at build time for search and previews that run no
@@ -306,6 +308,20 @@ Where things are (each module's design comment has its contract):
   its features and how well it works. Free to use.") says what it does.
   Every claim in it is something the product does today; keep it so as
   features change.
+- **Public site and guide** (Jamie, 2026-10-29: "Approved: build phase 1 of
+  the Release Notes signed-out site and guide, with my calls 1-8 as
+  recommended"): How it works, the guide (`/guide/`, `/guide/start/`,
+  `/guide/the-email/`, `/guide/replying/`), the FAQ and Privacy are
+  Markdown in `site/`, built into their own pages (docs/WEB-APP.md, Public
+  pages). The tour's rule holds for them, and for `llms.txt`: every claim
+  is something the product does today, in the tour's voice (plain, second
+  person, Jamie in the third person), and each number is checked against
+  its constant in `tests-node/site.test.ts`. **A PR that changes something
+  a subscriber sees updates its guide page in the same PR.** Privacy says
+  plainly that Jamie, as the operator, can read what is stored. The guide
+  index links only pages that exist; badges are named only from public
+  shelves ("a few are secret"). The first email's welcome line links
+  `/guide/start/`; the daily email's foot never links the guide.
 - **Release Notes comes with the Weekly Thing** (Jamie, 2026-10-25: "framed
   as better for Weekly Thing supporting members and also gated by
   subscribing to Weekly Thing"). A new account's verified address must be
@@ -573,9 +589,11 @@ Where things are (each module's design comment has its contract):
   browser), Status codes (secret collectibles on HTTP-status patches, with
   a status line in that morning's email) and RTFM (`/man/`, the product as
   a man page). docs/BADGES.md, Easter eggs, has them.
-- **Keep them secret.** The tour, the front page, help copy and the MCP
-  tool descriptions never mention them; the clues are the ones built (the
-  comments in `web/index.html` and `robots.txt`, the 404 page's line).
+- **Keep them secret.** The tour, the front page, the public pages and
+  guide, `llms.txt`, help copy and the MCP tool descriptions never mention
+  them (`tests-node/site.test.ts` holds the pages, the tour and `llms.txt`
+  to it); the clues are the ones built (the comments in `web/index.html`
+  and `robots.txt`, the 404 page's line).
   Every line of `/man/` is true of the product today, as the tour's are;
   keep it so as features change.
 - They work with "Show badges" off; only badges, unlock lines and badge
@@ -589,7 +607,9 @@ Where things are (each module's design comment has its contract):
 - **The web app counts pages in Tinylytics** (site 3816, Jamie 2026-10-08)
   from `web/src/lib/pagecount.ts`, not the embed script: never a query
   string (sign-in and unsubscribe tokens live there), no cookies, nothing
-  that names a person. No other analytics.
+  that names a person. The public pages count the same way, through
+  `assets/count-<hash>.js`, bundled from that module (`web/src/site.tsx`).
+  No other analytics.
 - **The CSP is `'self'`**: no inline script or style, nothing remote;
   anything another service answers goes through `/api` (the Map page's base
   map too: Amazon Location under the web role, `packages/backend/maps.ts`,
@@ -779,5 +799,11 @@ us-east-1, and Node 24 (`/opt/homebrew/opt/node@24/bin` first on PATH here).
   hand in the console; the stack does not own it, no deploy writes it, and
   agents never read its value. A new credential is a new key in it, not a
   new secret.
-- **DNS is at Namecheap** and Jamie applies records by hand. Read current
-  values from DNS or the stack, never from this repo.
+- **DNS is in Route 53**, as code: every record in `yourversionnumber.com`
+  is in its zone stack in `~/Projects/projects-sysadmin`
+  (`config/dns-<zone>-stack.yaml`; its `docs/DNS-MIGRATION.md`), never
+  edited in the console, and mail records change only with Jamie's
+  approval line. Namecheap stays the registrar. This app's records move
+  into its own stack when that is its own change (Jamie, 2026-10-28:
+  "Product repos"). Read current values from DNS or the stack, never from
+  this repo, which holds none.

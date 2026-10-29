@@ -618,7 +618,10 @@ Until then, builds go on a device from Xcode. For the App Store it needs:
 
 ## Badges
 
-Two new Firsts (docs/BADGES.md), both read from notes:
+Two new Firsts (docs/BADGES.md), both read from notes. API release is
+built (2026-10-29, as tokens opened). OTA update waits until anyone can
+install Changelog (TestFlight or the App Store), since Still to find would
+otherwise point everyone at an app they can't get:
 
 | Badge       | Earned by                                       |
 | ----------- | ----------------------------------------------- |

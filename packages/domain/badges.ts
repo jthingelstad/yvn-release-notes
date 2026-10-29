@@ -76,6 +76,13 @@ export const BADGES: readonly BadgeInfo[] = [
   ),
   badge(
     'first',
+    'api',
+    'API release',
+    'A note added through an API token you made.',
+    'Make an API token in Settings and add a note with it.'
+  ),
+  badge(
+    'first',
     'assets',
     'Release assets',
     'Added a photo.',
@@ -597,6 +604,7 @@ export function evaluateBadges(facts: BadgeFacts, today: Day): Badges {
     if (n.source === 'email' && !n.reply) give('webhook', w);
     if (n.source === 'web') give('web', w);
     if (n.assistant) give('pair', w);
+    if (n.source === 'api') give('api', w);
     if (n.photos) give('assets', w);
     if (n.audio) give('audio', w);
     if (n.placed) give('geotagged', w);

@@ -118,6 +118,7 @@ Most of these land in the first week. Each one points at a feature.
 | Web release      | Writing a note on the web                                                 |
 | Webhook          | Sending a note to your own standing address                               |
 | Pair programming | A note added by an agent you connected                                    |
+| API release      | A note added through an API token you made (docs/API.md)                  |
 | Release assets   | Attaching a photo                                                         |
 | Audio changelog  | Adding a voice memo                                                       |
 | Geotagged        | A note with a place                                                       |

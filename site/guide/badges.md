@@ -25,7 +25,7 @@ Signed in, **You**, then **Badges**, shows them all: what's coming up in this re
 
 **Firsts and craft** are earned once, for trying each part of Release Notes and for richer days:
 
-- Firsts: Hello, world · ACK · Web release · Webhook · Pair programming · Release assets · Audio changelog · Geotagged · git tag · Dependencies · Commit message · Hotfix · Backport.
+- Firsts: Hello, world · ACK · Web release · Webhook · Pair programming · API release · Release assets · Audio changelog · Geotagged · git tag · Dependencies · Commit message · Hotfix · Backport.
 - Four come from outside your notes: Signed commit, for a profile photo; Issue opened, for sending Jamie feedback; Merged upstream, when your feedback gets built or fixed; and Tarball, for [making a book](/guide/book/).
 - Craft: Full stack · RFC · Taxonomy · Multi-region · i18n · Cold start · Hot reload · All-weather build.
 

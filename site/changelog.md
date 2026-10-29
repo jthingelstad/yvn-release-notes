@@ -7,7 +7,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 
 ## 0.0.22 · October 29
 
-- API tokens in Settings: make one, and a script, a shortcut or an app can add notes as you, with photos, recordings, PDFs and where you were, and keep your Upcoming dates. The web shows which token added each note. [The API](/guide/api/) says how.
+- API tokens in Settings: make one, and a script, a shortcut or an app can add notes as you, with photos, recordings, PDFs and where you were, and keep your Upcoming dates. The web shows which token added each note, and your first earns a new badge, API release. [The API](/guide/api/) says how.
 - Four new badges in Firsts and craft: Signed commit, Issue opened, Merged upstream and Tarball.
 - A new track, Roadmap, for the dates you add to Upcoming, climbing from alpha to LTS like the others.
 - [The guide](/guide/), open to anyone before signing up: How it works, Getting started, the morning email, Replying, the FAQ and Privacy, and a page for every feature, from photos to agents. [Features](/features/) lists them all, a line each.

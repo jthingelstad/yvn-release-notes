@@ -345,6 +345,7 @@ function CalendarLink({
   const copyButton = useRef<HTMLButtonElement>(null),
     newButton = useRef<HTMLButtonElement>(null),
     removeButton = useRef<HTMLButtonElement>(null);
+  const subscribe = calendar && subscribeHref(calendar);
   const keep = (next: string | null) =>
     client.setQueryData(upcomingQuery.queryKey, (old) => old && { ...old, calendar: next });
   const copy = async () => {
@@ -389,8 +390,8 @@ function CalendarLink({
         </p>
       )}
       <div className="row calendar-actions">
-        {calendar && (
-          <a className="quiet" href={subscribeHref(calendar)} id="calendar-subscribe">
+        {subscribe && (
+          <a className="quiet" href={subscribe} id="calendar-subscribe">
             Subscribe
           </a>
         )}
@@ -416,8 +417,10 @@ function CalendarLink({
         Copied.
       </p>
       <p className="meta" hidden={!calendar}>
-        On an iPhone, iPad or Mac, Subscribe opens Calendar; on Android, Google Calendar. Elsewhere, add a calendar from
-        a URL. Anyone with the link can read these dates.
+        {subscribe
+          ? 'On an iPhone, iPad or Mac, Subscribe opens Calendar. Elsewhere, add a calendar from a URL.'
+          : 'Google Calendar’s Android app can’t add a calendar from a link. On a computer, open Google Calendar on the web, choose Other calendars, then From URL, and paste this link; the dates then show on your phone.'}{' '}
+        Anyone with the link can read these dates.
       </p>
       <ErrorLine line={problem.line} />
     </section>

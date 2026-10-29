@@ -1552,6 +1552,12 @@ Resources:
                   ForAllValues:StringLike:
                     dynamodb:LeadingKeys: ["USER#*"]
               - Effect: Allow
+                # Files an agent sends with a note (media:write), kept where a
+                # web upload's checked copy is, tagged kept, and removed again
+                # when no note takes them. Nothing is read.
+                Action: [s3:PutObject, s3:PutObjectTagging, s3:DeleteObject]
+                Resource: !Sub "${MailBucket.Arn}/media/*/files/*"
+              - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !GetAtt CaptureLogs.Arn
 
@@ -1560,7 +1566,7 @@ Resources:
     DependsOn: NativeSourcePolicy
     Properties:
       FunctionName: !Sub "${AWS::StackName}-capture"
-      Description: Private owner-approved MCP text capture; create and append only
+      Description: Private owner-approved MCP capture; create, append, edit own notes and add files
       Runtime: nodejs24.x
       Architectures: [arm64]
       Handler: index.handler
@@ -1578,6 +1584,7 @@ Resources:
         Variables:
           APP_VERSION: !Ref BuildId
           TABLE: !Ref Table
+          MAIL_BUCKET: !Ref MailBucket
           WEB_ORIGIN: !Sub "https://${WebDomain}"
 
   ExportLogs:

@@ -1,9 +1,15 @@
 import { runtimeSelfTest } from './runtime.ts';
-/** Private delegated text writer: no HTTP, no mail/media/models. Every commit
- * atomically proves the live family/profile, receipt, quota and note revision. */
+/** Private delegated writer: no HTTP, mail or models. Every commit atomically
+ * proves the live family/profile, receipt, quota and note revision. Files an
+ * agent sends (server/mcp/files.ts) are kept under media/<user>/files/ first,
+ * as a web upload's checked copy is, and removed if no note takes them. */
 import { randomUUID } from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { createObjects } from '../packages/backend/aws.ts';
+import type { Objects } from '../packages/backend/services.ts';
+import { MAX_FILES } from '../packages/backend/media.ts';
+import { dropFiles, inlineFiles, keepFiles, type InlineFile } from '../server/mcp/files.ts';
 import { digest } from '../packages/backend/auth.ts';
 import {
   collect,
@@ -20,8 +26,8 @@ import { MAX_NOTE } from '../packages/domain/notes.ts';
 import { found } from '../packages/domain/tags.ts';
 import { computeVersion } from '../packages/domain/version.ts';
 import { codePointLength, pythonTrim } from '../packages/domain/unicode.ts';
-import { agentUpcomingView, Reader, type ReaderContext, type ReaderStore } from '../server/mcp/reader.ts';
-import { TOOLS, UPCOMING_TOOLS, WRITE_TOOLS } from '../server/mcp/contract.ts';
+import { agentUpcomingView, editRevision, Reader, type ReaderContext, type ReaderStore } from '../server/mcp/reader.ts';
+import { TOOLS, UPCOMING_TOOLS, WRITE_TOOLS, scopesFor } from '../server/mcp/contract.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
 import { chosen, search, type City } from '../packages/backend/places.ts';
 import {
@@ -47,8 +53,8 @@ import {
 type Ops = NonNullable<TransactWriteCommandInput['TransactItems']>;
 export interface CaptureStore extends ReaderStore {
   upcomingBatch(uid: string, changes: readonly UpcomingChange[], extra: Ops): Promise<{ ok: boolean; applied: number }>;
-  agentProof(family: OAuthRow, now: number, scope: string): Ops;
-  familyProof(family: OAuthRow, now: number, scope: string): Ops;
+  agentProof(family: OAuthRow, now: number, scope: string | readonly string[]): Ops;
+  familyProof(family: OAuthRow, now: number, scope: string | readonly string[]): Ops;
   agentReceipts(receipt: OAuthRow, audit: OAuthRow, rate: OAuthRow, previous: OAuthRow | null, now: number): Ops;
   putActivity(user: string, rows: readonly OAuthRow[]): Promise<boolean>;
   captureCommit(
@@ -59,13 +65,16 @@ export interface CaptureStore extends ReaderStore {
     rate: OAuthRow,
     previous: OAuthRow | null,
     family: OAuthRow,
-    now: number
+    now: number,
+    added?: readonly OAuthRow[]
   ): Promise<boolean>;
 }
 export interface CaptureContext extends ReaderContext {
   store: CaptureStore;
   /** City search for a destination written as text; Open-Meteo by default. */
   geocode?: (q: string) => Promise<City[]>;
+  /** The private bucket, for files an agent sends; nothing else is read. */
+  objects?: Objects;
 }
 export interface CaptureOptions {
   fetchTitle?: TitleFetcher;
@@ -89,6 +98,15 @@ const FIELDS = [
   'updated_at',
   'revision'
 ];
+/** Daily writes an account takes from all its connections, by tool. */
+const CAPS: Record<string, number> = { notes_create: 20, notes_append: 50, notes_edit: 50, notes_attach: 20 };
+/** The connection's own notes: an append, a rewrite or new files go nowhere else. */
+const OWN: Record<string, string> = {
+  notes_append: 'Append only to a note created by this same connection; create a new note for anything else.',
+  notes_edit:
+    'Rewrite only a note created by this same connection; the owner edits their own notes on the web. Create a new note instead, or ask the user to change it.',
+  notes_attach: 'Add files only to a note created by this same connection; create a new note with the files instead.'
+};
 export async function writeCapture(
   context: CaptureContext,
   family: OAuthRow,
@@ -96,15 +114,26 @@ export async function writeCapture(
   args: Arguments,
   options: CaptureOptions = {}
 ): Promise<OAuthRow> {
-  if (!String(family.scope).split(/\s+/).includes('notes:write'))
+  const granted = String(family.scope).split(/\s+/),
+    lacking = scopesFor(name, args).filter((s) => !granted.includes(s));
+  if (lacking.includes('notes:write'))
     throw new ToolError('scope_required', 'Reconnect and explicitly approve adding agent notes.');
+  if (lacking.length)
+    throw new ToolError(
+      'scope_required',
+      'Ask the user to allow adding files for this connection under Settings, Connected agents, or to reconnect and approve it; or write the note without files.'
+    );
+  // Checked whole now, and kept only once the rest of the write has passed.
+  const files: InlineFile[] = Object.hasOwn(args, 'files') ? inlineFiles(args.files) : [];
   const uid = String(family.user_id),
     fid = String(family.id),
     key = 'CAPTURE#' + fid + '#' + digest(String(args.idempotency_key)),
     hash = fingerprint({ tool: name, arguments: args }),
     reader = await Reader.create(context, family),
     titles = new Map<string, PageMeta | null>();
-  let place: OAuthRow | undefined;
+  let place: OAuthRow | undefined,
+    kept: OAuthRow[] | null = null,
+    committed = false;
   const titleOnce: TitleFetcher = async (url) => {
     if (!titles.has(url)) {
       if (titles.size >= MAX_FETCHES) return null;
@@ -118,108 +147,164 @@ export async function writeCapture(
     }
     return titles.get(url) ?? null;
   };
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const receipt = await context.store.mcpGet('USER#' + uid, key);
-    if (live(receipt, context.now)) {
-      if (receipt.request_hash !== hash)
+  try {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const receipt = await context.store.mcpGet('USER#' + uid, key);
+      if (live(receipt, context.now)) {
+        if (receipt.request_hash !== hash)
+          throw new ToolError(
+            'duplicate_idempotency_key',
+            'Use a new key for a different operation; reuse the original key only for an exact retry.'
+          );
+        return { note: JSON.parse(String(receipt.result)), replayed: true };
+      }
+      const day = reader.day(args.date ?? reader.today);
+      let text = typeof args.text === 'string' ? pythonTrim(args.text.replace(/\r\n/g, '\n')) : '',
+        old: OAuthRow | null = null;
+      if (name !== 'notes_attach' && !text && !files.length)
         throw new ToolError(
-          'duplicate_idempotency_key',
-          'Use a new key for a different operation; reuse the original key only for an exact retry.'
+          'invalid_arguments',
+          name === 'notes_create' ? 'Write some note text, or send files.' : 'Write some note text.'
         );
-      return { note: JSON.parse(String(receipt.result)), replayed: true };
-    }
-    const day = reader.day(args.date ?? reader.today);
-    let text = pythonTrim(String(args.text).replace(/\r\n/g, '\n')),
-      old: OAuthRow | null = null;
-    if (!text) throw new ToolError('invalid_arguments', 'Write some note text.');
-    if (name === 'notes_append') {
-      old = await reader.note(args);
-      if (old.author !== 'assistant' || old.connection !== fid || old.client_id !== family.client_id)
+      if (name !== 'notes_create') {
+        old = await reader.note(args);
+        if (old.author !== 'assistant' || old.connection !== fid || old.client_id !== family.client_id)
+          throw new ToolError('forbidden_not_author', OWN[name]!);
+        // A rewrite replaces only the words its author read: a change on the
+        // web (or by this connection) since then refuses it, never overwrites.
+        if (name === 'notes_edit' && editRevision(old) !== args.revision)
+          throw new ToolError(
+            'conflict',
+            'The note changed since you read it: read it again with notes_get_note and redo the edit from its current text, with its new revision.'
+          );
+        if (name === 'notes_append') text = String(old.text ?? '') + '\n\n' + text;
+        if (name === 'notes_attach') text = String(old.text ?? '');
+      }
+      const before = (old?.media as OAuthRow[] | undefined) ?? [];
+      if (before.length + files.length > MAX_FILES)
         throw new ToolError(
-          'forbidden_not_author',
-          'Append only to a note created by this same connection; create a new note for anything else.'
+          'too_many_files',
+          `A note can hold ${MAX_FILES} files and this one has ${before.length}; create another note for the rest.`
         );
-      text = String(old.text ?? '') + '\n\n' + text;
-    }
-    if (codePointLength(text) > MAX_NOTE)
-      throw new ToolError('too_long', 'A note can have at most 20,000 characters; create another note.');
-    // A city the user named, found once, as the web's Where finds one.
-    if (!old && typeof args.place === 'string') place ??= await namedPlace(args.place, context.geocode ?? search);
-    const note: OAuthRow = old
-      ? Object.fromEntries(FIELDS.filter((k) => Object.hasOwn(old, k)).map((k) => [k, old![k]]))
-      : {
+      if (codePointLength(text) > MAX_NOTE)
+        throw new ToolError('too_long', 'A note can have at most 20,000 characters; create another note.');
+      // A city the user named, found once, as the web's Where finds one.
+      if (!old && typeof args.place === 'string') place ??= await namedPlace(args.place, context.geocode ?? search);
+      const note: OAuthRow = old
+        ? Object.fromEntries(FIELDS.filter((k) => Object.hasOwn(old, k)).map((k) => [k, old![k]]))
+        : {
+            pk: 'USER#' + uid,
+            sk: `NOTE#${day}#a-${randomUUID().replace(/-/g, '')}`,
+            source: 'agent',
+            author: 'assistant',
+            client: family.client_name,
+            client_id: family.client_id,
+            connection: fid,
+            on_behalf_of: uid,
+            written_at: iso(context.now),
+            tz: reader.profile.tz,
+            version: computeVersion(reader.birthday, day).toString(),
+            ...(place ? { place } : {})
+          };
+      Object.assign(note, {
+        text,
+        tags: found(text),
+        // New files change no words, so the links keep the titles they have.
+        links:
+          name === 'notes_attach'
+            ? ((old?.links as Link[] | undefined) ?? [])
+            : await collect(text, { keep: old?.links as Link[] | undefined, fetch: titleOnce }),
+        revision: Number(old?.revision ?? 0) + 1
+      });
+      if (old) note.updated_at = iso(context.now);
+      const rateKey = `WRITERATE#${name}#${Math.floor(context.now / 86400)}`,
+        previous = await context.store.mcpGet('MCPMETA#' + uid, rateKey),
+        count = Number(previous?.n ?? 0);
+      if (count >= CAPS[name]!)
+        throw new ToolError(
+          'rate_limited',
+          'Try again after this UTC day ends; exact retries of completed writes are still safe.'
+        );
+      if (files.length && !kept) {
+        if (!context.objects) throw new Error('Files service missing');
+        kept = await keepFiles(context.objects, uid, files);
+      }
+      // Numbered after the note's last file, as the web numbers them.
+      const first = Math.max(0, ...before.map((m) => Number(m.n))) + 1,
+        added = (kept ?? []).map((f, i) => ({ n: first + i, ...f }));
+      if (added.length) note.media = [...before, ...added];
+      const rate = {
+          pk: 'MCPMETA#' + uid,
+          sk: rateKey,
+          n: count + 1,
+          revision: Number(previous?.revision ?? 0) + 1,
+          expires_at: (Math.floor(context.now / 86400) + 2) * 86400
+        },
+        shown = reader.view({ ...old, ...note }, true);
+      const newReceipt = {
           pk: 'USER#' + uid,
-          sk: `NOTE#${day}#a-${randomUUID().replace(/-/g, '')}`,
-          source: 'agent',
-          author: 'assistant',
-          client: family.client_name,
-          client_id: family.client_id,
+          sk: key,
+          request_hash: hash,
+          result: JSON.stringify(shown),
+          expires_at: context.now + 86400
+        },
+        audit = {
+          pk: 'MCPMETA#' + uid,
+          sk: `LOG#${String(context.now).padStart(12, '0')}#${randomUUID().replace(/-/g, '')}`,
+          at: context.now,
+          tool: name,
+          outcome: 'ok',
           connection: fid,
-          on_behalf_of: uid,
-          written_at: iso(context.now),
-          tz: reader.profile.tz,
-          version: computeVersion(reader.birthday, day).toString(),
-          ...(place ? { place } : {})
+          client: family.client_name,
+          date: day,
+          note_id: String(note.sk).split('#').slice(2).join('#'),
+          ...(added.length ? { files: added.length } : {}),
+          expires_at: context.now + 14 * 86400
         };
-    Object.assign(note, {
-      text,
-      tags: found(text),
-      links: await collect(text, { keep: old?.links as Link[] | undefined, fetch: titleOnce }),
-      revision: Number(old?.revision ?? 0) + 1
-    });
-    if (old) note.updated_at = iso(context.now);
-    const rateKey = `WRITERATE#${name}#${Math.floor(context.now / 86400)}`,
-      previous = await context.store.mcpGet('MCPMETA#' + uid, rateKey),
-      count = Number(previous?.n ?? 0),
-      cap = name === 'notes_create' ? 20 : 50;
-    if (count >= cap)
-      throw new ToolError(
-        'rate_limited',
-        'Try again after this UTC day ends; exact retries of completed writes are still safe.'
-      );
-    const rate = {
-        pk: 'MCPMETA#' + uid,
-        sk: rateKey,
-        n: count + 1,
-        revision: Number(previous?.revision ?? 0) + 1,
-        expires_at: (Math.floor(context.now / 86400) + 2) * 86400
-      },
-      shown = reader.view({ ...old, ...note }, true);
-    const newReceipt = {
-        pk: 'USER#' + uid,
-        sk: key,
-        request_hash: hash,
-        result: JSON.stringify(shown),
-        expires_at: context.now + 86400
-      },
-      audit = {
-        pk: 'MCPMETA#' + uid,
-        sk: `LOG#${String(context.now).padStart(12, '0')}#${randomUUID().replace(/-/g, '')}`,
-        at: context.now,
-        tool: name,
-        outcome: 'ok',
-        connection: fid,
-        client: family.client_name,
-        date: day,
-        note_id: String(note.sk).split('#').slice(2).join('#'),
-        expires_at: context.now + 14 * 86400
-      };
-    if (await context.store.captureCommit(note, old, newReceipt, audit, rate, previous, family, context.now)) {
-      await recordNote(context, family, note, old, day, reader.profile, reader.today, options.log);
-      return { note: shown, replayed: false };
+      if (
+        await context.store.captureCommit(
+          note,
+          old,
+          newReceipt,
+          audit,
+          rate,
+          previous,
+          family,
+          context.now,
+          old && added.length ? added : undefined
+        )
+      ) {
+        committed = true;
+        await recordNote(
+          context,
+          family,
+          name,
+          note,
+          old,
+          day,
+          reader.profile,
+          reader.today,
+          added.length,
+          options.log
+        );
+        return { note: shown, replayed: false };
+      }
+      const current = await context.store.mcpGet('OAUTHFAMILY#' + fid),
+        profile = await context.store.mcpProfile(uid);
+      if (
+        !live(current, context.now) ||
+        !profile ||
+        profile.mcp_deleting ||
+        current.revision !== family.revision ||
+        scopesFor(name, args).some((s) => !String(current.scope).split(/\s+/).includes(s))
+      )
+        throw new ToolError('scope_required', 'This connection changed or was disconnected; reconnect before writing.');
     }
-    const current = await context.store.mcpGet('OAUTHFAMILY#' + fid),
-      profile = await context.store.mcpProfile(uid);
-    if (
-      !live(current, context.now) ||
-      !profile ||
-      profile.mcp_deleting ||
-      current.revision !== family.revision ||
-      !String(current.scope).split(/\s+/).includes('notes:write')
-    )
-      throw new ToolError('scope_required', 'This connection changed or was disconnected; reconnect before writing.');
+    throw new ToolError('busy', 'Try again shortly with exactly the same idempotency_key and arguments.');
+  } finally {
+    // A file no note took; one already numbered into a committed note stays.
+    if (kept && !committed) await dropFiles(context.objects!, kept);
   }
-  throw new ToolError('busy', 'Try again shortly with exactly the same idempotency_key and arguments.');
 }
 /** A note's place from a city written as text, kept as one chosen on the
  * web is. */
@@ -244,11 +329,13 @@ async function namedPlace(text: string, geocode: (q: string) => Promise<City[]>)
 async function recordNote(
   context: CaptureContext,
   family: OAuthRow,
+  name: string,
   note: OAuthRow,
   old: OAuthRow | null,
   day: string,
   profile: OAuthRow,
   today: string,
+  files: number,
   log?: SafeLog
 ): Promise<void> {
   const uid = String(family.user_id),
@@ -265,11 +352,25 @@ async function recordNote(
     uid,
     context.now,
     [
-      {
-        kind: old ? 'note.edited' : 'note.added',
-        id: old ? again(id) : id,
-        fields: { via: 'assistant', client: family.client_name, day, note: id, version: note.version }
-      },
+      // As the web records them: new files are note.files, with a count.
+      name === 'notes_attach'
+        ? {
+            kind: 'note.files',
+            id: again(id),
+            fields: { via: 'assistant', client: family.client_name, day, note: id, added: files }
+          }
+        : {
+            kind: old ? 'note.edited' : 'note.added',
+            id: old ? again(id) : id,
+            fields: {
+              via: 'assistant',
+              client: family.client_name,
+              day,
+              note: id,
+              version: note.version,
+              ...(files ? { files } : {})
+            }
+          },
       ...badgeEvents(unlocked, 'assistant', day, id, family.client_name)
     ],
     activityLog(context.now, log)
@@ -454,7 +555,7 @@ export async function captureNote(
     };
   }
 }
-let runtimeStore: Store | undefined;
+let runtimeStore: Store | undefined, runtimeObjects: Objects | undefined;
 export async function handler(event: unknown): Promise<OAuthRow> {
   if (runtimeSelfTest(event)) return runtimeSelfTest(event)!;
   runtimeStore ??= new Store(
@@ -463,8 +564,10 @@ export async function handler(event: unknown): Promise<OAuthRow> {
     }),
     process.env.TABLE ?? process.env.TABLE_NAME ?? ''
   );
+  runtimeObjects ??= createObjects(process.env.MAIL_BUCKET ?? '', process.env.AWS_REGION ?? 'us-east-1');
   return captureNote(event, {
     store: runtimeStore,
+    objects: runtimeObjects,
     origin: process.env.WEB_ORIGIN ?? '',
     now: Math.floor(Date.now() / 1000)
   });

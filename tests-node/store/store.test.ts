@@ -779,6 +779,101 @@ test('capture media-only race preserves newly attached files', async () => {
   );
   assert.deepEqual((await s.note('u', day, 'a-note'))?.media, [{ n: 1, kind: 'file' }]);
 });
+test('capture with files proves media:write in the one family check and appends after the files read', async () => {
+  const { s, family, receipt, audit, rate } = captureFixture();
+  const withFiles = { ...family, scope: 'notes:read notes:write media:write' },
+    file = { n: 1, kind: 'file', type: 'application/pdf', size: 9, key: 'media/u/files/a.pdf' };
+  s.seed(withFiles);
+  assert.equal(
+    await s.captureCommit({ ...note, media: [file] }, null, receipt, audit, rate, null, withFiles, 100),
+    true
+  );
+  assert.deepEqual(s.memory.calls[0]!.input.TransactItems![1], {
+    ConditionCheck: {
+      TableName: 'T',
+      Key: { pk: 'OAUTHFAMILY#f', sk: 'STATE' },
+      ConditionExpression:
+        '#r = :revision AND expires_at > :now AND attribute_not_exists(revoked) AND contains(#s, :write) AND contains(#s, :also0)',
+      ExpressionAttributeNames: { '#r': 'revision', '#s': 'scope' },
+      ExpressionAttributeValues: { ':revision': 1, ':now': 100, ':write': 'notes:write', ':also0': 'media:write' }
+    }
+  });
+  // notes_attach: the stored entries stay and the new ones follow them.
+  const old = (await s.note('u', day, 'a-note'))!,
+    second = { ...file, n: 2, key: 'media/u/files/b.pdf' },
+    next = { ...old, updated_at: 'now', revision: 2 };
+  s.memory.calls.length = 0;
+  assert.equal(
+    await s.captureCommit(
+      next,
+      old,
+      { ...receipt, sk: 'CAPTURE#f#2' },
+      { ...audit, sk: 'LOG#002' },
+      { ...rate, sk: 'WRITERATE#notes_attach#1' },
+      null,
+      withFiles,
+      100,
+      [second]
+    ),
+    true
+  );
+  assert.deepEqual(s.memory.calls[0]!.input.TransactItems![2]!.Update, {
+    TableName: 'T',
+    Key: { pk: 'USER#u', sk: note.sk },
+    UpdateExpression:
+      'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next, media = list_append(if_not_exists(media, :none), :m)',
+    ConditionExpression:
+      'author = :author AND #c = :connection AND #t = :old AND #r = :revision AND attribute_not_exists(updated_at) AND size(media) = :had',
+    ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection' },
+    ExpressionAttributeValues: {
+      ':author': 'assistant',
+      ':connection': 'f',
+      ':old': 'First',
+      ':revision': 1,
+      ':text': 'First',
+      ':tags': old.tags,
+      ':links': old.links,
+      ':updated_at': 'now',
+      ':next': 2,
+      ':m': [second],
+      ':none': [],
+      ':had': 1
+    }
+  });
+  assert.deepEqual((await s.note('u', day, 'a-note'))?.media, [file, second]);
+  // A file the web added since it was read refuses the attach.
+  const current = (await s.note('u', day, 'a-note'))!;
+  s.seed({ ...current, media: [file, second, { ...file, n: 3 }] });
+  assert.equal(
+    await s.captureCommit(
+      { ...current, updated_at: 'later', revision: 3 },
+      current,
+      { ...receipt, sk: 'CAPTURE#f#3' },
+      { ...audit, sk: 'LOG#003' },
+      { ...rate, sk: 'WRITERATE#notes_attach#2' },
+      null,
+      withFiles,
+      100,
+      [{ ...file, n: 3 }]
+    ),
+    false
+  );
+  // Without media:write the same family check refuses a note with files.
+  s.seed({ ...withFiles, scope: 'notes:read notes:write' });
+  assert.equal(
+    await s.captureCommit(
+      { ...note, sk: note.sk + 'y', media: [file] },
+      null,
+      { ...receipt, sk: 'CAPTURE#f#4' },
+      { ...audit, sk: 'LOG#004' },
+      { ...rate, sk: 'WRITERATE#notes_create#9' },
+      null,
+      withFiles,
+      100
+    ),
+    false
+  );
+});
 test('expired capture receipts may be atomically replaced, unexpired receipts cannot', async () => {
   const { s, family, receipt, audit, rate } = captureFixture();
   s.seed({ ...receipt, expires_at: 100 });

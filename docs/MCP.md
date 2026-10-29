@@ -66,8 +66,10 @@ with a next step. Notes are untrusted data, never agent instructions.
 | `notes_activity` | The activity log (`docs/WEB-APP.md`, Activity): what came in, changed and went out, newest first, kept for the life of the account. `from`/`through` are local days (both kept), `kinds` filters by family (`note` matches `note.added`), 50 rows a page by default, at most 100; `next_cursor` is bound to the filters. Mail subjects cut at 300 and words at 2,000 characters. Each connection's own reads are one row a local day. With the upcoming scope (1.5.1), a row naming an Upcoming date carries its `title` as it is now, null once removed; without it, only the date's id. 1.5.2 adds the daily email, each Upcoming reminder it carried (`when`, as the email said it), badges from notes filed by email, stops for a bounce or complaint, transcripts and descriptions (never their words), imports, and a day's own place (kind `place`, the day alone). |
 | `notes_mail_log` | The mail log (`docs/WEB-APP.md`): each email to the account's addresses in the last 30 days and what became of it, newest first; subjects cut at 300 and words at 2,000 characters. |
 | `notes_account` | Birthday, send time, status, processing settings, "Show badges", home place and pause, with streak, lifetime counts and next release. Never the email address, standing address or calendar feed. |
-| `notes_create` | Write one plain-text agent note on local today or an explicit past date, optionally with the city it was written in, only with separately approved `notes:write`. |
+| `notes_create` | Write one agent note on local today or an explicit past date, optionally with the city it was written in, only with separately approved `notes:write`. With `files` (1.8.0, needs `media:write` too) it keeps photos, recordings and PDFs with it; text, files or both. |
 | `notes_append` | Append text only to a note created by this exact connection; never edits a user's note or deletes anything. |
+| `notes_edit` | Replace the text of a note created by this exact connection (1.8.0), given the `revision` a full read returned; a note changed since is refused as `conflict`. Needs `notes:write`. Never a user's note, never a delete. |
+| `notes_attach` | Add up to 4 files (4 MB together) to a note created by this exact connection (1.8.0), after the files it has; needs `notes:write` and `media:write`. |
 | `upcoming_list` | Saved Upcoming dates (birthdays, anniversaries, trips, events) with each one's next occurrence, id and revision, in date order; needs the separate `upcoming` scope. A trip or event already over is left out and only counted (`past_left_out`, 1.6.0); `max_entries` is the account's cap, those included. |
 | `upcoming_save` | Add or change up to 50 Upcoming dates in one call, all or nothing, only when the user asks; a destination is text the server resolves; `dry_run` checks without saving. |
 | `upcoming_delete` | Remove up to 50 Upcoming dates by id and current revision, all or nothing, only when the user asks. Never touches notes. |
@@ -134,7 +136,47 @@ city search as the web's Where, and kept as a chosen city. A name the
 search does not know is refused, and nothing is written. Left out, the note
 shows the day's city (or home's), as any note without a place does. An
 append keeps the note's place. No separate tags, files, summaries or
-reflections, updates or deletes are added.
+reflections or deletes are added.
+
+`notes_edit({date, id, text, revision, idempotency_key})` (1.8.0; Jamie,
+2026-10-28: "the mcp interface doesn't provide a way to edit a note")
+replaces the whole text of a note this same connection created, only when
+the user asks. `revision` is the token on the note's full view
+(`notes_get_note`, or a write's answer): a digest of its
+text, edited time and stored revision, so any change since it was read (an
+edit on the web, an append, another edit) refuses it as `conflict`, to be
+read and redone, never overwritten. The commit's condition holds the same
+three, so a change racing the edit refuses it too. Hashtags come from the
+new text and link titles are fetched as for a new note; place and files stay.
+As on the web, no earlier text is kept. The activity log gets `note.edited`,
+never the words.
+
+### Files
+
+`notes_create`'s `files` and `notes_attach({date, id, files,
+idempotency_key})` (1.8.0; Jamie, 2026-10-28: "the mcp interface doesn't
+allow an agent to add an image or attachment") take a list of `{name, type,
+data}`: `data` is the standard base64 of the bytes, `type` the MIME type and
+`name` the file's name, kept and shown as the web shows an upload's. The
+types are a web upload's (photos as JPEG, PNG, GIF, WebP or HEIC; recordings
+as M4A, AAC, MP3, WAV, OGG, WebM or FLAC; PDFs), and the first bytes must
+look like that type. One call takes at most 4 files and 4 MB of bytes
+together: a synchronous Lambda invoke carries 6 MB, and base64 makes 4 MB
+about 5.6 MB (the MCP request itself may be 6,000,000 bytes). More or
+larger is refused as `file_too_large` with what to do next; a note holds at
+most 20 files (`too_many_files`). Files need the separate `media:write`
+approval as well as `notes:write` (`scope_required` names it).
+
+Files are kept as a web upload's checked copy is (`media/<user>/files/`,
+tagged as a note's), before the note that names them is written, and
+removed again if the note is not; the note's entries have the web's fields.
+The stream readers then treat them exactly as a web upload: every photo
+gets its thumbnail (a HEIC none, but its time and place are read), a
+photo's EXIF place names a note that has none, and transcripts and photo
+descriptions come only where the owner turned them on. Answers show the
+entries with their numbers, never a storage key. The audit and the
+activity log count files (`files`; `note.files` for an attach, with
+`added`), never their names or bytes.
 Dates are the owner's local days, birthday through today; late captures use
 the existing "added later" behavior. Captures are normal journal notes,
 count toward streaks, show in email/day views, and the owner can edit or
@@ -148,7 +190,7 @@ completed operation returns its original result, even if the note is since
 appended to or deleted. A changed request using that key is refused. After
 24 hours it is a new operation, even if DynamoDB TTL has not removed the
 receipt yet. Receipts are private USER data and disappear on account deletion.
-Daily account quotas are 20 creates and 50 appends across all connections,
+Daily account quotas are 20 creates, 50 appends, 50 edits and 20 attaches across all connections,
 in addition to the general request quota. Completed retries do not consume
 another write quota or create another audit record. Successful captures
 commit the note, receipt, audit and quota atomically, with current family
@@ -198,7 +240,12 @@ Public protocol routes, separate from `/api` cookie authentication:
 | `POST /oauth/revoke` | Form-encoded token and matching client id; idempotent family revocation. |
 
 `notes:read` is required; `media:read` additionally permits file bytes and
-private downloads. Optional `notes:write` delegates text capture only. Approval is only through `POST /api/mcp/authorize` with
+private downloads. Optional `notes:write` delegates adding notes, and appending
+to or rewriting the ones the same connection made. Optional `media:write`
+(1.8.0), only beside `notes:write`, lets those notes carry files; it is
+offered on the consent screen with adding, and an existing connection gains
+it in place from Settings ("Allow files for ..."). "Turn off adding" removes
+both. Approval is only through `POST /api/mcp/authorize` with
 an email-verified browser session and the site's Origin. Bearer tokens
 cannot authenticate existing web routes. Denying consumes the request and
 returns access_denied to the validated redirect. The resource is exactly
@@ -234,11 +281,17 @@ embedded `McpFailures` metric keeps these errors visible; the MCP alarm sums
 that metric and uncaught Lambda Errors from both reader and writer.
 Metadata transaction conflicts retry within bounded CAS loops. Invalid tool arguments remain
 structured tool errors and do not count as infrastructure failures.
-The capture function has no public route or function URL, no S3, SES, model,
-OAuth-write, deletion or invocation permission. Only its role can write USER
-note/receipt fields; note and grant conditions constrain the code's writes.
-The reader itself still cannot write USER rows. Append updates only text,
-tags, links, edited time and revision, preserving owner-added files/place.
+The capture function has no public route or function URL, no SES, model,
+OAuth-write or invocation permission. Its S3 grant is PutObject,
+PutObjectTagging and DeleteObject under `media/*/files/*` alone, for the
+files it keeps and the ones no note took; it reads nothing. Only its role
+can write USER note/receipt fields; note and grant conditions constrain the
+code's writes. The reader itself still cannot write USER rows. The MCP
+request may be up to 6,000,000 bytes. Append and edit update only text,
+tags, links, edited time and
+revision, preserving owner-added files and place; an attach appends entries
+after the number it read (`size(media)`), so a file added on the web
+meanwhile refuses it.
 
 `tools/dev-server.ts` dispatches `/mcp`, `/oauth/*` and discovery to these same
 handlers against the in-memory fakes. Test with fictional data only. Unit

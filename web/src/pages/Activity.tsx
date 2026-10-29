@@ -183,6 +183,7 @@ const SCOPES: Record<string, string> = {
   'notes:read': 'read notes',
   'media:read': 'see photos and audio',
   'notes:write': 'add notes',
+  'media:write': 'add files',
   upcoming: 'Upcoming'
 };
 const scopes = (s: string | undefined) =>

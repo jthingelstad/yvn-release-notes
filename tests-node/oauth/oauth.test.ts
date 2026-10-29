@@ -247,6 +247,40 @@ test('an owner widens a live connection with the upcoming scope in place; the ex
   await service.disconnect('u', fid);
   await assert.rejects(service.grant('u', fid, 'upcoming'), (e) => e instanceof OAuthError && e.status === 404);
 });
+test('media:write (files) is offered with adding, granted in place only beside notes:write, and goes with adding', async () => {
+  const ctx = fixture(),
+    service = new OAuthService(ctx),
+    family = () =>
+      ctx.store.memory
+        .all()
+        .filter((i) => String(i.pk).startsWith('OAUTHFAMILY#'))
+        .at(-1)!.scope;
+  const { id: alone } = await pending(ctx, 'notes:read notes:write');
+  await assert.rejects(
+    service.authorize('u', { request: alone, approve: true, write: false, files: true }),
+    (e) => e instanceof OAuthError && e.error === 'invalid_scope'
+  );
+  const { id: both } = await pending(ctx, 'notes:read notes:write');
+  await service.authorize('u', { request: both, approve: true, media: false, write: true, files: true });
+  assert.equal(family(), 'notes:read notes:write media:write');
+  // An existing text-only connection gains files only from Settings, and a
+  // read-only one cannot.
+  const a = await connected(ctx),
+    fid = String(a.family.id),
+    reader = await connected(ctx, false);
+  assert.equal((await service.bearer(a.token))!.scope, 'notes:read media:read notes:write');
+  await assert.rejects(
+    service.grant('u', String(reader.family.id), 'media:write'),
+    (e) => e instanceof OAuthError && e.error === 'invalid_scope'
+  );
+  assert.deepEqual(await service.grant('u', fid, 'media:write'), {
+    ok: true,
+    scope: 'notes:read media:read notes:write media:write'
+  });
+  assert.equal((await service.bearer(a.token))!.scope, 'notes:read media:read notes:write media:write');
+  await service.disconnect('u', fid, true);
+  assert.equal((await service.bearer(a.token))!.scope, 'notes:read media:read');
+});
 test("connections added, changed and ended are in the owner's activity log, never a token", async () => {
   const ctx = fixture(),
     log = () =>

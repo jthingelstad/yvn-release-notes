@@ -68,7 +68,7 @@ notes.yourversionnumber.com (CloudFront)
           -> private Lambda Web Function (server/app, Hono/Node 24)
   /mcp    -> private Lambda Web Function (server/mcp, separate reader role)
   web     -> export Event Function :live -> S3 exports/
-  MCP     -> private capture Event Function :live -> guarded text writes
+  MCP     -> private capture Event Function :live -> guarded note and file writes
 
 DynamoDB stream, for subscribers who opt in
   -> transcribe Event Function :live    recordings -> Amazon Transcribe -> transcript
@@ -602,11 +602,21 @@ Where things are (each module's design comment has its contract):
   adds file bytes and ten-minute links. Consent lets the agent process what it reads; it never turns on the
   product's own transcription or description.
 - **`notes:write`** is a separate approval, off by default, and existing
-  grants stay read-only. It allows text-only creates and appends at the
-  user's explicit request, hashtags in the text. An append goes only to a
-  note the same connection created (that connection, never a name a client
-  supplies). No MCP edit or delete of notes. "Turn off adding" in Settings
-  keeps reading.
+  grants stay read-only. It allows creates, appends and edits at the
+  user's explicit request, hashtags in the text. An append or edit goes
+  only to a note the same connection created (that connection, never a
+  name a client supplies). Edits (Jamie, 2026-10-28: "the mcp interface
+  doesn't provide a way to edit a note") replace the text from the
+  revision the agent read, refuse a note changed since, and keep no
+  history, as web edits keep none. No MCP delete of notes. "Turn off
+  adding" in Settings keeps reading.
+- **`media:write`** (2026-10-28; Jamie: "the mcp interface doesn't allow an
+  agent to add an image or attachment") is its own approval, only beside
+  `notes:write`, for files on those same notes: base64 photos, recordings
+  and PDFs as the web takes them, at most 4 files and 4 MB a call. Kept as
+  web uploads are, so thumbnails, EXIF place and the owner's opted-in
+  transcripts and descriptions follow as for a web upload. Existing
+  connections gain it in place from Settings; "Turn off adding" removes it.
 - **`upcoming`** (2026-10-17) is a third approval, for Upcoming dates only,
   never notes. An existing connection gains it in place from Settings
   (Jamie, 2026-10-17: without "disconnecting and reconnecting"). The consent
@@ -618,7 +628,9 @@ Where things are (each module's design comment has its contract):
 - **The MCP function is a reader**: its only table writes are MCPMETA rows
   and its one invocation is the private capture function, which rechecks
   the bearer and commits the note, the live grant, an idempotency receipt,
-  the daily quota and a content-free audit together. No MCP token
+  the daily quota and a content-free audit together. Capture alone keeps an
+  agent's files (S3 puts under `media/*/files/`), and removes them when no
+  note took them; no byte or file name is logged. No MCP token
   authenticates a web write. Activity records hold no arguments or returned
   content, and nothing logs note text.
 - **Disconnecting revokes at once**; what was already shared, and unexpired

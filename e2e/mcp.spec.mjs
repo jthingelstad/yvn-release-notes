@@ -18,13 +18,24 @@ test.beforeEach(async ({ context }) => {
 });
 
 async function pending(request, baseURL, scope = 'notes:read media:read') {
-  const registration = await request.post('/oauth/register', { data: { client_name: 'Claude test', redirect_uris: [callback] } });
+  const registration = await request.post('/oauth/register', {
+    data: { client_name: 'Claude test', redirect_uris: [callback] }
+  });
   expect(registration.status()).toBe(201);
   const { client_id } = await registration.json();
-  const authorization = await request.get('/oauth/authorize', { maxRedirects: 0, params: {
-    client_id, redirect_uri: callback, resource: baseURL + '/mcp', response_type: 'code',
-    scope, code_challenge: challenge, code_challenge_method: 'S256', state: 'state-from-client'
-  } });
+  const authorization = await request.get('/oauth/authorize', {
+    maxRedirects: 0,
+    params: {
+      client_id,
+      redirect_uri: callback,
+      resource: baseURL + '/mcp',
+      response_type: 'code',
+      scope,
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      state: 'state-from-client'
+    }
+  });
   expect(authorization.status()).toBe(303);
   return { client_id, url: authorization.headers().location };
 }
@@ -46,7 +57,10 @@ async function signIn(page, request) {
   session = await page.context().storageState();
 }
 
-for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['phone', { width: 390, height: 844 }]]) {
+for (const [name, viewport] of [
+  ['desktop', { width: 1400, height: 1000 }],
+  ['phone', { width: 390, height: 844 }]
+]) {
   test.describe(name, () => {
     test.use({ viewport, isMobile: name === 'phone' });
     test('approve, read and disconnect', async ({ page, request, baseURL }) => {
@@ -56,7 +70,10 @@ for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['ph
       let returned;
       await page.route(callback + '**', (route) => {
         returned = new URL(route.request().url());
-        return route.fulfill({ contentType: 'text/html', body: '<title>Client callback</title><h1>Returned to client</h1>' });
+        return route.fulfill({
+          contentType: 'text/html',
+          body: '<title>Client callback</title><h1>Returned to client</h1>'
+        });
       });
       await page.goto(p.url);
       await signIn(page, request);
@@ -76,15 +93,28 @@ for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['ph
       await page.getByRole('button', { name: 'Allow reading and Upcoming', exact: true }).click();
       await expect(page).toHaveURL(new RegExp('^' + callback.replaceAll('.', '\\.')));
       expect(returned.searchParams.get('state')).toBe('state-from-client');
-      const exchange = await request.post('/oauth/token', { form: {
-        grant_type: 'authorization_code', code: returned.searchParams.get('code'), client_id: p.client_id,
-        code_verifier: verifier, redirect_uri: callback, resource: baseURL + '/mcp'
-      } });
+      const exchange = await request.post('/oauth/token', {
+        form: {
+          grant_type: 'authorization_code',
+          code: returned.searchParams.get('code'),
+          client_id: p.client_id,
+          code_verifier: verifier,
+          redirect_uri: callback,
+          resource: baseURL + '/mcp'
+        }
+      });
       expect(exchange.status()).toBe(200);
       const { access_token } = await exchange.json();
-      const read = () => request.post('/mcp', { headers: { Authorization: 'Bearer ' + access_token }, data: {
-        jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'notes_context', arguments: {} }
-      } });
+      const read = () =>
+        request.post('/mcp', {
+          headers: { Authorization: 'Bearer ' + access_token },
+          data: {
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'tools/call',
+            params: { name: 'notes_context', arguments: {} }
+          }
+        });
       const answer = await read();
       expect(answer.status()).toBe(200);
       const granted = (await answer.json()).result.structuredContent.scope;
@@ -104,7 +134,11 @@ for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['ph
       expect(errors).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
     });
-    test('explicit adding consent, capture, replay, append and remove only write scope', async ({ page, request, baseURL }) => {
+    test('explicit adding consent, capture, replay, append and remove only write scope', async ({
+      page,
+      request,
+      baseURL
+    }) => {
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));
       page.on('console', (message) => {
@@ -114,28 +148,48 @@ for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['ph
       let returned;
       await page.route(callback + '**', (route) => {
         returned = new URL(route.request().url());
-        return route.fulfill({ contentType: 'text/html', body: '<title>Client callback</title><h1>Returned to client</h1>' });
+        return route.fulfill({
+          contentType: 'text/html',
+          body: '<title>Client callback</title><h1>Returned to client</h1>'
+        });
       });
       await page.goto(p.url);
       await signIn(page, request);
       const adding = page.getByRole('checkbox', { name: 'Also allow adding notes when I ask' });
       await expect(adding).not.toBeChecked();
       await adding.check();
-      await expect(page.getByText('The agent can create notes and append to notes this connection created.', { exact: false })).toBeVisible();
+      await expect(
+        page.getByText(
+          'The agent can create notes and append to notes this connection created, and rewrite those notes',
+          { exact: false }
+        )
+      ).toBeVisible();
       await mkdir('/tmp/yvn-capture-qa', { recursive: true });
       await page.screenshot({ path: `/tmp/yvn-capture-qa/consent-${name}.png`, fullPage: true });
       await page.getByRole('button', { name: 'Allow reading and adding', exact: true }).click();
       await expect(page).toHaveURL(/client.example.com\/callback/);
-      const exchange = await request.post('/oauth/token', { form: {
-        grant_type: 'authorization_code', code: returned.searchParams.get('code'), client_id: p.client_id,
-        code_verifier: verifier, redirect_uri: callback, resource: baseURL + '/mcp'
-      } });
+      const exchange = await request.post('/oauth/token', {
+        form: {
+          grant_type: 'authorization_code',
+          code: returned.searchParams.get('code'),
+          client_id: p.client_id,
+          code_verifier: verifier,
+          redirect_uri: callback,
+          resource: baseURL + '/mcp'
+        }
+      });
       const { access_token, scope } = await exchange.json();
       expect(scope).toContain('notes:write');
       const rpc = async (tool, args = {}) => {
-        const response = await request.post('/mcp', { headers: { Authorization: 'Bearer ' + access_token }, data: {
-          jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args }
-        } });
+        const response = await request.post('/mcp', {
+          headers: { Authorization: 'Bearer ' + access_token },
+          data: {
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'tools/call',
+            params: { name: tool, arguments: args }
+          }
+        });
         expect(response.status()).toBe(200);
         return (await response.json()).result.structuredContent;
       };
@@ -144,7 +198,12 @@ for (const [name, viewport] of [['desktop', { width: 1400, height: 1000 }], ['ph
       expect(first.note.author).toBe('assistant');
       expect(first.note.client).toBe('Claude test');
       expect((await rpc('notes_create', args)).replayed).toBe(true);
-      const append = await rpc('notes_append', { date: first.note.date, id: first.note.id, text: 'Then tea.', idempotency_key: 'append-ui' });
+      const append = await rpc('notes_append', {
+        date: first.note.date,
+        id: first.note.id,
+        text: 'Then tea.',
+        idempotency_key: 'append-ui'
+      });
       expect(append.note.text).toBe(args.text + '\n\nThen tea.');
       await page.goto('/day/?d=' + first.note.date);
       await expect(page.getByText(/added by Claude test/).first()).toBeVisible();

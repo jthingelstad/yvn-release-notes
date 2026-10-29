@@ -2137,9 +2137,16 @@ export class Store {
     rate: Item,
     previous: Item | null,
     family: Item,
-    now: number
+    now: number,
+    added?: readonly Item[]
   ) {
-    const ops: NonNullable<TransactWriteCommandInput['TransactItems']> = this.agentProof(family, now, 'notes:write');
+    // Files ride on a note: their write proves media:write as well.
+    const files = Boolean(added?.length || (!old && Array.isArray(note.media) && note.media.length)),
+      ops: NonNullable<TransactWriteCommandInput['TransactItems']> = this.agentProof(
+        family,
+        now,
+        files ? ['notes:write', 'media:write'] : 'notes:write'
+      );
     if (old) {
       const values: Item = {
         ':author': 'assistant',
@@ -2153,14 +2160,27 @@ export class Store {
         ':next': note.revision
       };
       if (old.updated_at) values[':edited'] = old.updated_at;
+      // New files go after the ones the note had when read, as the web's
+      // addMedia appends them: a worker's description or transcript written
+      // into an existing entry meanwhile is kept, and a file added on the
+      // web meanwhile refuses this, to be read again.
+      const had = ((old.media as Item[] | undefined) ?? []).length;
+      if (added?.length) Object.assign(values, { ':m': added, ':none': [], ':had': had });
       ops.push({
         Update: {
           TableName: this.tableName,
           Key: { pk: String(note.pk), sk: String(note.sk) },
-          UpdateExpression: 'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next',
+          UpdateExpression:
+            'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next' +
+            (added?.length ? ', media = list_append(if_not_exists(media, :none), :m)' : ''),
           ConditionExpression:
             'author = :author AND #c = :connection AND #t = :old AND #r = :revision AND ' +
-            (old.updated_at ? 'updated_at = :edited' : 'attribute_not_exists(updated_at)'),
+            (old.updated_at ? 'updated_at = :edited' : 'attribute_not_exists(updated_at)') +
+            (added?.length
+              ? had
+                ? ' AND size(media) = :had'
+                : ' AND (attribute_not_exists(media) OR size(media) = :had)'
+              : ''),
           ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection' },
           ExpressionAttributeValues: values
         }
@@ -2171,21 +2191,38 @@ export class Store {
   }
   /** An agent write proves the live account and the family's revision, expiry
    * and the scope it needs, in the same transaction as what it writes. */
-  agentProof(family: Item, now: number, scope: string): NonNullable<TransactWriteCommandInput['TransactItems']> {
+  agentProof(
+    family: Item,
+    now: number,
+    scope: string | readonly string[]
+  ): NonNullable<TransactWriteCommandInput['TransactItems']> {
     return [this.profileProof(String(family.user_id)), ...this.familyProof(family, now, scope)];
   }
   /** The family check alone, for a transaction that already touches PROFILE
    * (DynamoDB refuses two operations on one key). */
-  familyProof(family: Item, now: number, scope: string): NonNullable<TransactWriteCommandInput['TransactItems']> {
+  familyProof(
+    family: Item,
+    now: number,
+    scope: string | readonly string[]
+  ): NonNullable<TransactWriteCommandInput['TransactItems']> {
+    // One check on the family row (DynamoDB takes one operation a key), so a
+    // second scope is a second contains() in the same condition.
+    const [first, ...more] = typeof scope === 'string' ? [scope] : scope;
     return [
       {
         ConditionCheck: {
           TableName: this.tableName,
           Key: { pk: `OAUTHFAMILY#${family.id}`, sk: 'STATE' },
           ConditionExpression:
-            '#r = :revision AND expires_at > :now AND attribute_not_exists(revoked) AND contains(#s, :write)',
+            '#r = :revision AND expires_at > :now AND attribute_not_exists(revoked) AND contains(#s, :write)' +
+            more.map((_, i) => ` AND contains(#s, :also${i})`).join(''),
           ExpressionAttributeNames: { '#r': 'revision', '#s': 'scope' },
-          ExpressionAttributeValues: { ':revision': family.revision, ':now': now, ':write': scope }
+          ExpressionAttributeValues: {
+            ':revision': family.revision,
+            ':now': now,
+            ':write': first,
+            ...Object.fromEntries(more.map((s, i) => [`:also${i}`, s]))
+          }
         }
       }
     ];

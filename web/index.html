@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- cover: on Android, Chrome draws the page under the system navigation
+         bar (otherwise a white strip under an installed app), and the tab bar
+         pads itself clear of it with the safe-area insets (site.css). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Release Notes: a daily journal by email</title>
     <meta
       name="description"

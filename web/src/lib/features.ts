@@ -51,8 +51,7 @@ export const FEATURES: FeatureGroup[] = [
       {
         head: 'Your own apps and scripts.',
         line: 'Make an API token, and a script, a shortcut or an app can add notes as you, with photos and where you were.',
-        guide: '/guide/tokens/',
-        tour: false
+        guide: '/guide/tokens/'
       }
     ]
   },

@@ -7,14 +7,20 @@
  *   upload --artifacts O --commit SHA                  prints the code parameters
  *   policies                                           the endpoint grants
  *   probe --commit SHA                                 checks the finished release
+ *   indexnow --before J --after K                      tells IndexNow which pages changed
+ *   indexnow-plan --before J --after K                 what indexnow would send, sending nothing
+ *
+ * For indexnow, J is the replaced release's site/sitemap.json and K this
+ * release's (tools/indexnow.ts).
  */
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packageRelease } from './package-native.ts';
 import { uploadArtifacts } from './native-artifacts.ts';
 import { ensurePolicies } from './web-platform.ts';
 import { probe } from './release-probe.ts';
+import { changedUrls, pages, payload, submit } from './indexnow.ts';
 
 function options(args: string[], allowed: string[]) {
   const values: Record<string, string> = {};
@@ -60,6 +66,15 @@ export async function main(argv: string[]): Promise<string> {
   }
   if (command === 'probe') {
     return JSON.stringify(await probe(commitOf(options(args, ['--commit'])['--commit'])));
+  }
+  if (command === 'indexnow' || command === 'indexnow-plan') {
+    const o = options(args, ['--before', '--after']);
+    const read = (key: string) => JSON.parse(readFileSync(absolute(o[key]), 'utf8'));
+    const urls = changedUrls(read('--before'), read('--after'));
+    if (command === 'indexnow') return submit(urls);
+    return urls.length
+      ? `IndexNow would send ${pages(urls.length)}:\n${JSON.stringify(payload(urls), null, 2)}`
+      : 'IndexNow: no page changed, nothing would be sent';
   }
   throw new Error('Unknown release command');
 }

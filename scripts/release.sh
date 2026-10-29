@@ -11,7 +11,9 @@
 #      and `live` (each worker alias and each web endpoint) moved to them
 #   4. the web endpoints' CloudFront grants (tools/web-platform.ts)
 #   5. the inbound mail check and the web app sync
-#   6. the probe (tools/release-probe.ts): every worker's self-test, both
+#   6. IndexNow: the public pages this release changed
+#      (tools/indexnow.ts); a failed ping only warns
+#   7. the probe (tools/release-probe.ts): every worker's self-test, both
 #      endpoints' revisions and the API's health through CloudFront
 #
 # A failed stack update rolls itself back and nothing anyone is served
@@ -100,6 +102,7 @@ else
   [[ "$ARN" == *:assumed-role/ProjectsCloudEngineer/* ]] || refuse "caller is $ARN"
 fi
 mask() { [[ -z "$ACTIONS" || -z "$1" ]] || echo "::add-mask::$1"; }
+warn() { if [[ -n "$ACTIONS" ]]; then echo "::warning::$*"; else echo "WARNING: $*" >&2; fi; }
 RELEASE=(node "$BUNDLE/release/index.js")
 
 rule_arn() {
@@ -178,6 +181,11 @@ aws s3 sync "$WEB/assets/" "s3://$WEB_BUCKET/assets/" --no-overwrite --only-show
 aws s3 sync "$WEB/" "s3://$WEB_BUCKET/" --no-overwrite --only-show-errors --exclude '*' --include '*.html' \
   --cache-control 'public, max-age=60'
 echo "new web files staged"
+
+# The release now live, read before the stack update replaces it: IndexNow,
+# below, compares its site/sitemap.json with this release's.
+LIVE_BUILD=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+  --query "Stacks[0].Parameters[?ParameterKey=='BuildId'].ParameterValue | [0]" --output text)
 
 # The template is over CloudFormation's 51,200-byte inline limit, so it goes up
 # through the code bucket (expired after 90 days). The stack acts through its
@@ -260,6 +268,23 @@ aws cloudfront create-invalidation --distribution-id "$WEB_DISTRIBUTION" --paths
   --query Invalidation.Id --output text >/dev/null
 echo "web app synced and invalidated"
 still_ours "after the web sync" "re-run the newer release so its web app is whole"
+
+# IndexNow, once the pages are served: each sitemap address whose
+# site/sitemap.json entry (its lastmod and a hash of its words) differs from the
+# replaced release's, both read from git (the deploy job checks out main's
+# history; the Mac releases from its checkout). Its one network call is the
+# POST to IndexNow. A failure warns and the release stands.
+SITEMAP_BEFORE=$(mktemp) SITEMAP_AFTER=$(mktemp)
+if [[ ! "$LIVE_BUILD" =~ ^[a-f0-9]{40}$ ]] \
+  || ! git -C "$REPO" show "$LIVE_BUILD:site/sitemap.json" > "$SITEMAP_BEFORE" 2>/dev/null \
+  || ! git -C "$REPO" show "$COMMIT:site/sitemap.json" > "$SITEMAP_AFTER" 2>/dev/null; then
+  warn "IndexNow skipped: the replaced release's commit or this one is not in this checkout; the release stands"
+elif INDEXNOW=$("${RELEASE[@]}" indexnow --before "$SITEMAP_BEFORE" --after "$SITEMAP_AFTER"); then
+  echo "$INDEXNOW"
+else
+  warn "IndexNow was not told which pages changed; the release stands"
+fi
+rm -f "$SITEMAP_BEFORE" "$SITEMAP_AFTER"
 
 "${RELEASE[@]}" probe --commit "$COMMIT" >/dev/null \
   || refuse "$COMMIT is live but failed its probe; revert the merge to roll back"

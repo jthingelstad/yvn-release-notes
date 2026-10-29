@@ -115,10 +115,11 @@ Where things are (each module's design comment has its contract):
 - `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline,feedback}.ts`
   are operator tools (shared setup in `tools/operator.ts`);
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current.
-- `tools/{build-server,package-native,native-artifacts,web-platform,release-probe}.ts`
-  build and upload the code zips, keep the endpoint grants and probe a
-  finished release; `tools/{release-identity,release-cli}.ts` are who may
-  release and the bundled release tool. `scripts/build-release.sh` builds a
+- `tools/{build-server,package-native,native-artifacts,web-platform,release-probe,indexnow}.ts`
+  build and upload the code zips, keep the endpoint grants, tell IndexNow
+  which public pages a release changed and probe a finished release;
+  `tools/{release-identity,release-cli}.ts` are who may release and the
+  bundled release tool. `scripts/build-release.sh` builds a
   bundle with no cloud credentials, `scripts/release.sh` releases it, and
   `deploy.sh` is the Mac's path to both.
 - `infra/template.yaml` is the stack. `infra/github-deploy-role.yaml` is the

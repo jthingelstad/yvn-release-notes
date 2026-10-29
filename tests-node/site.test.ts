@@ -27,6 +27,7 @@ import { UPCOMING_MAX, UPCOMING_SHOWN } from '../packages/domain/upcoming.ts';
 import { DOTS, PHOTOS_AN_EMAIL, PHOTOS_A_DAY } from '../packages/mail/compose.ts';
 import { MAX_INLINE_BYTES, MAX_INLINE_FILES } from '../server/mcp/files.ts';
 import { FEATURES } from '../web/src/lib/features.ts';
+import { shareTags } from '../web/src/lib/share-card.ts';
 import { ORIGIN, SCOPES, readPages, sitemapDates } from '../web/src/site-pages.ts';
 import { LATE_NOTICES_A_DAY, REPLY_WINDOW } from '../workers/inbound.ts';
 
@@ -128,6 +129,13 @@ test('each page is its own document: its own canonical and sharing card, indexab
     assert.ok(page.includes(`<meta property="og:url" content="${url}"/>`), path);
     assert.doesNotMatch(page, /<meta[^>]*name="robots"/, path);
     assert.equal(page.match(/<h1[\s>]/g)?.length, 1, path);
+    for (const [attribute, name, content] of shareTags())
+      assert.equal(
+        page.match(new RegExp(`<meta ${attribute}="${name}" content="([^"]*)"/>`, 'g'))?.length === 1 &&
+          page.includes(`<meta ${attribute}="${name}" content="${content}"/>`),
+        true,
+        `${path}: ${name}`
+      );
     assert.ok(text(one(page, (e) => e.name === 'title')!).endsWith(': Release Notes'), path);
   }
   assert.equal(new Set(pages.map((p) => p.title)).size, pages.length, 'each page has its own title');

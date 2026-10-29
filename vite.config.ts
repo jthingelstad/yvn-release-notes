@@ -10,6 +10,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { runnerImport, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { shareTags } from './web/src/lib/share-card.ts';
 
 const api = process.env.RN_DEV_API || 'http://localhost:8790';
 
@@ -56,9 +57,24 @@ function frontPage(): Plugin {
   };
 }
 
+// The sharing card's tags (web/src/lib/share-card.ts) in index.html's head,
+// built and served alike, so front.html and the app's pages carry the card the
+// public pages do.
+function shareCard(): Plugin {
+  return {
+    name: 'release-notes-share-card',
+    transformIndexHtml: () =>
+      shareTags().map(([attribute, name, content]) => ({
+        tag: 'meta',
+        attrs: { [attribute]: name, content },
+        injectTo: 'head'
+      }))
+  };
+}
+
 export default defineConfig({
   root: 'web',
-  plugins: [react(), frontPage()],
+  plugins: [react(), shareCard(), frontPage()],
   define: { __BUILD__: JSON.stringify(build) },
   build: {
     outDir: '../dist/web',

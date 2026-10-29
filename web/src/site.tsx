@@ -26,6 +26,7 @@ import { BrandMark } from './components/brand-mark.tsx';
 import { titleOf } from './components/common.tsx';
 import { Icon } from './components/icon.tsx';
 import { SiteLinks } from './components/site-links.tsx';
+import { shareTags } from './lib/share-card.ts';
 import { ORIGIN, llmsTxt, readPages, sitemapDates, sitemapXml, SITE_DIR, type Page } from './site-pages.ts';
 
 const SRC_DIR = resolve('web/src');
@@ -51,9 +52,9 @@ export function pageHtml(page: Page, styles: string[], count: string | null): st
           <meta property="og:title" content={title} />
           <meta property="og:description" content={page.description} />
           <meta property="og:url" content={url} />
-          <meta property="og:image" content={`${ORIGIN}/brand/release-notes-paper-512.png`} />
-          <meta property="og:image:alt" content="The Release Notes mark: a blue V and an orange dot over two lines" />
-          <meta name="twitter:card" content="summary" />
+          {shareTags().map(([attribute, name, content]) => (
+            <meta key={name} {...{ [attribute]: name }} content={content} />
+          ))}
           <link rel="icon" href="/icons/icon-16.png" sizes="16x16" type="image/png" />
           <link rel="icon" href="/icons/icon-32.png" sizes="32x32" type="image/png" />
           <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />

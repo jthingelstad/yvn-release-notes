@@ -11,6 +11,7 @@ import {
   type FilePaths
 } from '../../packages/backend/export.ts';
 import { run } from '../../workers/export.ts';
+import { combine } from '../../packages/domain/notes.ts';
 import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects } from '../../packages/testing/services.ts';
 import type { Item } from '../../packages/backend/store.ts';
@@ -259,6 +260,40 @@ test('the JSON carries the activity log oldest first, with the reads and live ol
     build([{ sk: 'PROFILE', birthday: '1981-06-14', tz: 'America/Chicago' }], '2026-10-13T07:00:00Z').activity,
     undefined
   );
+});
+test('a token’s note carries “via <name>” in both exports, never an “Added by” line or into the email', () => {
+  const items = [
+      { sk: 'PROFILE', birthday: '1981-06-14', tz: 'America/Chicago' },
+      {
+        sk: 'NOTE#2026-10-12#t-1',
+        version: '4.5.120',
+        text: 'Coffee on the porch #walks',
+        source: 'api',
+        connection: 'tok1',
+        token: 'Changelog on my iPhone',
+        client: 'Changelog',
+        received_at: '2026-10-12T14:00:00Z'
+      },
+      {
+        sk: 'NOTE#2026-10-12#w-2',
+        version: '4.5.120',
+        text: 'Lake day',
+        source: 'web',
+        token: 'not a token note',
+        received_at: '2026-10-12T15:00:00Z'
+      }
+    ],
+    data = build(items, '2026-10-13T07:00:00Z'),
+    md = markdown(data),
+    byId = (id: string) => data.notes.find((n) => n.id === id)!;
+  assert.equal(byId('t-1').token, 'Changelog on my iPhone');
+  assert.equal(byId('t-1').author, 'user');
+  assert.ok(!('token' in byId('w-2')));
+  assert.match(md, /Coffee on the porch #walks\n\(via Changelog on my iPhone\)/);
+  assert.ok(!md.includes('Added by'));
+  assert.ok(!md.includes('not a token note'));
+  // The morning email combines without it (workers/send.ts).
+  assert.equal(combine(items.slice(1)), 'Coffee on the porch #walks\n\nLake day');
 });
 test('ZIP carries Upcoming separately in both exports without adding journal notes', async () => {
   const context = await setup();

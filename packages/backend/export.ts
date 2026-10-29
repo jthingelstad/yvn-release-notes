@@ -163,6 +163,8 @@ export function build(
         author: item.author ?? 'user',
         client: item.client ?? null,
         connection: item.connection ?? null,
+        // A token's name at the time it wrote the note: "via <name>".
+        ...(item.source === 'api' && item.token ? { token: String(item.token) } : {}),
         on_behalf_of: item.on_behalf_of ?? null,
         text: String(item.text ?? ''),
         written_at: writtenAt(item as NoteRecord) || null,
@@ -364,7 +366,7 @@ export function markdown(data: ExportData): string {
         client: typeof n.client === 'string' ? n.client : undefined,
         text: namedLinks(n.text, n.links as Link[] | undefined)
       })),
-      { label: escapeText }
+      { label: escapeText, via: true }
     );
     const version = notes[0]?.version ?? (born ? computeVersion(born, day).toString() : ''),
       named = born ? releaseName(computeVersion(born, day).age) : version.split('.').slice(0, 2).join('.');

@@ -34,7 +34,7 @@ export const FEATURES: FeatureGroup[] = [
       },
       {
         head: 'Photos, voice memos and PDFs.',
-        line: 'Attach photos and voice memos to a reply, or add any of them on the web. They stay with their day.',
+        line: 'Attach photos, voice memos and PDFs to a reply, or add them on the web. They stay with their day.',
         guide: '/guide/photos-and-voice/'
       },
       { head: 'An address of your own.', line: 'Mail a note any day, no reply needed.', guide: '/guide/address/' },

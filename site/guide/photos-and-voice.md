@@ -13,9 +13,9 @@ A note holds up to 20 files, at most 50 MB a file. Photos can be JPEG, PNG, GIF,
 
 ## By email
 
-Attach photos and voice memos to a reply, or to a note mailed to [your own address](/guide/address/), as you would to any email. They're kept with the note. Tiny pictures, like the logos in a signature, are left out.
+Attach photos, voice memos and PDFs to a reply, or to a note mailed to [your own address](/guide/address/), as you would to any email. They're kept with the note. Tiny pictures, like the logos in a signature, are left out.
 
-A PDF or any other kind of file attached to an email stays in the original email, which is kept whole, and the note says it had an attachment. To keep a PDF with its note, add it on the web.
+Any other kind of file attached to an email stays in the original email, which is kept whole, and the note says it had an attachment.
 
 ## In the morning email
 

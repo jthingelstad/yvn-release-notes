@@ -3,6 +3,7 @@
 import type { NoteRecord } from '../domain/notes.ts';
 import type { Objects } from './services.ts';
 import { object } from './places.ts';
+import { codePointSlice, pythonTrim } from '../domain/unicode.ts';
 export const IMAGES: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -32,7 +33,8 @@ const ALIASES: Record<string, string> = {
   'audio/wave': 'audio/wav',
   'audio/vnd.wave': 'audio/wav',
   'audio/x-aac': 'audio/aac',
-  'audio/x-flac': 'audio/flac'
+  'audio/x-flac': 'audio/flac',
+  'application/x-pdf': 'application/pdf'
 };
 const BY_EXTENSION: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -49,7 +51,8 @@ const BY_EXTENSION: Record<string, string> = {
   wav: 'audio/wav',
   ogg: 'audio/ogg',
   oga: 'audio/ogg',
-  flac: 'audio/flac'
+  flac: 'audio/flac',
+  pdf: 'application/pdf'
 };
 export const MIN_SIDE = 200,
   MIN_UNREAD = 20 * 1024,
@@ -76,10 +79,28 @@ export interface MediaPart {
   filename: string;
   data: Buffer;
 }
+/** A file's name as the web keeps it: the last part of a path, without
+ * control or odd space characters, at most 120 code points. */
+export const fileName = (value: unknown): string =>
+  typeof value === 'string'
+    ? codePointSlice(
+        pythonTrim(
+          value
+            .split(/[\\/]/)
+            .at(-1)!
+            .replace(/[\p{C}\p{Z}]/gu, (c) => (c === ' ' ? ' ' : ''))
+        ),
+        0,
+        120
+      )
+    : '';
+/** The type an emailed part is kept as, or null for one kept only in the raw
+ * mail: photos, recordings and PDFs (Jamie, 2026-10-29: "Yes we should keep
+ * pdf on the note."), as the web takes them. */
 export function mediaType(contentType: string, filename: string): string | null {
   const raw = contentType.toLowerCase(),
     type = ALIASES[raw] || raw;
-  if (type in IMAGES || type in AUDIO) return type;
+  if (type in IMAGES || type in AUDIO || type in PDF) return type;
   const ext = filename.includes('.') ? filename.split('.').at(-1)!.toLowerCase() : '';
   return type === 'application/octet-stream' || type === '' || type.startsWith('image/') || type.startsWith('audio/')
     ? BY_EXTENSION[ext] || null
@@ -162,13 +183,16 @@ export function imageSize(data: Buffer): [number, number] | null {
   return null;
 }
 export function worthKeeping(type: string, data: Buffer): boolean {
+  // A PDF is always sent on purpose; only tiny images are signature clutter.
+  if (kind(type) === 'file') return data.length > 0;
   if (kind(type) === 'audio') return data.length >= MIN_AUDIO;
   const size = imageSize(data);
   return size ? Math.max(...size) >= MIN_SIDE : data.length >= MIN_UNREAD;
 }
-/** Parts use the parser's attachment order, including unsupported raw-only files. */
-export function found(parts: readonly MediaPart[], refused: number[] = []): Array<[string, Buffer]> {
-  const out: Array<[string, Buffer]> = [];
+/** Parts use the parser's attachment order, including unsupported raw-only
+ * files. A PDF carries its cleaned file name, as a web upload's does. */
+export function found(parts: readonly MediaPart[], refused: number[] = []): Array<[string, Buffer, string?]> {
+  const out: Array<[string, Buffer, string?]> = [];
   for (const [n, part] of parts.entries()) {
     const type = mediaType(part.type, part.filename);
     if (!type) continue;
@@ -177,7 +201,8 @@ export function found(parts: readonly MediaPart[], refused: number[] = []): Arra
       continue;
     }
     if (!worthKeeping(type, part.data)) continue;
-    if (out.length < MAX_FILES) out.push([type, part.data]);
+    const name = kind(type) === 'file' ? fileName(part.filename) : '';
+    if (out.length < MAX_FILES) out.push(name ? [type, part.data, name] : [type, part.data]);
     else refused.push(n);
   }
   return out;
@@ -187,13 +212,13 @@ export async function storeFiles(
   user: string,
   day: string,
   id: string,
-  files: readonly [string, Buffer][]
+  files: readonly (readonly [string, Buffer, string?])[]
 ): Promise<MediaEntry[]> {
   const entries: MediaEntry[] = [];
-  for (const [i, [type, data]] of files.entries()) {
+  for (const [i, [type, data, name]] of files.entries()) {
     const k = key(user, day, id, i + 1, type);
     await objects.put(k, data, { type, disposition: 'inline' });
-    entries.push({ n: i + 1, kind: kind(type), type, size: data.length, key: k });
+    entries.push({ n: i + 1, kind: kind(type), type, size: data.length, key: k, ...(name ? { name } : {}) });
   }
   return entries;
 }
@@ -219,9 +244,19 @@ export function counts(notes: readonly NoteRecord[]): Record<string, number> {
     }
   return out;
 }
+/** Attachments shown only as "in the email": refused, of a kind never kept,
+ * or a PDF from before emailed PDFs were kept (2026-10-29), which the note's
+ * media doesn't hold. Emailed files are keyed by day and message; a file
+ * added on the web is under files/ and isn't one of them. */
 export function others(note: NoteRecord): number {
-  return (Array.isArray(note.attachments) ? note.attachments : []).filter((raw) => {
+  let pdfs = 0;
+  const unkept = (Array.isArray(note.attachments) ? note.attachments : []).filter((raw) => {
     const a = object(raw) ?? {};
-    return a.refused || !mediaType(String(a.content_type ?? ''), String(a.filename ?? ''));
+    if (a.refused) return true;
+    const type = mediaType(String(a.content_type ?? ''), String(a.filename ?? ''));
+    if (type && type in PDF) pdfs++;
+    return !type;
   }).length;
+  const kept = (note.media ?? []).filter((m) => m.kind === 'file' && !String(m.key ?? '').includes('/files/')).length;
+  return unkept + Math.max(0, pdfs - kept);
 }

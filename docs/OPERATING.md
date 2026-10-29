@@ -104,8 +104,9 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
   and saves its screenshots (mode 0600) to DIR, or to a new temporary
   directory, never into the repo. `answer OWNER ID --status answered|needs_info|done --text TEXT`
   is a dry run; `--write` appends the answer and emails the filer once while
-  their account is active. Each `--write` is a live write and needs Jamie's
-  go.
+  their account is active. Each `--write` is a live write; answering has
+  Jamie's standing go (AGENTS.md, Feedback), so run the dry run and then
+  write without asking.
 - One row per subscriber (address, state, sign-up day, send time, last
   email, last note, notes, 30-day reply rate):
   `node --import tsx tools/subscribers.ts`. Reads keys and a few fields,

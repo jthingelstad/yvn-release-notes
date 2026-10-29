@@ -5,12 +5,26 @@
 // API, and the dev server's stand-ins for S3 and mail, to
 // tools/dev-server.ts (start that first; RN_DEV_API moves it).
 import react from '@vitejs/plugin-react';
+import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { runnerImport, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 const api = process.env.RN_DEV_API || 'http://localhost:8790';
+
+// Which build this is, shown at the foot of Settings (web/src/lib/build.ts):
+// the commit, which scripts/build-release.sh passes in (it builds from a git
+// archive, with no .git), else the checkout's own, and when it was built.
+function buildCommit(): string {
+  if (process.env.RN_BUILD_COMMIT) return process.env.RN_BUILD_COMMIT;
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+const build = { commit: buildCommit(), at: new Date().toISOString() };
 
 // After the build, front.html: the built index.html with the front page
 // drawn in by the app's own components (web/src/prerender.tsx).
@@ -38,6 +52,7 @@ function frontPage(): Plugin {
 export default defineConfig({
   root: 'web',
   plugins: [react(), frontPage()],
+  define: { __BUILD__: JSON.stringify(build) },
   build: {
     outDir: '../dist/web',
     emptyOutDir: true,

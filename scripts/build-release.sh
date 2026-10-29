@@ -26,7 +26,8 @@ OUT=$(cd "$OUT" && pwd)
 
 cd "$SRC"
 npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
-npm run verify
+# The web app shows the commit it was built from (vite.config.ts).
+RN_BUILD_COMMIT=$COMMIT npm run verify
 
 # The native Linux Arm64 runtimes, Sharp (the describer and the export
 # worker) and Typst (the export worker's books): the committed lock installed

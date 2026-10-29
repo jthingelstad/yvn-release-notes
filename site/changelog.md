@@ -40,7 +40,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 
 ## 0.0.13 · October 20
 
-- **Badges.** Four tracks that climb from alpha to LTS, a shelf for this release, Firsts and craft, and Collectibles for notes on special version numbers. A few are secret.
+- **Badges.** Tracks that climb from alpha to LTS, a shelf for this release, Firsts and craft, and Collectibles for notes on special version numbers. A few are secret.
 - The morning email names any badge you earned since the last one, and points out a special day beside the number. "Show badges" in Settings turns it all off.
 - If an email to Release Notes can't be added, from another address say, you get an email telling you so.
 - An agent with read access can now see the rest of your account too: badges, releases, On this day and your settings.

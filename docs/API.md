@@ -103,7 +103,7 @@ terminal is the owner's own words that only came _via_ something.
 
 - **Every token writes in the owner's voice.** A token's note is
   `source: 'api'` (`NOTE#<day>#t-<id>`, as an agent's is `a-`), with the
-  token's id (`connection`) and its name at the time (`via`). It has no
+  token's id (`connection`) and its name at the time (`token`). It has no
   `author`.
 - It reads, counts and searches like a web note. It counts toward streaks
   and badges, and the email shows it with no "Added by" line.
@@ -285,7 +285,7 @@ It answers 201:
     "date": "2026-10-28",
     "version": "4.5.136",
     "revision": 1,
-    "via": "Terminal"
+    "token": "Terminal"
   },
   "unlocked": [{ "key": "api", "name": "API release" }]
 }
@@ -337,7 +337,7 @@ reads it, but trimmed of words:
 - Upcoming titles are joined only when the token also has `upcoming`;
 - every other kind is already free of words (`packages/domain/activity.ts`).
 
-Token writes show `via: "token"` with the token's name and `client`.
+Token writes show `via: "token"`, with the token's name as `token`, and `client`.
 
 ```
 GET /v1/activity?after=<id>&kinds=note,mail,badge,status&limit=50

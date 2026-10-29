@@ -88,6 +88,7 @@ export function NoteBody({ n, cls = 'text', mark }: { n: Note; cls?: string; mar
 function sourceName(n: Note): string {
   if (n.author === 'assistant') return `added by ${n.client || 'an agent'}`;
   if (n.source === 'web') return 'on the web';
+  if (n.source === 'api') return n.token ? `via ${n.token}` : 'through the API';
   if (n.source === 'import') return `from ${n.from || 'an import'}`;
   return 'by email';
 }

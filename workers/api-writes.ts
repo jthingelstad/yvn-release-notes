@@ -1,0 +1,441 @@
+/** `/v1` writes (docs/API.md), made here in the private capture function as
+ * an agent's are: the MCP function's /v1 router checks the token and hands
+ * on the request, and this checks it again and proves the live account and
+ * token in the same transaction as the write, its 7-day receipt, its
+ * content-free audit row and the account's daily count. A token writes in
+ * the owner's voice (`source` api, no `author`), and changes only notes it
+ * wrote itself. */
+import { randomUUID } from 'node:crypto';
+import type { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
+import { digest } from '../packages/backend/auth.ts';
+import {
+  collect,
+  fetchTitle,
+  MAX_FETCHES,
+  type Link,
+  type PageMeta,
+  type TitleFetcher
+} from '../packages/backend/links.ts';
+import { live, type OAuthRow } from '../packages/backend/oauth.ts';
+import { activityLog, again, badgeEvents, recordActivity } from '../packages/backend/activity.ts';
+import { unlockedBy } from '../packages/backend/badges.ts';
+import { keys as mediaKeys } from '../packages/backend/media.ts';
+import { safeLog } from '../packages/backend/services.ts';
+import { pinnedTags, pinsOf, tagRow, type TagRowStore } from '../packages/backend/tag-row.ts';
+import { checkToken, scopesOf, V1_LIMITS, V1_RECEIPT_SECONDS, type TokenReads } from '../packages/backend/tokens.ts';
+import { iso, localDay, validDay } from '../packages/domain/dates.ts';
+import { MAX_NOTE, type NoteRecord } from '../packages/domain/notes.ts';
+import { found } from '../packages/domain/tags.ts';
+import { codePointLength, pythonTrim } from '../packages/domain/unicode.ts';
+import { computeVersion } from '../packages/domain/version.ts';
+import type { Unlocked } from '../packages/domain/badges.ts';
+import { editRevision } from '../server/mcp/reader.ts';
+import { fingerprint, object, type Arguments, type SafeLog } from '../server/mcp/common.ts';
+import type { CaptureContext } from './capture.ts';
+
+type Ops = NonNullable<TransactWriteCommandInput['TransactItems']>;
+
+export interface ApiStore extends TokenReads, TagRowStore {
+  note(uid: string, day: string, id: string, consistent?: boolean): Promise<OAuthRow | null>;
+  tokenProof(token: OAuthRow, now: number, scope: string | readonly string[]): Ops;
+  agentReceipts(receipt: OAuthRow, audit: OAuthRow, rate: OAuthRow, previous: OAuthRow | null, now: number): Ops;
+  apiNoteCommit(
+    note: OAuthRow,
+    old: OAuthRow | null,
+    receipt: OAuthRow,
+    audit: OAuthRow,
+    rate: OAuthRow,
+    previous: OAuthRow | null,
+    token: OAuthRow,
+    now: number
+  ): Promise<boolean>;
+  apiNoteDelete(
+    old: OAuthRow,
+    receipt: OAuthRow,
+    audit: OAuthRow,
+    rate: OAuthRow,
+    previous: OAuthRow | null,
+    token: OAuthRow,
+    now: number
+  ): Promise<boolean>;
+  setPins(user: string, pins: readonly string[], old: readonly string[] | null, extra?: Ops): Promise<boolean>;
+  revokeToken(token: OAuthRow): Promise<boolean>;
+}
+
+/** The operations the router hands on, each with its body's fields. */
+export const API_WRITES: Record<string, readonly string[]> = {
+  'notes.create': ['text', 'date', 'written_at'],
+  'notes.edit': ['date', 'id', 'text', 'revision'],
+  'notes.append': ['date', 'id', 'text'],
+  'notes.delete': ['date', 'id'],
+  'tags.pinned': ['pinned'],
+  'token.revoke': []
+};
+
+/** A refusal in `/v1`'s own words (docs/API.md, Errors). */
+export class ApiRefusal extends Error {
+  constructor(
+    readonly code: string,
+    readonly detail: string,
+    readonly extra: OAuthRow = {}
+  ) {
+    super(code);
+  }
+}
+
+/** What a write answers: a status and body, whether a receipt answered it,
+ * and the daily count it used. */
+export interface ApiAnswer {
+  status: number;
+  body: OAuthRow | null;
+  replayed: boolean;
+  limit?: { limit: number; remaining: number; reset: number };
+}
+
+const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i;
+
+/** Seconds until the UTC day ends, when every daily count starts again. */
+export const untilUtcMidnight = (now: number): number => (Math.floor(now / 86400) + 1) * 86400 - now;
+
+function text(args: Arguments): string {
+  if (typeof args.text !== 'string') throw new ApiRefusal('text_required', 'Send the note as text.', { field: 'text' });
+  const value = pythonTrim(args.text.replace(/\r\n/g, '\n'));
+  if (!value) throw new ApiRefusal('text_required', 'Write some text for the note.', { field: 'text' });
+  return value;
+}
+function tooLong(value: string): void {
+  if (codePointLength(value) > MAX_NOTE)
+    throw new ApiRefusal('too_large', 'A note can have at most 20,000 characters; send another note for the rest.', {
+      field: 'text'
+    });
+}
+function shape(op: string, args: Arguments): void {
+  for (const field of Object.keys(args))
+    if (!API_WRITES[op]!.includes(field))
+      throw new ApiRefusal('invalid_request', `${field} isn't a field here.`, { field });
+  for (const field of ['date', 'id', 'revision', 'written_at'])
+    if (Object.hasOwn(args, field) && (typeof args[field] !== 'string' || codePointLength(String(args[field])) > 80))
+      throw new ApiRefusal('invalid_request', `${field} is a string.`, { field });
+}
+
+export async function writeApi(
+  context: CaptureContext,
+  event: Arguments,
+  options: { fetchTitle?: TitleFetcher; log?: SafeLog } = {}
+): Promise<ApiAnswer> {
+  const store = context.store,
+    now = context.now,
+    op = String(event.api),
+    args = object(event.arguments) ? event.arguments : {};
+  if (!Object.hasOwn(API_WRITES, op)) throw new ApiRefusal('not_found', 'There is no such request.');
+  const check = await checkToken(store, context.origin, now, 'Bearer ' + String(event.token ?? ''));
+  if (!check.ok) throw new ApiRefusal(check.code, '');
+  const token = check.token,
+    profile = check.profile,
+    uid = String(token.user_id),
+    tid = String(token.id),
+    name = String(token.name),
+    client = typeof event.client === 'string' && /^[A-Za-z0-9._-]{1,40}$/.test(event.client) ? event.client : null,
+    tz = String(profile.tz),
+    today = localDay(now, tz),
+    birthday = String(profile.birthday),
+    record = (events: Parameters<typeof recordActivity>[3]) =>
+      recordActivity(store, uid, now, events, activityLog(now, options.log));
+
+  if (op === 'token.revoke') {
+    if (!(await store.revokeToken(token))) throw new ApiRefusal('busy', 'Try again shortly.');
+    await record([
+      {
+        kind: 'connection.removed',
+        id: tid,
+        fields: { via: 'token', connection: tid, client: name, token: name, reason: 'client' }
+      }
+    ]);
+    return { status: 204, body: null, replayed: false };
+  }
+
+  if (!scopesOf(token).includes('notes:write'))
+    throw new ApiRefusal('scope_required', "This token can't add notes. Make a token with Add notes ticked.");
+  shape(op, args);
+  const key = typeof event.key === 'string' && event.key ? event.key : randomUUID(),
+    receiptKey = 'CAPTURE#' + tid + '#' + digest(key),
+    hash = fingerprint({ api: op, arguments: args }),
+    limitName = op === 'notes.create' ? 'create' : 'change',
+    cap = V1_LIMITS[limitName],
+    rateKey = `WRITERATE#v1-${limitName}#${Math.floor(now / 86400)}`,
+    titles = new Map<string, PageMeta | null>();
+  const titleOnce: TitleFetcher = async (url) => {
+    if (!titles.has(url)) {
+      if (titles.size >= MAX_FETCHES) return null;
+      let title: PageMeta | null = null;
+      try {
+        title = await (options.fetchTitle ?? fetchTitle)(url);
+      } catch {
+        /* A title never holds a note. */
+      }
+      titles.set(url, title);
+    }
+    return titles.get(url) ?? null;
+  };
+  const day = (value: unknown): string => {
+    if (typeof value !== 'string' || !validDay(value))
+      throw new ApiRefusal('invalid_request', 'A date is YYYY-MM-DD.', { field: 'date' });
+    if (value < birthday || value > today)
+      throw new ApiRefusal('date_out_of_range', 'Choose a day from your birthday through today.', { field: 'date' });
+    return value;
+  };
+  const own = async (): Promise<OAuthRow> => {
+    const d = day(args.date),
+      old = await store.note(uid, d, String(args.id), true);
+    if (!old) throw new ApiRefusal('not_found', 'There is no note with that date and id.');
+    if (old.source !== 'api' || old.connection !== tid)
+      throw new ApiRefusal('not_yours', 'A token changes only the notes it wrote.');
+    return old;
+  };
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const receipt = await store.mcpGet('USER#' + uid, receiptKey);
+    if (live(receipt, now)) {
+      if (receipt.request_hash !== hash)
+        throw new ApiRefusal(
+          'idempotency_mismatch',
+          'That Idempotency-Key went with a different request. Use a new key for a new request.'
+        );
+      const saved = JSON.parse(String(receipt.result)) as { status: number; body: OAuthRow | null };
+      return { status: saved.status, body: saved.body, replayed: true };
+    }
+    const previous = await store.mcpGet('MCPMETA#' + uid, rateKey),
+      count = Number(previous?.n ?? 0);
+    const reset = untilUtcMidnight(now);
+    if (count >= cap)
+      throw new ApiRefusal(
+        'rate_limited',
+        limitName === 'create'
+          ? `That's today's ${cap} notes through tokens. Try again after midnight UTC.`
+          : `That's today's ${cap} changes through tokens. Try again after midnight UTC.`,
+        { retry_after: reset }
+      );
+    const rate = {
+        pk: 'MCPMETA#' + uid,
+        sk: rateKey,
+        n: count + 1,
+        revision: Number(previous?.revision ?? 0) + 1,
+        expires_at: (Math.floor(now / 86400) + 2) * 86400
+      },
+      limit = { limit: cap, remaining: cap - count - 1, reset },
+      audit = (fields: OAuthRow) => ({
+        pk: 'MCPMETA#' + uid,
+        sk: `LOG#${String(now).padStart(12, '0')}#${randomUUID().replace(/-/g, '')}`,
+        at: now,
+        tool: 'v1:' + op,
+        outcome: 'ok',
+        connection: tid,
+        client: name,
+        ...fields,
+        expires_at: now + 14 * 86400
+      }),
+      receiptFor = (status: number, body: OAuthRow | null) => ({
+        pk: 'USER#' + uid,
+        sk: receiptKey,
+        request_hash: hash,
+        result: JSON.stringify({ status, body }),
+        expires_at: now + V1_RECEIPT_SECONDS
+      });
+
+    let landed: boolean, answer: ApiAnswer, after: () => Promise<void>;
+    if (op === 'tags.pinned') {
+      const pins = pinnedTags(args.pinned);
+      if (!pins) throw new ApiRefusal('invalid_request', 'pinned is a list of up to 12 tags.', { field: 'pinned' });
+      const old = Array.isArray(profile.pinned_tags) ? pinsOf(profile) : null,
+        row = await tagRow(store, uid, { ...profile, pinned_tags: pins }, today),
+        body = { ...row };
+      landed = await store.setPins(uid, pins, old, [
+        ...store.tokenProof(token, now, 'notes:write'),
+        ...store.agentReceipts(receiptFor(200, body), audit({}), rate, previous, now)
+      ]);
+      answer = { status: 200, body, replayed: false, limit };
+      after = async () => {
+        if (JSON.stringify(old ?? []) !== JSON.stringify(pins))
+          await record([
+            {
+              kind: 'settings.changed',
+              id: again('pinned_tags'),
+              fields: {
+                via: 'token',
+                token: name,
+                ...(client ? { client } : {}),
+                changes: [{ field: 'pinned_tags', from: old ?? [], to: pins }]
+              }
+            }
+          ]);
+      };
+    } else if (op === 'notes.delete') {
+      const old = await own(),
+        d = String(args.date),
+        id = String(args.id),
+        files = mediaKeys(old as NoteRecord);
+      landed = await store.apiNoteDelete(
+        old,
+        receiptFor(204, null),
+        audit({ date: d, note_id: id }),
+        rate,
+        previous,
+        token,
+        now
+      );
+      answer = { status: 204, body: null, replayed: false, limit };
+      after = async () => {
+        // The capture role may remove only what was uploaded; a token's notes
+        // have nothing else.
+        const ours = files.filter((k) => k.startsWith(`media/${uid}/files/`));
+        if (ours.length && context.objects) await Promise.allSettled(ours.map((k) => context.objects!.remove(k)));
+        await record([
+          {
+            kind: 'note.deleted',
+            id: again(id),
+            fields: {
+              via: 'token',
+              token: name,
+              ...(client ? { client } : {}),
+              day: d,
+              note: id,
+              files: ((old.media as OAuthRow[] | undefined) ?? []).length
+            }
+          }
+        ]);
+      };
+    } else {
+      let words = text(args),
+        old: OAuthRow | null = null,
+        typed = now,
+        d: string;
+      if (op === 'notes.create') {
+        if (Object.hasOwn(args, 'written_at')) {
+          const at = String(args.written_at),
+            seconds = Date.parse(at) / 1000;
+          if (!RFC3339.test(at) || !Number.isFinite(seconds))
+            throw new ApiRefusal('invalid_request', 'written_at is an RFC 3339 time.', { field: 'written_at' });
+          if (seconds > now + 300)
+            throw new ApiRefusal('invalid_request', 'written_at is in the future.', { field: 'written_at' });
+          // A minute or two ahead of this clock is still now.
+          typed = Math.min(Math.floor(seconds), now);
+        }
+        // Words typed offline file to the day they were typed, unless a date
+        // says otherwise.
+        d = day(Object.hasOwn(args, 'date') ? args.date : localDay(typed, tz));
+      } else {
+        old = await own();
+        d = String(args.date);
+        if (op === 'notes.edit' && editRevision(old) !== args.revision)
+          throw new ApiRefusal(
+            'revision_mismatch',
+            'This note changed since it was read. Read it again and redo the edit from its current text.',
+            { revision: editRevision(old) }
+          );
+        if (op === 'notes.append') words = String(old.text ?? '') + '\n\n' + words;
+      }
+      tooLong(words);
+      const note: OAuthRow = old
+        ? { pk: old.pk, sk: old.sk }
+        : {
+            pk: 'USER#' + uid,
+            sk: `NOTE#${d}#t-${randomUUID().replace(/-/g, '')}`,
+            source: 'api',
+            connection: tid,
+            token: name,
+            ...(client ? { client } : {}),
+            written_at: iso(typed),
+            tz,
+            version: computeVersion(birthday, d).toString()
+          };
+      Object.assign(note, {
+        text: words,
+        tags: found(words),
+        links: await collect(words, { keep: old?.links as Link[] | undefined, fetch: titleOnce }),
+        revision: Number(old?.revision ?? 0) + 1
+      });
+      if (old) note.updated_at = iso(now);
+      const id = String(note.sk).split('#').slice(2).join('#'),
+        full = { ...old, ...note },
+        body: OAuthRow = {
+          note: {
+            id,
+            date: d,
+            version: String(full.version ?? computeVersion(birthday, d).toString()),
+            revision: editRevision(full),
+            token: String(full.token ?? name)
+          }
+        };
+      const status = old ? 200 : 201;
+      landed = await store.apiNoteCommit(
+        note,
+        old,
+        receiptFor(status, body),
+        audit({ date: d, note_id: id }),
+        rate,
+        previous,
+        token,
+        now
+      );
+      answer = { status, body, replayed: false, limit };
+      after = async () => {
+        let unlocked: Unlocked[] = [];
+        if (profile.badges !== false)
+          try {
+            unlocked = await unlockedBy(context.store, uid, profile, today, full, old, [], (f) =>
+              (options.log ?? safeLog)(f)
+            );
+          } catch {
+            (options.log ?? safeLog)({ event: 'badges-error', user: uid, date: d });
+          }
+        if (profile.badges !== false)
+          answer.body = { ...body, unlocked: unlocked.map((u) => ({ key: u.key, name: u.name })) };
+        await record([
+          {
+            kind: old ? 'note.edited' : 'note.added',
+            id: old ? again(id) : id,
+            fields: {
+              via: 'token',
+              token: name,
+              ...(client ? { client } : {}),
+              day: d,
+              note: id,
+              version: full.version
+            }
+          },
+          ...badgeEvents(unlocked, 'token', d, id, client).map((e) => ({
+            ...e,
+            fields: { ...e.fields, token: name }
+          }))
+        ]);
+      };
+    }
+    if (landed) {
+      await after();
+      return answer;
+    }
+    // A lost race on the receipt or the count goes round again; a token or
+    // account that changed is told as such.
+    const now2 = await checkToken(store, context.origin, now, 'Bearer ' + String(event.token ?? ''));
+    if (!now2.ok) throw new ApiRefusal(now2.code, '');
+    if (now2.token.revision !== token.revision) throw new ApiRefusal('token_revoked', '');
+    if (op !== 'tags.pinned' && op !== 'notes.create') {
+      // The note itself may have moved on (a web edit meanwhile).
+      const current = await store.note(uid, String(args.date), String(args.id), true);
+      if (!current) throw new ApiRefusal('not_found', 'There is no note with that date and id.');
+      if (op === 'notes.edit' && editRevision(current) !== args.revision)
+        throw new ApiRefusal(
+          'revision_mismatch',
+          'This note changed since it was read. Read it again and redo the edit from its current text.',
+          { revision: editRevision(current) }
+        );
+    }
+    // Pins changed on the web meanwhile: read them again.
+    if (op === 'tags.pinned') {
+      const fresh = await store.mcpProfile(uid);
+      if (fresh) Object.assign(profile, { pinned_tags: fresh.pinned_tags });
+      if (fresh && !Object.hasOwn(fresh, 'pinned_tags')) delete profile.pinned_tags;
+    }
+  }
+  throw new ApiRefusal('busy', 'Try again shortly with the same Idempotency-Key.');
+}

@@ -59,13 +59,14 @@ test('every channel and orphan note counts, media empty arrays do not', () => {
       note('a', '2026-10-09', 'w-1', { source: 'web', media: [] }),
       note('a', '2015-06-01', 'd1-1', { source: 'import' }),
       note('gone', '2026-01-01'),
-      note('a', '2026-10-09', 'a-1', { source: 'agent' })
+      note('a', '2026-10-09', 'a-1', { source: 'agent' }),
+      note('a', '2026-10-09', 't-1', { source: 'api' })
     ],
     now
   );
   assert.deepEqual(
-    [c.Notes, c.EmailNotes, c.WebNotes, c.ImportedNotes, c.AgentNotes, c.NotesWithMedia],
-    [5, 2, 1, 1, 1, 1]
+    [c.Notes, c.EmailNotes, c.WebNotes, c.ImportedNotes, c.AgentNotes, c.ApiNotes, c.NotesWithMedia],
+    [6, 2, 1, 1, 1, 1, 1]
   );
 });
 

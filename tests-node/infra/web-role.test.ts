@@ -5,7 +5,7 @@
  * named) and weather, the Map page's base map,
  * Upcoming and the calendar feed, pauses, exports (the zip invoke, its link and
  * a replaced build's delete), MCP connections, the admin scan, product
- * updates, feedback with a screenshot and its answer, and both account-deletion cascades (tests-node/infra/grants.ts). */
+ * updates, API tokens, feedback with a screenshot and its answer, and both account-deletion cascades (tests-node/infra/grants.ts). */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { simpleParser } from 'mailparser';
@@ -366,6 +366,11 @@ test('the web role grants every request each route and the OAuth endpoints make'
   await call('POST', `/api/admin/updates/${update.id}/schedule`, { revision: 2, date: '2026-10-14' });
   await call('DELETE', `/api/admin/updates/${update.id}/schedule`, { revision: 3 });
   await call('DELETE', `/api/admin/updates/${update.id}`, { revision: 4 });
+  // Admin: API tokens made, listed and revoked.
+  const apiToken = (await call('POST', '/api/tokens', { name: 'Terminal', scopes: ['notes:write'], expiry: '1y' }, 201))
+    .b;
+  await call('GET', '/api/tokens');
+  await call('DELETE', `/api/tokens/${apiToken.id}`);
 
   // Feedback with a screenshot, its signed link, the admin queue and an answer.
   const filed = (

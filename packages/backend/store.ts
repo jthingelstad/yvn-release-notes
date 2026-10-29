@@ -67,6 +67,21 @@
  * USER#<owner> / FEEDBACKRATE#<UTC day> counts in `n` the items filed that
  * day from every door, ADDed in the filing transaction under FEEDBACK_A_DAY,
  * with expires_at two days on; deleted with the account.
+ * USER#<owner> / APITOKEN#<id> is an API token (tokens.ts, docs/API.md):
+ * `id`, `name`, `scope`, `created_at`, `expires_at` (absent when it never
+ * expires), `hash` (its SHA-256, never the value), `revoked` once its own
+ * client signed out, and `revision`, which each token write proves. Its
+ * hash points back from OAUTHACCESS#<hash> / STATE (`kind` token, `user_id`,
+ * `token`, `resource` <origin>/v1), tracked under OAUTHUSER# ROW#, so the
+ * OAuth deletion removes it; never exported. Once the token ends the
+ * pointer stays 30 days with `revoked`, so its client is told so. A token's note is
+ * NOTE#<day>#t-<id> (`source` api, `connection` the token's id, `token` its
+ * name, `client` the User-Agent's product), its receipts
+ * CAPTURE#<token id>#<key hash> for 7 days, its daily counts
+ * MCPMETA#<owner> / WRITERATE#v1-create# and WRITERATE#v1-change#<UTC day>
+ * for the account, and its reads MCPMETA#<owner> / TOKENREADS#<id>#<UTC day>.
+ * PROFILE.pinned_tags is the pinned tags (up to 12, normalized as hashtags),
+ * the same on the web and through every token.
  */
 import {
   BatchWriteCommand,
@@ -106,6 +121,8 @@ const purposeCondition = {
   delete: '#purpose = :purpose'
 };
 const key = (user: string, sk: string): Key => ({ pk: `USER#${user}`, sk });
+/** How long a revoked token's pointer answers `token_revoked`. */
+export const TOKEN_TOMBSTONE_SECONDS = 30 * 86400;
 import { writtenAt as written } from '../domain/notes.ts';
 import { givingYears, type GivingYear } from '../domain/giving.ts';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -2482,6 +2499,176 @@ export class Store {
       UpdateExpression: 'SET mcp_deleting = :yes',
       ExpressionAttributeValues: { ':yes': true },
       ConditionExpression: 'attribute_exists(pk)'
+    });
+  }
+  /** An account's API tokens (tokens.ts), read strongly. */
+  async apiTokens(user: string) {
+    return this.rows({
+      KeyConditionExpression: 'pk = :p AND begins_with(sk, :t)',
+      ExpressionAttributeValues: { ':p': `USER#${user}`, ':t': 'APITOKEN#' },
+      ConsistentRead: true
+    });
+  }
+  /** Ends a token for good: its row goes, and its hash's pointer stays 30
+   * days marked revoked (with its ownership row, so deleting the account
+   * still finds it), so the client hears `token_revoked`, not
+   * `token_unknown`. Unconditional: an expired token's pointer may be gone. */
+  async dropToken(user: string, id: string, hash: string, now: number) {
+    const end = now + TOKEN_TOMBSTONE_SECONDS;
+    return this.transact([
+      { Delete: { TableName: this.tableName, Key: key(user, `APITOKEN#${id}`) } },
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: { pk: `OAUTHACCESS#${hash}`, sk: 'STATE' },
+          UpdateExpression: 'SET revoked = :yes, expires_at = :end',
+          ExpressionAttributeValues: { ':yes': true, ':end': end }
+        }
+      },
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: { pk: `OAUTHUSER#${user}`, sk: `ROW#OAUTHACCESS#${hash}` },
+          UpdateExpression: 'SET target = :target, expires_at = :end',
+          ExpressionAttributeValues: { ':target': `OAUTHACCESS#${hash}`, ':end': end }
+        }
+      }
+    ]);
+  }
+  /** A token write proves the token's revision, expiry and scopes, as
+   * familyProof does an agent's; a token that never expires has no expiry. */
+  tokenProof(token: Item, now: number, scope: string | readonly string[]): Ops {
+    const [first, ...more] = typeof scope === 'string' ? [scope] : scope;
+    return [
+      {
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: key(String(token.user_id), `APITOKEN#${token.id}`),
+          ConditionExpression:
+            '#r = :revision AND attribute_not_exists(revoked) AND ' +
+            '(attribute_not_exists(expires_at) OR expires_at > :now) AND contains(#s, :scope)' +
+            more.map((_, i) => ` AND contains(#s, :also${i})`).join(''),
+          ExpressionAttributeNames: { '#r': 'revision', '#s': 'scope' },
+          ExpressionAttributeValues: {
+            ':revision': token.revision,
+            ':now': now,
+            ':scope': first,
+            ...Object.fromEntries(more.map((s, i) => [`:also${i}`, s]))
+          }
+        }
+      }
+    ];
+  }
+  /** A token's client signs out: the token is refused from its next request,
+   * and Settings removes it for good (tokens.ts). */
+  async revokeToken(token: Item) {
+    return this.transact([
+      this.profileProof(String(token.user_id)),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(String(token.user_id), `APITOKEN#${token.id}`),
+          UpdateExpression: 'SET revoked = :yes, #r = :next',
+          ConditionExpression: '#r = :revision AND attribute_not_exists(revoked)',
+          ExpressionAttributeNames: { '#r': 'revision' },
+          ExpressionAttributeValues: { ':yes': true, ':revision': token.revision, ':next': Number(token.revision) + 1 }
+        }
+      }
+    ]);
+  }
+  /** A token's note (docs/API.md), as captureCommit is an agent's: the live
+   * account and token, the note, the receipt, the audit and the daily count
+   * in one transaction. A change goes only to the token's own note, from the
+   * words it read. */
+  async apiNoteCommit(
+    note: Item,
+    old: Item | null,
+    receipt: Item,
+    audit: Item,
+    rate: Item,
+    previous: Item | null,
+    token: Item,
+    now: number
+  ) {
+    const ops: Ops = [this.profileProof(String(token.user_id)), ...this.tokenProof(token, now, 'notes:write')];
+    if (old) {
+      const values: Item = {
+        ':api': 'api',
+        ':token': token.id,
+        ':old': old.text ?? '',
+        ':revision': old.revision,
+        ':text': note.text,
+        ':tags': note.tags,
+        ':links': note.links,
+        ':updated_at': note.updated_at,
+        ':next': note.revision
+      };
+      if (old.updated_at) values[':edited'] = old.updated_at;
+      ops.push({
+        Update: {
+          TableName: this.tableName,
+          Key: { pk: String(note.pk), sk: String(note.sk) },
+          UpdateExpression: 'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next',
+          ConditionExpression:
+            '#src = :api AND #c = :token AND #t = :old AND #r = :revision AND ' +
+            (old.updated_at ? 'updated_at = :edited' : 'attribute_not_exists(updated_at)'),
+          ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection', '#src': 'source' },
+          ExpressionAttributeValues: values
+        }
+      });
+    } else ops.push(this.putOperation(note, { ConditionExpression: 'attribute_not_exists(pk)' }));
+    ops.push(...this.agentReceipts(receipt, audit, rate, previous, now));
+    return this.transact(ops);
+  }
+  /** A token deletes its own note, as it read it, with the same proofs. */
+  async apiNoteDelete(
+    old: Item,
+    receipt: Item,
+    audit: Item,
+    rate: Item,
+    previous: Item | null,
+    token: Item,
+    now: number
+  ) {
+    return this.transact([
+      this.profileProof(String(token.user_id)),
+      ...this.tokenProof(token, now, 'notes:write'),
+      {
+        Delete: {
+          TableName: this.tableName,
+          Key: { pk: String(old.pk), sk: String(old.sk) },
+          ConditionExpression: '#src = :api AND #c = :token AND #r = :revision',
+          ExpressionAttributeNames: { '#r': 'revision', '#c': 'connection', '#src': 'source' },
+          ExpressionAttributeValues: { ':api': 'api', ':token': token.id, ':revision': old.revision }
+        }
+      },
+      ...this.agentReceipts(receipt, audit, rate, previous, now)
+    ]);
+  }
+  /** The pinned tags (PROFILE.pinned_tags), from the list read: through a
+   * token with its proofs and receipts, or on the web with none. */
+  async setPins(user: string, pins: readonly string[], old: readonly string[] | null, extra: Ops = []) {
+    return this.transact([
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, 'PROFILE'),
+          UpdateExpression: 'SET pinned_tags = :pins',
+          ConditionExpression:
+            'attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND ' +
+            (old ? 'pinned_tags = :old' : 'attribute_not_exists(pinned_tags)'),
+          ExpressionAttributeValues: { ':pins': [...pins], ...(old ? { ':old': [...old] } : {}) }
+        }
+      },
+      ...extra
+    ]);
+  }
+  /** The tags of the notes on days from `first` through `last`, oldest day
+   * first: the recent tags' row. */
+  async tagsBetween(user: string, first: string, last: string) {
+    return this.notesBetween(user, first, last, {
+      ProjectionExpression: 'sk, #g, written_at, received_at',
+      ExpressionAttributeNames: { '#g': 'tags' }
     });
   }
 }

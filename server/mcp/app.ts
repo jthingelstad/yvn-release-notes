@@ -6,14 +6,25 @@ import { codePointLength } from '../../packages/domain/unicode.ts';
 import { FEEDBACK_TOOLS, TOOLS, PROTOCOLS, UPCOMING_TOOLS, VERSION, WRITE_TOOLS, scopesFor } from './contract.ts';
 import { Reader, quota, record, type ReaderContext } from './reader.ts';
 import { asciiJson, failure, object, validate, MAX_CHARS, ToolError, type SafeLog } from './common.ts';
+import { handleV1 } from './v1.ts';
 export interface CaptureEvent {
   token: string;
   tool: string;
   arguments: Record<string, unknown>;
 }
+/** A /v1 write (server/mcp/v1.ts, workers/api-writes.ts): the operation,
+ * the token as sent, its fields, the Idempotency-Key and the User-Agent's
+ * product. */
+export interface ApiEvent {
+  api: string;
+  token: string;
+  arguments: Record<string, unknown>;
+  key: string | null;
+  client: string | null;
+}
 export interface McpOptions {
   context(): ReaderContext | Promise<ReaderContext>;
-  capture(event: CaptureEvent): Promise<unknown>;
+  capture(event: CaptureEvent | ApiEvent): Promise<unknown>;
   log?: SafeLog;
 }
 const unavailable = () => ({
@@ -202,5 +213,7 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
 export function createMcpApp(options: McpOptions): Hono {
   const app = new Hono();
   app.all('/mcp', (c) => handleMcp(c.req.raw, options));
+  app.all('/v1', (c) => handleV1(c.req.raw, options));
+  app.all('/v1/*', (c) => handleV1(c.req.raw, options));
   return app;
 }

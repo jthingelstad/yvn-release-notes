@@ -22,10 +22,12 @@ export interface Media {
 
 export interface Note {
   id: string;
-  source: 'email' | 'web' | 'import' | 'agent';
+  source: 'email' | 'web' | 'import' | 'agent' | 'api';
   author?: 'user' | 'assistant';
   client?: string | null;
   connection?: string;
+  // The API token a note came through, by its name (docs/API.md).
+  token?: string;
   on_behalf_of?: string;
   text: string;
   parts?: Part[];

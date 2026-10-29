@@ -537,7 +537,9 @@ export async function publicOAuth(
       if (path === '/oauth/revoke') {
         for (const prefix of ['OAUTHACCESS#', 'OAUTHREFRESH#']) {
           const item = await context.store.mcpGet(prefix + digest(b.token ?? ''));
-          if (item && item.client_id === b.client_id)
+          // An API token's pointer has no client_id: it is revoked only
+          // through /v1 or Settings, never here.
+          if (item && b.client_id && item.client_id === b.client_id)
             await service.revoke(String(item.family), String(item.user_id), 'client');
         }
         return oauthResponse(200, {});

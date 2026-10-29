@@ -1502,6 +1502,43 @@ main:has(.bar--app) h1:not(.vnum) {
   margin: 6px 0 0;
   max-width: 36rem;
 }
+/* The profile photo (components/avatar.tsx): a circle, the size of the
+   glyph it stands in for in the nav, larger on You and in Settings. */
+.avatar {
+  display: block;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--rule);
+}
+.avatar--nav {
+  width: 23px;
+  height: 23px;
+}
+.bar--app .primary-nav a[aria-current='page'] .avatar--nav {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+.you-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.avatar--you {
+  width: 56px;
+  height: 56px;
+}
+.photo-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.photo-row > .icon,
+.avatar--settings {
+  width: 72px;
+  height: 72px;
+  color: var(--ink-3);
+}
 .you-places {
   list-style: none;
   margin: 24px 0 0;

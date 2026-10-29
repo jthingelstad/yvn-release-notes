@@ -2,7 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fromBuffer } from 'yauzl';
-import { build, markdown, filePaths, type ExportData, type FilePaths } from '../../packages/backend/export.ts';
+import {
+  build,
+  markdown,
+  filePaths,
+  photoFile,
+  type ExportData,
+  type FilePaths
+} from '../../packages/backend/export.ts';
 import { run } from '../../workers/export.ts';
 import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects } from '../../packages/testing/services.ts';
@@ -119,6 +126,34 @@ test('disk zip contains complete data and original files; missing files remain c
       .toString()
       .includes('media/u1')
   );
+});
+test('the zip carries the profile photo as profile-photo.jpg, named in both files without its key', async () => {
+  const context = await setup();
+  await context.store.setPhoto(
+    'u1',
+    { key: 'media/u1/profile/p.jpg', at: '2026-10-12T21:00:00.000Z', size: 4, side: 512 },
+    null
+  );
+  await context.objects.put('media/u1/profile/p.jpg', Buffer.from('face'), { type: 'image/jpeg' });
+  assert.equal(await run(context, 'u1', 'build-a'), 'ready');
+  const row = await context.store.export('u1'),
+    zip = await unzip((await context.objects.get(String(row?.export_key))).body),
+    prefix = 'release-notes-2026-10-13/',
+    json = JSON.parse(zip.get(prefix + 'release-notes.json')!.toString()) as ExportData;
+  assert.equal(row?.files, 2);
+  assert.equal(zip.get(prefix + 'profile-photo.jpg')?.toString(), 'face');
+  assert.deepEqual(json.profile.photo, { path: 'profile-photo.jpg', set_at: '2026-10-12T21:00:00.000Z' });
+  assert.match(zip.get(prefix + 'release-notes.md')!.toString(), /!\[Profile photo\]\(profile-photo\.jpg\)/);
+  assert.ok(
+    !zip
+      .get(prefix + 'release-notes.json')!
+      .toString()
+      .includes('media/u1')
+  );
+  // The words alone name no file; another owner's key is never exported.
+  assert.equal(build(await context.store.userItems('u1'), 'now').profile.photo, undefined);
+  context.store.seed({ ...(await context.store.profile('u1'))!, photo: { key: 'media/u2/profile/p.jpg' } });
+  assert.equal(photoFile(await context.store.userItems('u1'), 'u1'), null);
 });
 test('both exports carry badges, oldest first, worked out from the rows at export time', async () => {
   const context = await setup();

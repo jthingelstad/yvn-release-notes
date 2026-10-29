@@ -46,6 +46,8 @@
  * - signin: `how` (link or code). export.words: `format`; export.zip;
  *   export.book: `from`, `to` (the book's first and last day), and
  *   `commentary` when it asked for Claude's.
+ * - photo.set, photo.changed, photo.removed (the profile photo,
+ *   backend/profile-photo.ts): never the image.
  * - address.created, address.replaced; calendar.created, calendar.replaced,
  *   calendar.removed: never the address or link.
  * - connection.added: `connection`, `client`, `scopes`; connection.changed:
@@ -78,6 +80,7 @@ export const ACTIVITY_FAMILIES = [
   'status',
   'signin',
   'export',
+  'photo',
   'address',
   'calendar',
   'connection',

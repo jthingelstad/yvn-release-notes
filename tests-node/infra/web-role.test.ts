@@ -37,7 +37,15 @@ const origin = 'https://notes.example.com',
       weather_code: [2, 3]
     }
   },
-  pdf = Buffer.from('%PDF-1.4 synthetic');
+  pdf = Buffer.from('%PDF-1.4 synthetic'),
+  // A 512px square JPEG's head, as a canvas writes it: SOI, JFIF, frame, scan.
+  face = Buffer.concat([
+    Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]),
+    Buffer.from([0xff, 0xc0, 0, 17, 8, 2, 0, 2, 0, 3, 1, 0x11, 0, 2, 0x11, 1, 3, 0x11, 1]),
+    Buffer.from([0xff, 0xda, 0, 12, 3, 1, 0, 2, 0x11, 3, 0x11, 0, 0x3f, 0]),
+    Buffer.alloc(64, 0x55),
+    Buffer.from([0xff, 0xd9])
+  ]);
 const person = (id: string, email: string, extra: Item = {}): Item[] => [
   {
     pk: `USER#${id}`,
@@ -185,6 +193,18 @@ test('the web role grants every request each route and the OAuth endpoints make'
   assert.equal(aws.requests.filter((r) => r.action === 'ses:DeleteSuppressedDestination').length, 1);
   await call('POST', '/api/me/inbox', {});
   await call('POST', '/api/me/weekly-thing', {});
+  // The profile photo: a canvas JPEG checked, copied under profile/, linked,
+  // replaced (the old one deleted) and removed.
+  for (let i = 0; i < 2; i++) {
+    const { b } = await call('POST', '/api/uploads', { name: 'me.jpg', type: 'image/jpeg', size: face.length });
+    await files.put(media.uploadKey(currentUser, String(b.upload), 'image/jpeg'), face, {
+      type: 'image/jpeg',
+      tags: { outcome: 'pending' }
+    });
+    await call('PUT', '/api/me/photo', { upload: String(b.upload), type: 'image/jpeg' });
+  }
+  await call('GET', '/api/me/photo', undefined, 302);
+  await call('DELETE', '/api/me/photo');
   await call('GET', '/api/places?q=Paris');
   const here = (await call('POST', '/api/places/here', { lat: 48.856613, lon: 2.352222, accuracy_m: 12 })).b;
   await call('GET', '/api/activity');

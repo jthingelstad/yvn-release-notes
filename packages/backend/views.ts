@@ -32,6 +32,10 @@ export function profileView(p: Item, now: number, inboundDomain: string): Item {
     };
   for (const k of ['city', 'region', 'country', 'stopped_reason', 'weekly_thing']) if (p[k]) view[k] = p[k];
   if (p.inbox) view.inbox = `${p.inbox}@${inboundDomain}`;
+  // The profile photo by when it was set, never its key: the page loads it
+  // from /api/me/photo (profile-photo.ts).
+  const photo = p.photo as Item | undefined;
+  if (photo && typeof photo === 'object' && typeof photo.at === 'string') view.photo = { at: photo.at };
   if (String(p.pause_through ?? '') >= today && p.pause_from)
     view.pause = { from: p.pause_from, through: p.pause_through };
   return view;

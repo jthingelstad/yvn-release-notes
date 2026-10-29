@@ -24,6 +24,10 @@
  * days a Weekly Thing lookup saw a Supporting Member (domain/giving.ts):
  * only ever widened, one conditional step at a time (`widenGiving`), gone
  * with the profile.
+ * PROFILE.photo is the profile photo (profile-photo.ts): `{key, at, size,
+ * side}`, its file at media/<owner>/profile/<id>.jpg. Set, replaced
+ * (`setPhoto`) and removed (`dropPhoto`) only while it still names the
+ * photo read; the key is never answered, and it goes with the profile.
  * USER#<owner> / BOOK is the PDF book's build (packages/book), as EXPORT is
  * the zip's: the span asked for (`from`, `to`, `title`), and once made its
  * file under exports/ (`export_key`), size, pages and photos, offered for a
@@ -1103,6 +1107,33 @@ export class Store {
       ExpressionAttributeNames: names,
       ...(entries.length ? { ExpressionAttributeValues: values } : {})
     });
+  }
+  /** The profile photo (profile-photo.ts): set only while PROFILE still holds
+   * the photo the caller read (`old`, its key, or none), so two tabs racing
+   * never leave an object nothing points at unremoved. False when another
+   * change got there first. */
+  async setPhoto(user: string, photo: Item, old: string | null): Promise<boolean> {
+    return this.conditional(() =>
+      this.update(key(user, 'PROFILE'), {
+        UpdateExpression: 'SET #photo = :photo',
+        ConditionExpression: old
+          ? 'attribute_exists(pk) AND #photo.#key = :old'
+          : 'attribute_exists(pk) AND attribute_not_exists(#photo)',
+        ExpressionAttributeNames: old ? { '#photo': 'photo', '#key': 'key' } : { '#photo': 'photo' },
+        ExpressionAttributeValues: old ? { ':photo': photo, ':old': old } : { ':photo': photo }
+      })
+    );
+  }
+  /** Removes the profile photo while it is still the one read (`old`, its key). */
+  async dropPhoto(user: string, old: string): Promise<boolean> {
+    return this.conditional(() =>
+      this.update(key(user, 'PROFILE'), {
+        UpdateExpression: 'REMOVE #photo',
+        ConditionExpression: 'attribute_exists(pk) AND #photo.#key = :old',
+        ExpressionAttributeNames: { '#photo': 'photo', '#key': 'key' },
+        ExpressionAttributeValues: { ':old': old }
+      })
+    );
   }
   /** A Weekly Thing lookup on local `day` answered `member`: the day's year
    * added to PROFILE.giving, or its first or last day moved out to `day`.

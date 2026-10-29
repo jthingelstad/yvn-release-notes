@@ -271,6 +271,20 @@ Where things are (each module's design comment has its contract):
   every photo, opted in or not: about 640px, a JPEG under 80 KB, with no EXIF
   or GPS. The email reads only these, never an original. A HEIC gets none
   (`thumb: {}`), but its time and place are still read.
+- **A profile photo** (Jamie, 2026-10-28: "I feel like a user should be
+  able to create a Profile photo for themselves"): the owner adds,
+  changes and removes one in Settings; it shows in the You tab and on
+  You, with the You glyph when there is none. The browser crops it square
+  and draws it on a canvas as a 512px JPEG, so no EXIF or GPS leaves the
+  device and the web function needs no Sharp; `PUT /api/me/photo` keeps
+  only a square JPEG of 128 to 512 px, at most 256 KB, with no EXIF, XMP
+  or IPTC segment (`packages/backend/profile-photo.ts`). A HEIC works where
+  the browser decodes it. It is the owner's alone, like a note's photo: a
+  signed link through `/api/me/photo`, never a public URL or a key in an
+  answer. The activity log says it was added, changed or removed, never
+  the image; the export zip carries it and deleting the account deletes
+  it. Not in the email (it loads nothing remote) or the administrator's
+  overview.
 - **Day One imports are planned before anything is written** (Jamie,
   2026-10-09: "keep it to dry-run"): `--write` imports, and **every live run
   needs Jamie's go**. A repeat skips what was imported before, deleted since

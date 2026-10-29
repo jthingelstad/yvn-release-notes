@@ -81,6 +81,55 @@ test('a new person sees their number, signs in with the code, and setup has the 
   await expect(page.locator('#releases a[aria-current]')).toHaveAttribute('href', `/release/?v=${release}`);
 });
 
+test('the sample email is drawn with the number once a birthday is typed', async ({ page, request }) => {
+  const s = await sample(request, '1981-06-14');
+  await page.goto('/');
+  await expect(page.locator('#sample-v')).toHaveText('5.2.113');
+  await expect(page.locator('#gate-line')).toContainText('Free with a Weekly Thing subscription.');
+  await typeBirthday(page, 6, 14, 1981);
+  await expect(page.locator('#sample-v')).toHaveText(s.version);
+  await expect(page.locator('#sample-cap')).toHaveText('Your morning’s email');
+  await expect(page.locator('#sample-next')).toHaveText(`${s.next.version} ${s.next.days === 1 ? 'ships tomorrow' : `ships in ${s.next.days} days`}.`);
+  const [major, minor, patch] = s.version.split('.').map(Number);
+  const age = major * 10 + minor;
+  await expect(page.locator('#sample')).toContainText(`${Math.floor((age - 1) / 10)}.${(age - 1) % 10}.${patch}`);
+  // Back to the question, the sample is made up again.
+  await page.getByRole('button', { name: 'Change birthday' }).click();
+  await expect(page.locator('#sample-v')).toHaveText('5.2.113');
+});
+
+test('a link carrying a birthday shows its number as if typed, then clears it', async ({ page, request }) => {
+  const s = await sample(request, '1981-06-14');
+  const counted = [];
+  // Only the number's own request carries the birthday, as when it is typed.
+  page.on('request', (r) => {
+    const url = new URL(r.url());
+    if (r.url().includes('1981-06-14') && url.pathname !== '/api/sample') counted.push(r.url());
+  });
+  await page.goto('/#birthday=1981-06-14');
+  await expect(page.locator('#number')).toBeVisible();
+  await expect(page.locator('#my-v')).toHaveText(s.version);
+  await expect(page.locator('#sample-v')).toHaveText(s.version);
+  await expect(page).toHaveURL(/\/$/);
+  expect(JSON.parse(await waiting(page)).b).toBe('1981-06-14');
+  await page.getByRole('button', { name: 'Change birthday' }).click();
+  await expect(page.locator('#birthday-form [name=month]')).toHaveValue('6');
+  await expect(page.locator('#birthday-form [name=day]')).toHaveValue('14');
+  await expect(page.locator('#birthday-form [name=year]')).toHaveValue('1981');
+  expect(counted, 'no other request carries the birthday').toEqual([]);
+});
+
+test('a link with a malformed or future birthday opens on the question, without a word', async ({ page }) => {
+  for (const hash of ['#birthday=1981-02-30', '#birthday=2099-01-01', '#birthday=1981-6-14', '#birthday=1981-06-14&x=1']) {
+    await page.goto(`/${hash}`);
+    await expect(page.locator('#ask'), hash).toBeVisible();
+    await expect(page.locator('#birthday-form .error'), hash).toBeHidden();
+    await expect(page).toHaveURL(/\/$/);
+    expect(await waiting(page), hash).toBeNull();
+    await page.goto('about:blank');
+  }
+});
+
 test('the emailed link opens in a new tab and still brings the birthday', async ({ page, context, request }) => {
   await page.goto('/');
   await typeBirthday(page, 2, 29, 2000);
@@ -128,6 +177,24 @@ test('someone returning signs in alone, and a waiting birthday is dropped', asyn
   await sendLink(page, 'ada@example.com');
   await page.locator('#code-form [name=code]').fill(codeIn(await mail(request, 'ada@example.com')));
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/today\/$/);
+  expect(await waiting(page)).toBeNull();
+});
+
+// A fresh address, since Ada's sign-ins are limited and other suites need them.
+test('someone signed in who follows a birthday link goes on to Today', async ({ page, request }) => {
+  await page.goto('/');
+  await typeBirthday(page, 6, 14, 1981);
+  const email = someone();
+  await sendLink(page, email);
+  await page.locator('#code-form [name=code]').fill(codeIn(await mail(request, email)));
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/setup\/$/);
+  await page.locator('[name=city]').fill('Minneapolis');
+  await page.locator('.place').first().click();
+  await page.getByRole('button', { name: 'Start my release notes' }).click();
+  await expect(page).toHaveURL(/\/today\/$/);
+  await page.goto('/#birthday=1990-01-01');
   await expect(page).toHaveURL(/\/today\/$/);
   expect(await waiting(page)).toBeNull();
 });

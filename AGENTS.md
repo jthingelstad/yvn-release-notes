@@ -307,7 +307,12 @@ Where things are (each module's design comment has its contract):
   hidden gem. Please go ahead and modify its logged out experience to tout
   its features and how well it works. Free to use.") says what it does.
   Every claim in it is something the product does today; keep it so as
-  features change.
+  features change. Its sample email is drawn with the visitor's own number
+  once one shows (Jamie's call 1, 2026-10-29), in the browser from the
+  `/api/sample` answer, with nothing more kept. yourversionnumber.com
+  links `/#birthday=YYYY-MM-DD` (call 2), which the page reads as if typed
+  and then clears; keep that format, since the other repo writes it
+  (docs/WEB-APP.md, What it does).
 - **Public site and guide** (Jamie, 2026-10-29: "Approved: build phase 1 of
   the Release Notes signed-out site and guide, with my calls 1-8 as
   recommended"): How it works, the guide (`/guide/`, `/guide/start/`,

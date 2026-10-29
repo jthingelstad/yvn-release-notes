@@ -1,5 +1,5 @@
 /** The capture function's role allows every DynamoDB request its write tools
- * make. A missing grant (Query, for Upcoming writes, 2026-10-17) only showed up
+ * make, and the one S3 put feedback screenshots need. A missing grant (Query, for Upcoming writes, 2026-10-17) only showed up
  * live, as `temporarily_unavailable`. Each tool runs against the fake table and
  * every recorded request is held to the role (tests-node/infra/grants.ts). */
 import assert from 'node:assert/strict';
@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { captureNote } from '../../workers/capture.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { fixture, connected } from '../oauth/fixtures.ts';
+import { b64, png } from '../../packages/testing/images.ts';
 import { Recorder } from './grants.ts';
 import { FakeObjects } from '../../packages/testing/services.ts';
 import { testImage } from '../../packages/backend/describe.ts';
@@ -63,6 +64,14 @@ test('the capture role grants every DynamoDB and S3 request the write tools make
     idempotency_key: 'r'
   });
   assert.equal(removed.removed, 1, JSON.stringify(removed));
+  // Feedback with a screenshot, put under the owner's media.
+  const sent = await run('notes_send_feedback', {
+    kind: 'idea',
+    text: 'Words',
+    screenshots: [{ type: 'image/png', data: b64(png()) }],
+    idempotency_key: 'fb'
+  });
+  assert.equal(sent.replayed, false, JSON.stringify(sent));
 
   const made = aws.granted();
   assert.ok(made.some((r) => r.action === 'dynamodb:Query'));

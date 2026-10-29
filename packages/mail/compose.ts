@@ -831,3 +831,71 @@ export async function noticeMessage(o: NoticeOptions): Promise<Buffer> {
   if (!Buffer.isBuffer(result.message)) throw new TypeError('Expected buffered MIME message');
   return result.message;
 }
+/** One email for each answer to a filer's feedback (packages/domain/feedback.ts),
+ * to an active subscriber's own address: the answer's words, what it said of
+ * the item, and a link to the Feedback page. Nothing tracked, nothing remote. */
+export interface FeedbackAnswerOptions {
+  to: string;
+  fromAddr: string;
+  /** The item's kind and the day it was filed, in the filer's zone. */
+  kind: string;
+  filed: string;
+  status: 'answered' | 'needs_info' | 'done';
+  answer: string;
+}
+export const FEEDBACK_LINK = `${APP}/feedback/`;
+const FEEDBACK_KIND_WORDS: Record<string, string> = {
+  bug: 'the problem you reported',
+  idea: 'the idea you sent',
+  question: 'the question you asked',
+  other: 'the feedback you sent'
+};
+export function feedbackAnswerLines(o: Omit<FeedbackAnswerOptions, 'to' | 'fromAddr'>): [string, string] {
+  const what = FEEDBACK_KIND_WORDS[o.kind] ?? 'the feedback you sent',
+    on = longDate(o.filed);
+  return [
+    `Jamie answered ${what} on ${on}.`,
+    o.status === 'needs_info'
+      ? 'Jamie asked you something. Answer on the Feedback page with a follow-up.'
+      : o.status === 'done'
+        ? 'Jamie marked it done. A follow-up on the Feedback page reopens the conversation.'
+        : 'You can add a follow-up on the Feedback page.'
+  ];
+}
+export const feedbackAnswerSubject = (status: FeedbackAnswerOptions['status']) =>
+  status === 'needs_info' ? 'Jamie has a question about your feedback' : 'Jamie answered your feedback';
+export function feedbackAnswerText(o: Omit<FeedbackAnswerOptions, 'to' | 'fromAddr'>): string {
+  const [what, next] = feedbackAnswerLines(o);
+  return `${what}\n\n${o.answer}\n\n${next}\n\n${FEEDBACK_LINK}\n`;
+}
+export function feedbackAnswerHtml(o: Omit<FeedbackAnswerOptions, 'to' | 'fromAddr'>): string {
+  const [what, next] = feedbackAnswerLines(o),
+    paragraphs = o.answer
+      .split(/\n\s*\n/)
+      .map((p) => `<p class="ink" style="${ACCOUNT_P}color:${INK};">${curly(p).replace(/\n/g, '<br>')}</p>`)
+      .join('\n');
+  return accountHtml(
+    escape(feedbackAnswerSubject(o.status)),
+    curly(feedbackAnswerSubject(o.status)),
+    `<p class="ink-2" style="${ACCOUNT_P}">${curly(what)}</p>
+${paragraphs}
+<p class="ink-2" style="${ACCOUNT_P}">${curly(next)}</p>
+<p style="margin:0;">${action(FEEDBACK_LINK, 'Open your feedback', 18)}</p>
+`
+  );
+}
+export async function feedbackAnswerMessage(o: FeedbackAnswerOptions): Promise<Buffer> {
+  const result = await transport.sendMail({
+    from: { name: 'Release Notes', address: o.fromAddr },
+    to: o.to,
+    subject: feedbackAnswerSubject(o.status),
+    messageId: `<${randomUUID()}@${o.fromAddr.split('@')[1]}>`,
+    headers: { 'Auto-Submitted': 'auto-generated', 'X-Auto-Response-Suppress': 'OOF, AutoReply' },
+    text: feedbackAnswerText(o),
+    html: feedbackAnswerHtml(o),
+    disableFileAccess: true,
+    disableUrlAccess: true
+  });
+  if (!Buffer.isBuffer(result.message)) throw new TypeError('Expected buffered MIME message');
+  return result.message;
+}

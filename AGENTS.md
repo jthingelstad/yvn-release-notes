@@ -108,7 +108,7 @@ Where things are (each module's design comment has its contract):
   (2026-10-14): named imports only, icon-only actions named for assistive
   technology, with hover titles, visible focus and 44px targets. Brand marks
   stay their own artwork.
-- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline}.ts`
+- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline,feedback}.ts`
   are operator tools (shared setup in `tools/operator.ts`);
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current.
 - `tools/{build-server,package-native,native-artifacts,web-platform,release-probe}.ts`
@@ -416,6 +416,31 @@ Where things are (each module's design comment has its contract):
 - **Times:** each subscriber has an IANA `tz` and a `send_time` on a quarter
   hour (default 06:00, Jamie 2026-10-07: the email opens the day and replies
   come in through it). The day and the version are computed in their zone.
+
+### Feedback
+
+- **Feedback to Jamie** (Jamie, 2026-10-28: "we have no way to get Feedback
+  from users of release notes. It would be nice to have a way users could
+  submit feedback of a type, and then Claude could work on those and post a
+  reply to the feedback as well. This could be accessible via mcp for
+  Claude to send feedback too. (This is reminding me of the feedback system
+  we put in Elixir)"): `/feedback/` and the MCP `notes_send_feedback` file
+  one item with a kind (`FEEDBACK#<id>`), 10 a UTC day an account; the
+  copy says plainly that Jamie reads them. Items are never edited or
+  withdrawn; a follow-up is a new item. Answers are appended, each with
+  its status (open, answered, needs_info, done), from `/admin-feedback/`
+  (the configured administrator) or `tools/feedback.ts`, and each emails the
+  filer once, only while their account is active, with no tracking. The
+  activity log records filing and answering, never the words. Feedback is
+  in the export and goes with the account (docs/WEB-APP.md, Feedback).
+- **Screenshots** (Jamie, 2026-10-28: "Make sure a user or agent submitting
+  feedback can attach a screenshot."): up to 3 an item, PNG, JPEG or WebP
+  (a HEIC where the browser can turn it into one), 768 KiB each, kept under
+  `media/<owner>/feedback/` and shown only by signed links; no key in any
+  answer. EXIF, GPS and other metadata are stripped in plain code
+  (`packages/backend/inline-images.ts`, reusable for other inline uploads);
+  Sharp stays out of the web function. No model reads them.
+  `notes_my_feedback` returns their bytes only with `media:read`.
 
 ### Upcoming
 

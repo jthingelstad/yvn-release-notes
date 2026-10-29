@@ -199,6 +199,8 @@ const behind = [
     page('/map', () => import('./pages/Map.tsx'), 'MapPage'),
     page('/admin', () => import('./pages/Admin.tsx'), 'Admin'),
     page('/admin-users', () => import('./pages/AdminUsers.tsx'), 'AdminUsers'),
+    page('/admin-feedback', () => import('./pages/AdminFeedback.tsx'), 'AdminFeedback'),
+    page('/feedback', () => import('./pages/Feedback.tsx'), 'Feedback'),
     page('/pause', () => import('./pages/Pause.tsx'), 'Pause'),
     page('/delete', () => import('./pages/Delete.tsx'), 'Delete')
   ].map((p) => createRoute({ getParentRoute: () => signedInRoute, ...p }))

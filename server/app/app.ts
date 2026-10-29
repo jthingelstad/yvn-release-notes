@@ -6,6 +6,7 @@ import { accountRoutes } from './account-routes.ts';
 import { archiveRoutes } from './archive-routes.ts';
 import { noteRoutes } from './note-routes.ts';
 import { adminRoutes } from './admin-routes.ts';
+import { feedbackRoutes } from './feedback-routes.ts';
 import { upcomingRoutes } from './upcoming-routes.ts';
 import { BASE_MAP, mapRoutes } from './map-routes.ts';
 import { exportRoutes } from '../../packages/backend/exports.ts';
@@ -86,6 +87,12 @@ export const ROUTES: [string, string][] = [
   ['DELETE', '/api/mcp/connections/{id}'],
   ['POST', '/api/mcp/connections/{id}/scope'],
   ['GET', '/api/mcp/activity'],
+  ['GET', '/api/feedback'],
+  ['POST', '/api/feedback'],
+  ['GET', '/api/feedback/{id}/screenshots/{n}'],
+  ['GET', '/api/admin/feedback'],
+  ['POST', '/api/admin/feedback/{owner}/{id}/answers'],
+  ['GET', '/api/admin/feedback/{owner}/{id}/screenshots/{n}'],
   ['GET', '/api/admin/users'],
   ['GET', '/api/admin/updates'],
   ['POST', '/api/admin/updates'],
@@ -101,6 +108,7 @@ const compiled = ROUTES.map(([method, path]) => ({
     '^' +
       path
         .replace('{date}', '([0-9]{4}-[0-9]{2}-[0-9]{2})')
+        .replace('{owner}', '([A-Za-z0-9_-]{1,80})')
         .replace('{id}', '([A-Za-z0-9_-]{1,80})')
         .replace('{n}', '([1-9][0-9]?)')
         .replace('{v}', '([0-9]{1,3}\\.[0-9])')
@@ -148,6 +156,7 @@ export function createApp(options: AppOptions = {}): Hono {
             (await accountRoutes(service, matched.path, args, url.searchParams, viewer)) ??
             (await archiveRoutes(service, matched.path, args, url.searchParams)) ??
             (await noteRoutes(service, matched.path, args)) ??
+            (await feedbackRoutes(service, matched.path, args)) ??
             (await adminRoutes(service, matched.path, args)) ??
             (await upcomingRoutes(service, matched.path, args)) ??
             (await mapRoutes(service, matched.path, args)) ??

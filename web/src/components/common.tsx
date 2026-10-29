@@ -59,7 +59,7 @@ export function placeOf(path: string, rail = true) {
     ? '/timeline/'
     : /^\/(tag|search)\//.test(path)
       ? '/search/'
-      : /^\/(badges|activity|connect|pause|delete|settings|admin|admin-users)\//.test(path)
+      : /^\/(badges|activity|feedback|connect|pause|delete|settings|admin|admin-users|admin-feedback)\//.test(path)
         ? '/you/'
         : path;
 }

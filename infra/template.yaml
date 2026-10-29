@@ -1415,6 +1415,11 @@ Resources:
                   - !Sub "${MailBucket.Arn}/media/*/files/*"
                   - !Sub "${MailBucket.Arn}/media/*/profile/*"
               - Effect: Allow
+                # Feedback screenshots (packages/backend/feedback.ts), sent in
+                # the request body and stripped of metadata before they are put.
+                Action: s3:PutObject
+                Resource: !Sub "${MailBucket.Arn}/media/*/feedback/*"
+              - Effect: Allow
                 # A new zip export replaces the last; deleting the account
                 # deletes it.
                 Action: s3:DeleteObject
@@ -1554,6 +1559,11 @@ Resources:
                 Condition:
                   ForAllValues:StringLike:
                     dynamodb:LeadingKeys: ["USER#*"]
+              # An assistant's feedback screenshots (notes_send_feedback),
+              # stripped of metadata first; put only, never read or deleted.
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${MailBucket.Arn}/media/*/feedback/*"
               - Effect: Allow
                 # Files an agent sends with a note (media:write), kept where a
                 # web upload's checked copy is, tagged kept, and removed again
@@ -1569,7 +1579,7 @@ Resources:
     DependsOn: NativeSourcePolicy
     Properties:
       FunctionName: !Sub "${AWS::StackName}-capture"
-      Description: Private owner-approved MCP capture; create, append, edit own notes and add files
+      Description: Private owner-approved MCP capture; create, append, edit own notes, add files, and file feedback
       Runtime: nodejs24.x
       Architectures: [arm64]
       Handler: index.handler
@@ -1589,6 +1599,7 @@ Resources:
           TABLE: !Ref Table
           MAIL_BUCKET: !Ref MailBucket
           WEB_ORIGIN: !Sub "https://${WebDomain}"
+          MAIL_BUCKET: !Ref MailBucket
 
   ExportLogs:
     Type: AWS::Logs::LogGroup

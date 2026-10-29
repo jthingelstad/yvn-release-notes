@@ -10,8 +10,9 @@ export const json = (value: unknown, status = 200, headers: HeadersInit = {}) =>
  * trimming, and JSON.stringify spends at most 6 bytes on one code point (a \u00XX control escape;
  * astral characters are 4 raw UTF-8 bytes), so a full note plus its envelope always fits. */
 export const MAX_BODY = MAX_NOTE * 6 + 16 * 1024;
-export async function body(request: Request): Promise<Item> {
-  if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY) reject(413, 'too-large');
+/** The JSON body, at most `max` bytes (MAX_BODY unless a route needs more). */
+export async function body(request: Request, max = MAX_BODY): Promise<Item> {
+  if (Number(request.headers.get('content-length') ?? 0) > max) reject(413, 'too-large');
   const reader = request.body?.getReader(),
     chunks: Uint8Array[] = [];
   let size = 0;
@@ -21,7 +22,7 @@ export async function body(request: Request): Promise<Item> {
         const part = await reader.read();
         if (part.done) break;
         size += part.value.byteLength;
-        if (size > MAX_BODY) {
+        if (size > max) {
           await reader.cancel();
           reject(413, 'too-large');
         }

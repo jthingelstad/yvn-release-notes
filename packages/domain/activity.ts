@@ -54,6 +54,10 @@
  *   `connection`, `client`, `from`, `to`; connection.removed: `connection`,
  *   `client`, `reason` (owner; client, when it revoked its own token; or
  *   token-reuse, when a used refresh token came back and ended it).
+ * - feedback.filed: `feedback` (its id), `feedback_kind` (bug, idea, question or
+ *   other), `follows` (the item it follows, if any), `screenshots` (a
+ *   count); feedback.answered (via `admin`): `feedback`, `status` (what the
+ *   answer set), `mail` (sent, failed or not-sent). Never the words.
  * - account.created. */
 import { codePointSlice } from './unicode.ts';
 
@@ -84,6 +88,7 @@ export const ACTIVITY_FAMILIES = [
   'address',
   'calendar',
   'connection',
+  'feedback',
   'account'
 ] as const;
 export const familyOf = (kind: string): string => kind.split('.')[0]!;

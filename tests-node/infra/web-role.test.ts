@@ -4,8 +4,8 @@
  * uploads signed, checked and copied, media links, places (a device's spot
  * named) and weather, the Map page's base map,
  * Upcoming and the calendar feed, pauses, exports (the zip invoke, its link and
- * a replaced build's delete), MCP connections, the admin scan and product
- * updates, and both account-deletion cascades (tests-node/infra/grants.ts). */
+ * a replaced build's delete), MCP connections, the admin scan, product
+ * updates, feedback with a screenshot and its answer, and both account-deletion cascades (tests-node/infra/grants.ts). */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { simpleParser } from 'mailparser';
@@ -23,6 +23,7 @@ import { nameSpot } from '../../packages/backend/places.ts';
 import { geoMaps } from '../../packages/backend/maps.ts';
 import { REDIRECT, VERIFIER } from '../oauth/fixtures.ts';
 import { createHash } from 'node:crypto';
+import { b64, png } from '../../packages/testing/images.ts';
 import { Recorder, REGION, ACCOUNT, STACK } from './grants.ts';
 
 const origin = 'https://notes.example.com',
@@ -364,6 +365,21 @@ test('the web role grants every request each route and the OAuth endpoints make'
   await call('POST', `/api/admin/updates/${update.id}/schedule`, { revision: 2, date: '2026-10-14' });
   await call('DELETE', `/api/admin/updates/${update.id}/schedule`, { revision: 3 });
   await call('DELETE', `/api/admin/updates/${update.id}`, { revision: 4 });
+
+  // Feedback with a screenshot, its signed link, the admin queue and an answer.
+  const filed = (
+    await call(
+      'POST',
+      '/api/feedback',
+      { kind: 'bug', text: 'Words', screenshots: [{ type: 'image/png', data: b64(png()) }] },
+      201
+    )
+  ).b;
+  await call('GET', '/api/feedback');
+  await call('GET', `/api/feedback/${filed.id}/screenshots/1`, undefined, 302);
+  await call('GET', '/api/admin/feedback');
+  await call('GET', `/api/admin/feedback/u/${filed.id}/screenshots/1`, undefined, 302);
+  await call('POST', `/api/admin/feedback/u/${filed.id}/answers`, { text: 'Thanks', status: 'done', revision: 1 }, 201);
 
   await call('DELETE', `/api/days/${day}/notes/${withFile.id}`);
   // An emailed note takes its raw message with it.

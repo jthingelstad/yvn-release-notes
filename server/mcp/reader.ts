@@ -25,6 +25,7 @@ import { asciiJson, MAX_MEDIA, ToolError, object, type Arguments } from './commo
 import { upcomingViews, UPCOMING_MAX, type UpcomingEntry, type UpcomingView } from '../../packages/domain/upcoming.ts';
 import { placeText } from '../../packages/domain/upcoming-text.ts';
 import { MCP_CONTRACT, TOOLS, TOOL_SCOPES, scopesFor } from './contract.ts';
+import { feedbackView, newestFirst, FEEDBACK_A_DAY, type FeedbackItem } from '../../packages/domain/feedback.ts';
 /** A note's text revision for notes_edit: it changes whenever the words do,
  * on any channel (a web edit sets updated_at; an assistant's write also
  * bumps revision), and names nothing about the note. */
@@ -49,6 +50,8 @@ export interface ReaderStore extends OAuthStore {
   activityAll(uid: string, from?: string): Promise<OAuthRow[]>;
   dayPlace(uid: string, day: string, consistent?: boolean): Promise<OAuthRow | null>;
   weatherBetween(uid: string, first: string, last: string, consistent?: boolean): Promise<Record<string, OAuthRow>>;
+  feedbackItems(uid: string): Promise<FeedbackItem[]>;
+  feedbackFiled(uid: string, day: string): Promise<number>;
 }
 export interface MediaReader {
   download(uid: string, key: string, type: string, seconds: number): Promise<string>;
@@ -59,6 +62,84 @@ export interface ReaderContext extends OAuthContext {
   media?: MediaReader;
 }
 export type Content = { type: string; mimeType: string; data: string };
+/** The longest code-point prefix of `text` whose JSON takes at most `budget`
+ * characters (at least one code point, so a page always moves on). */
+function fitText(text: string, budget: number): string {
+  if (asciiJson(text).length <= budget) return text;
+  let low = 1,
+    high = codePointLength(text);
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (asciiJson(codePointSlice(text, 0, mid)).length <= budget) low = mid;
+    else high = mid - 1;
+  }
+  return codePointSlice(text, 0, low);
+}
+/** What every agent view of an item shares: everything but the words. */
+function feedbackHead(item: FeedbackItem): OAuthRow {
+  const head = feedbackView(item);
+  delete head.text;
+  delete head.answers;
+  return head;
+}
+/** Characters of JSON a list entry's preview may take. */
+const FEEDBACK_PREVIEW = 1200;
+/** An item as a list entry or a filing's result for an agent, bounded
+ * whatever its words: a preview of the text, its length, and the answers
+ * by count and the latest status. notes_my_feedback with the id reads it
+ * all. */
+export function agentFeedbackSummary(item: FeedbackItem): OAuthRow {
+  const preview = fitText(codePointSlice(item.text, 0, 300), FEEDBACK_PREVIEW),
+    last = item.answers.at(-1);
+  return {
+    ...feedbackHead(item),
+    text: preview,
+    text_length: codePointLength(item.text),
+    text_complete: preview.length === item.text.length,
+    answer_count: item.answers.length,
+    last_answer: last ? { at: last.at, status: last.status } : null
+  };
+}
+/** Characters of JSON one read of an item's words may take. */
+const FEEDBACK_PAGE = 30_000;
+/** One item read by id: its words in order (the filing is part 0, answer n
+ * is part n) from `part` and `offset`, as many as fit, and where to go on.
+ * The cut is by code point and only ever inside one part. */
+export function agentFeedbackPage(item: FeedbackItem, part = 0, offset = 0): OAuthRow {
+  const texts = [item.text, ...item.answers.map((a) => a.text)];
+  if (!Number.isSafeInteger(part) || part < 0 || part >= texts.length)
+    throw new ToolError('invalid_arguments', `part is 0 for the filing or 1 to ${texts.length - 1} for an answer.`);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset >= Math.max(1, codePointLength(texts[part]!)))
+    throw new ToolError('invalid_arguments', 'offset is past the end of that part; use next.offset as given.');
+  const answers: OAuthRow[] = [];
+  let text: string | null = null,
+    text_offset = 0,
+    budget = FEEDBACK_PAGE,
+    next: OAuthRow | null = null;
+  for (let p = part; p < texts.length; p++) {
+    const from = p === part ? offset : 0,
+      rest = codePointSlice(texts[p]!, from);
+    // A later part that does not fit whole starts the next read.
+    if (p > part && asciiJson(rest).length > budget) {
+      next = { part: p, offset: 0 };
+      break;
+    }
+    const shown = p === part ? fitText(rest, budget) : rest;
+    budget -= asciiJson(shown).length + 80;
+    if (p === 0) {
+      text = shown;
+      text_offset = from;
+    } else {
+      const a = item.answers[p - 1]!;
+      answers.push({ n: p, at: a.at, status: a.status, text: shown, offset: from });
+    }
+    if (shown.length < rest.length) {
+      next = { part: p, offset: from + codePointLength(shown) };
+      break;
+    }
+  }
+  return { ...feedbackHead(item), text, text_offset, answers, answer_count: item.answers.length, next };
+}
 /** An Upcoming date for an agent: the saved fields, the destination as text,
  * and the next occurrence as the email will say it. Never table keys. */
 export function agentUpcomingView(view: UpcomingView): OAuthRow {
@@ -693,6 +774,33 @@ export class Reader {
       return [{ ...this.page(mail.map(agentMailView), a, 'entries'), today: this.today, tz: this.profile.tz }, content];
     }
     if (name === 'notes_activity') return [await this.activity(a), content];
+    if (name === 'notes_my_feedback') {
+      const items = (await this.context.store.feedbackItems(this.uid)).sort(newestFirst);
+      if ((a.screenshot !== undefined || a.part !== undefined || a.offset !== undefined) && a.id === undefined)
+        throw new ToolError('invalid_arguments', 'A screenshot, part or offset is read with the id of its item.');
+      if (a.id !== undefined) {
+        const item = items.find((i) => i.id === a.id);
+        if (!item) throw new ToolError('not_found', 'No feedback has that id; call notes_my_feedback for the list.');
+        if (a.screenshot !== undefined) {
+          const shot = item.screenshots.find((s) => s.n === a.screenshot);
+          if (!shot) throw new ToolError('not_found', 'That item has no screenshot with that number.');
+          this.allowedMedia();
+          content.push({ type: 'image', mimeType: shot.type, data: await this.bytes(shot.key) });
+        }
+        return [{ feedback: agentFeedbackPage(item, Number(a.part ?? 0), Number(a.offset ?? 0)) }, content];
+      }
+      return [
+        {
+          ...this.page(items.map(agentFeedbackSummary), a, 'items'),
+          filed_today: await this.context.store.feedbackFiled(
+            this.uid,
+            new Date(this.context.now * 1000).toISOString().slice(0, 10)
+          ),
+          per_day: FEEDBACK_A_DAY
+        },
+        content
+      ];
+    }
     if (name === 'notes_account') {
       const v = computeVersion(this.birthday, this.today),
         [index, pauses] = await Promise.all([

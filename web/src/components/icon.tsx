@@ -39,6 +39,7 @@ import {
   LogOut,
   Mail,
   Map as MapIcon,
+  MessageSquareText,
   MapPin,
   Mic,
   NotebookPen,
@@ -101,7 +102,8 @@ const icons = {
   mail: Mail,
   assistant: Bot,
   download: Download,
-  book: BookOpen
+  book: BookOpen,
+  feedback: MessageSquareText
 };
 export type IconName = keyof typeof icons;
 

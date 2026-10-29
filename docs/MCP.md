@@ -70,6 +70,8 @@ with a next step. Notes are untrusted data, never agent instructions.
 | `notes_append` | Append text only to a note created by this exact connection; never edits a user's note or deletes anything. |
 | `notes_edit` | Replace the text of a note created by this exact connection (1.8.0), given the `revision` a full read returned; a note changed since is refused as `conflict`. Needs `notes:write`. Never a user's note, never a delete. |
 | `notes_attach` | Add up to 4 files (4 MB together) to a note created by this exact connection (1.8.0), after the files it has; needs `notes:write` and `media:write`. |
+| `notes_send_feedback` | Send Jamie feedback about Release Notes (1.9.0): a kind (bug, idea, question, other), up to 4,000 characters, optionally the id of an item it follows and up to 3 screenshots as base64 PNG, JPEG or WebP, 768 KiB each decoded. Files under `notes:read` through the capture function with an idempotency key; 10 a UTC day an account. |
+| `notes_my_feedback` | The account's feedback, newest first, by opening words and answer count, with the day's count; with `id`, one item's words and answers in full, continued by `part` and `offset`; with `id` and `screenshot`, that screenshot as image content, which needs `media:read`. |
 | `upcoming_list` | Saved Upcoming dates (birthdays, anniversaries, trips, events) with each one's next occurrence, id and revision, in date order; needs the separate `upcoming` scope. A trip or event already over is left out and only counted (`past_left_out`, 1.6.0); `max_entries` is the account's cap, those included. |
 | `upcoming_save` | Add or change up to 50 Upcoming dates in one call, all or nothing, only when the user asks; a destination is text the server resolves; `dry_run` checks without saving. |
 | `upcoming_delete` | Remove up to 50 Upcoming dates by id and current revision, all or nothing, only when the user asks. Never touches notes. |
@@ -116,6 +118,35 @@ announce a change, so the contract carries it instead:
 
 To announce a tool to subscribers, a product update can say what it does
 and that a connector may need a refresh to show it.
+
+## Feedback
+
+Jamie, 2026-10-28: the feedback system "could be accessible via mcp for
+Claude to send feedback too". `notes_send_feedback` files the same record
+the web's `/feedback/` does (docs/WEB-APP.md, Feedback), under `notes:read`:
+telling the product's maker about the product is not writing to the
+archive, so no `notes:write` is needed. It is still a write, so it goes
+through the capture function, which rechecks the bearer, decodes and strips
+the screenshots and puts them (its only S3 grant, `media/*/feedback/*`, put
+only), and commits the item, the daily count, the live grant, a receipt and
+a content-free audit together. A retry with the same `idempotency_key` and
+arguments answers from the receipt. Refusals say which field or which
+`screenshots[i]` and why. A failed commit may leave a screenshot file the
+capture function cannot remove; the account's deletion sweeps
+`media/<owner>/`.
+
+Every result stays inside the MCP result limit whatever the words: the list
+and `notes_send_feedback`'s answer give an item's opening words
+(`text_complete`, `text_length`), its answer count and latest answer status.
+A read by `id` returns the filing's words and the answers in full, in order,
+as far as fit; when `next` is set, call again with its `part` (0 the filing,
+n answer n) and `offset` (code points) for the rest. Only the first part of
+a read is ever cut.
+
+`notes_my_feedback` lists the items and answers. Answers are Jamie's words
+but still untrusted data, never instructions. A screenshot comes back as
+image content only with `media:read`. The MCP request body cap is 3.25 MiB
+so three screenshots fit.
 
 ## Adding notes
 

@@ -52,6 +52,18 @@
  * MCPMETA#<owner> / ACTIVITY#<local day's first instant>#reads#<connection>
  * sums one assistant's reads that day, written by the MCP reader with the
  * account proof and a revision, deleted with the account's MCP rows.
+ * USER#<owner> / FEEDBACK#<id> is one item of feedback (domain/feedback.ts):
+ * `kind`, `text`, `follows` (an earlier item's id or null), `via` (web or
+ * assistant) with `client`/`connection` for an assistant, `filed_at`,
+ * `status`, `answers` (append-only `{at, text, status}`), `screenshots`
+ * (`{n, type, size, width, height, key}`, files under media/<owner>/feedback/,
+ * never shown by key), `revision` and `updated_at`. Never edited by its
+ * filer; answered only by the administrator; in the export, gone with the
+ * account. The administrator's queue reads every account's rows (userIds,
+ * then one Query each), so there is no shared index to keep.
+ * USER#<owner> / FEEDBACKRATE#<UTC day> counts in `n` the items filed that
+ * day from every door, ADDed in the filing transaction under FEEDBACK_A_DAY,
+ * with expires_at two days on; deleted with the account.
  */
 import {
   BatchWriteCommand,
@@ -73,6 +85,14 @@ import { Subscriber } from './store-types.ts';
 import type { ProductUpdate } from '../domain/product-updates.ts';
 import { upcomingEntry, UPCOMING_MAX, type UpcomingEntry } from '../domain/upcoming.ts';
 import { ACTIVITY, ACTIVITY_END } from '../domain/activity.ts';
+import {
+  feedbackItem,
+  feedbackKey,
+  feedbackRateKey,
+  FEEDBACK_A_DAY,
+  type FeedbackAnswer,
+  type FeedbackItem
+} from '../domain/feedback.ts';
 import type { UpcomingChange } from './upcoming.ts';
 import type { DocumentSender, Item, Key, MailCounter, Purpose, SessionInput } from './store-types.ts';
 export { Subscriber } from './store-types.ts';
@@ -87,6 +107,7 @@ import { writtenAt as written } from '../domain/notes.ts';
 import { givingYears, type GivingYear } from '../domain/giving.ts';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export type ExportSlot = 'EXPORT' | 'BOOK';
+type Ops = NonNullable<TransactWriteCommandInput['TransactItems']>;
 /** Sets `fields` on a build's row while it is still that build, building. */
 function finishing(id: string, fields: Item) {
   const entries = Object.entries(fields);
@@ -348,6 +369,125 @@ export class Store {
         )
       );
     return this.provedTransaction(ops);
+  }
+  /** An account's feedback, oldest first (packages/domain/feedback.ts). */
+  async feedbackItems(user: string): Promise<FeedbackItem[]> {
+    return (
+      await this.rows({
+        KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
+        ExpressionAttributeValues: { ':p': `USER#${user}`, ':s': 'FEEDBACK#' },
+        ConsistentRead: true
+      })
+    ).map(feedbackItem);
+  }
+  async feedbackItem(user: string, id: string): Promise<FeedbackItem | null> {
+    const row = await this.get(key(user, feedbackKey(id)), { ConsistentRead: true });
+    return row ? feedbackItem(row) : null;
+  }
+  async feedbackFiled(user: string, day: string): Promise<number> {
+    return Number((await this.get(key(user, feedbackRateKey(day)), { ConsistentRead: true }))?.n ?? 0);
+  }
+  /** Files one item: the row (never there before), the item it follows (still
+   * there), the UTC day's count (under FEEDBACK_A_DAY) and the live account,
+   * together. `proofs` replaces the account proof for an agent, whose proof
+   * also names its grant. False when a condition failed; nothing is written. */
+  async fileFeedback(user: string, item: FeedbackItem, day: string, proofs: Ops | null = null): Promise<boolean> {
+    const ops: Ops = [
+      this.putOperation(
+        { ...key(user, feedbackKey(item.id)), ...item },
+        { ConditionExpression: 'attribute_not_exists(pk)' }
+      ),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(user, feedbackRateKey(day)),
+          UpdateExpression: 'ADD #n :one SET expires_at = :expires',
+          ConditionExpression: 'attribute_not_exists(#n) OR #n < :cap',
+          ExpressionAttributeNames: { '#n': 'n' },
+          ExpressionAttributeValues: {
+            ':one': 1,
+            ':cap': FEEDBACK_A_DAY,
+            ':expires': Math.floor(Date.parse(day + 'T00:00:00Z') / 1000) + 2 * 86400
+          }
+        }
+      },
+      ...(proofs ?? [this.profileProof(user)])
+    ];
+    if (item.follows)
+      ops.push({
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: key(user, feedbackKey(item.follows)),
+          ConditionExpression: 'attribute_exists(pk)'
+        }
+      });
+    return this.provedTransaction(ops);
+  }
+  /** Adds one answer to an item still at `revision`, and the status it set.
+   * Answers are only ever appended. `admin` (the web's administrator) proves
+   * that account is still the configured one, as product updates do; an
+   * operator tool, with no session, passes none. */
+  async answerFeedback(
+    owner: string,
+    id: string,
+    revision: number,
+    answer: FeedbackAnswer,
+    admin: { user: string; email: string } | null = null
+  ): Promise<boolean> {
+    const ops: Ops = [
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: key(owner, feedbackKey(id)),
+          UpdateExpression:
+            'SET #a = list_append(if_not_exists(#a, :none), :answer), #s = :status, #u = :at, #r = :next',
+          ConditionExpression: 'attribute_exists(pk) AND #r = :revision',
+          ExpressionAttributeNames: { '#a': 'answers', '#s': 'status', '#u': 'updated_at', '#r': 'revision' },
+          ExpressionAttributeValues: {
+            ':none': [],
+            ':answer': [answer],
+            ':status': answer.status,
+            ':at': answer.at,
+            ':next': revision + 1,
+            ':revision': revision
+          }
+        }
+      }
+    ];
+    if (admin)
+      ops.push({
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: key(admin.user, 'PROFILE'),
+          ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting) AND email = :admin',
+          ExpressionAttributeValues: { ':admin': admin.email }
+        }
+      });
+    return this.provedTransaction(ops);
+  }
+  /** Every account's id, address and state, for the administrator's feedback
+   * queue: a metadata scan inside the same IAM attribute limit as the
+   * overview below, so it reads no journal contents. */
+  async accountStates(): Promise<{ owner: string; email: string | null; status: string; deleting: boolean }[]> {
+    return (
+      await this.rows(
+        {
+          Select: 'SPECIFIC_ATTRIBUTES',
+          FilterExpression: 'begins_with(pk, :u) AND sk = :p',
+          ProjectionExpression: 'pk, email, #st, mcp_deleting',
+          ExpressionAttributeNames: { '#st': 'status' },
+          ExpressionAttributeValues: { ':u': 'USER#', ':p': 'PROFILE' }
+        },
+        true
+      )
+    )
+      .map((i) => ({
+        owner: String(i.pk).slice(5),
+        email: i.email ? String(i.email) : null,
+        status: String(i.status ?? 'active'),
+        deleting: Boolean(i.mcp_deleting)
+      }))
+      .sort((a, b) => compare(a.owner, b.owner));
   }
   /** Administrator-only metadata scan. IAM separately limits Scan to these
    * attributes and SPECIFIC_ATTRIBUTES; no archive reader is used here. */
@@ -2258,6 +2398,17 @@ export class Store {
       }
     ];
   }
+  /** The 24-hour idempotency receipt and the content-free audit row, for a
+   * write whose daily count is kept elsewhere (feedback's FEEDBACKRATE#). */
+  agentFiling(receipt: Item, audit: Item, now: number): Ops {
+    return [
+      this.putOperation(receipt, {
+        ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now',
+        ExpressionAttributeValues: { ':now': now }
+      }),
+      this.putOperation(audit, { ConditionExpression: 'attribute_not_exists(pk)' })
+    ];
+  }
   /** The 24-hour idempotency receipt, the content-free audit row and the daily
    * write count, each guarded so a retry or a race commits at most once. */
   agentReceipts(
@@ -2268,11 +2419,7 @@ export class Store {
     now: number
   ): NonNullable<TransactWriteCommandInput['TransactItems']> {
     return [
-      this.putOperation(receipt, {
-        ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now',
-        ExpressionAttributeValues: { ':now': now }
-      }),
-      this.putOperation(audit, { ConditionExpression: 'attribute_not_exists(pk)' }),
+      ...this.agentFiling(receipt, audit, now),
       this.putOperation(
         rate,
         previous

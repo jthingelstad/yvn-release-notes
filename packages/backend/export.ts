@@ -16,6 +16,7 @@ import type { Item } from './store.ts';
 import { upcomingEntry, type UpcomingEntry } from '../domain/upcoming.ts';
 import { badgesOf } from './badges.ts';
 import { ACTIVITY, activityView } from '../domain/activity.ts';
+import { feedbackItem, feedbackView, FEEDBACK_KIND_NAMES } from '../domain/feedback.ts';
 export const PROFILE_FIELDS = [
   'email',
   'birthday',
@@ -67,7 +68,12 @@ export interface ExportData {
   upcoming?: UpcomingEntry[];
   badges?: ExportBadge[];
   activity?: Item[];
+  /** Feedback to Jamie and the answers (domain/feedback.ts); screenshots by
+   * their place in the zip, when it has them. */
+  feedback?: Item[];
 }
+/** The key filePaths files a feedback item's screenshots under. */
+export const feedbackFiles = (id: string) => `feedback:${id}`;
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const sortBy = (rows: Item[], key: string) => rows.sort((a, b) => cmp(String(a[key]), String(b[key])));
 export function filePaths(items: readonly Item[], owner?: string): FilePaths {
@@ -97,6 +103,21 @@ export function filePaths(items: readonly Item[], owner?: string): FilePaths {
       (out[id] ??= []).push(entry);
     }
   }
+  // Feedback screenshots, named for the day the item was filed.
+  for (const item of items.filter((i) => String(i.sk).startsWith('FEEDBACK#'))) {
+    const f = feedbackItem(item),
+      day = f.filed_at.slice(0, 10);
+    if (!validDay(day) || !/^[0-9a-f]{16}$/.test(f.id)) continue;
+    for (const shot of f.screenshots) {
+      if (typeof shot.key !== 'string' || (owner && !shot.key.startsWith(`media/${owner}/`))) continue;
+      (out[feedbackFiles(f.id)] ??= []).push({
+        path: `files/${day}-feedback-${f.id}-${shot.n}.${extension(shot.type)}`,
+        kind: 'image',
+        type: shot.type,
+        key: shot.key
+      });
+    }
+  }
   return out;
 }
 /** The profile photo, for the zip: only the owner's own object. */
@@ -120,7 +141,8 @@ export function build(
     skies: Item[] = [],
     spots: Item[] = [],
     upcoming: UpcomingEntry[] = [],
-    activity: Item[] = [];
+    activity: Item[] = [],
+    feedback: Item[] = [];
   for (const item of items) {
     const sk = String(item.sk);
     if (sk === 'PROFILE')
@@ -162,7 +184,22 @@ export function build(
     } else if (sk.startsWith('PAUSE#')) pauses.push({ from: sk.slice(6), through: item.through ?? null });
     else if (sk.startsWith('UPCOMING#')) upcoming.push(upcomingEntry(item));
     else if (sk.startsWith(ACTIVITY)) activity.push(item);
-    else if (sk.startsWith('WEATHER#')) skies.push({ date: sk.slice(8), ...weather.plain(item as weather.Reading) });
+    else if (sk.startsWith('FEEDBACK#')) {
+      const f = feedbackItem(item),
+        view = feedbackView(f),
+        paths = files?.[feedbackFiles(f.id)] ?? [];
+      feedback.push(
+        paths.length
+          ? {
+              ...view,
+              screenshots: (view.screenshots as Item[]).map((s, i) => ({
+                ...s,
+                ...(paths[i] ? { path: paths[i].path } : {})
+              }))
+            }
+          : view
+      );
+    } else if (sk.startsWith('WEATHER#')) skies.push({ date: sk.slice(8), ...weather.plain(item as weather.Reading) });
     else if (sk.startsWith('PLACE#'))
       spots.push({
         date: sk.slice(6),
@@ -215,6 +252,7 @@ export function build(
     places: sortBy(spots, 'date'),
     ...(upcoming.length ? { upcoming: upcoming.sort((a, b) => cmp(a.id, b.id)) } : {}),
     ...(badges.length ? { badges } : {}),
+    ...(feedback.length ? { feedback: feedback.sort((a, b) => cmp(String(a.filed_at), String(b.filed_at))) } : {}),
     ...(activity.length
       ? {
           activity: [...new Map(activity.map((r) => [String(r.sk), r])).values()]
@@ -266,6 +304,27 @@ export function markdown(data: ExportData): string {
           ? `Daily email reminders: ${entry.reminders.join(', ')} days before (0 means on the day).`
           : 'Kept on the web only.'
       );
+    }
+  }
+  if (data.feedback?.length) {
+    lines.push('', '## Feedback', '', 'What you told Jamie, and the answers.');
+    for (const f of data.feedback) {
+      const shots = (f.screenshots as Item[]) ?? [];
+      lines.push(
+        '',
+        `### ${FEEDBACK_KIND_NAMES[f.kind as keyof typeof FEEDBACK_KIND_NAMES] ?? 'Feedback'}, ${longDate(String(f.filed_at).slice(0, 10))}`,
+        '',
+        escapeText(String(f.text)),
+        ...(f.follows ? ['', `Follows ${f.follows}.`] : []),
+        ...shots.map((s) => (s.path ? `\n![Screenshot ${s.n}](${s.path})` : `\nScreenshot ${s.n}.`))
+      );
+      for (const a of (f.answers as Item[]) ?? [])
+        lines.push(
+          '',
+          `Jamie, ${longDate(String(a.at).slice(0, 10))}:`,
+          '',
+          '> ' + escapeText(String(a.text)).replace(/\n/g, '\n> ')
+        );
     }
   }
   if (data.badges?.length) {

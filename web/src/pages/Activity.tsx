@@ -150,7 +150,8 @@ const GLYPHS: Record<string, IconName> = {
   photo: 'you',
   address: 'mail',
   calendar: 'calendar',
-  connection: 'assistant'
+  connection: 'assistant',
+  feedback: 'feedback'
 };
 
 function Row({ e, l }: { e: ActivityEntry; l: ActivityData }) {
@@ -330,6 +331,21 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
             ? 'A sign-in it had already used came back, so the connection was ended to be safe.'
             : undefined
       ];
+    case 'feedback.filed':
+      return [
+        `Sent Jamie ${FEEDBACK_WORDS[e.feedback_kind ?? ''] ?? 'feedback'}` +
+          (e.follows ? ', following up earlier feedback' : ''),
+        e.screenshots ? `With ${count(e.screenshots, 'screenshot', 'screenshots')}.` : undefined
+      ];
+    case 'feedback.answered':
+      return [
+        e.status === 'needs_info'
+          ? 'Jamie asked you about your feedback'
+          : e.status === 'done'
+            ? 'Jamie answered your feedback and marked it done'
+            : 'Jamie answered your feedback',
+        e.mail === 'sent' ? 'The answer was emailed to you too.' : undefined
+      ];
     case 'account.created':
       return ['Joined Release Notes'];
     default:
@@ -337,7 +353,13 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
   }
 }
 
-const VIA: Record<string, string> = { web: 'on the web', email: 'by email', import: 'imported' };
+const VIA: Record<string, string> = { web: 'on the web', email: 'by email', import: 'imported', admin: 'by Jamie' };
+const FEEDBACK_WORDS: Record<string, string> = {
+  bug: 'a problem',
+  idea: 'an idea',
+  question: 'a question',
+  other: 'feedback'
+};
 
 function EventRow({ e, l }: { e: EventActivity; l: ActivityData }) {
   const [what, more] = said(e, l),

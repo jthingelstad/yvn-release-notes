@@ -31,6 +31,9 @@ export function You() {
         <Row href="/activity/" id="you-activity" icon="activity" name="Activity">
           Every note, email, change and assistant read, newest first
         </Row>
+        <Row href="/feedback/" id="you-feedback" icon="feedback" name="Feedback">
+          Tell Jamie what’s wrong, an idea or a question, and read the answers
+        </Row>
         <Row href="/settings/" id="you-settings" icon="settings" name="Settings">
           Daily email, writing and search, agents, your account
         </Row>

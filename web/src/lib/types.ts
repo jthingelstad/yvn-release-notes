@@ -281,7 +281,7 @@ export interface ReadsActivity extends ActivityHead {
 // row's title is read now: null once the date is gone.
 export interface EventActivity extends ActivityHead {
   kind: string;
-  via?: 'web' | 'email' | 'assistant' | 'import' | 'weekly-thing';
+  via?: 'web' | 'email' | 'assistant' | 'import' | 'weekly-thing' | 'admin';
   client?: string;
   day?: string;
   note?: string;
@@ -305,6 +305,13 @@ export interface EventActivity extends ActivityHead {
   when?: string;
   file?: number;
   empty?: boolean;
+  // feedback.filed / feedback.answered (never the words)
+  feedback?: string;
+  feedback_kind?: string;
+  follows?: string | null;
+  screenshots?: number;
+  status?: string;
+  mail?: string;
   photos?: number;
   app?: string;
   notes?: number;
@@ -364,4 +371,20 @@ export interface NewBadge {
 export interface NewBadges {
   badges: NewBadge[];
   keys: string[];
+}
+
+// Feedback to Jamie (packages/domain/feedback.ts feedbackView): never a file key.
+export interface FeedbackView {
+  id: string;
+  kind: 'bug' | 'idea' | 'question' | 'other';
+  text: string;
+  status: 'open' | 'answered' | 'needs_info' | 'done';
+  follows: string | null;
+  via: 'web' | 'assistant';
+  client: string | null;
+  filed_at: string;
+  updated_at: string;
+  revision: number;
+  answers: { at: string; text: string; status: 'answered' | 'needs_info' | 'done' }[];
+  screenshots: { n: number; type: string; size: number; width?: number; height?: number }[];
 }

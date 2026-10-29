@@ -98,6 +98,14 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
   has already earned and is not yet `seen`; `--write` adds it, so nobody's
   first email with the badge line lists everything at once. Counts only,
   never a name or address.
+- Feedback (docs/WEB-APP.md, Feedback): `node --import tsx tools/feedback.ts list [--all]`
+  prints the waiting items (every item with `--all`), newest first, by
+  account id, never address; `show OWNER ID [--screenshots DIR]` prints one
+  and saves its screenshots (mode 0600) to DIR, or to a new temporary
+  directory, never into the repo. `answer OWNER ID --status answered|needs_info|done --text TEXT`
+  is a dry run; `--write` appends the answer and emails the filer once while
+  their account is active. Each `--write` is a live write and needs Jamie's
+  go.
 - One row per subscriber (address, state, sign-up day, send time, last
   email, last note, notes, 30-day reply rate):
   `node --import tsx tools/subscribers.ts`. Reads keys and a few fields,

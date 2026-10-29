@@ -380,9 +380,9 @@ notes.yourversionnumber.com
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/badges/`, `/map/`, `/search/`,
-  `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/you/`, `/settings/`, `/activity/` (`/mail-log/` redirects there), `/book/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/admin/`, `/admin-users/`.
+  `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/you/`, `/settings/`, `/activity/` (`/mail-log/` redirects there), `/book/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/feedback/`, `/admin/`, `/admin-users/`, `/admin-feedback/`.
   `/connect/` approves an external agent request whose opaque id stays in the fragment. With no request it shows the MCP address to add, with Copy; with one, the request's question is the title, what it shares as a list, each extra approval as a ruled checkbox row, and the retention paragraphs in full above Allow.
-  `/admin/` manages product updates; `/admin-users/` shows subscriber metadata. Administration is visible in settings only to the configured administrator.
+  `/feedback/` sends Jamie feedback and shows the answers (Feedback); `/admin/` manages product updates; `/admin-users/` shows subscriber metadata; `/admin-feedback/` is the feedback queue. Administration is visible in settings only to the configured administrator.
 
 - **A pause** starts on the next day an email would go (today, unless
   today's has gone) and runs 1 to 60 days. It is `PAUSE#<from>` with
@@ -682,6 +682,12 @@ or new CSP exception.
 | `DELETE /api/me` `{code}`                                                               | deletes everything; needs that fresh code                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `POST /api/unsubscribe?t=`                                                              | the email's one-click unsubscribe (RFC 8058); the token is the day's reply token, and this is the one write without an Origin                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `GET /api/unsubscribe?t=`                                                               | redirects to `/unsubscribe/`, a page with a button, for mail apps that open the link                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `GET /api/feedback`                                                                     | the owner's feedback, newest first (`items`, each with its answers and screenshot numbers, never a file key), `filed_today`, `per_day` (10), `screenshots_max` (3) and `screenshot_bytes` (768 KiB) |
+| `POST /api/feedback` `{kind,text,follows?,screenshots?}`                                | files one item (201): `kind` bug, idea, question or other; `text` up to 4,000 characters; `follows` an earlier item's id; up to 3 screenshots as `{type,data}` (PNG, JPEG or WebP, base64, 768 KiB each decoded), stripped of metadata before they are kept. 400 `feedback-kind`, `feedback-text`, `feedback-too-long`, `feedback-follows`, `feedback-image-count`, `-type`, `-data` or `-too-big` (with `index`); 429 `feedback-limit`; 409 `feedback-conflict`. The body may be about 3.1 MiB |
+| `GET /api/feedback/{id}/screenshots/{n}`                                                | redirects (302) to a fifteen-minute signed link to the owner's screenshot |
+| `GET /api/admin/feedback`                                                               | administrator only: every account's feedback, newest first, each with `owner`, `email` and `account` (its status) |
+| `POST /api/admin/feedback/{owner}/{id}/answers` `{text,status,revision}`                | administrator only: appends one answer (201, `{item, mail}`) with the status it sets (`answered`, `needs_info`, `done`) and emails the filer once while their account is active (`mail` `sent`, `failed` or `not-sent`). 404 `feedback-missing`; 409 `feedback-changed` (stale revision) or `feedback-full` (20 answers) |
+| `GET /api/admin/feedback/{owner}/{id}/screenshots/{n}`                                  | administrator only: the same signed link to that account's screenshot |
 | `GET /api/admin/users`                                                                  | administrator only: `users` with email, status (`active`, `paused`, `stopped`), stopped_reason, pause_through, joined_at, tz, send_time, last_sent_date, last_added_at, entries and days; `as_of` is the snapshot time; nullable metadata is null                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `GET /api/admin/updates`                                                                | administrator only: saved drafts and schedules (`updates`), and the administrator's local `today`; each update has `id`, `title`, `text`, named `links` and rendered `parts`, `revision`, `status`, `date`, `created_at`, `updated_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `POST /api/admin/updates` `{title,text}`                                                | administrator only: create a draft (201), without scheduling                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -799,6 +805,47 @@ Upcoming entries are included in JSON, Markdown and ZIP exports, in a separate
 compatibility), and removed by purpose-verified account deletion with every
 other USER row. Note scopes never reach Upcoming; only the separate
 `upcoming` scope does (`docs/MCP.md`).
+
+## Feedback
+
+Jamie, 2026-10-28: "we have no way to get Feedback from users of release
+notes. It would be nice to have a way users could submit feedback of a
+type, and then Claude could work on those and post a reply to the feedback
+as well." Elixir's feedback system is the model.
+
+`/feedback/` (You, Feedback) sends one item: a kind (something wrong, an
+idea, a question, something else), the words, and up to three screenshots
+(Jamie, 2026-10-28: "Make sure a user or agent submitting feedback can
+attach a screenshot"). The page says plainly that Jamie reads every item.
+The browser opens each picture (a HEIC too, where it can), draws it again
+on a canvas at most 2,400px on its longer side and sends a PNG when one fits
+in 768 KiB, else a JPEG (`web/src/lib/screenshots.ts`); the server checks the
+bytes and strips EXIF, XMP, GPS and text blocks again in plain code
+(`packages/backend/inline-images.ts`, no Sharp in the web function) before
+it stores each one at `media/<owner>/feedback/<id>-<n>.<ext>`. Screenshots
+are shown only by signed links, and no model reads them. An assistant files
+the same record through `notes_send_feedback` (docs/MCP.md).
+
+An item is never edited or withdrawn. Jamie's answers are appended one at a
+time, each with the status it sets: open (waiting), answered, needs_info
+(Jamie asked something) or done. A follow-up, or an answer to Jamie's
+question, is a new item that `follows` the first. Ten items a UTC day an
+account, across the web and assistants (`FEEDBACKRATE#<day>`, counted in the
+same transaction as the item).
+
+`/admin-feedback/` is the administrator's queue: every account's items,
+newest first (waiting ones by default), with the address and account state,
+the screenshots by signed link, and an answer form with the status. Each
+answer sends one email to the filer, plain text and HTML with nothing remote
+and no tracking, only while the account is active (not stopped or being
+deleted); a failed email never undoes the answer. `tools/feedback.ts` does
+the same from the Mac (docs/OPERATING.md).
+
+The activity log has `feedback.filed` and `feedback.answered` rows: the
+item's id, kind, how many screenshots, the status set and whether the email
+went, never the words. Feedback and its screenshots are in the export
+(`feedback` in the JSON, a Feedback section in the Markdown, the screenshots
+as `files/<day>-feedback-<id>-<n>.<ext>`) and go with the account.
 
 ## Product updates
 

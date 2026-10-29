@@ -2,7 +2,9 @@ import { runtimeSelfTest } from './runtime.ts';
 /** Private delegated writer: no HTTP, mail or models. Every commit atomically
  * proves the live family/profile, receipt, quota and note revision. Files an
  * agent sends (server/mcp/files.ts) are kept under media/<user>/files/ first,
- * as a web upload's checked copy is, and removed if no note takes them. */
+ * as a web upload's checked copy is, and removed if no note takes them. A
+ * feedback screenshot, stripped of its metadata, is put under the owner's
+ * media/<owner>/feedback/ and never removed (packages/backend/feedback.ts). */
 import { randomUUID } from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -26,8 +28,18 @@ import { MAX_NOTE } from '../packages/domain/notes.ts';
 import { found } from '../packages/domain/tags.ts';
 import { computeVersion } from '../packages/domain/version.ts';
 import { codePointLength, pythonTrim } from '../packages/domain/unicode.ts';
-import { agentUpcomingView, editRevision, Reader, type ReaderContext, type ReaderStore } from '../server/mcp/reader.ts';
-import { TOOLS, UPCOMING_TOOLS, WRITE_TOOLS, scopesFor } from '../server/mcp/contract.ts';
+import {
+  agentFeedbackSummary,
+  agentUpcomingView,
+  editRevision,
+  Reader,
+  type ReaderContext,
+  type ReaderStore
+} from '../server/mcp/reader.ts';
+import { FEEDBACK_TOOLS, TOOLS, UPCOMING_TOOLS, WRITE_TOOLS, scopesFor } from '../server/mcp/contract.ts';
+import { fileFeedback, newFeedbackId, type FeedbackStore } from '../packages/backend/feedback.ts';
+import { InlineImageError, inlineImages } from '../packages/backend/inline-images.ts';
+import { feedbackFields, SCREENSHOTS_MAX } from '../packages/domain/feedback.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
 import { chosen, search, type City } from '../packages/backend/places.ts';
 import {
@@ -51,7 +63,8 @@ import {
   type SafeLog
 } from '../server/mcp/common.ts';
 type Ops = NonNullable<TransactWriteCommandInput['TransactItems']>;
-export interface CaptureStore extends ReaderStore {
+export interface CaptureStore extends ReaderStore, Omit<FeedbackStore, 'mcpProfile' | 'putActivity'> {
+  agentFiling(receipt: OAuthRow, audit: OAuthRow, now: number): Ops;
   upcomingBatch(uid: string, changes: readonly UpcomingChange[], extra: Ops): Promise<{ ok: boolean; applied: number }>;
   agentProof(family: OAuthRow, now: number, scope: string | readonly string[]): Ops;
   familyProof(family: OAuthRow, now: number, scope: string | readonly string[]): Ops;
@@ -544,6 +557,113 @@ export async function writeUpcoming(
   }
   throw new ToolError('busy', 'Try again shortly with exactly the same idempotency_key and arguments.');
 }
+const SCREENSHOT_HINTS: Record<string, string> = {
+  'image-count': 'Send at most 3 screenshots.',
+  'image-type': 'A screenshot is image/png, image/jpeg or image/webp.',
+  'image-data': 'A screenshot is base64 of a whole PNG, JPEG or WebP file, without a data: prefix.',
+  'image-too-big': 'Each screenshot can be at most 768 KB decoded; send a smaller one, a JPEG, or crop it.'
+};
+const FIELD_HINTS: Record<string, string> = {
+  kind: 'kind is bug, idea, question or other.',
+  text: 'Write what to tell Jamie.',
+  'too-long': 'Feedback can have at most 4,000 characters; send the rest as a follow-up.',
+  follows: 'follows is the id of an earlier item from notes_my_feedback.'
+};
+/** Feedback filed for the user (notes_send_feedback): the item, the
+ * account's daily count (shared with the web), the receipt, the
+ * content-free audit and the live grant (notes:read) in one transaction. */
+export async function writeFeedback(
+  context: CaptureContext,
+  family: OAuthRow,
+  name: string,
+  args: Arguments
+): Promise<OAuthRow> {
+  const uid = String(family.user_id),
+    fid = String(family.id),
+    key = 'CAPTURE#' + fid + '#' + digest(String(args.idempotency_key)),
+    hash = fingerprint({ tool: name, arguments: args }),
+    fields = feedbackFields(args);
+  if (typeof fields === 'string')
+    throw new ToolError('invalid_arguments', FIELD_HINTS[fields] ?? 'Check the parameters.');
+  let screenshots;
+  try {
+    screenshots = inlineImages(args.screenshots, { max: SCREENSHOTS_MAX });
+  } catch (error) {
+    if (!(error instanceof InlineImageError)) throw error;
+    throw new ToolError(
+      'invalid_arguments',
+      (error.index >= 0 ? `screenshots[${error.index}]: ` : '') + SCREENSHOT_HINTS[error.reason]!
+    );
+  }
+  if (screenshots.length && !context.objects) throw new Error('Objects service missing');
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const receipt = await context.store.mcpGet('USER#' + uid, key);
+    if (live(receipt, context.now)) {
+      if (receipt.request_hash !== hash)
+        throw new ToolError(
+          'duplicate_idempotency_key',
+          'Use a new key for a different operation; reuse the original key only for an exact retry.'
+        );
+      return { feedback: JSON.parse(String(receipt.result)), replayed: true };
+    }
+    const id = newFeedbackId(),
+      audit = {
+        pk: 'MCPMETA#' + uid,
+        sk: `LOG#${String(context.now).padStart(12, '0')}#${randomUUID().replace(/-/g, '')}`,
+        at: context.now,
+        tool: name,
+        outcome: 'ok',
+        connection: fid,
+        client: family.client_name,
+        feedback_id: id,
+        expires_at: context.now + 14 * 86400
+      };
+    // Put only: the role may not delete under feedback/, and a commit whose
+    // answer was lost may still have kept the item that names the files.
+    const objects = context.objects,
+      putOnly = { put: objects ? objects.put.bind(objects) : async () => undefined };
+    const outcome = await fileFeedback(
+      { store: context.store, objects: putOnly, now: context.now },
+      uid,
+      { ...fields, screenshots, via: 'assistant', client: String(family.client_name ?? '') || null, connection: fid },
+      (item) => [
+        ...context.store.agentProof(family, context.now, 'notes:read'),
+        ...context.store.agentFiling(
+          {
+            pk: 'USER#' + uid,
+            sk: key,
+            request_hash: hash,
+            result: JSON.stringify(agentFeedbackSummary(item)),
+            expires_at: context.now + 86400
+          },
+          audit,
+          context.now
+        )
+      ],
+      id
+    );
+    if (outcome.ok) return { feedback: agentFeedbackSummary(outcome.item), replayed: false };
+    if (outcome.reason === 'limit')
+      throw new ToolError(
+        'rate_limited',
+        'The account has sent 10 items of feedback today; try again after this UTC day ends.'
+      );
+    if (outcome.reason === 'follows')
+      throw new ToolError('not_found', "follows names no item of the user's; read notes_my_feedback for ids.");
+    if (outcome.reason === 'too-many') throw new ToolError('invalid_arguments', SCREENSHOT_HINTS['image-count']!);
+    const current = await context.store.mcpGet('OAUTHFAMILY#' + fid),
+      profile = await context.store.mcpProfile(uid);
+    if (
+      !live(current, context.now) ||
+      !profile ||
+      profile.mcp_deleting ||
+      current.revision !== family.revision ||
+      !String(current.scope).split(/\s+/).includes('notes:read')
+    )
+      throw new ToolError('scope_required', 'This connection changed or was disconnected; reconnect before writing.');
+  }
+  throw new ToolError('busy', 'Try again shortly with exactly the same idempotency_key and arguments.');
+}
 export async function captureNote(
   event: unknown,
   context: CaptureContext,
@@ -563,9 +683,11 @@ export async function captureNote(
     if (typeof name !== 'string' || !WRITE_TOOLS.has(name))
       throw new ToolError('unknown_tool', 'Only the write tools are supported here.');
     validate(args, TOOLS.find((t) => t.name === name)!.inputSchema);
-    return await (UPCOMING_TOOLS.has(name)
-      ? writeUpcoming(context, family, name, args, options)
-      : writeCapture(context, family, name, args, options));
+    return await (FEEDBACK_TOOLS.has(name)
+      ? writeFeedback(context, family, name, args)
+      : UPCOMING_TOOLS.has(name)
+        ? writeUpcoming(context, family, name, args, options)
+        : writeCapture(context, family, name, args, options));
   } catch (error) {
     if (error instanceof ToolError) return { error: error.code, next_step: error.nextStep };
     failure(context.now, uid, options.log, error);

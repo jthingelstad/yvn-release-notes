@@ -55,7 +55,8 @@ export function parsePage(path: string, source: string): Page {
   if (!title || !description || Object.keys(rest).length)
     throw new Error(`${path}: front matter is a title and a description`);
   const body = source.slice(m[0].length);
-  if (/^# /m.test(body)) throw new Error(`${path}: the title is the one h1`);
+  // A recipe's own comments (# in a shell script) are no heading.
+  if (/^# /m.test(body.replace(/^```[\s\S]*?^```$/gm, ''))) throw new Error(`${path}: the title is the one h1`);
   return { path, title, description, html: markdown.render(body) };
 }
 
@@ -148,7 +149,8 @@ export const SCOPES: [string, string][] = [
   ['upcoming', 'list, add, change and remove Upcoming dates. Never notes.']
 ];
 
-/** llms.txt: what Release Notes is, each page, and how an agent connects. */
+/** llms.txt: what Release Notes is, each page, how an agent connects, and
+ * the API for scripts and apps. */
 export function llmsTxt(pages: Page[]): string {
   return [
     '# Release Notes',
@@ -168,6 +170,10 @@ export function llmsTxt(pages: Page[]): string {
     `A subscriber can connect an agent such as Claude or ChatGPT as a remote MCP connector at ${ORIGIN}/mcp. The subscriber signs in and approves each scope; disconnecting in Settings ends it at once.`,
     '',
     ...SCOPES.map(([scope, words]) => `- \`${scope}\`: ${words}`),
+    '',
+    '## Scripts and apps',
+    '',
+    `Scripts and apps add notes through the API at ${ORIGIN}/v1, with an API token the subscriber makes in Settings. For now only Jamie can make one; tokens open to every account after that. A token adds notes in the subscriber’s own voice and never reads them. ${ORIGIN}/v1/openapi.json describes every request and needs no token, and ${ORIGIN}/guide/api/ is the guide.`,
     ''
   ].join('\n');
 }

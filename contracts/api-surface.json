@@ -1,0 +1,1191 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Release Notes API",
+    "version": "1.0.0",
+    "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
+    "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. Notes come from the owner, shown with “via <token name>”. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 128 KB. Any answer is one short line instead with `Accept: text/plain`.\n\nEvery write takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days.\n\nA day in UTC, an account may add 100 notes and make 200 other changes across its tokens, and each token may read 2,000 times.",
+    "x-changes": [
+      {
+        "version": "1.0.0",
+        "date": "2026-10-29",
+        "summary": "The first version: who the token is and the days ahead, text notes, tags and pinned tags, and the activity log."
+      }
+    ]
+  },
+  "servers": [
+    {
+      "url": "https://notes.yourversionnumber.com"
+    }
+  ],
+  "security": [
+    {
+      "token": []
+    }
+  ],
+  "paths": {
+    "/v1/openapi.json": {
+      "get": {
+        "operationId": "getOpenApi",
+        "summary": "This document",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "operationId": "getMe",
+        "summary": "Today's version, the next 14 days' versions, and this token",
+        "description": "What a client needs to show the version and fire reminders offline, without ever working out a version itself. The birthday is never sent. Any token may read it.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: You're 4.5.137 today."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ]
+      }
+    },
+    "/v1/notes": {
+      "post": {
+        "operationId": "createNote",
+        "summary": "Add a note",
+        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. A `text/plain` body is the note’s text alone. With neither `date` nor `written_at`, it files to today.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteCreate"
+              }
+            },
+            "text/plain": {
+              "schema": {
+                "type": "string",
+                "maxLength": 20000
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: Filed in 4.5.137."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      }
+    },
+    "/v1/notes/{date}/{id}": {
+      "get": {
+        "operationId": "getNote",
+        "summary": "Read a note this token wrote",
+        "description": "Its text and revision, so an app can pick up an edit made on the web.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Note"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: The note’s text."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+            }
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      },
+      "put": {
+        "operationId": "editNote",
+        "summary": "Replace the text of a note this token wrote",
+        "description": "From the revision the client read: a note changed since is a 409 `revision_mismatch` with its current `revision`. No history is kept.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: Changed in 4.5.137."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      },
+      "delete": {
+        "operationId": "deleteNote",
+        "summary": "Delete a note this token wrote",
+        "responses": {
+          "204": {
+            "description": "Deleted.",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      }
+    },
+    "/v1/notes/{date}/{id}/append": {
+      "post": {
+        "operationId": "appendNote",
+        "summary": "Add a paragraph to a note this token wrote",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteAppend"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: Changed in 4.5.137."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      }
+    },
+    "/v1/tags": {
+      "get": {
+        "operationId": "getTags",
+        "summary": "The tag row: pinned tags, then the most used lately",
+        "description": "The pinned tags, then the tags used most in the last 30 days that aren't pinned, ties broken by last use. Any token may read it.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagRow"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: #house #work #running"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": []
+          }
+        ]
+      }
+    },
+    "/v1/tags/pinned": {
+      "put": {
+        "operationId": "setPinnedTags",
+        "summary": "Replace the pinned tags",
+        "description": "Up to 12 tags, normalized as note hashtags are (\"#Running\" is running), each once. The same pins show on the web and through every token.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Pins"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagRow"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: #house #work"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      }
+    },
+    "/v1/activity": {
+      "get": {
+        "operationId": "getActivity",
+        "summary": "The activity log, newest first, without words",
+        "description": "What came in, changed and went out. It never carries a mail subject, mail words, another sender or a settings value. An Upcoming row's title comes only with the `upcoming` scope.",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "The next older page: `next` from the answer before.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Only rows newer than this one, an `id` the client has seen.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kinds",
+            "in": "query",
+            "description": "Comma-separated families to keep.",
+            "schema": {
+              "type": "string",
+              "example": "note,mail,badge,status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Activity"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain, one short line: One line a row: when, kind and token."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "activity"
+            ]
+          }
+        ],
+        "x-scope": "activity"
+      }
+    },
+    "/v1/token": {
+      "delete": {
+        "operationId": "revokeToken",
+        "summary": "Revoke this token",
+        "description": "The token ends itself, as a sign-out does. Any token may.",
+        "responses": {
+          "204": {
+            "description": "Revoked.",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "token": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An API token: rn_ and 43 more characters, shown once when it is made."
+      }
+    },
+    "parameters": {
+      "Idempotency-Key": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "description": "Any 1 to 128 printable ASCII characters, new for each change. Sent again with the same request, it answers the first result again; with a different request it is a 422.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "headers": {
+      "Release-Notes-Version": {
+        "description": "Today's version, on every answer to a token.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "API-Version": {
+        "description": "This API’s version.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Idempotent-Replayed": {
+        "description": "true when a receipt answered.",
+        "schema": {
+          "type": "string",
+          "const": "true"
+        }
+      },
+      "RateLimit-Limit": {
+        "description": "The day’s limit for this kind of write.",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "RateLimit-Remaining": {
+        "description": "How many are left today.",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "RateLimit-Reset": {
+        "description": "Seconds until the limit starts again, at midnight UTC.",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "Retry-After": {
+        "description": "With rate_limited: seconds to wait.",
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "400 invalid_request, 400 text_required, 400 date_out_of_range, 401 token_missing, 401 token_unknown, 401 token_revoked, 401 token_expired, 403 scope_required, 403 not_yours, 403 origin_refused, 404 not_found, 405 method_not_allowed, 409 revision_mismatch, 409 account_closing, 409 busy, 413 too_large, 422 idempotency_mismatch, 429 rate_limited, 503 unavailable",
+        "headers": {
+          "Retry-After": {
+            "$ref": "#/components/headers/Retry-After"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "invalid_request",
+                  "text_required",
+                  "date_out_of_range",
+                  "token_missing",
+                  "token_unknown",
+                  "token_revoked",
+                  "token_expired",
+                  "scope_required",
+                  "not_yours",
+                  "origin_refused",
+                  "not_found",
+                  "method_not_allowed",
+                  "revision_mismatch",
+                  "account_closing",
+                  "busy",
+                  "too_large",
+                  "idempotency_mismatch",
+                  "rate_limited",
+                  "unavailable"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "description": "A sentence that says what to do next."
+              },
+              "field": {
+                "type": "string",
+                "description": "The field or header at fault."
+              },
+              "revision": {
+                "type": "string",
+                "description": "With revision_mismatch: the note’s current revision."
+              }
+            }
+          }
+        }
+      },
+      "Me": {
+        "type": "object",
+        "required": [
+          "today",
+          "version",
+          "tz",
+          "days",
+          "token",
+          "api_version"
+        ],
+        "properties": {
+          "today": {
+            "type": "string",
+            "format": "date",
+            "description": "A day in the account’s own time zone."
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "example": "4.5.137"
+          },
+          "tz": {
+            "type": "string",
+            "example": "America/Chicago"
+          },
+          "send_time": {
+            "type": "string",
+            "example": "06:00",
+            "description": "When the morning email goes, local time."
+          },
+          "wrote_today": {
+            "type": "boolean"
+          },
+          "streak": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "paused_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "description": "A day in the account’s own time zone."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "stopped"
+            ]
+          },
+          "show_badges": {
+            "type": "boolean"
+          },
+          "days": {
+            "type": "array",
+            "description": "14 days from today; a birthday shows as a new major or minor version on its day.",
+            "items": {
+              "type": "object",
+              "required": [
+                "date",
+                "version"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date",
+                  "description": "A day in the account’s own time zone."
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^\\d+\\.\\d+\\.\\d+$",
+                  "example": "4.5.137"
+                }
+              }
+            }
+          },
+          "token": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "expires_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "api_version": {
+            "type": "string",
+            "example": "1.0.0"
+          }
+        }
+      },
+      "NoteCreate": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "description": "At most 20000 characters."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Any day from the birthday through today. Default: the day it was written."
+          },
+          "written_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the words were typed, at most five minutes ahead. A note queued offline files to the day it was typed and is ordered by it."
+          }
+        }
+      },
+      "NoteEdit": {
+        "type": "object",
+        "required": [
+          "text",
+          "revision"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "description": "At most 20000 characters."
+          },
+          "revision": {
+            "type": "string",
+            "description": "The revision last read, unchanged."
+          }
+        }
+      },
+      "NoteAppend": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "description": "At most 20000 characters."
+          }
+        }
+      },
+      "NoteWritten": {
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "properties": {
+          "note": {
+            "type": "object",
+            "required": [
+              "id",
+              "date",
+              "version",
+              "revision",
+              "token"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string",
+                "format": "date",
+                "description": "A day in the account’s own time zone."
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^\\d+\\.\\d+\\.\\d+$",
+                "example": "4.5.137"
+              },
+              "revision": {
+                "type": "string",
+                "description": "Opaque: send it back unchanged."
+              },
+              "token": {
+                "type": "string",
+                "description": "The token’s name, as “via” shows it."
+              }
+            }
+          },
+          "unlocked": {
+            "type": "array",
+            "description": "Badges this note earned, only while Show badges is on, and never on a replay.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Note": {
+        "type": "object",
+        "required": [
+          "id",
+          "date",
+          "version",
+          "text",
+          "revision"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "A day in the account’s own time zone."
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "example": "4.5.137"
+          },
+          "text": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "written_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TagRow": {
+        "type": "object",
+        "required": [
+          "pinned",
+          "recent",
+          "window_days"
+        ],
+        "properties": {
+          "pinned": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string"
+            }
+          },
+          "recent": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "required": [
+                "tag",
+                "count",
+                "last_used"
+              ],
+              "properties": {
+                "tag": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                },
+                "last_used": {
+                  "type": "string",
+                  "format": "date",
+                  "description": "A day in the account’s own time zone."
+                }
+              }
+            }
+          },
+          "window_days": {
+            "type": "integer",
+            "const": 30
+          }
+        }
+      },
+      "Pins": {
+        "type": "object",
+        "required": [
+          "pinned"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pinned": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Activity": {
+        "type": "object",
+        "required": [
+          "items",
+          "next"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityRow"
+            }
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The `before` for the next older page."
+          }
+        }
+      },
+      "ActivityRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "kind"
+        ],
+        "description": "One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`, a reads row `calls` and `tools`); `via` says through what, and a token’s rows name it as `token`.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A cursor for `before` and `after`."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "type": "string",
+            "example": "note.added",
+            "description": "Its family is one of mail, reads, note, transcript, description, import, badge, email, reminder, place, upcoming, settings, pause, status, signin, export, photo, address, calendar, connection, feedback, egg, account."
+          },
+          "via": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "client": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

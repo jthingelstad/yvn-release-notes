@@ -44,7 +44,7 @@ describe('index.html', () => {
     const listed = Object.keys(JSON.parse(readFileSync('site/sitemap.json', 'utf8')));
     expect(listed[0]).toBe('/');
     for (const path of listed.slice(1)) {
-      expect(path).toMatch(/^\/[a-z-]+\/(?:[a-z-]+\/)?$/);
+      expect(path).toMatch(/^\/[a-z-]+\/(?:[a-z-]+\/){0,2}$/);
       expect(existsSync(`site${path.replace(/\/$/, '')}.md`) || existsSync(`site${path}index.md`)).toBe(true);
     }
   });

@@ -121,7 +121,9 @@ Where things are (each module's design comment has its contract):
   stay their own artwork.
 - `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline,feedback}.ts`
   are operator tools (shared setup in `tools/operator.ts`);
-  `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current.
+  `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current,
+  and `tools/export-api-contract.ts` the `/v1` OpenAPI file,
+  `contracts/api-surface.json`, with its version ledger.
 - `tools/{build-server,package-native,native-artifacts,web-platform,release-probe,indexnow}.ts`
   build and upload the code zips, keep the endpoint grants, tell IndexNow
   which public pages a release changed and probe a finished release;
@@ -766,7 +768,8 @@ Where things are (each module's design comment has its contract):
 ## API tokens and `/v1` (2026-10-29)
 
 `docs/API.md` has the design and the phases; phase 1 (tokens, text notes,
-tags, the activity log) is built.
+tags, the activity log) and phase 2 (the OpenAPI file and the guide's
+`/guide/tokens/`, `/guide/api/` and `/guide/api/clients/`) are built.
 
 - **`/v1` is the MCP function's**, under its reader role, and every write
   goes to the capture function, as an agent's does. Only an API token opens
@@ -784,6 +787,18 @@ tags, the activity log) is built.
   removes every token and its pointer with the agent connections.
 - **Offered scopes** are `notes:write` and `activity`; `media:write` and
   `upcoming` come with phases 3 and 4. There is no `notes:read` in v1.
+- **When `/v1` changes**, regenerate the contract with
+  `node --import tsx tools/export-api-contract.ts`. Every change is a new
+  `API_VERSION` with its `API_CHANGES` entry (`server/mcp/v1.ts`), or the
+  tool refuses it. `/v1` only gains things; a breaking change is `/v2`. The
+  guide's API page names every request and error (`tests-node/site.test.ts`),
+  so it changes in the same PR.
+- **The API pages are public before tokens open** (call 1, 2026-10-29,
+  approved with "I'm good with your recommendations": tokens show only to
+  the admin until the guide pages are live and Jamie has used one): they
+  say only Jamie can make one for now. The tour,
+  the front page, `features.ts`, the changelog and product updates leave
+  tokens out until Jamie writes one; then the pages drop that line.
 - **Test with the dev server's fictional account**, which prints a token at
   start. Live checks are read-only (a 401 without a token, health); the
   first live note through a token is Jamie's to send.

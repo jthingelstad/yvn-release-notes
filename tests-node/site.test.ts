@@ -15,6 +15,7 @@ import { build } from 'vite';
 import { MAX_PAUSE_DAYS } from '../packages/backend/accounts.ts';
 import { MAX_FILES, MAX_UPLOAD } from '../packages/backend/media.ts';
 import { MAX_A_DAY } from '../packages/backend/transcribe.ts';
+import { TOKEN_EXPIRY, TOKEN_NAME_MAX, TOKENS_MAX, V1_LIMITS, V1_RECEIPT_SECONDS } from '../packages/backend/tokens.ts';
 import { LOGIN_TTL, SESSION_IDLE } from '../packages/backend/auth.ts';
 import { SCOPES as GRANTED } from '../packages/backend/oauth.ts';
 import { COMMENTARY_DAYS, COMMENTARY_PER_RELEASE, MAX_PHOTOS, PAGE_SIZES } from '../packages/book/limits.ts';
@@ -23,10 +24,11 @@ import { SCREENSHOTS_MAX } from '../packages/domain/feedback.ts';
 import { MAX_NOTE } from '../packages/domain/notes.ts';
 import { SEARCH_DAYS } from '../packages/domain/search.ts';
 import { MAX_TAG } from '../packages/domain/tags.ts';
-import { PINS_MAX, RECENT_DAYS } from '../packages/backend/tag-row.ts';
+import { PINS_MAX, RECENT_DAYS, RECENT_MAX } from '../packages/backend/tag-row.ts';
 import { UPCOMING_MAX, UPCOMING_SHOWN } from '../packages/domain/upcoming.ts';
 import { DOTS, PHOTOS_AN_EMAIL, PHOTOS_A_DAY } from '../packages/mail/compose.ts';
 import { MAX_INLINE_BYTES, MAX_INLINE_FILES } from '../server/mcp/files.ts';
+import { ME_DAYS, V1_BODY, V1_ERRORS, V1_ROUTES } from '../server/mcp/v1.ts';
 import { FEATURES } from '../web/src/lib/features.ts';
 import { shareTags } from '../web/src/lib/share-card.ts';
 import { ORIGIN, SCOPES, readPages, sitemapDates } from '../web/src/site-pages.ts';
@@ -66,8 +68,13 @@ function said(page: string) {
     description = one(page, (e) => e.name === 'meta' && e.attribs.name === 'description')!.attribs.content!;
   return [title, description, text(article(page))].join('\n');
 }
+/** A page without its code: a recipe's block, and any bit of code with a
+ * digit in it (`chmod 600`, `/v1/me`, an example time), which are literal,
+ * not numbers the page claims. */
+const literalsOut = (page: string) =>
+  page.replace(/<pre>[\s\S]*?<\/pre>/g, '').replace(/<code>[^<]*\d[^<]*<\/code>/g, '');
 
-test('site/ has the pages phases 1, 3 and 4 promised, and site/sitemap.json lists / and each of them', () => {
+test('site/ has the pages phases 1, 3 and 4 promised, and the API’s, and site/sitemap.json lists / and each of them', () => {
   assert.deepEqual(
     pages.map((p) => p.path),
     [
@@ -88,6 +95,9 @@ test('site/ has the pages phases 1, 3 and 4 promised, and site/sitemap.json list
       '/guide/export/',
       '/guide/pause-and-stop/',
       '/guide/delete/',
+      '/guide/tokens/',
+      '/guide/api/',
+      '/guide/api/clients/',
       '/faq/',
       '/privacy/',
       '/changelog/'
@@ -197,7 +207,8 @@ test('every internal link goes to a built page or file, or to a page of the app'
       if (!local.startsWith('/')) continue;
       checked++;
       const path = local.replace(/[?#].*$/, '');
-      if (path === '/mcp') continue; // the MCP endpoint, which llms.txt names for agents
+      // The endpoints llms.txt names: MCP for agents, and the API for scripts and apps.
+      if (path === '/mcp' || path === '/v1' || path.startsWith('/v1/')) continue;
       const built = /\.[a-z0-9]+$/.test(path) ? existsSync(join(out, path)) : existsSync(join(out, path, 'index.html'));
       assert.ok(built || app.has(path), `${from} links ${href}, which is no page`);
       if (path.startsWith('/guide/')) assert.ok(built, `${from} links ${href}, a guide page not written yet`);
@@ -265,6 +276,16 @@ async function checkedPhrases() {
     `up to ${MAX_TAG} characters`,
     `last ${RECENT_DAYS} days`,
     `up to ${PINS_MAX} tags`,
+    `next ${ME_DAYS} days`,
+    `up to ${TOKEN_NAME_MAX} characters`,
+    `in ${TOKEN_EXPIRY['90d']! / 86400} days`,
+    `up to ${TOKENS_MAX} tokens`,
+    `${V1_BODY / 1024} KB`,
+    `for ${V1_RECEIPT_SECONDS / 86400} days`,
+    `add ${V1_LIMITS.create} notes`,
+    `${V1_LIMITS.change} other changes`,
+    `${V1_LIMITS.reads.toLocaleString('en-US')} times`,
+    `up to ${RECENT_MAX} recent ones`,
     `newest ${SEARCH_DAYS} days`,
     `up to ${UPCOMING_MAX} dates`,
     `up to ${perCall} dates a call`,
@@ -277,10 +298,12 @@ test('every number on the pages and in llms.txt is the product’s own', async (
   const phrases = await checkedPhrases(),
     used = new Set<string>();
   for (const [from, words] of [
-    ...[...html].map(([path, page]) => [path, said(page)] as const),
+    ...[...html].map(([path, page]) => [path, said(literalsOut(page))] as const),
     ['llms.txt', llms] as const
   ]) {
     let left = words;
+    // An API error, said beside its HTTP status: rate_limited (429).
+    for (const [code, status] of Object.entries(V1_ERRORS)) left = left.replaceAll(`${code} (${status})`, '');
     // A worked example: 5.2.113 is 52 years and 113 days, said beside it.
     for (const [phrase, years, days] of left.matchAll(/(\d+) years and (\d+) days/g)) {
       const version = `${Math.floor(Number(years) / 10)}.${Number(years) % 10}.${days}`;
@@ -302,6 +325,7 @@ test('every number on the pages and in llms.txt is the product’s own', async (
     // The changelog's dates: each release's day, and the launch's.
     if (from === '/changelog/') left = left.replace(/\b(?:October|November|December) \d{1,2}(?:, 2026)?\b/g, '');
     left = left
+      .replace(/\/v1\b/g, '') // the API's address
       .replace(/\b\d+\.\d+\.\d+\b/g, '') // versions, which are examples
       .replace(/#[a-z][a-z0-9-]*/g, ''); // a hashtag's example
     const stray = /[^\n]{0,40}\d[^\n]{0,40}/.exec(left);
@@ -314,11 +338,21 @@ test('every number on the pages and in llms.txt is the product’s own', async (
   );
 });
 
+test('the API guide names every /v1 request and every error with its status, and the tokens page each expiry', () => {
+  const api = text(article(html.get('/guide/api/')!));
+  for (const route of V1_ROUTES) assert.ok(api.includes(`${route.method} ${route.template}`), route.name);
+  for (const [code, status] of Object.entries(V1_ERRORS)) assert.ok(api.includes(`${code} (${status})`), code);
+  assert.deepEqual(Object.keys(TOKEN_EXPIRY), ['90d', '1y', 'never']);
+  assert.equal(TOKEN_EXPIRY['1y'], 365 * 86400);
+  assert.ok(text(article(html.get('/guide/tokens/')!)).includes('in 90 days, in a year, or never'));
+});
+
 test('llms.txt names each page and the MCP address, and each scope the server grants', () => {
   assert.match(llms, /^# Release Notes\n\n> /);
   for (const page of pages)
     assert.ok(llms.includes(`- [${page.title}](${ORIGIN}${page.path}): ${page.description}`), page.path);
   assert.ok(llms.includes(`${ORIGIN}/mcp`));
+  assert.ok(llms.includes(`${ORIGIN}/v1/openapi.json`) && llms.includes(`${ORIGIN}/guide/api/`));
   assert.deepEqual(SCOPES.map(([scope]) => scope).sort(), [...GRANTED].sort());
   for (const [scope] of SCOPES) assert.ok(llms.includes(`- \`${scope}\`: `), scope);
 });

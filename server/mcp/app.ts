@@ -6,7 +6,8 @@ import { codePointLength } from '../../packages/domain/unicode.ts';
 import { FEEDBACK_TOOLS, TOOLS, PROTOCOLS, UPCOMING_TOOLS, VERSION, WRITE_TOOLS, scopesFor } from './contract.ts';
 import { Reader, quota, record, type ReaderContext } from './reader.ts';
 import { asciiJson, failure, object, validate, MAX_CHARS, ToolError, type SafeLog } from './common.ts';
-import { handleV1 } from './v1.ts';
+import { API_VERSION, handleV1 } from './v1.ts';
+import { openApi } from './openapi.ts';
 export interface CaptureEvent {
   token: string;
   tool: string;
@@ -213,6 +214,10 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
 export function createMcpApp(options: McpOptions): Hono {
   const app = new Hono();
   app.all('/mcp', (c) => handleMcp(c.req.raw, options));
+  // The API's own description, open to anyone: no token, nothing read.
+  app.get('/v1/openapi.json', () =>
+    Response.json(openApi(), { headers: { 'cache-control': 'public, max-age=300', 'api-version': API_VERSION } })
+  );
   app.all('/v1', (c) => handleV1(c.req.raw, options));
   app.all('/v1/*', (c) => handleV1(c.req.raw, options));
   return app;

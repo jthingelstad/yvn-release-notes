@@ -12,7 +12,7 @@
     "lastmod": "2026-10-29"
   },
   "/guide/": {
-    "said": "80dd8d81031c6ec379c4469012cdbd09b84e4efff7a209051c8e292b346b91b8",
+    "said": "4013298fc86f222d380df5aa2a66ad015d772ceca1b0d3e51cceb18e365c6dc7",
     "lastmod": "2026-10-29"
   },
   "/guide/start/": {
@@ -69,6 +69,18 @@
   },
   "/guide/delete/": {
     "said": "dba57ef68c5ed87173377c1d23f3d92370058aeda4d6538047425f7ac7254395",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/tokens/": {
+    "said": "49e63cc3d6f78f07550a08a1375690f4809b3fa3bb038edef1f94ed24c76bb2b",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/api/": {
+    "said": "5df823d8f7ac367054b3a78aa5e215dc3400cbf2b266d088b2f4d5a36e0a7000",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/api/clients/": {
+    "said": "55a0148707881f4b9fa11420caf759ecc75df49bb45dad2113c03cd5b8de7bf8",
     "lastmod": "2026-10-29"
   },
   "/faq/": {

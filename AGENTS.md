@@ -50,8 +50,8 @@ Every write proves the writer owns the subscriber's address:
   logged; mail to it shows in the activity log like any reply.
 
 - **By a token** (Jamie, 2026-10-29; docs/API.md): a key the owner makes,
-  names and scopes in that session (Settings, API tokens; the configured
-  administrator alone until tokens open to everyone), shown once and kept
+  names and scopes in that session (Settings, API tokens, every
+  subscriber's since 2026-10-29), shown once and kept
   as its SHA-256, opening `/v1` only. The capture function checks it again
   and proves the live account and token in the same transaction as each
   write, and a token changes only the notes it wrote.
@@ -513,10 +513,9 @@ Where things are (each module's design comment has its contract):
   all; a failed read never holds the send. An app reads them from
   `GET /v1/upcoming/reminders` (`remindersFor`, with each morning's
   `send_at`) and schedules them on the device; the server sends nothing
-  more. No catch-up, tracking or model-generated prompts. The guide's
-  Upcoming, email and pause pages still say reminders come only in the
-  morning email, true while tokens are the administrator's alone; they
-  change when tokens open.
+  more. No catch-up, tracking or model-generated prompts. An app's
+  reminders don't stop for a pause or a stop, since the endpoint reads
+  every date as it is; the guide's pause page says so.
 - Entries (`UPCOMING#<id>`) are written with atomic revision and capacity
   checks and the session and account proof, are in every owner export and
   go with the account. Never log titles, dates or destinations. Note scopes
@@ -810,15 +809,17 @@ and Here) and phase 4 (Upcoming and its reminders) are built.
   tool refuses it. `/v1` only gains things; a breaking change is `/v2`. The
   guide's API page names every request and error (`tests-node/site.test.ts`),
   so it changes in the same PR.
-- **The API pages are public before tokens open** (call 1, 2026-10-29,
-  approved with "I'm good with your recommendations": tokens show only to
-  the admin until the guide pages are live and Jamie has used one): they
-  say only Jamie can make one for now. The tour,
-  the front page, `features.ts`, the changelog and product updates leave
-  tokens out until Jamie writes one; then the pages drop that line.
+- **Tokens are every subscriber's** (Jamie, 2026-10-29: "Open up token
+  generation and all of the needed features so we can continue with
+  build. I am fine with these features being enabled automatically.").
+  Settings shows API tokens to every account, with nothing to turn on, and
+  `/api/tokens` answers any signed-in subscriber for their own tokens alone.
+  `features.ts` lists them (`/features/` and the guide) with `tour: false`:
+  the front page's tour and product updates leave them out until Jamie
+  writes about them.
 - **Test with the dev server's fictional account**, which prints a token at
-  start. Live checks are read-only (a 401 without a token, health); the
-  first live note through a token is Jamie's to send.
+  start. On the live site an agent tests only with its own test account,
+  made with Jamie's go (2026-10-29), never a subscriber's.
 
 ## Landing changes
 

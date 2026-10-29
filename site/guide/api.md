@@ -7,7 +7,7 @@ description: Add notes, files and places, and keep Upcoming dates, from a termin
 
 Anything that can send a web request can add a note: a terminal, a script, a home automation, an app. Send a token you made (see [API tokens](/guide/tokens/)) and some words, and they become a note on today's release, in your own voice, with photos, recordings and PDFs if you like, and where you were. A token can keep your [Upcoming](/guide/upcoming/) dates too, and read the reminders each morning brings, so an app can remind you on your phone.
 
-Every request goes to `https://notes.yourversionnumber.com/v1`, and `/v1/openapi.json` there describes the whole API for tools that read OpenAPI, with no token needed. For now only Jamie can make tokens; they open to every account after that.
+Every request goes to `https://notes.yourversionnumber.com/v1`, and `/v1/openapi.json` there describes the whole API for tools that read OpenAPI, with no token needed.
 
 ## Your first note
 

@@ -78,13 +78,13 @@ export async function readPages(dir = SITE_DIR): Promise<Page[]> {
 // draws: a page whose Markdown has a paragraph of `{features}` gets every
 // feature there, each linked to its guide page, and one with `{guide}` the
 // guide pages those link, by group, each once, leaving out any the page
-// links above it.
+// links anywhere else (the guide's own Start here and Apps and scripts).
 const esc = (words: string) => words.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 // A description after a colon, as the guide's own lists write them.
 const lower = (words: string) => (/^[A-Z][a-z]/.test(words) ? words[0]!.toLowerCase() + words.slice(1) : words);
 const LIST = /<p>\{(features|guide)\}<\/p>\n/g;
 function fillLists(page: Page, pages: Page[]): string {
-  return page.html.replace(LIST, (_, list: string, at: number) => {
+  return page.html.replace(LIST, (_, list: string) => {
     if (list === 'features')
       return FEATURES.map(
         (g) =>
@@ -94,7 +94,7 @@ function fillLists(page: Page, pages: Page[]): string {
             .join('') +
           '</ul>\n'
       ).join('');
-    const seen = new Set(Array.from(page.html.slice(0, at).matchAll(/href="([^"]+)"/g), (m) => m[1]!));
+    const seen = new Set(Array.from(page.html.matchAll(/href="([^"]+)"/g), (m) => m[1]!));
     return FEATURES.map((g) => {
       const items = g.features.flatMap((f) => {
         if (seen.has(f.guide)) return [];
@@ -173,7 +173,7 @@ export function llmsTxt(pages: Page[]): string {
     '',
     '## Scripts and apps',
     '',
-    `Scripts and apps add notes through the API at ${ORIGIN}/v1, with an API token the subscriber makes in Settings. For now only Jamie can make one; tokens open to every account after that. A token adds notes in the subscriber’s own voice and can read back only the notes it added. It can give a new note a place, a city or the device’s own spot, and one allowed files adds photos, recordings and PDFs to its notes. One allowed Upcoming also keeps the subscriber’s Upcoming dates and reads the reminders each morning’s email carries, with when that email is due. ${ORIGIN}/v1/openapi.json describes every request and needs no token, and ${ORIGIN}/guide/api/ is the guide.`,
+    `Scripts and apps add notes through the API at ${ORIGIN}/v1, with an API token the subscriber makes in Settings. A token adds notes in the subscriber’s own voice and can read back only the notes it added. It can give a new note a place, a city or the device’s own spot, and one allowed files adds photos, recordings and PDFs to its notes. One allowed Upcoming also keeps the subscriber’s Upcoming dates and reads the reminders each morning’s email carries, with when that email is due. ${ORIGIN}/v1/openapi.json describes every request and needs no token, and ${ORIGIN}/guide/api/ is the guide.`,
     ''
   ].join('\n');
 }

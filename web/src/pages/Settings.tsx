@@ -495,7 +495,7 @@ function Account({ p }: { p: Me }) {
         </p>
       </SettingsGroup>
       <Connections />
-      {p.admin && <ApiTokens />}
+      <ApiTokens />
       <SettingsGroup
         id="account-settings"
         title="Your account"

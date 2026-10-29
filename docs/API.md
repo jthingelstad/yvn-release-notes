@@ -102,10 +102,11 @@ read and write those prefixes (`tests-node/infra/mcp-role.test.ts` holds
     expired.
   - A token's reads are one row a token a local day, as an agent's are
     (calls, never arguments or results).
-- **Who sees Tokens:** only the configured administrator at first
-  (`AdminUserId`; `/api/tokens` answers anyone else 403 `admin-only`). It
-  opens to every subscriber in a later PR, once the guide pages are live
-  and Jamie has used a token (Jamie's calls, 1).
+- **Who sees Tokens:** every subscriber, in Settings, with nothing to turn
+  on (Jamie, 2026-10-29: "Open up token generation and all of the needed
+  features so we can continue with build. I am fine with these features
+  being enabled automatically."). Until then only the configured
+  administrator did (`AdminUserId`).
 
 ## Voice and via
 
@@ -758,7 +759,9 @@ recommendations"):
    takes them out of the email is a separate small PR.
 3. **via** shows on the web, in exports and in the activity log, not in the
    morning email.
-4. **The first live note** through a token is Jamie's own.
+4. **The first live note** through a token is Jamie's own. (Overtaken the
+   same day, when Jamie opened tokens to everyone "so we can continue with
+   build".)
 5. **The app's repo:** public, MIT, `com.thingelstad.changelog`.
 6. **This design** merges after the automated review, without waiting for
    Jamie's read. Anything beyond it comes back as a question.

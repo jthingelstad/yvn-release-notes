@@ -126,6 +126,9 @@ export function replyToken(): string {
   }
   return out;
 }
+/** The longest pause, in days, start day included (the Pause page and the
+ * guide say it). */
+export const MAX_PAUSE_DAYS = 60;
 export const sendTime = (b: Item): string => {
   if (typeof b.send_time !== 'string' || !/^([01][0-9]|2[0-3]):(00|15|30|45)$/.test(b.send_time))
     reject(400, 'send-time');
@@ -286,13 +289,13 @@ export async function changePause(service: SessionService, b: Item | null): Prom
   if (current && current <= today) start = current;
   let through: string;
   if (Object.hasOwn(b, 'days')) {
-    if (!Number.isInteger(b.days) || Number(b.days) < 1 || Number(b.days) > 60) reject(400, 'days');
+    if (!Number.isInteger(b.days) || Number(b.days) < 1 || Number(b.days) > MAX_PAUSE_DAYS) reject(400, 'days');
     through = addDays(start, Number(b.days) - 1);
   } else {
     if (typeof b.through !== 'string' || !validDay(b.through)) reject(400, 'through');
     through = b.through;
   }
-  if (through < (start > today ? start : today) || through > addDays(start, 59)) reject(400, 'through');
+  if (through < (start > today ? start : today) || through > addDays(start, MAX_PAUSE_DAYS - 1)) reject(400, 'through');
   if (current && current !== start) await ctx.store.endPause(uid, current, null);
   await ctx.store.putPause(uid, start, through, iso(ctx.now));
   service.log({ event: 'pause', user: uid, days: daysBetween(start, through) + 1 });

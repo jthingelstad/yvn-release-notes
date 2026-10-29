@@ -18,6 +18,19 @@ for (const row of fixture.cases)
     assert.ok(Array.from(row.html).every((c) => c.codePointAt(0)! <= 127));
     assert.ok(!/<(?:script|link|iframe)\b|box-shadow|background-image|<img[^>]+src="https?:/i.test(row.html));
   });
+test('the first email alone links the guide, in its welcome line; a daily email never does', () => {
+  const row = fixture.cases[1]!,
+    v = computeVersion(row.birthday, row.day),
+    daily = { ...row.options, welcome: null, inbox: 'b'.repeat(24), token: 'a'.repeat(24) };
+  assert.equal(c.GUIDE_START, 'https://notes.yourversionnumber.com/guide/start/');
+  assert.match(c.body(v, row.birthday, row.options), new RegExp(`junk\\. ${c.GUIDE_HELP}: ${c.GUIDE_START}\n`));
+  assert.match(
+    c.htmlBody(v, row.birthday, row.day, row.options),
+    /junk\. <a class="link" href="[^"]+\/guide\/start\/"/
+  );
+  for (const out of [c.body(v, row.birthday, daily), c.htmlBody(v, row.birthday, row.day, daily)])
+    assert.doesNotMatch(out, /\/guide\//);
+});
 test('account and late-reply rendering matches legacy copy exactly', () => {
   const h = fixture.helpers;
   assert.equal(c.lateText('5.4.222', '2026-10-13'), h.lateText);

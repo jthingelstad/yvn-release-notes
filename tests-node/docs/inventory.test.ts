@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { ROUTES } from '../../server/app/app.ts';
 import { MCP_CONTRACT, TOOLS } from '../../server/mcp/contract.ts';
+import { readPages } from '../../web/src/site-pages.ts';
 const read = (path: string) => readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
 const web = await read('docs/WEB-APP.md'),
   mcp = await read('docs/MCP.md');
@@ -29,6 +30,12 @@ test('every frontend route appears in the documented Pages list', async () => {
   const listed = web.split('- **Pages**', 2)[1]?.split('\n- ', 1)[0];
   assert.ok(listed, 'missing Pages section');
   for (const page of pages) assert.ok(listed.includes('`' + page), `page missing from documentation: ${page}`);
+});
+test('the documented Public pages list is every page in site/, and no other', async () => {
+  const listed = web.split('- **Public pages**', 2)[1]?.split('\n- ', 1)[0]?.split('. Each is', 1)[0];
+  assert.ok(listed, 'missing Public pages section');
+  const documented = Array.from(listed.matchAll(/`(\/[a-z/-]*)`/g), (match) => match[1]);
+  assert.deepEqual(documented.sort(), (await readPages()).map((page) => page.path).sort());
 });
 test('MCP documentation and generated JSON match the complete tool contract', async () => {
   const documented = Array.from(mcp.matchAll(/^\| `((?:notes|upcoming)_[a-z_]+)` \|/gm), (match) => match[1]);

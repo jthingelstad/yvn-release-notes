@@ -1,7 +1,7 @@
 // The Release Notes web app: React on Vite, one app for every page. The
 // build goes to dist/web, which deploy.sh syncs to the web bucket, where
-// CloudFront answers / with front.html and every other address but a file
-// with index.html. `npm run dev` serves web/ with hot reload and hands the
+// CloudFront answers / with front.html, the public pages (site/) with their
+// own index.html, and every other address but a file with index.html. `npm run dev` serves web/ with hot reload and hands the
 // API, and the dev server's stand-ins for S3 and mail, to
 // tools/dev-server.ts (start that first; RN_DEV_API moves it).
 import react from '@vitejs/plugin-react';
@@ -27,7 +27,8 @@ function buildCommit(): string {
 const build = { commit: buildCommit(), at: new Date().toISOString() };
 
 // After the build, front.html: the built index.html with the front page
-// drawn in by the app's own components (web/src/prerender.tsx).
+// drawn in by the app's own components (web/src/prerender.tsx). Then the
+// public pages, sitemap.xml and llms.txt, from site/ (web/src/site.tsx).
 function frontPage(): Plugin {
   let root = '',
     outDir = '';
@@ -45,6 +46,12 @@ function frontPage(): Plugin {
       );
       const index = await readFile(resolve(outDir, 'index.html'), 'utf8');
       await writeFile(resolve(outDir, 'front.html'), module.withFront(index));
+      const site = await runnerImport<typeof import('./web/src/site.tsx')>(resolve(root, 'src/site.tsx'), {
+        configFile: false,
+        root,
+        logLevel: 'error'
+      });
+      await site.module.writeSite(outDir, index);
     }
   };
 }

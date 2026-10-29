@@ -1,7 +1,7 @@
 // The page every address is served (CloudFront and the dev server answer
 // any address but a file with it; / has it as front.html, the front page
 // drawn in), and the titles the pages give it.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { FRONT_TITLE, titleOf } from './components/common.tsx';
 
@@ -32,16 +32,20 @@ describe('index.html', () => {
     expect(loads).not.toMatch(/(src|href)="(https?:)?\/\//i);
   });
 
-  it('offers search the front page alone', () => {
+  it('offers search the front page and the public pages alone', () => {
     expect(html).toContain('<link rel="canonical" href="https://notes.yourversionnumber.com/" />');
     const robots = readFileSync('web/public/robots.txt', 'utf8');
     expect(robots).toMatch(/^Sitemap: https:\/\/notes\.yourversionnumber\.com\/sitemap\.xml$/m);
     for (const path of ['/api/', '/oauth/', '/mcp']) expect(robots).toContain(`Disallow: ${path}\n`);
     // A page blocked here could still be listed, its noindex unread.
     expect(robots).not.toMatch(/^Disallow: \/(signin|unsubscribe)/m);
-    const sitemap = readFileSync('web/public/sitemap.xml', 'utf8');
-    expect(Array.from(sitemap.matchAll(/<loc>([^<]+)<\/loc>/g), (m) => m[1])).toEqual([
-      'https://notes.yourversionnumber.com/'
-    ]);
+    // The sitemap is built from site/sitemap.json (site.tsx): / first, then
+    // the public pages, each of them a page of site/, never the app's.
+    const listed = Object.keys(JSON.parse(readFileSync('site/sitemap.json', 'utf8')));
+    expect(listed[0]).toBe('/');
+    for (const path of listed.slice(1)) {
+      expect(path).toMatch(/^\/[a-z-]+\/(?:[a-z-]+\/)?$/);
+      expect(existsSync(`site${path.replace(/\/$/, '')}.md`) || existsSync(`site${path}index.md`)).toBe(true);
+    }
   });
 });

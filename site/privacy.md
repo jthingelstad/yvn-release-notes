@@ -1,0 +1,40 @@
+---
+title: Privacy
+description: What Release Notes keeps, who can see it, and how to take it with you or delete it.
+---
+
+## What's kept
+
+Your email address, your birthday, your city and the time your email comes. Every note, photo, voice memo and PDF you send or add, with the original emails they came in. Release Notes keeps them on Amazon Web Services, and shows your files only to you, through links that expire.
+
+## Who can see it
+
+You can. So can Jamie Thingelstad, who runs Release Notes: as its operator, he can read what's stored. Nothing is sold or shared, and there are no ads.
+
+## What goes to other services
+
+Only what each job needs:
+
+- **Email** is sent and received through Amazon.
+- **Your city** goes to Open-Meteo for the weather. Never your notes.
+- **"Add where I am"**, if you turn it on, sends the spot where you saved a note to Amazon Location, to name the city.
+- **Signing in** checks for bots with Cloudflare Turnstile.
+- **Signing up** checks your address against the Weekly Thing's list, and looks again now and then.
+
+## AI, only when you ask
+
+Nothing you write goes to a model unless you turn it on. "Write out what I say" sends voice memos to Amazon Transcribe. "Describe my photos" sends photos to Claude, from Anthropic. A Supporting Member can ask for Claude's commentary in a book, and only that book's notes are read. Each is off until you choose it.
+
+## Agents, only with your consent
+
+You can connect an agent such as Claude or ChatGPT to your notes. It asks for each kind of access, you approve it, and you can disconnect it in Settings at any time. Every read it makes is listed in your Activity.
+
+## No tracking
+
+The email counts no opens and no clicks. Pages are counted with Tinylytics, without cookies and without anything that names you. The sign-in cookie only keeps you signed in, for 14 days from your last visit.
+
+## Taking it with you, and leaving
+
+Export everything as a zip, files and all, from Settings at any time. Deleting your account deletes every note, its photos and recordings, the original emails and your settings at once; old copies of files are gone within 30 days. A copy of the database is kept each month as a backup, so a deleted note can remain in backups made before you deleted it.
+
+Questions? Signed in, send Jamie [feedback](/feedback/).

@@ -1040,25 +1040,44 @@ Resources:
   # The web app is one page: any address but a file (/settings/,
   # /day/?d=...) is index.html, and the app's router shows the page. / alone
   # is front.html, the same page with the front page drawn in at build time
-  # for readers that run no script (web/src/prerender.tsx). A file (a name
-  # with a dot) is served as is. /api/* never runs it.
+  # for readers that run no script (web/src/prerender.tsx). The public pages
+  # (site/, drawn by web/src/site.tsx) are their own: an address under one of
+  # PUBLIC that ends in / is its own index.html, and one without the final
+  # slash is sent to it, so each page has one address. PUBLIC is the folders
+  # site/ has (tests-node/infra/web-index.test.ts); a mistyped address under
+  # one gets the bucket's bare 404. A file (a name with a dot) is served as
+  # is. /api/* never runs it.
   WebIndexFunction:
     Type: AWS::CloudFront::Function
     Properties:
       Name: !Sub "${AWS::StackName}-index"
       AutoPublish: true
       FunctionConfig:
-        Comment: Serve the app for every address that is not a file
+        Comment: Serve the app for every address that is not a file or a public page
         Runtime: cloudfront-js-2.0
       FunctionCode: |
+        var PUBLIC = ['/faq/', '/guide/', '/how-it-works/', '/privacy/'];
         function handler(event) {
           var request = event.request;
           var uri = request.uri;
           if (uri === '/') {
             request.uri = '/front.html';
-          } else if (uri.lastIndexOf('.') < uri.lastIndexOf('/')) {
-            request.uri = '/index.html';
+            return request;
           }
+          if (uri.lastIndexOf('.') > uri.lastIndexOf('/')) return request;
+          for (var i = 0; i < PUBLIC.length; i++) {
+            if (uri + '/' !== PUBLIC[i] && uri.indexOf(PUBLIC[i]) !== 0) continue;
+            if (uri.charAt(uri.length - 1) === '/') {
+              request.uri = uri + 'index.html';
+              return request;
+            }
+            return {
+              statusCode: 301,
+              statusDescription: 'Moved Permanently',
+              headers: { location: { value: uri + '/' } }
+            };
+          }
+          request.uri = '/index.html';
           return request;
         }
 

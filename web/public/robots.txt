@@ -1,7 +1,9 @@
-# Release Notes: the front page is public and welcome in search. Every other
-# page is the signed-in app or a link from an email, and the app marks it
-# noindex, so crawlers may load those pages to read that. They stay off the
-# addresses that answer with data, never a page.
+# Release Notes: the front page and the pages about it (How it works, the
+# guide, the FAQ and Privacy, each in the sitemap) are public and welcome in
+# search, and /llms.txt sums them up. Every other page is the signed-in app
+# or a link from an email, and the app marks it noindex, so crawlers may load
+# those pages to read that. They stay off the addresses that answer with
+# data, never a page.
 User-agent: *
 Disallow: /api/
 Disallow: /oauth/

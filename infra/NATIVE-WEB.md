@@ -27,8 +27,9 @@ replaced: "I did think the deploy got obnoxiously complex"):
    checked, not sent again (`tools/native-artifacts.ts`).
 2. **New web files** go up first, beside the live ones: this build's
    hashed script, styles and fonts, and any page the web bucket has not had
-   (`front.html`, which the stack's CloudFront function serves for `/`, the
-   first time). Nothing is overwritten or deleted (`--no-overwrite`), so
+   (`front.html`, which the stack's CloudFront function serves for `/`, or
+   a public page's `index.html`, which it serves for that page, the first
+   time). Nothing is overwritten or deleted (`--no-overwrite`), so
    what is served stays as it was until step 5.
 3. **One stack update** with `BuildId` (the commit) and the nine `<Name>Code`
    hashes. `BuildId` is every function's `APP_VERSION` and every revision's

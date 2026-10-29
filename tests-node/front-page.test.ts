@@ -86,9 +86,11 @@ test('the drawn front page has no script, no inline style and nothing the open p
     );
 });
 
-test('robots.txt and the sitemap are built as they are written', async () => {
-  for (const file of ['robots.txt', 'sitemap.xml'])
-    assert.equal(await readFile(join(out, file), 'utf8'), await readFile(resolve('web/public', file), 'utf8'), file);
+test('robots.txt is built as it is written', async () => {
+  assert.equal(
+    await readFile(join(out, 'robots.txt'), 'utf8'),
+    await readFile(resolve('web/public/robots.txt'), 'utf8')
+  );
 });
 
 /** What the front page says to search: its title, its description and the
@@ -104,25 +106,24 @@ function said(html: string) {
 }
 
 /** The front page's words when they last changed, and the day that reached
- * the site. sitemap.xml gives that day as / 's <lastmod>, which search reads
- * only while it stays true. */
-const FRONT_PAGE = {
-  said: '046b2966c726331e1b1e6399f4aea41c4f9b0ec086d28213bd9e8a737d0b6e94',
-  lastmod: '2026-10-25'
-};
-
+ * the site, are site/sitemap.json's entry for / (as each public page's are
+ * its own; tests-node/site.test.ts). sitemap.xml gives that day as / 's
+ * <lastmod>, which search reads only while it stays true. */
 test('the sitemap’s <lastmod> for / is the day the front page’s words last changed', async () => {
-  const sitemap = await readFile(resolve('web/public/sitemap.xml'), 'utf8');
-  assert.deepEqual(
-    Array.from(sitemap.matchAll(/<lastmod>([^<]+)<\/lastmod>/g), (m) => m[1]),
-    [FRONT_PAGE.lastmod]
+  const FRONT_PAGE = JSON.parse(await readFile(resolve('site/sitemap.json'), 'utf8'))['/'];
+  const sitemap = await readFile(join(out, 'sitemap.xml'), 'utf8');
+  assert.match(
+    sitemap,
+    new RegExp(
+      `<url>\\n    <loc>https://notes\\.yourversionnumber\\.com/</loc>\\n    <lastmod>${FRONT_PAGE.lastmod}</lastmod>`
+    )
   );
   assert.match(FRONT_PAGE.lastmod, /^\d{4}-\d{2}-\d{2}$/);
   const hash = createHash('sha256').update(said(front)).digest('hex');
   assert.equal(
     hash,
     FRONT_PAGE.said,
-    'The front page says something new. Set FRONT_PAGE.said to the hash above and FRONT_PAGE.lastmod, with the ' +
-      '<lastmod> in web/public/sitemap.xml, to the day (US Central) this change reaches the site.'
+    'The front page says something new. Set "said" for / in site/sitemap.json to the hash above and its ' +
+      '"lastmod" to the day (US Central) this change reaches the site.'
   );
 });

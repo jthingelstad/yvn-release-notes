@@ -814,9 +814,10 @@ and Here) and phase 4 (Upcoming and its reminders) are built.
   build. I am fine with these features being enabled automatically.").
   Settings shows API tokens to every account, with nothing to turn on, and
   `/api/tokens` answers any signed-in subscriber for their own tokens alone.
-  `features.ts` lists them (`/features/` and the guide) with `tour: false`:
-  the front page's tour and product updates leave them out until Jamie
-  writes about them.
+  `features.ts` lists them for the tour, `/features/` and the guide, with
+  no flag (Jamie, the same day: "I intend to open this up immediately so no
+  need to feature flag. Let's go fast."). A product update about them is
+  Jamie's to write.
 - **Test with the dev server's fictional account**, which prints a token at
   start. On the live site an agent tests only with its own test account,
   made with Jamie's go (2026-10-29), never a subscriber's.

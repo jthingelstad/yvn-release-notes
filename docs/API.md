@@ -758,6 +758,8 @@ recommendations"):
 1. **Who and when:** every subscriber, not only members. Tokens show only
    to the admin until the guide pages are live and Jamie has used one. No
    product update, front-page or tour mention until Jamie writes one.
+   (Overtaken the same day: tokens opened to everyone, and the tour lists
+   them, "I intend to open this up immediately so no need to feature flag.")
 2. **Reminders in the email:** the phone side is built first. A setting that
    takes them out of the email is a separate small PR.
 3. **via** shows on the web, in exports and in the activity log, not in the

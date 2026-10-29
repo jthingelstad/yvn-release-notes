@@ -1,6 +1,6 @@
 // The build line's commit.
 import { describe, expect, it } from 'vitest';
-import { BUILD, buildCommit } from './build.ts';
+import { BUILD, buildCommit, buildVersion } from './build.ts';
 
 describe('buildCommit', () => {
   it('shortens a commit and links its page', () => {
@@ -14,5 +14,14 @@ describe('buildCommit', () => {
   });
   it('is stamped with when it was built', () => {
     expect(Number.isNaN(Date.parse(BUILD.at))).toBe(false);
+  });
+});
+
+describe('buildVersion', () => {
+  it('counts from Your Version Number’s launch, by the build’s day in Chicago', () => {
+    expect(buildVersion('2026-05-01T05:00:00Z')).toBe('0.0.0');
+    // 9:41 PM in Chicago on Oct 28 is already Oct 29 in UTC.
+    expect(buildVersion('2026-10-29T02:41:54Z')).toBe('0.0.180');
+    expect(buildVersion('2027-05-01T17:00:00Z')).toBe('0.1.0');
   });
 });

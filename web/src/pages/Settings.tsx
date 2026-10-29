@@ -20,7 +20,7 @@ import { SendTimeSelect, ZipExport } from '../components/fields.tsx';
 import { PlacePicker } from '../components/placepicker.tsx';
 import { SettingsGroup } from '../components/settings-group.tsx';
 import { api } from '../lib/api.ts';
-import { BUILD, buildCommit } from '../lib/build.ts';
+import { BUILD, buildCommit, buildVersion } from '../lib/build.ts';
 import { clock, longDate, pauseLine, zoneName, zoneShortDate, zoneTime } from '../lib/format.ts';
 import { useMe, useSignedInAs } from '../lib/nav.ts';
 import { signedIn } from '../lib/storage.ts';
@@ -455,12 +455,16 @@ function Account({ p }: { p: Me }) {
 }
 
 // Which build of the app this is, for telling an installed app that hasn't
-// reloaded from the live one.
+// reloaded from the live one: its version (lib/build.ts) and its commit.
 function BuildLine({ tz }: { tz: string }) {
   const commit = buildCommit();
   return (
     <p className="meta settings-build" id="build">
-      Release Notes build{' '}
+      Release Notes{' '}
+      <span className="mono" title="Counted like Your Version Number’s own, from its launch on May 1, 2026">
+        {buildVersion()}
+      </span>
+      , build{' '}
       {commit ? (
         <a href={commit.url} className="mono">
           {commit.short}

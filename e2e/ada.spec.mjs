@@ -189,6 +189,36 @@ test('search lists every tag, finds words, marks them, and the box clears back t
   await expect(page.locator('#tag-title')).toHaveText(name);
 });
 
+test('the tag row types a hashtag in and out, and a pin puts its tag first', async ({ page }) => {
+  await page.goto('/today/');
+  const form = page.locator('#note-form'),
+    row = form.locator('.tag-picks'),
+    box = form.locator('textarea');
+  await box.fill('Coffee on the porch');
+  const walks = row.getByRole('button', { name: '#walks', exact: true });
+  await walks.click();
+  await expect(box).toHaveValue('Coffee on the porch #walks');
+  await expect(walks).toHaveAttribute('aria-pressed', 'true');
+  await walks.click();
+  await expect(box).toHaveValue('Coffee on the porch');
+  await expect(walks).toHaveAttribute('aria-pressed', 'false');
+
+  // Pinned from Search, first under the box; unpinned again after.
+  await page.goto('/search/');
+  const tags = page.locator('#every-tag-list');
+  await tags.getByRole('button', { name: 'Pin tags' }).click();
+  const vacation = tags.getByRole('button', { name: '#vacation', exact: true });
+  await vacation.click();
+  await expect(vacation).toHaveAttribute('aria-pressed', 'true');
+  await page.goto('/today/');
+  await expect(row.locator('.tags li').first()).toHaveText('#vacation');
+  await row.getByRole('button', { name: 'Pin tags' }).click();
+  await row.getByRole('button', { name: '#vacation', exact: true }).click();
+  await expect(row.getByRole('button', { name: '#vacation', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await page.goto('/activity/');
+  await expect(page.getByText('Pinned tags: none to #vacation.')).toBeVisible();
+});
+
 test('a recording made on the page plays back, then goes with the note', async ({ page }) => {
   await page.goto('/today/');
   const form = page.locator('#note-form');

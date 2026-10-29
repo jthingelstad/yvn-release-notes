@@ -9,6 +9,12 @@ Write a hashtag anywhere in a note, like #cabin or #maine-2016, and the note has
 
 A tag is letters and numbers, with hyphens to join words, and it needs at least one letter. Capitals and accents don't matter, so #Café and #cafe are one tag. A tag keeps up to 50 characters.
 
+## The tag row
+
+Under the box where you write a note, on Today or any other day, is a row of your tags: the ones you've pinned first, then the ones you've used most in the last 30 days. Tap one and its hashtag goes at the end of your note; tap it again and it comes out. **All tags** shows every other tag you've used.
+
+**Pin tags** turns the row into your pins: tap a tag to pin it, and again to unpin it, up to 12 tags. Pinned tags come first wherever you write, on any device. The tag list on **Search** has **Pin tags** too.
+
 ## A page for each tag
 
 A tag on a note, in the morning email or on a release's page opens that tag's page: every day with a note that has it, newest first.

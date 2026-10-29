@@ -4,8 +4,9 @@
 // Once any files are sent, the note shows in the list at once ("Saving…")
 // and the form empties; a write that fails puts it all back. "Where" is
 // optional (where.tsx), and with "Add where I am" on, Today's form adds
-// where the device is as a note is saved. What a saved note earned shows
-// under the form (unlock.tsx).
+// where the device is as a note is saved. Under the box, the tag row
+// (tag-row.tsx) types a hashtag in or takes it out. What a saved note earned
+// shows under the form (unlock.tsx).
 import { useQueryClient } from '@tanstack/react-query';
 import { useBlocker } from '@tanstack/react-router';
 import { useCallback, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -21,6 +22,7 @@ import { canRecord, recordClock, useRecorder } from './recorder.ts';
 import { Icon } from './icon.tsx';
 import { UnlockLine } from './unlock.tsx';
 import { NoteWhere } from './where.tsx';
+import { TagRow } from './tag-row.tsx';
 import { canLocate, kept, whereAmI } from '../lib/here.ts';
 import { spans, MAX_TAG } from '../../../packages/domain/tags.ts';
 
@@ -79,6 +81,14 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
     shouldBlockFn: () => rec.unsaved() && !window.confirm('Your recording isn’t saved yet. Leave without it?'),
     enableBeforeUnload: false
   });
+
+  // Typed, or a tag tapped in the row: the draft is kept as it changes.
+  const write = (next: string) => {
+    problem.clear();
+    setText(next);
+    if (next.trim()) store.set(key, next);
+    else store.drop(key);
+  };
 
   const showChosen = () => {
     const names = [...(pick.current?.files || [])].map((f) => f.name);
@@ -161,14 +171,10 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
             placeholder={placeholder}
             value={text}
             readOnly={held}
-            onChange={(e) => {
-              problem.clear();
-              setText(e.target.value);
-              if (e.target.value.trim()) store.set(key, e.target.value);
-              else store.drop(key);
-            }}
+            onChange={(e) => write(e.target.value)}
           />
         </label>
+        <TagRow text={text} onText={write} disabled={held} />
         <p className="hint chosen" role="status" hidden={!chosen}>
           {chosen}
         </p>

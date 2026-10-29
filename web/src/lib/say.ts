@@ -54,6 +54,7 @@ export const SAY: Record<string, Line> = {
   'photo-size': 'That photo isn’t the shape this page makes. Try again.',
   photo: 'There’s no profile photo yet.',
   'try-again': 'That didn’t save. Try again.',
+  pins: 'Pin up to 12 tags.',
   'token-fields': 'Name the token and tick what it may do.',
   'token-name': 'Name the token in up to 40 characters.',
   'token-name-taken': 'You already have a token with that name. Pick another.',

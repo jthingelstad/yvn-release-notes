@@ -77,6 +77,8 @@ export const ROUTES: [string, string][] = [
   ['POST', '/api/days/{date}/notes/{id}/media'],
   ['POST', '/api/uploads'],
   ['GET', '/api/tags'],
+  ['GET', '/api/tag-row'],
+  ['PUT', '/api/tag-row'],
   ['GET', '/api/tags/{tag}'],
   ['POST', '/api/search'],
   ['PUT', '/api/pause'],

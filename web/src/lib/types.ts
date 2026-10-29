@@ -193,6 +193,14 @@ export interface TaggedDays {
   days: Day[];
 }
 
+// GET /api/tag-row: the pinned tags, then the most used in the last 30
+// days (packages/backend/tag-row.ts).
+export interface TagRow {
+  pinned: string[];
+  recent: { tag: string; count: number; last_used: string }[];
+  window_days: number;
+}
+
 export interface SearchResult {
   today: string;
   tz: string;
@@ -272,6 +280,9 @@ export interface ReadsActivity extends ActivityHead {
   kind: 'reads';
   day: string;
   client: string;
+  // An API token's calls to /v1, named by the token.
+  via?: 'token';
+  token?: string;
   connection: string;
   calls: number;
   tools: Record<string, number>;
@@ -283,8 +294,10 @@ export interface ReadsActivity extends ActivityHead {
 // row's title is read now: null once the date is gone.
 export interface EventActivity extends ActivityHead {
   kind: string;
-  via?: 'web' | 'email' | 'assistant' | 'import' | 'weekly-thing' | 'admin';
+  via?: 'web' | 'email' | 'assistant' | 'import' | 'weekly-thing' | 'admin' | 'token';
   client?: string;
+  // An API token's name at the time (docs/API.md, Voice and via).
+  token?: string;
   day?: string;
   note?: string;
   version?: string;

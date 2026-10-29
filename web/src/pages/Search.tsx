@@ -1,4 +1,5 @@
-// Every tag, most used first, and the notes with some words. The words
+// Every tag, most used first, with the pins for the note box's tag row
+// (components/tag-row.tsx), and the notes with some words. The words
 // live in the address's # (#q=), so back and reload work and no server,
 // CloudFront's logs included, ever sees them.
 import { useQuery } from '@tanstack/react-query';
@@ -6,6 +7,8 @@ import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { AppLink, Bar, ErrorLine, Failed, Loading, useProblem, useTitle } from '../components/common.tsx';
 import { DayList } from '../components/days.tsx';
+import { Icon } from '../components/icon.tsx';
+import { PinButton, usePins } from '../components/tag-row.tsx';
 import { ApiError, load } from '../lib/api.ts';
 import { count } from '../lib/format.ts';
 import { useHashParam } from '../lib/nav.ts';
@@ -24,6 +27,9 @@ export function Search() {
     enabled: !!q
   });
   const tags = useQuery(tagsQuery);
+  const pins = usePins();
+  // "Pin tags" turns the list into pins for the note box's tag row.
+  const [pinning, setPinning] = useState(false);
   // Words the API refuses (too many) say so at the box.
   const refused = found.error instanceof ApiError && found.error.answer.status === 400 ? found.error.answer.data : null;
 
@@ -75,13 +81,39 @@ export function Search() {
               : 'No tags yet. Write a hashtag, like #cabin, in a note or a reply, and it shows here.')}
         </p>
         {tags.isError && <Failed />}
+        {!!tags.data?.tags.length && pins.ready && (
+          <p className="pin-lede">
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => {
+                pins.problem.clear();
+                setPinning(!pinning);
+              }}
+            >
+              <Icon name="pin" /> {pinning ? 'Done pinning' : 'Pin tags'}
+            </button>
+            <span className="hint">
+              {pinning
+                ? ' Pinned tags come first under the note box, at most 12.'
+                : pins.pinned.length
+                  ? ` ${pins.pinned.map((t) => '#' + t).join(' ')} first under the note box.`
+                  : ' Pinned tags come first under the note box.'}
+            </span>
+          </p>
+        )}
+        {pins.problem.line && <ErrorLine line={pins.problem.line} />}
         {tags.data && (
-          <ul className="tags">
+          <ul className={pinning ? 'tags tag-pins' : 'tags'}>
             {tags.data.tags.map((t) => (
               <li key={t.tag}>
-                <AppLink className="tag" href={`/tag/?t=${encodeURIComponent(t.tag)}`}>
-                  #{t.tag}
-                </AppLink>
+                {pinning ? (
+                  <PinButton tag={t.tag} pins={pins} />
+                ) : (
+                  <AppLink className="tag" href={`/tag/?t=${encodeURIComponent(t.tag)}`}>
+                    #{t.tag}
+                  </AppLink>
+                )}
                 <span className="hint"> {count(t.days, 'day', 'days')}</span>
               </li>
             ))}

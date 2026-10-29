@@ -170,24 +170,28 @@ const SETTINGS: Record<string, string> = {
   transcribe: 'Transcripts',
   describe: 'Photo descriptions',
   badges: 'Badges',
-  here: 'Add where I am'
+  here: 'Add where I am',
+  pinned_tags: 'Pinned tags'
 };
 const setting = (field: string, value: unknown) =>
   value === true
     ? 'on'
     : value === false
       ? 'off'
-      : value == null || value === ''
+      : value == null || value === '' || (Array.isArray(value) && !value.length)
         ? 'none'
-        : field === 'send_time'
-          ? clock(String(value))
-          : String(value);
+        : Array.isArray(value)
+          ? value.map((t) => '#' + String(t)).join(' ')
+          : field === 'send_time'
+            ? clock(String(value))
+            : String(value);
 const SCOPES: Record<string, string> = {
   'notes:read': 'read notes',
   'media:read': 'see photos and audio',
   'notes:write': 'add notes',
   'media:write': 'add files',
-  upcoming: 'Upcoming'
+  upcoming: 'Upcoming',
+  activity: 'read the activity log'
 };
 const scopes = (s: string | undefined) =>
   listed(
@@ -320,10 +324,20 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
     case 'calendar.removed':
       return ['Turned off your calendar link'];
     case 'connection.added':
+      if (e.token)
+        return [
+          `Made the API token ${e.token}`,
+          e.scopes ? `It may ${scopes(e.scopes)}.` : 'It reads your version and tags.'
+        ];
       return [`Connected ${e.client}`, `It may ${scopes(e.scopes)}.`];
     case 'connection.changed':
       return [`Changed what ${e.client} may do`, `It may ${scopes(e.to)}.`];
     case 'connection.removed':
+      if (e.token)
+        return [
+          `Revoked the API token ${e.token}`,
+          e.reason === 'client' ? `${e.client ?? e.token} signed itself out.` : undefined
+        ];
       return [
         `Disconnected ${e.client}`,
         e.reason === 'client'
@@ -357,6 +371,13 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
 }
 
 const VIA: Record<string, string> = { web: 'on the web', email: 'by email', import: 'imported', admin: 'by Jamie' };
+// The line under a row naming what it came through: an API token by its name
+// (docs/API.md, Voice and via), an assistant by its client, the rest by VIA.
+export function channel(e: { via?: string; client?: string; token?: string }): string | null {
+  if (e.via === 'token') return e.token ? `via ${e.token}` : 'through the API';
+  if (e.via === 'assistant') return e.client ?? null;
+  return (e.via && VIA[e.via]) || null;
+}
 const FEEDBACK_WORDS: Record<string, string> = {
   bug: 'a problem',
   idea: 'an idea',
@@ -366,7 +387,7 @@ const FEEDBACK_WORDS: Record<string, string> = {
 
 function EventRow({ e, l }: { e: EventActivity; l: ActivityData }) {
   const [what, more] = said(e, l),
-    via = e.via === 'assistant' ? e.client : e.via ? VIA[e.via] : null;
+    via = channel(e);
   return (
     <li className={`activity-row event ${e.kind.split('.')[0]}`}>
       <Line e={e} l={l} icon={GLYPHS[e.kind.split('.')[0]] || 'activity'} what={what} via={via}>
@@ -379,7 +400,17 @@ function EventRow({ e, l }: { e: EventActivity; l: ActivityData }) {
 function ReadsRow({ e, l }: { e: ReadsActivity; l: ActivityData }) {
   return (
     <li className="activity-row reads">
-      <Line e={e} l={l} icon="assistant" what={`Read your notes ${count(e.calls, 'time', 'times')}`} via={e.client}>
+      <Line
+        e={e}
+        l={l}
+        icon={e.via === 'token' ? 'api' : 'assistant'}
+        what={
+          e.via === 'token'
+            ? `Used the API ${count(e.calls, 'time', 'times')}`
+            : `Read your notes ${count(e.calls, 'time', 'times')}`
+        }
+        via={e.via === 'token' ? channel(e) : e.client}
+      >
         {!!e.errors && <p className="hint">{count(e.errors, 'request was', 'requests were')} turned down.</p>}
       </Line>
     </li>

@@ -5,7 +5,7 @@
  * named) and weather, the Map page's base map,
  * Upcoming and the calendar feed, pauses, exports (the zip invoke, its link and
  * a replaced build's delete), MCP connections, the admin scan, product
- * updates, API tokens, feedback with a screenshot and its answer, and both account-deletion cascades (tests-node/infra/grants.ts). */
+ * updates, API tokens, the tag row's pins, feedback with a screenshot and its answer, and both account-deletion cascades (tests-node/infra/grants.ts). */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { simpleParser } from 'mailparser';
@@ -246,6 +246,8 @@ test('the web role grants every request each route and the OAuth endpoints make'
     '/api/map/sprites/Dark/sprites@2x.png'
   ])
     await call('GET', path);
+  await call('GET', '/api/tag-row');
+  await call('PUT', '/api/tag-row', { pinned: ['lake'] });
   await call('POST', '/api/search', { q: 'lake' });
   await call('POST', '/api/badges/seen', { keys: ['hello'] });
   await call('POST', '/api/eggs', { egg: 'rtfm' });

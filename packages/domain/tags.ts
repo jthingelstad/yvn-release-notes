@@ -76,3 +76,23 @@ export function withoutClosing(text: string): string {
   }
   return pythonRstrip(lines.join('\n'));
 }
+/** The tag row's tap (docs/API.md, Tags): `#tag` added at the end, on the
+ * same line, unless the text has it; or, when it does, every `#tag` for it
+ * taken out with the space beside it. */
+export function addingTag(text: string, tag: string): string {
+  if (!valid(tag) || spans(text).some(([, , t]) => t === tag)) return text;
+  const kept = pythonRstrip(text || '');
+  return kept ? `${kept} #${tag}` : `#${tag} `;
+}
+export function removingTag(text: string, tag: string): string {
+  const chars = Array.from(text || '');
+  for (const [start, end, t] of spans(text).toReversed()) {
+    if (t !== tag) continue;
+    const before = start > 0 && chars[start - 1] === ' ',
+      after = !before && chars[end] === ' ';
+    chars.splice(before ? start - 1 : start, end - start + (before || after ? 1 : 0));
+  }
+  return chars.join('');
+}
+export const togglingTag = (text: string, tag: string): string =>
+  spans(text).some(([, , t]) => t === tag) ? removingTag(text, tag) : addingTag(text, tag);

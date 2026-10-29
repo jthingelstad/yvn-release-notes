@@ -566,6 +566,11 @@ or new CSP exception.
   was picked over a white strip under the dark page. The page draws under
   that bar (`viewport-fit=cover`) and pads its foot with the safe-area
   insets.
+- **Build line**: the foot of Settings names the build (`lib/build.ts`):
+  the commit, linked to GitHub, and when it was made, in the subscriber's
+  zone. `vite.config.ts` stamps it in; `scripts/build-release.sh` passes
+  the release's commit, since it builds from a git archive. It tells an
+  installed app that hasn't reloaded from the live one.
 - **Page counts** (`lib/pagecount.ts`) go to Tinylytics on each page shown,
   without the embed script: the page's address without its query string,
   and on a visit's first page the referring site's origin only. No

@@ -200,6 +200,20 @@ test('badges baseline counts only, writes only with --write, repeats harmlessly 
   store.seed({ ...p, mcp_deleting: true });
   assert.equal((await baseline(store, false, now)).skipped, 1);
 });
+test('badges baseline --only marks just the named badges seen', async () => {
+  const store = new FakeStore([p]);
+  await store.putNote('u', '2026-10-10', 'w-a', {
+    text: 'A fictional entry',
+    source: 'web',
+    written_at: '2026-10-10T12:00:00Z'
+  });
+  store.memory.calls.length = 0;
+  const dry = await baseline(store, false, now, new Set(['web', 'patches']));
+  assert.deepEqual([dry.earned, dry.to_add, dry.written], [1, 1, 0]);
+  assert.equal(hasWrites(store), false);
+  assert.equal((await baseline(store, true, now, new Set(['web', 'patches']))).written, 1);
+  assert.deepEqual(await store.seenBadges('u'), new Set(['web']));
+});
 test('media backfill dry run leaves raw untouched; deletion guard cleans staged files only', async () => {
   const store = new FakeStore([p, { ...note(), raw_key: 'raw/m1', attachments: [{ filename: 'voice.wav' }] }]),
     objects = new FakeObjects();

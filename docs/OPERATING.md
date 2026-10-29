@@ -94,10 +94,13 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
   count them; the real run drops `dry_run`. It hands itself on near its
   time limit and skips any photo that has one.
 - The badges baseline (once, at the Badges launch):
-  `node --import tsx tools/badges-baseline.ts` counts what every subscriber
+  `node --import tsx tools/badges-baseline.ts [--only id,id]` counts what every subscriber
   has already earned and is not yet `seen`; `--write` adds it, so nobody's
-  first email with the badge line lists everything at once. Counts only,
-  never a name or address.
+  first email with the badge line lists everything at once. `--only`
+  limits it to the named badges (a track's id covers its tiers), for a
+  later badge that should stay quiet for what was earned before it
+  shipped, as Status code, Found and I'm a teapot were on 2026-10-29.
+  Counts only, never a name or address.
 - Feedback (docs/WEB-APP.md, Feedback): `node --import tsx tools/feedback.ts list [--all]`
   prints the waiting items (every item with `--all`), newest first, by
   account id, never address; `show OWNER ID [--screenshots DIR]` prints one

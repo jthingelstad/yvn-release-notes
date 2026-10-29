@@ -12,10 +12,7 @@ describe('subscribeHref', () => {
   it('is the webcal: address where Calendar takes it', () => {
     expect(subscribeHref(FEED, IPHONE)).toBe('webcal://notes.example.com/api/calendar/abc123.ics');
   });
-  it('goes to Google Calendar on Android, which has no app for webcal:', () => {
-    expect(subscribeHref(FEED, PIXEL)).toBe(
-      'https://calendar.google.com/calendar/render?cid=' +
-        encodeURIComponent('webcal://notes.example.com/api/calendar/abc123.ics')
-    );
+  it('is none on Android, where no tap can subscribe', () => {
+    expect(subscribeHref(FEED, PIXEL)).toBeNull();
   });
 });

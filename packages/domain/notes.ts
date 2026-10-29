@@ -69,16 +69,22 @@ export function mapUrl(place: PlaceRecord): string | null {
 }
 
 /** Input order is writing order; storage readers sort by writtenAt, not id. */
-export function combine(notes: readonly NoteRecord[], options: { label?: (name: string) => string } = {}): string {
+/** `via` marks a token's note with its name, as the exports do; the morning
+ * email leaves it off (docs/API.md, Voice and via). */
+export function combine(
+  notes: readonly NoteRecord[],
+  options: { label?: (name: string) => string; via?: boolean } = {}
+): string {
   const parts: string[] = [],
-    seen = new Set<string>();
+    seen = new Set<string>(),
+    label = (name: string) => (options.label ? options.label(name) : name);
   for (const note of notes) {
     let text = pythonTrim(note.text || '');
     if (note.author === 'assistant') {
-      const client = note.client || 'an agent',
-        name = options.label ? options.label(client) : client;
+      const name = label(note.client || 'an agent');
       text = text ? `Added by ${name}:\n${text}` : `Added by ${name}.`;
-    }
+    } else if (options.via && text && note.source === 'api' && typeof note.token === 'string' && note.token)
+      text = `${text}\n(via ${label(note.token)})`;
     if (text && !seen.has(text)) {
       parts.push(text);
       seen.add(text);

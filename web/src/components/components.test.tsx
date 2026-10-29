@@ -1,6 +1,7 @@
 // What the shared pieces draw.
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ownMorning, type Morning } from '../lib/sample.ts';
 import type { Note } from '../lib/types.ts';
 import { MEMBERS_URL, WEEKLY_THING_URL } from '../lib/weekly-thing.ts';
 import { LineText, placeOf, splitHref } from './common.tsx';
@@ -177,5 +178,48 @@ describe('the Weekly Thing', () => {
     const hrefs = [...container.querySelectorAll('#tour-free ~ p a')].map((a) => a.getAttribute('href'));
     expect(hrefs).toEqual([WEEKLY_THING_URL, MEMBERS_URL]);
     expect(container.textContent).toContain('Free with the Weekly Thing.');
+  });
+});
+
+describe('the tour’s sample email', () => {
+  const text = (morning?: Morning) => {
+    const { container } = render(<Tour hidden={false} morning={morning} />);
+    const say = (id: string) => container.querySelector(`#${id}`)!.textContent!.replace(/\s+/g, ' ').trim();
+    return { say, all: container.querySelector('#sample')!.textContent! };
+  };
+
+  it('is a made-up morning at 5.2.113 before a birthday is typed', () => {
+    const { say, all } = text();
+    expect(say('sample-cap')).toBe('A morning’s email');
+    expect(say('sample-v')).toBe('5.2.113');
+    expect(say('sample-day')).toBe('Tuesday, October 27');
+    expect(say('sample-next')).toBe('5.3.0 ships in 252 days.');
+    expect(all).toContain('5.1.113 First snow.');
+    expect(all).toContain('5.0.113 Started the new job.');
+    expect(say('sample-note')).toBe('A made-up morning. Yours fills in from your own notes.');
+  });
+
+  it('is drawn with the visitor’s own number once a birthday is typed', () => {
+    const sample = { version: '4.5.137', age: '45', next: { version: '4.6.0', date: '2027-06-14', days: 228 } };
+    const { say, all } = text(ownMorning('1981-06-14', sample)!);
+    expect(say('sample-cap')).toBe('Your morning’s email');
+    expect(say('sample-v')).toBe('4.5.137');
+    expect(say('sample-day')).toBe('Thursday, October 29');
+    expect(say('sample-next')).toBe('4.6.0 ships in 228 days.');
+    expect(all).toContain('becomes the release notes for 4.5.137.');
+    expect(all).toContain('Reply today and 4.5.137 makes it 13.');
+    expect(all).toContain('4.4.137 First snow.');
+    expect(all).toContain('4.3.137 Started the new job.');
+    expect(all).not.toContain('5.2.113');
+    expect(say('sample-note')).toMatch(
+      /^Your number, your day and your own patches\. The notes, the weather and the streak are made up/
+    );
+  });
+
+  it('leaves out On this day before a second release', () => {
+    const sample = { version: '0.0.0', age: '0', next: { version: '0.1.0', date: '2027-10-29', days: 365 } };
+    const { all } = text(ownMorning('2026-10-29', sample)!);
+    expect(all).not.toContain('On this day');
+    expect(all).toContain('0.1.0 ships in 365 days.');
   });
 });

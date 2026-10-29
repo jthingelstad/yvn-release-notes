@@ -1150,6 +1150,10 @@ main[tabindex='-1']:focus {
   margin-right: 6px;
   color: var(--blue);
 }
+.sample .sample-next .mono {
+  color: var(--ink);
+  font-weight: 700;
+}
 .sample-tag {
   color: var(--blue);
   font-weight: 600;

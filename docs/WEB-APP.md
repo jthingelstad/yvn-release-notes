@@ -28,11 +28,33 @@ Privacy (Public pages, below).
    sentence ("Not right?" opens the fields) and saves it with the city and
    time. "Sign in" (`/#sign-in`) is the email alone. We send a
    link and a six-digit code. The code covers the case where you asked on
-   the laptop and read the mail on the phone. Under the asking, the tour
-   (`components/tour.tsx`) says what Release Notes does, with a made-up
-   morning's email, and that it is free with the Weekly Thing. A new
-   address must get the Weekly Thing (AGENTS.md, Subscribers and
-   accounts): one that doesn't sees "Subscribe <address> to the Weekly
+   the laptop and read the mail on the phone. The first screen says, in
+   one line under the question, that it is free with a Weekly Thing
+   subscription and that we'll offer to add anyone without one. Under the
+   asking, the tour (`components/tour.tsx`) says what Release Notes does,
+   with a morning's email, and that it is free with the Weekly Thing.
+   That sample is a made-up 5.2.113 until a birthday is typed (and in
+   `front.html` always); once the number shows, the browser draws it again
+   from the same `/api/sample` answer with the visitor's own number, their
+   day, the same patch in their two newest earlier releases that reached
+   it (On this day) and when their next release ships (`lib/sample.ts`,
+   the domain's arithmetic). No other request is made and nothing more is
+   kept; the notes, weather and streak stay made up, and the sample says
+   so. "Change birthday" goes back to the made-up one. **A birthday in
+   the link:** yourversionnumber.com links the front page as
+   `/#birthday=YYYY-MM-DD` (Jamie's call 2, 2026-10-29), and the page
+   reads it as it opens, unless a code is waiting in that tab: the fields
+   are filled in, the number and the sample are shown and the birthday
+   waits as a typed one does. It is strict (that one field, a real
+   calendar day, 29 February only in a leap year, from 1900-01-01 to the
+   visitor's own today) and anything else is dropped without a word. Once
+   read, used or not, it is cleared from the address bar with
+   `history.replaceState`, so a copied address doesn't carry it (the
+   waiting birthday still brings the number back on a reload). A fragment
+   never reaches a server, and the page count sends the path alone.
+   Someone signed in goes on to Today as before. A new address must get
+   the Weekly Thing (AGENTS.md, Subscribers and accounts): one that
+   doesn't sees "Subscribe <address> to the Weekly
    Thing" instead of the form, then confirms from Buttondown's email and
    taps "Check again"; "Use that one" signs out, back to the front page,
    the birthday still waiting. Then it confirms or picks:
@@ -406,7 +428,8 @@ notes.yourversionnumber.com
   receives only the headers it reads (Origin, Content-Type, Accept, the
   viewer address) and only that cookie.
 - **Pages**: `/` (the birthday, the number it makes from `/api/sample`,
-  then the email; `/#sign-in` the email alone), `/signin/` (the link lands
+  then the email; `/#sign-in` the email alone; `/#birthday=YYYY-MM-DD` the
+  number for that birthday, as if typed), `/signin/` (the link lands
   here, token in the fragment), `/setup/` (a new address's three
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/badges/`, `/map/`, `/search/`,

@@ -8,12 +8,12 @@
 // membership is never called a price.
 import type { ReactNode } from 'react';
 import { Digits } from './common.tsx';
+import { emailDate, MADE_UP, type Morning } from '../lib/sample.ts';
 import { MEMBERS_URL, WEEKLY_THING_URL } from '../lib/weekly-thing.ts';
 
-// The sample's number. Made up, like everything in the sample.
-const V = '5.2.113';
-
-export function Tour({ hidden }: { hidden: boolean }) {
+// `morning` is the visitor's own, once they have typed a birthday
+// (lib/sample.ts); until then the sample is made up.
+export function Tour({ hidden, morning = MADE_UP }: { hidden: boolean; morning?: Morning }) {
   return (
     <section id="tour" className="tour" aria-labelledby="tour-head" hidden={hidden}>
       <p className="kicker">Release Notes</p>
@@ -36,7 +36,7 @@ export function Tour({ hidden }: { hidden: boolean }) {
         </Step>
       </ol>
 
-      <SampleEmail />
+      <SampleEmail m={morning} />
 
       <h2 className="big tour-head">Everything a journal needs.</h2>
       <Group head="Write it however it comes">
@@ -137,23 +137,33 @@ function Feature({ head, children }: { head: string; children: ReactNode }) {
 }
 
 // A morning's email as the email lays it out (packages/mail/compose.ts),
-// with made-up notes.
-function SampleEmail() {
+// with made-up notes. With the visitor's own morning, the number, the day,
+// the countdown and On this day's patches are theirs.
+const PAST_NOTES = [
+  'First snow. The dog refused to go out.',
+  'Started the new job. Everyone remembered my name but me.'
+];
+
+function SampleEmail({ m }: { m: Morning }) {
+  const V = m.version;
   return (
-    <figure className="sample" aria-labelledby="sample-cap">
+    <figure className="sample" id="sample" aria-labelledby="sample-cap">
       <figcaption className="kicker" id="sample-cap">
-        A morning’s email
+        {m.own ? 'Your morning’s email' : 'A morning’s email'}
       </figcaption>
       <p className="sample-subject">
-        <span className="vh">Subject: </span>You’re {V} today
+        <span className="vh">Subject: </span>You’re <span id="sample-v">{V}</span> today
       </p>
       <p className="sample-meta">
-        <strong>Release Notes</strong> · Tuesday, October 27
+        <strong>Release Notes</strong> · <span id="sample-day">{emailDate(m.day)}</span>
         <br />
         Minneapolis today: partly cloudy, high 61°, low 44°.
       </p>
       <p className="vnum big" aria-hidden="true">
         <Digits v={V} />
+      </p>
+      <p className="sample-quiet sample-next" id="sample-next">
+        <span className="mono">{m.next}</span> ships {m.ships}.
       </p>
       <p>
         Reply any time today: what happened, what you made, who you saw. Whatever you send back becomes the release
@@ -165,14 +175,21 @@ function SampleEmail() {
         Finally fixed the porch light. Pizza on the back steps after, until it got too cold.{' '}
         <span className="sample-tag">#home</span>
       </p>
-      <h3>On this day</h3>
-      <p>
-        <span className="mono">5.1.113</span> First snow. The dog refused to go out.
+      {m.past.length > 0 && (
+        <>
+          <h3>On this day</h3>
+          {m.past.map((v, i) => (
+            <p key={v}>
+              <span className="mono">{v}</span> {PAST_NOTES[i]}
+            </p>
+          ))}
+        </>
+      )}
+      <p className="hint sample-note" id="sample-note">
+        {m.own
+          ? 'Your number, your day and your own patches. The notes, the weather and the streak are made up: yours fill in from what you write.'
+          : 'A made-up morning. Yours fills in from your own notes.'}
       </p>
-      <p>
-        <span className="mono">5.0.113</span> Started the new job. Everyone remembered my name but me.
-      </p>
-      <p className="hint sample-note">A made-up morning. Yours fills in from your own notes.</p>
     </figure>
   );
 }

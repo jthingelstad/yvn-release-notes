@@ -2,7 +2,13 @@
 // then asks for an email. The birthday waits in this browser
 // (pendingBirthday) and setup saves it after sign-in. "Sign in" skips
 // straight to the email for anyone returning. Under the asking, the tour
-// says what Release Notes is to anyone who hasn't signed up.
+// says what Release Notes is to anyone who hasn't signed up, and once the
+// number shows, its sample email is drawn with that number (lib/sample.ts).
+// A link from yourversionnumber.com carries the birthday as
+// /#birthday=YYYY-MM-DD: read as the page opens, as if it had been typed,
+// then cleared from the address bar (history.replaceState) so a reload or
+// a shared address doesn't carry it. A malformed or future one is dropped
+// without a word.
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { BirthdayFields, emptyMdy, mdyOf, mdyValue, type Mdy } from '../components/fields.tsx';
@@ -22,8 +28,11 @@ import { api } from '../lib/api.ts';
 import { browserZone, longDate } from '../lib/format.ts';
 import { useGo, useSignedInAs } from '../lib/nav.ts';
 import { home, pendingBirthday, signedIn, store } from '../lib/storage.ts';
+import { birthdayFromHash, carriesBirthday, ownMorning, type Morning } from '../lib/sample.ts';
 import { useTurnstile } from '../lib/turnstile.ts';
 import type { Sample } from '../lib/types.ts';
+import { WEEKLY_THING_URL } from '../lib/weekly-thing.ts';
+import { localDay } from '../../../packages/domain/dates.ts';
 
 // One of ask (the birthday), number (it explained, then the email), signin
 // (the email alone, for anyone returning) or check (the code). Each part of
@@ -71,6 +80,7 @@ export function Home({ prerender = false }: { prerender?: boolean }) {
   const [opening, setOpening] = useState(false);
   const [birthday, setBirthday] = useState<Mdy>(emptyMdy);
   const [sample, setSample] = useState<Sample | null>(null);
+  const [morning, setMorning] = useState<Morning | null>(null);
   const [sentTo, setSentTo] = useState('');
   const [resent, setResent] = useState('');
   const [birthdayBusy, runBirthday] = useBusy();
@@ -106,9 +116,23 @@ export function Home({ prerender = false }: { prerender?: boolean }) {
     focusLater(() => code.current);
   };
 
-  const explain = (s: Sample) => {
+  const explain = (s: Sample, b: string) => {
     setSample(s);
+    setMorning(ownMorning(b, s));
     now.current.explained = true;
+  };
+
+  // The number for a birthday, shown as if it had just been typed; false
+  // if the API says no, or the page has moved on meanwhile.
+  const showNumber = async (b: string) => {
+    const mine = now.current.view;
+    const r = await sampleFor(b);
+    // A signed-in visitor may have gone on to Today meanwhile.
+    if (mine !== now.current.view || !r.ok || location.pathname !== '/') return false;
+    setBirthday(mdyOf(b));
+    explain(r.data, b);
+    show('number');
+    return true;
   };
 
   // Where this visit starts: the code if an email just went from this tab,
@@ -123,16 +147,20 @@ export function Home({ prerender = false }: { prerender?: boolean }) {
       return showCheck(sent);
     }
     if (location.hash === '#sign-in') return show('signin');
+    if (carriesBirthday(location.hash)) {
+      const linked = birthdayFromHash(location.hash, localDay(Date.now() / 1000, browserZone()));
+      toHash('');
+      if (linked) {
+        const mine = now.current.view;
+        if (await showNumber(linked)) return pendingBirthday.set(linked);
+        if (mine !== now.current.view) return;
+      }
+    }
     const b = pendingBirthday.get();
     if (b) {
       const mine = now.current.view;
-      const r = await sampleFor(b);
+      if (await showNumber(b)) return;
       if (mine !== now.current.view) return;
-      if (r.ok) {
-        setBirthday(mdyOf(b));
-        explain(r.data);
-        return show('number');
-      }
     }
     show('ask');
   };
@@ -184,7 +212,7 @@ export function Home({ prerender = false }: { prerender?: boolean }) {
       if (mine !== now.current.view) return;
       if (!r.ok) return birthdayProblem.show(r.data, month.current);
       pendingBirthday.set(b);
-      explain(r.data);
+      explain(r.data, b);
       show('number');
       focusLater(() => youAre.current);
     });
@@ -286,6 +314,9 @@ export function Home({ prerender = false }: { prerender?: boolean }) {
         </p>
         <h1>What’s your version number?</h1>
         <p className="lede">Your age, written like software: decades, years, and the days since your last birthday.</p>
+        <p className="sub" id="gate-line">
+          Free with a <a href={WEEKLY_THING_URL}>Weekly Thing</a> subscription. No subscription? We’ll offer to add you.
+        </p>
 
         <form id="birthday-form" noValidate onSubmit={onBirthday} onInput={birthdayProblem.clear}>
           <BirthdayFields value={birthday} onChange={setBirthday} firstRef={month} />
@@ -490,7 +521,7 @@ export function Home({ prerender = false }: { prerender?: boolean }) {
           again", and outside the forms. Shown only while Cloudflare asks. */}
       <div className="turnstile" id="signin-check" ref={slotRef} />
 
-      <Tour hidden={!shows('ask', 'number')} />
+      <Tour hidden={!shows('ask', 'number')} morning={(shows('number') && morning) || undefined} />
 
       <p className="foot" id="home-foot" hidden={!shows('ask', 'number', 'signin')}>
         A hobby by <a href="https://www.thingelstad.com/">Jamie Thingelstad</a>, free with the{' '}

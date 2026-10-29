@@ -1,6 +1,9 @@
 // Which build of the web app this is, stamped in by vite.config.ts: the
 // commit it was built from and when. Settings shows it at its foot, so an
 // installed app that hasn't reloaded can be told from the live one.
+import { localDay } from '../../../packages/domain/dates.ts';
+import { computeVersion } from '../../../packages/domain/version.ts';
+
 declare const __BUILD__: { commit: string; at: string };
 
 export const BUILD = __BUILD__;
@@ -10,4 +13,16 @@ const REPO = 'https://github.com/jthingelstad/yvn-release-notes';
 /** The commit's short form and its page, or null for a build with none. */
 export function buildCommit(commit = BUILD.commit): { short: string; url: string } | null {
   return /^[0-9a-f]{40}$/.test(commit) ? { short: commit.slice(0, 7), url: `${REPO}/commit/${commit}` } : null;
+}
+
+// The version a build carries is Your Version Number's own (Jamie,
+// 2026-10-28: "the same version number math based on the launch day of
+// that website"): yourversionnumber.com shipped on 1 May 2026, and a build
+// is numbered by the day it was made, in Jamie's zone, so it reads the same
+// to everyone.
+export const LAUNCH = '2026-05-01';
+const HOME_ZONE = 'America/Chicago';
+
+export function buildVersion(at = BUILD.at): string {
+  return computeVersion(LAUNCH, localDay(Date.parse(at) / 1000, HOME_ZONE)).toString();
 }

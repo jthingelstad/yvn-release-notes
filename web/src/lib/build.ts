@@ -15,12 +15,13 @@ export function buildCommit(commit = BUILD.commit): { short: string; url: string
   return /^[0-9a-f]{40}$/.test(commit) ? { short: commit.slice(0, 7), url: `${REPO}/commit/${commit}` } : null;
 }
 
-// The version a build carries is Your Version Number's own (Jamie,
-// 2026-10-28: "the same version number math based on the launch day of
-// that website"): yourversionnumber.com shipped on 1 May 2026, and a build
-// is numbered by the day it was made, in Jamie's zone, so it reads the same
-// to everyone.
-export const LAUNCH = '2026-05-01';
+// The version a build carries counts from Release Notes' own launch, by
+// Your Version Number's arithmetic (Jamie, 2026-10-28: "Should release
+// notes get its own start date based on when the app was launched? I think
+// we should."). It launched on 7 October 2026, the repository's first
+// commit and the evening the first emails went. A build is numbered by the
+// day it was made, in Jamie's zone, so it reads the same to everyone.
+export const LAUNCH = '2026-10-07';
 const HOME_ZONE = 'America/Chicago';
 
 export function buildVersion(at = BUILD.at): string {

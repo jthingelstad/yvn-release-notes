@@ -461,7 +461,7 @@ function BuildLine({ tz }: { tz: string }) {
   return (
     <p className="meta settings-build" id="build">
       Release Notes{' '}
-      <span className="mono" title="Counted like Your Version Number’s own, from its launch on May 1, 2026">
+      <span className="mono" title="Release Notes’ own version number, counted from its launch on October 7, 2026">
         {buildVersion()}
       </span>
       , build{' '}

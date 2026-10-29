@@ -19,9 +19,9 @@ Each date can have one tag, like #family, to group it with others. You can keep 
 
 ## Reminders
 
-Reminders come only in the morning email, up to 3 at a time, with a link to the rest. Each date chooses how many days ahead to remind you: unless you change it, a week before (two weeks for a trip), the day before and on the day. A date can have up to six reminders. Turn **Include in my daily email** off and a date stays in Upcoming without a reminder.
+Reminders come in the morning email, up to 3 at a time, with a link to the rest. An app you give a token that can keep your Upcoming dates can show the same reminders on your phone, once you turn them on there (see [the API](/guide/api/)). Each date chooses how many days ahead to remind you: unless you change it, a week before (two weeks for a trip), the day before and on the day. A date can have up to six reminders. Turn **Include in my daily email** off and a date stays in Upcoming without a reminder.
 
-There's no other message, and nothing is sent to catch up on a reminder that was missed while your emails were paused.
+Release Notes itself sends nothing else, and nothing is sent to catch up on a reminder that was missed while your emails were paused.
 
 ## Finding a date
 
@@ -37,7 +37,7 @@ A tagged date has a button to write a note with its hashtag: it opens Today with
 
 ## In your calendar
 
-Under **In your calendar**, **Make a calendar link** gives you a private address to subscribe to from your calendar app. It keeps your dates current there, with each birthday's version number. It sets no alarms: reminders still come only in the morning email.
+Under **In your calendar**, **Make a calendar link** gives you a private address to subscribe to from your calendar app. It keeps your dates current there, with each birthday's version number. It sets no alarms: reminders come in the morning email, and in an app if you turn them on there.
 
 Anyone with the link can read your dates, so keep it to yourself. **New link** replaces it, and calendars using the old one stop updating; **Remove link** stops it altogether.
 

@@ -9,7 +9,7 @@ import {
   subscribeWeeklyThing
 } from '../../packages/backend/accounts.ts';
 import { profileView } from '../../packages/backend/views.ts';
-import { admin, isAdmin } from '../../packages/backend/product-updates.ts';
+import { isAdmin } from '../../packages/backend/product-updates.ts';
 import { Tokens } from '../../packages/backend/tokens.ts';
 import { pinnedTags, pinsOf, tagRow } from '../../packages/backend/tag-row.ts';
 import * as auth from '../../packages/backend/auth.ts';
@@ -316,10 +316,9 @@ export async function accountRoutes(
     if (args[0]) return json(await oauth.disconnect(uid, args[0], query.get('write_only') === 'true'));
     return json(await oauth.connections(uid));
   }
-  // API tokens (docs/API.md), the administrator's alone until they open to
-  // every subscriber (Jamie's calls, 1).
+  // API tokens (docs/API.md): every subscriber's own, in their session.
   if (pattern.startsWith('/api/tokens')) {
-    const { uid } = await admin(service),
+    const { uid } = await service.account(),
       tokens = new Tokens({ store, origin: ctx.origin, now: ctx.now, log: (f) => service.log(f) });
     if (args[0]) return json(await tokens.revoke(uid, args[0]));
     if (method === 'POST') return json(await tokens.make(uid, await body(service.request)), 201);

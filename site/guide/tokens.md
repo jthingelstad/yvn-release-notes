@@ -7,8 +7,6 @@ description: Keys that let an app or a script add notes as you, what each one ma
 
 A token is a key you make for one app or script, so it can add notes as you: a line typed in a terminal, a shortcut on your phone, a script that writes a note when a job is done. It works only with [the API](/guide/api/). It can't sign in or change your settings, and the only notes it can read are the ones it added, as they stand now: change one on the web and the token reads your change. If you allow it, a token can add photos, recordings and PDFs to the notes it adds, and keep your [Upcoming](/guide/upcoming/) dates, so an app can show them and remind you of them.
 
-For now only Jamie sees API tokens in Settings, to try them first. They open to every account after that.
-
 ## Making one
 
 Signed in, open Settings, then **API tokens** and **Make a token**:

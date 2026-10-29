@@ -47,6 +47,12 @@ export const FEATURES: FeatureGroup[] = [
         head: 'Your assistant, if you like.',
         line: 'Connect Claude or ChatGPT to read your notes, and to add to them only if you allow it.',
         guide: '/guide/agents/'
+      },
+      {
+        head: 'Your own apps and scripts.',
+        line: 'Make an API token, and a script, a shortcut or an app can add notes as you, with photos and where you were.',
+        guide: '/guide/tokens/',
+        tour: false
       }
     ]
   },

@@ -27,7 +27,7 @@ Now and then Jamie adds a short note about what's new in Release Notes. It has i
 
 ## Upcoming
 
-When a birthday, anniversary, trip or event you saved in **Upcoming** is near, the email reminds you, up to 3 at a time, with a link to the rest. Reminders come only here, in the morning email.
+When a birthday, anniversary, trip or event you saved in **Upcoming** is near, the email reminds you, up to 3 at a time, with a link to the rest. An app you've turned reminders on in can show them too (see [Upcoming](/guide/upcoming/)).
 
 ## Your birthday
 

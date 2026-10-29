@@ -9,7 +9,7 @@ Away, or just need a break? In **You**, then **Settings**, **Pause the emails** 
 
 Paused days don't break your streak. You can still write on them, on the web, by mailing [your own address](/guide/address/) or through an agent, and a day you write on counts as usual.
 
-Upcoming reminders come only in the morning email, so a pause skips them too. To end a pause early, **Start them again now** in Settings, or **Start the emails again now** on the pause page.
+A pause skips the Upcoming reminders in the morning email too. An app you've turned reminders on in still shows them while the emails are paused or stopped. To end a pause early, **Start them again now** in Settings, or **Start the emails again now** on the pause page.
 
 ## Stopping
 

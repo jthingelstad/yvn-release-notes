@@ -1,6 +1,6 @@
-// API tokens (docs/API.md, Tokens): the administrator's alone until they
-// open to every subscriber. A token is shown once, as it is made; after that
-// Settings knows only its name, scopes and dates.
+// API tokens (docs/API.md, Tokens), every subscriber's own. A token is shown
+// once, as it is made; after that Settings knows only its name, scopes and
+// dates.
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { SettingsGroup } from './settings-group.tsx';
@@ -87,7 +87,8 @@ export function ApiTokens() {
       }
     >
       <p className="hint">
-        A token lets an app or a script add notes as you, through the API at /v1. Only you see this for now.
+        A token lets an app or a script add notes as you, through the API at /v1. The <a href="/guide/tokens/">guide</a>{' '}
+        says how.
       </p>
       {list.isPending && <Loading />}
       {list.isError && <Failed />}

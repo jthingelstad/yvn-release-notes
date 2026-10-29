@@ -13,7 +13,8 @@ follow; where a step needs Jamie's go, that rule is there too.
   `ReleaseNotesGitHubDeploy` through OIDC: the code uploaded, the build's
   new web files staged beside the live ones, one stack update that takes
   every function and endpoint to the commit, the endpoint
-  grants confirmed, the web app synced, then the probe. Every merge releases
+  grants confirmed, the web app synced, IndexNow told which public pages
+  changed (a failure only warns; `infra/NATIVE-WEB.md`), then the probe. Every merge releases
   everything, in about five minutes. "Run workflow" on main releases main's
   tip again. Runs share the `production-deploy` concurrency group (never
   cancelled; a newer waiting run replaces an older waiting one) and refuse

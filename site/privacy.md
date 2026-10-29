@@ -27,7 +27,7 @@ Nothing you write goes to a model unless you turn it on. "Write out what I say" 
 
 ## Agents, only with your consent
 
-You can connect an agent such as Claude or ChatGPT to your notes. It asks for each kind of access, you approve it, and you can disconnect it in Settings at any time. Its reads show in your Activity, one line for each agent each day.
+You can connect an agent such as Claude or ChatGPT to your notes. It asks for each kind of access, you approve it, and you can disconnect it in Settings at any time. Its reads show in your Activity, one line for each connection each day.
 
 ## No tracking
 

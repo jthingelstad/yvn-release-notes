@@ -568,9 +568,14 @@ or new CSP exception.
   page's words. `tests-node/front-page.test.ts` builds both pages and
   `e2e/front.spec.mjs` reads them in Chromium, with scripts and without.
 - Search sees the front page and the public pages alone. `index.html`
-  carries the front page's canonical link and share tags (the paper mark
-  as the image), and `front.html` the same head; each public page has its
-  own. `web/public/robots.txt` keeps crawlers off the API, OAuth and MCP
+  carries the front page's canonical link and share tags, and `front.html`
+  the same head; each public page has its own. The sharing card (the
+  picture, its alt text and the X card kind, today the paper mark as a
+  `summary` card) is one constant, `SHARE_CARD` in `lib/share-card.ts`:
+  `vite.config.ts` adds its tags to `index.html`'s head and each public
+  page's shell (`site.tsx`) draws them, so a new card is a change there
+  alone. `tests-node/front-page.test.ts` and `tests-node/site.test.ts`
+  hold every page to it. `web/public/robots.txt` keeps crawlers off the API, OAuth and MCP
   addresses and names `sitemap.xml`, which lists `/` and the public pages,
   and the router marks every other page `noindex` as it resolves, since
   they all serve `index.html`. Those pages stay crawlable: a page
@@ -582,7 +587,8 @@ or new CSP exception.
   `tests-node/front-page.test.ts` (for `/`) and `tests-node/site.test.ts`
   fail when the words change until both are moved to the day the change
   goes live. Never a build date: search ignores a `lastmod` that is always
-  now. `robots.txt`, `sitemap.xml` and `llms.txt` go up named UTF-8;
+  now. A release sends IndexNow every address whose entry here changed
+  (`tools/indexnow.ts`, `infra/NATIVE-WEB.md`). `robots.txt`, `sitemap.xml` and `llms.txt` go up named UTF-8;
   `robots.txt` and `sitemap.xml` are served with their own CSP
   (`PlainFilesHeadersPolicy`), which lets the browser's viewer style the
   XML; under the app's CSP Chrome shows it unstyled, with "..." where it

@@ -43,7 +43,19 @@ replaced: "I did think the deploy got obnoxiously complex"):
    whole.
 4. **The endpoint grants** are confirmed (below).
 5. **The inbound mail rule set** is checked and **the web app** synced.
-6. **The probe** (`tools/release-probe.ts`): every worker's `live` alias is the
+6. **IndexNow** (`tools/indexnow.ts`): the release reads the stack's
+   `BuildId` before step 3, and once the web app is synced compares that
+   commit's `site/sitemap.json` with this one's, both from git (the deploy
+   job checks out main's whole history). Every address whose entry (its
+   `lastmod` and the hash of its words) differs, or is new, goes to
+   `api.indexnow.org` in one POST, with the key file `web/public/` serves at
+   `/<key>.txt` (public by design, shared with Jamie's other sites). Nothing
+   changed, nothing sent; a page taken off the site is not sent. It is the
+   step's one network call, and a refusal, a timeout or a commit missing from
+   history is a warning: the release goes on to the probe.
+   `node --import tsx tools/release-cli.ts indexnow-plan --before J --after K`
+   prints what would be sent for two `sitemap.json` files and sends nothing.
+7. **The probe** (`tools/release-probe.ts`): every worker's `live` alias is the
    version the stack published and answers `{"self_test":true}` with this
    build on Node 24 Arm64; each endpoint serves an active revision of this
    build; `/api/health` answers through CloudFront. It reads no subscriber

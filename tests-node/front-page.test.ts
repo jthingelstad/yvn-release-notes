@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DomUtils, parseDocument } from 'htmlparser2';
 import { build } from 'vite';
+import { SHARE_CARD, shareTags } from '../web/src/lib/share-card.ts';
 
 const out = await mkdtemp(join(tmpdir(), 'yvn-front-page-'));
 test.after(() => rm(out, { recursive: true, force: true }));
@@ -66,12 +67,23 @@ test('outside #app the two pages are the same, canonical, sharing card and title
     '<title>Release Notes: a daily journal by email</title>',
     '<link rel="canonical" href="https://notes.yourversionnumber.com/" />',
     '<meta property="og:url" content="https://notes.yourversionnumber.com/" />',
-    '<meta property="og:title" content="Release Notes" />',
-    '<meta property="og:image" content="https://notes.yourversionnumber.com/brand/release-notes-paper-512.png" />'
+    '<meta property="og:title" content="Release Notes" />'
   ])
     assert.ok(outside.includes(line), line);
   // The front page stays indexable; main.tsx marks every other page noindex.
   assert.doesNotMatch(front, /<meta[^>]*name="robots"/);
+});
+
+test('both carry the one sharing card, from share-card.ts, each tag once', () => {
+  assert.match(SHARE_CARD.image, /^https:\/\/notes\.yourversionnumber\.com\/brand\/[a-z0-9-]+\.png$/);
+  for (const html of [front, index]) {
+    const metas = DomUtils.findAll((e) => e.name === 'meta', parseDocument(html).children);
+    for (const [attribute, name, content] of shareTags()) {
+      const found = metas.filter((e) => e.attribs[attribute] === name);
+      assert.equal(found.length, 1, name);
+      assert.equal(found[0]!.attribs.content, content, name);
+    }
+  }
 });
 
 test('the drawn front page has no script, no inline style and nothing the open page hides', () => {

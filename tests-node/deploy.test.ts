@@ -39,6 +39,12 @@ if (command === 'upload') {
   console.log(words.join(' '));
 } else if (command === 'policies') console.log('{"App":"confirmed","Mcp":"confirmed"}');
 else if (command === 'probe') console.log('{"workers":7,"endpoints":2,"health":"ok"}');
+else if (command === 'indexnow') {
+  // What it was given: the replaced release's site/sitemap.json and this one's.
+  for (const side of ['before', 'after'])
+    fs.writeFileSync(process.env.FIXTURE_LOG + '.' + side, fs.readFileSync(args[args.indexOf('--' + side) + 1], 'utf8'));
+  console.log('IndexNow: 202 for 2 pages changed');
+}
 else process.exit(5);
 `;
 
@@ -52,6 +58,8 @@ else if (args[1] === 'describe-stack-events') console.log('2026-01-01T00:00:00Z\
 else if (args[1] === 'describe-stacks') {
   if (joined.includes('WebBucketName')) console.log('fictional-web-bucket');
   else if (joined.includes('WebDistributionId')) console.log('FICTIONALDIST');
+  // The release live before this one, read once before the stack update.
+  else if (joined.includes('BuildId') && !joined.includes('StackStatus')) console.log(process.env.FIXTURE_LIVE_BUILD || '${'c'.repeat(40)}');
   else if (joined.includes('BuildId')) {
     // FIXTURE_REPLACED: another release has updated the stack after N reads.
     // FIXTURE_UPDATING: another release starts updating it after N reads, for
@@ -79,7 +87,13 @@ else if (args[0] === 'rev-parse') {
   if (args[1] === 'origin/main') fs.writeFileSync(marker, '');
   console.log(args[1] === 'origin/main' && moved ? '${'b'.repeat(40)}' : '${commit}');
 }
-else if (args[0] === 'status' || args[0] === 'fetch') record('git');`,
+else if (args[0] === 'status' || args[0] === 'fetch') record('git');
+else if (args[2] === 'show') {
+  // The replaced release's site/sitemap.json; FIXTURE_NO_HISTORY: a commit this checkout lacks.
+  record('git');
+  if (process.env.FIXTURE_NO_HISTORY) process.exit(128);
+  console.log(JSON.stringify({ shown: args[3] }));
+}`,
   gh: `record('gh'); if (args[0] === 'run') console.log(process.env.FIXTURE_RUNNING ? '1' : '0');
 else console.log(process.env.FIXTURE_RED ? '0' : '1');`,
   npm: `record('npm'); if (process.env.FIXTURE_FAILURE === 'verify' && args.includes('verify')) process.exit(18);
@@ -133,7 +147,7 @@ async function fixture() {
       .map((line) => JSON.parse(line) as Event);
   const spawn = async (command: string[], options: Options) => {
     await writeFile(log, '');
-    for (const extra of ['.builds', '.main', '.sleeps']) await rm(log + extra, { force: true });
+    for (const extra of ['.builds', '.main', '.sleeps', '.before', '.after']) await rm(log + extra, { force: true });
     const result = spawnSync('bash', command, { env: environment(options), encoding: 'utf8', timeout: 30000 });
     return { result, events: await events() };
   };
@@ -193,7 +207,16 @@ test('a release uploads the code, stages new web files, updates the stack once, 
   await withFixture(async (f) => {
     const { result, events } = await f.release();
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.deepEqual(steps(events), [
+      'upload',
+      'sync',
+      'deploy',
+      'policies',
+      'sync',
+      'create-invalidation',
+      'indexnow',
+      'probe'
+    ]);
     const upload = cli(events, 'upload')[0]!;
     assert.equal(upload.args[upload.args.indexOf('--commit') + 1], commit);
     const deploy = aws(events, 'deploy')[0]!;
@@ -293,7 +316,16 @@ test('a release waits out another one updating the stack, then syncs if that upd
       result.stdout,
       /before the web sync: another release is updating the stack \(UPDATE_IN_PROGRESS\); waiting/
     );
-    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.deepEqual(steps(events), [
+      'upload',
+      'sync',
+      'deploy',
+      'policies',
+      'sync',
+      'create-invalidation',
+      'indexnow',
+      'probe'
+    ]);
     assert.equal(await sleeps(), 2);
 
     ({ result, events } = await f.release([], {
@@ -423,8 +455,69 @@ test('a failed probe fails the release and says to revert', async () => {
   await withFixture(async (f) => {
     const { result, events } = await f.release([], { failure: 'probe' });
     assert.notEqual(result.status, 0);
-    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.deepEqual(steps(events), [
+      'upload',
+      'sync',
+      'deploy',
+      'policies',
+      'sync',
+      'create-invalidation',
+      'indexnow',
+      'probe'
+    ]);
     assert.match(result.stderr, /live but failed its probe; revert the merge/);
+  });
+});
+
+test('once the web app is synced, IndexNow compares its sitemap with the replaced release’s, read before the stack update', async () => {
+  await withFixture(async (f) => {
+    const live = 'd'.repeat(40);
+    const { result, events } = await f.release([], { env: { FIXTURE_LIVE_BUILD: live } });
+    assert.equal(result.status, 0, result.stderr);
+    // The live BuildId is read before the stack update makes it this commit.
+    const read = events.findIndex(
+      (e) =>
+        e.program === 'aws' &&
+        e.args[1] === 'describe-stacks' &&
+        !e.args.join(' ').includes('StackStatus') &&
+        e.args.join(' ').includes('BuildId')
+    );
+    assert.ok(read >= 0 && read < events.indexOf(aws(events, 'deploy')[0]!));
+    const [ping] = cli(events, 'indexnow');
+    assert.ok(ping);
+    assert.deepEqual(JSON.parse(await readFile(f.log + '.before', 'utf8')), { shown: `${live}:site/sitemap.json` });
+    assert.deepEqual(JSON.parse(await readFile(f.log + '.after', 'utf8')), { shown: `${commit}:site/sitemap.json` });
+    assert.match(result.stdout, /IndexNow: 202 for 2 pages changed/);
+  });
+});
+
+test('a failed IndexNow ping, or a replaced release missing from history, warns and the release still probes', async () => {
+  await withFixture(async (f) => {
+    for (const actions of [false, true]) {
+      const options = {
+        actions,
+        env: (actions
+          ? { FIXTURE_ARN: `arn:aws:sts::${account}:assumed-role/ReleaseNotesGitHubDeploy/run` }
+          : {}) as Record<string, string>
+      };
+      let { result, events } = await f.release([], { ...options, failure: 'indexnow' });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(
+        actions ? result.stdout : result.stderr,
+        /IndexNow was not told which pages changed; the release stands/
+      );
+      if (actions) assert.match(result.stdout, /^::warning::IndexNow was not told/m);
+      assert.deepEqual(steps(events).slice(-2), ['indexnow', 'probe']);
+
+      ({ result, events } = await f.release([], { ...options, env: { ...options.env, FIXTURE_NO_HISTORY: '1' } }));
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(
+        actions ? result.stdout : result.stderr,
+        /IndexNow skipped: the replaced release's commit or this one is not in/
+      );
+      assert.deepEqual(cli(events, 'indexnow'), []);
+      assert.equal(cli(events, 'probe').length, 1);
+    }
   });
 });
 
@@ -486,7 +579,16 @@ test('in GitHub Actions the deploy role releases and identifiers are masked', as
     assert.deepEqual([...aws(events, 'create-bucket'), ...aws(events, 'put-bucket-policy')], []);
     assert.deepEqual(aws(events, 'set-active-receipt-rule-set'), []);
     assert.match(result.stdout, /::warning::No SES receipt rule set/);
-    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.deepEqual(steps(events), [
+      'upload',
+      'sync',
+      'deploy',
+      'policies',
+      'sync',
+      'create-invalidation',
+      'indexnow',
+      'probe'
+    ]);
 
     for (const env of [{ FIXTURE_NO_CODE_BUCKET: '1' }, { FIXTURE_INSECURE: '1' }] as Record<string, string>[]) {
       const refused = await f.release([], { ...actions, env: { ...actions.env, ...env } });
@@ -548,7 +650,16 @@ test('deploy.sh builds the committed tree with build-release.sh, then hands it t
     assert.ok(events.some((e) => e.program === 'gh'));
     assert.ok(events.indexOf(build) < events.indexOf(cli(events, 'upload')[0]!));
     assert.ok(overrides(aws(events, 'deploy')[0]!).includes('TurnstileMode=observe'));
-    assert.deepEqual(steps(events), ['upload', 'sync', 'deploy', 'policies', 'sync', 'create-invalidation', 'probe']);
+    assert.deepEqual(steps(events), [
+      'upload',
+      'sync',
+      'deploy',
+      'policies',
+      'sync',
+      'create-invalidation',
+      'indexnow',
+      'probe'
+    ]);
 
     ({ result, events } = await deploy([], { env: { FIXTURE_BUILD_FAILS: '1' } }));
     assert.notEqual(result.status, 0);

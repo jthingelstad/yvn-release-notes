@@ -3,6 +3,7 @@
 // the router's: each is a page of its own, outside the app.
 export const SITE_LINKS = [
   ['/how-it-works/', 'How it works'],
+  ['/features/', 'Features'],
   ['/guide/', 'Guide'],
   ['/faq/', 'FAQ'],
   ['/privacy/', 'Privacy'],

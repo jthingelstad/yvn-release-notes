@@ -1,14 +1,18 @@
 {
   "/": {
-    "said": "e44f1feb7b3f6e31f9988897e41e562a33a102d557bd982c49fb49b81aab0c0c",
+    "said": "dae3aabfbeaafc9c6c86741eaa7face58c81d2623399bea50965068f534aa0af",
     "lastmod": "2026-10-29"
   },
   "/how-it-works/": {
     "said": "28774b4a8b1804a894d13c1991a7ad7061adcad58bbd204bb9a4b4c4166947f7",
     "lastmod": "2026-10-29"
   },
+  "/features/": {
+    "said": "8fa613eeae5d67df768eb54aa97e86ccf07e0c0762895b930fda08d0c9dcce6d",
+    "lastmod": "2026-10-29"
+  },
   "/guide/": {
-    "said": "8424f62237c999170bfe5d5765b2fc538b6c3be1d4ec776f0fcdf99c5b4a851e",
+    "said": "80dd8d81031c6ec379c4469012cdbd09b84e4efff7a209051c8e292b346b91b8",
     "lastmod": "2026-10-29"
   },
   "/guide/start/": {
@@ -20,7 +24,51 @@
     "lastmod": "2026-10-29"
   },
   "/guide/replying/": {
-    "said": "3f94ef58b887097a1c22c69cf4caf042784d8d7a0aa85537fed48863c07f071c",
+    "said": "1f753423eecad952dfe4cdd4132ed7d8d4579a3818a24eb26e1a6b4df765f11f",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/address/": {
+    "said": "370cdff7ef5cde8ff9103438d6d8c4b46385b870ce42afdaf839b5a9d109da17",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/photos-and-voice/": {
+    "said": "99b64398bc98477e4e1fcf95ac63025d2dc43ce8c79323c30a1ead262fd26929",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/places-and-map/": {
+    "said": "260b577ea8270a08d7fe70ec602c684640e0cdf1aa8daa76d352d606d605024d",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/tags-and-search/": {
+    "said": "a8280119c5b9a0802c532c8b04c472c7c0f646d275570856f7fba54125c23754",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/upcoming/": {
+    "said": "e696530c9bfbed0c0152a481198729bd2ba1df3981adcc2618379fcdc5617046",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/badges/": {
+    "said": "4c485f7ce8eecfcefdb14c9416d07e4901c614b5f8a30bf7c79a0da3e67fed02",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/agents/": {
+    "said": "5796ec6b3face746db5cd34b9e02ebc382f81aaf61062dac638102e88599aa47",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/book/": {
+    "said": "563a1bad1c8fcdd7c09a97924dcdca3058d9caf1eff1ab8ffbaa68bba751c109",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/export/": {
+    "said": "9a855520ae6178217afbb31d6acb3949a98da42c1f2c53b19f5938522dd3bb55",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/pause-and-stop/": {
+    "said": "60dbcbb660499712512ee2f345693b831357eb09a31c7a4dca9a3366e1496338",
+    "lastmod": "2026-10-29"
+  },
+  "/guide/delete/": {
+    "said": "dba57ef68c5ed87173377c1d23f3d92370058aeda4d6538047425f7ac7254395",
     "lastmod": "2026-10-29"
   },
   "/faq/": {
@@ -32,7 +80,7 @@
     "lastmod": "2026-10-29"
   },
   "/changelog/": {
-    "said": "18e181fd7d554c36344d949e62f7e553a9db6587b25a360f2421cf5c3ce54b0c",
+    "said": "8959acdbdf87de7b7b262910b5353260a2ba7a3383ab394964330537c4ede0e1",
     "lastmod": "2026-10-29"
   }
 }

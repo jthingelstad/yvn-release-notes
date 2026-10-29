@@ -5,6 +5,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import MarkdownIt from 'markdown-it';
+import { FEATURES } from './lib/features.ts';
 
 export const ORIGIN = 'https://notes.yourversionnumber.com';
 // Read from the checkout's root, where the build runs.
@@ -68,7 +69,42 @@ export async function readPages(dir = SITE_DIR): Promise<Page[]> {
   for (const path of order)
     if (path !== '/' && !pages.some((p) => p.path === path))
       throw new Error(`site/sitemap.json lists ${path}, which has no page`);
-  return pages.sort((a, b) => order.indexOf(a.path) - order.indexOf(b.path));
+  pages.sort((a, b) => order.indexOf(a.path) - order.indexOf(b.path));
+  return pages.map((page) => ({ ...page, html: fillLists(page, pages) }));
+}
+
+// Two lists drawn from lib/features.ts, the list the front page's tour
+// draws: a page whose Markdown has a paragraph of `{features}` gets every
+// feature there, each linked to its guide page, and one with `{guide}` the
+// guide pages those link, by group, each once, leaving out any the page
+// links above it.
+const esc = (words: string) => words.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// A description after a colon, as the guide's own lists write them.
+const lower = (words: string) => (/^[A-Z][a-z]/.test(words) ? words[0]!.toLowerCase() + words.slice(1) : words);
+const LIST = /<p>\{(features|guide)\}<\/p>\n/g;
+function fillLists(page: Page, pages: Page[]): string {
+  return page.html.replace(LIST, (_, list: string, at: number) => {
+    if (list === 'features')
+      return FEATURES.map(
+        (g) =>
+          `<h2 id="${slug(g.head)}">${esc(g.head)}</h2>\n<ul>\n` +
+          g.features
+            .map((f) => `<li><strong><a href="${f.guide}">${esc(f.head)}</a></strong> ${esc(f.line)}</li>\n`)
+            .join('') +
+          '</ul>\n'
+      ).join('');
+    const seen = new Set(Array.from(page.html.slice(0, at).matchAll(/href="([^"]+)"/g), (m) => m[1]!));
+    return FEATURES.map((g) => {
+      const items = g.features.flatMap((f) => {
+        if (seen.has(f.guide)) return [];
+        seen.add(f.guide);
+        const to = pages.find((p) => p.path === f.guide);
+        if (!to) throw new Error(`lib/features.ts links ${f.guide}, which has no page`);
+        return [`<li><a href="${to.path}">${esc(to.title)}</a>: ${esc(lower(to.description))}</li>\n`];
+      });
+      return items.length ? `<h3>${esc(g.head)}</h3>\n<ul>\n${items.join('')}</ul>\n` : '';
+    }).join('');
+  });
 }
 
 /** Each address's <lastmod>, and the hash of its words that the date holds for. */

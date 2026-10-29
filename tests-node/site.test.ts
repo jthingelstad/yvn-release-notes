@@ -13,15 +13,20 @@ import { join, resolve } from 'node:path';
 import { DomUtils, parseDocument } from 'htmlparser2';
 import { build } from 'vite';
 import { MAX_PAUSE_DAYS } from '../packages/backend/accounts.ts';
+import { MAX_FILES, MAX_UPLOAD } from '../packages/backend/media.ts';
+import { MAX_A_DAY } from '../packages/backend/transcribe.ts';
 import { LOGIN_TTL, SESSION_IDLE } from '../packages/backend/auth.ts';
 import { SCOPES as GRANTED } from '../packages/backend/oauth.ts';
-import { COMMENTARY_PER_RELEASE, PAGE_SIZES } from '../packages/book/limits.ts';
+import { COMMENTARY_DAYS, COMMENTARY_PER_RELEASE, MAX_PHOTOS, PAGE_SIZES } from '../packages/book/limits.ts';
 import { BADGES } from '../packages/domain/badges.ts';
 import { SCREENSHOTS_MAX } from '../packages/domain/feedback.ts';
 import { MAX_NOTE } from '../packages/domain/notes.ts';
-import { UPCOMING_SHOWN } from '../packages/domain/upcoming.ts';
+import { SEARCH_DAYS } from '../packages/domain/search.ts';
+import { MAX_TAG } from '../packages/domain/tags.ts';
+import { UPCOMING_MAX, UPCOMING_SHOWN } from '../packages/domain/upcoming.ts';
 import { DOTS, PHOTOS_AN_EMAIL, PHOTOS_A_DAY } from '../packages/mail/compose.ts';
 import { MAX_INLINE_BYTES, MAX_INLINE_FILES } from '../server/mcp/files.ts';
+import { FEATURES } from '../web/src/lib/features.ts';
 import { ORIGIN, SCOPES, readPages, sitemapDates } from '../web/src/site-pages.ts';
 import { LATE_NOTICES_A_DAY, REPLY_WINDOW } from '../workers/inbound.ts';
 
@@ -60,15 +65,27 @@ function said(page: string) {
   return [title, description, text(article(page))].join('\n');
 }
 
-test('site/ has the pages phases 1 and 4 promised, and site/sitemap.json lists / and each of them', () => {
+test('site/ has the pages phases 1, 3 and 4 promised, and site/sitemap.json lists / and each of them', () => {
   assert.deepEqual(
     pages.map((p) => p.path),
     [
       '/how-it-works/',
+      '/features/',
       '/guide/',
       '/guide/start/',
       '/guide/the-email/',
       '/guide/replying/',
+      '/guide/address/',
+      '/guide/photos-and-voice/',
+      '/guide/places-and-map/',
+      '/guide/tags-and-search/',
+      '/guide/upcoming/',
+      '/guide/badges/',
+      '/guide/agents/',
+      '/guide/book/',
+      '/guide/export/',
+      '/guide/pause-and-stop/',
+      '/guide/delete/',
       '/faq/',
       '/privacy/',
       '/changelog/'
@@ -179,6 +196,33 @@ test('every internal link goes to a built page or file, or to a page of the app'
   assert.ok(checked > 40);
 });
 
+test('every feature has its guide page, /features/ links each, and /guide/ links every guide page', () => {
+  const links = (path: string) => new Set(Array.from(html.get(path)!.matchAll(/\shref="([^"]*)"/g), (m) => m[1]!));
+  const features = links('/features/'),
+    guide = links('/guide/');
+  for (const { features: list } of FEATURES)
+    for (const f of list) {
+      assert.ok(html.has(f.guide), `${f.head} links ${f.guide}, which is no page`);
+      assert.ok(features.has(f.guide), `/features/ doesn’t link ${f.guide}`);
+    }
+  for (const { path } of pages.filter((p) => p.path.startsWith('/guide/') && p.path !== '/guide/'))
+    assert.ok(guide.has(path), `/guide/ doesn’t link ${path}`);
+});
+
+test('the front page’s tour draws lib/features.ts, every feature it shows in order', () => {
+  const tour = text(parseDocument(frontApp));
+  let at = 0;
+  for (const { head, features } of FEATURES)
+    for (const f of features.filter((f) => f.tour !== false)) {
+      const said = `${f.head} ${f.line}`,
+        found = tour.indexOf(said, at);
+      assert.ok(found > at, `${head}: the tour doesn’t say "${said}" in order`);
+      at = found;
+    }
+  for (const f of FEATURES.flatMap((g) => g.features).filter((f) => f.tour === false))
+    assert.ok(!tour.includes(f.head), `the tour shows "${f.head}", which lib/features.ts leaves out of it`);
+});
+
 test('the front page’s foot links each public page', () => {
   for (const { path } of pages.filter((p) => !p.path.startsWith('/guide/') || p.path === '/guide/'))
     assert.ok(frontApp.includes(`href="${path}"`), path);
@@ -188,7 +232,9 @@ test('the front page’s foot links each public page', () => {
  * from the constant the product keeps it in. */
 async function checkedPhrases() {
   const template = await readFile(resolve('infra/template.yaml'), 'utf8'),
-    versions = Number(/- Id: expire-old-versions\n(?: {12}.*\n)*? {14}NoncurrentDays: (\d+)\n/.exec(template)![1]);
+    versions = Number(/- Id: expire-old-versions\n(?: {12}.*\n)*? {14}NoncurrentDays: (\d+)\n/.exec(template)![1]),
+    contract = await readFile(resolve('server/mcp/contract.ts'), 'utf8'),
+    perCall = Number(/name: 'upcoming_save',[\s\S]*?maxItems: (\d+),/.exec(contract)![1]);
   return [
     `${REPLY_WINDOW / 3600} hours`,
     `up to ${LATE_NOTICES_A_DAY} of those a day`,
@@ -203,7 +249,16 @@ async function checkedPhrases() {
     `up to ${SCREENSHOTS_MAX} screenshots`,
     `1 to ${MAX_PAUSE_DAYS} days`,
     `within ${versions} days`,
-    `at most ${MAX_INLINE_FILES} files and ${MAX_INLINE_BYTES / 1024 / 1024} MB a call`
+    `at most ${MAX_INLINE_FILES} files and ${MAX_INLINE_BYTES / 1024 / 1024} MB a call`,
+    `up to ${MAX_FILES} files`,
+    `${MAX_UPLOAD / 1024 / 1024} MB a file`,
+    `up to ${MAX_A_DAY} recordings a day`,
+    `up to ${MAX_TAG} characters`,
+    `newest ${SEARCH_DAYS} days`,
+    `up to ${UPCOMING_MAX} dates`,
+    `up to ${perCall} dates a call`,
+    `up to ${MAX_PHOTOS.toLocaleString('en-US')} photos`,
+    `up to a year (${COMMENTARY_DAYS} days)`
   ];
 }
 
@@ -231,6 +286,8 @@ test('every number on the pages and in llms.txt is the product’s own', async (
         used.add(phrase);
         left = left.replaceAll(phrase, '');
       }
+    // A badge's own name, like i18n, said as packages/domain/badges.ts names it.
+    for (const { name } of BADGES.filter((b) => !b.secret && /\d/.test(b.name))) left = left.replaceAll(name, '');
     // The changelog's dates: each release's day, and the launch's.
     if (from === '/changelog/') left = left.replace(/\b(?:October|November|December) \d{1,2}(?:, 2026)?\b/g, '');
     left = left

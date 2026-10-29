@@ -1599,7 +1599,6 @@ Resources:
           TABLE: !Ref Table
           MAIL_BUCKET: !Ref MailBucket
           WEB_ORIGIN: !Sub "https://${WebDomain}"
-          MAIL_BUCKET: !Ref MailBucket
 
   ExportLogs:
     Type: AWS::Logs::LogGroup

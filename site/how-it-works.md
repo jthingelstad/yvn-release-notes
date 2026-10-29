@@ -23,7 +23,7 @@ A release is a year of your life, birthday to birthday. On your birthday the ema
 
 ## Signing up
 
-1. On the [front page](/), type your birthday to see your number.
+1. On the [front page](/), type your birthday to see your number. The sample email under it is then drawn with your number: your date, your next release and your own patches in On this day. Its notes, weather and streak stay made up. Nothing is kept until you sign up.
 2. Type your email address. Release Notes sends a link and a six-digit code, each good once, for 15 minutes.
 3. Release Notes is free with a [Weekly Thing](https://weekly.thingelstad.com/) subscription. If your address doesn't get the Weekly Thing yet, Release Notes offers to subscribe it for you. Confirm from the Weekly Thing's email, then carry on.
 4. Pick your city, which sets your time zone and your weather, and the time your email comes.

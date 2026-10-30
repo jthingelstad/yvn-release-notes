@@ -83,18 +83,6 @@ import {
   TrendingUp,
   Webhook,
   Wrench,
-  Bike,
-  Dumbbell,
-  Footprints,
-  Headphones,
-  HeartPulse,
-  MessageCircleQuestion,
-  Mountain,
-  Music,
-  Podcast,
-  Ticket,
-  Users,
-  Waves,
   type LucideIcon
 } from 'lucide-react';
 
@@ -199,30 +187,6 @@ const badges: Record<string, LucideIcon> = {
   // Every giving year (giving-2026) wears the Weekly Thing's gold star.
   giving: Star
 };
-
-// A moment's pieces (docs/MOMENTS.md): a workout by its activity, the rest
-// by kind.
-const moments: Record<string, LucideIcon> = {
-  walking: Footprints,
-  running: Footprints,
-  cycling: Bike,
-  hiking: Mountain,
-  swimming: Waves,
-  other: Dumbbell,
-  song: Music,
-  podcast: Podcast,
-  played: Headphones,
-  steps: Footprints,
-  feeling: HeartPulse,
-  event: Ticket,
-  people: Users,
-  reflection: MessageCircleQuestion
-};
-
-export function MomentIcon({ kind }: { kind: string }) {
-  const Glyph = moments[kind] || CircleHelp;
-  return <Glyph className="icon" strokeWidth={1.75} aria-hidden="true" focusable="false" />;
-}
 
 export function BadgeIcon({ id }: { id?: string }) {
   const key = id?.startsWith('giving-') ? 'giving' : id;

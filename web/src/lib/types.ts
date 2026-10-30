@@ -1,6 +1,5 @@
 // What the API answers (server/app/), as the pages read it.
 import type { Badges as Shelf, Unlocked } from '../../../packages/domain/badges.ts';
-import type { Moment } from '../../../packages/domain/moments.ts';
 
 // A note's text as shown: plain strings, links by name (links.segments) and
 // hashtags (tags.split).
@@ -48,8 +47,6 @@ export interface Note {
   media?: Media[];
   attachments?: number;
   late?: boolean;
-  // What an app picked for it, kept beside the words (docs/MOMENTS.md).
-  moment?: Moment;
 }
 
 export interface Day {

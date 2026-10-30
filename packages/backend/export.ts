@@ -8,7 +8,6 @@
 import { localDay, parseDay, validDay, validTimezone } from '../domain/dates.ts';
 import { combine, placeLabel, writtenAt, type NoteRecord, type PlaceRecord } from '../domain/notes.ts';
 import { computeVersion, releaseName } from '../domain/version.ts';
-import { momentParts, storedMoment, usesMiles, type Moment } from '../domain/moments.ts';
 import { markdown as namedLinks, type Link } from './links.ts';
 import { isRich, RICH } from '../domain/rich.ts';
 import * as weather from './weather.ts';
@@ -157,7 +156,6 @@ export function build(
       const [, day, id] = sk.split('#'),
         media = Array.isArray(item.media) ? (item.media as Item[]) : [];
       if (!day || !id) continue;
-      const moment = storedMoment(item.moment);
       const note: ExportNote = {
         id,
         date: day,
@@ -175,8 +173,6 @@ export function build(
         written_at: writtenAt(item as NoteRecord) || null,
         tz: item.tz ?? null,
         place: item.place ?? null,
-        // As kept, only on a note that has one (docs/MOMENTS.md).
-        ...(moment ? { moment } : {}),
         tags: Array.isArray(item.tags) ? item.tags : item.tags instanceof Set ? [...item.tags] : [],
         origin: item.origin ?? null,
         updated_at: item.updated_at ?? null,
@@ -363,8 +359,7 @@ export function markdown(data: ExportData): string {
     lines.push('', `${weather.CREDIT} (${weather.CREDIT_URL}), CC BY 4.0.`);
   if (!byDay.size) lines.push('', 'No notes yet.');
   let release: string | null = null;
-  const fahrenheit = weather.fahrenheit(profile as PlaceRecord),
-    miles = usesMiles(typeof profile.country === 'string' ? profile.country : null);
+  const fahrenheit = weather.fahrenheit(profile as PlaceRecord);
   for (const [day, notes] of [...byDay].sort(([a], [b]) => cmp(a, b))) {
     const text = combine(
       notes.map((n) => ({
@@ -397,15 +392,6 @@ export function markdown(data: ExportData): string {
     const shown = notes.flatMap((n) => (Array.isArray(n.files) ? (n.files as Item[]) : []));
     if (notes.length && (text || !shown.length))
       lines.push('', text || '(Attachments only. They are in the original email.)');
-    for (const n of notes)
-      if (n.moment)
-        lines.push(
-          '',
-          'Moment: ' +
-            momentParts(n.moment as Moment, miles)
-              .map((p) => escapeText(p.text))
-              .join('; ')
-        );
     for (const f of shown) {
       const label = f.kind === 'image' ? 'Photo' : f.kind === 'audio' ? 'Recording' : 'File';
       const alt = f.description

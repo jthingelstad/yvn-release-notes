@@ -76,9 +76,7 @@
  * OAuth deletion removes it; never exported. Once the token ends the
  * pointer stays 30 days with `revoked`, so its client is told so. A token's note is
  * NOTE#<day>#t-<id> (`source` api, `connection` the token's id, `token` its
- * name, `client` the User-Agent's product, and from API 1.6.0 an optional
- * `moment`, the typed values an app picked for it, set once at creation and
- * never by an edit; docs/MOMENTS.md), its receipts the account's,
+ * name and `client` the User-Agent's product), its receipts the account's,
  * CAPTURE#api#<key hash> for 7 days, whichever of its tokens wrote them
  * (API 1.4.0; before, each token's own CAPTURE#<token id>#<key hash>, read
  * and guarded against until PER_TOKEN_RECEIPTS_UNTIL), its daily counts

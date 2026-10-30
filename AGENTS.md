@@ -208,14 +208,13 @@ Where things are (each module's design comment has its contract):
 - **Any kind of data can come from any channel** (Jamie, 2026-10-09: "assume
   any type of data we deal with can come from any channel"). A channel that
   does not carry something yet is work not done, never a rule.
-- **A moment is kept beside the words** (Jamie, 2026-10-29: "moments API
-  has promise and maybe we should consider data model changes to work with
-  it better?"; docs/MOMENTS.md, with the calls still open): a new note's
-  optional `moment`, the typed pieces an app picked (`packages/domain/moments.ts`),
-  set once at creation and kept as picked. The words stay the note, and
-  every edit of them keeps the moment; deleting the note deletes it. An
-  activity row names its kinds, never its words, and it is never logged.
-  A new kind comes to the server first, as a new API version.
+- **Moments are a source, never stored** (Jamie, 2026-10-30: "Moments are
+  a source of inspiration for a user to use a note and an easy way to get
+  images and everything into the application, but they should not form
+  our API."; docs/MOMENTS.md): what an app picks for a note, a workout, a
+  song or who was there, becomes its words, its files and its place, which
+  every channel has. A note keeps nothing of an app's own record of it,
+  and `/v1` refuses `moment` (API 1.8.0 withdrew 1.6.0's).
 - **A note is the same record from every channel**
   (`packages/domain/notes.ts`). Its `place` shows by name, never coordinates,
   linked to a map unless it is only the subscriber's city
@@ -861,8 +860,10 @@ sign-in, which makes an API token) are built.
   `node --import tsx tools/export-api-contract.ts`. Every change is a new
   `API_VERSION` with its `API_CHANGES` entry (`server/mcp/v1.ts`), or the
   tool refuses it. `/v1` only gains things; a breaking change is `/v2`. The
-  guide's API page names every request and error (`tests-node/site.test.ts`),
-  so it changes in the same PR.
+  one exception is 1.8.0, which withdrew `moment` before any released app
+  sent one (Jamie, 2026-10-30: "Approved: withdraw moments from Release
+  Notes as API 1.8.0"). The guide's API page names every request and
+  error (`tests-node/site.test.ts`), so it changes in the same PR.
 - **Tokens are every subscriber's** (Jamie, 2026-10-29: "Open up token
   generation and all of the needed features so we can continue with
   build. I am fine with these features being enabled automatically.").

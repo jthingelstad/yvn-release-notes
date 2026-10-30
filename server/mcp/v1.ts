@@ -7,7 +7,6 @@
 import { activityId, ACTIVITY_FAMILIES, familyOf, tokenActivityView, titled } from '../../packages/domain/activity.ts';
 import { addDays, iso, localDay, localMoment, validDay } from '../../packages/domain/dates.ts';
 import { writtenAt, type NoteRecord } from '../../packages/domain/notes.ts';
-import { storedMoment } from '../../packages/domain/moments.ts';
 import { codePointLength, pythonTrim, wellFormed } from '../../packages/domain/unicode.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { remindersFor, UPCOMING_MAX, upcomingViews } from '../../packages/domain/upcoming.ts';
@@ -27,11 +26,19 @@ import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.7.1';
+export const API_VERSION = '1.8.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
- * here with its date. A new version starts with its entry. */
+ * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
+ * `moment` before any released app sent one (Jamie, 2026-10-30). A new
+ * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.8.0',
+    date: '2026-10-30',
+    summary:
+      'Moments withdrawn: POST /v1/notes no longer takes the `moment` that 1.6.0 added, and refuses it as a field it doesn’t have (invalid_request, with field `moment`). No released app sent one, and no note kept one. A note’s read and its note.added row no longer carry it. An app that starts a note from something picked, a workout, a song or who was there, writes it into the words, with its photos as `uploads` and its spot as `place`.'
+  },
   {
     version: '1.7.1',
     date: '2026-10-30',
@@ -557,7 +564,6 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         if (!item) return { code: 'not_found', message: 'There is no note with that date and id.' };
         if (item.source !== 'api' || item.connection !== tid)
           return { code: 'not_yours', message: 'A token reads only the notes it wrote.' };
-        const moment = storedMoment(item.moment);
         return {
           status: 200,
           body: {
@@ -568,8 +574,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
             revision: editRevision(item),
             written_at: writtenAt(item as NoteRecord) || null,
             files: ((item.media as OAuthRow[] | undefined) ?? []).length,
-            token: item.token ?? null,
-            ...(moment ? { moment } : {})
+            token: item.token ?? null
           },
           line: String(item.text ?? '')
         };

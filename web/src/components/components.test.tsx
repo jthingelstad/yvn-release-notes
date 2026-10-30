@@ -6,7 +6,7 @@ import type { Note } from '../lib/types.ts';
 import { MEMBERS_URL, WEEKLY_THING_URL } from '../lib/weekly-thing.ts';
 import { LineText, placeOf, splitHref } from './common.tsx';
 import { StreakLine } from './days.tsx';
-import { mapHref, Marked, NoteBody, NoteMeta, NoteMoment, noteText } from './notes.tsx';
+import { mapHref, Marked, NoteBody, NoteMeta, noteText } from './notes.tsx';
 import { Tour } from './tour.tsx';
 import { answered } from './where.tsx';
 
@@ -23,36 +23,6 @@ describe('NoteMeta agent provenance', () => {
       />
     );
     expect(container.textContent).toBe(`added by ${client}`);
-  });
-});
-
-describe('NoteMoment', () => {
-  const n: Note = {
-    id: 't-1',
-    source: 'api',
-    text: 'A walk',
-    moment: {
-      items: [
-        { kind: 'workout', activity: 'cycling', distance_m: 32000, duration_s: 3600 },
-        { kind: 'song', title: '<b>A Song</b>', artist: 'A Band' },
-        { kind: 'people', names: ['Ana', 'Ben'] }
-      ]
-    }
-  };
-
-  it('draws a quiet line a piece, each with its glyph, as text', () => {
-    const { container } = render(<NoteMoment n={n} miles={true} />);
-    const lines = [...container.querySelectorAll('.moment li')].map((li) => li.textContent);
-    expect(lines).toEqual(['Ride · 19.9 mi · 1 hr', '<b>A Song</b> · A Band', 'With Ana and Ben']);
-    expect(container.querySelector('b')).toBeNull();
-    expect(container.querySelectorAll('.moment li svg[aria-hidden="true"]').length).toBe(3);
-    expect(container.querySelector('.moment')?.getAttribute('aria-label')).toBe('Moment');
-  });
-
-  it('uses kilometres away from miles, and draws nothing for a note without one', () => {
-    expect(render(<NoteMoment n={n} miles={false} />).container.textContent).toContain('Ride · 32 km · 1 hr');
-    cleanup();
-    expect(render(<NoteMoment n={{ ...n, moment: undefined }} miles={true} />).container.innerHTML).toBe('');
   });
 });
 

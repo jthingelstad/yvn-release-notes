@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.7.1",
+    "version": "1.8.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.8.0",
+        "date": "2026-10-30",
+        "summary": "Moments withdrawn: POST /v1/notes no longer takes the `moment` that 1.6.0 added, and refuses it as a field it doesn’t have (invalid_request, with field `moment`). No released app sent one, and no note kept one. A note’s read and its note.added row no longer carry it. An app that starts a note from something picked, a workout, a song or who was there, writes it into the words, with its photos as `uploads` and its spot as `place`."
+      },
       {
         "version": "1.7.1",
         "date": "2026-10-30",
@@ -123,7 +128,7 @@
       "post": {
         "operationId": "createNote",
         "summary": "Add a note",
-        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags, in any script since 1.7.1. A `text/plain` body is the note’s text alone, and so is a form that is not a `NoteForm`; a multipart body is refused. With neither `date` nor `written_at`, it files to today. With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came, and kept as sent: its shape is checked, not the place. A `moment` (since 1.6.0) keeps what an app picked for the note, a walk, a song or who was there, as values beside the words: the words are still the note, and the moment is shown, exported and deleted with it.",
+        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags, in any script since 1.7.1. A `text/plain` body is the note’s text alone, and so is a form that is not a `NoteForm`; a multipart body is refused. With neither `date` nor `written_at`, it files to today. With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came, and kept as sent: its shape is checked, not the place.",
         "requestBody": {
           "required": true,
           "content": {
@@ -187,14 +192,10 @@
         ],
         "security": [
           {
-            "token": [
-              "notes:write"
-            ]
+            "token": ["notes:write"]
           },
           {
-            "signIn": [
-              "notes:write"
-            ]
+            "signIn": ["notes:write"]
           }
         ],
         "x-scope": "notes:write"
@@ -249,14 +250,10 @@
         ],
         "security": [
           {
-            "token": [
-              "notes:write"
-            ]
+            "token": ["notes:write"]
           },
           {
-            "signIn": [
-              "notes:write"
-            ]
+            "signIn": ["notes:write"]
           }
         ],
         "x-scope": "notes:write"
@@ -336,14 +333,10 @@
         ],
         "security": [
           {
-            "token": [
-              "notes:write"
-            ]
+            "token": ["notes:write"]
           },
           {
-            "signIn": [
-              "notes:write"
-            ]
+            "signIn": ["notes:write"]
           }
         ],
         "x-scope": "notes:write"
@@ -399,14 +392,10 @@
         ],
         "security": [
           {
-            "token": [
-              "notes:write"
-            ]
+            "token": ["notes:write"]
           },
           {
-            "signIn": [
-              "notes:write"
-            ]
+            "signIn": ["notes:write"]
           }
         ],
         "x-scope": "notes:write"
@@ -487,14 +476,10 @@
         ],
         "security": [
           {
-            "token": [
-              "notes:write"
-            ]
+            "token": ["notes:write"]
           },
           {
-            "signIn": [
-              "notes:write"
-            ]
+            "signIn": ["notes:write"]
           }
         ],
         "x-scope": "notes:write"
@@ -576,14 +561,10 @@
         ],
         "security": [
           {
-            "token": [
-              "media:write"
-            ]
+            "token": ["media:write"]
           },
           {
-            "signIn": [
-              "media:write"
-            ]
+            "signIn": ["media:write"]
           }
         ],
         "x-scope": "media:write"
@@ -627,14 +608,10 @@
         },
         "security": [
           {
-            "token": [
-              "media:write"
-            ]
+            "token": ["media:write"]
           },
           {
-            "signIn": [
-              "media:write"
-            ]
+            "signIn": ["media:write"]
           }
         ],
         "x-scope": "media:write"
@@ -681,14 +658,10 @@
         },
         "security": [
           {
-            "token": [
-              "notes:write"
-            ]
+            "token": ["notes:write"]
           },
           {
-            "signIn": [
-              "notes:write"
-            ]
+            "signIn": ["notes:write"]
           }
         ],
         "x-scope": "notes:write"
@@ -743,14 +716,10 @@
         },
         "security": [
           {
-            "token": [
-              "notes:write"
-            ]
+            "token": ["notes:write"]
           },
           {
-            "signIn": [
-              "notes:write"
-            ]
+            "signIn": ["notes:write"]
           }
         ],
         "x-scope": "notes:write"
@@ -849,14 +818,10 @@
         ],
         "security": [
           {
-            "token": [
-              "notes:write"
-            ]
+            "token": ["notes:write"]
           },
           {
-            "signIn": [
-              "notes:write"
-            ]
+            "signIn": ["notes:write"]
           }
         ],
         "x-scope": "notes:write"
@@ -927,14 +892,10 @@
         },
         "security": [
           {
-            "token": [
-              "activity"
-            ]
+            "token": ["activity"]
           },
           {
-            "signIn": [
-              "activity"
-            ]
+            "signIn": ["activity"]
           }
         ],
         "x-scope": "activity"
@@ -968,14 +929,10 @@
         },
         "security": [
           {
-            "token": [
-              "upcoming"
-            ]
+            "token": ["upcoming"]
           },
           {
-            "signIn": [
-              "upcoming"
-            ]
+            "signIn": ["upcoming"]
           }
         ],
         "x-scope": "upcoming"
@@ -1038,14 +995,10 @@
         ],
         "security": [
           {
-            "token": [
-              "upcoming"
-            ]
+            "token": ["upcoming"]
           },
           {
-            "signIn": [
-              "upcoming"
-            ]
+            "signIn": ["upcoming"]
           }
         ],
         "x-scope": "upcoming"
@@ -1092,14 +1045,10 @@
         },
         "security": [
           {
-            "token": [
-              "upcoming"
-            ]
+            "token": ["upcoming"]
           },
           {
-            "signIn": [
-              "upcoming"
-            ]
+            "signIn": ["upcoming"]
           }
         ],
         "x-scope": "upcoming"
@@ -1158,14 +1107,10 @@
         },
         "security": [
           {
-            "token": [
-              "upcoming"
-            ]
+            "token": ["upcoming"]
           },
           {
-            "signIn": [
-              "upcoming"
-            ]
+            "signIn": ["upcoming"]
           }
         ],
         "x-scope": "upcoming"
@@ -1320,16 +1265,11 @@
     "schemas": {
       "Error": {
         "type": "object",
-        "required": [
-          "error"
-        ],
+        "required": ["error"],
         "properties": {
           "error": {
             "type": "object",
-            "required": [
-              "code",
-              "message"
-            ],
+            "required": ["code", "message"],
             "properties": {
               "code": {
                 "type": "string",
@@ -1373,15 +1313,7 @@
       },
       "Me": {
         "type": "object",
-        "required": [
-          "account",
-          "today",
-          "version",
-          "tz",
-          "days",
-          "token",
-          "api_version"
-        ],
+        "required": ["account", "today", "version", "tz", "days", "token", "api_version"],
         "properties": {
           "account": {
             "type": "string",
@@ -1429,10 +1361,7 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "active",
-              "stopped"
-            ]
+            "enum": ["active", "stopped"]
           },
           "show_badges": {
             "type": "boolean"
@@ -1442,10 +1371,7 @@
             "description": "14 days from today; a birthday shows as a new major or minor version on its day.",
             "items": {
               "type": "object",
-              "required": [
-                "date",
-                "version"
-              ],
+              "required": ["date", "version"],
               "properties": {
                 "date": {
                   "type": "string",
@@ -1462,12 +1388,7 @@
           },
           "token": {
             "type": "object",
-            "required": [
-              "id",
-              "name",
-              "scopes",
-              "expires_at"
-            ],
+            "required": ["id", "name", "scopes", "expires_at"],
             "properties": {
               "id": {
                 "type": "string",
@@ -1498,7 +1419,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.7.1"
+            "example": "1.8.0"
           }
         }
       },
@@ -1507,14 +1428,10 @@
         "description": "Text, files or both.",
         "anyOf": [
           {
-            "required": [
-              "text"
-            ]
+            "required": ["text"]
           },
           {
-            "required": [
-              "uploads"
-            ]
+            "required": ["uploads"]
           }
         ],
         "additionalProperties": false,
@@ -1540,18 +1457,13 @@
           },
           "place": {
             "$ref": "#/components/schemas/NotePlace"
-          },
-          "moment": {
-            "$ref": "#/components/schemas/Moment"
           }
         }
       },
       "NoteForm": {
         "type": "object",
         "description": "A form, as a Shortcut’s Form body sends it, read as these fields when every name is one of them and `text` is there; any other form body is the words. Since 1.7.0.",
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "additionalProperties": false,
         "properties": {
           "text": {
@@ -1572,292 +1484,9 @@
           }
         }
       },
-      "Moment": {
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "additionalProperties": false,
-        "description": "What an app picked for the note (Apple’s Journaling Suggestions, say), kept beside its words as it was sent: words trimmed and empty ones left out. A place visited is the note’s `place`, and photos are its `uploads`. Since 1.6.0.",
-        "properties": {
-          "at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When the moment began."
-          },
-          "items": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 12,
-            "items": {
-              "$ref": "#/components/schemas/MomentItem"
-            }
-          }
-        }
-      },
-      "MomentItem": {
-        "type": "object",
-        "required": [
-          "kind"
-        ],
-        "description": "One piece, by its `kind`. An unknown kind or field is `invalid_request`, naming it (`moment.items[2].distance_m`). Kinds: workout, song, podcast, played, steps, feeling, event, people, reflection.",
-        "oneOf": [
-          {
-            "type": "object",
-            "title": "workout",
-            "required": [
-              "kind",
-              "activity"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "workout"
-              },
-              "activity": {
-                "type": "string",
-                "enum": [
-                  "walking",
-                  "running",
-                  "cycling",
-                  "hiking",
-                  "swimming",
-                  "other"
-                ]
-              },
-              "name": {
-                "type": "string",
-                "maxLength": 200,
-                "description": "The workout’s own name (“Yoga”), for one with no activity here."
-              },
-              "distance_m": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1000000,
-                "description": "In metres."
-              },
-              "duration_s": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 604800,
-                "description": "In seconds."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "song",
-            "required": [
-              "kind"
-            ],
-            "additionalProperties": false,
-            "description": "A title or an artist.",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "song"
-              },
-              "title": {
-                "type": "string",
-                "maxLength": 200
-              },
-              "artist": {
-                "type": "string",
-                "maxLength": 200
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "podcast",
-            "required": [
-              "kind"
-            ],
-            "additionalProperties": false,
-            "description": "An episode or a show.",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "podcast"
-              },
-              "episode": {
-                "type": "string",
-                "maxLength": 200
-              },
-              "show": {
-                "type": "string",
-                "maxLength": 200
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "played",
-            "required": [
-              "kind"
-            ],
-            "additionalProperties": false,
-            "description": "Something listened to in another app.",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "played"
-              },
-              "title": {
-                "type": "string",
-                "maxLength": 200
-              },
-              "artist": {
-                "type": "string",
-                "maxLength": 200
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "steps",
-            "required": [
-              "kind",
-              "count"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "steps"
-              },
-              "count": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 1000000
-              },
-              "movement": {
-                "type": "string",
-                "enum": [
-                  "walking",
-                  "running",
-                  "both"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "feeling",
-            "required": [
-              "kind"
-            ],
-            "additionalProperties": false,
-            "description": "Labels (“calm”), a valence, or both.",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "feeling"
-              },
-              "labels": {
-                "type": "array",
-                "maxItems": 10,
-                "items": {
-                  "type": "string",
-                  "maxLength": 40
-                }
-              },
-              "valence": {
-                "type": "string",
-                "enum": [
-                  "very_unpleasant",
-                  "unpleasant",
-                  "slightly_unpleasant",
-                  "neutral",
-                  "slightly_pleasant",
-                  "pleasant",
-                  "very_pleasant"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "event",
-            "required": [
-              "kind",
-              "title"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "event"
-              },
-              "title": {
-                "type": "string",
-                "maxLength": 200
-              },
-              "place": {
-                "type": "string",
-                "maxLength": 200
-              },
-              "start": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "hosted": {
-                "type": "boolean",
-                "description": "Kept as false when not sent."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "people",
-            "required": [
-              "kind",
-              "names"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "people"
-              },
-              "names": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 20,
-                "items": {
-                  "type": "string",
-                  "maxLength": 200
-                }
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "reflection",
-            "required": [
-              "kind",
-              "prompt"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "reflection"
-              },
-              "prompt": {
-                "type": "string",
-                "maxLength": 400
-              }
-            }
-          }
-        ]
-      },
       "NoteMedia": {
         "type": "object",
-        "required": [
-          "uploads"
-        ],
+        "required": ["uploads"],
         "additionalProperties": false,
         "properties": {
           "uploads": {
@@ -1872,10 +1501,7 @@
         "description": "Files posted to forms from `POST /v1/uploads`, each once. Needs `media:write`.",
         "items": {
           "type": "object",
-          "required": [
-            "upload",
-            "type"
-          ],
+          "required": ["upload", "type"],
           "additionalProperties": false,
           "properties": {
             "upload": {
@@ -1896,10 +1522,7 @@
       },
       "UploadStart": {
         "type": "object",
-        "required": [
-          "type",
-          "size"
-        ],
+        "required": ["type", "size"],
         "additionalProperties": false,
         "properties": {
           "name": {
@@ -1922,13 +1545,7 @@
       },
       "UploadForm": {
         "type": "object",
-        "required": [
-          "upload",
-          "type",
-          "url",
-          "fields",
-          "expires_in"
-        ],
+        "required": ["upload", "type", "url", "fields", "expires_in"],
         "properties": {
           "upload": {
             "type": "string",
@@ -1959,14 +1576,7 @@
       },
       "City": {
         "type": "object",
-        "required": [
-          "name",
-          "region",
-          "country",
-          "tz",
-          "lat",
-          "lon"
-        ],
+        "required": ["name", "region", "country", "tz", "lat", "lon"],
         "properties": {
           "name": {
             "type": "string"
@@ -1991,9 +1601,7 @@
       },
       "Places": {
         "type": "object",
-        "required": [
-          "places"
-        ],
+        "required": ["places"],
         "properties": {
           "places": {
             "type": "array",
@@ -2005,10 +1613,7 @@
       },
       "Spot": {
         "type": "object",
-        "required": [
-          "lat",
-          "lon"
-        ],
+        "required": ["lat", "lon"],
         "additionalProperties": false,
         "properties": {
           "lat": {
@@ -2030,12 +1635,7 @@
       },
       "DevicePlace": {
         "type": "object",
-        "required": [
-          "name",
-          "lat",
-          "lon",
-          "from"
-        ],
+        "required": ["name", "lat", "lon", "from"],
         "description": "A spot, kept to six decimal places, with its names.",
         "properties": {
           "name": {
@@ -2087,10 +1687,7 @@
       },
       "Here": {
         "type": "object",
-        "required": [
-          "place",
-          "nearby"
-        ],
+        "required": ["place", "nearby"],
         "properties": {
           "place": {
             "$ref": "#/components/schemas/DevicePlace"
@@ -2100,12 +1697,7 @@
             "maxItems": 6,
             "items": {
               "type": "object",
-              "required": [
-                "name",
-                "lat",
-                "lon",
-                "distance_m"
-              ],
+              "required": ["name", "lat", "lon", "distance_m"],
               "properties": {
                 "name": {
                   "type": "string",
@@ -2127,10 +1719,7 @@
       },
       "NoteEdit": {
         "type": "object",
-        "required": [
-          "text",
-          "revision"
-        ],
+        "required": ["text", "revision"],
         "additionalProperties": false,
         "properties": {
           "text": {
@@ -2147,9 +1736,7 @@
       },
       "NoteAppend": {
         "type": "object",
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "additionalProperties": false,
         "properties": {
           "text": {
@@ -2162,19 +1749,11 @@
       },
       "NoteWritten": {
         "type": "object",
-        "required": [
-          "note"
-        ],
+        "required": ["note"],
         "properties": {
           "note": {
             "type": "object",
-            "required": [
-              "id",
-              "date",
-              "version",
-              "revision",
-              "token"
-            ],
+            "required": ["id", "date", "version", "revision", "token"],
             "properties": {
               "id": {
                 "type": "string"
@@ -2223,13 +1802,7 @@
       },
       "Note": {
         "type": "object",
-        "required": [
-          "id",
-          "date",
-          "version",
-          "text",
-          "revision"
-        ],
+        "required": ["id", "date", "version", "text", "revision"],
         "properties": {
           "id": {
             "type": "string"
@@ -2274,20 +1847,12 @@
                 "type": "null"
               }
             ]
-          },
-          "moment": {
-            "$ref": "#/components/schemas/Moment",
-            "description": "The moment it was written with, as kept. Since 1.6.0."
           }
         }
       },
       "TagRow": {
         "type": "object",
-        "required": [
-          "pinned",
-          "recent",
-          "window_days"
-        ],
+        "required": ["pinned", "recent", "window_days"],
         "properties": {
           "pinned": {
             "type": "array",
@@ -2301,11 +1866,7 @@
             "maxItems": 20,
             "items": {
               "type": "object",
-              "required": [
-                "tag",
-                "count",
-                "last_used"
-              ],
+              "required": ["tag", "count", "last_used"],
               "properties": {
                 "tag": {
                   "type": "string"
@@ -2329,9 +1890,7 @@
       },
       "Pins": {
         "type": "object",
-        "required": [
-          "pinned"
-        ],
+        "required": ["pinned"],
         "additionalProperties": false,
         "properties": {
           "pinned": {
@@ -2346,20 +1905,11 @@
       "UpcomingFields": {
         "type": "object",
         "description": "A date as it is saved. A change sends every field again, as it should be.",
-        "required": [
-          "kind",
-          "title",
-          "date"
-        ],
+        "required": ["kind", "title", "date"],
         "properties": {
           "kind": {
             "type": "string",
-            "enum": [
-              "birthday",
-              "anniversary",
-              "trip",
-              "event"
-            ]
+            "enum": ["birthday", "anniversary", "trip", "event"]
           },
           "title": {
             "type": "string",
@@ -2445,13 +1995,7 @@
           },
           {
             "type": "object",
-            "required": [
-              "id",
-              "revision",
-              "next",
-              "status",
-              "line"
-            ],
+            "required": ["id", "revision", "next", "status", "line"],
             "properties": {
               "id": {
                 "type": "string"
@@ -2472,12 +2016,7 @@
               },
               "status": {
                 "type": "string",
-                "enum": [
-                  "upcoming",
-                  "today",
-                  "ongoing",
-                  "past"
-                ]
+                "enum": ["upcoming", "today", "ongoing", "past"]
               },
               "line": {
                 "type": "string",
@@ -2489,12 +2028,7 @@
       },
       "UpcomingList": {
         "type": "object",
-        "required": [
-          "today",
-          "entries",
-          "past_left_out",
-          "max_entries"
-        ],
+        "required": ["today", "entries", "past_left_out", "max_entries"],
         "properties": {
           "today": {
             "type": "string",
@@ -2537,10 +2071,7 @@
                 },
                 {
                   "type": "object",
-                  "required": [
-                    "id",
-                    "revision"
-                  ],
+                  "required": ["id", "revision"],
                   "properties": {
                     "id": {
                       "type": "string"
@@ -2557,10 +2088,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "id",
-                "revision"
-              ],
+              "required": ["id", "revision"],
               "additionalProperties": false,
               "properties": {
                 "id": {
@@ -2580,12 +2108,7 @@
       },
       "UpcomingSaved": {
         "type": "object",
-        "required": [
-          "dry_run",
-          "added",
-          "changed",
-          "removed"
-        ],
+        "required": ["dry_run", "added", "changed", "removed"],
         "properties": {
           "dry_run": {
             "type": "boolean"
@@ -2629,11 +2152,7 @@
       },
       "Reminders": {
         "type": "object",
-        "required": [
-          "from",
-          "through",
-          "days"
-        ],
+        "required": ["from", "through", "days"],
         "properties": {
           "from": {
             "type": "string",
@@ -2650,11 +2169,7 @@
             "description": "Only the days with a reminder due.",
             "items": {
               "type": "object",
-              "required": [
-                "date",
-                "send_at",
-                "reminders"
-              ],
+              "required": ["date", "send_at", "reminders"],
               "properties": {
                 "date": {
                   "type": "string",
@@ -2670,12 +2185,7 @@
                   "type": "array",
                   "items": {
                     "type": "object",
-                    "required": [
-                      "upcoming",
-                      "date",
-                      "when",
-                      "line"
-                    ],
+                    "required": ["upcoming", "date", "when", "line"],
                     "properties": {
                       "upcoming": {
                         "type": "string",
@@ -2704,10 +2214,7 @@
       },
       "Activity": {
         "type": "object",
-        "required": [
-          "items",
-          "next"
-        ],
+        "required": ["items", "next"],
         "properties": {
           "items": {
             "type": "array",
@@ -2730,12 +2237,8 @@
       },
       "ActivityRow": {
         "type": "object",
-        "required": [
-          "id",
-          "at",
-          "kind"
-        ],
-        "description": "One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`, and from 1.6.0 `moment`, the kinds of a moment it came with; a reads row `calls` and `tools`); `via` says through what, and a token’s rows name it as `token` and, from 1.4.0, by id as `token_id`.",
+        "required": ["id", "at", "kind"],
+        "description": "One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`; a reads row `calls` and `tools`); `via` says through what, and a token’s rows name it as `token` and, from 1.4.0, by id as `token_id`.",
         "properties": {
           "id": {
             "type": "string",

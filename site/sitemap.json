@@ -12,7 +12,7 @@
     "lastmod": "2026-10-29"
   },
   "/guide/": {
-    "said": "4013298fc86f222d380df5aa2a66ad015d772ceca1b0d3e51cceb18e365c6dc7",
+    "said": "9d89339a50def2a8199cfc965bf9623f8de22a52f38481a296b467d4ff594e41",
     "lastmod": "2026-10-29"
   },
   "/guide/start/": {
@@ -83,6 +83,10 @@
     "said": "0ed363b99aadcc876ea445091e6e1228db4578750a919bc5a7cd4ba215b20db8",
     "lastmod": "2026-10-29"
   },
+  "/guide/changelog/": {
+    "said": "df05abb0c83faaee070082bca038dc0dda63ccb54a0f0b27827e7725577e9f6b",
+    "lastmod": "2026-10-29"
+  },
   "/faq/": {
     "said": "208bf14ebd160f4c569e6853b30ce4b51e14ff8d1bd65247c74200da2bc2e34f",
     "lastmod": "2026-10-29"
@@ -92,7 +96,7 @@
     "lastmod": "2026-10-29"
   },
   "/changelog/": {
-    "said": "87d7b0c6612a88f12c623ba1443d4e0e8de91ab78d3931f0a2d718f7506ef04b",
+    "said": "f2403ad1b59cd7369a077035a6c45bb0170d526c2db90538b4cd6a790a9c8f4d",
     "lastmod": "2026-10-29"
   }
 }

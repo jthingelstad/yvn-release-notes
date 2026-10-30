@@ -3,7 +3,7 @@ title: Release Notes for Release Notes
 description: Everything Release Notes has learned to do, one release at a time.
 ---
 
-Release Notes numbers itself the way it numbers you. It shipped on October 7, 2026, so that day is 0.0.0. Newest first.
+Release Notes numbers itself the way it numbers you. It shipped on October 7, 2026, so that day is 0.0.0. Newest first. Changelog, the iPhone app, keeps [its own](/guide/changelog/).
 
 ## 0.0.22 · October 29
 

@@ -94,9 +94,15 @@ const KEY: JsonSchema = {
   pattern: '^[A-Za-z0-9_-]+$'
 };
 export const MCP_CONTRACT: McpContract = {
-  server_version: '1.10.0',
+  server_version: '1.11.0',
   protocol_versions: ['2025-06-18', '2025-03-26'],
   changes: [
+    {
+      version: '1.11.0',
+      date: '2026-10-30',
+      summary:
+        "A hashtag in any script is a tag: #東京, #שלום and #Москва are 東京, שלום and москва, wherever tags show. notes_search's tag takes one, so its pattern is gone; a tag no hashtag gives is still refused. Tags with a-z letters are as they were."
+    },
     {
       version: '1.10.0',
       date: '2026-10-29',
@@ -385,8 +391,7 @@ export const MCP_CONTRACT: McpContract = {
           },
           tag: {
             type: 'string',
-            description: 'A lowercase hashtag without #',
-            pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$',
+            description: 'A hashtag without #, as notes_tags lists it: lowercase, in any script, like maine-2016',
             maxLength: 100
           }
         },

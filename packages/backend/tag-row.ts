@@ -4,7 +4,7 @@
  * then the tags used most in the last 30 days, leaving out pinned ones,
  * ties broken by last use. */
 import { addDays, type Day } from '../domain/dates.ts';
-import { slug } from '../domain/tags.ts';
+import { isTag, tagName } from '../domain/tags.ts';
 import type { Item } from './store-types.ts';
 
 export const PINS_MAX = 12,
@@ -19,8 +19,8 @@ export function pinnedTags(value: unknown): string[] | null {
   const out: string[] = [];
   for (const entry of value) {
     if (typeof entry !== 'string') return null;
-    const tag = slug(entry.replace(/^#/, ''));
-    if (!/[a-z]/.test(tag)) return null;
+    const tag = tagName(entry.replace(/^#/, ''));
+    if (!isTag(tag)) return null;
     if (!out.includes(tag)) out.push(tag);
   }
   return out;

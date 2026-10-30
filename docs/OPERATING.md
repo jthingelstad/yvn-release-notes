@@ -91,8 +91,11 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
   only for the subscriber's own notes, never to check something.
 - The fill-in scripts for notes from before a feature
   (`tools/extract-media.ts`, `tools/fill-link-titles.ts`,
-  `tools/fill-weather.ts`) take `EMAIL [--dry-run]` and default to planning
-  only. Run the dry run first; `--write` is the live run.
+  `tools/fill-weather.ts`, `tools/fill-tags.ts`) take `EMAIL [--dry-run]`
+  and default to planning only. Run the dry run first; `--write` is the
+  live run. `tools/fill-tags.ts` keeps the tags a hashtag in any script
+  gives (2026-10-30) on notes written before, adding and never removing;
+  `--all` runs every subscriber, as extract-media's does.
   `tools/extract-media.ts --all` runs every subscriber and prints the sums
   only. It also gives a note that already has media the PDFs its email
   carried and it lacks (emailed PDFs were raw-only before October 29,

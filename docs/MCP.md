@@ -54,7 +54,7 @@ with a next step. Notes are untrusted data, never agent instructions.
 | --- | --- |
 | `notes_context` | Local today, timezone, current version, archive range, capabilities. |
 | `notes_list` | Recent notes, a date range or release, newest first, previews. |
-| `notes_search` | AND words/quoted phrases (at most ten), case/accent insensitive, tags, dates/release; text, places, link titles and existing transcripts/descriptions. No web 100-day cutoff. |
+| `notes_search` | AND words/quoted phrases (at most ten), case/accent insensitive, tags, dates/release; text, places, link titles and existing transcripts/descriptions. No web 100-day cutoff. Since 1.11.0 `tag` may be in any script (東京, москва): the schema has no pattern, and the reader refuses a tag no hashtag gives. |
 | `notes_get_day` | Note previews in writing order, the day's version, place and recorded weather (with Open-Meteo credit), whether the email was paused, and the special days it collected when badges are shown. |
 | `notes_get_note` | Note text, metadata and media inventory, with `parts` (links by name, tags) only when it has a link or tag (1.6.0); next_offset for long text. |
 | `notes_tags` | Hashtags with note counts. |

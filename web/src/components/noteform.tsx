@@ -25,7 +25,7 @@ import { NoteWhere } from './where.tsx';
 import { TagRow } from './tag-row.tsx';
 import { FormatBar, formatKey } from './format-bar.tsx';
 import { canLocate, kept, whereAmI } from '../lib/here.ts';
-import { spans, MAX_TAG } from '../../../packages/domain/tags.ts';
+import { isTag, spans } from '../../../packages/domain/tags.ts';
 
 interface Props {
   day: string;
@@ -44,14 +44,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
     const draft = store.get(key) || '';
     // Tags travel in the fragment, never a server-visible query or request.
     // Keep an existing draft and never duplicate a hashtag already in its text.
-    if (
-      !initialTag ||
-      initialTag.length > MAX_TAG ||
-      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(initialTag) ||
-      !/[a-z]/.test(initialTag) ||
-      spans(draft).some(([, , tag]) => tag === initialTag)
-    )
-      return draft;
+    if (!isTag(initialTag) || spans(draft).some(([, , tag]) => tag === initialTag)) return draft;
     return draft + (draft ? '\n\n' : '') + '#' + initialTag;
   });
   const [chosen, setChosen] = useState<string>('');

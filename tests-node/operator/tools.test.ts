@@ -13,6 +13,7 @@ import { report as tally } from '../../tools/tally.ts';
 import { report as readNotes } from '../../tools/read-notes.ts';
 import { fill as fillLinks } from '../../tools/fill-link-titles.ts';
 import { fill as fillWeather } from '../../tools/fill-weather.ts';
+import { fill as fillTags, fillAll as fillAllTags } from '../../tools/fill-tags.ts';
 import { extract, extractAll } from '../../tools/extract-media.ts';
 import { baseline } from '../../tools/badges-baseline.ts';
 import { privatePlanDirectory, savePlans, report, sampleWeather } from '../../tools/import-dayone.ts';
@@ -125,6 +126,39 @@ test('link fill dry run fetches only injected titles; changed words and deleting
   store.seed({ ...p, mcp_deleting: true });
   assert.equal((await fillLinks(store, 'u', true, fetcher)).changed, 1);
   assert.equal((await store.note('u', '2026-10-10', 'n'))?.links, undefined);
+});
+test('tag fill adds tags in any script to older notes, never takes one away, and stops on changed words', async () => {
+  const tagged = (id: string, text: string, tags?: string[]) => ({ ...note(id), text, ...(tags ? { tags } : {}) }),
+    store = new FakeStore([
+      p,
+      tagged('tokyo', 'Ramen #東京 and #walks', ['walks']),
+      tagged('walk', 'A walk #walks', ['walks']),
+      tagged('moscow', 'Snow in #Москва'),
+      tagged('moved', 'Now #東京', ['old'])
+    ]),
+    tags = async (id: string) => (await store.note('u', '2026-10-10', id))?.tags;
+  const dry = await fillTags(store, 'u');
+  assert.deepEqual(dry, { dry_run: true, notes: 4, to_tag: 2, tags_added: 2, left: 1, tagged: 0, changed: 0 });
+  assert.equal(hasWrites(store), false);
+  store.memory.beforeSend = (command) => {
+    if (command instanceof TransactWriteCommand) store.seed(tagged('moscow', 'Changed #Москва'));
+  };
+  const first = await fillTags(store, 'u', true);
+  assert.deepEqual([first.tagged, first.changed], [1, 1]);
+  store.memory.beforeSend = undefined;
+  assert.deepEqual(await tags('tokyo'), ['東京', 'walks']);
+  assert.equal(await tags('moscow'), undefined);
+  assert.deepEqual(await tags('walk'), ['walks']);
+  assert.deepEqual(await tags('moved'), ['old']);
+  const again = await fillAllTags(store, true);
+  assert.deepEqual([again.subscribers, again.to_tag, again.tagged, again.changed, again.left], [1, 1, 1, 0, 1]);
+  assert.deepEqual(await tags('moscow'), ['москва']);
+  assert.ok(!JSON.stringify(again).includes('ada'));
+  store.seed(tagged('tokyo', 'Ramen #東京 and #walks', ['walks']));
+  store.seed({ ...p, mcp_deleting: true });
+  assert.equal((await fillTags(store, 'u', true)).changed, 1);
+  assert.deepEqual(await tags('tokyo'), ['walks']);
+  assert.equal((await fillAllTags(store)).skipped, 1);
 });
 test('weather fill skips current/future/existing days and proves account before keeping results', async () => {
   const store = new FakeStore([

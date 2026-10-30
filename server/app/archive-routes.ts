@@ -15,6 +15,7 @@ const given = (giving: string[]) => (giving.length ? { giving } : {});
 /** The most badge keys one welcome back marks seen: more than are earnable. */
 const MAX_TOLD = 500;
 import { json, body, dayFrom, dateOf, pageLimit, searchFrom } from './requests.ts';
+import { isTag } from '../../packages/domain/tags.ts';
 export async function renderedDays(
   service: SessionService,
   uid: string,
@@ -59,6 +60,10 @@ export async function archiveRoutes(
     ].includes(pattern)
   )
     return null;
+  // A tag comes percent-encoded (#東京 as %E6%9D%B1%E4%BA%AC); one that no
+  // hashtag gives is an address the routes don't know.
+  const tag = pattern === '/api/tags/{tag}' ? pathTag(args[0]!) : null;
+  if (pattern === '/api/tags/{tag}' && !tag) return json({ error: 'not-found' }, 404);
   const { uid, profile: p } = await service.account(),
     ctx = service.context,
     store = ctx.store,
@@ -227,8 +232,8 @@ export async function archiveRoutes(
     every = await store.allNotes(uid);
     for (const n of every) if (terms.every((t) => searchedText(n).includes(t))) (by[dateOf(n)] ??= []).push(n);
   } else
-    for (const n of await store.taggedNotes(uid, args[0]!))
-      if (((n.tags as string[]) ?? []).includes(args[0]!)) (by[dateOf(n)] ??= []).push(n);
+    for (const n of await store.taggedNotes(uid, tag!))
+      if (((n.tags as string[]) ?? []).includes(tag!)) (by[dateOf(n)] ??= []).push(n);
   const dates = Object.keys(by).sort().reverse(),
     shown = pattern === '/api/search' ? dates.slice(0, 100) : dates;
   // A note with no place shows its whole day's city, so read the whole day
@@ -241,9 +246,20 @@ export async function archiveRoutes(
   return json({
     ...(pattern === '/api/search'
       ? { terms, notes: Object.values(by).reduce((n, v) => n + v.length, 0), day_count: dates.length }
-      : { tag: args[0] }),
+      : { tag }),
     today,
     tz: p.tz,
     days: views
   });
+}
+function pathTag(raw: string): string | null {
+  // The address every tag before 2026-10-30 had, read as it always was.
+  if (/^[a-z0-9]{1,50}(?:-[a-z0-9]{1,49})*$/.test(raw)) return raw;
+  let tag: string;
+  try {
+    tag = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  return isTag(tag) ? tag : null;
 }

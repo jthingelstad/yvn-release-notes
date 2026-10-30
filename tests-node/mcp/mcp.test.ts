@@ -230,6 +230,24 @@ test('cursor binds account, field and filters, tolerates changed page size; rele
   for (const args of [{ q: '' }, { q: 'one '.repeat(11) }, { q: '"" '.repeat(11) }])
     assert.equal((await rpc(ctx, a.token, 'notes_search', args)).value.error, 'invalid_arguments');
 });
+test('notes_search takes a tag in any script, as notes_tags lists it, and refuses one no hashtag gives', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx);
+  note(ctx, 'tokyo', 'Ramen #東京 and #Москва', '2026-10-07');
+  note(ctx, 'walk', 'A walk #walks', '2026-10-08');
+  for (const [tag, ids] of [
+    ['東京', ['tokyo']],
+    ['москва', ['tokyo']],
+    ['walks', ['walk']]
+  ] as const)
+    assert.deepEqual(
+      ((await rpc(ctx, a.token, 'notes_search', { tag })).value.notes as OAuthRow[]).map((n) => n.id),
+      ids,
+      tag
+    );
+  for (const tag of ['Москва', 'Running', '東'.repeat(51), '-walks', '١٢٣', 7])
+    assert.equal((await rpc(ctx, a.token, 'notes_search', { tag })).value.error, 'invalid_arguments', String(tag));
+});
 test('all huge Unicode/import notes and audio finish continuation without raw keys or descriptions', async () => {
   const ctx = fixture(),
     a = await connected(ctx);

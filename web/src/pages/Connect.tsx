@@ -212,10 +212,10 @@ export function AppSignIn({ info, request, email }: { info: RequestInfo; request
             onChange={(e) => setName(e.target.value)}
           />
         </label>
-        <fieldset>
+        <fieldset className="scopes">
           <legend>It may</legend>
           {asked.map(([scope, said]) => (
-            <label key={scope}>
+            <label className="check" key={scope}>
               <input
                 type="checkbox"
                 checked={scopes.includes(scope)}

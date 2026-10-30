@@ -231,6 +231,7 @@ function EditForm({
       <textarea
         ref={area}
         name="text"
+        dir="auto"
         autoFocus
         rows={Math.min(12, Math.max(3, text.split('\n').length + 1))}
         value={text}

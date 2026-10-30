@@ -9,7 +9,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 
 - Apps on [the API](/guide/api/) can tell which account and which token they're signed in with, and a note an app sends again under another of your tokens is still filed once. An app that prefers plain text to JSON gets it however its request says so, and a request whose body contradicts its address is refused rather than guessed at.
 - Changelog, the iPhone app, has [its page in the guide](/guide/changelog/), with screenshots and an invitation to its test on TestFlight. [Features](/features/) lists it too.
-- Smaller things: in Settings, a new API token wraps to fit a phone, and its Copy button comes into view as soon as it's made. In Feedback, Attach a screenshot is a link, as Add files is under the note box, rather than the browser's own file button. Upcoming's calendar link no longer says reminders come only in the email, now that an app can show them too. A long tag breaks to fit a phone, in Search's tags, the row under the note box and the activity log, instead of running off the side.
+- Smaller things: in Settings, a new API token wraps to fit a phone, and its Copy button comes into view as soon as it's made. In Feedback, Attach a screenshot is a link, as Add files is under the note box, rather than the browser's own file button. Upcoming's calendar link no longer says reminders come only in the email, now that an app can show them too. A long tag breaks to fit a phone, in a note's own words, Search's tags, the row under the note box and the activity log, instead of running off the side. A note in Hebrew or Arabic reads right to left, in the box as you type it and once it's saved.
 
 ## 0.0.22 · October 29
 

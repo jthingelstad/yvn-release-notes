@@ -5,6 +5,10 @@ description: Everything Release Notes has learned to do, one release at a time.
 
 Release Notes numbers itself the way it numbers you. It shipped on October 7, 2026, so that day is 0.0.0. Newest first. Changelog, the iPhone app, keeps [its own](/guide/changelog/).
 
+## 0.0.23 · October 30
+
+- Apps on [the API](/guide/api/) can tell which account and which token they're signed in with, and a note an app sends again under another of your tokens is still filed once.
+
 ## 0.0.22 · October 29
 
 - API tokens in Settings: make one, and a script, a shortcut or an app can add notes as you, with photos, recordings, PDFs and where you were, and keep your Upcoming dates. The web shows which token added each note, and your first earns a new badge, API release. [The API](/guide/api/) says how.

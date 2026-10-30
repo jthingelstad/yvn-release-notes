@@ -12,6 +12,7 @@ import {
   UNCONFIRMED_RECHECK_SECONDS,
   LookupError,
   createWeeklyThing,
+  gateFree,
   standingOf,
   subscribedOf,
   type Standing,
@@ -197,6 +198,37 @@ test('a failed lookup, or no gate, never stops a sign-up', async () => {
 
   const open = await setup();
   assert.equal((await open.signUp(await open.newcomer('new@example.com'))).r.status, 200);
+});
+
+test('Jamie’s own plus addresses skip the gate and are never looked up', async () => {
+  assert.ok(gateFree('jamie+example@thingelstad.com'));
+  assert.ok(gateFree('Jamie+Example@Thingelstad.com'));
+  const wt = lookup({}),
+    s = await setup(wt.weeklyThing),
+    own = await s.newcomer('jamie+example@thingelstad.com');
+  assert.deepEqual((await s.call('GET', '/api/me', own)).b, { new: true, email: 'jamie+example@thingelstad.com' });
+  const made = await s.signUp(own);
+  assert.equal(made.r.status, 200);
+  assert.equal(made.b.weekly_thing, undefined);
+  const uid = String(await s.store.userForEmail('jamie+example@thingelstad.com'));
+  assert.ok(!('weekly_thing_at' in (await s.store.profile(uid))!), 'nothing to look at again');
+  assert.equal((await s.call('GET', '/api/me', own)).r.status, 200);
+  assert.deepEqual(wt.asked, [], 'never asked, at sign-up or after');
+
+  // Only that shape: the bare address, an empty tag, another name or another
+  // domain is asked about like anyone's.
+  const others = [
+    'jamie@thingelstad.com',
+    'jamie+@thingelstad.com',
+    'notjamie+x@thingelstad.com',
+    'jamie+x@mail.thingelstad.com',
+    'jamie+x@thingelstad.com.example.com'
+  ];
+  for (const email of others) {
+    assert.equal(gateFree(email), false, email);
+    assert.equal((await s.signUp(await s.newcomer(email))).b.error, 'weekly-thing', email);
+  }
+  assert.deepEqual(wt.asked, others);
 });
 
 test('an account made before the gate keeps everything and is looked at every nine days', async () => {

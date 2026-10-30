@@ -34,7 +34,13 @@ import { releaseBadges, untold } from '../packages/domain/badges.ts';
 import { givenDuring } from '../packages/domain/giving.ts';
 import { badges as readBadgesOf } from '../packages/backend/badges.ts';
 import { givingEvents } from '../packages/backend/activity.ts';
-import { LookupError, recheckDue, standingFields, type WeeklyThing } from '../packages/backend/weekly-thing.ts';
+import {
+  LookupError,
+  gateFree,
+  recheckDue,
+  standingFields,
+  type WeeklyThing
+} from '../packages/backend/weekly-thing.ts';
 import {
   buildMessage,
   newToken,
@@ -595,7 +601,7 @@ export async function recheckStanding(
   day: string,
   at: number
 ): Promise<void> {
-  if (!s.weeklyThing || !recheckDue(profile, at)) return;
+  if (!s.weeklyThing || !recheckDue(profile, at) || gateFree(String(profile.email))) return;
   // The year before the standing's time, so a failed write is asked again
   // after the next email (as web visits do, packages/backend/accounts.ts).
   let added = false;

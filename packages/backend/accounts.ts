@@ -14,7 +14,7 @@ import { badges } from './badges.ts';
 import { again, eventId, givingEvents, recordActivity } from './activity.ts';
 import type { ActivityEvent } from '../domain/activity.ts';
 import { sawMember } from '../domain/giving.ts';
-import { LookupError, recheckDue, standingFields, welcome, type Standing } from './weekly-thing.ts';
+import { LookupError, gateFree, recheckDue, standingFields, welcome, type Standing } from './weekly-thing.ts';
 /** The settings a change records, each with what it reads as when unset. */
 const SETTINGS: Record<string, unknown> = {
   send_time: null,
@@ -30,14 +30,15 @@ const SETTINGS: Record<string, unknown> = {
 const record = (service: SessionService, user: string, events: ActivityEvent[]) =>
   recordActivity(service.context.store, user, service.context.now, events, (f) => service.log(f));
 /** An address's Weekly Thing standing as profile fields
- * (packages/backend/weekly-thing.ts), or nothing when there is no gate or the
- * lookup failed: a failure never locks anyone out. */
+ * (packages/backend/weekly-thing.ts), or nothing when there is no gate, the
+ * address is Jamie's own (`gateFree`) or the lookup failed: a failure never
+ * locks anyone out. */
 export async function lookUpWeeklyThing(
   service: SessionService,
   email: string
 ): Promise<{ weekly_thing?: Standing; weekly_thing_at?: string }> {
   const lookup = service.context.weeklyThing;
-  if (!lookup) return {};
+  if (!lookup || gateFree(email)) return {};
   try {
     const standing = await lookup.standing(email);
     service.log({ event: 'weekly-thing', standing });

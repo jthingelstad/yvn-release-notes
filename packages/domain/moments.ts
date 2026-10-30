@@ -273,7 +273,8 @@ const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 export function distanceText(metres: number, swimming: boolean, miles: boolean): string {
   if (swimming) return miles ? `${count(metres * 1.0936133)} yd` : `${count(metres)} m`;
   const value = miles ? metres / 1609.344 : metres / 1000;
-  return `${value < 10 ? value.toFixed(1) : count(value)} ${miles ? 'mi' : 'km'}`;
+  // As Changelog writes it: tenths below 100, without a bare ".0".
+  return `${value < 100 ? String(Number(value.toFixed(1))) : count(value)} ${miles ? 'mi' : 'km'}`;
 }
 export function durationText(seconds: number): string {
   const minutes = Math.round(seconds / 60),

@@ -43,7 +43,7 @@ describe('NoteMoment', () => {
   it('draws a quiet line a piece, each with its glyph, as text', () => {
     const { container } = render(<NoteMoment n={n} miles={true} />);
     const lines = [...container.querySelectorAll('.moment li')].map((li) => li.textContent);
-    expect(lines).toEqual(['Ride · 20 mi · 1 hr', '<b>A Song</b> · A Band', 'With Ana and Ben']);
+    expect(lines).toEqual(['Ride · 19.9 mi · 1 hr', '<b>A Song</b> · A Band', 'With Ana and Ben']);
     expect(container.querySelector('b')).toBeNull();
     expect(container.querySelectorAll('.moment li svg[aria-hidden="true"]').length).toBe(3);
     expect(container.querySelector('.moment')?.getAttribute('aria-label')).toBe('Moment');

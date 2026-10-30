@@ -16,7 +16,7 @@ Signed in, **You**, then **Badges**, shows them all: what's coming up in this re
 **Tracks** climb through tiers, from alpha to beta, rc, stable and LTS, for years:
 
 - **Continuous delivery**: days in a row with a note.
-- **Cadence**: weeks with notes on four days or more.
+- **Cadence**: weeks in a row with notes on four days or more.
 - **Patches shipped**: days with notes, all told.
 - **Coverage**: the share of a release's days that have notes. Each release earns its own.
 - **Roadmap**: dates you've added to [Upcoming](/guide/upcoming/).

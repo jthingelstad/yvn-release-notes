@@ -37,6 +37,7 @@ In **You**, then **Settings**:
 - **Daily email**: the time it comes, your city, and pausing the emails.
 - **Writing and search**: the address you can mail a note to any day, "Add where I am", writing out voice memos, describing photos and showing badges.
 - **Connected agents**: connecting Claude or ChatGPT to your notes, if you'd like.
+- **API tokens**: keys that let a script, a shortcut or an app add notes as you. [API tokens](/guide/tokens/) says how.
 - **Your account**: a profile photo, exporting everything, and deleting your account.
 
 Next: [the morning email](/guide/the-email/), part by part.

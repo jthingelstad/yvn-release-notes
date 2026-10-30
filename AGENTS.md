@@ -276,7 +276,8 @@ Where things are (each module's design comment has its contract):
   every guard). `links.segments` is the one rendering for the email, the
   web and the export.
 - **Rich text is a small subset, and only for notes stamped rich**
-  (`docs/RICH-TEXT.md`; it replaced 2026-10-08's "there is no Markdown"):
+  (Jamie, 2026-10-30: "Approved: merge Release Notes #257, rich text";
+  `docs/RICH-TEXT.md`; it replaced 2026-10-08's "there is no Markdown"):
   bold, italic, lists, numbered lists and quotes, stored as typed, with
   `markup: 'rich'` set when the note is written and kept by every edit. A
   note without the stamp is plain and renders exactly as before, so the

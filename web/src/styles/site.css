@@ -3259,6 +3259,23 @@ fieldset.book-fields {
 .doc-body pre code {
   font-size: 13px;
 }
+/* Screenshots (the Changelog page): phone screens side by side, a paragraph
+   of images alone, their corners rounded like the phone's and a faint rule
+   so a light screen shows on the paper. A narrow screen scrolls the row
+   sideways rather than shrinking them past reading. */
+.doc-body p:has(> img) {
+  display: flex;
+  gap: 16px;
+  margin-top: 24px;
+  overflow-x: auto;
+}
+.doc-body p > img {
+  flex: 0 0 auto;
+  width: max(150px, calc((100% - 32px) / 3));
+  height: auto;
+  border-radius: 24px;
+  box-shadow: 0 0 0 1px var(--rule);
+}
 .site-links {
   display: flex;
   flex-wrap: wrap;

@@ -1058,7 +1058,9 @@ Resources:
   # own index.html, and its address without the final slash is sent to it,
   # so each page has one address. Any other address under one of PUBLIC (a
   # mistyped /guide/ page, say) is index.html too, whose Not found the
-  # function sends as a 404 when the answer goes back (viewer-response).
+  # function sends as a 404 when the answer goes back (viewer-response):
+  # that run sees the rewritten address, so the way in marks the request
+  # with a header no cache key or origin sees.
   # PAGES is the pages site/ has and PUBLIC their folders
   # (tests-node/infra/web-index.test.ts). A file (a name with a dot) is
   # served as is. /api/* never runs it.
@@ -1099,6 +1101,9 @@ Resources:
         ];
         var PUBLIC = ['/changelog/', '/faq/', '/features/', '/guide/', '/how-it-works/', '/privacy/'];
         // An address under a section that is none of its pages: Not found.
+        // The way back sees the address as rewritten (/index.html), so the
+        // way in marks the request, and only this function sets the mark.
+        var MARK = 'x-rn-missing';
         function missing(uri) {
           if (uri.lastIndexOf('.') > uri.lastIndexOf('/')) return false;
           var page = uri.charAt(uri.length - 1) === '/' ? uri : uri + '/';
@@ -1111,12 +1116,14 @@ Resources:
           var uri = request.uri;
           if (event.context.eventType === 'viewer-response') {
             var response = event.response;
-            if (response.statusCode === 200 && missing(uri)) {
+            if (response.statusCode === 200 && (request.headers[MARK] || missing(uri))) {
               response.statusCode = 404;
               response.statusDescription = 'Not Found';
             }
             return response;
           }
+          delete request.headers[MARK];
+          if (missing(uri)) request.headers[MARK] = { value: '1' };
           if (uri === '/') {
             request.uri = '/front.html';
             return request;

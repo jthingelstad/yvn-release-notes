@@ -81,7 +81,7 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
     const authorization = request.headers.get('authorization') ?? '',
       token = authorization.slice(7),
       family =
-        authorization.startsWith('Bearer ') && authorization.length < 256
+        /^bearer /i.test(authorization) && authorization.length < 256
           ? await new OAuthService(context).bearer(token)
           : null;
     if (!family || !String(family.scope).split(/\s+/).includes('notes:read'))
@@ -101,7 +101,9 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
       parsed = b;
     } catch (error) {
       if (error instanceof ToolError)
-        return oauthResponse(error.code === 'body_too_large' ? 413 : 400, { error: error.code });
+        return error.code === 'body_too_large'
+          ? oauthResponse(413, { error: error.code })
+          : oauthResponse(400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
       throw error;
     }
     if (

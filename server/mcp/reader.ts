@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { newToken } from '../../packages/backend/auth.ts';
 import { type OAuthContext, type OAuthRow, type OAuthStore } from '../../packages/backend/oauth.ts';
 import { segments, type Link } from '../../packages/backend/links.ts';
+import { isRich } from '../../packages/domain/rich.ts';
 import type { City } from '../../packages/backend/places.ts';
 import { localDay, localStart, validDay, validTimezone, parseDay, addDays } from '../../packages/domain/dates.ts';
 import {
@@ -362,7 +363,7 @@ export class Reader {
     for (;;) {
       const words = codePointSlice(text, offset, offset + Math.max(length, 0)),
         tz = validTimezone(item.tz) ? String(item.tz) : String(this.profile.tz),
-        parts = split(segments(words, item.links as Link[] | undefined));
+        parts = split(segments(words, item.links as Link[] | undefined, isRich(item)));
       shown = {
         id: String(item.sk).split('#').slice(2).join('#'),
         source: item.source ?? 'email',

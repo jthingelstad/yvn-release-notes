@@ -112,3 +112,20 @@ test('page metadata preserves HTML entities, preference, charset and word trunca
   assert.equal(links.pageMeta(Buffer.from('<title> </title>'), 'text/html', 'example.com'), null);
   assert.equal(links.clean('word '.repeat(100), 200).endsWith('word…'), true);
 });
+test('in rich text a closing * or _ after an address is a mark; in plain text it stays the address’s', async () => {
+  const found = [{ url: 'https://example.com/a', title: 'A page' }];
+  assert.deepEqual(links.segments('**https://example.com/a**', found, true), [
+    '**',
+    { url: 'https://example.com/a', label: 'A page', site: '' },
+    '**'
+  ]);
+  assert.deepEqual(links.urls('see https://example.com/a_ now', true), ['https://example.com/a']);
+  assert.deepEqual(links.urls('see https://example.com/a_ now'), ['https://example.com/a_']);
+  assert.equal(links.plain('*https://example.com/a*', found, true), '*A page <https://example.com/a>*');
+  assert.deepEqual(
+    (
+      await links.collect('**https://example.com/b**', { rich: true, fetch: async () => ({ title: 'B', site: '' }) })
+    ).map((l) => l.url),
+    ['https://example.com/b']
+  );
+});

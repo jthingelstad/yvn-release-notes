@@ -3,8 +3,9 @@
 import { Fragment, useState, type ReactNode } from 'react';
 import { absolute, LINK_MS, mediaPath } from '../lib/files.ts';
 import { zoneName, zoneShortDate, zoneTime } from '../lib/format.ts';
-import type { Media, Note } from '../lib/types.ts';
+import type { Media, Note, Part } from '../lib/types.ts';
 import { momentParts } from '../../../packages/domain/moments.ts';
+import { blocks, webParts, type Block, type Line } from '../../../packages/domain/rich.ts';
 import { AppLink } from './common.tsx';
 import { MomentIcon } from './icon.tsx';
 import { useViewer } from './viewer.tsx';
@@ -37,33 +38,84 @@ function OutLink({ href, children }: { href: string; children: ReactNode }) {
 
 const URL_RE = /https?:\/\/[^\s<>"]+/gi;
 
-// A note's text as a paragraph, links by name: the API's `parts` (strings,
-// {url, label, site} and {tag, text}), the same as the email's
-// (links.segments). Bare web addresses still link if `parts` is missing.
+type Atom = Exclude<Part, string>;
+
+// One link or hashtag of a note's words.
+function atomNode(part: Atom, key: number): ReactNode {
+  if ('tag' in part) {
+    // A hashtag: its tag's page (tags.py).
+    return (
+      <AppLink key={key} className="tag" href={`/tag/?t=${encodeURIComponent(part.tag)}`}>
+        {part.text}
+      </AppLink>
+    );
+  }
+  if (/^https?:\/\//i.test(part.url || '')) {
+    return (
+      <span key={key}>
+        <OutLink href={part.url}>{part.label || part.url}</OutLink>
+        {part.site && <span className="site"> · {part.site}</span>}
+      </span>
+    );
+  }
+  return null;
+}
+
+function inlineNodes(line: Line<Atom>, mark?: RegExp | null): ReactNode[] {
+  return line.map((bit, i) => {
+    let node: ReactNode = 'atom' in bit ? atomNode(bit.atom, i) : <Marked key={i} text={bit.text} mark={mark} />;
+    if (bit.em) node = <em key={i}>{node}</em>;
+    if (bit.strong) node = <strong key={i}>{node}</strong>;
+    return node;
+  });
+}
+
+const lineNodes = (rows: Line<Atom>[], mark?: RegExp | null) =>
+  rows.map((row, i) => (
+    <Fragment key={i}>
+      {i > 0 && <br />}
+      {inlineNodes(row, mark)}
+    </Fragment>
+  ));
+
+function blockNodes(written: Block<Atom>[], mark?: RegExp | null): ReactNode[] {
+  return written.map((b, i) => {
+    if (b.kind === 'para') return <p key={i}>{lineNodes(b.lines, mark)}</p>;
+    if (b.kind === 'quote') return <blockquote key={i}>{blockNodes(b.blocks, mark)}</blockquote>;
+    const items = b.items.map((rows, j) => <li key={j}>{lineNodes(rows, mark)}</li>);
+    if (b.kind === 'numbers')
+      return (
+        <ol key={i} start={b.start === 1 ? undefined : b.start}>
+          {items}
+        </ol>
+      );
+    return <ul key={i}>{items}</ul>;
+  });
+}
+
+// A note's text, links by name: the API's `parts` (strings, {url, label,
+// site} and {tag, text}), the same as the email's (links.segments). A note
+// written with rich text (n.markup) has its bold, italic, lists and quotes
+// read from those strings, as the email reads them (domain/rich.ts). Bare
+// web addresses still link if `parts` is missing.
 export function NoteBody({ n, cls = 'text', mark }: { n: Note; cls?: string; mark?: RegExp | null }) {
   const text = noteText(n);
+  if (n.text && n.markup === 'rich') {
+    // While it is saved, before the API's `parts`: addresses still link.
+    const parts: (string | Atom)[] = Array.isArray(n.parts)
+      ? n.parts
+      : webParts(n.text).map((p) =>
+          typeof p === 'string'
+            ? p
+            : { url: p.url, label: p.url.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '') }
+        );
+    return <div className={`${cls} rich`}>{blockNodes(blocks(parts), mark)}</div>;
+  }
   let body: ReactNode[];
   if (n.text && Array.isArray(n.parts)) {
-    body = n.parts.map((part, i) => {
-      if (typeof part === 'string') return <Marked key={i} text={part} mark={mark} />;
-      if ('tag' in part) {
-        // A hashtag: its tag's page (tags.py).
-        return (
-          <AppLink key={i} className="tag" href={`/tag/?t=${encodeURIComponent(part.tag)}`}>
-            {part.text}
-          </AppLink>
-        );
-      }
-      if (/^https?:\/\//i.test(part.url || '')) {
-        return (
-          <span key={i}>
-            <OutLink href={part.url}>{part.label || part.url}</OutLink>
-            {part.site && <span className="site"> · {part.site}</span>}
-          </span>
-        );
-      }
-      return null;
-    });
+    body = n.parts.map((part, i) =>
+      typeof part === 'string' ? <Marked key={i} text={part} mark={mark} /> : atomNode(part, i)
+    );
   } else {
     body = [];
     let last = 0;

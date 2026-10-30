@@ -7,6 +7,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 
 ## 0.0.23 · October 30
 
+- Notes written on the web can have **bold** and _italic_ words, lists, numbered lists and quotes: use the buttons under the box, or type the marks. They show on the web and in the email. [Getting started](/guide/start/) says how.
 - Apps on [the API](/guide/api/) can tell which account and which token they're signed in with, and a note an app sends again under another of your tokens is still filed once. An app that prefers plain text to JSON gets it however its request says so, and a request whose body contradicts its address is refused rather than guessed at.
 - Changelog, the iPhone app, has [its page in the guide](/guide/changelog/), with screenshots and an invitation to its test on TestFlight. [Features](/features/) lists it too.
 - An app can keep a moment with a note: a walk's distance and time, a song, how you felt or who you were with, beside the words. The day page shows it under them, and the export keeps it. [The API](/guide/api/#moments) says how.

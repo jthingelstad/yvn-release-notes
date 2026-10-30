@@ -23,6 +23,7 @@ import { Icon } from './icon.tsx';
 import { UnlockLine } from './unlock.tsx';
 import { NoteWhere } from './where.tsx';
 import { TagRow } from './tag-row.tsx';
+import { FormatBar, formatKey } from './format-bar.tsx';
 import { canLocate, kept, whereAmI } from '../lib/here.ts';
 import { spans, MAX_TAG } from '../../../packages/domain/tags.ts';
 
@@ -122,7 +123,12 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
       if ('place' in found) at = found.place;
     }
     // The zone it is being written in, so its time reads as it did here.
-    const body: { text: string; tz: string; uploads?: unknown; place?: Place } = { text, tz: browserZone() };
+    // Written here, it is rich text (docs/RICH-TEXT.md).
+    const body: { text: string; tz: string; markup: 'rich'; uploads?: unknown; place?: Place } = {
+      text,
+      tz: browserZone(),
+      markup: 'rich'
+    };
     if (at) body.place = kept(at);
     if (files.length) {
       const out = await sendFiles(files, setChosen);
@@ -173,8 +179,10 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
             value={text}
             readOnly={held}
             onChange={(e) => write(e.target.value)}
+            onKeyDown={(e) => formatKey(e, area, text, write)}
           />
         </label>
+        <FormatBar area={area} text={text} onText={write} disabled={held} />
         <TagRow text={text} onText={write} disabled={held} />
         <p className="hint chosen" role="status" hidden={!chosen}>
           {chosen}

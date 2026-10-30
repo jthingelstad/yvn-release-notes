@@ -5,6 +5,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import * as links from '../backend/links.ts';
 import { withoutClosing } from '../domain/tags.ts';
+import * as rich from '../domain/rich.ts';
 import { computeVersion, lifeCount, livedText, releaseName, type Version } from '../domain/version.ts';
 import type { Streak } from '../domain/streak.ts';
 import { codePointLength, codePointSlice, pythonRstrip, pythonTrim } from '../domain/unicode.ts';
@@ -57,6 +58,9 @@ export interface Thumbnail {
 export interface PastDay {
   day: string;
   text: string;
+  /** Set when the day has a rich note (domain/rich.ts `combined`): the text
+   * is read as rich, its plain notes escaped. */
+  rich?: true;
   links?: links.Link[];
   files?: Files;
   sky?: string | null;
@@ -269,15 +273,13 @@ export const escape = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;' })[c]!);
 export const asciiHtml = (text: string) =>
   Array.from(escape(text), (c) => (c.codePointAt(0)! > 127 ? `&#${c.codePointAt(0)};` : c)).join('');
+const linkHtml = (seg: links.LinkPart) =>
+  `<a class="link" href="${asciiHtml(seg.url)}" style="color:${BLUE};">${asciiHtml(seg.label)}</a>` +
+  (seg.site ? `<span class="ink-2" style="color:${INK_2};"> &middot; ${asciiHtml(seg.site)}</span>` : '');
 export function linked(text: string, found?: links.Link[]): string {
   return links
     .segments(text, found)
-    .map((seg) =>
-      typeof seg === 'string'
-        ? asciiHtml(seg)
-        : `<a class="link" href="${asciiHtml(seg.url)}" style="color:${BLUE};">${asciiHtml(seg.label)}</a>` +
-          (seg.site ? `<span class="ink-2" style="color:${INK_2};"> &middot; ${asciiHtml(seg.site)}</span>` : '')
-    )
+    .map((seg) => (typeof seg === 'string' ? asciiHtml(seg) : linkHtml(seg)))
     .join('');
 }
 export function filesPhrase(files?: Files): string {
@@ -305,13 +307,24 @@ export const yearsAgo = (v: Version, then: Version) =>
 export const sectionLede = (v: Version, past: OnThisDay) =>
   `${past.shown.length + past.more.length === 1 ? 'One earlier release has' : `${past.shown.length + past.more.length} earlier releases have`} notes for day ${v.patch}.`;
 export const budget = (past: OnThisDay) => Math.floor(PAST_MAX / Math.max(1, past.shown.length));
-export const shownText = (p: PastDay, limit: number) => pastText(withoutClosing(p.text), limit);
+/** A rich day's cut closes any bold or italic it left open (rich.closeCut). */
+const richCut = (p: { rich?: true }, full: string, [text, cut]: [string, boolean]): [string, boolean] => [
+  cut && p.rich ? rich.closeCut(full, text) : text,
+  cut
+];
+export const shownText = (p: PastDay, limit: number) => {
+  const full = withoutClosing(p.text);
+  return richCut(p, full, pastText(full, limit));
+};
+/** The words for the text part: a rich day's as typed, backslashes gone. */
+export const typed = (p: { rich?: true }, text: string, found?: links.Link[]) =>
+  p.rich ? links.plain(rich.asTyped(text), found, true) : links.plain(text, found);
 export function pastBody(v: Version, birthday: string, past: OnThisDay): string {
   const out = [`On this day: ${sectionLede(v, past)}\n\n`];
   for (const p of past.shown) {
     const then = computeVersion(birthday, p.day),
       [text, cut] = shownText(p, budget(past)),
-      shown = links.plain(text, p.links);
+      shown = typed(p, text, p.links);
     out.push(
       `${yearsAgo(v, then)} you were ${then} (${longDate(p.day)}, ${p.day.slice(0, 4)}):\n` +
         (p.sky ? `${p.sky}.\n` : '') +
@@ -327,17 +340,22 @@ export function pastBody(v: Version, birthday: string, past: OnThisDay): string 
     );
   return out.join('');
 }
-export const yesterdayShown = (y: Yesterday) => sentenceText(withoutClosing(y.text));
-export const cutMark = (shown: string, cut: boolean) => (cut && shown && !endsSentence.test(shown) ? '…' : '');
+export const yesterdayShown = (y: Yesterday) => {
+  const full = withoutClosing(y.text);
+  return richCut(y, full, sentenceText(full));
+};
+// A rich excerpt may end in the markers that close its bold or italic.
+export const cutMark = (shown: string, cut: boolean, isRich = false) =>
+  cut && shown && !endsSentence.test(isRich ? shown.replace(/[*_]+$/u, '') : shown) ? '…' : '';
 export function yesterdayBody(birthday: string, y: Yesterday): string {
   const then = computeVersion(birthday, y.day),
     [text, cut] = yesterdayShown(y),
-    shown = links.plain(text, y.links),
+    shown = typed(y, text, y.links),
     files = filesLine(y.files, y.others);
   return (
     `Yesterday you were ${then} (${longDate(y.day)}):\n\n` +
     (y.places.length ? `${whereLine(y.places)}\n\n` : '') +
-    (shown ? `${shown}${cutMark(shown, cut) ? ' ...' : ''}\n\n` : '') +
+    (shown ? `${shown}${cutMark(shown, cut, y.rich) ? ' ...' : ''}\n\n` : '') +
     (y.tags.length ? y.tags.map((t) => `#${t}`).join(' ') + '\n\n' : '') +
     (files ? files + '\n' : '') +
     `${cut ? 'Read the rest' : `See ${then}`}: ${pastLink(y.day)}\n\n`
@@ -457,6 +475,46 @@ export function notesHtml(shown: string, found?: links.Link[], mark = ''): strin
     )
     .join('');
 }
+const BODY = `font-family:${FONT};font-size:17px;line-height:1.5;`;
+function inlineHtml(line: rich.Line<links.LinkPart>): string {
+  return line
+    .map((s) => {
+      let html = 'text' in s ? asciiHtml(s.text) : linkHtml(s.atom);
+      if (s.em) html = `<em style="font-style:italic;">${html}</em>`;
+      if (s.strong) html = `<strong style="font-weight:700;">${html}</strong>`;
+      return html;
+    })
+    .join('');
+}
+function blocksHtml(written: rich.Block<links.LinkPart>[], quoted = false): string {
+  // Type on paper: a quote is set in and quieter, with no rule beside it.
+  const ink = quoted
+      ? `class="ink-2" style="margin:0 0 12px;${BODY}color:${INK_2};"`
+      : `class="ink" style="margin:0 0 12px;${BODY}color:${INK};"`,
+    list = `style="margin:0 0 12px;padding:0 0 0 26px;${BODY}color:${quoted ? INK_2 : INK};" class="${quoted ? 'ink-2' : 'ink'}"`,
+    item = (lines: rich.Line<links.LinkPart>[]) =>
+      `<li style="margin:0 0 4px;">${lines.map(inlineHtml).join('<br>')}</li>`;
+  return written
+    .map((b) => {
+      if (b.kind === 'para') return `<p ${ink}>${b.lines.map(inlineHtml).join('<br>')}</p>\n`;
+      if (b.kind === 'quote')
+        return `<blockquote style="margin:0 0 12px;padding:0 0 0 18px;">\n${blocksHtml(b.blocks, true)}</blockquote>\n`;
+      const tag = b.kind === 'bullets' ? 'ul' : 'ol',
+        start = b.kind === 'numbers' && b.start !== 1 ? ` start="${b.start}"` : '';
+      return `<${tag}${start} ${list}>${b.items.map(item).join('')}</${tag}>\n`;
+    })
+    .join('');
+}
+/** A rich day's words (domain/rich.ts): paragraphs, lists and quotes, bold
+ * and italic, links by name; `mark` goes after the last word. */
+export function richHtml(shown: string, found?: links.Link[], mark = ''): string {
+  const html = blocksHtml(rich.blocks(links.segments(shown, found, true)));
+  return mark
+    ? html.replace(/(<\/(?:p|li)>)((?:<\/(?:ul|ol)>)?\n(?:<\/blockquote>\n)*)$/u, `${asciiHtml(mark)}$1$2`)
+    : html;
+}
+const dayHtml = (p: { rich?: true }, shown: string, found?: links.Link[], mark = '') =>
+  p.rich ? richHtml(shown, found, mark) : notesHtml(shown, found, mark);
 export const imgHtml = (p: Inline, width: number) =>
   `<img src="cid:${escape(p.cid)}" alt="${asciiHtml(p.alt)}" width="${Math.min(width, p.width)}" style="display:block;width:100%;max-width:${Math.min(width, p.width)}px;height:auto;">`;
 export function photosHtml(photos: Inline[]): string {
@@ -544,7 +602,7 @@ export function yesterdayHtml(birthday: string, y: Yesterday): string {
 <p class="ink" style="margin:0 0 12px;font-family:${FONT};font-size:22px;line-height:1.2;font-weight:800;color:${INK};">Yesterday</p>
 <p class="ink-2" style="margin:0 0 6px;${KICKER}">${escape(longDate(y.day))}</p>
 <p style="margin:0 0 12px;">${vnumHtml(then, 26)}</p>
-${whereHtml}${notesHtml(shown, y.links, cutMark(shown, cut))}${photosHtml(y.photos)}${tagsHtml(y.tags)}${filesHtml}<p style="margin:2px 0 0;">${action(escape(pastLink(y.day)), cut ? 'Read the rest' : `See ${escape(String(then))}`)}</p>
+${whereHtml}${dayHtml(y, shown, y.links, cutMark(shown, cut, y.rich))}${photosHtml(y.photos)}${tagsHtml(y.tags)}${filesHtml}<p style="margin:2px 0 0;">${action(escape(pastLink(y.day)), cut ? 'Read the rest' : `See ${escape(String(then))}`)}</p>
 </td></tr>
 `;
 }
@@ -555,7 +613,7 @@ export function pastDayHtml(v: Version, birthday: string, p: PastDay, limit: num
       ? `<p class="ink-2" style="margin:0 0 12px;font-family:${FONT};font-size:14px;line-height:1.45;color:${INK_2};">${asciiHtml(p.sky)}</p>\n`
       : '',
     [shown, cut] = shownText(p, limit),
-    notes = notesHtml(shown, p.links, cut ? '…' : '') + photosHtml(p.photos),
+    notes = dayHtml(p, shown, p.links, cut ? '…' : '') + photosHtml(p.photos),
     tagHtml = tagsHtml(p.tags);
   return `<p class="ink-2" style="margin:32px 0 6px;${KICKER}">${escape(yearsAgo(v, then))} &middot; ${escape(longDate(p.day))}, ${Number(p.day.slice(0, 4))}</p>
 <p style="margin:0 0 ${p.sky ? 8 : 12}px;">${vnumHtml(then, 26)}</p>

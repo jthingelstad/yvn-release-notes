@@ -1638,3 +1638,39 @@ test('two tabs finding an egg at once write one row and one unlock', async () =>
   assert.equal(s.store.memory.all().filter((i) => i.kind === 'egg.found').length, 1);
   assert.equal(s.store.memory.all().filter((i) => i.kind === 'badge.earned').length, 1);
 });
+test('a note written with rich text keeps its markup through views, edits and search; others stay plain', async () => {
+  const s = await setup(),
+    rich = await s.call('POST', '/api/days/2026-10-13/notes', {
+      text: 'A **long** day at the _lake_.\n\n- towels #lake',
+      markup: 'rich'
+    }),
+    plain = await s.call('POST', '/api/days/2026-10-13/notes', { text: 'A 5* hotel.' }),
+    odd = await s.call('POST', '/api/days/2026-10-13/notes', { text: 'Not rich.', markup: 'html' });
+  assert.equal(rich.r.status, 201);
+  assert.equal((rich.b as Item).markup, 'rich');
+  // `parts` carry the words as typed, the hashtag found as before.
+  assert.deepEqual((rich.b as Item).parts, [
+    'A **long** day at the _lake_.\n\n- towels ',
+    { tag: 'lake', text: '#lake' }
+  ]);
+  for (const r of [plain, odd]) assert.ok(!Object.hasOwn(r.b as Item, 'markup'));
+  const id = String((rich.b as Item).id),
+    stored = await s.store.allNotes('u'),
+    day = (await s.call('GET', '/api/days/2026-10-13')).b as Item;
+  assert.deepEqual(
+    stored.filter((n) => n.markup).map((n) => [String(n.sk).endsWith(id), n.markup]),
+    [[true, 'rich']]
+  );
+  assert.deepEqual(
+    (day.notes as Item[]).filter((n) => n.markup).map((n) => [n.id, n.markup]),
+    [[id, 'rich']]
+  );
+  // An edit keeps the note's markup, rich or plain.
+  const edited = await s.call('PUT', `/api/days/2026-10-13/notes/${id}`, { text: 'A **longer** day.' });
+  assert.equal((edited.b as Item).markup, 'rich');
+  const plainId = String((plain.b as Item).id),
+    still = await s.call('PUT', `/api/days/2026-10-13/notes/${plainId}`, { text: 'A **5*** hotel.', markup: 'rich' });
+  assert.ok(!Object.hasOwn(still.b as Item, 'markup'));
+  // Search reads a rich note's words, so a phrase runs across its marks.
+  assert.equal(((await s.call('POST', '/api/search', { q: '"longer day"' })).b as Item).notes, 1);
+});

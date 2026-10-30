@@ -26,6 +26,10 @@ On an iPhone the Home Screen app keeps its own sign-in, apart from Safari. Sign 
 
 Signed in, **Today** has a box for a note, and buttons to add photos, voice memos and PDFs, or to record a voice memo right there. A note written on the web is the same as a reply: it files to its day, counts for your streak and shows up in the next morning's email.
 
+## Bold, lists and quotes
+
+A note written on the web can make words **bold** or _italic_, and hold lists, numbered lists and quotes. Use the buttons under the box, or type the marks yourself: two stars around words for bold, one for italic (⌘B and ⌘I work too), a line that starts with `-` or `1.` for a list, and `>` for a quote. They show on the web and in the morning email. A star with a space after it, or inside a word, stays a star, and notes written before, or sent by email, read just as they were typed.
+
 ## Fill in a day you missed
 
 Any day from your birthday to yesterday can have notes. Open **Archive**, pick a day (its page has a calendar to reach any other), and write in the box there. A day you fill in later counts toward your streak, the same as one written on the day.

@@ -31,6 +31,8 @@ export interface NoteRecord {
   place?: PlaceRecord;
   links?: LinkRecord[];
   media?: Array<Record<string, unknown>>;
+  /** 'rich' when written with rich text (domain/rich.ts); else plain. */
+  markup?: string;
   [key: string]: unknown;
 }
 

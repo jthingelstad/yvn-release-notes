@@ -588,6 +588,41 @@ select {
   align-self: center;
   color: var(--ink-3);
 }
+/* Rich text (docs/RICH-TEXT.md): paragraphs, lists and quotes, spaced as
+   the email spaces them. A quote is set in and in ink-2, with no rule. */
+.text.rich :is(p, ul, ol, blockquote) {
+  margin: 0;
+}
+.text.rich :is(p, ul, ol, blockquote) + :is(p, ul, ol, blockquote) {
+  margin-top: 10px;
+}
+.text.rich :is(ul, ol) {
+  padding-left: 26px;
+}
+.text.rich li + li {
+  margin-top: 4px;
+}
+.text.rich blockquote {
+  padding-left: 18px;
+  color: var(--ink-2);
+}
+.text.rich strong {
+  font-weight: 700;
+}
+/* The formatting row under a note's box: quiet until pointed at. */
+.format-bar .row {
+  gap: 0 2px;
+  align-items: center;
+  margin-top: -6px;
+}
+.format-bar .format-how {
+  margin-left: 12px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.format-bar .hint {
+  margin-top: 4px;
+}
 .media {
   display: flex;
   flex-wrap: wrap;

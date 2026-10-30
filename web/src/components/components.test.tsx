@@ -124,6 +124,51 @@ describe('NoteBody', () => {
     expect(container.textContent).toBe('read example.com/x.');
   });
 
+  it('draws a rich note as paragraphs, lists and quotes, with bold, italic and links', () => {
+    const { container } = render(
+      <NoteBody
+        mark={/(lake)/i}
+        n={note({
+          markup: 'rich',
+          text: 'unused: parts win',
+          parts: [
+            'A **long** day at the *lake*, <b>raw</b>.\n\n- towels\n- paddles\n\n3. three\n\n> see ',
+            { url: 'https://example.com/a', label: 'A page' },
+            ' and _this_'
+          ]
+        })}
+      />
+    );
+    const body = container.firstElementChild!;
+    expect(body.className).toBe('text rich');
+    expect([...body.children].map((e) => e.tagName)).toEqual(['P', 'UL', 'OL', 'BLOCKQUOTE']);
+    expect(body.querySelector('strong')!.textContent).toBe('long');
+    expect(body.querySelector('em mark')!.textContent).toBe('lake');
+    expect(body.querySelector('b')).toBeNull();
+    expect(body.querySelector('p')!.textContent).toBe('A long day at the lake, <b>raw</b>.');
+    expect([...body.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['towels', 'paddles', 'three']);
+    expect(body.querySelector('ol')!.getAttribute('start')).toBe('3');
+    expect(body.querySelector('blockquote a')!.getAttribute('href')).toBe('https://example.com/a');
+    expect(body.querySelector('blockquote em')!.textContent).toBe('this');
+  });
+
+  it('keeps a plain note’s stars and dashes as typed', () => {
+    const { container } = render(
+      <NoteBody n={note({ text: '**not bold**\n- not a list', parts: ['**not bold**\n- not a list'] })} />
+    );
+    expect(container.querySelector('strong, ul')).toBeNull();
+    expect(container.textContent).toBe('**not bold**\n- not a list');
+  });
+
+  it('reads a rich note’s own text while it has no parts yet', () => {
+    const { container } = render(
+      <NoteBody n={note({ markup: 'rich', text: '**Saved** at https://www.example.com/x.' })} />
+    );
+    expect(container.querySelector('strong')!.textContent).toBe('Saved');
+    expect(container.querySelector('a')!.getAttribute('href')).toBe('https://www.example.com/x');
+    expect(container.textContent).toBe('Saved at example.com/x.');
+  });
+
   it('says what a note without words holds', () => {
     expect(noteText(note({ source: 'email' }))).toBe('Attachments only. They are in the original email.');
     expect(noteText(note({}))).toBe('Nothing written.');

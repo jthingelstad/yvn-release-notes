@@ -12,6 +12,7 @@ import { keepDay, placeOf } from '../../packages/backend/weather.ts';
 import { localDay, iso, validTimezone } from '../../packages/domain/dates.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
 import { found } from '../../packages/domain/tags.ts';
+import { isRich, RICH } from '../../packages/domain/rich.ts';
 import { again, badgeEvents, recordActivity } from '../../packages/backend/activity.ts';
 import type { ActivityEvent } from '../../packages/domain/activity.ts';
 import { json, body, dayFrom, textFrom } from './requests.ts';
@@ -84,9 +85,12 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
         text,
         source: 'web',
         written_at: iso(ctx.now),
-        tz: validTimezone(b.tz) ? b.tz : p.tz
+        tz: validTimezone(b.tz) ? b.tz : p.tz,
+        // Rich text (docs/RICH-TEXT.md) is the note's own, from its writing:
+        // the form asks for it, and anything else is plain.
+        ...(b.markup === RICH ? { markup: RICH } : {})
       },
-      named = await collect(text, { fetch: ctx.fetchTitle }),
+      named = await collect(text, { fetch: ctx.fetchTitle, rich: b.markup === RICH }),
       tagged = found(text);
     if (named.length) item.links = named;
     if (tagged.length) item.tags = tagged;
@@ -180,7 +184,8 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
   }
   if (method === 'PUT') {
     const text = textFrom(await body(service.request), Boolean((old.media as Item[] | undefined)?.length)),
-      named = await collect(text, { keep: old.links as Link[] | undefined, fetch: ctx.fetchTitle }),
+      // An edit keeps the note's markup, plain or rich, as it was written.
+      named = await collect(text, { keep: old.links as Link[] | undefined, fetch: ctx.fetchTitle, rich: isRich(old) }),
       item = await store.updateNote(
         uid,
         day,

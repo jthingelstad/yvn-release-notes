@@ -13,6 +13,7 @@ import type { Me, Note } from '../lib/types.ts';
 import { usesMiles } from '../../../packages/domain/moments.ts';
 import { ErrorLine, LineText, useFocusLater } from './common.tsx';
 import { NoteBody, NoteMedia, NoteMeta, NoteMoment } from './notes.tsx';
+import { FormatBar, formatKey } from './format-bar.tsx';
 import { Icon } from './icon.tsx';
 import { SavedNoteWhere } from './where.tsx';
 
@@ -240,8 +241,11 @@ function EditForm({
         rows={Math.min(12, Math.max(3, text.split('\n').length + 1))}
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onKeyDown={n.markup === 'rich' ? (e) => formatKey(e, area, text, setText) : undefined}
         aria-label="Edit this note"
       />
+      {/* A note keeps the way it was written: plain text stays plain. */}
+      {n.markup === 'rich' && <FormatBar area={area} text={text} onText={setText} />}
       <div className="row">
         <button className="go small" type="submit">
           Save

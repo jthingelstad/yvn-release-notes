@@ -5,6 +5,7 @@ import type { Objects } from './services.ts';
 import { segments, type Link } from './links.ts';
 import { others, MAX_UPLOAD } from './media.ts';
 import { split } from '../domain/tags.ts';
+import { isRich, RICH } from '../domain/rich.ts';
 import { writtenAt, placeLabel, mapUrl, type NoteRecord, type PlaceRecord } from '../domain/notes.ts';
 import { localDay, addDays, validTimezone } from '../domain/dates.ts';
 import { computeVersion } from '../domain/version.ts';
@@ -60,8 +61,11 @@ export async function noteView(item: Item, tz: string, writingOut = false, link?
       tz: zone,
       author: item.author ?? 'user',
       client: item.client ?? null,
-      parts: split(segments(String(item.text ?? ''), item.links as Link[] | undefined))
+      parts: split(segments(String(item.text ?? ''), item.links as Link[] | undefined, isRich(item)))
     };
+  // A rich note (domain/rich.ts): `parts` still carry the markup as typed,
+  // for the page to read as blocks. A plain note's view is as it always was.
+  if (isRich(item)) view.markup = RICH;
   if (item.connection) Object.assign(view, { connection: item.connection, on_behalf_of: item.on_behalf_of });
   // A token's note is the owner's own words, "via" the token's name.
   if (item.source === 'api' && item.token) view.token = item.token;

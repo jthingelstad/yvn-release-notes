@@ -33,19 +33,23 @@ export interface PageMeta {
 }
 export type TitleFetcher = (url: string) => PageMeta | null | Promise<PageMeta | null>;
 
-function matches(text: string) {
+// A rich note (domain/rich.ts) may close bold or italic right after a bare
+// address, so there a trailing * or _ is markup, not the address.
+const TRAILING = /[.,;:!?'")\]}]+$/u,
+  TRAILING_RICH = /[.,;:!?'")\]}*_]+$/u;
+function matches(text: string, rich = false) {
   const out: { start: number; end: number; url: string; bracketed: boolean }[] = [];
   for (const match of text.matchAll(/<?(https?:\/\/[^\s<>"]+)>?/giu)) {
     const whole = match[0],
       bracketed = whole.startsWith('<') && whole.endsWith('>');
-    const url = bracketed ? match[1]! : match[1]!.replace(/[.,;:!?'")\]}]+$/u, '');
+    const url = bracketed ? match[1]! : match[1]!.replace(rich ? TRAILING_RICH : TRAILING, '');
     const start = match.index + (whole.startsWith('<') && !bracketed ? 1 : 0);
     if (url) out.push({ start, end: bracketed ? match.index + whole.length : start + url.length, url, bracketed });
   }
   return out;
 }
-export function urls(text: string): string[] {
-  return [...new Set(matches(text).map((m) => m.url))];
+export function urls(text: string, rich = false): string[] {
+  return [...new Set(matches(text, rich).map((m) => m.url))];
 }
 export function short(url: string): string {
   return url.replace(/^https?:\/\/(www\.)?/iu, '').replace(/\/+$/u, '');
@@ -69,12 +73,12 @@ function namedIn(text: string, title: string, url: string): boolean {
 }
 export async function collect(
   text: string,
-  options: { named?: Record<string, string>; keep?: Link[]; fetch?: TitleFetcher } = {}
+  options: { named?: Record<string, string>; keep?: Link[]; fetch?: TitleFetcher; rich?: boolean } = {}
 ): Promise<Link[]> {
   const old = new Map((options.keep ?? []).map((l) => [l.url, l])),
     out: Link[] = [];
   let fetched = 0;
-  for (const url of urls(text)) {
+  for (const url of urls(text, options.rich)) {
     const title = clean(options.named?.[url] ?? '', MAX_TITLE),
       was = old.get(url);
     if (namedIn(text, title, url)) out.push({ url, title, named: true });
@@ -90,11 +94,14 @@ export async function collect(
   }
   return out;
 }
-export function segments(text: string, links?: Link[] | null): (string | LinkPart)[] {
+/** `rich` for a rich note (domain/rich.ts): the same, but a bare address
+ * never takes a closing * or _. The strings left carry the markup, for
+ * rich.blocks to read with the links as atoms. */
+export function segments(text: string, links?: Link[] | null, rich = false): (string | LinkPart)[] {
   const byUrl = new Map((links ?? []).map((l) => [l.url, l])),
     out: (string | LinkPart)[] = [];
   let pos = 0;
-  for (const m of matches(text)) {
+  for (const m of matches(text, rich)) {
     const link = byUrl.get(m.url),
       before = text.slice(pos, m.start);
     const name =
@@ -107,13 +114,13 @@ export function segments(text: string, links?: Link[] | null): (string | LinkPar
   out.push(text.slice(pos));
   return out.filter((s) => typeof s !== 'string' || s.length > 0);
 }
-export function plain(text: string, links?: Link[] | null): string {
-  return segments(text, links)
+export function plain(text: string, links?: Link[] | null, rich = false): string {
+  return segments(text, links, rich)
     .map((p) => (typeof p === 'string' ? p : `${p.label} <${p.url}>`))
     .join('');
 }
-export function markdown(text: string, links?: Link[] | null): string {
-  return segments(text, links)
+export function markdown(text: string, links?: Link[] | null, rich = false): string {
+  return segments(text, links, rich)
     .map((p) => (typeof p === 'string' ? p : `[${p.label}](${p.url})`))
     .join('');
 }

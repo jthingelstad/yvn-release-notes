@@ -23,7 +23,8 @@ async function patch(client: QueryClient, day: string, change: (notes: Note[]) =
 
 export async function addPending(client: QueryClient, day: string, text: string): Promise<string> {
   const id = PENDING + Date.now();
-  const note: Note = { id, source: 'web', text, at: new Date().toISOString(), tz: browserZone() };
+  // Written here, so rich text, as the API will keep it.
+  const note: Note = { id, source: 'web', text, markup: 'rich', at: new Date().toISOString(), tz: browserZone() };
   await patch(client, day, (notes) => [...notes, note]);
   return id;
 }

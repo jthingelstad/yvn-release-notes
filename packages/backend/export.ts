@@ -10,6 +10,7 @@ import { combine, placeLabel, writtenAt, type NoteRecord, type PlaceRecord } fro
 import { computeVersion, releaseName } from '../domain/version.ts';
 import { momentParts, storedMoment, usesMiles, type Moment } from '../domain/moments.ts';
 import { markdown as namedLinks, type Link } from './links.ts';
+import { isRich, RICH } from '../domain/rich.ts';
 import * as weather from './weather.ts';
 import { extension } from './media.ts';
 import { object } from './places.ts';
@@ -169,6 +170,8 @@ export function build(
         ...(item.source === 'api' && item.token ? { token: String(item.token) } : {}),
         on_behalf_of: item.on_behalf_of ?? null,
         text: String(item.text ?? ''),
+        // Rich text (domain/rich.ts): the text is as typed either way.
+        ...(isRich(item) ? { markup: RICH } : {}),
         written_at: writtenAt(item as NoteRecord) || null,
         tz: item.tz ?? null,
         place: item.place ?? null,
@@ -369,7 +372,7 @@ export function markdown(data: ExportData): string {
         written_at: n.written_at ?? undefined,
         author: typeof n.author === 'string' ? n.author : undefined,
         client: typeof n.client === 'string' ? n.client : undefined,
-        text: namedLinks(n.text, n.links as Link[] | undefined)
+        text: namedLinks(n.text, n.links as Link[] | undefined, isRich(n))
       })),
       { label: escapeText, via: true }
     );

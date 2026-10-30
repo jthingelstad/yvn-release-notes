@@ -23,10 +23,14 @@ It numbers itself the way Release Notes numbers you. It started on October 29, 2
 
 ## 0.0.1 · October 30
 
+- **On paper:** every screen, sheet and widget now looks like Release Notes on the web, with its paper and inks in light and dark, its type, and a tangerine Commit. It opens on the paper too, with no flash of white.
+- After you Commit, Log goes back to the box, ready for the next line.
+- Sign in to another account, and notes still waiting from the first one stay put. Each says so, and you choose: send it to this account, or delete it.
 - Changelog opens again. The build from the night of October 29 closed itself as it opened, once Today had a note in it.
 - **Moments:** start a note from one of your iPhone's suggestions. A workout, a song, a place or photos fill it in, and it files to the day it happened, or to today if you'd rather. Nothing goes until you Commit.
 - Deleting a note from **Today** asks first, since its photos and files go with it.
 - Siri answers sooner on a slow connection, and Changelog sends the note itself, so Siri never asks you to say it again.
+- In **Activity**, a deleted note's row says Note deleted, where it stopped at "Deleted from".
 
 ## 0.0.0 · October 29
 

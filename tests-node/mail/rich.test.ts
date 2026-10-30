@@ -93,3 +93,17 @@ test('a day with a rich note and a plain one keeps the plain note as typed', () 
   assert.match(html, /<li[^>]*><strong[^>]*>ready<\/strong><\/li>/);
   assert.ok(text.includes('A 5* hotel and *stars*.\n\n- packed\n- **ready**'));
 });
+
+test('a plain note’s address ending in _ keeps it, and its name, beside a rich note', () => {
+  const notes = [
+      { text: 'Read https://example.com/a_ today.', source: 'email' },
+      { text: '**ready**', source: 'web', markup: 'rich' }
+    ] as NoteRecord[],
+    day = combined(notes),
+    found = [{ url: 'https://example.com/a_', title: 'Underscores' }],
+    html = c.htmlBody(v, birthday, today, { yesterday: { ...yesterday(day.text, day.rich), links: found } }),
+    text = c.body(v, birthday, { yesterday: { ...yesterday(day.text, day.rich), links: found } });
+  assert.match(html, /Read <a [^>]*href="https:\/\/example.com\/a_"[^>]*>Underscores<\/a> today\./);
+  assert.doesNotMatch(html, /&lt;|&gt;/);
+  assert.ok(text.includes('Read Underscores <https://example.com/a_> today.'));
+});

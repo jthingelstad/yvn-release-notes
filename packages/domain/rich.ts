@@ -45,13 +45,15 @@ const QUOTE = /^ {0,3}> ?/u,
   // The bare web addresses links.ts finds, so markup inside one is left alone.
   WEB = /<?https?:\/\/[^\s<>"]+>?/giu;
 
-function linesOf<T>(parts: readonly (string | T)[]): Unit<T>[][] {
+// `width` is how many code points an atom stood for in the text, so `at`
+// stays an offset into the line as typed (closeCut compares it with a cut).
+function linesOf<T>(parts: readonly (string | T)[], width: (atom: T) => number = () => 1): Unit<T>[][] {
   const out: Unit<T>[][] = [[]];
   let at = 0;
   for (const part of parts) {
     if (typeof part !== 'string') {
       out.at(-1)!.push({ atom: part, at });
-      at++;
+      at += width(part);
       continue;
     }
     for (const c of part.replace(/\r\n?/gu, '\n')) {
@@ -291,12 +293,16 @@ export function flat<T>(written: Block<T>[], gap = '\n'): (string | T)[] {
 export const plainWords = (text: string): string => words(blocks(webParts(text)), (a) => a.url);
 
 /** A plain note's text, escaped so it reads as typed beside rich ones (a
- * day of notes is one text in the email). Web addresses are left whole. */
+ * day of notes is one text in the email). Web addresses are left whole: one
+ * that ends in * or _, which a rich reading would leave out of it, goes in
+ * angle brackets, which keep an address whole and show as nothing. */
 export function escapePlain(text: string): string {
   return webParts(text, false)
     .map((p) =>
       typeof p !== 'string'
-        ? p.url
+        ? /^<.*>$/su.test(p.url) || !/[*_]$/u.test(p.url)
+          ? p.url
+          : p.url.replace(/^(<?)(.*)$/su, '$1<$2>')
         : p
             .replace(/[\\*_]/gu, '\\$&')
             .replace(/(^|\n)([ \t]*)([-•>]|\d{1,3}(?=[.)]))/gu, (_, start: string, gap: string, mark: string) =>
@@ -322,7 +328,7 @@ export function closeCut(full: string, shown: string): string {
     to = full.indexOf('\n', from),
     whole = full.slice(from, to < 0 ? undefined : to),
     cut = Array.from(shown.slice(from)).length;
-  let units = linesOf(webParts(whole))[0] ?? [];
+  let units = linesOf(webParts(whole), (a) => Array.from(a.url).length)[0] ?? [];
   // The line's block marker is not emphasis.
   for (let m = QUOTE.exec(lead(units)); m; m = QUOTE.exec(lead(units))) units = drop(units, Array.from(m[0]).length);
   const marked = BULLET.exec(lead(units)) ?? NUMBER.exec(lead(units));

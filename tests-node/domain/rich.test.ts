@@ -99,12 +99,22 @@ test('plain text escaped reads back as the same words, and as typed loses the ba
   for (const text of [
     'A 5* hotel. *Not* italic, **not** bold, snake_case.',
     '- not a list\n> not a quote\n1. not a number\n• nor this',
-    'https://example.com/a_b_ stays whole, and \\ a backslash.'
+    'https://example.com/a_b stays whole, and \\ a backslash.'
   ]) {
     const escaped = escapePlain(text);
     assert.equal(plainWords(escaped), text);
     assert.equal(asTyped(escaped), text);
   }
+  // An address a rich reading would end early goes in angle brackets, which
+  // keep it whole (links.ts) and show as nothing.
+  assert.equal(
+    escapePlain('See https://example.com/a_b_ and https://example.com/x*.'),
+    'See <https://example.com/a_b_> and <https://example.com/x*>.'
+  );
+  assert.equal(
+    escapePlain('<https://example.com/a_> and <https://example.com/b_'),
+    '<https://example.com/a_> and <<https://example.com/b_>'
+  );
 });
 
 test('an excerpt cut inside bold or italic closes it, and nothing else', () => {
@@ -112,6 +122,13 @@ test('an excerpt cut inside bold or italic closes it, and nothing else', () => {
   assert.equal(closeCut('- I *loved the lake. It was* cold.', '- I *loved the lake.'), '- I *loved the lake.*');
   assert.equal(closeCut('A *lone star. And more.', 'A *lone star.'), 'A *lone star.');
   assert.equal(closeCut('Plain. Words.', 'Plain.'), 'Plain.');
+  // An address before the cut counts at its length as typed.
+  const linked = 'https://example.com/a_long_path **A long sentence. More bold words** after.';
+  assert.equal(
+    closeCut(linked, 'https://example.com/a_long_path **A long sentence.'),
+    'https://example.com/a_long_path **A long sentence.**'
+  );
+  assert.equal(closeCut(linked, 'https://example.com/a_long_path'), 'https://example.com/a_long_path');
 });
 
 test('a day with a rich note reads as rich, its plain notes escaped; without one, as it always did', () => {

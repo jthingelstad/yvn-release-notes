@@ -26,22 +26,62 @@ function stars(text: string, i: number, step: 1 | -1): number {
 const has = (mark: Mark, left: number, right: number) =>
   mark === 'strong' ? left >= 2 && right >= 2 : left % 2 === 1 && right % 2 === 1;
 
+// A line's list or quote marks, which stay outside bold and italic.
+const LEAD = /^(?:[ \t]*(?:> ?|[-*•][ \t]+|\d{1,3}[.)][ \t]+))+/u;
+
+// One line's piece of a selection: spaces at its edges, and a list or quote
+// mark when it starts the line, stay outside the marks, which pair only
+// around words.
+function span(text: string, start: number, end: number): [number, number] {
+  for (;;) {
+    if (start === 0 || text[start - 1] === '\n') start += LEAD.exec(text.slice(start, end))?.[0].length ?? 0;
+    if (start < end && /\s/u.test(text[start] ?? '')) start++;
+    else break;
+  }
+  while (end > start && /\s/u.test(text[end - 1] ?? '')) end--;
+  return [start, end];
+}
+// Whether a piece already has the mark at its own ends.
+function marked(inside: string, mark: Mark): boolean {
+  const left = stars(inside, 0, 1);
+  return left < inside.length && has(mark, left, stars(inside, inside.length, -1));
+}
+
 // Bold or italic around the selection, or taken off when it is already
 // there. With nothing selected the pair goes in with the caret between.
-// Spaces at a selection's edges stay outside the marks, which pair only
-// around words.
+// Marks pair within a line (domain/rich.ts), so a selection over several
+// lines gets a pair on each line with words, and loses them when each has
+// them already.
 export function wrap(text: string, start: number, end: number, mark: Mark): Edit {
   const d = mark === 'strong' ? '**' : '*';
-  while (start < end && /\s/u.test(text[start] ?? '')) start++;
-  while (end > start && /\s/u.test(text[end - 1] ?? '')) end--;
+  [start, end] = span(text, start, end);
   const inside = text.slice(start, end);
+  if (inside.includes('\n')) {
+    const rows: [number, number][] = [];
+    for (let a = start; a <= end;) {
+      const nl = text.indexOf('\n', a),
+        b = nl < 0 || nl > end ? end : nl;
+      const row = span(text, a, b);
+      if (row[0] < row[1]) rows.push(row);
+      a = b + 1;
+    }
+    const off = rows.every(([a, b]) => marked(text.slice(a, b), mark));
+    let insert = '',
+      pos = start;
+    for (const [a, b] of rows) {
+      const row = text.slice(a, b);
+      insert +=
+        text.slice(pos, a) + (off ? row.slice(d.length, row.length - d.length) : marked(row, mark) ? row : d + row + d);
+      pos = b;
+    }
+    insert += text.slice(pos, end);
+    return { from: start, to: end, insert, start, end: start + insert.length };
+  }
   // The marks just outside the selection.
   if (inside && has(mark, stars(text, start, -1), stars(text, end, 1)))
     return { from: start - d.length, to: end + d.length, insert: inside, start: start - d.length, end: end - d.length };
   // The selection's own ends.
-  const left = stars(inside, 0, 1);
-  const right = stars(inside, inside.length, -1);
-  if (left < inside.length && has(mark, left, right)) {
+  if (marked(inside, mark)) {
     const bare = inside.slice(d.length, inside.length - d.length);
     return { from: start, to: end, insert: bare, start, end: start + bare.length };
   }

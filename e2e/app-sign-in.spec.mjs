@@ -4,21 +4,40 @@
 // for an API token that opens /v1.
 import { test, expect } from '@playwright/test';
 import { stubTurnstile } from './turnstile-stub.mjs';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 const callback = 'com.yourversionnumber.changelog:/oauth';
 
-// One sign-in as Ada, shared: an address gets five sign-in emails an hour.
+// One sign-in, shared, as a fictional account of its own: Ada's five
+// sign-in emails an hour are the other suites'.
 test.describe.configure({ mode: 'serial' });
 let session;
 test.beforeAll(async ({ browser }) => {
   const baseURL = test.info().project.use.baseURL;
   const context = await browser.newContext({ baseURL });
+  const email = `app-sign-in-${randomUUID()}@example.com`;
   const post = (path, data) => context.request.post(path, { data, headers: { Origin: baseURL } });
-  await post('/api/auth/start', { email: 'ada@example.com' });
-  const mail = await (await context.request.get('/dev-mail/?to=ada@example.com')).text();
+  expect((await post('/api/auth/start', { email })).status()).toBe(202);
+  const mail = await (await context.request.get('/dev-mail/?to=' + email)).text();
   const code = mail.match(/type this code where you asked: (\d{6})/)[1];
-  expect((await post('/api/auth/verify', { email: 'ada@example.com', code })).ok()).toBeTruthy();
+  expect((await post('/api/auth/verify', { email, code })).ok()).toBeTruthy();
+  // Set up, as Ada is, so the sign-in goes straight to the request.
+  const setup = await context.request.put('/api/me', {
+    headers: { Origin: baseURL },
+    data: {
+      birthday: '1990-06-14',
+      send_time: '06:30',
+      place: {
+        name: 'Minneapolis',
+        region: 'Minnesota',
+        country: 'United States',
+        tz: 'America/Chicago',
+        lat: 44.98,
+        lon: -93.27
+      }
+    }
+  });
+  expect(setup.status()).toBe(200);
   session = await context.storageState();
   await context.close();
 });

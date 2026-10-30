@@ -204,19 +204,26 @@ There is no new DNS record, certificate or function.
   string tokens, no cookies.
 - **JSON in and out,** UTF-8. A note's text may be up to `MAX_NOTE` (20,000
   code points), and a request body at most 128 KB.
-- **`Accept: text/plain`** gets one short line instead, for terminals:
-  `Filed in 4.5.137.` A `text/plain` body on `POST /v1/notes` is the note's
-  text.
+- **`Accept: text/plain`** gets text instead, for terminals: a write's one
+  line (`Filed in 4.5.137.`), a list's line for each thing, a note's words
+  as they are. Accept is read in full: text wins only where it outranks
+  `application/json` by q, or ties and comes first (API 1.5.0). A
+  `text/plain` body on `POST /v1/notes` is the note's text.
 - **Dates and times:** `YYYY-MM-DD` dates are days in the account's own
   zone; times are RFC 3339.
 - **Headers on every answer:**
   - `Cache-Control: no-store` (`/v1/openapi.json`, which needs no token,
     is `public, max-age=300`);
-  - `Release-Notes-Version: 4.5.137`, today's version;
-  - `API-Version: 1.4.0`, the API's own version (`API_VERSION` in
+  - `Release-Notes-Version: 4.5.137`, today's version, on every answer to
+    a good token, a 404 or 405 included (a browser's refused request reads
+    nothing, so has none);
+  - `API-Version: 1.5.0`, the API's own version (`API_VERSION` in
     `server/mcp/v1.ts`).
-- **Idempotency:** every write takes an `Idempotency-Key` header (1 to 128
-  printable ASCII characters). Receipts last **7 days** on `/v1`, against
+- **Idempotency:** every write but `POST /v1/uploads` and
+  `POST /v1/places/here` takes an `Idempotency-Key` header (1 to 128
+  printable ASCII characters). Those two keep no receipt: a retry gets a
+  new form, or a new lookup that counts again (API 1.5.0 stopped listing
+  the key on them). Receipts last **7 days** on `/v1`, against
   24 hours on MCP, because a phone can be offline for a weekend.
   - The same key with the same request answers the first result again,
     with `Idempotent-Replayed: true`.
@@ -268,8 +275,9 @@ There is no new DNS record, certificate or function.
   - 2,000 reads a token;
   - files and Upcoming keep the web's and MCP's limits (phases 3 and 4).
 
-  Writes answer `RateLimit-Limit`, `RateLimit-Remaining` and
-  `RateLimit-Reset` for their own limit.
+  Writes that count answer `RateLimit-Limit`, `RateLimit-Remaining` and
+  `RateLimit-Reset` for their own limit; a replay counts nothing and has
+  none.
 
 ### Phase 1: tokens and text
 

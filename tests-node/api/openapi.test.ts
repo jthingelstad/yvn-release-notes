@@ -27,12 +27,17 @@ test('every /v1 route is one operation with its scope, plus the description itse
     assert.deepEqual(op.security, [{ token: scopes }, { signIn: scopes }], route.name);
     assert.ok(op.summary, route.name);
     assert.ok(op.responses.default, route.name);
-    // Every write takes an Idempotency-Key.
+    // Every write takes an Idempotency-Key, but the two that keep no receipt
+    // (an upload's form and Here), which never say they replayed.
+    const receipt = route.method !== 'GET' && !['uploads.start', 'places.here'].includes(route.name);
     assert.equal(
       (op.parameters ?? []).some((p: Doc) => p.$ref === '#/components/parameters/Idempotency-Key'),
-      route.method !== 'GET',
+      receipt,
       route.name
     );
+    if (!receipt)
+      for (const answer of Object.values(op.responses as Doc))
+        assert.equal((answer as Doc).headers?.['Idempotent-Replayed'], undefined, route.name);
   }
   assert.deepEqual(doc.paths['/v1/openapi.json'].get.security, []);
 });

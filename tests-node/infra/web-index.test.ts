@@ -2,7 +2,9 @@
  * front.html, which has the front page's words for readers that run no
  * script; a public page (site/, web/src/site.tsx) is its own index.html, one
  * address each; every other address but a file is index.html, whose #app is
- * empty, so no other address says the front page's words. */
+ * empty, so no other address says the front page's words. The same code runs
+ * on the way back, and makes an address under a public section that is none
+ * of its pages a 404. */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
@@ -15,17 +17,30 @@ const source = /  WebIndexFunction:[\s\S]*?      FunctionCode: \|\n((?:        .
   .split('\n')
   .map((line) => line.replace(/^        /, ''))
   .join('\n');
-type Redirect = { statusCode: number; statusDescription: string; headers: Record<string, { value: string }> };
+type Response = { statusCode: number; statusDescription: string; headers: Record<string, { value: string }> };
 const handler = runInNewContext(source + '\nhandler') as (event: {
+  context: { eventType: 'viewer-request' | 'viewer-response' };
   request: { uri: string };
-}) => { uri: string } | Redirect;
+  response?: Response;
+}) => { uri: string } | Response;
+const asked = (uri: string) => handler({ context: { eventType: 'viewer-request' }, request: { uri } });
 const served = (uri: string) => {
-  const out = handler({ request: { uri } });
+  const out = asked(uri);
   assert.ok('uri' in out, `${uri} is served, not redirected`);
   return out.uri;
 };
+// The status the viewer gets for the bucket's answer to an address.
+const status = (uri: string, statusCode = 200) => {
+  const out = handler({
+    context: { eventType: 'viewer-response' },
+    request: { uri },
+    response: { statusCode, statusDescription: 'OK', headers: { 'content-type': { value: 'text/html' } } }
+  }) as Response;
+  return out.statusCode;
+};
 // Its own realm's arrays and objects, made this one's to compare.
 const PUBLIC = [...(runInNewContext(source + '\nPUBLIC') as string[])];
+const PAGES = [...(runInNewContext(source + '\nPAGES') as string[])];
 
 test('/ is front.html, the one page with the front page drawn in', () => {
   assert.equal(served('/'), '/front.html');
@@ -52,22 +67,73 @@ test('every other address but a file is index.html, the empty app', () => {
     assert.equal(served(uri), '/index.html', uri);
 });
 
-test('a public page is its own index.html, its sections the folders site/ has', async () => {
+test('a public page is its own index.html, PAGES the pages site/ has and PUBLIC their folders', async () => {
   const pages = await readPages();
+  assert.deepEqual(
+    PAGES,
+    pages.map((p) => p.path).sort(),
+    'PAGES in WebIndexFunction lists each page of site/, in order: add a new page there too'
+  );
   assert.deepEqual(
     PUBLIC,
     sectionsOf(pages).map((s) => `/${s}/`),
     'PUBLIC in WebIndexFunction lists each section of site/'
   );
-  for (const { path } of pages) assert.equal(served(path), path + 'index.html', path);
-  // A page not written yet asks the bucket, which says 404: the known gap.
-  assert.equal(served('/guide/not-yet/'), '/guide/not-yet/index.html');
+  for (const { path } of pages) {
+    assert.equal(served(path), path + 'index.html', path);
+    assert.equal(status(path), 200, path);
+  }
+});
+
+test('an address under a section that is none of its pages is the app’s Not found, as a 404', () => {
+  for (const uri of [
+    '/guide/not-yet/',
+    '/guide/not-yet',
+    '/guide/api/nope/',
+    '/guide/api/clients/more/',
+    '/features/nope/',
+    '/faq/x',
+    '/guide//',
+    '/changelog/0.0.1/'
+  ]) {
+    assert.equal(served(uri), '/index.html', uri);
+    assert.equal(status(uri), 404, uri);
+  }
+  // Only a 200 becomes one: a revalidation or an error stays as it was.
+  assert.equal(status('/guide/not-yet/', 304), 304);
+  assert.equal(status('/guide/not-yet/', 503), 503);
+  // The answer for the address as rewritten is never one: a file, or the app.
+  for (const uri of ['/index.html', '/guide/start/index.html', '/assets/index-abc123.js', '/guide/x.png'])
+    assert.equal(status(uri), 200, uri);
+});
+
+test('the app’s own addresses, and any outside a section, keep their 200', () => {
+  for (const uri of ['/', '/signin/', '/today/', '/day/', '/man/', '/nope', '/feature/', '/guides/', '/a/guide/'])
+    assert.equal(status(uri), 200, uri);
+});
+
+test('the function runs both ways on the web bucket’s behaviour, and nowhere else', () => {
+  const distribution = template.slice(template.indexOf('\n  WebDistribution:\n'));
+  const associations = /\n {8}DefaultCacheBehavior:\n[\s\S]*?\n {10}FunctionAssociations:\n((?: {12}.*\n)+)/.exec(
+    distribution
+  )![1]!;
+  assert.equal(
+    associations,
+    [
+      '            - EventType: viewer-request',
+      '              FunctionARN: !GetAtt WebIndexFunction.FunctionMetadata.FunctionARN',
+      '            - EventType: viewer-response',
+      '              FunctionARN: !GetAtt WebIndexFunction.FunctionMetadata.FunctionARN',
+      ''
+    ].join('\n')
+  );
+  assert.equal(template.match(/WebIndexFunction\.FunctionMetadata\.FunctionARN/g)?.length, 2);
 });
 
 test('a public page without its final slash is sent to the address with it, for good', async () => {
   for (const { path } of await readPages()) {
     const uri = path.slice(0, -1),
-      out = JSON.parse(JSON.stringify(handler({ request: { uri } })));
+      out = JSON.parse(JSON.stringify(asked(uri)));
     assert.deepEqual(
       out,
       { statusCode: 301, statusDescription: 'Moved Permanently', headers: { location: { value: path } } },

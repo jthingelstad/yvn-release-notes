@@ -443,16 +443,20 @@ export async function main(args = process.argv.slice(2)) {
       // As CloudFront does: / is front.html, the front page drawn in for
       // readers that run no script; a public page (site/) is its own
       // index.html, and its address without the final slash is sent to it;
-      // any other address but a file, index.html.
+      // any other address but a file, index.html, which is a 404 under a
+      // public section (the app's Not found for a mistyped guide page).
       const page = !extname(path) && pathname !== '/' ? resolve(path, 'index.html') : null;
       if (page && existsSync(page) && !pathname.endsWith('/')) return c.redirect(pathname + '/', 301);
-      const file = extname(path)
+      const section = pathname.split('/')[1],
+        missing = !!page && !existsSync(page) && !!section && existsSync(resolve(root, section, 'index.html')),
+        file = extname(path)
           ? path
           : page && existsSync(page)
             ? page
             : resolve(root, pathname === '/' ? 'front.html' : 'index.html'),
         bytes = await readFile(file);
       return new Response(bytes, {
+        status: missing ? 404 : 200,
         headers: {
           'content-type': types[extname(file)] ?? 'application/octet-stream',
           'cache-control': 'no-store',

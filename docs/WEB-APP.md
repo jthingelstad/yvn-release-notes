@@ -618,10 +618,11 @@ or new CSP exception.
   pages they link, by group, leaving out any linked above it (`/guide/`).
   So the tour and the docs say the same thing, and a changed line moves
   both pages' hashes.
-  A new page is a Markdown file and a line in `site/sitemap.json`; a new
-  section is also a line in `WebIndexFunction`'s `PUBLIC`
-  (`tests-node/infra/web-index.test.ts` holds the two together). A
-  mistyped address under a section gets the bucket's bare 404.
+  A new page is a Markdown file, a line in `site/sitemap.json` and one in
+  `WebIndexFunction`'s `PAGES`; a new section is also a line in its
+  `PUBLIC` (`tests-node/infra/web-index.test.ts` holds them together). A
+  mistyped address under a section is the app's Not found, sent as a 404:
+  the function runs again on the answer (viewer-response) to set it.
   `tests-node/site.test.ts` builds them and checks every link, every
   number against its constant, and that no page names an Easter egg or a
   secret badge. You's Help row links `/guide/`, and the first email's

@@ -18,5 +18,5 @@ It numbers itself the way Release Notes numbers you. It started on October 29, 2
 - **Upcoming:** add, change and remove your dates, each in the line the email gives it.
 - Notifications, each off until you turn it on: your Upcoming reminders and a "What changed?" with the day's version, both when each morning's email is due, and news from elsewhere, like a note an agent added or a badge, never with a note's words.
 - **Activity:** what came in, changed or went out, from every channel, without the words.
-- **Siri and Shortcuts:** "Add a note in Changelog" asks what changed and files it without opening the app, with your sticky tag. "New Note" opens Changelog ready to write. Put either on the Action Button.
+- **Siri and Shortcuts:** "Add a note in Changelog" asks what changed and files it without opening the app, with your sticky tag, even with the phone locked. "New Note" opens Changelog ready to write. Put either on the Action Button.
 - **Widgets:** today's version and whether you've written yet, on the Home Screen and the Lock Screen, with what's coming up on the medium one. And a New Note control for Control Center, the Lock Screen and the Action Button.

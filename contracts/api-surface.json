@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.7.0",
+    "version": "1.7.1",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.7.1",
+        "date": "2026-10-30",
+        "summary": "Tags in any script: a hashtag whose letters are not Latin is a tag of its own letters, lowercased (#東京 is 東京, #Москва is москва), on a note sent through /v1 as anywhere, and PUT /v1/tags/pinned takes them. Every tag that worked before is spelled as it was."
+      },
       {
         "version": "1.7.0",
         "date": "2026-10-30",
@@ -118,7 +123,7 @@
       "post": {
         "operationId": "createNote",
         "summary": "Add a note",
-        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. A `text/plain` body is the note’s text alone, and so is a form that is not a `NoteForm`; a multipart body is refused. With neither `date` nor `written_at`, it files to today. With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came, and kept as sent: its shape is checked, not the place. A `moment` (since 1.6.0) keeps what an app picked for the note, a walk, a song or who was there, as values beside the words: the words are still the note, and the moment is shown, exported and deleted with it.",
+        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags, in any script since 1.7.1. A `text/plain` body is the note’s text alone, and so is a form that is not a `NoteForm`; a multipart body is refused. With neither `date` nor `written_at`, it files to today. With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came, and kept as sent: its shape is checked, not the place. A `moment` (since 1.6.0) keeps what an app picked for the note, a walk, a song or who was there, as values beside the words: the words are still the note, and the moment is shown, exported and deleted with it.",
         "requestBody": {
           "required": true,
           "content": {
@@ -791,7 +796,7 @@
       "put": {
         "operationId": "setPinnedTags",
         "summary": "Replace the pinned tags",
-        "description": "Up to 12 tags, normalized as note hashtags are (\"#Running\" is running), each once. The same pins show on the web and through every token.",
+        "description": "Up to 12 tags, normalized as note hashtags are (\"#Running\" is running, and since 1.7.1 \"Москва\" is москва), each once. The same pins show on the web and through every token.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1493,7 +1498,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.7.0"
+            "example": "1.7.1"
           }
         }
       },

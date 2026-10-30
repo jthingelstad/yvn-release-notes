@@ -27,11 +27,17 @@ import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.7.0';
+export const API_VERSION = '1.7.1';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. A new version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.7.1',
+    date: '2026-10-30',
+    summary:
+      'Tags in any script: a hashtag whose letters are not Latin is a tag of its own letters, lowercased (#東京 is 東京, #Москва is москва), on a note sent through /v1 as anywhere, and PUT /v1/tags/pinned takes them. Every tag that worked before is spelled as it was.'
+  },
   {
     version: '1.7.0',
     date: '2026-10-30',

@@ -4,7 +4,8 @@
  * address each; every other address but a file is index.html, whose #app is
  * empty, so no other address says the front page's words. The same code runs
  * on the way back, and makes an address under a public section that is none
- * of its pages a 404. */
+ * of its pages a 404: the way back sees the address as the way in rewrote it,
+ * so the way in marks the request. */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
@@ -17,23 +18,31 @@ const source = /  WebIndexFunction:[\s\S]*?      FunctionCode: \|\n((?:        .
   .split('\n')
   .map((line) => line.replace(/^        /, ''))
   .join('\n');
-type Response = { statusCode: number; statusDescription: string; headers: Record<string, { value: string }> };
+type Headers = Record<string, { value: string }>;
+type Request = { uri: string; headers: Headers };
+type Response = { statusCode: number; statusDescription: string; headers: Headers };
 const handler = runInNewContext(source + '\nhandler') as (event: {
   context: { eventType: 'viewer-request' | 'viewer-response' };
-  request: { uri: string };
+  request: Request;
   response?: Response;
-}) => { uri: string } | Response;
-const asked = (uri: string) => handler({ context: { eventType: 'viewer-request' }, request: { uri } });
+}) => Request | Response;
+const asked = (uri: string, headers: Headers = {}) =>
+  handler({ context: { eventType: 'viewer-request' }, request: { uri, headers: { ...headers } } });
 const served = (uri: string) => {
   const out = asked(uri);
   assert.ok('uri' in out, `${uri} is served, not redirected`);
   return out.uri;
 };
-// The status the viewer gets for the bucket's answer to an address.
-const status = (uri: string, statusCode = 200) => {
+// The status the viewer gets for the bucket's answer to an address. The way
+// back is handed the request as the way in left it, rewritten address and
+// all (what the live distribution does: on 2026-10-30 an unmarked
+// /guide/repyling/ came back a 200, its address seen as /index.html).
+const status = (uri: string, statusCode = 200, headers: Headers = {}) => {
+  const request = asked(uri, headers);
+  if (!('uri' in request)) return request.statusCode;
   const out = handler({
     context: { eventType: 'viewer-response' },
-    request: { uri },
+    request,
     response: { statusCode, statusDescription: 'OK', headers: { 'content-type': { value: 'text/html' } } }
   }) as Response;
   return out.statusCode;
@@ -110,6 +119,25 @@ test('an address under a section that is none of its pages is the app’s Not fo
 test('the app’s own addresses, and any outside a section, keep their 200', () => {
   for (const uri of ['/', '/signin/', '/today/', '/day/', '/man/', '/nope', '/feature/', '/guides/', '/a/guide/'])
     assert.equal(status(uri), 200, uri);
+});
+
+test('only the way in marks an address missing, never the viewer', () => {
+  const mark = (uri: string, headers: Headers = {}) => (asked(uri, headers) as Request).headers['x-rn-missing'];
+  assert.deepEqual({ ...mark('/guide/repyling/') }, { value: '1' });
+  for (const uri of ['/', '/today/', '/guide/start/', '/assets/index-abc123.js'])
+    assert.equal(mark(uri, { 'x-rn-missing': { value: '1' } }), undefined, uri);
+  assert.equal(status('/today/', 200, { 'x-rn-missing': { value: '1' } }), 200);
+  // The way back alone, its address the rewritten one: the mark decides.
+  const back = (headers: Headers) =>
+    (
+      handler({
+        context: { eventType: 'viewer-response' },
+        request: { uri: '/index.html', headers },
+        response: { statusCode: 200, statusDescription: 'OK', headers: {} }
+      }) as Response
+    ).statusCode;
+  assert.equal(back({ 'x-rn-missing': { value: '1' } }), 404);
+  assert.equal(back({}), 200);
 });
 
 test('the function runs both ways on the web bucket’s behaviour, and nowhere else', () => {

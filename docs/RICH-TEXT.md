@@ -1,8 +1,12 @@
 # Rich text in notes
 
 Jamie asked (2026-10-29): "how can we handle rich text better or at all?"
-This is the answer, ready for a decision. The pull request that adds this
-file builds the recommendation, and nothing ships until Jamie merges it.
+This is the answer. Jamie merged the pull request that built it (#257,
+2026-10-30: "Approved: merge Release Notes #257, rich text"), which settled
+decisions 1, 3, 4, 5 and 8 as built, and then took the rest as recommended
+(2026-10-30: "Approved: RICH-TEXT decisions 2, 6, 7, 9 and 10 as
+recommended"). Still to build: MCP and `/v1` taking `markup` (decision 2),
+then Changelog's composer (decision 7), then email replies.
 
 ## Recommendation
 
@@ -11,19 +15,22 @@ numbered lists, quotes, and the paragraphs and line breaks they already
 have. The text is stored exactly as typed. A note is read as rich only when
 it carries `markup: 'rich'`, set once when it is written and kept by every
 edit. Every note without the stamp, which today is every note, renders
-byte for byte as before. In this PR only the web's note box writes rich
+byte for byte as before. In #257 only the web's note box writes rich
 notes; replies, agents, `/v1` and imports stay plain until Jamie picks
 them (decision 2).
 
-## Decisions for Jamie
+## Decisions
+
+All ten are decided: 1, 3, 4, 5 and 8 as #257 built them, the
+recommendation each one gives, and 2, 6, 7, 9 and 10 as marked.
 
 1. **The guard.** A stamp on each note (recommended), an account setting,
    or a cut-over date. The stamp is the only one that can never change what
    an old note means. An account setting would reread years of notes at
    once, where `5* hotel` or a line starting `- ` suddenly turns into
    markup. A date is invisible to the writer, and imports carry old dates.
-2. **Which ways in write rich text.** Recommended: the web now (this PR).
-   Next, as their own PRs: MCP and `/v1` take an optional `markup: 'rich'`
+2. **Which ways in write rich text.** Decided as recommended: the web
+   now (#257). Next, as their own PRs: MCP and `/v1` take an optional `markup: 'rich'`
    argument (agents write Markdown by habit; each needs its version bump
    and changes entry), and Changelog follows `/v1`. Email replies last:
    bold, italic and lists from the HTML part of a reply, mapped to the
@@ -43,23 +50,25 @@ them (decision 2).
    until someone asks).
 6. **Day One imports.** The importer strips headings, bold, italic and
    escapes today, and `tests-node/operator/legacy-dayone.json` pins that.
-   Recommended: leave it, and later add an opt-in "keep formatting" that
-   maps Day One's Markdown to the subset and stamps the notes rich.
-7. **Changelog's composer.** Recommended: when `/v1` takes `markup`, an
-   iOS 26 `TextEditor` bound to an `AttributedString`, so the system's own
-   Bold and Italic (the edit menu, ⌘B and ⌘I on a keyboard) work, saved as
-   the subset; a small list and quote toolbar above the keyboard if wanted.
-   Typing `**` on a phone is poor, so the app should never ask for it.
+   Decided as recommended: leave it. An opt-in "keep formatting", mapping
+   Day One's Markdown to the subset and stamping the notes rich, waits
+   until someone asks for it.
+7. **Changelog's composer.** Decided as recommended: when `/v1` takes
+   `markup`, an iOS 26 `TextEditor` bound to an `AttributedString`, so the
+   system's own Bold and Italic (the edit menu, ⌘B and ⌘I on a keyboard)
+   work, saved as the subset; a small list and quote toolbar above the
+   keyboard if wanted. Typing `**` on a phone is poor, so the app should
+   never ask for it.
 8. **How a quote looks.** Set in and in the second ink, with no rule beside
    it (recommended; the email allows no borders).
 9. **Italic in the book.** The book's typeface, Bricolage Grotesque, has
    no italic, and Typst sets `emph` upright, so italic words print plain
-   (bold, lists and quotes do print). Recommended: leave it for now, or
-   pick an italic face from another family for emphasis.
-10. **Telling subscribers.** This PR adds a section to Getting started, a
-    line in the changelog for the day it merges, and the "How to format"
-    line under the box. Whether Features and the tour mention it is
-    Jamie's call; they are unchanged.
+   (bold, lists and quotes do print). Decided as recommended: leave it
+   for now; an italic face from another family stays an option.
+10. **Telling subscribers.** #257 added a section to Getting started, a
+    line in the changelog for the day it merged, and the "How to format"
+    line under the box. Decided as recommended: Features lists it ("Bold,
+    lists and quotes."), and the front page's tour leaves it out.
 
 ## The subset
 

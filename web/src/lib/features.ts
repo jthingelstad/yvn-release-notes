@@ -37,6 +37,12 @@ export const FEATURES: FeatureGroup[] = [
         line: 'Attach photos, voice memos and PDFs to a reply, or add them on the web. They stay with their day.',
         guide: '/guide/photos-and-voice/'
       },
+      {
+        head: 'Bold, lists and quotes.',
+        line: 'A note written on the web can make words bold or italic, and hold lists and quotes. Notes written before read just as they were typed.',
+        guide: '/guide/start/',
+        tour: false
+      },
       { head: 'An address of your own.', line: 'Mail a note any day, no reply needed.', guide: '/guide/address/' },
       {
         head: 'On your Home Screen.',

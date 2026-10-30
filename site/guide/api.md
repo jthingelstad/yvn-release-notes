@@ -43,7 +43,7 @@ It answers with one line: `Filed in 5.2.113.`
 - `POST /v1/uploads`: a form to upload one file to, before a note takes it.
 - `DELETE /v1/notes/{date}/{id}`: delete it.
 - `GET /v1/tags`: your tag row, the pinned tags and then up to 20 recent ones, the tags used most in the last 30 days. Any token may ask.
-- `PUT /v1/tags/pinned`: replace your pinned tags, with `{"pinned": ["house", "work"]}`, up to 12 tags. They're the same ones the web shows under the note box.
+- `PUT /v1/tags/pinned`: replace your pinned tags, with `{"pinned": ["house", "work"]}`, up to 12 tags, in any language's letters, like `москва` or `東京`. They're the same ones the web shows under the note box.
 - `GET /v1/places`: the cities by a name, like `?q=Zürich`, for a note's place.
 - `POST /v1/places/here`: the city, neighbourhood and businesses nearby for the spot a device is at, for a note's place.
 - `GET /v1/upcoming`: your Upcoming dates, soonest first, each with its `id`, its `revision`, its `next` date and the line the email says about it. A trip or event that's over is left out and only counted, as `past_left_out`.

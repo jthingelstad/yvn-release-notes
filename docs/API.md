@@ -227,7 +227,7 @@ There is no new DNS record, certificate or function.
   - `Release-Notes-Version: 4.5.137`, today's version, on every answer to
     a good token, a 404 or 405 included (a browser's refused request reads
     nothing, so has none);
-  - `API-Version: 1.7.0`, the API's own version (`API_VERSION` in
+  - `API-Version: 1.7.1`, the API's own version (`API_VERSION` in
     `server/mcp/v1.ts`).
 - **Idempotency:** every write but `POST /v1/uploads` and
   `POST /v1/places/here` takes an `Idempotency-Key` header (1 to 128
@@ -408,7 +408,7 @@ and edits are.
 ties broken by last use. It has at most 20.
 
 **`PUT /v1/tags/pinned`** `{"pinned": [...]}`, `notes:write`. Up to 12 tags,
-normalized as note hashtags are, in any script since 2026-10-30
+normalized as note hashtags are, in any script since API 1.7.1 (2026-10-30)
 (`"Москва"` is `москва`, `"東京"` stays `東京`; `packages/domain/tags.ts`).
 Pins live on the account, so the web's
 Today form and every phone show the same ones. A `settings.changed` row

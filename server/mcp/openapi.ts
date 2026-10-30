@@ -56,7 +56,8 @@ const OPERATIONS: Record<string, Doc> = {
     operationId: 'createNote',
     summary: 'Add a note',
     description:
-      "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. " +
+      "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags, " +
+      'in any script since 1.7.1. ' +
       'A `text/plain` body is the note’s text alone, and so is a form that is not a `NoteForm`; a multipart ' +
       'body is refused. With neither `date` nor `written_at`, it files to today. ' +
       'With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a ' +
@@ -158,7 +159,7 @@ const OPERATIONS: Record<string, Doc> = {
   'tags.pinned': {
     operationId: 'setPinnedTags',
     summary: 'Replace the pinned tags',
-    description: `Up to ${PINS_MAX} tags, normalized as note hashtags are ("#Running" is running), each once. The same pins show on the web and through every token.`,
+    description: `Up to ${PINS_MAX} tags, normalized as note hashtags are ("#Running" is running, and since 1.7.1 "Москва" is москва), each once. The same pins show on the web and through every token.`,
     requestBody: { required: true, content: { 'application/json': { schema: ref('Pins') } } },
     responses: { '200': answer('TagRow', '#house #work', true) }
   },

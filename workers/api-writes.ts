@@ -165,7 +165,7 @@ const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-
  * February 30 over to March 2, and 24:00 to the next day. */
 function realTime(at: string): boolean {
   if (!RFC3339.test(at)) return false;
-  const [, h, m, s = '00'] = /T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(at)!,
+  const [, h, m, s = '00'] = /T(\d{2}):(\d{2})(?::(\d{2}))?/i.exec(at)!,
     offset = /([+-])(\d{2}):(\d{2})$/.exec(at);
   return (
     validDay(at.slice(0, 10)) &&

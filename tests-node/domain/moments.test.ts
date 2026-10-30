@@ -150,13 +150,15 @@ test('each piece is one plain line, in the account’s units', () => {
     [
       'Swim · 1,094 yd · 1 hr 5 min',
       'Yoga · 1 hr',
-      'Ride · 20 mi',
+      'Ride · 19.9 mi',
       'Slightly pleasant',
       'With Ana and Ben',
       'Episode 4'
     ]
   );
   assert.equal(distanceText(1000, true, false), '1,000 m');
+  assert.equal(distanceText(3000, false, false), '3 km');
+  assert.equal(distanceText(160_934.4, false, true), '100 mi');
   assert.equal(durationText(59), '1 min');
   assert.ok(usesMiles('United States') && usesMiles('United Kingdom'));
   assert.ok(!usesMiles('Switzerland') && !usesMiles(undefined));

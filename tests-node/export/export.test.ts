@@ -368,3 +368,21 @@ test('atomic completion refuses a deletion that starts after the final profile r
   await assert.rejects(context.objects.get('exports/u1/build-a.zip'));
   assert.equal((await context.store.export('u1'))?.status, 'building');
 });
+test('a rich note exports its text as typed, marked rich; a plain note is unchanged', () => {
+  const data = build(
+    [
+      { sk: 'PROFILE', birthday: '1981-06-14', tz: 'America/Chicago' },
+      { sk: 'NOTE#2026-10-12#a', id: 'a', source: 'web', text: 'A **long** day.', markup: 'rich' },
+      { sk: 'NOTE#2026-10-12#b', id: 'b', source: 'email', text: 'A 5* hotel.' }
+    ],
+    '2026-10-13T07:00:00Z'
+  );
+  assert.deepEqual(
+    data.notes.map((n) => [n.text, n.markup ?? null]),
+    [
+      ['A **long** day.', 'rich'],
+      ['A 5* hotel.', null]
+    ]
+  );
+  assert.match(markdown(data), /A \*\*long\*\* day\.\n\nA 5\* hotel\./);
+});

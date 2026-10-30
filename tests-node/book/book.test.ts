@@ -3,7 +3,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
-import { blocks, bookPlan, defaultTitle, PAGES, paragraphs, plainText, span } from '../../packages/book/data.ts';
+import {
+  blocks,
+  bookPlan,
+  defaultTitle,
+  PAGES,
+  paragraphs,
+  plainText,
+  richBlocks,
+  span
+} from '../../packages/book/data.ts';
 import { photo, renderBook, rows, selfTest } from '../../packages/book/render.ts';
 import { bookKey, runBook } from '../../workers/export.ts';
 import { FakeStore } from '../../packages/testing/store.ts';
@@ -343,4 +352,79 @@ test('a book for an account being deleted is never built', async () => {
   await store.seed({ ...(await store.profile('u1'))!, deleting: true });
   assert.equal(await runBook(context, 'u1', 'book-a'), 'skipped');
   assert.ok(!objects.calls.some((c) => c.operation === 'get' || c.operation === 'uploadFile'));
+});
+test('a rich note prints its marks, lists, numbered lists and quotes as it wrote them, with nothing guessed', () => {
+  const made = richBlocks([
+    'A **long** day at the *lake*.\nPacked:\n- towels\n- the ',
+    { tag: 'canoe', text: '#canoe' },
+    ' paddles\n  and a bag\n\n3. third\n4. fourth\n\n> cold *water*\n\nRead ',
+    { url: 'https://example.com/loons', label: 'Loons', site: 'example.com' },
+    '.'
+  ]);
+  assert.deepEqual(made, [
+    {
+      kind: 'text',
+      lines: [
+        [
+          { text: 'A ' },
+          { text: 'long', strong: true },
+          { text: ' day at the ' },
+          { text: 'lake', em: true },
+          { text: '.' }
+        ],
+        [{ text: 'Packed:' }]
+      ]
+    },
+    {
+      kind: 'list',
+      lines: [
+        [{ text: 'towels' }],
+        [{ text: 'the ' }, { text: '#canoe', tag: true }, { text: ' paddles' }, { text: ' ' }, { text: 'and a bag' }]
+      ]
+    },
+    { kind: 'numbers', lines: [[{ text: 'third' }], [{ text: 'fourth' }]], start: 3 },
+    { kind: 'text', lines: [[{ text: 'cold ' }, { text: 'water', em: true }]], quote: true },
+    {
+      kind: 'text',
+      lines: [
+        [
+          { text: 'Read ' },
+          { text: 'Loons', href: 'https://example.com/loons' },
+          { text: ' · example.com', muted: true },
+          { text: '.' }
+        ]
+      ]
+    }
+  ]);
+  assert.equal(
+    plainText({ blocks: made }),
+    'A long day at the lake.\nPacked:\n\n- towels\n- the #canoe paddles and a bag\n\n3. third\n4. fourth\n\n> cold water\n\nRead Loons · example.com.'
+  );
+});
+test('Typst sets a rich note’s bold, italic, numbered list and quote with no warnings', async () => {
+  const { store, objects } = await subscriber(),
+    p = (await store.profile('u1'))!,
+    plan = await bookPlan(
+      p,
+      'u1',
+      '2026-10-12',
+      '2026-10-13',
+      await store.notesBetween('u1', '2026-10-12', '2026-10-13'),
+      {},
+      {},
+      { made: '2026-10-13' }
+    ),
+    day = plan.data.chapters[0]!.days[0]!,
+    note = { ...day.notes[0]!, blocks: richBlocks(['**Bold**, *italic*.\n\n2. two\n3. three\n\n> a *quote*']) },
+    rich = {
+      ...plan,
+      data: {
+        ...plan.data,
+        chapters: [{ ...plan.data.chapters[0]!, days: [{ ...day, notes: [note, ...day.notes.slice(1)] }] }]
+      }
+    },
+    read = async (key: string) => (await objects.get(key).catch(() => null))?.body ?? null,
+    book = await renderBook(rich, read, { now });
+  assert.equal(book.pdf.subarray(0, 5).toString(), '%PDF-');
+  assert.equal(book.warnings, 0);
 });

@@ -241,9 +241,14 @@
 }
 
 #let span(s) = {
-  if "href" in s { link(s.href, s.text) } else if "tag" in s { text(fill: blue, s.text) } else if "muted" in s {
+  let t = if "href" in s { link(s.href, s.text) } else if "tag" in s { text(fill: blue, s.text) } else if "muted" in s {
     text(fill: ink3, s.text)
   } else { s.text }
+  // A rich note's bold and italic (docs/RICH-TEXT.md): flags on a string,
+  // never markup.
+  if "strong" in s { t = text(weight: 700, t) }
+  if "em" in s { t = emph(t) }
+  t
 }
 #let spans(l) = l.map(span).join()
 // A piece of Claude's commentary, set apart from the notes.
@@ -283,13 +288,19 @@
     v(0.5em)
   }
   set list(marker: move(dy: 0.1em, circle(radius: pt(1.7), fill: orange)), indent: 0.1em, body-indent: 0.8em, spacing: 0.5em)
+  set enum(indent: 0.1em, body-indent: 0.6em, spacing: 0.5em)
   for b in note.blocks {
     let above = if "tight" in b { 0.55em } else { 0.95em }
     if b.kind == "head" {
       block(above: above + 0.2em, below: 0.55em, sticky: true, text(weight: 700, spans(b.lines.first())))
-    } else if b.kind == "list" {
-      block(above: above, below: 0.95em, list(..b.lines.map(spans)))
-    } else { block(above: above, below: 0.95em, par(b.lines.map(spans).join(linebreak()))) }
+    } else {
+      let words = if b.kind == "list" { list(..b.lines.map(spans)) } else if b.kind == "numbers" {
+        enum(start: b.at("start", default: 1), ..b.lines.map(spans))
+      } else { par(b.lines.map(spans).join(linebreak())) }
+      // A quote is set in and in ink-2, with no rule, as on the web.
+      if "quote" in b { words = pad(left: 1.1em, text(fill: ink2, words)) }
+      block(above: above, below: 0.95em, words)
+    }
   }
   if "place" in note { block(above: 0.65em, kicker(note.place, fill: ink3, size: pt(6.5))) }
   for a in note.audio {

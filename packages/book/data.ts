@@ -11,6 +11,7 @@ import { CREDIT, CREDIT_URL, fahrenheit, placeOf, summary, type Reading } from '
 import { daysBetween, parseDay } from '../domain/dates.ts';
 import type { PlaceRecord } from '../domain/notes.ts';
 import { computeVersion, releaseName, releaseSpan } from '../domain/version.ts';
+import * as rich from '../domain/rich.ts';
 import { MAX_PHOTOS, type PageSize } from './limits.ts';
 
 export { MAX_PHOTOS, MAX_TITLE } from './limits.ts';
@@ -76,6 +77,9 @@ export interface BookSpan {
   href?: string;
   tag?: true;
   muted?: true;
+  /** Bold or italic, in a note written with rich text (docs/RICH-TEXT.md). */
+  strong?: true;
+  em?: true;
 }
 export interface BookPhoto {
   file: string;
@@ -84,11 +88,15 @@ export interface BookPhoto {
 }
 /** A run of a note's lines: a paragraph, list items (written "- ", "* " or
  * "• ", the marker dropped), or a short line heading the list below it. A
- * tight block goes on from the one before, in the same paragraph as written. */
+ * tight block goes on from the one before, in the same paragraph as written.
+ * A note written with rich text also has numbered lists (from `start`) and
+ * quoted blocks. */
 export interface BookBlock {
-  kind: 'text' | 'list' | 'head';
+  kind: 'text' | 'list' | 'head' | 'numbers';
   lines: BookSpan[][];
   tight?: true;
+  start?: number;
+  quote?: true;
 }
 export interface BookNote {
   by?: string;
@@ -348,11 +356,65 @@ export function blocks(written: BookSpan[][][]): BookBlock[] {
   }
   return out;
 }
+type Atom = Exclude<Part, string>;
+/** One line of a rich note as spans, each with its marks (a link's site
+ * unmarked), trimmed as paragraphs() trims. */
+function richLine(line: rich.Line<Atom>): BookSpan[] {
+  const out: BookSpan[] = [];
+  for (const bit of line) {
+    const marks = { ...(bit.strong ? { strong: true as const } : {}), ...(bit.em ? { em: true as const } : {}) };
+    if ('text' in bit) out.push({ text: bit.text, ...marks });
+    else if ('tag' in bit.atom) out.push({ text: bit.atom.text, tag: true, ...marks });
+    else {
+      const a = bit.atom;
+      out.push(web(a.url) ? { text: a.label, href: a.url, ...marks } : { text: a.label, ...marks });
+      if (a.site && !bare(a.label).includes(bare(a.site))) out.push({ text: ` · ${a.site}`, muted: true });
+    }
+  }
+  if (out.length) {
+    out[0] = { ...out[0]!, text: out[0]!.text.trimStart() };
+    out[out.length - 1] = { ...out.at(-1)!, text: out.at(-1)!.text.trimEnd() };
+  }
+  return out.filter((s) => s.text);
+}
+/** A note written with rich text as blocks: its paragraphs, lists, numbered
+ * lists and quotes as it marked them (domain/rich.ts), with nothing guessed.
+ * A list item's lines run on as one; a quote's blocks are marked quoted. */
+export function richBlocks(parts: readonly Part[]): BookBlock[] {
+  const out: BookBlock[] = [];
+  const add = (written: rich.Block<Atom>[], quote: boolean) => {
+    for (const b of written) {
+      const q = quote ? { quote: true as const } : {};
+      if (b.kind === 'quote') add(b.blocks, true);
+      else if (b.kind === 'para')
+        out.push({ kind: 'text', lines: b.lines.map(richLine).filter((l) => l.length), ...q });
+      else
+        out.push({
+          kind: b.kind === 'numbers' ? 'numbers' : 'list',
+          lines: b.items
+            .map((rows) => rows.map(richLine).filter((l) => l.length))
+            .map((rows) => rows.flatMap((l, i) => (i ? [{ text: ' ' }, ...l] : l)))
+            .filter((l) => l.length),
+          ...(b.kind === 'numbers' && b.start !== 1 ? { start: b.start } : {}),
+          ...q
+        });
+    }
+  };
+  add(rich.blocks(parts), false);
+  return out.filter((b) => b.lines.length);
+}
 /** A note's words as written, from its blocks: for the commentary to read. */
 export const plainText = (note: Pick<BookNote, 'blocks'>): string =>
   note.blocks
     .map((b, i) => {
-      const text = b.lines.map((line) => (b.kind === 'list' ? '- ' : '') + words(line)).join('\n');
+      const text = b.lines
+        .map(
+          (line, j) =>
+            (b.quote ? '> ' : '') +
+            (b.kind === 'list' ? '- ' : b.kind === 'numbers' ? `${(b.start ?? 1) + j}. ` : '') +
+            words(line)
+        )
+        .join('\n');
       return i === 0 ? text : (b.tight ? '\n' : '\n\n') + text;
     })
     .join('');
@@ -407,7 +469,9 @@ export async function bookPlan(
       const item = raw[i]!,
         media = (Array.isArray(item.media) ? item.media : []) as Item[],
         note: BookNote = {
-          blocks: blocks(paragraphs((n.parts as Part[]) ?? [])),
+          blocks: rich.isRich(n)
+            ? richBlocks((n.parts as Part[]) ?? [])
+            : blocks(paragraphs((n.parts as Part[]) ?? [])),
           photos: [],
           images: [],
           audio: [],

@@ -32,6 +32,9 @@ export interface Note {
   on_behalf_of?: string;
   text: string;
   parts?: Part[];
+  // 'rich' when it was written with rich text (docs/RICH-TEXT.md): `parts`
+  // then hold its marks as typed. Absent, the text is plain.
+  markup?: 'rich';
   at?: string;
   tz?: string;
   tags?: string[];

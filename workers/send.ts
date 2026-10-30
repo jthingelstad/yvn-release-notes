@@ -14,8 +14,8 @@ import type { Objects, Mail, Log } from '../packages/backend/services.ts';
 import * as media from '../packages/backend/media.ts';
 import * as weather from '../packages/backend/weather.ts';
 import { fetchJson, object, type JsonFetch } from '../packages/backend/places.ts';
+import { combined } from '../packages/domain/rich.ts';
 import {
-  combine,
   dayLinks,
   placeLabel,
   mapUrl,
@@ -192,7 +192,8 @@ export async function readYesterday(
     return [
       {
         day: then,
-        text: combine(notes),
+        // As one text; a day with a rich note reads as rich (domain/rich.ts).
+        ...combined(notes as NoteRecord[]),
         links: dayLinks(notes as NoteRecord[]),
         files: media.counts(notes),
         tags: tags(notes.map((n) => n.text ?? '').join('\n\n')),
@@ -280,7 +281,7 @@ export async function readOnThisDay(
       shown: PastDay[] = [];
     for (const then of found.slice(0, SHOWN)) {
       const notes = await s.store.dayNotes(sub.user_id, then),
-        text = combine(notes),
+        { text, rich } = combined(notes as NoteRecord[]),
         files = media.counts(notes);
       if (!text && !Object.values(files).some(Boolean)) continue;
       const kept = (await s.store.weatherBetween(sub.user_id, then, then))[then],
@@ -288,6 +289,7 @@ export async function readOnThisDay(
       shown.push({
         day: then,
         text,
+        ...(rich ? { rich } : {}),
         links: dayLinks(notes as NoteRecord[]),
         files,
         sky,

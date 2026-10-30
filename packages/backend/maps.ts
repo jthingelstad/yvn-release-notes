@@ -16,6 +16,7 @@ import { split, type TagPart } from '../domain/tags.ts';
 import { codePointSlice, pythonTrim } from '../domain/unicode.ts';
 import { computeVersion, releaseName } from '../domain/version.ts';
 import { segments, type Link, type LinkPart } from './links.ts';
+import { blocks, flat, isRich } from '../domain/rich.ts';
 
 export type Scheme = 'Light' | 'Dark';
 export const STYLE = 'Standard',
@@ -123,8 +124,11 @@ const shown = (part: Part) => (typeof part === 'string' ? part : 'tag' in part ?
  * a long address cannot fill the preview. A link or tag is kept whole or
  * left for the ellipsis. */
 function preview(note: NoteRecord): { text: string; parts: Part[] } {
-  const words = pythonTrim(String(note.text ?? '').replace(/\s+/g, ' ')),
-    all: Part[] = split(segments(words, note.links as Link[] | undefined)),
+  // A rich note's preview is its words without the markup (domain/rich.ts).
+  const rich = isRich(note),
+    words = pythonTrim(String(note.text ?? '').replace(rich ? /[^\S\n]+/g : /\s+/g, ' ')),
+    found = segments(words, note.links as Link[] | undefined, rich),
+    all: Part[] = split(rich ? flat(blocks(found), ' ') : found),
     size = (part: Part) => Array.from(shown(part)).length;
   if (all.reduce((n, part) => n + size(part), 0) <= PREVIEW) return { text: all.map(shown).join(''), parts: all };
   const parts: Part[] = [];

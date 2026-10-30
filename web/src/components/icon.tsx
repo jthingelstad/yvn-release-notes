@@ -8,6 +8,7 @@ import {
   ArrowLeftRight,
   Award,
   Binary,
+  Bold,
   BookOpen,
   BookOpenText,
   Bot,
@@ -38,9 +39,12 @@ import {
   Hash,
   History,
   Image,
+  Italic,
   Languages,
   Layers,
   Link,
+  List,
+  ListOrdered,
   LocateFixed,
   Lock,
   LogOut,
@@ -74,6 +78,7 @@ import {
   Tags,
   Target,
   Terminal,
+  TextQuote,
   Trash2,
   TrendingUp,
   Webhook,
@@ -129,7 +134,12 @@ const icons = {
   api: Terminal,
   download: Download,
   book: BookOpen,
-  feedback: MessageSquareText
+  feedback: MessageSquareText,
+  bold: Bold,
+  italic: Italic,
+  bullets: List,
+  numbers: ListOrdered,
+  quote: TextQuote
 };
 export type IconName = keyof typeof icons;
 

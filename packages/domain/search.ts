@@ -1,6 +1,8 @@
 /** Shared web/MCP search: AND terms, quoted phrases, names and already
- * available descriptions/transcripts. Search never triggers processing. */
+ * available descriptions/transcripts. Search never triggers processing. A
+ * rich note is searched by its words, not its markup (domain/rich.ts). */
 import { placeLabel, type NoteRecord } from './notes.ts';
+import { isRich, plainWords } from './rich.ts';
 import { fold, pythonTrim } from './unicode.ts';
 export { fold } from './unicode.ts';
 export const MAX_QUERY = 200,
@@ -19,7 +21,7 @@ export function searchTerms(query: string): string[] {
   return found;
 }
 export function searchedText(note: NoteRecord): string {
-  const words = [note.text || ''];
+  const words = [isRich(note) ? plainWords(note.text || '') : note.text || ''];
   for (const media of note.media || [])
     for (const key of ['transcript', 'description']) words.push(String(media[key] || ''));
   if (note.place) words.push(placeLabel(note.place));

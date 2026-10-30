@@ -3,7 +3,7 @@ import { oauthResponse } from '../../packages/backend/oauth.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { validDay, localDay } from '../../packages/domain/dates.ts';
 import { codePointLength, pythonTrim } from '../../packages/domain/unicode.ts';
-import { MAX_NOTE } from '../../packages/domain/notes.ts';
+import { MAX_NOTE, noteWords } from '../../packages/domain/notes.ts';
 import { MAX_QUERY, searchTerms } from '../../packages/domain/search.ts';
 export const json = (value: unknown, status = 200, headers: HeadersInit = {}) => oauthResponse(status, value, headers);
 /** Largest JSON body a valid request can need. Note text is limited to MAX_NOTE code points after
@@ -67,7 +67,7 @@ export const dayFrom = (p: Item, value: unknown, now: number): string => {
 export const textFrom = (b: Item, empty = false): string => {
   const raw = b.text ?? (empty ? '' : null);
   if (typeof raw !== 'string') reject(400, 'text');
-  const text = pythonTrim(raw.replace(/\r\n/g, '\n'));
+  const text = noteWords(raw);
   if (!text && !empty) reject(400, 'text');
   if (codePointLength(text) > MAX_NOTE) reject(400, 'too-long');
   return text;

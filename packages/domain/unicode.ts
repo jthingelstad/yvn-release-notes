@@ -15,6 +15,17 @@ export const pythonTrim = (text: string): string => text.replace(leading, '').re
 export const pythonRstrip = (text: string): string => text.replace(trailing, '');
 export const isWhitespace = (char: string): boolean => new RegExp(`^${whitespace}$`).test(char);
 
+/** Whether every string in a parsed body, keys included, is whole: JSON
+ * can carry a lone surrogate as an escape, which is no character, and
+ * storing one would quietly change it. */
+export function wellFormed(value: unknown): boolean {
+  if (typeof value === 'string') return !/\p{Cs}/u.test(value);
+  if (Array.isArray(value)) return value.every(wellFormed);
+  if (value && typeof value === 'object')
+    return Object.entries(value).every(([key, item]) => wellFormed(key) && wellFormed(item));
+  return true;
+}
+
 export function isAlphanumeric(char: string): boolean {
   const cp = char.codePointAt(0);
   if (cp === undefined) return false;

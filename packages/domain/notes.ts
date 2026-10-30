@@ -36,6 +36,23 @@ export interface NoteRecord {
   [key: string]: unknown;
 }
 
+/** A note's words as every channel keeps them (Jamie, 2026-10-30:
+ * "Approved: build the five API edge cases as recommended", case 3): line
+ * endings as `\n`, a leading byte-order mark and every control character
+ * but tab and newline dropped (a NUL or a terminal escape is never text),
+ * a lone surrogate as U+FFFD, then trimmed. Everything visible stays, and
+ * so do the invisible marks real text needs: joiners, variation selectors
+ * and direction marks. `/v1` and MCP refuse a lone surrogate before this
+ * (`unicode.wellFormed`), so only the web and email ever replace one. */
+export function noteWords(raw: string): string {
+  const text = raw.replace(/\r\n?/g, '\n');
+  return pythonTrim(
+    (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)
+      .replace(/(?![\t\n])\p{Cc}/gu, '')
+      .replace(/\p{Cs}/gu, String.fromCodePoint(0xfffd))
+  );
+}
+
 export function writtenAt(note: NoteRecord): string {
   return note.written_at || note.received_at || '';
 }

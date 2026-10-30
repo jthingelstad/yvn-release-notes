@@ -480,6 +480,14 @@ test('inbound reply stays on original day, truncates by code point and retry is 
   assert.equal(f.logs.at(-1)?.duplicate, true);
   assert.ok(!JSON.stringify(f.logs).includes('little thing'));
 });
+test('an emailed note loses control characters as every channel’s does', async () => {
+  const esc = String.fromCodePoint(0x1b),
+    f = await replyFixture(
+      `From: Ada <ada@example.com>\r\nMessage-ID: <reply@example.com>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nPasted ${esc}[1mbold${esc}[0m #made`
+    );
+  assert.equal(await inbound.process(ses(), f.services), 'note');
+  assert.equal((await f.store.dayNotes('u', '2026-10-11'))[0]?.text, 'Pasted [1mbold[0m #made');
+});
 for (const [name, verdict, reason] of [
   ['spam', { spamVerdict: { status: 'FAIL' } }, 'spam-or-virus'],
   ['virus scan failure', { virusVerdict: { status: 'PROCESSING_FAILED' } }, 'spam-or-virus'],

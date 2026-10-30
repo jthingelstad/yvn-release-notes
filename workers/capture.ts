@@ -24,10 +24,10 @@ import {
 import { OAuthService, live, type OAuthRow } from '../packages/backend/oauth.ts';
 import { Store } from '../packages/backend/store.ts';
 import { iso } from '../packages/domain/dates.ts';
-import { MAX_NOTE } from '../packages/domain/notes.ts';
+import { MAX_NOTE, noteWords } from '../packages/domain/notes.ts';
 import { found } from '../packages/domain/tags.ts';
 import { computeVersion } from '../packages/domain/version.ts';
-import { codePointLength, pythonTrim } from '../packages/domain/unicode.ts';
+import { codePointLength, wellFormed } from '../packages/domain/unicode.ts';
 import {
   agentFeedbackSummary,
   agentUpcomingView,
@@ -181,7 +181,7 @@ export async function writeCapture(
         return { note: JSON.parse(String(receipt.result)), replayed: true };
       }
       const day = reader.day(args.date ?? reader.today);
-      let text = typeof args.text === 'string' ? pythonTrim(args.text.replace(/\r\n/g, '\n')) : '',
+      let text = typeof args.text === 'string' ? noteWords(args.text) : '',
         old: OAuthRow | null = null;
       if (name !== 'notes_attach' && !text && !files.length)
         throw new ToolError(
@@ -706,6 +706,11 @@ export async function captureNote(
     if (typeof name !== 'string' || !WRITE_TOOLS.has(name))
       throw new ToolError('unknown_tool', 'Only the write tools are supported here.');
     validate(args, TOOLS.find((t) => t.name === name)!.inputSchema);
+    if (!wellFormed(args))
+      throw new ToolError(
+        'invalid_arguments',
+        'Some text holds half a character (a lone surrogate escape); send whole characters.'
+      );
     return await (FEEDBACK_TOOLS.has(name)
       ? writeFeedback(context, family, name, args)
       : UPCOMING_TOOLS.has(name)

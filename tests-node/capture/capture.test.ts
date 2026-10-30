@@ -411,3 +411,20 @@ test('a note whose activity row cannot be written is still saved, and counted', 
   assert.equal(logs[1]!.ActivityUnrecorded, 1);
   assert.ok(!JSON.stringify(logs).includes('Kept anyway'));
 });
+test('an agent’s words lose control characters, and half a character is refused (2026-10-30)', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx),
+    c = (...p: number[]) => String.fromCodePoint(...p),
+    run = (args: OAuthRow) =>
+      captureNote({ token: a.token, tool: 'notes_create', arguments: args }, ctx, { fetchTitle: noFetch });
+  const made = await run({
+    date: '2026-10-07',
+    text: `Ran${c(0x1b)}[2J ${c(0)}far ${c(0x2764, 0xfe0f)}`,
+    idempotency_key: 'odd'
+  });
+  assert.equal((made.note as OAuthRow).text, `Ran[2J far ${c(0x2764, 0xfe0f)}`);
+  const half = await run({ date: '2026-10-07', text: `half ${String.fromCharCode(0xd83d)}`, idempotency_key: 'half' });
+  assert.equal(half.error, 'invalid_arguments');
+  assert.match(String(half.next_step), /lone surrogate/);
+  assert.equal(ctx.store.memory.all().filter((i) => String(i.sk).startsWith('NOTE#')).length, 1);
+});

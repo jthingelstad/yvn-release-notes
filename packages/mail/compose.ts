@@ -268,7 +268,7 @@ export const pastLink = (day: string) => `${APP}/day/?d=${day}`;
 // #, so no server sees which.
 export const mapLink = (day: string, at: { id: string } | { ll: string }) =>
   `${APP}/map/#${new URLSearchParams('id' in at ? { d: day, n: at.id } : { d: day, ll: at.ll }).toString()}`;
-export const tagLink = (tag: string) => `${APP}/tag/?t=${tag}`;
+export const tagLink = (tag: string) => `${APP}/tag/?t=${encodeURIComponent(tag)}`;
 export const escape = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;' })[c]!);
 export const asciiHtml = (text: string) =>

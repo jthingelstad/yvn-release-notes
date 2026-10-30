@@ -109,6 +109,23 @@ test('optional tags normalize, persist, clear and export without entering journa
   assert.equal((await f.call('GET')).data.entries.find((e: Item) => e.id === 'legacy').tag, null);
   assert.doesNotMatch(JSON.stringify(f.logs), /sps|SPS|quipe/);
 });
+test('a tag in any script is its letters, lowercased with their marks, as the hashtag would be', async () => {
+  const f = await fixture();
+  for (const [given, tag] of [
+    ['#Москва', 'москва'],
+    ['東京', '東京'],
+    ['שָׁלוֹם', 'שָׁלוֹם'],
+    ['नमस्ते-2026', 'नमस्ते-2026'],
+    ['ΑΘΗΝΑ', 'αθηνα'],
+    ['Tokyo東京', 'tokyo']
+  ]) {
+    const saved = await f.call('POST', undefined, { ...birthday, tag: given });
+    assert.equal(saved.status, 201, given);
+    assert.equal(saved.data.tag, tag, given);
+  }
+  for (const tag of ['١٢٣', '東'.repeat(51), 'Москва Сити', '\u0301ab'])
+    assert.equal((await f.call('POST', undefined, { ...birthday, tag })).status, 400, tag);
+});
 test('signed-out, wrong Origin, no-account and deleting-account requests cannot write', async () => {
   const f = await fixture();
   assert.equal((await f.call('GET', undefined, undefined, '')).status, 401);

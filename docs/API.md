@@ -408,7 +408,9 @@ and edits are.
 ties broken by last use. It has at most 20.
 
 **`PUT /v1/tags/pinned`** `{"pinned": [...]}`, `notes:write`. Up to 12 tags,
-normalized as note hashtags are. Pins live on the account, so the web's
+normalized as note hashtags are, in any script since 2026-10-30
+(`"Москва"` is `москва`, `"東京"` stays `東京`; `packages/domain/tags.ts`).
+Pins live on the account, so the web's
 Today form and every phone show the same ones. A `settings.changed` row
 names the field.
 

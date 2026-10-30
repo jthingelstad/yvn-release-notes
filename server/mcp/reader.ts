@@ -20,7 +20,7 @@ import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { collectedOn, evaluateBadges, releaseBadges } from '../../packages/domain/badges.ts';
 import { badgeFacts } from '../../packages/backend/badges.ts';
 import { writtenAt, placeLabel, type NoteRecord, type PlaceRecord } from '../../packages/domain/notes.ts';
-import { found, split } from '../../packages/domain/tags.ts';
+import { found, isTag, split } from '../../packages/domain/tags.ts';
 import { searchTerms, searchedText } from '../../packages/domain/search.ts';
 import { codePointLength, codePointSlice } from '../../packages/domain/unicode.ts';
 import { asciiJson, MAX_MEDIA, ToolError, object, type Arguments } from './common.ts';
@@ -581,6 +581,10 @@ export class Reader {
       ];
     }
     if (name === 'notes_list' || name === 'notes_search') {
+      // The schema has no pattern for a tag in any script (1.11.0), so the
+      // check its pattern made is made here, before anything is read.
+      if (Object.hasOwn(a, 'tag') && !isTag(a.tag))
+        throw new ToolError('invalid_arguments', 'Check the format and length of your parameters.');
       let first = this.day(a.from ?? this.birthday),
         last = this.day(a.through ?? this.today);
       if (a.release) {

@@ -40,3 +40,11 @@ test('yesterday falls back to whole words, excludes overlong URLs and places a c
   assert.match(linked, /href="https:\/\/example.com\/path"/);
   assert.match(linked, /<\/a>&#8230;/);
 });
+test('a tag in any script links to its page percent-encoded; one in a-z links as it always did', () => {
+  assert.equal(c.tagLink('woods'), 'https://notes.yourversionnumber.com/tag/?t=woods');
+  assert.equal(c.tagLink('東京'), 'https://notes.yourversionnumber.com/tag/?t=%E6%9D%B1%E4%BA%AC');
+  const html = c.tagsHtml(['東京', 'maine-2016']);
+  assert.ok(html.includes('href="https://notes.yourversionnumber.com/tag/?t=%E6%9D%B1%E4%BA%AC"'));
+  assert.ok(html.includes('>#東京</a>'));
+  assert.ok(html.includes('?t=maine-2016"'));
+});

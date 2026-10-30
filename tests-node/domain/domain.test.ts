@@ -102,14 +102,30 @@ test('all Unicode codepoints match the independent Python Unicode16 search oracl
 
 test('synthetic legacy goldens cover Unicode tags, offsets, trimming and quoted search', () => {
   const fixture = JSON.parse(readFileSync(new URL('./legacy-golden.json', import.meta.url), 'utf8'));
+  // Letters in any script (2026-10-30) only add tags: every legacy tag and
+  // span is still there, in order, and each added one has no a-z letter in
+  // its slug, so a tag from before never moves. The golden is unchanged.
+  const legacy = (tag: string) => /^[a-z0-9-]+$/.test(tag);
+  const added: string[] = [];
   for (const value of fixture.texts) {
     assert.equal(fold(value.text), value.fold);
-    assert.deepEqual(tags.found(value.text), value.tags);
-    assert.deepEqual(tags.spans(value.text), value.spans);
+    assert.deepEqual(tags.found(value.text).filter(legacy), value.tags);
+    assert.deepEqual(
+      tags.spans(value.text).filter(([, , tag]) => legacy(tag)),
+      value.spans
+    );
+    for (const [, , tag] of tags.spans(value.text))
+      if (!legacy(tag)) {
+        assert.ok(!/[a-z]/.test(tags.slug(tag)), tag);
+        added.push(tag);
+      }
     assert.equal(tags.slug(value.text), value.slug);
     assert.equal(tags.withoutClosing(value.text), value.withoutClosing);
     assert.deepEqual(searchTerms(value.text), value.terms);
   }
+  // #한국 was no tag before; the rest are the random texts' #Σ, #ς and #한.
+  assert.equal(added.length, 9);
+  assert.equal(added[0], '한국');
   assert.equal(codePointLength('💡'.repeat(20000)), 20000);
   assert.equal(codePointSlice('💡A💡B', 1, 3), 'A💡');
   assert.equal(pythonTrim('\u001c x \ufeff'), 'x \ufeff');

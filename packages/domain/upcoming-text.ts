@@ -11,6 +11,7 @@
  * Rendering and parsing round-trip; a plan pairs lines with saved entries by
  * kind and folded title so an edited line is a change, not a remove and add. */
 import { validDay } from './dates.ts';
+import { tagName } from './tags.ts';
 import { fold } from './unicode.ts';
 import { annual, defaultReminders, UPCOMING_KINDS, type UpcomingEntry, type UpcomingKind } from './upcoming.ts';
 
@@ -171,7 +172,7 @@ const sameDate = (entry: UpcomingEntry, line: TextLine) =>
 export function lineChanges(entry: UpcomingEntry, line: TextLine): boolean {
   return (
     entry.title !== line.title ||
-    (entry.tag ?? null) !== (line.tag === null ? null : line.tag.toLowerCase()) ||
+    (entry.tag ?? null) !== (line.tag === null ? null : tagName(line.tag)) ||
     !sameDate(entry, line) ||
     placeText(entry.place) !== line.place ||
     (line.email !== null && entry.email !== line.email) ||

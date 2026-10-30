@@ -1395,6 +1395,38 @@ test('the tag row: pinned tags first, then the last 30 days', async () => {
   assert.equal((await s.call('PUT', '/api/tag-row', { pinned: [] }, s.token, false)).r.status, 403);
 });
 
+test('a hashtag in any script is a tag: kept on its note, listed, opened by its encoded address and pinned', async () => {
+  const s = await setup();
+  s.ctx.weatherFetch = async () => ({
+    daily: { time: [], temperature_2m_max: [], temperature_2m_min: [], weather_code: [] }
+  });
+  const made = await s.call('POST', '/api/days/2026-10-06/notes', { text: 'Ramen #東京 with #Москва friends #walks' });
+  assert.equal(made.r.status, 201);
+  const id = String((made.b as Item).id);
+  assert.deepEqual(s.store.memory.read({ pk: 'USER#u', sk: `NOTE#2026-10-06#${id}` })!.tags, [
+    '東京',
+    'москва',
+    'walks'
+  ]);
+  const listed = (((await s.call('GET', '/api/tags')).b as Item).tags as Item[]).map((t) => t.tag);
+  assert.deepEqual(listed.toSorted(), ['walks', 'москва', '東京']);
+  const page = await s.call('GET', `/api/tags/${encodeURIComponent('東京')}`);
+  assert.equal(page.r.status, 200);
+  assert.equal((page.b as Item).tag, '東京');
+  assert.deepEqual(
+    ((page.b as Item).days as Item[]).flatMap((d) => (d.notes as Item[]).map((n) => n.id)),
+    [id]
+  );
+  assert.equal((await s.call('GET', '/api/tags/walks')).r.status, 200);
+  // An address no hashtag gives is not found, as before: capitals, broken
+  // escapes and a capital spelled as an escape alike.
+  for (const path of ['Running', '%E6%9D', '%52unning', encodeURIComponent('Москва'), '-walks'])
+    assert.equal((await s.call('GET', `/api/tags/${path}`)).r.status, 404, path);
+  const pins = await s.call('PUT', '/api/tag-row', { pinned: ['#Москва', '東京', 'москва'] });
+  assert.equal(pins.r.status, 200);
+  assert.deepEqual((pins.b as Item).pinned, ['москва', '東京']);
+});
+
 // A JPEG as a canvas makes it: SOI, a JFIF APP0, the frame and the scan.
 // `extra` goes before the frame (an EXIF APP1, say).
 function jpeg(width: number, height = width, extra: Buffer[] = [], pad = 200) {

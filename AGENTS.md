@@ -122,7 +122,7 @@ Where things are (each module's design comment has its contract):
   (2026-10-14): named imports only, icon-only actions named for assistive
   technology, with hover titles, visible focus and 44px targets. Brand marks
   stay their own artwork.
-- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,badges-baseline,feedback}.ts`
+- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,fill-tags,badges-baseline,feedback}.ts`
   are operator tools (shared setup in `tools/operator.ts`);
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current,
   and `tools/export-api-contract.ts` the `/v1` OpenAPI file,
@@ -268,7 +268,14 @@ Where things are (each module's design comment has its contract):
   text needs. `/v1` and MCP refuse a lone surrogate escape.
 - **Tags are hashtags** in the text (Jamie, 2026-10-09: "hashtags",
   lowercase with hyphens, "maine-2016"), the one place a tag lives. No
-  index: one person's notes are read whole.
+  index: one person's notes are read whole. Letters in any script make a
+  tag (Jamie, 2026-10-30: "Approved: build the five API edge cases as
+  recommended: 1, 3 and 4 as API 1.7.0, 2 as its own PR"): a hashtag with
+  no a-z letter even read in full (#東京, #שלום, #Москва) is its own
+  letters, lowercased, marks kept; one with them keeps the legacy slug
+  exactly, so no tag from before moves (`packages/domain/tags.ts`). A
+  note's `tags` are kept when it is written, so older notes gain such tags
+  only from `tools/fill-tags.ts --write`, a live run that needs Jamie's go.
 - **Search** (Jamie, 2026-10-09: "pull posts by tag, showing all tags that
   have been used, as well as search by string across notes") matches every
   word or "quoted phrase" in text, place, link names, transcripts and photo

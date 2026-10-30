@@ -5,7 +5,7 @@ import { reject, ApiError } from './sessions.ts';
 import { clean, type City } from './places.ts';
 import { validDay, parseDay, formatDay } from '../domain/dates.ts';
 import { pythonTrim, codePointLength, fold } from '../domain/unicode.ts';
-import { MAX_TAG, slug } from '../domain/tags.ts';
+import { MAX_TAG, isTag, tagName } from '../domain/tags.ts';
 import {
   annual,
   defaultReminders,
@@ -36,8 +36,14 @@ export function upcomingContent(value: Item, today: string) {
     if (typeof value.tag !== 'string') reject(400, 'upcoming-tag');
     const raw = pythonTrim(value.tag).replace(/^#/, '');
     if (raw) {
-      tag = slug(raw);
-      if (codePointLength(raw) > MAX_TAG || !/^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(raw) || !/[a-z]/.test(tag))
+      tag = tagName(raw);
+      // One word, as a hashtag is: letters, numbers and their marks in any
+      // script, hyphens between words.
+      if (
+        codePointLength(raw) > MAX_TAG ||
+        !/^[\p{L}\p{N}][\p{L}\p{M}\p{N}\u200c\u200d]*(?:-[\p{L}\p{N}][\p{L}\p{M}\p{N}\u200c\u200d]*)*$/u.test(raw) ||
+        !isTag(tag)
+      )
         reject(400, 'upcoming-tag');
     } else if (pythonTrim(value.tag)) reject(400, 'upcoming-tag');
   }

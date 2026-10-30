@@ -7,7 +7,7 @@ description: Hashtags in any note, a page for each tag, and search across every 
 
 Write a hashtag anywhere in a note, like #cabin or #maine-2016, and the note has that tag. It works the same in a reply, a note mailed to your own address and a note written on the web. Tags live in the words of the note: edit the note to change them.
 
-A tag is letters and numbers, with hyphens to join words, and it needs at least one letter. Capitals and accents don't matter, so #Café and #cafe are one tag. A tag keeps up to 50 characters.
+A tag is letters and numbers, with hyphens to join words, and it needs at least one letter. Capitals and accents don't matter, so #Café and #cafe are one tag. Letters in any language make a tag, so #東京, #שלום and #Москва are tags too. A tag keeps up to 50 characters.
 
 ## The tag row
 

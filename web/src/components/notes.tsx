@@ -4,7 +4,9 @@ import { Fragment, useState, type ReactNode } from 'react';
 import { absolute, LINK_MS, mediaPath } from '../lib/files.ts';
 import { zoneName, zoneShortDate, zoneTime } from '../lib/format.ts';
 import type { Media, Note } from '../lib/types.ts';
+import { momentParts } from '../../../packages/domain/moments.ts';
 import { AppLink } from './common.tsx';
+import { MomentIcon } from './icon.tsx';
 import { useViewer } from './viewer.tsx';
 
 export function noteText(n: Note): string {
@@ -82,6 +84,27 @@ export function NoteBody({ n, cls = 'text', mark }: { n: Note; cls?: string; mar
     <p className={cls} hidden={!text} dir="auto">
       {body}
     </p>
+  );
+}
+
+// A moment an app kept with the note (docs/MOMENTS.md): one quiet line a
+// piece, each with its glyph, in the account's units. The words are still
+// the note; these say what was picked.
+export function NoteMoment({ n, miles }: { n: Note; miles: boolean }) {
+  if (!n.moment) return null;
+  const workouts = n.moment.items.flatMap((i) => (i.kind === 'workout' ? [i.activity] : []));
+  let w = 0;
+  const parts = momentParts(n.moment, miles);
+  if (!parts.length) return null;
+  return (
+    <ul className="moment" aria-label="Moment">
+      {parts.map((p, i) => (
+        <li key={i}>
+          <MomentIcon kind={p.kind === 'workout' ? (workouts[w++] ?? 'other') : p.kind} />
+          <span>{p.text}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

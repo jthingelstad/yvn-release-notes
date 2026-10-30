@@ -14,11 +14,33 @@ import { NEARBY_MAX } from '../../packages/backend/places.ts';
 import { FORM_SECONDS, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY } from '../../packages/backend/uploads.ts';
 import { PINS_MAX, RECENT_DAYS, RECENT_MAX } from '../../packages/backend/tag-row.ts';
 import { TOKEN_SCOPES, V1_LIMITS, V1_RECEIPT_SECONDS, V1_UPCOMING_MAX } from '../../packages/backend/tokens.ts';
+import {
+  ACTIVITIES,
+  MOMENT_ITEMS,
+  MOMENT_KINDS,
+  MOMENT_LABELS,
+  MOMENT_PEOPLE,
+  MOMENT_PROMPT,
+  MOMENT_WORDS,
+  MOVEMENTS,
+  VALENCES
+} from '../../packages/domain/moments.ts';
 import { MAX_TAG } from '../../packages/domain/tags.ts';
 import { UPCOMING_KINDS, UPCOMING_MAX, UPCOMING_TITLE_MAX } from '../../packages/domain/upcoming.ts';
 import { API_CHANGES, API_VERSION, ME_DAYS, REMINDER_DAYS_MAX, V1_BODY, V1_ERRORS, V1_ROUTES } from './v1.ts';
 
 type Doc = Record<string, unknown>;
+
+const words: Doc = { type: 'string', maxLength: MOMENT_WORDS };
+/** One kind of moment piece, closed to its own fields. */
+const piece = (kind: string, required: string[], properties: Doc, description?: string): Doc => ({
+  type: 'object',
+  title: kind,
+  required: ['kind', ...required],
+  additionalProperties: false,
+  ...(description ? { description } : {}),
+  properties: { kind: { type: 'string', const: kind }, ...properties }
+});
 
 /** Each route's operation: its id, summary and what it reads and answers. */
 const OPERATIONS: Record<string, Doc> = {
@@ -37,7 +59,9 @@ const OPERATIONS: Record<string, Doc> = {
       "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. " +
       'A `text/plain` body is the note’s text alone. With neither `date` nor `written_at`, it files to today. ' +
       'With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a ' +
-      'city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came.',
+      'city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came. A `moment` ' +
+      '(since 1.6.0) keeps what an app picked for the note, a walk, a song or who was there, as values beside ' +
+      'the words: the words are still the note, and the moment is shown, exported and deleted with it.',
     requestBody: {
       required: true,
       content: {
@@ -324,8 +348,61 @@ const SCHEMAS: Record<string, Doc> = {
           'was typed and is ordered by it.'
       },
       uploads: ref('Uploads'),
-      place: ref('NotePlace')
+      place: ref('NotePlace'),
+      moment: ref('Moment')
     }
+  },
+  Moment: {
+    type: 'object',
+    required: ['items'],
+    additionalProperties: false,
+    description:
+      'What an app picked for the note (Apple’s Journaling Suggestions, say), kept beside its words as it was ' +
+      'sent: words trimmed and empty ones left out. A place visited is the note’s `place`, and photos are ' +
+      'its `uploads`. Since 1.6.0.',
+    properties: {
+      at: { type: 'string', format: 'date-time', description: 'When the moment began.' },
+      items: { type: 'array', minItems: 1, maxItems: MOMENT_ITEMS, items: ref('MomentItem') }
+    }
+  },
+  MomentItem: {
+    type: 'object',
+    required: ['kind'],
+    description: `One piece, by its \`kind\`. An unknown kind or field is \`invalid_request\`, naming it (\`moment.items[2].distance_m\`). Kinds: ${MOMENT_KINDS.join(', ')}.`,
+    oneOf: [
+      piece('workout', ['activity'], {
+        activity: { type: 'string', enum: [...ACTIVITIES] },
+        name: { ...words, description: 'The workout’s own name (“Yoga”), for one with no activity here.' },
+        distance_m: { type: 'number', minimum: 0, maximum: 1_000_000, description: 'In metres.' },
+        duration_s: { type: 'number', minimum: 0, maximum: 604_800, description: 'In seconds.' }
+      }),
+      piece('song', [], { title: words, artist: words }, 'A title or an artist.'),
+      piece('podcast', [], { episode: words, show: words }, 'An episode or a show.'),
+      piece('played', [], { title: words, artist: words }, 'Something listened to in another app.'),
+      piece('steps', ['count'], {
+        count: { type: 'integer', minimum: 1, maximum: 1_000_000 },
+        movement: { type: 'string', enum: [...MOVEMENTS] }
+      }),
+      piece(
+        'feeling',
+        [],
+        {
+          labels: { type: 'array', maxItems: MOMENT_LABELS, items: { type: 'string', maxLength: 40 } },
+          valence: { type: 'string', enum: [...VALENCES] }
+        },
+        'Labels (“calm”), a valence, or both.'
+      ),
+      piece('event', ['title'], {
+        title: words,
+        place: words,
+        start: { type: 'string', format: 'date-time' },
+        hosted: { type: 'boolean', description: 'Kept as false when not sent.' }
+      }),
+      piece('people', ['names'], {
+        names: { type: 'array', minItems: 1, maxItems: MOMENT_PEOPLE, items: words }
+      }),
+      piece('reflection', ['prompt'], { prompt: { type: 'string', maxLength: MOMENT_PROMPT } })
+    ]
   },
   NoteMedia: {
     type: 'object',
@@ -481,7 +558,8 @@ const SCHEMAS: Record<string, Doc> = {
       revision: { type: 'string' },
       written_at: { anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }] },
       files: { type: 'integer', minimum: 0 },
-      token: { anyOf: [{ type: 'string' }, { type: 'null' }] }
+      token: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      moment: { ...ref('Moment'), description: 'The moment it was written with, as kept. Since 1.6.0.' }
     }
   },
   TagRow: {
@@ -660,9 +738,9 @@ const SCHEMAS: Record<string, Doc> = {
     type: 'object',
     required: ['id', 'at', 'kind'],
     description:
-      'One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`, a reads row ' +
-      '`calls` and `tools`); `via` says through what, and a token’s rows name it as `token` and, from 1.4.0, ' +
-      'by id as `token_id`.',
+      'One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`, and from ' +
+      '1.6.0 `moment`, the kinds of a moment it came with; a reads row `calls` and `tools`); `via` says through ' +
+      'what, and a token’s rows name it as `token` and, from 1.4.0, by id as `token_id`.',
     properties: {
       id: { type: 'string', description: 'A cursor for `before` and `after`.' },
       at: { type: 'string', format: 'date-time' },

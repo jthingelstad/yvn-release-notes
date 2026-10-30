@@ -217,7 +217,7 @@ There is no new DNS record, certificate or function.
   - `Release-Notes-Version: 4.5.137`, today's version, on every answer to
     a good token, a 404 or 405 included (a browser's refused request reads
     nothing, so has none);
-  - `API-Version: 1.5.0`, the API's own version (`API_VERSION` in
+  - `API-Version: 1.6.0`, the API's own version (`API_VERSION` in
     `server/mcp/v1.ts`).
 - **Idempotency:** every write but `POST /v1/uploads` and
   `POST /v1/places/here` takes an `Idempotency-Key` header (1 to 128
@@ -344,6 +344,10 @@ know whose account a token opens and which rows are its own:
   and sent at 12:05am files to the day it was typed, in the account's zone,
   unless `date` says otherwise. It also orders the note within its day.
 - `uploads` (with `media:write`) and `place` are as under Phase 3.
+- `moment` (1.6.0, 2026-10-30) is optional: the typed pieces an app picked
+  for the note, kept beside the words as they came, returned by the
+  note's read and named by kind in its `note.added` row.
+  `docs/MOMENTS.md` has the model, its rules and the steps after it.
 - With neither `date` nor `written_at`, the note files to today.
 
 It answers 201:

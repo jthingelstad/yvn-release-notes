@@ -37,6 +37,7 @@ Keep every note on the device the moment it's written, then send it. With no con
 - An upload no note takes is gone after a day. If the note is still queued by then, ask for a new form and post the file again.
 - Send photos as JPEG, PNG or WebP. On an iPhone, convert a HEIC before you send it, or it gets no thumbnail and never shows in the email.
 - Ask before reading where the device is, and read it only when the person asks to add where they are. Offer the `nearby` businesses from Here as choices, and never pick one for them: the nearest is as often a bus stop.
+- Something the person picks on the device, a workout, a song, who they were with, goes in as words they can edit before it's sent, with its photos as `uploads` and where it was as `place`. Release Notes keeps a note's words, files and place, and nothing more about where they came from.
 
 ## Which rows are yours
 

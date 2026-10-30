@@ -9,10 +9,9 @@ import { api } from '../lib/api.ts';
 import { FILES, sendFiles } from '../lib/files.ts';
 import { isPending } from '../lib/notecache.ts';
 import { sayFor, type Line, type Problem } from '../lib/say.ts';
-import type { Me, Note } from '../lib/types.ts';
-import { usesMiles } from '../../../packages/domain/moments.ts';
+import type { Note } from '../lib/types.ts';
 import { ErrorLine, LineText, useFocusLater } from './common.tsx';
-import { NoteBody, NoteMedia, NoteMeta, NoteMoment } from './notes.tsx';
+import { NoteBody, NoteMedia, NoteMeta } from './notes.tsx';
 import { FormatBar, formatKey } from './format-bar.tsx';
 import { Icon } from './icon.tsx';
 import { SavedNoteWhere } from './where.tsx';
@@ -51,8 +50,6 @@ type Mode =
 function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; version: string }) {
   const [mode, setMode] = useState<Mode>({ is: 'view' });
   const refresh = useRefresh();
-  // The gate has the profile before a signed-in page shows: home's units.
-  const miles = usesMiles(useQueryClient().getQueryData<Me>(['me'])?.country);
   const pick = useRef<HTMLInputElement>(null);
   const article = useRef<HTMLElement>(null);
   const focusLater = useFocusLater();
@@ -121,7 +118,6 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
       ) : (
         <NoteBody n={shown} />
       )}
-      <NoteMoment n={n} miles={miles} />
       <NoteMedia day={day} n={n} version={version} />
       <NoteMeta n={n} day={day} tz={tz} cls="meta" />
       {mode.is === 'where' && (

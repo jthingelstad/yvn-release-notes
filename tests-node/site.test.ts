@@ -30,7 +30,6 @@ import { SCOPES as GRANTED } from '../packages/backend/oauth.ts';
 import { COMMENTARY_DAYS, COMMENTARY_PER_RELEASE, MAX_PHOTOS, PAGE_SIZES } from '../packages/book/limits.ts';
 import { BADGES } from '../packages/domain/badges.ts';
 import { SCREENSHOTS_MAX } from '../packages/domain/feedback.ts';
-import { MOMENT_ITEMS, MOMENT_PEOPLE } from '../packages/domain/moments.ts';
 import { MAX_NOTE } from '../packages/domain/notes.ts';
 import { SEARCH_DAYS } from '../packages/domain/search.ts';
 import { MAX_TAG } from '../packages/domain/tags.ts';
@@ -308,9 +307,7 @@ async function checkedPhrases() {
     `up to ${UPCOMING_MAX} dates`,
     `up to ${perCall} dates a call`,
     `up to ${MAX_PHOTOS.toLocaleString('en-US')} photos`,
-    `up to a year (${COMMENTARY_DAYS} days)`,
-    `1 to ${MOMENT_ITEMS} items`,
-    `up to ${MOMENT_PEOPLE} names`
+    `up to a year (${COMMENTARY_DAYS} days)`
   ];
 }
 

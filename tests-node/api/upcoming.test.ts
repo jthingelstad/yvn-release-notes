@@ -290,6 +290,9 @@ test('a batch previews with dry_run, resolves destinations by text, applies as o
       ['add', 3]
     ],
     [{ ...batch, change: [{ ...batch.change[0], revision: 9 }] }, 409, 'upcoming-changed', ['change', 0]],
+    // No revision, or one that isn't a whole number, is malformed, not stale.
+    [{ ...batch, change: [{ ...batch.change[0], revision: '1' }] }, 400, 'upcoming-fields', ['change', 0]],
+    [{ ...batch, remove: [{ id: batch.remove[0]!.id }] }, 400, 'upcoming-fields', ['remove', 0]],
     [{ ...batch, remove: [{ id: 'missing', revision: 1 }] }, 404, 'upcoming-missing', ['remove', 0]],
     [{ ...batch, remove: [batch.remove[0], batch.remove[0]] }, 400, 'upcoming-fields', ['remove', 1]],
     [{ add: [{ id: 'x', kind: 'birthday', title: 'Bad', date: '01-01' }] }, 400, 'upcoming-fields', ['add', 0]],

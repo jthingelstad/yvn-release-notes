@@ -190,7 +190,7 @@ const SCOPES: Record<string, string> = {
   'media:read': 'see photos and audio',
   'notes:write': 'add notes',
   'media:write': 'add files',
-  upcoming: 'Upcoming',
+  upcoming: 'keep Upcoming dates',
   activity: 'read the activity log'
 };
 const scopes = (s: string | undefined) =>

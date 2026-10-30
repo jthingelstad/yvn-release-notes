@@ -76,8 +76,10 @@
  * OAuth deletion removes it; never exported. Once the token ends the
  * pointer stays 30 days with `revoked`, so its client is told so. A token's note is
  * NOTE#<day>#t-<id> (`source` api, `connection` the token's id, `token` its
- * name, `client` the User-Agent's product), its receipts
- * CAPTURE#<token id>#<key hash> for 7 days, its daily counts
+ * name, `client` the User-Agent's product), its receipts the account's,
+ * CAPTURE#api#<key hash> for 7 days, whichever of its tokens wrote them
+ * (API 1.4.0; before, each token's own CAPTURE#<token id>#<key hash>, read
+ * and guarded against until PER_TOKEN_RECEIPTS_UNTIL), its daily counts
  * MCPMETA#<owner> / WRITERATE#v1-create# and WRITERATE#v1-change#<UTC day>
  * for the account, and its reads MCPMETA#<owner> / TOKENREADS#<id>#<UTC day>.
  * PROFILE.pinned_tags is the pinned tags (up to 12, normalized as hashtags),
@@ -2561,6 +2563,21 @@ export class Store {
       }
     ];
   }
+  /** A receipt under an older key that must not still answer: a `/v1` write
+   * commits only while none is live there (tokens.ts, PER_TOKEN_RECEIPTS_UNTIL),
+   * as the receipt it writes commits only while none is live under its own. */
+  receiptAbsent(user: string, sk: string, now: number): Ops {
+    return [
+      {
+        ConditionCheck: {
+          TableName: this.tableName,
+          Key: key(user, sk),
+          ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now',
+          ExpressionAttributeValues: { ':now': now }
+        }
+      }
+    ];
+  }
   /** A token's client signs out: the token is refused from its next request,
    * and Settings removes it for good (tokens.ts). */
   async revokeToken(token: Item) {
@@ -2580,8 +2597,8 @@ export class Store {
   }
   /** A token's note (docs/API.md), as captureCommit is an agent's: the live
    * account and token, the note, the receipt, the audit and the daily count
-   * in one transaction. A change goes only to the token's own note, from the
-   * words it read. */
+   * in one transaction, with `extra` (an older receipt's guard) after. A
+   * change goes only to the token's own note, from the words it read. */
   async apiNoteCommit(
     note: Item,
     old: Item | null,
@@ -2591,7 +2608,8 @@ export class Store {
     previous: Item | null,
     token: Item,
     now: number,
-    added?: readonly Item[]
+    added?: readonly Item[],
+    extra: Ops = []
   ) {
     // Files ride on a note: their write proves media:write as well.
     const files = Boolean(added?.length || (!old && Array.isArray(note.media) && note.media.length)),
@@ -2636,7 +2654,7 @@ export class Store {
         }
       });
     } else ops.push(this.putOperation(note, { ConditionExpression: 'attribute_not_exists(pk)' }));
-    ops.push(...this.agentReceipts(receipt, audit, rate, previous, now));
+    ops.push(...this.agentReceipts(receipt, audit, rate, previous, now), ...extra);
     return this.transact(ops);
   }
   /** A token's signed form (`POST /v1/uploads`): the live account and token
@@ -2665,7 +2683,8 @@ export class Store {
       return reasons(e)[ops.length - 1]?.Code === 'ConditionalCheckFailed' ? 'limited' : 'retry';
     }
   }
-  /** A token deletes its own note, as it read it, with the same proofs. */
+  /** A token deletes its own note, as it read it, with the same proofs and
+   * `extra` after, as apiNoteCommit. */
   async apiNoteDelete(
     old: Item,
     receipt: Item,
@@ -2673,7 +2692,8 @@ export class Store {
     rate: Item,
     previous: Item | null,
     token: Item,
-    now: number
+    now: number,
+    extra: Ops = []
   ) {
     return this.transact([
       this.profileProof(String(token.user_id)),
@@ -2687,7 +2707,8 @@ export class Store {
           ExpressionAttributeValues: { ':api': 'api', ':token': token.id, ':revision': old.revision }
         }
       },
-      ...this.agentReceipts(receipt, audit, rate, previous, now)
+      ...this.agentReceipts(receipt, audit, rate, previous, now),
+      ...extra
     ]);
   }
   /** The pinned tags (PROFILE.pinned_tags), from the list read: through a

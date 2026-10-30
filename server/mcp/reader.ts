@@ -297,8 +297,9 @@ export async function record(
           at: start,
           day,
           client: family.client_name,
-          // An API token's reads (server/mcp/v1.ts) name the token.
-          ...(family.kind === 'token' ? { via: 'token', token: family.client_name } : {}),
+          // An API token's reads (server/mcp/v1.ts) name the token, by its id
+          // too from API 1.4.0.
+          ...(family.kind === 'token' ? { via: 'token', token: family.client_name, token_id: fid } : {}),
           connection: fid,
           calls: Number(reads?.calls ?? 0) + 1,
           tools,

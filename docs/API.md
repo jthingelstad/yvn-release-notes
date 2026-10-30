@@ -222,6 +222,22 @@ There is no new DNS record, certificate or function.
     `idempotency_mismatch`.
   - The key is optional, so a one-off curl still works. The client guide
     says every app sends one.
+  - Receipts are the account's (API 1.4.0, 2026-10-30):
+    `USER#<owner>/CAPTURE#api#<sha256 of the key>`, so a key sent again
+    through any token of the account (an app's queue after it signs in
+    again) gets the first answer, and another account never sees it. Two
+    tokens of one account sending one key for different requests get
+    `idempotency_mismatch`. The hash is of the operation and its arguments
+    alone, and a token's scopes are checked before any receipt is read, so
+    a token that couldn't make the request is refused, never answered.
+  - Before 1.4.0 each token kept its own, `CAPTURE#<token id>#<key hash>`.
+    Until `PER_TOKEN_RECEIPTS_UNTIL` (2026-11-13T00:00Z: the 7 days such a
+    receipt lives, from a release about 2026-10-30, with a week to spare) a
+    write also reads that one, answers from it if it is live, and commits
+    only while it isn't (one condition check in the same transaction), so a
+    resend begun under 1.3.0 is never filed twice. Such a receipt answers
+    only the token that wrote it. After the cutoff, neither is looked at,
+    and the code for it can go.
 - **Errors** all have one shape, with a stable code and a sentence that says
   what to do next:
 
@@ -261,6 +277,7 @@ birthday is never sent.
 
 ```json
 {
+  "account": "acct_5d41402abc4b2a76b9719d911017c592",
   "today": "2026-10-29",
   "version": "4.5.137",
   "tz": "America/Chicago",
@@ -274,13 +291,31 @@ birthday is never sent.
     { "date": "2026-10-29", "version": "4.5.137" },
     { "date": "2026-10-30", "version": "4.5.138" }
   ],
-  "token": { "name": "Terminal", "scopes": ["notes:write"], "expires_at": "2027-10-29T14:02:11Z" },
-  "api_version": "1.0.0"
+  "token": {
+    "id": "0f8e2c4a9b7d4e1f8a6c3b5d7e9f1a2b",
+    "name": "Terminal",
+    "scopes": ["notes:write"],
+    "expires_at": "2027-10-29T14:02:11Z"
+  },
+  "api_version": "1.4.0"
 }
 ```
 
 `days` runs 14 days from today, and a birthday in it shows as a new major or
 minor version on its day. `status` is `active` or `stopped`.
+
+`account` and `token.id` came in 1.4.0 (2026-10-30), for an app that has to
+know whose account a token opens and which rows are its own:
+
+- `account` is `acct_` and 32 hex characters, the same for every token of
+  the account and never changing (`tokens.accountId`): the first half of
+  the SHA-256 of the account's internal id, a random UUID, under the label
+  `release-notes/v1/account/`. It is derived on each read, never stored or
+  used as a key, and the internal id can't be got back from it. It is one
+  id for every client, not one per app.
+- `token.id` is the token's own record id, 32 hex characters, the one notes
+  already carry as `connection`. It grants nothing and is never the token
+  or its hash.
 
 **`POST /v1/notes`**, `notes:write`.
 
@@ -363,6 +398,12 @@ reads it, but trimmed of words:
 - every other kind is already free of words (`packages/domain/activity.ts`).
 
 Token writes show `via: "token"`, with the token's name as `token`, and `client`.
+From 1.4.0 (2026-10-30) every row a token writes, its daily reads row and
+its own sign-out (`connection.removed`, reason `client`) also carry
+`token_id`, the `token.id` from `/v1/me`, so a client picks out its own rows
+by id, never by a name a later token can reuse. Rows written before then are
+not backfilled and have no `token_id` (the field is left out, never null);
+a reads row from before the release gains it at its next read that day.
 
 ```
 GET /v1/activity?after=<id>&kinds=note,mail,badge,status&limit=50

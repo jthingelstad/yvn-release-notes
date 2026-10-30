@@ -821,6 +821,13 @@ sign-in, which makes an API token) are built.
   dates a request, past one-time dates left out) and reaches every date,
   as MCP's does, with its own count of 50 saves a UTC day across tokens;
   a dry run counts as a read. Its activity rows carry the token's name.
+- **Receipts and ids are the account's** (Jamie, 2026-10-30: "Make that
+  api change."; API 1.4.0, docs/API.md): an `Idempotency-Key` answers from
+  any token of the account (`CAPTURE#api#`), the old per-token receipt is
+  honoured until `PER_TOKEN_RECEIPTS_UNTIL`, `/v1/me` gives a derived
+  `account` id and the token's `id`, and a token's activity rows carry
+  `token_id`. Ownership stays the token's: it changes only the notes it
+  wrote.
 - **When `/v1` changes**, regenerate the contract with
   `node --import tsx tools/export-api-contract.ts`. Every change is a new
   `API_VERSION` with its `API_CHANGES` entry (`server/mcp/v1.ts`), or the

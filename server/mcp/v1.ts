@@ -14,16 +14,29 @@ import { computeVersion } from '../../packages/domain/version.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { search, type City } from '../../packages/backend/places.ts';
 import { tagRow, type TagRowStore } from '../../packages/backend/tag-row.ts';
-import { checkToken, clientProduct, SCOPE_REFUSALS, scopesOf, V1_LIMITS } from '../../packages/backend/tokens.ts';
+import {
+  accountId,
+  checkToken,
+  clientProduct,
+  SCOPE_REFUSALS,
+  scopesOf,
+  V1_LIMITS
+} from '../../packages/backend/tokens.ts';
 import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.3.0';
+export const API_VERSION = '1.4.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. A new version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.4.0',
+    date: '2026-10-30',
+    summary:
+      'Which account and which token: GET /v1/me gives the account’s id, the same for every token of the account and never changing, and the token’s own id; each activity row a token writes from now names it by token_id. An Idempotency-Key now holds for the account: the same key sent through another of its tokens gets the first answer, and a different request under it is idempotency_mismatch.'
+  },
   {
     version: '1.3.0',
     date: '2026-10-29',
@@ -395,6 +408,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         return {
           status: 200,
           body: {
+            account: accountId(uid),
             today,
             version,
             tz,
@@ -409,6 +423,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
               return { date, version: computeVersion(birthday, date).toString() };
             }),
             token: {
+              id: tid,
               name: token.name,
               scopes,
               expires_at: token.expires_at == null ? null : iso(Number(token.expires_at))

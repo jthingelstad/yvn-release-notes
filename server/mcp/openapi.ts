@@ -262,8 +262,16 @@ const SCHEMAS: Record<string, Doc> = {
   },
   Me: {
     type: 'object',
-    required: ['today', 'version', 'tz', 'days', 'token', 'api_version'],
+    required: ['account', 'today', 'version', 'tz', 'days', 'token', 'api_version'],
     properties: {
+      account: {
+        type: 'string',
+        pattern: '^acct_[0-9a-f]{32}$',
+        example: 'acct_5d41402abc4b2a76b9719d911017c592',
+        description:
+          'The account’s id: the same for every token of the account and never changing, so a client can tell ' +
+          'whose account a token opens. It means nothing anywhere else. Since 1.4.0.'
+      },
       today: day,
       version,
       tz: { type: 'string', example: 'America/Chicago' },
@@ -280,7 +288,15 @@ const SCHEMAS: Record<string, Doc> = {
       },
       token: {
         type: 'object',
+        required: ['id', 'name', 'scopes', 'expires_at'],
         properties: {
+          id: {
+            type: 'string',
+            pattern: '^[0-9a-f]{32}$',
+            description:
+              'This token’s id, which never changes and is never the token itself; activity rows it writes carry ' +
+              'it as `token_id`. Since 1.4.0.'
+          },
           name: { type: 'string' },
           scopes: { type: 'array', items: { type: 'string' } },
           expires_at: { anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }] }
@@ -642,7 +658,8 @@ const SCHEMAS: Record<string, Doc> = {
     required: ['id', 'at', 'kind'],
     description:
       'One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`, a reads row ' +
-      '`calls` and `tools`); `via` says through what, and a token’s rows name it as `token`.',
+      '`calls` and `tools`); `via` says through what, and a token’s rows name it as `token` and, from 1.4.0, ' +
+      'by id as `token_id`.',
     properties: {
       id: { type: 'string', description: 'A cursor for `before` and `after`.' },
       at: { type: 'string', format: 'date-time' },
@@ -652,7 +669,14 @@ const SCHEMAS: Record<string, Doc> = {
         description: `Its family is one of ${ACTIVITY_FAMILIES.join(', ')}.`
       },
       via: { type: 'string' },
-      token: { type: 'string' },
+      token: { type: 'string', description: 'The name of the token it came through.' },
+      token_id: {
+        type: 'string',
+        pattern: '^[0-9a-f]{32}$',
+        description:
+          'The id of the token it came through, as `GET /v1/me` gives it. Absent on rows written before 1.4.0, ' +
+          'and on rows no token wrote.'
+      },
       client: { type: 'string' }
     },
     additionalProperties: true
@@ -722,7 +746,7 @@ export function openApi(): Doc {
         `Bodies are JSON in UTF-8, at most ${V1_BODY / 1024} KB. Any answer is one short line instead with ` +
           '`Accept: text/plain`.',
         `Every write takes an optional \`Idempotency-Key\`; its receipt answers the same request again for ` +
-          `${V1_RECEIPT_SECONDS / 86400} days.`,
+          `${V1_RECEIPT_SECONDS / 86400} days, sent through any token of the account.`,
         `A day in UTC, an account may add ${V1_LIMITS.create} notes, make ${V1_LIMITS.change} other changes, ` +
           `save Upcoming ${V1_LIMITS.upcoming} times and name ${V1_LIMITS.here} spots across its tokens, and ` +
           `upload ${UPLOADS_A_DAY} files with the web's; each token may read ` +
@@ -763,7 +787,8 @@ export function openApi(): Doc {
           in: 'header',
           description:
             'Any 1 to 128 printable ASCII characters, new for each change. Sent again with the same request, ' +
-            'it answers the first result again; with a different request it is a 422.',
+            'through this token or another of the account’s, it answers the first result again; with a different ' +
+            'request it is a 422.',
           schema: { type: 'string', minLength: 1, maxLength: 128 }
         }
       },

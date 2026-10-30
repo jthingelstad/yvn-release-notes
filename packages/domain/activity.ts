@@ -62,7 +62,9 @@
  * - Through an API token (via `token`): note rows and the badges they earn
  *   carry `token`, the token's name, and `client`, the product its
  *   User-Agent named; its reads row too, and settings.changed when it
- *   changed the pinned tags.
+ *   changed the pinned tags. From API 1.4.0 (2026-10-30) every row a token
+ *   wrote, and its reads row, carries `token_id` too, the token's id, which
+ *   a name is not; rows written before then have none.
  * - feedback.filed: `feedback` (its id), `feedback_kind` (bug, idea, question or
  *   other), `follows` (the item it follows, if any), `screenshots` (a
  *   count); feedback.answered (via `admin`): `feedback`, `status` (what the
@@ -129,7 +131,7 @@ export function activityKey(at: string, kind: string, id: string): string {
 export const activityId = (sk: string): string => sk.slice(ACTIVITY.length);
 
 const MAIL = ['message', 'received_at', 'via', 'day', 'version', 'subject', 'outcome', 'reason', 'sender', 'text'];
-const READS = ['day', 'via', 'client', 'token', 'connection', 'calls', 'tools', 'errors', 'last_at'];
+const READS = ['day', 'via', 'client', 'token', 'token_id', 'connection', 'calls', 'tools', 'errors', 'last_at'];
 
 /** A row as its owner sees it, on the web and in the export: no table keys,
  * revisions or expiry. */

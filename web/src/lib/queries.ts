@@ -4,6 +4,7 @@
 import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { get } from './api.ts';
 import { addDays } from './format.ts';
+import { validDay } from '../../../packages/domain/dates.ts';
 import type {
   Activity,
   Badges,
@@ -121,7 +122,9 @@ export const tagRowQuery = queryOptions({
 // The day asked for (?d=), if it is one there can be notes for, else
 // yesterday (or the birthday itself, on someone's first day).
 export function pickDay(asked: string | null | undefined, p: Me): string {
-  if (asked && asked >= p.birthday && asked <= p.today) return asked;
+  // A real day in range: February 30, or half a date, would sort between
+  // the two and then be refused by the server.
+  if (validDay(asked) && asked >= p.birthday && asked <= p.today) return asked;
   const yesterday = addDays(p.today, -1);
   return yesterday < p.birthday ? p.birthday : yesterday;
 }

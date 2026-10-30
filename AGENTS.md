@@ -260,7 +260,12 @@ Where things are (each module's design comment has its contract):
   mail (`outcome=ignored`) expires in 30 days.
 - **Automatic replies are not notes** (Auto-Submitted, X-Autoreply,
   Precedence bulk and the rest), nor is mail with more than one From. A note
-  is at most 20,000 characters (`notes.MAX_NOTE`), emailed or typed.
+  is at most 20,000 characters (`notes.MAX_NOTE`), emailed or typed, and
+  every channel keeps its words through `notes.noteWords` (Jamie,
+  2026-10-30: "Approved: build the five API edge cases as recommended"):
+  control characters other than tab and newline dropped, and everything
+  visible kept, with the joiners, variation selectors and direction marks
+  text needs. `/v1` and MCP refuse a lone surrogate escape.
 - **Tags are hashtags** in the text (Jamie, 2026-10-09: "hashtags",
   lowercase with hyphens, "maine-2016"), the one place a tag lives. No
   index: one person's notes are read whole.

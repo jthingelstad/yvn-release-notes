@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
-    "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 128 KB. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
+    "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.7.0",
+        "date": "2026-10-30",
+        "summary": "Odd bodies: POST /v1/notes reads a form (application/x-www-form-urlencoded, as a Shortcut’s Form body sends it) as its text, date and written_at, when those are its only fields and text is one; any other form is still the words, and a multipart or media body is refused. A body may be 256 KB, room for the longest note with every character escaped. A note’s words lose control characters other than tab and newline, as from every channel, and a JSON body holding a lone surrogate escape is refused. A note’s place is kept as sent, its shape checked."
+      },
       {
         "version": "1.6.0",
         "date": "2026-10-30",
@@ -113,7 +118,7 @@
       "post": {
         "operationId": "createNote",
         "summary": "Add a note",
-        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. A `text/plain` body is the note’s text alone. With neither `date` nor `written_at`, it files to today. With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came. A `moment` (since 1.6.0) keeps what an app picked for the note, a walk, a song or who was there, as values beside the words: the words are still the note, and the moment is shown, exported and deleted with it.",
+        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. A `text/plain` body is the note’s text alone, and so is a form that is not a `NoteForm`; a multipart body is refused. With neither `date` nor `written_at`, it files to today. With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came, and kept as sent: its shape is checked, not the place. A `moment` (since 1.6.0) keeps what an app picked for the note, a walk, a song or who was there, as values beside the words: the words are still the note, and the moment is shown, exported and deleted with it.",
         "requestBody": {
           "required": true,
           "content": {
@@ -126,6 +131,11 @@
               "schema": {
                 "type": "string",
                 "maxLength": 20000
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteForm"
               }
             }
           }
@@ -1483,7 +1493,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.6.0"
+            "example": "1.7.0"
           }
         }
       },
@@ -1508,7 +1518,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 20000,
-            "description": "At most 20000 characters."
+            "description": "At most 20000 characters. Control characters other than tab and newline are dropped, and a lone surrogate escape is refused (since 1.7.0)."
           },
           "date": {
             "type": "string",
@@ -1528,6 +1538,32 @@
           },
           "moment": {
             "$ref": "#/components/schemas/Moment"
+          }
+        }
+      },
+      "NoteForm": {
+        "type": "object",
+        "description": "A form, as a Shortcut’s Form body sends it, read as these fields when every name is one of them and `text` is there; any other form body is the words. Since 1.7.0.",
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "description": "At most 20000 characters. Control characters other than tab and newline are dropped, and a lone surrogate escape is refused (since 1.7.0)."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Any day from the birthday through today. Default: the day it was written."
+          },
+          "written_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the words were typed, at most five minutes ahead. A note queued offline files to the day it was typed and is ordered by it."
           }
         }
       },
@@ -2034,6 +2070,7 @@
         }
       },
       "NotePlace": {
+        "description": "A city from `GET /v1/places`, or the `place` from `POST /v1/places/here`, kept as sent: its names, time zone and spot are checked for shape, and it is never looked up again.",
         "anyOf": [
           {
             "$ref": "#/components/schemas/City"
@@ -2095,7 +2132,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 20000,
-            "description": "At most 20000 characters."
+            "description": "At most 20000 characters. Control characters other than tab and newline are dropped, and a lone surrogate escape is refused (since 1.7.0)."
           },
           "revision": {
             "type": "string",
@@ -2114,7 +2151,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 20000,
-            "description": "At most 20000 characters."
+            "description": "At most 20000 characters. Control characters other than tab and newline are dropped, and a lone surrogate escape is refused (since 1.7.0)."
           }
         }
       },

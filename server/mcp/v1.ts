@@ -8,7 +8,7 @@ import { activityId, ACTIVITY_FAMILIES, familyOf, tokenActivityView, titled } fr
 import { addDays, iso, localDay, localMoment, validDay } from '../../packages/domain/dates.ts';
 import { writtenAt, type NoteRecord } from '../../packages/domain/notes.ts';
 import { storedMoment } from '../../packages/domain/moments.ts';
-import { codePointLength, pythonTrim } from '../../packages/domain/unicode.ts';
+import { codePointLength, pythonTrim, wellFormed } from '../../packages/domain/unicode.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { remindersFor, UPCOMING_MAX, upcomingViews } from '../../packages/domain/upcoming.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
@@ -27,11 +27,17 @@ import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.6.0';
+export const API_VERSION = '1.7.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. A new version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.7.0',
+    date: '2026-10-30',
+    summary:
+      'Odd bodies: POST /v1/notes reads a form (application/x-www-form-urlencoded, as a Shortcut’s Form body sends it) as its text, date and written_at, when those are its only fields and text is one; any other form is still the words, and a multipart or media body is refused. A body may be 256 KB, room for the longest note with every character escaped. A note’s words lose control characters other than tab and newline, as from every channel, and a JSON body holding a lone surrogate escape is refused. A note’s place is kept as sent, its shape checked.'
+  },
   {
     version: '1.6.0',
     date: '2026-10-30',
@@ -75,8 +81,14 @@ export const API_CHANGES: readonly { version: string; date: string; summary: str
       'The first version: who the token is and the days ahead, text notes, tags and pinned tags, and the activity log.'
   }
 ];
-/** A request body's ceiling, which a 20,000-character note fits well within. */
-export const V1_BODY = 128 * 1024;
+/** A request body's ceiling: the longest note even when every character
+ * comes escaped (Python's json.dumps sends an emoji as two six-byte
+ * escapes, twelve bytes), with room for the other fields (API 1.7.0). */
+export const V1_BODY = 256 * 1024;
+/** The fields a form-encoded POST /v1/notes may carry, read as fields only
+ * when every name is one of them and `text` is among them (API 1.7.0):
+ * any other form body, such as `curl -d 'my words'`, is the words. */
+export const NOTE_FORM = ['text', 'date', 'written_at'] as const;
 /** How many days `/v1/me` gives versions for, today first: enough for a
  * phone to show the version and fire reminders offline for two weeks. */
 export const ME_DAYS = 14;
@@ -184,7 +196,7 @@ const MESSAGES: Record<string, string> = {
   not_found: 'There is no such request. The API is described at /guide/api/.',
   method_not_allowed: "That method isn't used here.",
   busy: 'Try again shortly with the same Idempotency-Key.',
-  too_large: 'A request can be at most 128 KB.',
+  too_large: `A request can be at most ${V1_BODY / 1024} KB.`,
   unavailable: 'Try again shortly with the same Idempotency-Key.'
 };
 
@@ -235,7 +247,19 @@ function refuse(code: string, asText: boolean, headers: Headers = {}, detail = '
   return respond(status, { error }, asText ? message : null, more);
 }
 
-/** The body, at most 128 KB, as UTF-8 text; null when it was over. */
+/** A form a Shortcut or `curl --data-urlencode` sends, as its fields, when
+ * every name is a note's and `text` is one; null when it is the words; a
+ * name sent twice, as that name. */
+function noteForm(type: string, raw: string): OAuthRow | string | null {
+  if (type !== 'application/x-www-form-urlencoded') return null;
+  const fields = [...new URLSearchParams(raw)],
+    names = fields.map(([name]) => name);
+  if (!names.includes('text') || !names.every((name) => (NOTE_FORM as readonly string[]).includes(name))) return null;
+  const twice = names.find((name, at) => names.indexOf(name) !== at);
+  return twice ?? Object.fromEntries(fields);
+}
+
+/** The body, at most V1_BODY, as UTF-8 text; null when it was over. */
 async function bodyText(request: Request): Promise<string | null> {
   if (Number(request.headers.get('content-length') ?? 0) > V1_BODY) return null;
   const reader = request.body?.getReader(),
@@ -344,9 +368,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         const raw = await bodyText(request).catch(() => undefined);
         if (raw === null) return refuse('too_large', asText, headers);
         if (raw === undefined) return refuse('invalid_request', asText, headers, 'Send the body as UTF-8.');
-        const json =
-          (request.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase() === 'application/json';
-        if (json) {
+        const type = (request.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+        if (type === 'application/json') {
           let parsed: unknown;
           try {
             parsed = JSON.parse(raw);
@@ -354,9 +377,30 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
             return refuse('invalid_request', asText, headers, "The body isn't JSON.");
           }
           if (!object(parsed)) return refuse('invalid_request', asText, headers, 'The body is a JSON object.');
+          if (!wellFormed(parsed))
+            return refuse(
+              'invalid_request',
+              asText,
+              headers,
+              'Some text holds half a character (a lone surrogate escape); send whole characters.'
+            );
           args = parsed;
-        } else if (route.name === 'notes.create') args = { text: raw };
-        else return refuse('invalid_request', asText, headers, 'Send a JSON body with Content-Type: application/json.');
+        } else if (route.name !== 'notes.create')
+          return refuse('invalid_request', asText, headers, 'Send a JSON body with Content-Type: application/json.');
+        else if (/^(multipart|image|audio|video)\//.test(type))
+          return refuse(
+            'invalid_request',
+            asText,
+            headers,
+            'Send the words as text/plain, or JSON with Content-Type: application/json; files go through POST /v1/uploads.',
+            { field: 'Content-Type' }
+          );
+        else {
+          const form = noteForm(type, raw);
+          if (typeof form === 'string')
+            return refuse('invalid_request', asText, headers, `Send ${form} once.`, { field: form });
+          args = form ?? { text: raw };
+        }
       }
       // The path names the note or date ({date}, {id}). A body may repeat
       // them, but one naming another is refused: nothing moves a note.

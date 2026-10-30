@@ -13,7 +13,7 @@ import * as media from '../packages/backend/media.ts';
 import type { Objects, Mail, Log } from '../packages/backend/services.ts';
 import { collect, type TitleFetcher } from '../packages/backend/links.ts';
 import { found as tags } from '../packages/domain/tags.ts';
-import { MAX_NOTE } from '../packages/domain/notes.ts';
+import { MAX_NOTE, noteWords } from '../packages/domain/notes.ts';
 import { localDay, addDays } from '../packages/domain/dates.ts';
 import { computeVersion } from '../packages/domain/version.ts';
 import { codePointSlice, codePointLength, pythonTrim } from '../packages/domain/unicode.ts';
@@ -286,7 +286,7 @@ export async function file(
     photos: ReturnType<typeof media.found>;
   try {
     const msg = await parseMessage(raw);
-    text = seen.text = codePointSlice(noteText(msg), 0, MAX_NOTE);
+    text = seen.text = codePointSlice(noteWords(noteText(msg)), 0, MAX_NOTE);
     files = attachments(msg);
     named = text ? anchors(msg) : {};
     const refused: number[] = [];

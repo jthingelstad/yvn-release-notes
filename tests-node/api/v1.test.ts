@@ -5,7 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMcpApp, handleMcp, type McpOptions } from '../../server/mcp/app.ts';
-import { API_VERSION, V1_ROUTES } from '../../server/mcp/v1.ts';
+import { API_VERSION, V1_BODY, V1_ROUTES } from '../../server/mcp/v1.ts';
+import { MAX_NOTE } from '../../packages/domain/notes.ts';
 import { captureNote } from '../../workers/capture.ts';
 import {
   accountId,
@@ -600,7 +601,7 @@ test('note fields: dates, written_at, sizes, bodies and plain text', async () =>
   }
   assert.equal((await post('[1]', { 'content-type': 'application/json' })).error.code, 'invalid_request');
   assert.equal((await post('{', { 'content-type': 'application/json' })).error.code, 'invalid_request');
-  const huge = await post('x'.repeat(200 * 1024), { 'content-type': 'text/plain' });
+  const huge = await post('x'.repeat(V1_BODY + 1), { 'content-type': 'text/plain' });
   assert.equal(huge.status, 413);
   assert.equal(huge.error.code, 'too_large');
   const badKey = await post({ text: 'Hi' }, { 'idempotency-key': 'ü' });
@@ -639,6 +640,77 @@ test('note fields: dates, written_at, sizes, bodies and plain text', async () =>
     headers: { 'content-type': 'text/plain' }
   });
   assert.equal(plainEdit.error.code, 'invalid_request');
+});
+
+test('odd bodies (1.7.0): forms, multipart, escaped emoji, control characters, lone surrogates', async () => {
+  const { ctx, app } = setup(),
+    made = await make(ctx),
+    post = (body: unknown, headers: Record<string, string> = {}) =>
+      call(app, 'POST', '/v1/notes', { token: made.token, body, headers }),
+    form = { 'content-type': 'application/x-www-form-urlencoded' },
+    kept = async (r: { json: OAuthRow | null; text: string }) =>
+      (await ctx.store.note('u', String(noteOf(r).date), String(noteOf(r).id)))!.text;
+
+  // A Shortcut's Form body: the fields, not the encoded string.
+  const shortcut = await post('text=Had%20a%20good%20day%20%23form&date=2026-10-01', form);
+  assert.equal(shortcut.status, 201, shortcut.text);
+  assert.equal(noteOf(shortcut).date, '2026-10-01');
+  assert.equal(await kept(shortcut), 'Had a good day #form');
+  assert.equal(
+    await kept(await post('text=Hi+there', { 'content-type': 'application/x-www-form-urlencoded; charset=utf-8' })),
+    'Hi there'
+  );
+  // curl -d sends any words as a form: one that isn't a note's fields stays the words.
+  assert.equal(await kept(await post('my words & more', form)), 'my words & more');
+  assert.equal(await kept(await post('text=Hi&mood=great', form)), 'text=Hi&mood=great');
+  const twice = await post('text=a&text=b', form);
+  assert.equal(twice.error.code, 'invalid_request');
+  assert.equal(twice.error.field, 'text');
+  assert.equal((await post('text=', form)).error.code, 'text_required');
+  for (const type of ['multipart/form-data; boundary=x', 'image/jpeg', 'audio/m4a', 'video/mp4']) {
+    const refused = await post('--x\r\nContent-Disposition: form-data; name="text"\r\n\r\nhello\r\n--x--', {
+      'content-type': type
+    });
+    assert.equal(refused.error.code, 'invalid_request', type);
+    assert.equal(refused.error.field, 'Content-Type');
+  }
+  // Only notes.create reads a form; elsewhere a body is JSON.
+  const formEdit = await call(app, 'PUT', `/v1/notes/${TODAY}/${String(noteOf(shortcut).id)}`, {
+    token: made.token,
+    body: 'text=x&revision=1',
+    headers: form
+  });
+  assert.equal(formEdit.error.code, 'invalid_request');
+
+  // The longest note, every character escaped as Python's json.dumps sends it.
+  assert.ok(V1_BODY >= MAX_NOTE * 12 + 16 * 1024);
+  const escape = (text: string) =>
+      JSON.stringify({ text }).replace(
+        /[^\x20-\x7e]/g,
+        (ch) => '\\' + 'u' + ch.charCodeAt(0).toString(16).padStart(4, '0')
+      ),
+    emoji = String.fromCodePoint(0x1f600).repeat(MAX_NOTE),
+    escaped = escape(emoji);
+  assert.ok(escaped.length > 128 * 1024 && escaped.length < V1_BODY);
+  const longest = await post(escaped, { 'content-type': 'application/json' });
+  assert.equal(longest.status, 201, longest.text);
+  assert.equal(await kept(longest), emoji);
+
+  // Control characters go; what text needs stays.
+  const c = (...p: number[]) => String.fromCodePoint(...p),
+    family = c(0x1f468, 0x200d, 0x1f469),
+    odd = await post({ text: `Bell${c(7)} ESC${c(0x1b)}[31m${c(0)} ${family} ${c(0x200f)}ok\ttab` });
+  assert.equal(await kept(odd), `Bell ESC[31m ${family} ${c(0x200f)}ok\ttab`);
+  const plain = await post(`${c(0xfeff)}From a file${c(0x1b)}\r\n`, { 'content-type': 'text/plain' });
+  assert.equal(await kept(plain), 'From a file');
+
+  // A lone surrogate escape is half a character, refused wherever it is.
+  const half = '\\' + 'ud83d';
+  for (const body of [`{"text": "half ${half}"}`, `{"text": "ok", "place": {"name": "x${half}"}}`, `{"${half}": 1}`]) {
+    const refused = await post(body, { 'content-type': 'application/json' });
+    assert.equal(refused.error.code, 'invalid_request', body);
+    assert.match(String(refused.error.message), /lone surrogate/);
+  }
 });
 
 test('Accept is read in full: text only where text/plain outranks JSON', async () => {

@@ -203,12 +203,22 @@ There is no new DNS record, certificate or function.
 - **Auth:** `Authorization: Bearer rn_...`, and nothing else: no query
   string tokens, no cookies.
 - **JSON in and out,** UTF-8. A note's text may be up to `MAX_NOTE` (20,000
-  code points), and a request body at most 128 KB.
+  code points), and a request body at most 256 KB (`V1_BODY`; 128 KB
+  before 1.7.0), room for the longest note with every character escaped,
+  as Python's `json.dumps` sends it (an emoji is twelve bytes). A JSON body
+  with a lone surrogate escape anywhere is refused (`unicode.wellFormed`),
+  and a note's words lose control characters other than tab and newline,
+  as from every channel (`notes.noteWords`; API 1.7.0).
 - **`Accept: text/plain`** gets text instead, for terminals: a write's one
   line (`Filed in 4.5.137.`), a list's line for each thing, a note's words
   as they are. Accept is read in full: text wins only where it outranks
   `application/json` by q, or ties and comes first (API 1.5.0). A
-  `text/plain` body on `POST /v1/notes` is the note's text.
+  `text/plain` body on `POST /v1/notes` is the note's text. So is a form
+  (`application/x-www-form-urlencoded`, which `curl -d` sends for any
+  words) unless every name in it is `text`, `date` or `written_at` and
+  `text` is one: then it is read as those fields (`NOTE_FORM`, API 1.7.0),
+  as a Shortcut's Form body sends them. A multipart, image, audio or video
+  body is refused, naming `Content-Type`; files go through uploads.
 - **Dates and times:** `YYYY-MM-DD` dates are days in the account's own
   zone; times are RFC 3339.
 - **Headers on every answer:**
@@ -217,7 +227,7 @@ There is no new DNS record, certificate or function.
   - `Release-Notes-Version: 4.5.137`, today's version, on every answer to
     a good token, a 404 or 405 included (a browser's refused request reads
     nothing, so has none);
-  - `API-Version: 1.6.0`, the API's own version (`API_VERSION` in
+  - `API-Version: 1.7.0`, the API's own version (`API_VERSION` in
     `server/mcp/v1.ts`).
 - **Idempotency:** every write but `POST /v1/uploads` and
   `POST /v1/places/here` takes an `Idempotency-Key` header (1 to 128
@@ -458,8 +468,13 @@ subject, mail words, another sender or a settings value.
 /v1/places/here`** `{lat, lon, accuracy_m}` gives the spot, its
   neighbourhood and up to six nearby businesses, as the web's Here does,
   as `{place, nearby}`. A note sends a `place` back as it came, the Here one
-  with `venue` set to a `nearby` name if the owner picks one. Both need
-  `notes:write`. Each Here is a paid lookup, so an account names 100 spots
+  with `venue` set to a `nearby` name if the owner picks one. It is kept
+  as sent, with its shape checked (`places.clean`, `places.devicePlace`)
+  and never looked up again, as the web's Where keeps the city its browser
+  sends back: it is the owner's own note in their own voice, and signing
+  each answer or naming the spot again on every write would add a cost and
+  a way to fail for no one's protection (Jamie, 2026-10-30, case 5 of the
+  API edge cases). Both need `notes:write`. Each Here is a paid lookup, so an account names 100 spots
   a UTC day through its tokens.
 - **The one infrastructure change, flagged.** Signed forms and the attach
   step after them run in the web server today, under a session. The MCP

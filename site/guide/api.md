@@ -26,7 +26,8 @@ It answers with one line: `Filed in 5.2.113.`
 ## Every request
 
 - Send the token as `Authorization: Bearer rn_...`, never in the address.
-- Bodies are JSON, at most 128 KB, and a note is up to 20,000 characters.
+- Bodies are JSON, at most 256 KB, and a note is up to 20,000 characters, even with every character escaped.
+- A note keeps every character you can see, and the invisible ones text needs, like the joiners inside an emoji and the marks that set its direction. Control characters other than tab and newline are dropped, and text with half a character in it (a lone surrogate escape, like `"\ud83d"` alone) is refused.
 - With `Accept: text/plain`, every answer is text instead, for terminals: a line, or a line for each thing a list holds, and a note's words as they are.
 - A day is written `YYYY-MM-DD`, in the time zone your account keeps. A time has its offset, like `2026-10-29T07:45:00-05:00`.
 - Every answer to your token says today's version in `Release-Notes-Version`, and every answer says the API's own in `API-Version`.
@@ -34,7 +35,7 @@ It answers with one line: `Filed in 5.2.113.`
 ## The requests
 
 - `GET /v1/me`: today's date and version, the versions for the next 14 days, your streak, your time zone, when your email goes, your `account`, and this token's `id`, name, what it may do and when it expires. Never your birthday. `account` is the same for every token you make and never changes, so an app can tell whose account a token opens; the token's `id` never changes either, and is never the token itself. Any token may ask.
-- `POST /v1/notes`: add a note. Send `{"text": "…"}`, or the words alone as `text/plain`. Hashtags in the words are its tags, and links get their names, as on the web. `date` puts it on an earlier day, back to your birthday. `written_at` is the moment the words were typed: a note sent late files to the day it was typed. With neither, it's today's. `uploads` gives it files (see [Photos, recordings and PDFs](#photos-recordings-and-pdfs)), and then it needs no words. `place` says where it was (see [Places](#places)). `moment` keeps what an app picked for it, a walk or a song, beside the words (see [Moments](#moments)). The answer has the note's `id`, `date`, `version` and `revision`, and how many `files` it has.
+- `POST /v1/notes`: add a note. Send `{"text": "…"}`, or the words alone as `text/plain`. A form works too, as a Shortcut's **Form** body or `curl --data-urlencode "text=…"` sends it, with `text` and, if you like, `date` or `written_at`. Any other form is taken as the words, so `curl -d "my words"` still works, and a `multipart` body is refused. Hashtags in the words are its tags, and links get their names, as on the web. `date` puts it on an earlier day, back to your birthday. `written_at` is the moment the words were typed: a note sent late files to the day it was typed. With neither, it's today's. `uploads` gives it files (see [Photos, recordings and PDFs](#photos-recordings-and-pdfs)), and then it needs no words. `place` says where it was (see [Places](#places)). `moment` keeps what an app picked for it, a walk or a song, beside the words (see [Moments](#moments)). The answer has the note's `id`, `date`, `version` and `revision`, and how many `files` it has.
 - `GET /v1/notes/{date}/{id}`: one note this token added, with its text, `revision` and `written_at`, and its `moment` if it has one.
 - `PUT /v1/notes/{date}/{id}`: replace its text. Send `{"text": "…", "revision": "…"}` with the revision you read; a note changed since, on the web say, is refused with the current one.
 - `POST /v1/notes/{date}/{id}/append`: add a paragraph to it, with `{"text": "…"}`.
@@ -79,7 +80,7 @@ Act on the code, and show the sentence. Here is each one, with its HTTP status:
 - `revision_mismatch` (409): the note or date changed since you read it. For a note, `revision` is its current one; for a date, read `GET /v1/upcoming` again.
 - `account_closing` (409): the account is being deleted.
 - `busy` (409): try again shortly, with the same `Idempotency-Key`.
-- `too_large` (413): the request is over 128 KB, or a file is over its limit, 50 MB a file.
+- `too_large` (413): the request is over 256 KB, or a file is over its limit, 50 MB a file.
 - `idempotency_mismatch` (422): that `Idempotency-Key` went with a different request.
 - `rate_limited` (429): a limit for the day is reached, and `Retry-After` says how many seconds to wait.
 - `unavailable` (503): try again shortly, with the same `Idempotency-Key`.
@@ -126,6 +127,8 @@ A note's `place` says where it was. Send one of two things, as it came:
 
 - **A city** from `GET /v1/places?q=Zürich`, which answers the cities by that name, each with its `region`, `country`, time zone and spot. Pick the right one: two cities can share a name.
 - **The spot a device is at**, from `POST /v1/places/here`. Send `lat` and `lon` in degrees, and the device's `accuracy_m` in metres if it has one. The answer's `place` has the spot's city and its neighbourhood as `district`, and `nearby` lists up to 6 businesses within the accuracy. If the person picks one, send the place with `venue` set to its name; nothing is picked for them. The spot is kept to six decimal places, and nothing is kept until a note takes it. Here takes no `Idempotency-Key`: if its answer is lost, ask again, and that counts again.
+
+A place is kept as you send it. Release Notes checks its shape, its names, time zone and spot, but doesn't look it up again, so send the one the person picked.
 
 On the web, a note with a spot links to your map. A note with no place shows the day's city, or your home's.
 
@@ -177,7 +180,7 @@ Then `rn "Fixed the gate latch #house"`. Quote a note with a hashtag in it, sinc
 Build it once in the Shortcuts app:
 
 1. Add **Ask for Input**, with the prompt "What happened?".
-2. Add **Get Contents of URL**, with `https://notes.yourversionnumber.com/v1/notes`. Under it, set the method to **POST**; add the headers `Authorization`, with `Bearer` and your token, and `Accept`, with `text/plain`; and set the request body to **JSON**, with one text field named `text` set to **Provided Input**.
+2. Add **Get Contents of URL**, with `https://notes.yourversionnumber.com/v1/notes`. Under it, set the method to **POST**; add the headers `Authorization`, with `Bearer` and your token, and `Accept`, with `text/plain`; and set the request body to **JSON** (or **Form**), with one text field named `text` set to **Provided Input**.
 3. Add **Show Notification**, with **Contents of URL**, to see the version it was filed in.
 
 On an iPhone with an Action Button, choose the shortcut under Settings, then **Action Button**, for a note at one press. The token lives inside the shortcut, so never share the shortcut itself.

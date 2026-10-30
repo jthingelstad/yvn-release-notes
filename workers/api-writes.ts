@@ -63,10 +63,10 @@ import {
   type UpcomingChange
 } from '../packages/backend/upcoming.ts';
 import { iso, localDay, validDay } from '../packages/domain/dates.ts';
-import { MAX_NOTE, type NoteRecord } from '../packages/domain/notes.ts';
+import { MAX_NOTE, noteWords, type NoteRecord } from '../packages/domain/notes.ts';
 import { found } from '../packages/domain/tags.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
-import { codePointLength, pythonTrim } from '../packages/domain/unicode.ts';
+import { codePointLength } from '../packages/domain/unicode.ts';
 import { computeVersion } from '../packages/domain/version.ts';
 import type { ActivityEvent } from '../packages/domain/activity.ts';
 import type { Unlocked } from '../packages/domain/badges.ts';
@@ -184,7 +184,7 @@ export const untilUtcMidnight = (now: number): number => (Math.floor(now / 86400
 function text(args: Arguments, optional = false): string {
   if (optional && !Object.hasOwn(args, 'text')) return '';
   if (typeof args.text !== 'string') throw new ApiRefusal('text_required', 'Send the note as text.', { field: 'text' });
-  const value = pythonTrim(args.text.replace(/\r\n/g, '\n'));
+  const value = noteWords(args.text);
   if (!value && !optional) throw new ApiRefusal('text_required', 'Write some text for the note.', { field: 'text' });
   return value;
 }

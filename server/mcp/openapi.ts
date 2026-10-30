@@ -57,16 +57,19 @@ const OPERATIONS: Record<string, Doc> = {
     summary: 'Add a note',
     description:
       "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. " +
-      'A `text/plain` body is the note’s text alone. With neither `date` nor `written_at`, it files to today. ' +
+      'A `text/plain` body is the note’s text alone, and so is a form that is not a `NoteForm`; a multipart ' +
+      'body is refused. With neither `date` nor `written_at`, it files to today. ' +
       'With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a ' +
-      'city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came. A `moment` ' +
+      'city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came, and kept as ' +
+      'sent: its shape is checked, not the place. A `moment` ' +
       '(since 1.6.0) keeps what an app picked for the note, a walk, a song or who was there, as values beside ' +
       'the words: the words are still the note, and the moment is shown, exported and deleted with it.',
     requestBody: {
       required: true,
       content: {
         'application/json': { schema: ref('NoteCreate') },
-        'text/plain': { schema: { type: 'string', maxLength: MAX_NOTE } }
+        'text/plain': { schema: { type: 'string', maxLength: MAX_NOTE } },
+        'application/x-www-form-urlencoded': { schema: ref('NoteForm') }
       }
     },
     responses: { '201': answer('NoteWritten', 'Filed in 4.5.137.', true) }
@@ -268,7 +271,22 @@ function answer(schema: string, plain: string, write = false, receipt = write): 
 
 const day = { type: 'string', format: 'date', description: 'A day in the account’s own time zone.' },
   version = { type: 'string', pattern: '^\\d+\\.\\d+\\.\\d+$', example: '4.5.137' },
-  text = { type: 'string', minLength: 1, maxLength: MAX_NOTE, description: `At most ${MAX_NOTE} characters.` };
+  text = {
+    type: 'string',
+    minLength: 1,
+    maxLength: MAX_NOTE,
+    description:
+      `At most ${MAX_NOTE} characters. Control characters other than tab and newline are dropped, and a lone ` +
+      'surrogate escape is refused (since 1.7.0).'
+  },
+  noteDate = { ...day, description: 'Any day from the birthday through today. Default: the day it was written.' },
+  noteWritten = {
+    type: 'string',
+    format: 'date-time',
+    description:
+      'When the words were typed, at most five minutes ahead. A note queued offline files to the day it ' +
+      'was typed and is ordered by it.'
+  };
 
 const SCHEMAS: Record<string, Doc> = {
   Error: {
@@ -339,18 +357,21 @@ const SCHEMAS: Record<string, Doc> = {
     additionalProperties: false,
     properties: {
       text,
-      date: { ...day, description: 'Any day from the birthday through today. Default: the day it was written.' },
-      written_at: {
-        type: 'string',
-        format: 'date-time',
-        description:
-          'When the words were typed, at most five minutes ahead. A note queued offline files to the day it ' +
-          'was typed and is ordered by it.'
-      },
+      date: noteDate,
+      written_at: noteWritten,
       uploads: ref('Uploads'),
       place: ref('NotePlace'),
       moment: ref('Moment')
     }
+  },
+  NoteForm: {
+    type: 'object',
+    description:
+      'A form, as a Shortcut’s Form body sends it, read as these fields when every name is one of them and ' +
+      '`text` is there; any other form body is the words. Since 1.7.0.',
+    required: ['text'],
+    additionalProperties: false,
+    properties: { text, date: noteDate, written_at: noteWritten }
   },
   Moment: {
     type: 'object',
@@ -495,7 +516,12 @@ const SCHEMAS: Record<string, Doc> = {
       from: { type: 'string', const: 'device' }
     }
   },
-  NotePlace: { anyOf: [ref('City'), ref('DevicePlace')] },
+  NotePlace: {
+    description:
+      'A city from `GET /v1/places`, or the `place` from `POST /v1/places/here`, kept as sent: its names, time ' +
+      'zone and spot are checked for shape, and it is never looked up again.',
+    anyOf: [ref('City'), ref('DevicePlace')]
+  },
   Here: {
     type: 'object',
     required: ['place', 'nearby'],
@@ -829,7 +855,8 @@ export function openApi(): Doc {
           'recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` ' +
           'scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at ' +
           '/guide/api/.',
-        `Bodies are JSON in UTF-8, at most ${V1_BODY / 1024} KB. With \`Accept: text/plain\`, any answer is ` +
+        `Bodies are JSON in UTF-8, at most ${V1_BODY / 1024} KB, which holds the longest note with every ` +
+          'character escaped. With `Accept: text/plain`, any answer is ' +
           'text instead: a line, or a line for each thing a list holds, and a note’s words as they are.',
         `Every write but an upload form and Here takes an optional \`Idempotency-Key\`; its receipt answers ` +
           `the same request again for ${V1_RECEIPT_SECONDS / 86400} days, sent through any token of the account. ` +

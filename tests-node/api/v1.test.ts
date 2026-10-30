@@ -593,6 +593,10 @@ test('note fields: dates, written_at, sizes, bodies and plain text', async () =>
   // Typed offline late last night, sent this morning: last night's day.
   const late = await post({ text: 'Late', written_at: '2026-10-13T04:30:00Z' });
   assert.equal(noteOf(late).date, '2026-10-12');
+  // RFC 3339 lets the T and the Z be lowercase.
+  const lower = await post({ text: 'Lower', written_at: '2026-10-13t04:31:00z' });
+  assert.equal(lower.status, 201, lower.text);
+  assert.equal(noteOf(lower).date, '2026-10-12');
   // A minute ahead of this clock is now.
   const ahead = await post({ text: 'Ahead', written_at: '2026-10-13T12:02:00Z' });
   assert.equal(noteOf(ahead).date, TODAY);

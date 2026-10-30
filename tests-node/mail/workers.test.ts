@@ -1143,6 +1143,22 @@ test('after the email, a standing that is due is looked at again; a member recor
   assert.ok(String(f.mail.messages[1]!.raw).includes('New badge: Supported Signal'));
 });
 
+test('after the email, Jamie’s own plus address is never looked up', async () => {
+  const asked: string[] = [],
+    f = setup({ email: 'jamie+example@thingelstad.com' }),
+    weeklyThing = {
+      standing: async (email: string) => {
+        asked.push(email);
+        return 'none' as const;
+      },
+      subscribe: async () => ({ outcome: 'added' as const })
+    };
+  await sender.handler({}, { getRemainingTimeInMillis: () => 60000 }, { ...f.services, weeklyThing });
+  assert.equal(f.mail.messages.length, 1);
+  assert.deepEqual(asked, []);
+  assert.ok(!('weekly_thing' in (await f.store.profile('u'))!));
+});
+
 test('a failed giving write after the email leaves the standing due, so the next email asks again', async () => {
   const f = setup(),
     weeklyThing = { standing: async () => 'member' as const, subscribe: async () => ({ outcome: 'added' as const }) };

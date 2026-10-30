@@ -382,6 +382,12 @@ Where things are (each module's design comment has its contract):
   confirmed (403 `weekly-thing`, `weekly-thing-unconfirmed`) with nothing
   written.
   - Accounts made before the gate keep everything (Jamie: "Keep them").
+  - Jamie's own plus addresses, `jamie+<anything>@thingelstad.com`, skip
+    the gate (Jamie, 2026-10-29: "it would be fine to allow jamie+<anything>
+    to bypass the Weekly Thing subscriber check"), for test accounts and an
+    app reviewer's: never looked up (`gateFree`), so their accounts read
+    like ones made before the gate. The address still needs its emailed
+    code, and only Jamie gets that mail.
   - Every account is looked up again on `GET /api/me` once nine days have
     passed (Jamie: "Re-check like Thingy"), or ten minutes while a
     subscription it asked for waits to be confirmed, and by the sender after

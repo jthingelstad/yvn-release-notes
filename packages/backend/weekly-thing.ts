@@ -44,6 +44,14 @@ export type Standing = 'member' | 'reader' | 'unconfirmed' | 'none';
 export const STANDINGS: readonly Standing[] = ['member', 'reader', 'unconfirmed', 'none'];
 /** Standings that may make an account. */
 export const welcome = (s: Standing) => s === 'member' || s === 'reader';
+/** Jamie's own plus addresses skip the gate (Jamie, 2026-10-29: "it would be
+ * fine to allow jamie+<anything> to bypass the Weekly Thing subscriber
+ * check"), for test accounts and an app reviewer's. Such an address is never
+ * looked up, at sign-up or after, so its account reads like one made before
+ * the gate. Only Jamie gets its mail, and an account still needs the code
+ * mailed there. */
+const GATE_FREE = /^jamie\+[^@\s]+@thingelstad\.com$/;
+export const gateFree = (email: string) => GATE_FREE.test(email.toLowerCase());
 /** Whether a profile's standing is due a fresh look: `RECHECK_SECONDS` old,
  * sooner while unconfirmed, never asked (an account from before the gate),
  * or asked before the sign-in at `signedInAt`. Signing in looks again, as

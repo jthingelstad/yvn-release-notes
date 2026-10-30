@@ -8,6 +8,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 ## 0.0.23 · October 30
 
 - Apps on [the API](/guide/api/) can tell which account and which token they're signed in with, and a note an app sends again under another of your tokens is still filed once.
+- Smaller things: in Settings, a new API token wraps to fit a phone, and its Copy button comes into view as soon as it's made.
 
 ## 0.0.22 · October 29
 

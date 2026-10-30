@@ -77,8 +77,9 @@ export function NoteBody({ n, cls = 'text', mark }: { n: Note; cls?: string; mar
     }
     body.push(text.slice(last));
   }
+  // dir="auto": a note in Hebrew or Arabic reads right to left.
   return (
-    <p className={cls} hidden={!text}>
+    <p className={cls} hidden={!text} dir="auto">
       {body}
     </p>
   );

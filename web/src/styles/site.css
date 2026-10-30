@@ -1382,6 +1382,14 @@ form.search-form {
 a.tag {
   white-space: nowrap;
 }
+/* In a note's words a hashtag still keeps together, unless it is longer
+   than the line: then it breaks inside itself rather than push the page
+   sideways on a phone. */
+.text a.tag {
+  display: inline-block;
+  max-width: 100%;
+  white-space: normal;
+}
 
 /* Agent names and connector addresses are unbroken external strings. */
 .agent-content {

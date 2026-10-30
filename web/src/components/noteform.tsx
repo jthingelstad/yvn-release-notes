@@ -167,6 +167,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
           <textarea
             ref={area}
             name="text"
+            dir="auto"
             rows={3}
             placeholder={placeholder}
             value={text}

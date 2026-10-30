@@ -82,6 +82,11 @@ describe('NoteBody', () => {
     expect(container.textContent).toBe('see A page · Example and ');
   });
 
+  it('lets the words set their own direction, so a right-to-left note reads as typed', () => {
+    const { container } = render(<NoteBody n={note({ text: 'שלום עולם #שלום' })} />);
+    expect(container.querySelector('p')!.getAttribute('dir')).toBe('auto');
+  });
+
   it('links bare addresses when there are no parts', () => {
     const { container } = render(<NoteBody n={note({ text: 'read https://www.example.com/x/.' })} />);
     const a = container.querySelector('a')!;

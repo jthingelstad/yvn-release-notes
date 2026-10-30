@@ -166,6 +166,9 @@ There is no new DNS record, certificate or function.
 - **`/v1` only ever gains things:** new endpoints, new optional fields, new
   error codes. A breaking change would be `/v2`. Deprecations are announced
   in `x-changes`, with a date.
+- **Every change is a new `API_VERSION`:** a minor version for anything
+  gained, a patch version for a fix, including one that only makes `/v1`
+  do what these docs already said (Jamie, 2026-10-30).
 - **Not for browsers in v1.** It sends no CORS headers, and a request
   carrying any Origin other than the site's is refused, as on `/mcp`.
 - **The dev server** (`tools/dev-server.ts`) serves `/v1` against its
@@ -227,7 +230,7 @@ There is no new DNS record, certificate or function.
   - `Release-Notes-Version: 4.5.137`, today's version, on every answer to
     a good token, a 404 or 405 included (a browser's refused request reads
     nothing, so has none);
-  - `API-Version: 1.7.1`, the API's own version (`API_VERSION` in
+  - `API-Version: 1.8.0`, the API's own version (`API_VERSION` in
     `server/mcp/v1.ts`).
 - **Idempotency:** every write but `POST /v1/uploads` and
   `POST /v1/places/here` takes an `Idempotency-Key` header (1 to 128

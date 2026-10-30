@@ -53,7 +53,7 @@ export function Tour({ hidden, morning = MADE_UP }: { hidden: boolean; morning?:
 
       <h2 className="big tour-head">It just works.</h2>
       <ul className="tour-list">
-        <Feature head="It’s only email.">Nothing to install, nothing to learn, no app to open first.</Feature>
+        <Feature head="Email is all it takes.">Nothing to install, nothing to learn, no app to open first.</Feature>
         <Feature head="Nothing gets lost.">Every reply is kept whole, exactly as it arrived.</Feature>
         <Feature head="Late is fine.">
           A reply counts for its day for 72 hours. Later than that, a note comes back to say so.

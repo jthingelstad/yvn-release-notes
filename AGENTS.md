@@ -369,9 +369,13 @@ Where things are (each module's design comment has its contract):
   is something the product does today, in the tour's voice (plain, second
   person, Jamie in the third person), and each number is checked against
   its constant in `tests-node/site.test.ts`. **A PR that changes something
-  a subscriber sees updates its guide page, and the changelog, in the same
-  PR.** The changelog (`site/changelog.md`, `/changelog/`, "Release Notes for
-  Release Notes"; Jamie, 2026-10-29: "Approved: publish the Release Notes
+  a subscriber sees adds its changelog line, and edits a guide page only
+  where that page's words stop being true, in the same PR** (Jamie,
+  2026-10-30: "Approved: reword the guide rule to edit a guide page only
+  when its words stop being true"). A fix that makes the product do what
+  the guide already says needs no guide edit. The changelog
+  (`site/changelog.md`, `/changelog/`, "Release Notes for Release Notes";
+  Jamie, 2026-10-29: "Approved: publish the Release Notes
   changelog backfill as drafted, with answers 1-7 and the two tweaks as
   recommended") has one entry per day something a subscriber notices went
   live, under Release Notes' own version for that day (`lib/build.ts`:
@@ -859,7 +863,11 @@ sign-in, which makes an API token) are built.
 - **When `/v1` changes**, regenerate the contract with
   `node --import tsx tools/export-api-contract.ts`. Every change is a new
   `API_VERSION` with its `API_CHANGES` entry (`server/mcp/v1.ts`), or the
-  tool refuses it. `/v1` only gains things; a breaking change is `/v2`. The
+  tool refuses it. That holds for a fix the contract can't see too, one
+  that only makes `/v1` do what its docs already said: a patch version for
+  a fix, a minor one for anything gained (Jamie, 2026-10-30: "Approved:
+  bump API_VERSION for every API fix, including fixes that only match the
+  docs"). `/v1` only gains things; a breaking change is `/v2`. The
   one exception is 1.8.0, which withdrew `moment` before any released app
   sent one (Jamie, 2026-10-30: "Approved: withdraw moments from Release
   Notes as API 1.8.0"). The guide's API page names every request and

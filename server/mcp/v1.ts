@@ -526,10 +526,12 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         };
       }
       // The activity log, trimmed of words (packages/domain/activity.ts).
+      // A row's id ends in whatever made it unique, which can be a badge's
+      // key (`roadmap:alpha`): any printable ASCII but the `#` between parts.
       const cursor = (field: string) => {
         const value = q.get(field);
         if (value === null) return undefined;
-        if (!/^\d{4}-\d{2}-\d{2}T[\d:.]+Z#[a-z.]+#[A-Za-z0-9_.-]{1,120}$/.test(value)) throw new Error(field);
+        if (!/^\d{4}-\d{2}-\d{2}T[\d:.]+Z#[a-z.]+#[\x21\x22\x24-\x7e]{1,200}$/.test(value)) throw new Error(field);
         return value;
       };
       let before: string | undefined, after: string | undefined;

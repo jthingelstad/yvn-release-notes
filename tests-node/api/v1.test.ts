@@ -824,6 +824,49 @@ test('the activity log through a token has no words in it', async () => {
   assert.ok(Number(reads[0]!.calls) >= 4);
 });
 
+test('a page of the activity log can end on any row, a badge with a colon in its key too', async () => {
+  const { ctx, app } = setup(),
+    made = await make(ctx, { scopes: ['activity'] }),
+    at = (s: number) => activityTime(NOW - s);
+  ctx.store.seed({
+    pk: 'USER#u',
+    sk: activityKey(at(200), 'note.added', 't-1'),
+    kind: 'note.added',
+    via: 'web',
+    day: '2026-10-12',
+    note: 't-1'
+  });
+  ctx.store.seed({
+    pk: 'USER#u',
+    sk: activityKey(at(100), 'badge.earned', 'roadmap:alpha'),
+    kind: 'badge.earned',
+    via: 'web',
+    badge: 'roadmap',
+    key: 'roadmap:alpha'
+  });
+  const page = await call(app, 'GET', '/v1/activity?limit=1&kinds=badge,note', { token: made.token });
+  assert.equal(page.status, 200, page.text);
+  const next = String(page.json!.next);
+  assert.ok(next.endsWith('#badge.earned#roadmap:alpha'), next);
+  const older = await call(app, 'GET', `/v1/activity?kinds=badge,note&before=${encodeURIComponent(next)}`, {
+    token: made.token
+  });
+  assert.equal(older.status, 200, older.text);
+  assert.deepEqual(
+    (older.json!.items as OAuthRow[]).map((i) => i.kind),
+    ['note.added']
+  );
+  const newer = await call(app, 'GET', `/v1/activity?after=${encodeURIComponent(next)}`, { token: made.token });
+  assert.equal(newer.status, 200, newer.text);
+  // Still not a way in for anything else: a space, or a part missing.
+  for (const bad of [next.replace('roadmap:alpha', 'road map'), next.replace('#badge.earned', '')])
+    assert.equal(
+      (await call(app, 'GET', `/v1/activity?before=${encodeURIComponent(bad)}`, { token: made.token })).error.code,
+      'invalid_request',
+      bad
+    );
+});
+
 test('deleting the account removes every token and its pointer', async () => {
   const { ctx, app } = setup(),
     made = await make(ctx),

@@ -107,6 +107,7 @@ test('site/ has the pages phases 1, 3 and 4 promised, and the API’s, and site/
       '/guide/tokens/',
       '/guide/api/',
       '/guide/api/clients/',
+      '/guide/changelog/',
       '/faq/',
       '/privacy/',
       '/changelog/'
@@ -338,8 +339,9 @@ test('every number on the pages and in llms.txt is the product’s own', async (
       }
     // A badge's own name, like i18n, said as packages/domain/badges.ts names it.
     for (const { name } of BADGES.filter((b) => !b.secret && /\d/.test(b.name))) left = left.replaceAll(name, '');
-    // The changelog's dates: each release's day, and the launch's.
-    if (from === '/changelog/') left = left.replace(/\b(?:October|November|December) \d{1,2}(?:, 2026)?\b/g, '');
+    // The changelogs' dates: each release's day, and the launch's.
+    if (from === '/changelog/' || from === '/guide/changelog/')
+      left = left.replace(/\b(?:October|November|December) \d{1,2}(?:, 2026)?\b/g, '');
     left = left
       .replace(/\/v1\b/g, '') // the API's address
       .replace(/\b\d+\.\d+\.\d+\b/g, '') // versions, which are examples

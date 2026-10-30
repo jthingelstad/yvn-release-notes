@@ -561,7 +561,9 @@ Changelog written outside the project is the case the docs are written for.
   - take versions and reminders from the server, never compute them;
   - handle 429 and the 401 codes;
   - never log the token.
-- **`/guide/changelog/`**: the app's own page.
+- **`/guide/changelog/`**: the app's own page, "Release Notes for Changelog",
+  with what each version brought (Jamie, 2026-10-29: "Please make sure that
+  there is a changelog page for changelog itself on the public site.").
 - **`/v1/openapi.json`**, and `llms.txt` lists the API next to MCP.
 
 The guide's tests that pin numbers to code constants cover these pages too:

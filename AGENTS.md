@@ -347,7 +347,14 @@ Where things are (each module's design comment has its contract):
   0.0.0 is 2026-10-07, counted in US Central), newest first. Entries say
   what you can do now, in the tour's voice; internal work stays out, and a
   later change rewrites an older entry that is no longer true rather than
-  leaving it. Privacy says
+  leaving it. The iPhone app keeps its own the same way (Jamie, 2026-10-29:
+  "Please make sure that there is a changelog page for changelog itself on
+  the public site."): `site/guide/changelog.md`, `/guide/changelog/`,
+  "Release Notes for Changelog", one entry per day a TestFlight build (later
+  an App Store one) brings something new, under Changelog's own version for
+  that day (0.0.0 is 2026-10-29, counted as Release Notes is), from
+  changelog-ios's `AGENTS.md`. While the app is in testing the page says
+  so. Privacy says
   plainly that Jamie, as the operator, can read what is stored. The guide
   index links only pages that exist; badges are named only from public
   shelves ("a few are secret"). The first email's welcome line links

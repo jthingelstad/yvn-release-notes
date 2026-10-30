@@ -31,6 +31,7 @@ It numbers itself the way Release Notes numbers you. It started on October 29, 2
 - Deleting a note from **Today** asks first, since its photos and files go with it.
 - Siri answers sooner on a slow connection, and Changelog sends the note itself, so Siri never asks you to say it again.
 - In **Activity**, a deleted note's row says Note deleted, where it stopped at "Deleted from".
+- **Tags in any script:** pin #東京 or #москва in Settings and tap it in the tag row, or give one to an Upcoming date.
 
 ## 0.0.0 · October 29
 

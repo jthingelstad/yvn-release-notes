@@ -112,7 +112,9 @@ typed. `packages/domain/rich.ts` is the one reader of the subset.
 Addresses and hashtags are found first and are never read for marks, so
 underscores inside an address are safe. In rich text a bare address never
 ends in `*` or `_`, so `**https://example.com**` is a bold link (an address
-that really ends in `_` loses it, as one ending in `.` already does).
+that really ends in `_` loses it, as one ending in `.` already does). On
+a day mixing plain and rich notes, a plain note's address that ends in
+`*` or `_` goes in angle brackets, so it stays whole and keeps its name.
 `**#lake**` is a bold tag. `_#lake_` is not a tag, because a tag must not
 follow a letter, digit or `_`; italic tags use `*#lake*`.
 
@@ -121,8 +123,10 @@ follow a letter, digit or `_`; italic tags use `*#lake*`.
 On the web, a row under the note box (and under a rich note's edit box):
 Bold, Italic, List, Numbered list and Quote, then "How to format". The
 buttons and ⌘B and ⌘I (Ctrl on other systems) type the marks in around the
-selection, or take them off, as an edit the browser's Undo takes back. A
-plain note's edit box has no row, since it stays plain.
+selection, or take them off, as an edit the browser's Undo takes back.
+Since marks pair within a line, bold or italic over several lines goes on
+each line, after any list or quote mark. A plain note's edit box has no
+row, since it stays plain.
 
 ## Not in this PR
 

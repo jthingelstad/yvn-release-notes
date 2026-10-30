@@ -35,6 +35,21 @@ describe('bold and italic', () => {
     expect(run('a *[lake]* day', italic)).toBe('a [lake] day');
   });
 
+  it('marks each line of a selection over several, since marks pair within a line', () => {
+    expect(run('[one\ntwo]', bold)).toBe('[**one**\n**two**]');
+    expect(run('[one\n\n  two ]', italic)).toBe('[*one*\n\n  *two*] ');
+    expect(run('[**one**\ntwo]', bold)).toBe('[**one**\n**two**]');
+    expect(run('[**one**\n**two**]', bold)).toBe('[one\ntwo]');
+  });
+
+  it('leaves a line’s list or quote mark outside the marks', () => {
+    expect(run('[- towels\n- paddles]', bold)).toBe('- [**towels**\n- **paddles**]');
+    expect(run('[- **towels**\n- **paddles**]', bold)).toBe('- [towels\n- paddles]');
+    expect(run('[> 1. cold water]', italic)).toBe('> 1. *[cold water]*');
+    expect(run('Packed:[\n- towels]', bold)).toBe('Packed:\n- **[towels]**');
+    expect(run('[-5 degrees]', bold)).toBe('**[-5 degrees]**');
+  });
+
   it('tells bold from italic', () => {
     expect(run('a **[long]** day', italic)).toBe('a ***[long]*** day');
     expect(run('a ***[both]*** day', italic)).toBe('a **[both]** day');

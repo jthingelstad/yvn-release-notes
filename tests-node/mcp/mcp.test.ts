@@ -83,6 +83,21 @@ test('Hono protocol negotiation, auth challenge, methods/origin, notifications a
       (await app.request('/mcp', { method: 'POST', headers: base, body: JSON.stringify(input) })).status,
       400
     );
+  // A body that isn't JSON is JSON-RPC's parse error, with no id to answer.
+  for (const body of ['{"jsonrpc":', '', 'not json'])
+    assert.deepEqual(
+      await (await app.request('/mcp', { method: 'POST', headers: base, body })).json(),
+      { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } },
+      JSON.stringify(body)
+    );
+  // The scheme's case is the client's (RFC 9110, 11.1), as /v1 reads it.
+  const lower = await app.request('/mcp', {
+    method: 'POST',
+    headers: { ...base, authorization: 'bearer ' + a.token },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' })
+  });
+  assert.equal(lower.status, 200);
+  assert.deepEqual(((await lower.json()) as RpcBody).result, {});
   const notification = await app.request('/mcp', {
     method: 'POST',
     headers: base,

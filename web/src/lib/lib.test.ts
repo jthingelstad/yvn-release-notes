@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { emptyMdy, mdyOf, mdyValue } from '../components/fields.tsx';
 import { addDays, clock, count, dateRange, megabytes, pauseLine, SEND_TIMES } from './format.ts';
 import { sayFor, SAY } from './say.ts';
+import { pickDay } from './queries.ts';
+import type { Me } from './types.ts';
 
 describe('sayFor', () => {
   it('says the line for a known error, and a fallback otherwise', () => {
@@ -90,5 +92,18 @@ describe('the birthday fields', () => {
 
   it('read back what they made', () => {
     expect(mdyValue(mdyOf('1981-06-14'))).toBe('1981-06-14');
+  });
+});
+
+describe('pickDay', () => {
+  const me = { birthday: '1981-06-14', today: '2026-10-30' } as Me;
+  it('opens the day asked for, from the birthday through today', () => {
+    expect(pickDay('2026-10-12', me)).toBe('2026-10-12');
+    expect(pickDay('1981-06-14', me)).toBe('1981-06-14');
+    expect(pickDay('2026-10-30', me)).toBe('2026-10-30');
+  });
+  it('opens yesterday for anything else, a day that sorts in range but is not one too', () => {
+    for (const asked of ['2026-02-30', '2026-1', '2026-10-29x', '1981-06-13', '2026-10-31', 'nonsense', '', null])
+      expect(pickDay(asked, me), String(asked)).toBe('2026-10-29');
   });
 });

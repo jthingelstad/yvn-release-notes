@@ -9,7 +9,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 
 - Apps on [the API](/guide/api/) can tell which account and which token they're signed in with, and a note an app sends again under another of your tokens is still filed once.
 - Changelog, the iPhone app, has [its page in the guide](/guide/changelog/), with screenshots and an invitation to its test on TestFlight. [Features](/features/) lists it too.
-- Smaller things: in Settings, a new API token wraps to fit a phone, and its Copy button comes into view as soon as it's made. In Feedback, Attach a screenshot is a link, as Add files is under the note box, rather than the browser's own file button.
+- Smaller things: in Settings, a new API token wraps to fit a phone, and its Copy button comes into view as soon as it's made. In Feedback, Attach a screenshot is a link, as Add files is under the note box, rather than the browser's own file button. Upcoming's calendar link no longer says reminders come only in the email, now that an app can show them too.
 
 ## 0.0.22 · October 29
 

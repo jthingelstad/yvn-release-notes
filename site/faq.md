@@ -49,7 +49,7 @@ Your days follow the time zone of your city in Settings. Change the city and the
 
 Yes. In Settings, "Pause the emails" stops them for 1 to 60 days, then they start again on their own. You can still write on the web while they're paused.
 
-To stop them for good, use "Unsubscribe" at the foot of any email. Nothing is deleted, and "Start them again" in Settings brings them back.
+To stop them, use "Unsubscribe" at the foot of any email. Nothing is deleted, and "Start them again" in Settings brings them back.
 
 ## My reply didn't arrive. What happened?
 

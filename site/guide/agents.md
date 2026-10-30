@@ -25,6 +25,8 @@ Reading is the one approval every connection has. The rest are separate boxes, s
 - **Also allow adding photos, recordings and PDFs to those notes.** Only with adding notes, at most 4 files and 4 MB a call. They're kept like the files you add yourself.
 - **Also allow reading and changing my Upcoming dates.** Your [Upcoming](/guide/upcoming/) dates, to list, add, change and remove. It never touches a note.
 
+Any connection can also send Jamie feedback about Release Notes for you, when you ask it to or agree it should, as you can from [Feedback](/feedback/). It shows there with Jamie's answers.
+
 A note an agent adds says so, as "added by Claude", say, on the web, in the email and in your export. You can edit or delete it like any other.
 
 An agent's service keeps what it reads under its own privacy and retention policies. Connecting never turns on Release Notes' own transcripts or photo descriptions, and an agent can't change your settings.

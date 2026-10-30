@@ -3061,6 +3061,19 @@ fieldset.book-fields {
   border: 0;
   padding: 0;
   margin: 0;
+  min-width: 0;
+}
+.feedback-shots legend {
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+/* Attach a screenshot: a quiet link over the device's own picker, as the
+   note form's Add files is. */
+.feedback-shots label.picker {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
 }
 .feedback-shots ul {
   list-style: none;

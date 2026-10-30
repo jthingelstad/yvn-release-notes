@@ -63,6 +63,7 @@ export function FormatBar({
             className="quiet icon-button"
             type="button"
             aria-label={b.label}
+            title={b.label}
             disabled={disabled}
             // Keep the box's selection: the button acts on it.
             onMouseDown={(e) => e.preventDefault()}

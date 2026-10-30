@@ -37,6 +37,9 @@ export type Block<T> =
 type Unit<T> = { c: string; lit?: true; at: number } | { atom: T; at: number };
 const isChar = <T>(u: Unit<T> | undefined): u is { c: string; lit?: true; at: number } => !!u && 'c' in u;
 
+// Quotes nest this deep; a deeper > stays as typed, so no note can nest the
+// readers (all of them recursive) past it.
+const QUOTE_DEPTH = 3;
 const QUOTE = /^ {0,3}> ?/u,
   BULLET = /^[ \t]*[-*•][ \t]+/u,
   NUMBER = /^[ \t]*(\d{1,3})[.)][ \t]+/u,
@@ -88,10 +91,10 @@ function item<T>(line: Unit<T>[]): { kind: 'bullets' | 'numbers'; n: number; res
   return { kind: bullet ? 'bullets' : 'numbers', n: number ? Number(number[1]) : 1, rest };
 }
 
-function parseBlocks<T>(lines: Unit<T>[][]): Block<T>[] {
+function parseBlocks<T>(lines: Unit<T>[][], depth = 0): Block<T>[] {
   const out: Block<T>[] = [];
   let i = 0;
-  const quoted = (line: Unit<T>[]) => QUOTE.exec(lead(line));
+  const quoted = (line: Unit<T>[]) => (depth < QUOTE_DEPTH ? QUOTE.exec(lead(line)) : null);
   while (i < lines.length) {
     const line = lines[i]!;
     if (blank(line)) {
@@ -102,7 +105,7 @@ function parseBlocks<T>(lines: Unit<T>[][]): Block<T>[] {
       const inner: Unit<T>[][] = [];
       for (let q = quoted(lines[i]!); i < lines.length && q; q = lines[++i] ? quoted(lines[i]!) : null)
         inner.push(drop(lines[i]!, Array.from(q[0]).length));
-      out.push({ kind: 'quote', blocks: parseBlocks(inner) });
+      out.push({ kind: 'quote', blocks: parseBlocks(inner, depth + 1) });
       continue;
     }
     const first = item(line);
@@ -111,9 +114,10 @@ function parseBlocks<T>(lines: Unit<T>[][]): Block<T>[] {
       while (i < lines.length) {
         const next = item(lines[i]!);
         if (next?.kind === first.kind) items.push([inline(next.rest)]);
-        // An indented line straight under an item goes on with it.
+        // An indented line straight under an item goes on with it, whatever
+        // starts it (a link or a tag is an atom, not in its lead).
         else if (!next && !blank(lines[i]!) && /^[ \t]{2,}/u.test(lead(lines[i]!)))
-          items.at(-1)!.push(inline(lines[i]!.slice(lead(lines[i]!).search(/\S/u))));
+          items.at(-1)!.push(inline(lines[i]!.slice(lines[i]!.findIndex((u) => !isChar(u) || !isWhitespace(u.c)))));
         else break;
         i++;
       }
@@ -330,7 +334,8 @@ export function closeCut(full: string, shown: string): string {
     cut = Array.from(shown.slice(from)).length;
   let units = linesOf(webParts(whole), (a) => Array.from(a.url).length)[0] ?? [];
   // The line's block marker is not emphasis.
-  for (let m = QUOTE.exec(lead(units)); m; m = QUOTE.exec(lead(units))) units = drop(units, Array.from(m[0]).length);
+  for (let d = 0, m = QUOTE.exec(lead(units)); m && d < QUOTE_DEPTH; d++, m = QUOTE.exec(lead(units)))
+    units = drop(units, Array.from(m[0]).length);
   const marked = BULLET.exec(lead(units)) ?? NUMBER.exec(lead(units));
   if (marked) units = drop(units, Array.from(marked[0]).length);
   const kept = unescaped(units),

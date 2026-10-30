@@ -83,7 +83,9 @@ export function Connect() {
             <li>Your badges, releases, settings and your activity log</li>
             <li>Never your email address or private addresses</li>
           </ul>
-          <p className="hint">The agent can search and discuss them with you.</p>
+          <p className="hint">
+            The agent can search and discuss them with you, and send Jamie feedback about Release Notes for you.
+          </p>
           <div className="connect-options">
             {info.data.scope.includes('media:read') && (
               <label className="check">

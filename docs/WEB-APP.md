@@ -577,8 +577,9 @@ or new CSP exception.
   `vite.config.ts` adds its tags to `index.html`'s head and each public
   page's shell (`site.tsx`) draws them, so a new card is a change there
   alone. `tests-node/front-page.test.ts` and `tests-node/site.test.ts`
-  hold every page to it. `web/public/robots.txt` keeps crawlers off the API, OAuth and MCP
-  addresses and names `sitemap.xml`, which lists `/` and the public pages,
+  hold every page to it. `web/public/robots.txt` keeps crawlers off the
+  API, OAuth, MCP and `/v1` addresses (but `/v1/openapi.json`) and names
+  `sitemap.xml`, which lists `/` and the public pages,
   and the router marks every other page `noindex` as it resolves, since
   they all serve `index.html`. Those pages stay crawlable: a page
   robots.txt blocks can still be listed, because its `noindex` is never

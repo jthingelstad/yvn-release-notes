@@ -34,7 +34,7 @@ It numbers itself the way Release Notes numbers you. It started on October 29, 2
 - **Log** a line, with your tags a tap away, and Commit. Touch and hold a tag to add it to every note. **Today** underneath shows the words of the notes you sent from this phone today.
 - Nothing gets lost. A note you're writing keeps, even if iOS closes Changelog while you're away. Every note waits on the phone until it's sent, offline included, and sending one again never makes a second note. Waiting notes go when the connection comes back and finish after you lock the phone, and each says what it's waiting for: a connection, today's limit, Release Notes, or room on the phone.
 - When Release Notes turns a note down, **Fix** it: change the words, send it without its files, or copy the words. An edit that can't be saved says why.
-- Photos from your library or the camera, a voice memo recorded in the app, and **Here**: the neighbourhood you're in, with a business nearby to pick.
+- Photos from your library or the camera, a voice memo recorded in the app, and **Here**: the neighbourhood you're in, with a business nearby to pick. Turn on **Add where I am** in Settings and each new note takes where you are.
 - **Share** a photo, a PDF, a voice memo, a link or some text from any app. Changelog is in the share sheet, with a line to go with it.
 - **Upcoming:** add, change and remove your dates, each in the line the email gives it.
 - Notifications, each off until you turn it on: your Upcoming reminders and a "What changed?" with the day's version, both when each morning's email is due, and news from elsewhere, like a note an agent added or a badge, never with a note's words.

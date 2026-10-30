@@ -1,13 +1,15 @@
-# Release Notes: the front page and the pages about it (How it works, the
-# guide, the FAQ and Privacy, each in the sitemap) are public and welcome in
-# search, and /llms.txt sums them up. Every other page is the signed-in app
+# Release Notes: the front page and the pages about it (How it works,
+# Features, the guide, the FAQ, Privacy and the changelog, each in the
+# sitemap) are public and welcome in search, and /llms.txt sums them up. Every other page is the signed-in app
 # or a link from an email, and the app marks it noindex, so crawlers may load
 # those pages to read that. They stay off the addresses that answer with
-# data, never a page.
+# data, never a page, but for the API's own description.
 User-agent: *
 Disallow: /api/
 Disallow: /oauth/
 Disallow: /mcp
+Disallow: /v1/
+Allow: /v1/openapi.json
 # RTFM: /man/
 
 Sitemap: https://notes.yourversionnumber.com/sitemap.xml

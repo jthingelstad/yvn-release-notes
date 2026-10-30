@@ -220,6 +220,10 @@ function shape(op: string, args: Arguments): void {
   for (const field of ['date', 'id', 'revision', 'written_at'])
     if (Object.hasOwn(args, field) && (typeof args[field] !== 'string' || codePointLength(String(args[field])) > 80))
       throw new ApiRefusal('invalid_request', `${field} is a string.`, { field });
+  // An edit with no revision is a request missing a field, not a note that
+  // changed since it was read.
+  if (op === 'notes.edit' && !args.revision)
+    throw new ApiRefusal('invalid_request', 'Send the revision you read, as it came.', { field: 'revision' });
 }
 
 /** A refused date in `/v1`'s words, naming the entry (`change[2]`). */

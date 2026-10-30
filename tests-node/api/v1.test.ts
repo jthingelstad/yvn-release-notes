@@ -340,6 +340,13 @@ test('a note: create, replay, read back, append, edit, delete', async () => {
   const afterAppend = noteOf(appended);
   assert.notEqual(afterAppend.revision, ref.revision);
 
+  // An edit with no revision is a request missing a field, not a conflict.
+  for (const body of [{ text: 'New words' }, { text: 'New words', revision: '' }]) {
+    const bare = await call(app, 'PUT', path, { token: made.token, body });
+    assert.equal(bare.status, 400, JSON.stringify(body));
+    assert.deepEqual([bare.error.code, bare.error.field], ['invalid_request', 'revision']);
+  }
+
   // An edit from a stale revision is refused with the current one.
   const stale = await call(app, 'PUT', path, {
     token: made.token,

@@ -176,8 +176,10 @@ export async function prepareUpcomingBatch(
     if (!previous) reject(404, 'upcoming-missing', { list, index });
     if (seen.has(previous.id)) reject(400, 'upcoming-fields', { list, index });
     seen.add(previous.id);
-    if (!Number.isSafeInteger(item.revision) || item.revision !== previous.revision)
-      reject(409, 'upcoming-changed', { list, index });
+    // No revision, or one that isn't a whole number, is a malformed item;
+    // only a revision that was read and has moved on is a conflict.
+    if (!Number.isSafeInteger(item.revision)) reject(400, 'upcoming-fields', { list, index });
+    if (item.revision !== previous.revision) reject(409, 'upcoming-changed', { list, index });
     return previous;
   };
   batch.remove.forEach((item, index) => {

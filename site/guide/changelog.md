@@ -3,7 +3,7 @@ title: Release Notes for Changelog
 description: Changelog, the iPhone app for getting notes into Release Notes, and everything it has learned to do, one version at a time.
 ---
 
-Changelog gets a note into Release Notes in two taps. It isn't a second Release Notes: you read, search and look back on the web. It signs in with an [API token](/guide/tokens/) you make in Settings and talks to Release Notes through [the API](/guide/api/), as any app you write yourself can. Its code is open, [on GitHub](https://github.com/jthingelstad/changelog-ios).
+Changelog gets a note into Release Notes in two taps. It isn't a second Release Notes: you read, search and look back on the web. You sign it in with Release Notes, which asks you to name the [API token](/guide/tokens/) it keeps and choose what it may do, and it talks to Release Notes through [the API](/guide/api/), as any app you write yourself can. Its code is open, [on GitHub](https://github.com/jthingelstad/changelog-ios).
 
 Changelog is in testing with Jamie on TestFlight, and isn't in the App Store yet.
 
@@ -11,6 +11,7 @@ It numbers itself the way Release Notes numbers you. It started on October 29, 2
 
 ## 0.0.0 · October 29
 
+- **Sign in with Release Notes.** Name the token Changelog keeps, choose what it may do and when it ends, and you're in. Pasting a token you made in Settings still works.
 - **Log** a line, with your tags a tap away, and Commit. Touch and hold a tag to add it to every note.
 - Nothing gets lost. Every note waits on the phone until it's sent, offline included, and sending one again never makes a second note.
 - Photos from your library or the camera, a voice memo recorded in the app, and **Here**: the neighbourhood you're in, with a business nearby to pick.

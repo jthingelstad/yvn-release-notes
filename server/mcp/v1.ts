@@ -251,7 +251,9 @@ function refuse(code: string, asText: boolean, headers: Headers = {}, detail = '
  * every name is a note's and `text` is one; null when it is the words; a
  * name sent twice, as that name. */
 function noteForm(type: string, raw: string): OAuthRow | string | null {
-  if (type !== 'application/x-www-form-urlencoded') return null;
+  // Every piece names its value, so `curl -d text` is still the word.
+  const pieces = raw.split('&').filter(Boolean);
+  if (type !== 'application/x-www-form-urlencoded' || !pieces.every((piece) => piece.includes('='))) return null;
   const fields = [...new URLSearchParams(raw)],
     names = fields.map(([name]) => name);
   if (!names.includes('text') || !names.every((name) => (NOTE_FORM as readonly string[]).includes(name))) return null;

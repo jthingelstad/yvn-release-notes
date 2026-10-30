@@ -663,6 +663,8 @@ test('odd bodies (1.7.0): forms, multipart, escaped emoji, control characters, l
   // curl -d sends any words as a form: one that isn't a note's fields stays the words.
   assert.equal(await kept(await post('my words & more', form)), 'my words & more');
   assert.equal(await kept(await post('text=Hi&mood=great', form)), 'text=Hi&mood=great');
+  assert.equal(await kept(await post('text', form)), 'text');
+  assert.equal(await kept(await post('text=Hi&date', form)), 'text=Hi&date');
   const twice = await post('text=a&text=b', form);
   assert.equal(twice.error.code, 'invalid_request');
   assert.equal(twice.error.field, 'text');

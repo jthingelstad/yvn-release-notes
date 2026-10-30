@@ -77,6 +77,17 @@ test('lists, numbered lists and quotes are lines that start with their marks', (
   assert.deepEqual(shown(read('-\n---\n-- two dashes\n—one')), [['para', '-', '---', '-- two dashes', '—one']]);
   // 1000. is a year, not a list.
   assert.deepEqual(shown(read('1999. A good year.')), [['para', '1999. A good year.']]);
+  // An indented line under an item may start with a link or a tag.
+  assert.deepEqual(shown(read('- first\n  https://example.com and words')), [
+    ['bullets', 'first / [https://example.com] and words']
+  ]);
+});
+
+test('quotes nest three deep; a deeper > stays as typed, however many there are', () => {
+  assert.deepEqual(shown(read('> > > > deep')), [['quote', ['quote', ['quote', ['para', '> deep']]]]]);
+  const deep = '> '.repeat(6000) + 'hello';
+  assert.equal(plainWords(deep), '> '.repeat(5997).trimEnd() + ' hello');
+  assert.equal(closeCut(deep + ' *one. two*', deep + ' *one.'), deep + ' *one.*');
 });
 
 test('a backslash keeps a mark as typed, and links are never read for marks', () => {

@@ -275,3 +275,46 @@ test('/oauth/revoke signs the app out with its own client, and never ends a toke
   assert.equal((await revoke(String(answer.access_token), body.client_id)).status, 200);
   assert.equal(activity(ctx, 'connection.removed').length, 1);
 });
+
+test('/oauth/revoke answers 503 when the token could not be ended, so the app tries again', async () => {
+  const ctx = fixture(),
+    body = await approve(ctx),
+    answer = await new OAuthService(ctx).exchange(body);
+  const drop = ctx.store.dropToken.bind(ctx.store);
+  ctx.store.dropToken = async () => false;
+  const revoke = () =>
+    publicOAuth(
+      ctx,
+      new Request(ORIGIN + '/oauth/revoke', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: String(answer.access_token), client_id: body.client_id }).toString()
+      }),
+      viewer
+    );
+  const failed = await revoke();
+  assert.equal(failed.status, 503);
+  assert.deepEqual(await failed.json(), { error: 'temporarily_unavailable' });
+  assert.ok((await checkToken(ctx.store, ORIGIN, NOW, 'Bearer ' + answer.access_token)).ok);
+  ctx.store.dropToken = drop;
+  assert.equal((await revoke()).status, 200);
+  assert.ok(!(await checkToken(ctx.store, ORIGIN, NOW, 'Bearer ' + answer.access_token)).ok);
+});
+
+test('/oauth/revoke of a token its owner already deleted is still a sign out', async () => {
+  const ctx = fixture(),
+    body = await approve(ctx),
+    answer = await new OAuthService(ctx).exchange(body);
+  const [row] = ctx.store.memory.all().filter((i) => String(i.sk).startsWith('APITOKEN#'));
+  await new Tokens(ctx).revoke('u', String(row!.id));
+  const r = await publicOAuth(
+    ctx,
+    new Request(ORIGIN + '/oauth/revoke', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: String(answer.access_token), client_id: body.client_id }).toString()
+    }),
+    viewer
+  );
+  assert.equal(r.status, 200);
+});

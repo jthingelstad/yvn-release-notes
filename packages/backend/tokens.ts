@@ -12,8 +12,8 @@
  * account removes it with the agent connections. No bearer authenticates a
  * web route: only the /v1 router and the capture function read a token. */
 import { randomUUID } from 'node:crypto';
-import { digest, newToken } from './auth.ts';
-import { live, type OAuthRow } from './oauth.ts';
+import { digest, live, newToken } from './auth.ts';
+import type { OAuthRow } from './oauth.ts';
 import { recordActivity } from './activity.ts';
 import { reject } from './sessions.ts';
 import { codePointLength, pythonTrim } from '../domain/unicode.ts';
@@ -115,6 +115,38 @@ export function tokenView(row: OAuthRow, now: number, used: number | null = null
   };
 }
 
+export interface TokenFields {
+  name: string;
+  /** The scopes in TOKEN_SCOPES' order, space separated. */
+  scope: string;
+  expiry: string;
+}
+/** A token's name, scopes and expiry as the owner gave them in Settings or
+ * on an app's sign-in, or the refusal. */
+export function tokenFields(body: OAuthRow): TokenFields {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) reject(400, 'token-fields');
+  const name = typeof body.name === 'string' ? pythonTrim(body.name.normalize('NFC')) : '';
+  if (
+    !name ||
+    codePointLength(name) > TOKEN_NAME_MAX ||
+    [...name].some((c) => c.codePointAt(0)! < 32 || c === '\u007f')
+  )
+    reject(400, 'token-name');
+  const scopes = body.scopes;
+  if (
+    !Array.isArray(scopes) ||
+    !scopes.length ||
+    new Set(scopes).size !== scopes.length ||
+    scopes.some((s) => !(TOKEN_SCOPES as readonly unknown[]).includes(s))
+  )
+    reject(400, 'token-scopes');
+  // Files ride on adding notes, as they do for an agent.
+  if (scopes.includes('media:write') && !scopes.includes('notes:write')) reject(400, 'token-scopes');
+  if (typeof body.expiry !== 'string' || !Object.hasOwn(TOKEN_EXPIRY, body.expiry)) reject(400, 'token-expiry');
+  return { name, scope: TOKEN_SCOPES.filter((s) => scopes.includes(s)).join(' '), expiry: body.expiry };
+}
+export const tokenId = (): string => randomUUID().replace(/-/g, '');
+
 /** The owner's side, in their email-verified web session (account-routes). */
 export class Tokens {
   constructor(readonly context: { store: TokenStore; origin: string; now: number; log?: Log }) {}
@@ -137,38 +169,69 @@ export class Tokens {
         .map((r) => tokenView(r, now, usage.get(String(r.id)) ?? null))
     };
   }
-  /** Makes a token and answers its value, the one time it is ever shown. */
-  async make(uid: string, body: OAuthRow): Promise<OAuthRow> {
-    const { store, now, origin } = this.context;
-    if (!body || typeof body !== 'object' || Array.isArray(body)) reject(400, 'token-fields');
-    const name = typeof body.name === 'string' ? pythonTrim(body.name.normalize('NFC')) : '';
-    if (
-      !name ||
-      codePointLength(name) > TOKEN_NAME_MAX ||
-      [...name].some((c) => c.codePointAt(0)! < 32 || c === '\u007f')
-    )
-      reject(400, 'token-name');
-    const scopes = body.scopes;
-    if (
-      !Array.isArray(scopes) ||
-      !scopes.length ||
-      new Set(scopes).size !== scopes.length ||
-      scopes.some((s) => !(TOKEN_SCOPES as readonly unknown[]).includes(s))
-    )
-      reject(400, 'token-scopes');
-    // Files ride on adding notes, as they do for an agent.
-    if (scopes.includes('media:write') && !scopes.includes('notes:write')) reject(400, 'token-scopes');
-    if (typeof body.expiry !== 'string' || !Object.hasOwn(TOKEN_EXPIRY, body.expiry)) reject(400, 'token-expiry');
-    const current = (await store.apiTokens(uid)).filter((r) => !r.revoked && !expired(r, now));
+  /** Refuses another token when the account has 20, or one by this name. */
+  async room(uid: string, name: string): Promise<void> {
+    const current = (await this.context.store.apiTokens(uid)).filter(
+      (r) => !r.revoked && !expired(r, this.context.now)
+    );
     if (current.length >= TOKENS_MAX) reject(409, 'token-limit', { max: TOKENS_MAX });
     if (current.some((r) => String(r.name).toLowerCase() === name.toLowerCase())) reject(409, 'token-name-taken');
+  }
+  /** A name for an app's token, from the name it registered: that, or with
+   * the first number no live token has ("Changelog 2"). */
+  async nameFor(uid: string, wanted: unknown): Promise<string> {
+    const clean = pythonTrim(
+        [...String(wanted ?? '').normalize('NFC')].filter((c) => c.codePointAt(0)! >= 32 && c !== '\u007f').join('')
+      ),
+      base = [...(clean || 'App')].slice(0, TOKEN_NAME_MAX - 3).join(''),
+      taken = new Set(
+        (await this.context.store.apiTokens(uid))
+          .filter((r) => !r.revoked && !expired(r, this.context.now))
+          .map((r) => String(r.name).toLowerCase())
+      );
+    for (let n = 1; n <= TOKENS_MAX + 1; n++) {
+      const name = n === 1 ? base : `${base} ${n}`;
+      if (!taken.has(name.toLowerCase())) return name;
+    }
+    return base;
+  }
+  /** Makes a token and answers its value, the one time it is ever shown. */
+  async make(uid: string, body: OAuthRow): Promise<OAuthRow> {
+    const fields = tokenFields(body);
+    await this.room(uid, fields.name);
+    const made = await this.issue(uid, fields);
+    if (!made) reject(409, 'try-again');
+    return { token: made.token, ...tokenView({ ...made.row, revision: 1 }, this.context.now) };
+  }
+  /** Writes a token checked by `tokenFields` and `room`, with `also` in the
+   * same transaction: an app's sign-in spends its code there, so a code
+   * makes one token at most. Null when the transaction lost. A sign-in's
+   * token remembers its OAuth client, so the app can revoke it at
+   * /oauth/revoke too, and its activity row names the app. */
+  async issue(
+    uid: string,
+    fields: TokenFields,
+    options: { id?: string; client_id?: string; app?: string; also?: [OAuthRow, number | null][] } = {}
+  ): Promise<{ token: string; row: OAuthRow } | null> {
+    const { store, now, origin } = this.context,
+      { name, scope } = fields;
     const raw = 'rn_' + newToken(),
       hash = digest(raw),
-      id = randomUUID().replace(/-/g, ''),
-      seconds = TOKEN_EXPIRY[body.expiry]!,
+      id = options.id ?? tokenId(),
+      seconds = TOKEN_EXPIRY[fields.expiry]!,
       ends = seconds == null ? {} : { expires_at: now + seconds },
-      scope = TOKEN_SCOPES.filter((s) => scopes.includes(s)).join(' '),
-      row: OAuthRow = { pk: 'USER#' + uid, sk: tokenKey(id), id, name, scope, created_at: now, hash, ...ends },
+      client = options.client_id ? { client_id: options.client_id } : {},
+      row: OAuthRow = {
+        pk: 'USER#' + uid,
+        sk: tokenKey(id),
+        id,
+        name,
+        scope,
+        created_at: now,
+        hash,
+        ...client,
+        ...ends
+      },
       pointer: OAuthRow = {
         pk: 'OAUTHACCESS#' + hash,
         sk: 'STATE',
@@ -176,20 +239,12 @@ export class Tokens {
         user_id: uid,
         token: id,
         resource: origin + '/v1',
+        ...client,
         ...ends
       },
       tracked: OAuthRow = { pk: 'OAUTHUSER#' + uid, sk: 'ROW#' + pointer.pk, target: pointer.pk, ...ends };
-    if (
-      !(await store.mcpCommit(
-        [
-          [row, null],
-          [pointer, null],
-          [tracked, null]
-        ],
-        uid
-      ))
-    )
-      reject(409, 'try-again');
+    if (!(await store.mcpCommit([[row, null], [pointer, null], [tracked, null], ...(options.also ?? [])], uid)))
+      return null;
     await recordActivity(
       store,
       uid,
@@ -198,15 +253,24 @@ export class Tokens {
         {
           kind: 'connection.added',
           id,
-          fields: { via: 'web', connection: id, client: name, scopes: scope, token: name }
+          fields: {
+            via: 'web',
+            connection: id,
+            client: name,
+            scopes: scope,
+            token: name,
+            ...(options.app ? { app: options.app } : {})
+          }
         }
       ],
       (f) => this.context.log?.(f)
     );
-    return { token: raw, ...tokenView({ ...row, revision: 1 }, now) };
+    return { token: raw, row };
   }
-  /** The owner ends a token: its next request is refused. */
-  async revoke(uid: string, id: string): Promise<{ ok: true }> {
+  /** Ends a token: its next request is refused. The owner ends it in
+   * Settings; its app at /oauth/revoke (`client`); and a sign-in's code
+   * that came back a second time ends the token it made (`token-reuse`). */
+  async revoke(uid: string, id: string, reason: 'owner' | 'client' | 'token-reuse' = 'owner'): Promise<{ ok: true }> {
     const { store, now } = this.context,
       row = await store.mcpGet('USER#' + uid, tokenKey(id));
     if (!row) reject(404, 'token-gone');
@@ -220,7 +284,13 @@ export class Tokens {
           {
             kind: 'connection.removed',
             id,
-            fields: { via: 'web', connection: id, client: row.name, reason: 'owner', token: row.name }
+            fields: {
+              via: reason === 'owner' ? 'web' : 'token',
+              connection: id,
+              client: row.name,
+              reason,
+              token: row.name
+            }
           }
         ],
         (f) => this.context.log?.(f)

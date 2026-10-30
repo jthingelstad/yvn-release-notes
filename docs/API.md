@@ -1,8 +1,8 @@
 # Tokens, the public API and Changelog
 
 Designed 2026-10-29, with Jamie's calls made the same day (at the end,
-under "Jamie's calls"). Phases 1 to 4 are built (2026-10-29); the build
-order is under "Phases".
+under "Jamie's calls"). Phases 1 to 5 are built on the server (2026-10-29);
+the build order is under "Phases".
 
 Jamie, 2026-10-29: the idea is "enabling and kind of embracing the techie,
 kind of geeky aspect of release notes", and making it "even easier to get
@@ -64,8 +64,9 @@ the agent connections. No role changes: the MCP and capture roles already
 read and write those prefixes (`tests-node/infra/mcp-role.test.ts` holds
 `/v1` to both).
 
-- **Made in Settings, under API tokens.** A web session is required. The
-  owner gives it:
+- **Made in Settings, under API tokens,** or by an app's sign-in (Phase 5),
+  which is the same form on the consent page. A web session is required.
+  The owner gives it:
   - a **name**: 1 to 40 code points, unique among the account's live
     tokens. It is the token's identity: "Terminal", "Changelog on my
     iPhone". Unlike an MCP client's self-reported name, the owner chose it;
@@ -87,7 +88,9 @@ read and write those prefixes (`tests-node/infra/mcp-role.test.ts` holds
   `token_unknown`, and knows to sign in again.
 - **A token ends** when:
   - the owner revokes it;
-  - it revokes itself (`DELETE /v1/token`, a client's sign out);
+  - it revokes itself (`DELETE /v1/token`, a client's sign out), or, for a
+    token an app signed in for, its app ends it at `/oauth/revoke` with its
+    own client id;
   - it expires;
   - the account is deleted. Deletion blocks token writes first, as it does
     MCP writes (`mcp_deleting`), then removes every token.
@@ -188,8 +191,9 @@ There is no new DNS record, certificate or function.
 - **No token can** make tokens, change settings, export, or delete the
   account. The one exception is the pinned tags list (Tags), which Jamie
   wants the same on the web and every phone.
-- The OAuth consent screen never offers `activity` in v1. It is a token
-  scope until phase 5 brings OAuth to `/v1`.
+- An agent's OAuth consent (`/mcp`) never offers `activity`. An app's
+  sign-in (`/v1`, Phase 5) offers the four token scopes, because what it
+  gets is a token.
 
 ## The API
 
@@ -460,83 +464,57 @@ subject, mail words, another sender or a settings value.
 
 ### Phase 5: OAuth for apps
 
-Pasted or scanned tokens are fine for development and TestFlight. The App
-Store wants a sign-in. That needs two server changes:
+Pasted tokens are fine for development and TestFlight. The App Store wants
+a sign-in. Built 2026-10-29 (`packages/backend/oauth.ts`, `tokens.ts`,
+`web/src/pages/Connect.tsx`; `tests-node/oauth/sign-in.test.ts`):
 
-- the OAuth resource may be `/v1` as well as `/mcp`, with the `activity`
-  scope offered;
-- registration accepts a native app's own callback (RFC 8252): an https app
-  link, or a private-use scheme.
+- **An app's sign-in makes an API token,** the same key Settings makes.
+  OAuth's resource may be `<origin>/v1` as well as `/mcp`. For `/v1` the
+  consent page (`/connect/`, in the owner's email-verified session) is the
+  token form: a name (the app's registered name, or with the first number
+  no live token has, "Changelog 2"), what it may do, ticked from the scopes
+  the app asked for (`notes:write`, `media:write` only beside it, `upcoming`,
+  `activity`; never `notes:read`), and an expiry (90 days, 1 year, the
+  default, or never). Allowing makes nothing yet: the code holds the
+  choice for five minutes. Spending it at `/oauth/token` (PKCE S256, the
+  same client, redirect and resource) makes the token in the same
+  transaction that marks the code used, and answers it once:
+  `access_token` `rn_...`, `token_type` Bearer, the `scope` allowed and
+  `expires_in` unless it never expires.
+- **No refresh token.** An app, its share extension and its Siri intent
+  are separate processes that all send notes. A rotating refresh token
+  shared between them, whose reuse ends the grant, would sign the phone
+  out whenever two refreshed at once. One long-lived key, scoped so it
+  can't read a word, is what a pasted token already is (Scopes, above), so
+  the sign-in adds no new kind of credential: it saves the copying.
+- **A code that comes back** a second time ends the token it made (RFC
+  6749, 4.1.2), and the activity log says why (`token-reuse`).
+- **Signing out:** `DELETE /v1/token`, or `/oauth/revoke` with the token
+  and the client id it was signed in for. A token made in Settings has no
+  client, so `/oauth/revoke` never ends it.
+- **It is listed with the other tokens** in Settings, and revoked there.
+  Its `connection.added` row carries `app`, the name the app registered:
+  "Signed in Changelog as the API token Changelog".
+- **Native callbacks (RFC 8252):** registration accepts a private-use
+  scheme, a reversed domain with at least one dot followed by `:/`, such as
+  `com.yourversionnumber.changelog:/oauth`, as well as https and loopback
+  http. An https app link works with no change here. An Android app link
+  needs `/.well-known/assetlinks.json` listing the app's package and
+  signing certificate, and an iPhone universal link needs an
+  `apple-app-site-association`. Either is the site vouching for the app,
+  so it lists only an app Jamie calls official; until then every app,
+  Changelog included, uses its own scheme, which PKCE protects.
+- **Discovery:** `/.well-known/oauth-protected-resource/v1`, and the
+  authorization server's metadata lists every scope. The OpenAPI file
+  describes the flow as the `signIn` scheme (API 1.3.0).
+- **Pasted tokens stay,** for the dev server, scripts and anyone who
+  prefers them.
 
-It is built for any platform. An Android app link needs
-`/.well-known/assetlinks.json` listing the app's package and signing
-certificate. That file is the site vouching for the app, so it lists only
-an app Jamie calls official. Any other client uses a private-use scheme.
-
-## Tags on the phone and the web
-
-Jamie, 2026-10-29: "Pinned tags are good and then also augmented with
-frequently used RECENT tags", and the row "could also come into the web
-interface".
-
-- **The row** has the pinned tags first, then recent ones, then `+` for any
-  other.
-- **A sticky tag** stays on for every note until turned off (a trip, a
-  project). It is kept on each device, since it's a habit of the moment,
-  not a setting.
-- **Keep a Changelog's words,** Added, Changed, Fixed and Removed, are
-  suggested quick tags, plain hashtags like any other.
-- **The web's Today form** gets the same row in phase 1, with pinning from
-  the row's menu and the Tags page. Its guide page changes in the same PR.
-
-Tags are also the answer to multiple journals (Not now, below).
-
-## Notifications
-
-Jamie, 2026-10-29: "Reminders are going to show up in other places. The
-daily email is already doing too much work." So reminders can travel in any
-channel the owner turns on, not only the email. AGENTS.md's Upcoming rule
-changes with phase 4.
-
-Every notification in v1 is **local**: an app schedules it on the phone from
-data it fetched.
-
-- Release Notes keeps no device tokens and no push key, which would be a
-  secret to hold.
-- Notifications still fire when the phone is offline.
-
-The kinds:
-
-- **Upcoming reminders,** on each reminder day at the account's send time,
-  with the email's own line. iOS keeps at most 64 pending notifications an
-  app, so an app schedules about 14 days ahead and tops up when it opens and
-  in background refresh.
-- **A daily prompt,** "You're 4.5.137 today. What changed?", at send time.
-  It is off by default.
-- **Activity,** off until turned on, each kind chosen in the app:
-  - notes added by someone else (an agent, another token, an import, an
-    email reply);
-  - problems (a reply that wasn't filed, the account stopped, a connection
-    ended);
-  - badges earned.
-
-  Never the app's own notes, and never the daily email going out. Activity
-  notifications come from `GET /v1/activity?after=` in background refresh,
-  so the phone decides when. That might be minutes or hours.
-
-The email keeps its reminders for now. A setting that takes them out of the
-email, for someone who gets them on the phone, is a separate small PR, once
-the phone side works (Jamie's calls, 2).
-
-**Real push is deferred** (Jamie, 2026-10-29: "Agree on the real push
-deferral"). It would need:
-
-- the paid Apple Developer Program;
-- a push key, kept as a secret;
-- device tokens stored per account;
-- a worker on the table's stream.
-
-That is its own design. Nothing in v1 blocks it.
+Calls made in building it, each easy to change (Jamie, 2026-10-29: "Lets
+get phase 5 done."): the token form is the consent, with the app's scopes
+ticked to start with, since the owner began the sign-in in the app; a
+signed-in token is an ordinary API token rather than a connection of its
+own; and there is no refresh.
 
 ## Clients other people build
 
@@ -608,7 +586,7 @@ which holds its own design.
 | 0.2     | photos, the camera, voice memos, Here, the share extension                                                                                                | phase 3 |
 | 0.3     | the Upcoming screen, reminder and activity notifications, the optional daily prompt                                                                       | phase 4 |
 | 0.4     | App Intents, the Action Button, a Control Center control, widgets                                                                                         | nothing |
-| 1.0     | OAuth sign-in, the App Store                                                                                                                              | phase 5 |
+| 1.0     | OAuth sign-in (the server's side built 2026-10-29), the App Store                                                                                         | phase 5 |
 
 TestFlight and the App Store wait for the paid Apple Developer Program.
 Until then, builds go on a device from Xcode. For the App Store it needs:

@@ -52,7 +52,10 @@ Every write proves the writer owns the subscriber's address:
 - **By a token** (Jamie, 2026-10-29; docs/API.md): a key the owner makes,
   names and scopes in that session (Settings, API tokens, every
   subscriber's since 2026-10-29), shown once and kept
-  as its SHA-256, opening `/v1` only. The capture function checks it again
+  as its SHA-256, opening `/v1` only. An app's sign-in makes one the same
+  way: the owner chooses it on `/connect/` in that session, and the app
+  gets it once for its code (OAuth for the resource `/v1`, no refresh;
+  docs/API.md, Phase 5). The capture function checks it again
   and proves the live account and token in the same transaction as each
   write, and a token changes only the notes it wrote.
 
@@ -787,12 +790,14 @@ Where things are (each module's design comment has its contract):
 tags, the activity log), phase 2 (the OpenAPI file and the guide's
 `/guide/tokens/`, `/guide/api/` and `/guide/api/clients/`), phase 3
 (signed forms, files on a token's notes, a note's place, the city search
-and Here) and phase 4 (Upcoming and its reminders) are built.
+and Here), phase 4 (Upcoming and its reminders) and phase 5 (an app's
+sign-in, which makes an API token) are built.
 
 - **`/v1` is the MCP function's**, under its reader role, and every write
   goes to the capture function, as an agent's does. Only an API token opens
   it: no cookie, and no MCP access token. No token authenticates a web route
-  or `/mcp`, and `/oauth/revoke` never ends one.
+  or `/mcp`, and `/oauth/revoke` ends only one an app signed in for, when
+  that app's own client id comes with it.
 - **A token writes in the owner's voice**: `source` `api`, no `author`, its
   name as `token` and the User-Agent's product as `client`. The web shows
   "via <name>"; the email shows nothing. It counts like a web note.

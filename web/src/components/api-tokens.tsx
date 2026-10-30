@@ -18,13 +18,13 @@ interface ApiToken {
 }
 // What a token may be given. Files go only on the notes it adds, so Add
 // files comes only with Add notes.
-const OFFERED: [string, string][] = [
+export const OFFERED: [string, string][] = [
   ['notes:write', 'Add notes, and change or delete the notes it adds'],
   ['media:write', 'Add files to the notes it adds: photos, recordings and PDFs'],
   ['upcoming', 'Read and change your Upcoming dates and their reminders'],
   ['activity', 'Read the activity log, without any words from it']
 ];
-const EXPIRY: [string, string][] = [
+export const EXPIRY: [string, string][] = [
   ['90d', '90 days'],
   ['1y', '1 year'],
   ['never', 'Never']

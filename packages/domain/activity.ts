@@ -55,8 +55,10 @@
  * - connection.added: `connection`, `client`, `scopes`; connection.changed:
  *   `connection`, `client`, `from`, `to`; connection.removed: `connection`,
  *   `client`, `reason` (owner; client, when it revoked its own token; or
- *   token-reuse, when a used refresh token came back and ended it). An API
- *   token's rows also carry `token`, its name (docs/API.md).
+ *   token-reuse, when a used refresh token, or an app's sign-in code, came
+ *   back and ended it). An API token's rows also carry `token`, its name
+ *   (docs/API.md); one an app signed in for (Phase 5) is added with `app`,
+ *   the name the app registered.
  * - Through an API token (via `token`): note rows and the badges they earn
  *   carry `token`, the token's name, and `client`, the product its
  *   User-Agent named; its reads row too, and settings.changed when it

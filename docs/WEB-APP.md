@@ -434,7 +434,7 @@ notes.yourversionnumber.com
   questions), `/today/` (where sign-in lands), `/timeline/`,
   `/day/?d=YYYY-MM-DD` (any day, for backfill), `/release/?v=5.4`, `/badges/`, `/map/`, `/search/`,
   `/tag/?t=<tag>`, `/upcoming/`, `/upcoming-text/`, `/you/`, `/settings/`, `/activity/` (`/mail-log/` redirects there), `/book/`, `/pause/`, `/delete/`, `/unsubscribe/`, `/feedback/`, `/admin/`, `/admin-users/`, `/admin-feedback/`, `/man/`.
-  `/connect/` approves an external agent request whose opaque id stays in the fragment. With no request it shows the MCP address to add, with Copy; with one, the request's question is the title, what it shares as a list, each extra approval as a ruled checkbox row, and the retention paragraphs in full above Allow.
+  `/connect/` approves an external agent request whose opaque id stays in the fragment. An app's sign-in to `/v1` (docs/API.md, Phase 5) is the API token form there instead: its name, what it may do ticked from what the app asked for, and its expiry, then Allow or Cancel. With no request it shows the MCP address to add, with Copy; with one, the request's question is the title, what it shares as a list, each extra approval as a ruled checkbox row, and the retention paragraphs in full above Allow.
   `/feedback/` sends Jamie feedback and shows the answers (Feedback); `/admin/` manages product updates; `/admin-users/` shows subscriber metadata; `/admin-feedback/` is the feedback queue. Administration is visible in settings only to the configured administrator.
 
 - **Public pages**: `/how-it-works/`, `/features/`, `/guide/` and its

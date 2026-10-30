@@ -22,6 +22,12 @@ export function digest(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
+/** A credential row still in force: before its expiry, if it has one, and
+ * not revoked. OAuth's rows and API tokens alike. */
+export function live(item: Record<string, unknown> | null | undefined, now: number): item is Record<string, unknown> {
+  return Boolean(item && Number(item.expires_at ?? now + 1) > now && !item.revoked);
+}
+
 export function same(a: string, b: string): boolean {
   const x = Buffer.from(a),
     y = Buffer.from(b);

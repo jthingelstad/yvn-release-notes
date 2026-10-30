@@ -1,12 +1,19 @@
 /** Email-owner approved OAuth connections. Browser consent is separate from
  * public OAuth, tokens are hash-only, and family/profile proofs are durable.
- * No bearer can authenticate an application session or a general web write. */
+ * No bearer can authenticate an application session or a general web write.
+ *
+ * Two resources (docs/API.md, Phase 5). `/mcp` is an agent's connection:
+ * an hour-long access token and a rotating refresh token. `/v1` is an app's
+ * sign-in: the consent chooses an API token (tokens.ts) as Settings makes
+ * one, and spending the code makes it, once, with no refresh, so an app,
+ * its share extension and its shortcuts all hold the same one key. */
 import { createHash } from 'node:crypto';
-import { digest, network, newToken, same } from './auth.ts';
+import { digest, live, network, newToken, same } from './auth.ts';
 import { codePointLength } from '../domain/unicode.ts';
 import type { ActivityEvent } from '../domain/activity.ts';
 import { again, recordActivity } from './activity.ts';
 import { safeLog, type Log } from './services.ts';
+import { TOKEN_EXPIRY, TOKEN_SCOPES, tokenFields, tokenId, Tokens, type TokenStore } from './tokens.ts';
 export type OAuthRow = Record<string, unknown>;
 export type OAuthChange = [OAuthRow, number | null];
 export interface OAuthStore {
@@ -26,6 +33,10 @@ export interface OAuthContext {
   log?: Log;
 }
 export const SCOPES = ['media:read', 'media:write', 'notes:read', 'notes:write', 'upcoming'];
+/** What an app signing in may ask for: a token's scopes. */
+export const APP_SCOPES: readonly string[] = TOKEN_SCOPES;
+/** An app's sign-in code lives five minutes, as an agent's does. */
+const CODE_SECONDS = 300;
 export const ACCESS_SECONDS = 3600,
   REFRESH_SECONDS = 30 * 86400;
 export class OAuthError extends Error {
@@ -39,9 +50,7 @@ export class OAuthError extends Error {
 function fail(error = 'invalid_request', status = 400): never {
   throw new OAuthError(error, status);
 }
-export function live(item: OAuthRow | null | undefined, now: number): item is OAuthRow {
-  return Boolean(item && Number(item.expires_at ?? now + 1) > now && !item.revoked);
-}
+export { live };
 const row = (pk: string, fields: OAuthRow = {}): OAuthRow => ({ pk, sk: 'STATE', ...fields });
 const tracked = (item: OAuthRow, uid: string): OAuthRow =>
   row(`OAUTHUSER#${uid}`, { sk: `ROW#${item.pk}`, target: item.pk, expires_at: item.expires_at });
@@ -54,6 +63,25 @@ const scopes = (value: unknown): string[] =>
   String(value ?? '')
     .split(/\s+/)
     .filter(Boolean);
+/** The code's PKCE verifier and redirect, as the client gave them. */
+function proved(item: OAuthRow, body: Record<string, string>): boolean {
+  const verifier = body.code_verifier ?? '',
+    challenge = createHash('sha256').update(verifier).digest('base64url');
+  return (
+    /^[A-Za-z0-9._~-]{43,128}$/.test(verifier) &&
+    same(challenge, String(item.challenge)) &&
+    body.redirect_uri === item.redirect_uri
+  );
+}
+/** Where the browser goes after consent: the client's redirect, with the
+ * answer and its state. */
+function back(item: OAuthRow, answer: Record<string, string>): { redirect: string } {
+  const params = new URLSearchParams(answer);
+  if (item.state) params.set('state', String(item.state));
+  return {
+    redirect: String(item.redirect_uri) + (String(item.redirect_uri).includes('?') ? '&' : '?') + params.toString()
+  };
+}
 export function validRedirect(uri: unknown): uri is string {
   if (
     typeof uri !== 'string' ||
@@ -63,6 +91,9 @@ export function validRedirect(uri: unknown): uri is string {
     uri.includes('\\')
   )
     return false;
+  // A native app's own scheme (RFC 8252, 7.1): reverse DNS, so it has a dot,
+  // like com.yourversionnumber.changelog:/oauth. No web scheme has one.
+  if (/^[a-z][a-z0-9+-]*(\.[a-z0-9+-]+)+:\//i.test(uri)) return true;
   try {
     const u = new URL(uri);
     // The URL parser canonicalizes integers/dot forms; only explicit loopback
@@ -85,6 +116,17 @@ export class OAuthService {
   constructor(readonly context: OAuthContext) {}
   get resource(): string {
     return this.context.origin + '/mcp';
+  }
+  /** The API's resource, which an app signs in to. */
+  get appResource(): string {
+    return this.context.origin + '/v1';
+  }
+  /** An app's sign-in makes an API token, which only the web's store can. */
+  private tokens(): Tokens {
+    const store = this.context.store as OAuthStore & Partial<TokenStore>;
+    if (typeof store.apiTokens !== 'function' || typeof store.dropToken !== 'function')
+      fail('temporarily_unavailable', 503);
+    return new Tokens({ ...this.context, store: store as OAuthStore & TokenStore });
   }
   private async familyFor(item: OAuthRow): Promise<OAuthRow | null> {
     const { store, now } = this.context;
@@ -156,6 +198,7 @@ export class OAuthService {
   }
   async exchange(body: Record<string, string>): Promise<OAuthRow> {
     const { store, now } = this.context;
+    if (body.resource === this.appResource) return this.signedIn(body);
     if (body.resource !== this.resource) fail('invalid_target');
     const kind = body.grant_type;
     const prefix =
@@ -175,14 +218,7 @@ export class OAuthService {
     const family = await this.familyFor(item);
     if (!live(item, now) || !family) fail('invalid_grant');
     if (kind === 'authorization_code') {
-      const verifier = body.code_verifier ?? '',
-        challenge = createHash('sha256').update(verifier).digest('base64url');
-      if (
-        !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) ||
-        !same(challenge, String(item.challenge)) ||
-        body.redirect_uri !== item.redirect_uri
-      )
-        fail('invalid_grant');
+      if (!proved(item, body)) fail('invalid_grant');
     } else if (item.version !== family.version) {
       await this.revoke(String(item.family), String(item.user_id), 'token-reuse');
       fail('invalid_grant');
@@ -212,6 +248,7 @@ export class OAuthService {
         ? await store.mcpGet('OAUTHPENDING#' + pending)
         : null;
     if (!live(item, now) || item.used) fail('request_expired');
+    if (item.resource === this.appResource) return this.signIn(uid, item, body);
     if (!Object.hasOwn(body, 'approve')) return { client_name: item.client_name, scope: item.scope };
     if (
       typeof body.approve !== 'boolean' ||
@@ -265,11 +302,90 @@ export class OAuthService {
       );
     if (!(await store.mcpCommit(changes, uid))) fail('request_expired');
     if (body.approve) await this.record(uid, 'connection.added', family, { via: 'web', scopes: scope });
-    const params = new URLSearchParams(body.approve ? { code } : { error: 'access_denied' });
-    if (item.state) params.set('state', String(item.state));
+    return back(item, body.approve ? { code } : { error: 'access_denied' });
+  }
+  /** An app's sign-in, in the owner's email-verified session: asked, it
+   * answers the app's name, what it asked for and a name for its token;
+   * approved, the token the owner chose (tokenFields: a name, the scopes
+   * ticked from those asked for, an expiry) goes in a code, and nothing is
+   * granted until the app spends it. */
+  private async signIn(uid: string, item: OAuthRow, body: OAuthRow): Promise<OAuthRow> {
+    const { store, now } = this.context,
+      tokens = this.tokens();
+    if (!Object.hasOwn(body, 'approve'))
+      return {
+        client_name: item.client_name,
+        scope: item.scope,
+        resource: '/v1',
+        name: await tokens.nameFor(uid, item.client_name)
+      };
+    if (typeof body.approve !== 'boolean') fail();
+    const code = newToken(),
+      changes: OAuthChange[] = [[{ ...item, used: true }, Number(item.revision)]];
+    if (body.approve) {
+      const fields = tokenFields(body);
+      if (scopes(fields.scope).some((s) => !scopes(item.scope).includes(s))) fail('invalid_scope');
+      await tokens.room(uid, fields.name);
+      const codeRow = row('OAUTHCODE#' + digest(code), {
+        user_id: uid,
+        client_id: item.client_id,
+        client_name: item.client_name,
+        redirect_uri: item.redirect_uri,
+        challenge: item.challenge,
+        resource: item.resource,
+        name: fields.name,
+        scope: fields.scope,
+        expiry: fields.expiry,
+        expires_at: now + CODE_SECONDS
+      });
+      changes.push([codeRow, null], [tracked(codeRow, uid), null]);
+    }
+    if (!(await store.mcpCommit(changes, uid))) fail('request_expired');
+    return back(item, body.approve ? { code } : { error: 'access_denied' });
+  }
+  /** An app spends its code: the token is made in the same transaction that
+   * marks the code used, and answered once. A code that comes back a second
+   * time may have been stolen, so the token it made ends (RFC 6749, 4.1.2). */
+  private async signedIn(body: Record<string, string>): Promise<OAuthRow> {
+    const { store, now } = this.context;
+    if (body.grant_type !== 'authorization_code') fail('unsupported_grant_type');
+    const item = await store.mcpGet('OAUTHCODE#' + digest(body.code ?? ''));
+    if (!item || item.client_id !== body.client_id || item.resource !== this.appResource) fail('invalid_grant');
+    const uid = String(item.user_id),
+      tokens = this.tokens();
+    if (item.used) {
+      if (item.token) await tokens.revoke(uid, String(item.token), 'token-reuse').catch(() => undefined);
+      fail('invalid_grant');
+    }
+    if (!live(item, now) || !proved(item, body)) fail('invalid_grant');
+    if (body.scope && body.scope !== item.scope) fail('invalid_scope');
+    const profile = await store.mcpProfile(uid);
+    if (!profile || profile.mcp_deleting) fail('invalid_grant');
+    const fields = { name: String(item.name), scope: String(item.scope), expiry: String(item.expiry) };
+    // Another token may have taken the name, or the last place, since.
+    await tokens.room(uid, fields.name).catch(() => fail('invalid_grant'));
+    const id = tokenId(),
+      made = await tokens.issue(uid, fields, {
+        id,
+        client_id: String(item.client_id),
+        app: String(item.client_name ?? ''),
+        also: [[{ ...item, used: true, token: id }, Number(item.revision)]]
+      });
+    if (!made) fail('invalid_grant');
+    const seconds = TOKEN_EXPIRY[fields.expiry];
     return {
-      redirect: String(item.redirect_uri) + (String(item.redirect_uri).includes('?') ? '&' : '?') + params.toString()
+      access_token: made.token,
+      token_type: 'Bearer',
+      scope: fields.scope,
+      ...(seconds == null ? {} : { expires_in: seconds })
     };
+  }
+  /** An app's own sign out at /oauth/revoke, as `DELETE /v1/token` is. */
+  async signOut(pointer: OAuthRow): Promise<void> {
+    if (pointer.revoked) return;
+    await this.tokens()
+      .revoke(String(pointer.user_id), String(pointer.token), 'client')
+      .catch(() => undefined);
   }
   async disconnect(uid: string, fid: string, writeOnly = false): Promise<{ ok: true }> {
     if (!writeOnly) {
@@ -431,6 +547,13 @@ export async function publicOAuth(
         scopes_supported: SCOPES,
         bearer_methods_supported: ['header']
       });
+    if (request.method === 'GET' && path === '/.well-known/oauth-protected-resource/v1')
+      return oauthResponse(200, {
+        resource: service.appResource,
+        authorization_servers: [context.origin],
+        scopes_supported: APP_SCOPES,
+        bearer_methods_supported: ['header']
+      });
     if (request.method === 'GET' && path === '/.well-known/oauth-authorization-server')
       return oauthResponse(200, {
         issuer: context.origin,
@@ -438,7 +561,7 @@ export async function publicOAuth(
         token_endpoint: context.origin + '/oauth/token',
         registration_endpoint: context.origin + '/oauth/register',
         revocation_endpoint: context.origin + '/oauth/revoke',
-        scopes_supported: SCOPES,
+        scopes_supported: [...new Set([...SCOPES, ...APP_SCOPES])].sort(),
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
@@ -498,16 +621,23 @@ export async function publicOAuth(
       if (!/^[A-Za-z0-9_-]{43}$/.test(cid)) fail('invalid_client');
       const client = await context.store.mcpGet('OAUTHCLIENT#' + cid);
       if (!live(client, context.now) || !(client.redirect_uris as string[]).includes(redirect)) fail('invalid_client');
-      const requested = [...new Set(scopes(b.scope ?? 'notes:read media:read notes:write upcoming'))],
+      // An app signing in to /v1 asks for a token's scopes; an agent's
+      // connection to /mcp always reads.
+      const app = b.resource === service.appResource,
+        requested = [
+          ...new Set(scopes(b.scope ?? (app ? 'notes:write' : 'notes:read media:read notes:write upcoming')))
+        ],
         challenge = b.code_challenge ?? '',
         state = b.state ?? '';
       if (
         b.response_type !== 'code' ||
-        b.resource !== service.resource ||
+        (b.resource !== service.resource && !app) ||
         b.code_challenge_method !== 'S256' ||
         !/^[A-Za-z0-9_-]{43}$/.test(challenge) ||
-        requested.some((s) => !SCOPES.includes(s)) ||
-        !requested.includes('notes:read') ||
+        requested.some((s) => !(app ? APP_SCOPES : SCOPES).includes(s)) ||
+        (app
+          ? !requested.length || (requested.includes('media:write') && !requested.includes('notes:write'))
+          : !requested.includes('notes:read')) ||
         codePointLength(state) > 1024
       )
         fail();
@@ -516,10 +646,10 @@ export async function publicOAuth(
           client_id: cid,
           client_name: client.client_name,
           redirect_uri: redirect,
-          scope: requested.sort().join(' '),
+          scope: app ? APP_SCOPES.filter((s) => requested.includes(s)).join(' ') : requested.sort().join(' '),
           challenge,
           state,
-          resource: service.resource,
+          resource: app ? service.appResource : service.resource,
           expires_at: context.now + 600
         });
       if (!(await context.store.mcpCommit([[item, null]]))) fail('temporarily_unavailable', 503);
@@ -537,10 +667,12 @@ export async function publicOAuth(
       if (path === '/oauth/revoke') {
         for (const prefix of ['OAUTHACCESS#', 'OAUTHREFRESH#']) {
           const item = await context.store.mcpGet(prefix + digest(b.token ?? ''));
-          // An API token's pointer has no client_id: it is revoked only
-          // through /v1 or Settings, never here.
-          if (item && b.client_id && item.client_id === b.client_id)
-            await service.revoke(String(item.family), String(item.user_id), 'client');
+          // An API token made in Settings has no client_id: it is revoked
+          // only through /v1 or Settings, never here. One an app signed in
+          // for names its client, which may end it as its sign out.
+          if (!item || !b.client_id || item.client_id !== b.client_id) continue;
+          if (item.kind === 'token') await service.signOut(item);
+          else await service.revoke(String(item.family), String(item.user_id), 'client');
         }
         return oauthResponse(200, {});
       }

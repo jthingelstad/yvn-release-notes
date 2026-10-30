@@ -1,7 +1,10 @@
 // Approval uses the owner's existing email-verified session. The pending
-// request stays in the fragment, out of page counts and server URLs.
+// request stays in the fragment, out of page counts and server URLs. An
+// agent asks to connect to /mcp; an app asks to sign in to /v1, which makes
+// it an API token (docs/API.md, Phase 5).
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { EXPIRY, OFFERED } from '../components/api-tokens.tsx';
 import { AppLink, Bar, ErrorLine, Failed, Loading, useBusy, useProblem, useTitle } from '../components/common.tsx';
 import { api, load } from '../lib/api.ts';
 import { useHashParam, useMe } from '../lib/nav.ts';
@@ -9,10 +12,12 @@ import { useHashParam, useMe } from '../lib/nav.ts';
 interface RequestInfo {
   client_name: string;
   scope: string;
+  // An app's sign-in: the API, and a name for its token no other has.
+  resource?: '/v1';
+  name?: string;
 }
 
 export function Connect() {
-  useTitle('Connect an agent');
   const request = useHashParam('request');
   const me = useMe();
   const info = useQuery({
@@ -21,6 +26,7 @@ export function Connect() {
     enabled: !!request,
     retry: false
   });
+  useTitle(info.data?.resource === '/v1' ? 'Sign in an app' : 'Connect an agent');
   const [media, setMedia] = useState(false);
   const [write, setWrite] = useState(false);
   const [files, setFiles] = useState(false);
@@ -59,7 +65,10 @@ export function Connect() {
           <p>Start again from your agent if this request has expired.</p>
         </>
       )}
-      {info.data && (
+      {info.data?.resource === '/v1' && request && (
+        <AppSignIn info={info.data} request={request} email={me.data?.email} />
+      )}
+      {info.data && info.data.resource !== '/v1' && (
         <section className="agent-content connect-request">
           <p className="kicker">Approval request</p>
           <h1>{info.data.client_name} wants to read your notes</h1>
@@ -147,6 +156,107 @@ export function Connect() {
         </section>
       )}
     </>
+  );
+}
+
+// An app signing in chooses an API token, as Settings makes one: its name,
+// what it may do from what the app asked for, and when it expires. Nothing
+// is made until the app takes the answer back.
+export function AppSignIn({ info, request, email }: { info: RequestInfo; request: string; email?: string }) {
+  const asked = OFFERED.filter(([s]) => info.scope.split(' ').includes(s));
+  const [name, setName] = useState(info.name ?? '');
+  const [scopes, setScopes] = useState<string[]>(asked.map(([s]) => s));
+  const [expiry, setExpiry] = useState('1y');
+  const [busy, run] = useBusy();
+  const problem = useProblem();
+  const form = useRef<HTMLFormElement>(null);
+  const decide = (approve: boolean) =>
+    run(async () => {
+      problem.clear();
+      const r = await api<{ redirect: string }>(
+        'POST',
+        '/api/mcp/authorize',
+        approve ? { request, approve, name, scopes, expiry } : { request, approve }
+      );
+      if (r.ok) return window.location.assign(r.data.redirect);
+      if (r.data?.error === 'request_expired' || !approve)
+        return problem.show('This sign-in request expired. Start again from the app.');
+      problem.show(r.data, null, form.current);
+    });
+  return (
+    <section className="agent-content connect-request">
+      <p className="kicker">Sign-in request</p>
+      <h1>{info.client_name} wants to sign in</h1>
+      <p className="hint">
+        Signed in as {email}. The app supplied this name; allow it only if you started this from the app.
+      </p>
+      <p>
+        Allowing makes it an API token, like one you make in Settings. It lasts until it expires, you revoke it under
+        API tokens, or the app signs out.
+      </p>
+      <form
+        ref={form}
+        className="stack tight"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void decide(true);
+        }}
+      >
+        <label>
+          Name
+          <input
+            name="token-name"
+            value={name}
+            maxLength={40}
+            autoComplete="off"
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+        <fieldset>
+          <legend>It may</legend>
+          {asked.map(([scope, said]) => (
+            <label key={scope}>
+              <input
+                type="checkbox"
+                checked={scopes.includes(scope)}
+                disabled={scope === 'media:write' && !scopes.includes('notes:write')}
+                onChange={(e) =>
+                  setScopes((now) =>
+                    e.target.checked
+                      ? [...now, scope]
+                      : now.filter((s) => s !== scope && !(scope === 'notes:write' && s === 'media:write'))
+                  )
+                }
+              />{' '}
+              {said}
+            </label>
+          ))}
+        </fieldset>
+        <label>
+          Expires
+          <select name="token-expiry" value={expiry} onChange={(e) => setExpiry(e.target.value)}>
+            {EXPIRY.map(([value, said]) => (
+              <option key={value} value={value}>
+                {said}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="hint">
+          Every token reads your version, today’s date and your tags. Notes it adds are yours, shown “via” its name. No
+          token reads your notes.
+        </p>
+        <div className="row">
+          <button className="go" type="submit" disabled={busy || !scopes.length}>
+            Allow
+          </button>
+          <button type="button" className="quiet" disabled={busy} onClick={() => decide(false)}>
+            Cancel
+          </button>
+        </div>
+      </form>
+      <ErrorLine line={problem.line} />
+    </section>
   );
 }
 

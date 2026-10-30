@@ -13,7 +13,7 @@ import { MAX_FILES, MAX_UPLOAD } from '../../packages/backend/media.ts';
 import { NEARBY_MAX } from '../../packages/backend/places.ts';
 import { FORM_SECONDS, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY } from '../../packages/backend/uploads.ts';
 import { PINS_MAX, RECENT_DAYS, RECENT_MAX } from '../../packages/backend/tag-row.ts';
-import { V1_LIMITS, V1_RECEIPT_SECONDS, V1_UPCOMING_MAX } from '../../packages/backend/tokens.ts';
+import { TOKEN_SCOPES, V1_LIMITS, V1_RECEIPT_SECONDS, V1_UPCOMING_MAX } from '../../packages/backend/tokens.ts';
 import { MAX_TAG } from '../../packages/domain/tags.ts';
 import { UPCOMING_KINDS, UPCOMING_MAX, UPCOMING_TITLE_MAX } from '../../packages/domain/upcoming.ts';
 import { API_CHANGES, API_VERSION, ME_DAYS, REMINDER_DAYS_MAX, V1_BODY, V1_ERRORS, V1_ROUTES } from './v1.ts';
@@ -660,6 +660,13 @@ const SCHEMAS: Record<string, Doc> = {
 };
 
 const header = (description: string, schema: Doc = { type: 'integer' }): Doc => ({ description, schema });
+/** What each scope opens, as the sign-in's consent offers it. */
+const SIGN_IN_SCOPES: Record<string, string> = {
+  'notes:write': 'Add notes, and change or delete the notes it adds',
+  'media:write': 'Add files to the notes it adds (only beside notes:write)',
+  upcoming: 'Read and change Upcoming dates and their reminders',
+  activity: 'Read the activity log, without any words from it'
+};
 
 /** The whole document, as served and as kept in the contract. */
 export function openApi(): Doc {
@@ -693,7 +700,8 @@ export function openApi(): Doc {
     (paths[route.template] ??= {})[route.method.toLowerCase()] = {
       ...operation,
       ...(parameters.length ? { parameters } : {}),
-      security: [{ token: route.scope ? [route.scope] : [] }],
+      // One token either way: made in Settings, or by an app's sign-in.
+      security: [{ token: route.scope ? [route.scope] : [] }, { signIn: route.scope ? [route.scope] : [] }],
       ...(route.scope ? { 'x-scope': route.scope } : {}),
       responses: { ...(operation.responses as Doc), default: { $ref: '#/components/responses/Error' } }
     };
@@ -706,6 +714,7 @@ export function openApi(): Doc {
       summary: 'Add notes to Release Notes from anywhere: a terminal, a script or an app.',
       description: [
         'Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. ' +
+          'An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. ' +
           'Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, ' +
           'recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` ' +
           'scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at ' +
@@ -730,6 +739,22 @@ export function openApi(): Doc {
           type: 'http',
           scheme: 'bearer',
           description: 'An API token: rn_ and 43 more characters, shown once when it is made.'
+        },
+        signIn: {
+          type: 'oauth2',
+          description:
+            'An app signing in: register at /oauth/register (a public client, with its own https or ' +
+            'reverse-DNS callback), then the authorization code with PKCE (S256) and `resource` ' +
+            'https://notes.yourversionnumber.com/v1. The owner names the token, ticks its scopes from those ' +
+            'asked for and picks its expiry; the answer is that API token, with no refresh token. Discovery is ' +
+            'at /.well-known/oauth-protected-resource/v1.',
+          flows: {
+            authorizationCode: {
+              authorizationUrl: 'https://notes.yourversionnumber.com/oauth/authorize',
+              tokenUrl: 'https://notes.yourversionnumber.com/oauth/token',
+              scopes: Object.fromEntries(TOKEN_SCOPES.map((scope) => [scope, SIGN_IN_SCOPES[scope] ?? scope]))
+            }
+          }
         }
       },
       parameters: {

@@ -264,11 +264,12 @@ Public protocol routes, separate from `/api` cookie authentication:
 | Route | Purpose |
 | --- | --- |
 | `GET /.well-known/oauth-protected-resource/mcp` | Resource and authorization server discovery. The root variant also works. |
+| `GET /.well-known/oauth-protected-resource/v1` | The API's resource, which an app signs in to (docs/API.md, Phase 5), with the token scopes. |
 | `GET /.well-known/oauth-authorization-server` | OAuth endpoints and supported scopes/grants/PKCE. |
-| `POST /oauth/register` | Public clients, exact HTTPS or loopback HTTP redirects, no secret. |
+| `POST /oauth/register` | Public clients, exact HTTPS, loopback HTTP or reverse-DNS private-use (RFC 8252) redirects, no secret. |
 | `GET /oauth/authorize` | Validate registered redirect, resource, scope and S256 challenge; create ten-minute pending request, redirect to `/connect/#request=…`. |
 | `POST /oauth/token` | Form-encoded code or refresh exchange, resource and client id required. |
-| `POST /oauth/revoke` | Form-encoded token and matching client id; idempotent family revocation. |
+| `POST /oauth/revoke` | Form-encoded token and matching client id; idempotent family revocation, or an app's signed-in API token. |
 
 `notes:read` is required; `media:read` additionally permits file bytes and
 private downloads. Optional `notes:write` delegates adding notes, and appending
@@ -279,8 +280,10 @@ it in place from Settings ("Allow files for ..."). "Turn off adding" removes
 both. Approval is only through `POST /api/mcp/authorize` with
 an email-verified browser session and the site's Origin. Bearer tokens
 cannot authenticate existing web routes. Denying consumes the request and
-returns access_denied to the validated redirect. The resource is exactly
-`https://notes.yourversionnumber.com/mcp`. Tokens are 256-bit opaque values
+returns access_denied to the validated redirect. An agent's resource is
+exactly `https://notes.yourversionnumber.com/mcp`; `/v1` is an app's
+sign-in, which makes an API token instead of a connection (docs/API.md,
+Phase 5), and its code, bearer and grant never open `/mcp`. Tokens are 256-bit opaque values
 stored only by SHA-256 hash. Codes last five minutes, access tokens one hour,
 refresh tokens thirty days sliding. Refresh tokens rotate atomically; reuse
 revokes the family, including a simultaneous competing exchange. Rotating

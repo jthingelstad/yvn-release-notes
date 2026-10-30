@@ -326,7 +326,7 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
     case 'connection.added':
       if (e.token)
         return [
-          `Made the API token ${e.token}`,
+          e.app ? `Signed in ${e.app} as the API token ${e.token}` : `Made the API token ${e.token}`,
           e.scopes ? `It may ${scopes(e.scopes)}.` : 'It reads your version and tags.'
         ];
       return [`Connected ${e.client}`, `It may ${scopes(e.scopes)}.`];

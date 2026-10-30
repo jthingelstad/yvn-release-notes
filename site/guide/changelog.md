@@ -1,11 +1,23 @@
 ---
 title: Release Notes for Changelog
-description: Changelog, the iPhone app for getting notes into Release Notes, and everything it has learned to do, one version at a time.
+description: Changelog, the iPhone app for getting notes into Release Notes, how to get it, and everything it has learned to do, one version at a time.
 ---
 
-Changelog gets a note into Release Notes in two taps. It isn't a second Release Notes: you read, search and look back on the web. You sign it in with Release Notes, which asks you to name the [API token](/guide/tokens/) it keeps and choose what it may do, and it talks to Release Notes through [the API](/guide/api/), as any app you write yourself can. Its code is open, [on GitHub](https://github.com/jthingelstad/changelog-ios).
+Changelog is Release Notes on your iPhone. Write a line and Commit, and it's in today's notes: two taps. Add photos, a voice memo or where you are. Siri, a widget, the Action Button and the share sheet start a note too, and your Upcoming dates and everything that came in are a tab away.
 
-Changelog is in testing with Jamie on TestFlight, and isn't in the App Store yet.
+![Log in Changelog: today's version, 4.5.138, large, then "What changed today?" with a line being written, tags to tap and a tangerine Commit.](/guide/changelog/log.png)
+![Upcoming in Changelog, in dark mode: a trip to Paris, a book club night, two birthdays and an anniversary, soonest first.](/guide/changelog/upcoming.png)
+![Activity in Changelog: notes filed, dates added and badges earned, each with its time.](/guide/changelog/activity.png)
+
+## Get it
+
+Changelog is in testing on TestFlight, Apple's app for trying an app before it's in the App Store. On your iPhone, open [the TestFlight invitation](https://testflight.apple.com/join/YxT4gRQW): it takes you to TestFlight, then installs Changelog. It needs a Release Notes account, which you sign in with when it opens. Tell Jamie what you find from TestFlight, or, signed in here, from [Feedback](/feedback/).
+
+## How it works
+
+Changelog isn't a second Release Notes: you read, search and look back on the web. You sign it in with Release Notes, which asks you to name the [API token](/guide/tokens/) it keeps and choose what it may do, and it talks to Release Notes through [the API](/guide/api/), as any app you write yourself can. Its code is open, [on GitHub](https://github.com/jthingelstad/changelog-ios).
+
+## Version by version
 
 It numbers itself the way Release Notes numbers you. It started on October 29, 2026, so that day is 0.0.0, and the foot of its Settings names the version and the build. Newest first.
 

@@ -44,6 +44,12 @@ export const FEATURES: FeatureGroup[] = [
         guide: '/guide/start/'
       },
       {
+        head: 'An iPhone app.',
+        line: 'Changelog adds a note in two taps, with photos, a voice memo or where you are, or from Siri, a widget or the share sheet. It’s in testing on TestFlight.',
+        guide: '/guide/changelog/',
+        tour: false
+      },
+      {
         head: 'Your assistant, if you like.',
         line: 'Connect Claude or ChatGPT to read your notes, and to add to them only if you allow it.',
         guide: '/guide/agents/'

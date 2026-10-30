@@ -210,9 +210,11 @@ There is no new DNS record, certificate or function.
 - **Dates and times:** `YYYY-MM-DD` dates are days in the account's own
   zone; times are RFC 3339.
 - **Headers on every answer:**
-  - `Cache-Control: no-store`;
+  - `Cache-Control: no-store` (`/v1/openapi.json`, which needs no token,
+    is `public, max-age=300`);
   - `Release-Notes-Version: 4.5.137`, today's version;
-  - `API-Version: 1.0.0`.
+  - `API-Version: 1.4.0`, the API's own version (`API_VERSION` in
+    `server/mcp/v1.ts`).
 - **Idempotency:** every write takes an `Idempotency-Key` header (1 to 128
   printable ASCII characters). Receipts last **7 days** on `/v1`, against
   24 hours on MCP, because a phone can be offline for a weekend.

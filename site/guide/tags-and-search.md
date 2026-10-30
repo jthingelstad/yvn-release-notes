@@ -34,7 +34,7 @@ Search looks in:
 
 Results come newest first. When many days match, you see the newest 100 days, and more words narrow it.
 
-What you search for goes to Release Notes inside the request, never in a web address, and it's never logged.
+What you search for goes to Release Notes inside the request, never in an address a server sees: the page keeps your words after the # in the address bar, a part browsers don't send. It's never logged.
 
 ## Upcoming has its own tags
 

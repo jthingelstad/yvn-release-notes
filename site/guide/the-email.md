@@ -9,7 +9,11 @@ The email is type on paper, with no ads and nothing loaded from elsewhere. Parts
 
 The subject and the top of the email are that day's version number: "You're 5.2.113 today". Under the date is the day's forecast for your city. On your birthday the email says so. With badges on, a short line beside the number points out a few special days, such as a round number like 5.4.300.
 
-Under the number, 24 dots fill in as the year goes, with the next release and how many days until it ships.
+Under the number, 24 dots fill in as the year goes, with the next release and how many days until it ships, and which week and day of your life this is.
+
+## Release Notes about Release Notes
+
+Now and then Jamie adds a short note about what's new in Release Notes. It has its own heading, so you can tell it from your own notes.
 
 ## The ask
 
@@ -20,10 +24,6 @@ Under the number, 24 dots fill in as the year goes, with the next release and ho
 One quiet line counts the days in a row you've written, up to yesterday, and what a reply today would make it. Miss a day and the count starts over without a word; the line shows your longest instead. Under it, your notes, days and photos so far.
 
 If you have badges on (they are, unless you turn them off in Settings), a line names any badge you've earned since the last email, with a link to all of them.
-
-## Release Notes about Release Notes
-
-Now and then Jamie adds a short note about what's new in Release Notes. It has its own heading, so you can tell it from your own notes.
 
 ## Upcoming
 

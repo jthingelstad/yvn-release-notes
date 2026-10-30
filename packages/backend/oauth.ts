@@ -14,6 +14,7 @@ import type { ActivityEvent } from '../domain/activity.ts';
 import { again, recordActivity } from './activity.ts';
 import { safeLog, type Log } from './services.ts';
 import { TOKEN_EXPIRY, TOKEN_SCOPES, tokenFields, tokenId, Tokens, type TokenStore } from './tokens.ts';
+import { ApiError } from './sessions.ts';
 export type OAuthRow = Record<string, unknown>;
 export type OAuthChange = [OAuthRow, number | null];
 export interface OAuthStore {
@@ -380,12 +381,21 @@ export class OAuthService {
       ...(seconds == null ? {} : { expires_in: seconds })
     };
   }
-  /** An app's own sign out at /oauth/revoke, as `DELETE /v1/token` is. */
+  /** An app's own sign out at /oauth/revoke, as `DELETE /v1/token` is. A
+   * token already gone is signed out; any other failure is a 503, so the app
+   * tries again rather than believing a token that still works has ended. */
   async signOut(pointer: OAuthRow): Promise<void> {
     if (pointer.revoked) return;
-    await this.tokens()
-      .revoke(String(pointer.user_id), String(pointer.token), 'client')
-      .catch(() => undefined);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.tokens().revoke(String(pointer.user_id), String(pointer.token), 'client');
+        return;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return;
+        if (!(error instanceof ApiError && error.error === 'try-again')) break;
+      }
+    }
+    fail('temporarily_unavailable', 503);
   }
   async disconnect(uid: string, fid: string, writeOnly = false): Promise<{ ok: true }> {
     if (!writeOnly) {

@@ -1,7 +1,7 @@
 // API tokens (docs/API.md, Tokens), every subscriber's own. A token is shown
 // once, as it is made; after that Settings knows only its name, scopes and
 // dates.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { SettingsGroup } from './settings-group.tsx';
 import { api, get } from '../lib/api.ts';
@@ -47,6 +47,11 @@ export function ApiTokens() {
   const [copied, setCopied] = useState(false);
   const form = useRef<HTMLFormElement>(null);
   const copyButton = useRef<HTMLButtonElement>(null);
+  // A new token shows above the list, which can be a long way up from the
+  // form: its Copy button takes the focus, which brings it into view.
+  useEffect(() => {
+    if (shown) copyButton.current?.focus();
+  }, [shown]);
 
   const make = () =>
     run(async () => {
@@ -96,10 +101,10 @@ export function ApiTokens() {
         <section className="section" id="token-shown">
           <h3>{shown.name}</h3>
           <p className="hint">Copy it now. This is the only time it is shown.</p>
-          <p className="value" data-field="api-token">
+          <p className="value mono" data-field="api-token">
             {shown.token}
           </p>
-          <button type="button" ref={copyButton} onClick={copy}>
+          <button type="button" className="quiet" ref={copyButton} onClick={copy}>
             Copy token
           </button>
           <p className="aside saved" role="status" hidden={!copied}>
@@ -142,10 +147,10 @@ export function ApiTokens() {
               onChange={(e) => setName(e.target.value)}
             />
           </label>
-          <fieldset>
+          <fieldset className="scopes">
             <legend>It may</legend>
             {OFFERED.map(([scope, said]) => (
-              <label key={scope}>
+              <label className="check" key={scope}>
                 <input
                   type="checkbox"
                   checked={scopes.includes(scope)}
@@ -176,7 +181,7 @@ export function ApiTokens() {
             Every token reads your version, today’s date and your tags. Notes it adds are yours, shown “via” its name.
             No token reads your notes.
           </p>
-          <button type="submit" disabled={busy}>
+          <button className="go" type="submit" disabled={busy}>
             Make token
           </button>
         </form>

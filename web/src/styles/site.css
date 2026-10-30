@@ -934,6 +934,25 @@ label.until {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+/* What a token may do, in Settings and on an app's sign-in: a box a line
+   under a legend set like the form's other labels, with no frame. */
+fieldset.scopes {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+fieldset.scopes legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+/* A new token, shown once: it wraps rather than running off a phone. */
+[data-field='api-token'] {
+  font-size: 15px;
+  word-break: break-all;
+}
 .connect-request {
   display: flex;
   flex-direction: column;

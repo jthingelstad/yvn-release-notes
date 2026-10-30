@@ -226,11 +226,14 @@ function shape(op: string, args: Arguments): void {
     throw new ApiRefusal('invalid_request', 'Send the revision you read, as it came.', { field: 'revision' });
 }
 
-/** A refused date in `/v1`'s words, naming the entry (`change[2]`). */
-function upcomingRefusal(error: ApiError): ApiRefusal {
-  const list = error.extra.list,
+/** A refused date in `/v1`'s words, naming the entry (`change[2]`); for
+ * `DELETE /v1/upcoming/{id}` (`one`), which sends no list, the date is the
+ * one in the address and a stale revision is the `revision` sent with it. */
+function upcomingRefusal(error: ApiError, one = false): ApiRefusal {
+  const list = one ? null : error.extra.list,
     at = typeof list === 'string' && typeof error.extra.index === 'number' ? `${list}[${error.extra.index}]` : null,
-    field = at ?? (error.error === 'upcoming-batch' ? 'add' : null),
+    field =
+      at ?? (error.error === 'upcoming-batch' ? 'add' : one && error.error === 'upcoming-changed' ? 'revision' : null),
     where = at ? ` (${at})` : '',
     extra = field ? { field } : {};
   if (error.error === 'places-failed')
@@ -479,7 +482,7 @@ export async function writeApi(
         )
       ).changes;
     } catch (error) {
-      if (error instanceof ApiError) throw upcomingRefusal(error);
+      if (error instanceof ApiError) throw upcomingRefusal(error, op === 'upcoming.delete');
       throw error;
     }
   };

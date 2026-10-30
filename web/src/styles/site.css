@@ -1331,6 +1331,13 @@ main:has(.bar--app) .kicker + h1 {
 .tags .hint {
   font-size: 14px;
 }
+/* A tag can be 50 characters (MAX_TAG), wider than a phone: in a list of
+   tags it breaks where it must rather than running off the screen. */
+.tags a.tag,
+.tags .quiet {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .other-releases {
   margin-top: 56px;
   gap: 0 28px;
@@ -2896,6 +2903,8 @@ fieldset.book-fields {
   gap: 2px 14px;
   padding: 12px 0;
   border-top: 1px solid var(--rule);
+  /* A row that names a long tag breaks it to fit. */
+  overflow-wrap: anywhere;
 }
 .activity-row > .icon {
   color: var(--ink-2);

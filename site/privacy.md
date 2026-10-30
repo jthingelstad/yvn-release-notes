@@ -29,6 +29,10 @@ Nothing you write goes to a model unless you turn it on. "Write out what I say" 
 
 You can connect an agent such as Claude or ChatGPT to your notes. It asks for each kind of access, you approve it, and you can disconnect it in Settings at any time. Its reads show in your Activity, one line for each connection each day.
 
+## The iPhone app
+
+[Changelog](/guide/changelog/), the iPhone app, talks only to Release Notes, with the [API token](/guide/tokens/) it signs in with. The phone keeps that token, the note you're writing and any notes waiting to send. It asks where you are only for Here or "Add where I am", never in the background. It has no analytics, and its widgets and notifications never show a note's words. Revoking its token in Settings signs it out, even on a phone you no longer have.
+
 ## No tracking
 
 The email counts no opens and no clicks. Pages are counted with Tinylytics, without cookies and without anything that names you. The sign-in cookie only keeps you signed in, for 14 days from your last visit.

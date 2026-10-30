@@ -218,8 +218,14 @@ test('changes and removals go from the revision read; one changed since is refus
   // DELETE takes the revision in the address.
   const path = `/v1/upcoming/${String(mom.id)}`;
   assert.equal((await call(app, 'DELETE', path, { token: t.token })).error.field, 'revision');
-  assert.equal((await call(app, 'DELETE', path + '?revision=1', { token: t.token })).error.code, 'revision_mismatch');
-  assert.equal((await call(app, 'DELETE', '/v1/upcoming/nope?revision=1', { token: t.token })).status, 404);
+  // Its refusals name what it sent, never a list it didn't.
+  const staleOne = await call(app, 'DELETE', path + '?revision=1', { token: t.token });
+  assert.deepEqual([staleOne.error.code, staleOne.error.field], ['revision_mismatch', 'revision']);
+  assert.ok(!String(staleOne.error.message).includes('remove['), String(staleOne.error.message));
+  const nope = await call(app, 'DELETE', '/v1/upcoming/nope?revision=1', { token: t.token });
+  assert.equal(nope.status, 404);
+  assert.ok(!Object.hasOwn(nope.error, 'field'), JSON.stringify(nope.error));
+  assert.ok(!String(nope.error.message).includes('remove['), String(nope.error.message));
   const gone = await call(app, 'DELETE', path + '?revision=2', {
     token: t.token,
     headers: { 'idempotency-key': 'd-1' }

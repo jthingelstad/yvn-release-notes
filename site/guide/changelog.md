@@ -9,6 +9,12 @@ Changelog is in testing with Jamie on TestFlight, and isn't in the App Store yet
 
 It numbers itself the way Release Notes numbers you. It started on October 29, 2026, so that day is 0.0.0, and the foot of its Settings names the version and the build. Newest first.
 
+## 0.0.1 · October 30
+
+- Changelog opens again. The build from the night of October 29 closed itself as it opened, once Today had a note in it.
+- Deleting a note from **Today** asks first, since its photos and files go with it.
+- Siri answers sooner on a slow connection, and Changelog sends the note itself, so Siri never asks you to say it again.
+
 ## 0.0.0 · October 29
 
 - **Sign in with Release Notes.** Name the token Changelog keeps, choose what it may do and when it ends, and you're in. Pasting a token you made in Settings still works. Signing out works offline too, and says so if the token still needs ending on the web; if a token is revoked or runs out, Changelog says that's why it signed out. **Privacy** is a tap away in Settings and when you sign in.

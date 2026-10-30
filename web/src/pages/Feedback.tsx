@@ -163,7 +163,7 @@ export function Feedback() {
             ))}
           </ul>
           {shots.length < max && (
-            <label className="quiet">
+            <label className="quiet picker">
               Attach a screenshot
               <input
                 ref={picker}

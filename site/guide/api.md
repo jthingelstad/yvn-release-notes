@@ -27,9 +27,9 @@ It answers with one line: `Filed in 5.2.113.`
 
 - Send the token as `Authorization: Bearer rn_...`, never in the address.
 - Bodies are JSON, at most 128 KB, and a note is up to 20,000 characters.
-- With `Accept: text/plain`, every answer is one short line instead, for terminals.
+- With `Accept: text/plain`, every answer is text instead, for terminals: a line, or a line for each thing a list holds, and a note's words as they are.
 - A day is written `YYYY-MM-DD`, in the time zone your account keeps. A time has its offset, like `2026-10-29T07:45:00-05:00`.
-- Every answer says today's version in `Release-Notes-Version` and the API's own in `API-Version`.
+- Every answer to your token says today's version in `Release-Notes-Version`, and every answer says the API's own in `API-Version`.
 
 ## The requests
 
@@ -90,7 +90,7 @@ On a bad connection you can't always tell whether a note arrived. Send an `Idemp
 
 ## Limits
 
-Each day, from midnight UTC, an account may add 100 notes, make 200 other changes (appends, edits, deletes, files added to a note and pinned tags), save Upcoming 50 times and name 100 spots with Here, across all its tokens, and each token may read 2,000 times. An Upcoming dry run and a city search count as reads. Uploads count with the web's: 200 files and 2 GB a day. Past a limit the answer is `rate_limited`, with `Retry-After`. Every write says where it stands in `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`.
+Each day, from midnight UTC, an account may add 100 notes, make 200 other changes (appends, edits, deletes, files added to a note and pinned tags), save Upcoming 50 times and name 100 spots with Here, across all its tokens, and each token may read 2,000 times. An Upcoming dry run and a city search count as reads. Uploads count with the web's: 200 files and 2 GB a day. Past a limit the answer is `rate_limited`, with `Retry-After`. Every write that counts says where it stands in `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`; a repeat answered from its `Idempotency-Key` counts nothing, and says nothing.
 
 ## Photos, recordings and PDFs
 
@@ -125,7 +125,7 @@ Send photos as JPEG, PNG or WebP where you can. A HEIC photo is kept, with its t
 A note's `place` says where it was. Send one of two things, as it came:
 
 - **A city** from `GET /v1/places?q=Zürich`, which answers the cities by that name, each with its `region`, `country`, time zone and spot. Pick the right one: two cities can share a name.
-- **The spot a device is at**, from `POST /v1/places/here`. Send `lat` and `lon` in degrees, and the device's `accuracy_m` in metres if it has one. The answer's `place` has the spot's city and its neighbourhood as `district`, and `nearby` lists up to 6 businesses within the accuracy. If the person picks one, send the place with `venue` set to its name; nothing is picked for them. The spot is kept to six decimal places, and nothing is kept until a note takes it.
+- **The spot a device is at**, from `POST /v1/places/here`. Send `lat` and `lon` in degrees, and the device's `accuracy_m` in metres if it has one. The answer's `place` has the spot's city and its neighbourhood as `district`, and `nearby` lists up to 6 businesses within the accuracy. If the person picks one, send the place with `venue` set to its name; nothing is picked for them. The spot is kept to six decimal places, and nothing is kept until a note takes it. Here takes no `Idempotency-Key`: if its answer is lost, ask again, and that counts again.
 
 On the web, a note with a spot links to your map. A note with no place shows the day's city, or your home's.
 

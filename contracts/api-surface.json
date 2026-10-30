@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
-    "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 128 KB. Any answer is one short line instead with `Accept: text/plain`.\n\nEvery write takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
+    "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 128 KB. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.5.0",
+        "date": "2026-10-30",
+        "summary": "The contract says what answers do: POST /v1/uploads and POST /v1/places/here take no Idempotency-Key, since neither keeps a receipt (a retry asks again); RateLimit headers come on a write that counts, not on a replay; and Accept: text/plain gives text, a line for each thing a list holds. Accept is read in full, so text/plain wins only where it outranks application/json. A token’s 404 and 405 answers say today’s version too, and a body naming another date or id than the path is invalid_request."
+      },
       {
         "version": "1.4.0",
         "date": "2026-10-30",
@@ -80,7 +85,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: You're 4.5.137 today."
+                  "description": "With Accept: text/plain: You're 4.5.137 today."
                 }
               }
             }
@@ -146,7 +151,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: Filed in 4.5.137."
+                  "description": "With Accept: text/plain: Filed in 4.5.137."
                 }
               }
             }
@@ -192,7 +197,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: The note’s text."
+                  "description": "With Accept: text/plain: The note’s text."
                 }
               }
             }
@@ -276,7 +281,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: Changed in 4.5.137."
+                  "description": "With Accept: text/plain: Changed in 4.5.137."
                 }
               }
             }
@@ -427,7 +432,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: Changed in 4.5.137."
+                  "description": "With Accept: text/plain: Changed in 4.5.137."
                 }
               }
             }
@@ -516,7 +521,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: Changed in 4.5.137."
+                  "description": "With Accept: text/plain: Changed in 4.5.137."
                 }
               }
             }
@@ -591,7 +596,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: The upload’s id."
+                  "description": "With Accept: text/plain: The upload’s id."
                 }
               }
             }
@@ -600,11 +605,6 @@
             "$ref": "#/components/responses/Error"
           }
         },
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Idempotency-Key"
-          }
-        ],
         "security": [
           {
             "token": [
@@ -650,7 +650,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: One line a city."
+                  "description": "With Accept: text/plain: One line a city."
                 }
               }
             }
@@ -678,7 +678,7 @@
       "post": {
         "operationId": "nameHere",
         "summary": "Name the spot a device is at, for a note’s place",
-        "description": "The city and neighbourhood, and the businesses Amazon Location finds within the accuracy (50 to 200 m), up to 6. Send `place` back as a note’s place, with `venue` set to one `nearby` name if the owner picks one; nothing is picked for them. An account names 100 spots a UTC day across its tokens. Nothing is kept until a note takes the place.",
+        "description": "The city and neighbourhood, and the businesses Amazon Location finds within the accuracy (50 to 200 m), up to 6. Send `place` back as a note’s place, with `venue` set to one `nearby` name if the owner picks one; nothing is picked for them. An account names 100 spots a UTC day across its tokens. Nothing is kept until a note takes the place. It has no receipt: a retry asks again, and counts again.",
         "requestBody": {
           "required": true,
           "content": {
@@ -693,9 +693,6 @@
           "200": {
             "description": "OK",
             "headers": {
-              "Idempotent-Replayed": {
-                "$ref": "#/components/headers/Idempotent-Replayed"
-              },
               "RateLimit-Limit": {
                 "$ref": "#/components/headers/RateLimit-Limit"
               },
@@ -715,7 +712,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: The spot’s names, then what is nearby."
+                  "description": "With Accept: text/plain: The spot’s names, then what is nearby."
                 }
               }
             }
@@ -724,11 +721,6 @@
             "$ref": "#/components/responses/Error"
           }
         },
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Idempotency-Key"
-          }
-        ],
         "security": [
           {
             "token": [
@@ -761,7 +753,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: #house #work #running"
+                  "description": "With Accept: text/plain: #house #work #running"
                 }
               }
             }
@@ -821,7 +813,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: #house #work"
+                  "description": "With Accept: text/plain: #house #work"
                 }
               }
             }
@@ -904,7 +896,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: One line a row: when, kind and token."
+                  "description": "With Accept: text/plain: One line a row: when, kind and token."
                 }
               }
             }
@@ -945,7 +937,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: One line a date: its next date and its line."
+                  "description": "With Accept: text/plain: One line a date: its next date and its line."
                 }
               }
             }
@@ -1010,7 +1002,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: Saved: 2 added, 1 changed, 0 removed."
+                  "description": "With Accept: text/plain: Saved: 2 added, 1 changed, 0 removed."
                 }
               }
             }
@@ -1069,7 +1061,7 @@
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "description": "With Accept: text/plain, one short line: One line a reminder: its day, when and line."
+                  "description": "With Accept: text/plain: One line a reminder: its day, when and line."
                 }
               }
             }
@@ -1486,7 +1478,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.4.0"
+            "example": "1.5.0"
           }
         }
       },

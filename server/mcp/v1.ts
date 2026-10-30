@@ -26,11 +26,17 @@ import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.4.0';
+export const API_VERSION = '1.5.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. A new version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.5.0',
+    date: '2026-10-30',
+    summary:
+      'The contract says what answers do: POST /v1/uploads and POST /v1/places/here take no Idempotency-Key, since neither keeps a receipt (a retry asks again); RateLimit headers come on a write that counts, not on a replay; and Accept: text/plain gives text, a line for each thing a list holds. Accept is read in full, so text/plain wins only where it outranks application/json. A token’s 404 and 405 answers say today’s version too, and a body naming another date or id than the path is invalid_request.'
+  },
   {
     version: '1.4.0',
     date: '2026-10-30',
@@ -178,8 +184,25 @@ const MESSAGES: Record<string, string> = {
 type V1Store = ReaderStore & TagRowStore;
 type Headers = Record<string, string>;
 
+/** Text when the Accept header prefers text/plain to JSON. Each takes the q
+ * of the most specific range that names it, the higher q wins, and a tie
+ * goes to the one listed first; no header, or any type alone, is JSON. */
 function wantsPlain(request: Request): boolean {
-  return (request.headers.get('accept') ?? '').split(',')[0]!.trim().toLowerCase().startsWith('text/plain');
+  const ranges = (request.headers.get('accept') ?? '').split(',').map((part, at) => {
+    const [range = '', ...params] = part.split(';').map((s) => s.trim().toLowerCase()),
+      q = params.find((p) => p.startsWith('q='));
+    return { range, at, q: q ? Number(q.slice(2)) : 1 };
+  });
+  const pick = (type: string) => {
+    for (const range of [type, type.split('/')[0] + '/*', '*/*']) {
+      const hit = ranges.find((r) => r.range === range);
+      if (hit) return { q: Number.isFinite(hit.q) ? hit.q : 0, at: hit.at };
+    }
+    return { q: 0, at: Infinity };
+  };
+  const plain = pick('text/plain'),
+    json = pick('application/json');
+  return plain.q > 0 && (plain.q > json.q || (plain.q === json.q && plain.at < json.at));
 }
 
 /** One answer: JSON, or a line for a terminal that asked for text. */
@@ -272,9 +295,25 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
     const path = new URL(request.url).pathname,
       candidates = V1_ROUTES.filter((r) => r.path.test(path)),
       route = candidates.find((r) => r.method === request.method);
-    if (!candidates.length) return refuse('not_found', asText);
+    // A request no route takes still says today's version to a good token.
+    const origin = context.origin,
+      versionOnly = async (): Promise<Headers> => {
+        const known = await checkToken(store, origin, now, request.headers.get('authorization'));
+        return known.ok
+          ? {
+              'release-notes-version': computeVersion(
+                String(known.profile.birthday),
+                localDay(now, String(known.profile.tz))
+              ).toString()
+            }
+          : {};
+      };
+    if (!candidates.length) return refuse('not_found', asText, await versionOnly());
     if (!route)
-      return refuse('method_not_allowed', asText, { allow: [...new Set(candidates.map((r) => r.method))].join(', ') });
+      return refuse('method_not_allowed', asText, {
+        ...(await versionOnly()),
+        allow: [...new Set(candidates.map((r) => r.method))].join(', ')
+      });
     const check = await checkToken(store, context.origin, now, request.headers.get('authorization'));
     if (!check.ok) return refuse(check.code, asText);
     const { token, profile } = check,
@@ -312,8 +351,19 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         } else if (route.name === 'notes.create') args = { text: raw };
         else return refuse('invalid_request', asText, headers, 'Send a JSON body with Content-Type: application/json.');
       }
-      // The path's own fields ({date}, {id}) win over the body's.
-      [...route.template.matchAll(/\{(\w+)\}/g)].forEach((m, i) => (args[m[1]!] = params[i]));
+      // The path names the note or date ({date}, {id}). A body may repeat
+      // them, but one naming another is refused: nothing moves a note.
+      const named = [...route.template.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!),
+        other = named.find((field, i) => field in args && args[field] !== params[i]);
+      if (other)
+        return refuse(
+          'invalid_request',
+          asText,
+          headers,
+          other === 'date' ? 'A note keeps its day: the path names it.' : 'The path names what this changes.',
+          { field: other }
+        );
+      named.forEach((field, i) => (args[field] = params[i]));
       if (route.name === 'upcoming.delete') {
         const revision = new URL(request.url).searchParams.get('revision');
         if (revision === null || !/^[1-9]\d{0,14}$/.test(revision))

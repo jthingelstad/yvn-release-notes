@@ -117,9 +117,10 @@ const OPERATIONS: Record<string, Doc> = {
       'The city and neighbourhood, and the businesses Amazon Location finds within the accuracy (50 to 200 m), ' +
       `up to ${NEARBY_MAX}. Send \`place\` back as a note’s place, with \`venue\` set to one \`nearby\` name if ` +
       `the owner picks one; nothing is picked for them. An account names ${V1_LIMITS.here} spots a UTC day across ` +
-      'its tokens. Nothing is kept until a note takes the place.',
+      'its tokens. Nothing is kept until a note takes the place. It has no receipt: a retry asks again, and ' +
+      'counts again.',
     requestBody: { required: true, content: { 'application/json': { schema: ref('Spot') } } },
-    responses: { '200': answer('Here', 'The spot’s names, then what is nearby.', true) }
+    responses: { '200': answer('Here', 'The spot’s names, then what is nearby.', true, false) }
   },
   tags: {
     operationId: 'getTags',
@@ -220,21 +221,23 @@ function ref(name: string): Doc {
 function cursor(name: string, description: string): Doc {
   return { name, in: 'query', description, schema: { type: 'string' } };
 }
-function writeHeaders(): Doc {
+function writeHeaders(receipt = true): Doc {
   return {
-    'Idempotent-Replayed': { $ref: '#/components/headers/Idempotent-Replayed' },
+    ...(receipt ? { 'Idempotent-Replayed': { $ref: '#/components/headers/Idempotent-Replayed' } } : {}),
     'RateLimit-Limit': { $ref: '#/components/headers/RateLimit-Limit' },
     'RateLimit-Remaining': { $ref: '#/components/headers/RateLimit-Remaining' },
     'RateLimit-Reset': { $ref: '#/components/headers/RateLimit-Reset' }
   };
 }
-function answer(schema: string, plain: string, write = false): Doc {
+/** An OK answer; a counted write says where it stands, and one with a
+ * receipt says when the receipt answered. */
+function answer(schema: string, plain: string, write = false, receipt = write): Doc {
   return {
     description: 'OK',
-    ...(write ? { headers: writeHeaders() } : {}),
+    ...(write ? { headers: writeHeaders(receipt) } : {}),
     content: {
       'application/json': { schema: ref(schema) },
-      'text/plain': { schema: { type: 'string', description: `With Accept: text/plain, one short line: ${plain}` } }
+      'text/plain': { schema: { type: 'string', description: `With Accept: text/plain: ${plain}` } }
     }
   };
 }
@@ -685,6 +688,10 @@ const SCHEMAS: Record<string, Doc> = {
 
 const header = (description: string, schema: Doc = { type: 'integer' }): Doc => ({ description, schema });
 /** What each scope opens, as the sign-in's consent offers it. */
+/** Writes that keep no receipt, so take no Idempotency-Key: a form makes
+ * nothing until a note takes it, and Here is a lookup (workers/api-writes.ts). */
+const NO_RECEIPT = new Set(['uploads.start', 'places.here']);
+
 const SIGN_IN_SCOPES: Record<string, string> = {
   'notes:write': 'Add notes, and change or delete the notes it adds',
   'media:write': 'Add files to the notes it adds (only beside notes:write)',
@@ -719,7 +726,8 @@ export function openApi(): Doc {
         required: true,
         schema: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,80}$' }
       });
-    if (route.method !== 'GET') parameters.push({ $ref: '#/components/parameters/Idempotency-Key' });
+    if (route.method !== 'GET' && !NO_RECEIPT.has(route.name))
+      parameters.push({ $ref: '#/components/parameters/Idempotency-Key' });
     if (Array.isArray(operation.parameters)) parameters.push(...(operation.parameters as Doc[]));
     (paths[route.template] ??= {})[route.method.toLowerCase()] = {
       ...operation,
@@ -743,10 +751,11 @@ export function openApi(): Doc {
           'recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` ' +
           'scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at ' +
           '/guide/api/.',
-        `Bodies are JSON in UTF-8, at most ${V1_BODY / 1024} KB. Any answer is one short line instead with ` +
-          '`Accept: text/plain`.',
-        `Every write takes an optional \`Idempotency-Key\`; its receipt answers the same request again for ` +
-          `${V1_RECEIPT_SECONDS / 86400} days, sent through any token of the account.`,
+        `Bodies are JSON in UTF-8, at most ${V1_BODY / 1024} KB. With \`Accept: text/plain\`, any answer is ` +
+          'text instead: a line, or a line for each thing a list holds, and a note’s words as they are.',
+        `Every write but an upload form and Here takes an optional \`Idempotency-Key\`; its receipt answers ` +
+          `the same request again for ${V1_RECEIPT_SECONDS / 86400} days, sent through any token of the account. ` +
+          'A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.',
         `A day in UTC, an account may add ${V1_LIMITS.create} notes, make ${V1_LIMITS.change} other changes, ` +
           `save Upcoming ${V1_LIMITS.upcoming} times and name ${V1_LIMITS.here} spots across its tokens, and ` +
           `upload ${UPLOADS_A_DAY} files with the web's; each token may read ` +

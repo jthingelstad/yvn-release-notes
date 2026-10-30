@@ -238,10 +238,19 @@ test('routes, methods and scopes', async () => {
     bare = await make(ctx, { name: 'Bare', scopes: ['upcoming'] }),
     // A token always has some scope, so each route is tried with one without its own.
     other = await make(ctx, { name: 'Other', scopes: ['activity'] });
-  assert.equal((await call(app, 'GET', '/v1/nothing', { token: bare.token })).error.code, 'not_found');
+  const nothing = await call(app, 'GET', '/v1/nothing', { token: bare.token });
+  assert.equal(nothing.error.code, 'not_found');
   const wrong = await call(app, 'PATCH', '/v1/notes/2026-10-13/t-1', { token: bare.token });
   assert.equal(wrong.status, 405);
   assert.equal(wrong.response.headers.get('allow'), 'GET, PUT, DELETE');
+  // A good token's wrong request still says today's version; no token's does not.
+  const version = (await call(app, 'GET', '/v1/me', { token: bare.token })).json!.version;
+  assert.equal(nothing.response.headers.get('release-notes-version'), version);
+  assert.equal(wrong.response.headers.get('release-notes-version'), version);
+  const anon = await call(app, 'GET', '/v1/nothing');
+  assert.equal(anon.error.code, 'not_found');
+  assert.equal(anon.response.headers.get('release-notes-version'), null);
+  assert.equal((await call(app, 'GET', '/v1/nothing', { token: 'rn_nope' })).status, 404);
   // Any token reads /v1/me and the tags, and can sign itself out.
   assert.equal((await call(app, 'GET', '/v1/me', { token: bare.token })).status, 200);
   assert.equal((await call(app, 'GET', '/v1/tags', { token: bare.token })).status, 200);
@@ -630,6 +639,43 @@ test('note fields: dates, written_at, sizes, bodies and plain text', async () =>
     headers: { 'content-type': 'text/plain' }
   });
   assert.equal(plainEdit.error.code, 'invalid_request');
+});
+
+test('Accept is read in full: text only where text/plain outranks JSON', async () => {
+  const { ctx, app } = setup(),
+    made = await make(ctx),
+    plain = async (accept: string) =>
+      (await call(app, 'GET', '/v1/me', { token: made.token, headers: { accept } })).response.headers
+        .get('content-type')!
+        .startsWith('text/plain');
+  for (const accept of ['text/plain', 'text/*', 'text/plain, application/json', 'application/json;q=0.5, text/plain'])
+    assert.equal(await plain(accept), true, accept);
+  for (const accept of [
+    '',
+    '*/*',
+    'application/json',
+    'application/json, text/plain',
+    'text/plain;q=0.1, application/json',
+    'text/plain;q=0, */*',
+    'text/html'
+  ])
+    assert.equal(await plain(accept), false, accept);
+});
+
+test('the path names the note: a body naming another date or id is refused, the same one is fine', async () => {
+  const { ctx, app } = setup(),
+    made = await make(ctx),
+    note = noteOf(await call(app, 'POST', '/v1/notes', { token: made.token, body: { text: 'Where it is' } })),
+    path = `/v1/notes/${String(note.date)}/${String(note.id)}`,
+    put = (body: OAuthRow) => call(app, 'PUT', path, { token: made.token, body: { revision: note.revision, ...body } });
+  const moved = await put({ text: 'Moved?', date: '2026-10-01' });
+  assert.equal(moved.status, 400);
+  assert.equal(moved.error.code, 'invalid_request');
+  assert.equal(moved.error.field, 'date');
+  assert.equal((await put({ text: 'Another?', id: 't-other' })).error.field, 'id');
+  const same = await put({ text: 'Same place', date: note.date, id: note.id });
+  assert.equal(same.status, 200);
+  assert.equal(noteOf(same).date, note.date);
 });
 
 test('a token earns badges in the owner voice, said once', async () => {

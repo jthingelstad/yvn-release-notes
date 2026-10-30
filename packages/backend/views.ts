@@ -8,6 +8,7 @@ import { split } from '../domain/tags.ts';
 import { writtenAt, placeLabel, mapUrl, type NoteRecord, type PlaceRecord } from '../domain/notes.ts';
 import { localDay, addDays, validTimezone } from '../domain/dates.ts';
 import { computeVersion } from '../domain/version.ts';
+import { storedMoment } from '../domain/moments.ts';
 import { dayLine, dayPlace, fahrenheit, placeOf, type Reading } from './weather.ts';
 export const pauseStart = (p: Item, today: string): string =>
   String(p.last_sent_date ?? '') >= today ? addDays(today, 1) : today;
@@ -72,6 +73,9 @@ export async function noteView(item: Item, tz: string, writingOut = false, link?
     if (url) view.map = url;
   }
   if (item.origin) view.from = (item.origin as Item).app === 'dayone' ? 'Day One' : 'an import';
+  // What an app picked for it (docs/MOMENTS.md), as kept; the page words it.
+  const moment = storedMoment(item.moment);
+  if (moment) view.moment = moment;
   if (item.updated_at) view.edited_at = item.updated_at;
   if (item.media) {
     view.media = await Promise.all(

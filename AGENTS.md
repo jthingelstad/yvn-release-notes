@@ -208,6 +208,14 @@ Where things are (each module's design comment has its contract):
 - **Any kind of data can come from any channel** (Jamie, 2026-10-09: "assume
   any type of data we deal with can come from any channel"). A channel that
   does not carry something yet is work not done, never a rule.
+- **A moment is kept beside the words** (Jamie, 2026-10-29: "moments API
+  has promise and maybe we should consider data model changes to work with
+  it better?"; docs/MOMENTS.md, with the calls still open): a new note's
+  optional `moment`, the typed pieces an app picked (`packages/domain/moments.ts`),
+  set once at creation and kept as picked. The words stay the note, and
+  every edit of them keeps the moment; deleting the note deletes it. An
+  activity row names its kinds, never its words, and it is never logged.
+  A new kind comes to the server first, as a new API version.
 - **A note is the same record from every channel**
   (`packages/domain/notes.ts`). Its `place` shows by name, never coordinates,
   linked to a map unless it is only the subscriber's city

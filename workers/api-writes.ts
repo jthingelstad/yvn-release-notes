@@ -28,6 +28,7 @@ import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from 
 import { addedEvents, earnedBy, unlockedBy } from '../packages/backend/badges.ts';
 import { keys as mediaKeys, MAX_FILES } from '../packages/backend/media.ts';
 import { nameSpot, notePlaceOf, search, spotOf, type SpotNames } from '../packages/backend/places.ts';
+import { momentKinds, momentOf, type Moment } from '../packages/domain/moments.ts';
 import { errorFields, safeLog } from '../packages/backend/services.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
 import { pinnedTags, pinsOf, tagRow, type TagRowStore } from '../packages/backend/tag-row.ts';
@@ -116,7 +117,7 @@ export interface ApiStore extends TokenReads, TagRowStore {
 
 /** The operations the router hands on, each with its body's fields. */
 export const API_WRITES: Record<string, readonly string[]> = {
-  'notes.create': ['text', 'date', 'written_at', 'place', 'uploads'],
+  'notes.create': ['text', 'date', 'written_at', 'place', 'uploads', 'moment'],
   'notes.edit': ['date', 'id', 'text', 'revision'],
   'notes.append': ['date', 'id', 'text'],
   'notes.media': ['date', 'id', 'uploads'],
@@ -224,6 +225,16 @@ function shape(op: string, args: Arguments): void {
   // changed since it was read.
   if (op === 'notes.edit' && !args.revision)
     throw new ApiRefusal('invalid_request', 'Send the revision you read, as it came.', { field: 'revision' });
+  if (op === 'notes.create') momentArg(args);
+}
+
+/** A new note's moment (docs/MOMENTS.md), checked whole and tidied, or
+ * null when none came; refused at the field that is wrong. */
+function momentArg(args: Arguments): Moment | null {
+  if (!Object.hasOwn(args, 'moment')) return null;
+  const read = momentOf(args.moment);
+  if ('problem' in read) throw new ApiRefusal('invalid_request', read.problem.detail, { field: read.problem.field });
+  return read.moment;
 }
 
 /** A refused date in `/v1`'s words, naming the entry (`change[2]`); for
@@ -656,8 +667,10 @@ export async function writeApi(
           old: OAuthRow | null = null,
           typed = now,
           d: string,
-          place: OAuthRow | null = null;
+          place: OAuthRow | null = null,
+          moment: Moment | null = null;
         if (op === 'notes.create') {
+          moment = momentArg(args);
           if (Object.hasOwn(args, 'written_at')) {
             const at = String(args.written_at),
               seconds = Date.parse(at) / 1000;
@@ -738,7 +751,8 @@ export async function writeApi(
               written_at: iso(typed),
               tz,
               version: computeVersion(birthday, d).toString(),
-              ...(place ? { place } : {})
+              ...(place ? { place } : {}),
+              ...(moment ? { moment } : {})
             };
         Object.assign(note, {
           text: words,
@@ -820,7 +834,9 @@ export async function writeApi(
                     day: d,
                     note: id,
                     version: full.version,
-                    ...(added.length ? { files: added.length } : {})
+                    ...(added.length ? { files: added.length } : {}),
+                    // Its kinds alone, never a word of it.
+                    ...(moment ? { moment: momentKinds(moment) } : {})
                   }
                 },
             ...badgeEvents(unlocked, 'token', d, id, client).map((e) => ({

@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 128 KB. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.6.0",
+        "date": "2026-10-30",
+        "summary": "Moments: a new note can carry a `moment`, what an app picked for it (a workout, a song or podcast, steps, a feeling, an event, people, a reflection prompt) as typed values beside its words. GET /v1/notes/{date}/{id} returns it as kept, and the note.added activity row names its kinds, never its words."
+      },
       {
         "version": "1.5.0",
         "date": "2026-10-30",
@@ -108,7 +113,7 @@
       "post": {
         "operationId": "createNote",
         "summary": "Add a note",
-        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. A `text/plain` body is the note’s text alone. With neither `date` nor `written_at`, it files to today. With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came.",
+        "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags. A `text/plain` body is the note’s text alone. With neither `date` nor `written_at`, it files to today. With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came. A `moment` (since 1.6.0) keeps what an app picked for the note, a walk, a song or who was there, as values beside the words: the words are still the note, and the moment is shown, exported and deleted with it.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1478,7 +1483,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.5.0"
+            "example": "1.6.0"
           }
         }
       },
@@ -1520,8 +1525,292 @@
           },
           "place": {
             "$ref": "#/components/schemas/NotePlace"
+          },
+          "moment": {
+            "$ref": "#/components/schemas/Moment"
           }
         }
+      },
+      "Moment": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false,
+        "description": "What an app picked for the note (Apple’s Journaling Suggestions, say), kept beside its words as it was sent: words trimmed and empty ones left out. A place visited is the note’s `place`, and photos are its `uploads`. Since 1.6.0.",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the moment began."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "$ref": "#/components/schemas/MomentItem"
+            }
+          }
+        }
+      },
+      "MomentItem": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "description": "One piece, by its `kind`. An unknown kind or field is `invalid_request`, naming it (`moment.items[2].distance_m`). Kinds: workout, song, podcast, played, steps, feeling, event, people, reflection.",
+        "oneOf": [
+          {
+            "type": "object",
+            "title": "workout",
+            "required": [
+              "kind",
+              "activity"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "workout"
+              },
+              "activity": {
+                "type": "string",
+                "enum": [
+                  "walking",
+                  "running",
+                  "cycling",
+                  "hiking",
+                  "swimming",
+                  "other"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "The workout’s own name (“Yoga”), for one with no activity here."
+              },
+              "distance_m": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000,
+                "description": "In metres."
+              },
+              "duration_s": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 604800,
+                "description": "In seconds."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "song",
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false,
+            "description": "A title or an artist.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "song"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "artist": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "podcast",
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false,
+            "description": "An episode or a show.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "podcast"
+              },
+              "episode": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "show": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "played",
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false,
+            "description": "Something listened to in another app.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "played"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "artist": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "steps",
+            "required": [
+              "kind",
+              "count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "steps"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "movement": {
+                "type": "string",
+                "enum": [
+                  "walking",
+                  "running",
+                  "both"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "feeling",
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false,
+            "description": "Labels (“calm”), a valence, or both.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "feeling"
+              },
+              "labels": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "valence": {
+                "type": "string",
+                "enum": [
+                  "very_unpleasant",
+                  "unpleasant",
+                  "slightly_unpleasant",
+                  "neutral",
+                  "slightly_pleasant",
+                  "pleasant",
+                  "very_pleasant"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "event",
+            "required": [
+              "kind",
+              "title"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "event"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "place": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "hosted": {
+                "type": "boolean",
+                "description": "Kept as false when not sent."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "people",
+            "required": [
+              "kind",
+              "names"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "people"
+              },
+              "names": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 20,
+                "items": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "title": "reflection",
+            "required": [
+              "kind",
+              "prompt"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "reflection"
+              },
+              "prompt": {
+                "type": "string",
+                "maxLength": 400
+              }
+            }
+          }
+        ]
       },
       "NoteMedia": {
         "type": "object",
@@ -1943,6 +2232,10 @@
                 "type": "null"
               }
             ]
+          },
+          "moment": {
+            "$ref": "#/components/schemas/Moment",
+            "description": "The moment it was written with, as kept. Since 1.6.0."
           }
         }
       },
@@ -2400,7 +2693,7 @@
           "at",
           "kind"
         ],
-        "description": "One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`, a reads row `calls` and `tools`); `via` says through what, and a token’s rows name it as `token` and, from 1.4.0, by id as `token_id`.",
+        "description": "One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`, and from 1.6.0 `moment`, the kinds of a moment it came with; a reads row `calls` and `tools`); `via` says through what, and a token’s rows name it as `token` and, from 1.4.0, by id as `token_id`.",
         "properties": {
           "id": {
             "type": "string",

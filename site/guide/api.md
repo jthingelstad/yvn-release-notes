@@ -34,8 +34,8 @@ It answers with one line: `Filed in 5.2.113.`
 ## The requests
 
 - `GET /v1/me`: today's date and version, the versions for the next 14 days, your streak, your time zone, when your email goes, your `account`, and this token's `id`, name, what it may do and when it expires. Never your birthday. `account` is the same for every token you make and never changes, so an app can tell whose account a token opens; the token's `id` never changes either, and is never the token itself. Any token may ask.
-- `POST /v1/notes`: add a note. Send `{"text": "…"}`, or the words alone as `text/plain`. Hashtags in the words are its tags, and links get their names, as on the web. `date` puts it on an earlier day, back to your birthday. `written_at` is the moment the words were typed: a note sent late files to the day it was typed. With neither, it's today's. `uploads` gives it files (see [Photos, recordings and PDFs](#photos-recordings-and-pdfs)), and then it needs no words. `place` says where it was (see [Places](#places)). The answer has the note's `id`, `date`, `version` and `revision`, and how many `files` it has.
-- `GET /v1/notes/{date}/{id}`: one note this token added, with its text, `revision` and `written_at`.
+- `POST /v1/notes`: add a note. Send `{"text": "…"}`, or the words alone as `text/plain`. Hashtags in the words are its tags, and links get their names, as on the web. `date` puts it on an earlier day, back to your birthday. `written_at` is the moment the words were typed: a note sent late files to the day it was typed. With neither, it's today's. `uploads` gives it files (see [Photos, recordings and PDFs](#photos-recordings-and-pdfs)), and then it needs no words. `place` says where it was (see [Places](#places)). `moment` keeps what an app picked for it, a walk or a song, beside the words (see [Moments](#moments)). The answer has the note's `id`, `date`, `version` and `revision`, and how many `files` it has.
+- `GET /v1/notes/{date}/{id}`: one note this token added, with its text, `revision` and `written_at`, and its `moment` if it has one.
 - `PUT /v1/notes/{date}/{id}`: replace its text. Send `{"text": "…", "revision": "…"}` with the revision you read; a note changed since, on the web say, is refused with the current one.
 - `POST /v1/notes/{date}/{id}/append`: add a paragraph to it, with `{"text": "…"}`.
 - `POST /v1/notes/{date}/{id}/media`: add files to it, with `{"uploads": […]}`.
@@ -49,7 +49,7 @@ It answers with one line: `Filed in 5.2.113.`
 - `POST /v1/upcoming/batch`: add, change and remove dates together, up to 50 dates a request, as `{"add": […], "change": […], "remove": […]}`. It saves all or nothing: if one date isn't right, none is saved, and `field` names the one, like `add[1]`. With `"dry_run": true` it checks everything and finds each trip's city, and saves nothing. The answer lists what was `added`, in the order you sent it, then what was `changed` and `removed`.
 - `GET /v1/upcoming/reminders`: the reminders each morning's email carries, day by day, for the next 14 days, or up to 31 days ahead with `days`. Each day has `send_at`, the moment that morning's email is due, and each reminder the date's `id` as `upcoming`, the day it falls on as `date`, and its `when` and `line`, as the email says them. A date with its email reminders turned off isn't there; a paused email doesn't change the list.
 - `DELETE /v1/upcoming/{id}`: remove one date, with the revision you read as `?revision=`.
-- `GET /v1/activity`: your activity log, newest first, without any words: no note text, no email's subject or sender, no setting's value. A row a token wrote names it by `token` and, from version 1.4.0 of the API, by `token_id`, the `id` that `GET /v1/me` gives; older rows have no `token_id`. `after` gives only rows newer than one you've seen, and `before`, with the `next` from the answer, the page older. `kinds` keeps some kinds, like `note,mail`, and `limit` sets how many rows a page holds.
+- `GET /v1/activity`: your activity log, newest first, without any words: no note text, no email's subject or sender, no setting's value. A row a token wrote names it by `token` and, from version 1.4.0 of the API, by `token_id`, the `id` that `GET /v1/me` gives; older rows have no `token_id`. A note added with a moment has its kinds as `moment`, like `["workout", "song"]`, and never its words. `after` gives only rows newer than one you've seen, and `before`, with the `next` from the answer, the page older. `kinds` keeps some kinds, like `note,mail`, and `limit` sets how many rows a page holds.
 - `DELETE /v1/token`: this token revokes itself. Any token may ask.
 
 Adding, changing and deleting notes, pinning tags and finding places need a token that may add notes, and only ever touch the notes that same token added. Files need a token that may add files too, which comes only with adding notes. Upcoming needs a token that may read and change your Upcoming dates; it reaches all of them, not only the ones it added, and no other token reaches them. The activity log needs a token that may read it.
@@ -128,6 +128,19 @@ A note's `place` says where it was. Send one of two things, as it came:
 - **The spot a device is at**, from `POST /v1/places/here`. Send `lat` and `lon` in degrees, and the device's `accuracy_m` in metres if it has one. The answer's `place` has the spot's city and its neighbourhood as `district`, and `nearby` lists up to 6 businesses within the accuracy. If the person picks one, send the place with `venue` set to its name; nothing is picked for them. The spot is kept to six decimal places, and nothing is kept until a note takes it. Here takes no `Idempotency-Key`: if its answer is lost, ask again, and that counts again.
 
 On the web, a note with a spot links to your map. A note with no place shows the day's city, or your home's.
+
+## Moments
+
+A note's `moment` keeps what an app picked for it as values, beside the words: Changelog sends one from Apple's Journaling Suggestions. The words are still the note, so write the lines you want read into `text` too. Send it only on a new note, as `{"at": "…", "items": […]}`, with `at` the time it began, if you know it, and 1 to 12 `items`, each with its `kind`:
+
+- `workout`: an `activity` (walking, running, cycling, hiking, swimming or other), and its `name`, `distance_m` in metres and `duration_s` in seconds if you have them.
+- `song`, and `played` for something from another app: a `title`, an `artist` or both. `podcast`: an `episode`, a `show` or both.
+- `steps`: a `count`, and a `movement` of walking, running or both.
+- `feeling`: Health's `labels`, like `["calm"]`, a `valence` from `very_unpleasant` to `very_pleasant`, or both.
+- `event`: a `title`, and its `place`, its `start` and whether you `hosted` it.
+- `people`: up to 20 `names`. `reflection`: the `prompt`.
+
+Words are trimmed and empty ones left out, and that's how the note keeps them. An unknown kind or field is `invalid_request`, with `field` naming it, like `moment.items[0].pace`. A place visited is the note's `place`, and photos are its `uploads`. Editing the words keeps the moment; deleting the note deletes it. The day page shows it under the words, in miles or kilometres as your home's road signs give them, and the export keeps it.
 
 ## Upcoming dates
 

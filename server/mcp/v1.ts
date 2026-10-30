@@ -7,6 +7,7 @@
 import { activityId, ACTIVITY_FAMILIES, familyOf, tokenActivityView, titled } from '../../packages/domain/activity.ts';
 import { addDays, iso, localDay, localMoment, validDay } from '../../packages/domain/dates.ts';
 import { writtenAt, type NoteRecord } from '../../packages/domain/notes.ts';
+import { storedMoment } from '../../packages/domain/moments.ts';
 import { codePointLength, pythonTrim } from '../../packages/domain/unicode.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { remindersFor, UPCOMING_MAX, upcomingViews } from '../../packages/domain/upcoming.ts';
@@ -26,11 +27,17 @@ import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.5.0';
+export const API_VERSION = '1.6.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. A new version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.6.0',
+    date: '2026-10-30',
+    summary:
+      'Moments: a new note can carry a `moment`, what an app picked for it (a workout, a song or podcast, steps, a feeling, an event, people, a reflection prompt) as typed values beside its words. GET /v1/notes/{date}/{id} returns it as kept, and the note.added activity row names its kinds, never its words.'
+  },
   {
     version: '1.5.0',
     date: '2026-10-30',
@@ -498,6 +505,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         if (!item) return { code: 'not_found', message: 'There is no note with that date and id.' };
         if (item.source !== 'api' || item.connection !== tid)
           return { code: 'not_yours', message: 'A token reads only the notes it wrote.' };
+        const moment = storedMoment(item.moment);
         return {
           status: 200,
           body: {
@@ -508,7 +516,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
             revision: editRevision(item),
             written_at: writtenAt(item as NoteRecord) || null,
             files: ((item.media as OAuthRow[] | undefined) ?? []).length,
-            token: item.token ?? null
+            token: item.token ?? null,
+            ...(moment ? { moment } : {})
           },
           line: String(item.text ?? '')
         };

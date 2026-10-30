@@ -562,6 +562,32 @@ select {
 .text .site {
   color: var(--ink-2);
 }
+/* A moment an app kept with the note: quiet lines under the words, each
+   with its glyph, type on paper like the rest (no box or rule). */
+.moment {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.moment li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.moment .icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  align-self: center;
+  color: var(--ink-3);
+}
 .media {
   display: flex;
   flex-wrap: wrap;

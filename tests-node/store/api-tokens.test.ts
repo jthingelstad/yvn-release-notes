@@ -1,7 +1,8 @@
 /** Exact DynamoDB shapes for API tokens and their writes (docs/API.md): the
  * token list, the owner's revoke with its 30-day pointer, a client's own
  * revoke, the token proof, a token's note added, changed and deleted, its
- * files and upload count, the pinned tags and the recent tags' read. The fake table runs the same
+ * files and upload count, the pinned tags and the recent tags' read, and
+ * the guard on a receipt under its older per-token key. The fake table runs the same
  * requests in tests-node/api/v1.test.ts; these pin what goes to AWS. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -446,5 +447,82 @@ test('the fake table refuses a token proof for a revoked, expired, changed or na
       mutation
     );
     assert.equal((await s.allNotes('u')).length, mutation === 'live' ? 1 : 0, mutation);
+  }
+});
+
+test('a receipt under its older per-token key is guarded by one condition check, after the receipts', async () => {
+  const { store, only } = recorder(),
+    guard = {
+      ConditionCheck: {
+        TableName: 'T',
+        Key: { pk: 'USER#u', sk: 'CAPTURE#a#h' },
+        ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now',
+        ExpressionAttributeValues: { ':now': 100 }
+      }
+    },
+    current = { ...receipt, sk: 'CAPTURE#api#h' };
+  assert.deepEqual(store.receiptAbsent('u', 'CAPTURE#a#h', 100), [guard]);
+  const extra = store.receiptAbsent('u', 'CAPTURE#a#h', 100);
+  assert.equal(await store.apiNoteCommit(note, null, current, audit, rate, null, token, 100, undefined, extra), true);
+  assert.equal(await store.apiNoteDelete(note, current, audit, rate, previous, token, 100, extra), true);
+  const put = (r: ReturnType<typeof receipts>) => [{ Put: { ...r[0]!.Put, Item: current } }, ...r.slice(1)];
+  assert.deepEqual(only(), [
+    [
+      'TransactWriteCommand',
+      {
+        TransactItems: [
+          profileProof,
+          tokenProof,
+          { Put: { TableName: 'T', Item: note, ConditionExpression: 'attribute_not_exists(pk)' } },
+          ...put(receipts(null)),
+          guard
+        ]
+      }
+    ],
+    [
+      'TransactWriteCommand',
+      {
+        TransactItems: [
+          profileProof,
+          tokenProof,
+          {
+            Delete: {
+              TableName: 'T',
+              Key: { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n' },
+              ConditionExpression: '#src = :api AND #c = :token AND #r = :revision',
+              ExpressionAttributeNames: { '#r': 'revision', '#c': 'connection', '#src': 'source' },
+              ExpressionAttributeValues: { ':api': 'api', ':token': 'a', ':revision': 'r1' }
+            }
+          },
+          ...put(receipts(previous)),
+          guard
+        ]
+      }
+    ]
+  ]);
+});
+
+test('the fake table refuses a write while the older receipt is live, and takes one once it has expired', async () => {
+  const current = { ...receipt, sk: 'CAPTURE#api#h' };
+  for (const [state, seeded] of [
+    ['none', null],
+    ['live', { ...receipt, expires_at: 101 }],
+    ['expired', { ...receipt, expires_at: 100 }]
+  ] as const) {
+    const s = new FakeStore(
+      [
+        { pk: 'USER#u', sk: 'PROFILE', email: 'ada@example.com' },
+        { pk: 'USER#u', sk: 'APITOKEN#a', ...token }
+      ],
+      'T'
+    );
+    if (seeded) s.seed(seeded);
+    const extra = s.receiptAbsent('u', 'CAPTURE#a#h', 100);
+    assert.equal(
+      await s.apiNoteCommit(note, null, current, audit, rate, null, token, 100, undefined, extra),
+      state !== 'live',
+      state
+    );
+    assert.equal((await s.allNotes('u')).length, state === 'live' ? 0 : 1, state);
   }
 });

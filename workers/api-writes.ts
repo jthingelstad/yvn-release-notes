@@ -15,7 +15,6 @@
 import { randomUUID } from 'node:crypto';
 import { GeoPlacesClient } from '@aws-sdk/client-geo-places';
 import type { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
-import { digest } from '../packages/backend/auth.ts';
 import {
   collect,
   fetchTitle,
@@ -44,7 +43,10 @@ import {
   type UploadRequest
 } from '../packages/backend/uploads.ts';
 import {
+  apiReceiptKey,
   checkToken,
+  PER_TOKEN_RECEIPTS_UNTIL,
+  perTokenReceiptKey,
   SCOPE_REFUSALS,
   scopesOf,
   V1_LIMITS,
@@ -78,6 +80,7 @@ export interface ApiStore extends TokenReads, TagRowStore {
   note(uid: string, day: string, id: string, consistent?: boolean): Promise<OAuthRow | null>;
   tokenProof(token: OAuthRow, now: number, scope: string | readonly string[]): Ops;
   agentReceipts(receipt: OAuthRow, audit: OAuthRow, rate: OAuthRow, previous: OAuthRow | null, now: number): Ops;
+  receiptAbsent(user: string, sk: string, now: number): Ops;
   apiNoteCommit(
     note: OAuthRow,
     old: OAuthRow | null,
@@ -87,7 +90,8 @@ export interface ApiStore extends TokenReads, TagRowStore {
     previous: OAuthRow | null,
     token: OAuthRow,
     now: number,
-    added?: readonly OAuthRow[]
+    added?: readonly OAuthRow[],
+    extra?: Ops
   ): Promise<boolean>;
   apiUploadCount(
     token: OAuthRow,
@@ -103,7 +107,8 @@ export interface ApiStore extends TokenReads, TagRowStore {
     rate: OAuthRow,
     previous: OAuthRow | null,
     token: OAuthRow,
-    now: number
+    now: number,
+    extra?: Ops
   ): Promise<boolean>;
   setPins(user: string, pins: readonly string[], old: readonly string[] | null, extra?: Ops): Promise<boolean>;
   revokeToken(token: OAuthRow): Promise<boolean>;
@@ -265,8 +270,16 @@ export async function writeApi(
     tz = String(profile.tz),
     today = localDay(now, tz),
     birthday = String(profile.birthday),
+    // Every row a token writes names it by id as well as by name (API 1.4.0),
+    // so a client tells its own rows from another token's of the same name.
     record = (events: Parameters<typeof recordActivity>[3]) =>
-      recordActivity(store, uid, now, events, activityLog(now, options.log));
+      recordActivity(
+        store,
+        uid,
+        now,
+        events.map((e) => ({ ...e, fields: { ...e.fields, token_id: tid } })),
+        activityLog(now, options.log)
+      );
 
   if (op === 'token.revoke') {
     if (!(await store.revokeToken(token))) throw new ApiRefusal('busy', 'Try again shortly.');
@@ -381,8 +394,14 @@ export async function writeApi(
       limit: { limit: cap, remaining, reset: untilUtcMidnight(now) }
     };
   }
+  // A receipt is the account's (API 1.4.0): a key sent again through any of
+  // its tokens gets the first answer. Until PER_TOKEN_RECEIPTS_UNTIL, a
+  // receipt written before then under this token's own key answers too, and
+  // a write commits only while none is live there.
   const key = typeof event.key === 'string' && event.key ? event.key : randomUUID(),
-    receiptKey = 'CAPTURE#' + tid + '#' + digest(key),
+    receiptKey = apiReceiptKey(key),
+    legacyKey = now < PER_TOKEN_RECEIPTS_UNTIL ? perTokenReceiptKey(tid, key) : null,
+    legacyGuard = (): Ops => (legacyKey ? store.receiptAbsent(uid, legacyKey, now) : []),
     hash = fingerprint({ api: op, arguments: args }),
     limitName = op === 'notes.create' ? 'create' : op.startsWith('upcoming.') ? 'upcoming' : 'change',
     cap = V1_LIMITS[limitName],
@@ -470,7 +489,8 @@ export async function writeApi(
     unsure = false;
   try {
     for (let attempt = 0; attempt < 5; attempt++) {
-      const receipt = await store.mcpGet('USER#' + uid, receiptKey);
+      let receipt = await store.mcpGet('USER#' + uid, receiptKey);
+      if (!live(receipt, now) && legacyKey) receipt = await store.mcpGet('USER#' + uid, legacyKey);
       if (live(receipt, now)) {
         if (receipt.request_hash !== hash)
           throw new ApiRefusal(
@@ -529,7 +549,8 @@ export async function writeApi(
           body = { ...row };
         landed = await store.setPins(uid, pins, old, [
           ...store.tokenProof(token, now, 'notes:write'),
-          ...store.agentReceipts(receiptFor(200, body), audit({}), rate, previous, now)
+          ...store.agentReceipts(receiptFor(200, body), audit({}), rate, previous, now),
+          ...legacyGuard()
         ]);
         answer = { status: 200, body, replayed: false, limit };
         after = async () => {
@@ -556,7 +577,8 @@ export async function writeApi(
         landed = (
           await context.store.upcomingBatch(uid, changes, [
             ...store.tokenProof(token, now, 'upcoming'),
-            ...store.agentReceipts(receiptFor(status, body), audit({ count: changes.length }), rate, previous, now)
+            ...store.agentReceipts(receiptFor(status, body), audit({ count: changes.length }), rate, previous, now),
+            ...legacyGuard()
           ])
         ).ok;
         answer = { status, body, replayed: false, limit };
@@ -583,7 +605,8 @@ export async function writeApi(
           rate,
           previous,
           token,
-          now
+          now,
+          legacyGuard()
         );
         answer = { status: 204, body: null, replayed: false, limit };
         after = async () => {
@@ -716,7 +739,8 @@ export async function writeApi(
             previous,
             token,
             now,
-            old && added.length ? added : undefined
+            old && added.length ? added : undefined,
+            legacyGuard()
           );
         } catch (error) {
           unsure = true;

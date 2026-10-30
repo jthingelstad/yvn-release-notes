@@ -26,7 +26,8 @@ Signing in is OAuth's authorization code with PKCE, and what it gives your app i
 
 Keep every note on the device the moment it's written, then send it. With no connection, hold it in a queue and send it later, oldest first.
 
-- Make each note's `Idempotency-Key` once, when it's saved, and send that same key on every try. A note that did arrive is answered again, never added twice. A key holds for 7 days, so send what's queued within that.
+- Make each note's `Idempotency-Key` once, when it's saved, and send that same key on every try. A note that did arrive is answered again, never added twice. A key holds for 7 days, so send what's queued within that. It holds for the account, not the token: after the person signs in again, send the queue through the new token with the same keys.
+- Keep the `account` from `GET /v1/me` with each queued note, and send it only through a token whose `account` matches. Someone who signs in to a different account never sends it another account's notes.
 - Send `written_at`, the moment the words were typed. A note typed just before midnight and sent just after files to the day it was typed.
 - After a timeout, `busy` or `unavailable`, try again later with the same key, waiting longer each time. Take a note out of the queue only when it was filed, or on an answer that trying again can't fix, like `text_required` or `too_large`, and show the person why.
 
@@ -36,6 +37,10 @@ Keep every note on the device the moment it's written, then send it. With no con
 - An upload no note takes is gone after a day. If the note is still queued by then, ask for a new form and post the file again.
 - Send photos as JPEG, PNG or WebP. On an iPhone, convert a HEIC before you send it, or it gets no thumbnail and never shows in the email.
 - Ask before reading where the device is, and read it only when the person asks to add where they are. Offer the `nearby` businesses from Here as choices, and never pick one for them: the nearest is as often a bus stop.
+
+## Which rows are yours
+
+A token's activity rows carry its `token_id`, the `id` under `token` in `GET /v1/me`. Pick out what your app did by that id, never by the token's name: a token made later can have the same name. Rows from before version 1.4.0 of the API have no `token_id`.
 
 ## Take the version from the server
 

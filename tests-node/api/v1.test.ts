@@ -7,7 +7,17 @@ import assert from 'node:assert/strict';
 import { createMcpApp, handleMcp, type McpOptions } from '../../server/mcp/app.ts';
 import { API_VERSION, V1_ROUTES } from '../../server/mcp/v1.ts';
 import { captureNote } from '../../workers/capture.ts';
-import { Tokens, TOKEN_FORMAT, TOKENS_MAX, V1_LIMITS, clientProduct } from '../../packages/backend/tokens.ts';
+import {
+  accountId,
+  PER_TOKEN_RECEIPTS_UNTIL,
+  Tokens,
+  TOKEN_FORMAT,
+  TOKENS_MAX,
+  V1_LIMITS,
+  V1_RECEIPT_SECONDS,
+  clientProduct
+} from '../../packages/backend/tokens.ts';
+import { fingerprint } from '../../server/mcp/common.ts';
 import { OAuthService, publicOAuth, type OAuthRow } from '../../packages/backend/oauth.ts';
 import { activityKey, activityTime } from '../../packages/domain/activity.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
@@ -119,6 +129,8 @@ test('a token is made once, kept only as its hash, listed and ended in Settings'
   assert.equal(tomb.expires_at, NOW + 30 * 86400);
   const removed = ctx.store.memory.all().find((r) => r.kind === 'connection.removed')!;
   assert.equal(removed.reason, 'owner');
+  // The owner ended it, not the token: no token_id.
+  assert.equal(removed.token_id, undefined);
   assert.deepEqual((await tokens(ctx).list('u')).tokens, []);
   await assert.rejects(tokens(ctx).revoke('u', made.id), { status: 404 });
   // The name is free again.
@@ -184,7 +196,12 @@ test('the bearer rule: /v1 takes an API token alone, /mcp never takes one', asyn
   assert.equal(ok.response.headers.get('access-control-allow-origin'), null);
   // The birthday is never sent.
   assert.ok(!ok.text.includes(PROFILE.birthday));
-  assert.deepEqual(ok.json!.token, { name: 'Changelog', scopes: ['notes:write', 'activity'], expires_at: null });
+  assert.deepEqual(ok.json!.token, {
+    id: made.id,
+    name: 'Changelog',
+    scopes: ['notes:write', 'activity'],
+    expires_at: null
+  });
   assert.equal((ok.json!.days as OAuthRow[]).length, 14);
 
   // Not for browsers.
@@ -203,10 +220,9 @@ test('the bearer rule: /v1 takes an API token alone, /mcp never takes one', asyn
   assert.equal(signout.status, 204);
   assert.equal(signout.text, '');
   assert.equal((await me(self.token)).error.code, 'token_revoked');
-  assert.equal(
-    ctx.store.memory.all().find((r) => r.kind === 'connection.removed' && r.token === 'Self')?.reason,
-    'client'
-  );
+  const signedOut = ctx.store.memory.all().find((r) => r.kind === 'connection.removed' && r.token === 'Self')!;
+  assert.equal(signedOut.reason, 'client');
+  assert.equal(signedOut.token_id, self.id);
   // Settings removes it for good at the next list; it still reads revoked.
   assert.ok(!(await tokens(ctx).list('u')).tokens.some((t) => t.id === self.id));
   assert.equal((await me(self.token)).error.code, 'token_revoked');
@@ -393,6 +409,147 @@ test('a token changes and reads only its own notes', async () => {
   assert.equal((await call(app, 'GET', '/v1/notes/2026-13-40/t-none', { token: mine.token })).error.code, 'not_found');
 });
 
+test('/v1/me names the account and the token by id: stable, one for the account, apart across accounts', async () => {
+  const { ctx, app } = setup();
+  ctx.store.seed({ ...PROFILE, pk: 'USER#v', email: 'bob@example.com' });
+  const first = await make(ctx),
+    second = await make(ctx, { name: 'Terminal' }),
+    theirs = await make(ctx, {}, 'v'),
+    me = async (t: Made) => {
+      const r = await call(app, 'GET', '/v1/me', { token: t.token });
+      assert.equal(r.status, 200, r.text);
+      return r.json!;
+    };
+  const a = await me(first),
+    again = await me(first),
+    b = await me(second),
+    c = await me(theirs);
+  assert.match(String(a.account), /^acct_[0-9a-f]{32}$/);
+  assert.equal(a.account, accountId('u'));
+  assert.equal(again.account, a.account);
+  assert.equal(b.account, a.account);
+  assert.notEqual(c.account, a.account);
+  assert.match(String(c.account), /^acct_[0-9a-f]{32}$/);
+  // Derived, never stored: no table row holds it.
+  const table = JSON.stringify(ctx.store.memory.all());
+  for (const id of [a.account, c.account]) assert.ok(!table.includes(String(id).slice(5)));
+
+  const ids = [a, again, b, c].map((m) => (m.token as OAuthRow).id);
+  assert.deepEqual(ids, [first.id, first.id, second.id, theirs.id]);
+  assert.equal(new Set([first.id, second.id, theirs.id]).size, 3);
+  for (const [t, id] of [
+    [first, first.id],
+    [second, second.id]
+  ] as const) {
+    assert.match(id, /^[0-9a-f]{32}$/);
+    // Neither the token nor its hash, nor any part of them.
+    assert.ok(!t.token.includes(id) && !digest(t.token).includes(id));
+  }
+});
+
+test('an Idempotency-Key holds for the account: another of its tokens gets the first answer, another account’s never', async () => {
+  const { ctx, app } = setup();
+  ctx.store.seed({ ...PROFILE, pk: 'USER#v', email: 'bob@example.com' });
+  const old = await make(ctx),
+    narrow = await make(ctx, { name: 'Reader', scopes: ['activity'] }),
+    theirs = await make(ctx, {}, 'v'),
+    post = (t: Made, text = 'Queued offline') =>
+      call(app, 'POST', '/v1/notes', { token: t.token, body: { text }, headers: { 'idempotency-key': 'q-1' } }),
+    notes = (uid: string) =>
+      ctx.store.memory.all().filter((r) => r.pk === 'USER#' + uid && String(r.sk).startsWith('NOTE#'));
+  const first = await post(old);
+  assert.equal(first.status, 201, first.text);
+  // Signed out and in again, with the same name: the queue sends the note
+  // again through the new token, and it is answered, not filed twice.
+  await tokens(ctx).revoke('u', old.id);
+  const fresh = await make(ctx);
+  assert.notEqual(fresh.id, old.id);
+  const resent = await post(fresh);
+  assert.equal(resent.status, 201, resent.text);
+  assert.equal(resent.response.headers.get('idempotent-replayed'), 'true');
+  assert.deepEqual(noteOf(resent), noteOf(first));
+  assert.equal(notes('u').length, 1);
+  // One receipt, the account's, under no token's id.
+  const receipts = ctx.store.memory.all().filter((r) => String(r.sk).startsWith('CAPTURE#'));
+  assert.deepEqual(
+    receipts.map((r) => [r.pk, r.sk]),
+    [['USER#u', 'CAPTURE#api#' + digest('q-1')]]
+  );
+  assert.equal(receipts[0]!.expires_at, NOW + V1_RECEIPT_SECONDS);
+  // A different request under the key is refused, through any of its tokens.
+  const mismatch = await post(fresh, 'Something else');
+  assert.equal(mismatch.status, 422);
+  assert.equal(mismatch.error.code, 'idempotency_mismatch');
+  // A token without the scope is refused, not answered from the receipt.
+  assert.equal((await post(narrow)).error.code, 'scope_required');
+  // Another account's token with the same key files its own note.
+  const other = await post(theirs);
+  assert.equal(other.status, 201, other.text);
+  assert.equal(other.response.headers.get('idempotent-replayed'), null);
+  assert.notEqual(noteOf(other).id, noteOf(first).id);
+  assert.equal(notes('v').length, 1);
+  assert.equal(notes('u').length, 1);
+});
+
+test('until PER_TOKEN_RECEIPTS_UNTIL, a receipt kept under its token before 1.4.0 still answers that token', async () => {
+  const { ctx, app } = setup(),
+    made = await make(ctx),
+    other = await make(ctx, { name: 'Terminal' }),
+    text = 'Sent before the release',
+    post = (t: Made, key: string, words = text) =>
+      call(app, 'POST', '/v1/notes', { token: t.token, body: { text: words }, headers: { 'idempotency-key': key } }),
+    answer = { note: { id: 't-' + 'a'.repeat(32), date: TODAY, version: VERSION, revision: '1', files: 0 } },
+    // A receipt as 1.3.0 kept it, under the token's own id.
+    legacy = (key: string, expires = NOW - 3600 + V1_RECEIPT_SECONDS) => ({
+      pk: 'USER#u',
+      sk: 'CAPTURE#' + made.id + '#' + digest(key),
+      request_hash: fingerprint({ api: 'notes.create', arguments: { text } }),
+      result: JSON.stringify({ status: 201, body: answer }),
+      expires_at: expires
+    }),
+    notes = () => ctx.store.memory.all().filter((r) => String(r.sk).startsWith('NOTE#'));
+  assert.ok(NOW < PER_TOKEN_RECEIPTS_UNTIL);
+  ctx.store.seed(legacy('k-old'));
+  const replayed = await post(made, 'k-old');
+  assert.equal(replayed.status, 201, replayed.text);
+  assert.equal(replayed.response.headers.get('idempotent-replayed'), 'true');
+  assert.deepEqual(replayed.json, answer);
+  assert.equal((await post(made, 'k-old', 'Other words')).error.code, 'idempotency_mismatch');
+  assert.equal(notes().length, 0);
+
+  // A write racing one by 1.3.0, whose receipt lands between the read and
+  // the commit: the commit is refused and the next attempt answers from it.
+  let raced = false;
+  ctx.store.memory.beforeSend = (command, client) => {
+    if (!raced && command.constructor.name === 'TransactWriteCommand') {
+      raced = true;
+      client.seed(legacy('k-race'));
+    }
+  };
+  const race = await post(made, 'k-race');
+  ctx.store.memory.beforeSend = undefined;
+  assert.ok(raced);
+  assert.equal(race.status, 201, race.text);
+  assert.equal(race.response.headers.get('idempotent-replayed'), 'true');
+  assert.deepEqual(race.json, answer);
+  assert.equal(notes().length, 0);
+
+  // It was that token's alone, as before 1.4.0: another token files anew.
+  const elsewhere = await post(other, 'k-old');
+  assert.equal(elsewhere.status, 201, elsewhere.text);
+  assert.equal(elsewhere.response.headers.get('idempotent-replayed'), null);
+  assert.equal(notes().length, 1);
+
+  // From the cutoff the old key is read no more, even if a receipt there
+  // were somehow still live.
+  ctx.store.seed(legacy('k-late', PER_TOKEN_RECEIPTS_UNTIL + 86400));
+  ctx.now = PER_TOKEN_RECEIPTS_UNTIL;
+  const late = await post(made, 'k-late');
+  assert.equal(late.status, 201, late.text);
+  assert.equal(late.response.headers.get('idempotent-replayed'), null);
+  assert.equal(notes().length, 2);
+});
+
 test('note fields: dates, written_at, sizes, bodies and plain text', async () => {
   const { ctx, app } = setup(),
     made = await make(ctx),
@@ -549,6 +706,7 @@ test('pinned tags and the recent tags row, the same on every token', async () =>
   const changed = ctx.store.memory.all().find((r) => r.kind === 'settings.changed')!;
   assert.equal(changed.via, 'token');
   assert.equal(changed.token, 'Changelog');
+  assert.equal(changed.token_id, a.id);
   for (const pinned of [Array.from({ length: 13 }, (_, i) => 't' + i), 'trip', ['#'], [3]]) {
     const r = await call(app, 'PUT', '/v1/tags/pinned', { token: a.token, body: { pinned } });
     assert.equal(r.error.code, 'invalid_request', JSON.stringify(pinned));
@@ -569,6 +727,16 @@ test('the activity log through a token has no words in it', async () => {
   const { ctx, app } = setup(),
     made = await make(ctx, { scopes: ['notes:write', 'activity', 'upcoming'] }),
     at = (s: number) => activityTime(NOW - s);
+  // A token's row from before 1.4.0, which has no token_id.
+  ctx.store.seed({
+    pk: 'USER#u',
+    sk: activityKey(at(400), 'note.added', 't-old'),
+    kind: 'note.added',
+    via: 'token',
+    token: 'Changelog',
+    day: '2026-10-12',
+    note: 't-old'
+  });
   ctx.store.seed({
     pk: 'USER#u',
     sk: activityKey(at(300), 'mail', 'm-1'),
@@ -614,6 +782,20 @@ test('the activity log through a token has no words in it', async () => {
   assert.deepEqual(Object.keys(mail).sort(), ['at', 'day', 'id', 'kind', 'message', 'outcome', 'received_at', 'via']);
   assert.deepEqual(items.find((i) => i.kind === 'settings.changed')!.changes, [{ field: 'city' }]);
   assert.equal(items.find((i) => i.kind === 'note.added')!.token, 'Changelog');
+  // Rows a token wrote name it by id from 1.4.0; older rows, and rows no
+  // token wrote, leave the field out rather than null.
+  assert.equal(items.find((i) => i.kind === 'note.added')!.token_id, made.id);
+  const old = items.find((i) => i.kind === 'note.added' && i.note === 't-old')!;
+  assert.equal(old.token, 'Changelog');
+  assert.ok(!Object.hasOwn(old, 'token_id'));
+  for (const k of ['mail', 'settings.changed', 'upcoming.added'])
+    assert.ok(
+      !Object.hasOwn(
+        items.find((i) => i.kind === k)!,
+        'token_id'
+      ),
+      k
+    );
 
   // Pages by `before`, filters by kind, and refuses what it doesn't know.
   const one = await call(app, 'GET', '/v1/activity?limit=1&kinds=mail', { token: made.token });
@@ -635,6 +817,10 @@ test('the activity log through a token has no words in it', async () => {
   assert.equal(reads.length, 1);
   assert.equal(reads[0]!.via, 'token');
   assert.equal(reads[0]!.token, 'Changelog');
+  assert.equal(reads[0]!.token_id, made.id);
+  const readsView = (await call(app, 'GET', '/v1/activity?kinds=reads', { token: made.token })).json!
+    .items as OAuthRow[];
+  assert.equal(readsView[0]!.token_id, made.id);
   assert.ok(Number(reads[0]!.calls) >= 4);
 });
 

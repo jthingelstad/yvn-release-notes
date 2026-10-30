@@ -33,7 +33,7 @@ It answers with one line: `Filed in 5.2.113.`
 
 ## The requests
 
-- `GET /v1/me`: today's date and version, the versions for the next 14 days, your streak, your time zone, when your email goes, and this token's name, what it may do and when it expires. Never your birthday. Any token may ask.
+- `GET /v1/me`: today's date and version, the versions for the next 14 days, your streak, your time zone, when your email goes, your `account`, and this token's `id`, name, what it may do and when it expires. Never your birthday. `account` is the same for every token you make and never changes, so an app can tell whose account a token opens; the token's `id` never changes either, and is never the token itself. Any token may ask.
 - `POST /v1/notes`: add a note. Send `{"text": "…"}`, or the words alone as `text/plain`. Hashtags in the words are its tags, and links get their names, as on the web. `date` puts it on an earlier day, back to your birthday. `written_at` is the moment the words were typed: a note sent late files to the day it was typed. With neither, it's today's. `uploads` gives it files (see [Photos, recordings and PDFs](#photos-recordings-and-pdfs)), and then it needs no words. `place` says where it was (see [Places](#places)). The answer has the note's `id`, `date`, `version` and `revision`, and how many `files` it has.
 - `GET /v1/notes/{date}/{id}`: one note this token added, with its text, `revision` and `written_at`.
 - `PUT /v1/notes/{date}/{id}`: replace its text. Send `{"text": "…", "revision": "…"}` with the revision you read; a note changed since, on the web say, is refused with the current one.
@@ -49,7 +49,7 @@ It answers with one line: `Filed in 5.2.113.`
 - `POST /v1/upcoming/batch`: add, change and remove dates together, up to 50 dates a request, as `{"add": […], "change": […], "remove": […]}`. It saves all or nothing: if one date isn't right, none is saved, and `field` names the one, like `add[1]`. With `"dry_run": true` it checks everything and finds each trip's city, and saves nothing. The answer lists what was `added`, in the order you sent it, then what was `changed` and `removed`.
 - `GET /v1/upcoming/reminders`: the reminders each morning's email carries, day by day, for the next 14 days, or up to 31 days ahead with `days`. Each day has `send_at`, the moment that morning's email is due, and each reminder the date's `id` as `upcoming`, the day it falls on as `date`, and its `when` and `line`, as the email says them. A date with its email reminders turned off isn't there; a paused email doesn't change the list.
 - `DELETE /v1/upcoming/{id}`: remove one date, with the revision you read as `?revision=`.
-- `GET /v1/activity`: your activity log, newest first, without any words: no note text, no email's subject or sender, no setting's value. `after` gives only rows newer than one you've seen, and `before`, with the `next` from the answer, the page older. `kinds` keeps some kinds, like `note,mail`, and `limit` sets how many rows a page holds.
+- `GET /v1/activity`: your activity log, newest first, without any words: no note text, no email's subject or sender, no setting's value. A row a token wrote names it by `token` and, from version 1.4.0 of the API, by `token_id`, the `id` that `GET /v1/me` gives; older rows have no `token_id`. `after` gives only rows newer than one you've seen, and `before`, with the `next` from the answer, the page older. `kinds` keeps some kinds, like `note,mail`, and `limit` sets how many rows a page holds.
 - `DELETE /v1/token`: this token revokes itself. Any token may ask.
 
 Adding, changing and deleting notes, pinning tags and finding places need a token that may add notes, and only ever touch the notes that same token added. Files need a token that may add files too, which comes only with adding notes. Upcoming needs a token that may read and change your Upcoming dates; it reaches all of them, not only the ones it added, and no other token reaches them. The activity log needs a token that may read it.
@@ -86,7 +86,7 @@ Act on the code, and show the sentence. Here is each one, with its HTTP status:
 
 ## Sending a note once
 
-On a bad connection you can't always tell whether a note arrived. Send an `Idempotency-Key` header with each write, a string you make for that one note, like a random UUID, and send the same key if you try again. Release Notes answers a repeat with what it answered the first time, marked `Idempotent-Replayed: true`, and adds nothing. A key holds for 7 days.
+On a bad connection you can't always tell whether a note arrived. Send an `Idempotency-Key` header with each write, a string you make for that one note, like a random UUID, and send the same key if you try again. Release Notes answers a repeat with what it answered the first time, marked `Idempotent-Replayed: true`, and adds nothing. A key holds for 7 days, and for your whole account: sent again through another of your tokens, as an app does after you sign in again, it gets the same answer. So make a new key for each note, never one per token.
 
 ## Limits
 

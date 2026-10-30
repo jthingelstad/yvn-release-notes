@@ -45,6 +45,26 @@ export const SCOPE_REFUSALS: Record<string, string> = {
 /** How long a `/v1` write's receipt answers a retry: a phone can be offline
  * for a weekend. */
 export const V1_RECEIPT_SECONDS = 7 * 86400;
+/** A `/v1` write's receipt is the account's, not the token's (API 1.4.0):
+ * USER#<owner> / CAPTURE#api#<key hash>, so a resend with the same key from
+ * any token of the account, such as an app's queue sent again after it signed
+ * out and back in, answers the first result. Another account never sees it. */
+export const apiReceiptKey = (key: string): string => 'CAPTURE#api#' + digest(key);
+/** Before 1.4.0 each token kept its own, CAPTURE#<token id>#<key hash>. Until
+ * the last of those has expired (7 days after the release, with a week to
+ * spare in case it ships late), a write also reads its token's old receipt
+ * and commits only while that one isn't live, so a resend begun before the
+ * release isn't filed twice. After it, neither is looked at. */
+export const PER_TOKEN_RECEIPTS_UNTIL = Date.parse('2026-11-13T00:00:00Z') / 1000;
+export const perTokenReceiptKey = (tokenId: string, key: string): string => 'CAPTURE#' + tokenId + '#' + digest(key);
+
+/** The account's id as `/v1/me` answers it (API 1.4.0): opaque, and the same
+ * for every token of the account, forever, so a client can tell whose account
+ * a token opens. It is the SHA-256 of the internal id, a random UUID, under a
+ * label of its own, so it can't be turned back into that id or guessed, and
+ * it is never a table key. It needs no secret: a key could be lost or
+ * changed, and every account's id would change with it. */
+export const accountId = (uid: string): string => 'acct_' + digest('release-notes/v1/account/' + uid).slice(0, 32);
 
 /** The product a client names first in its User-Agent ("Changelog" from
  * "Changelog/0.1 (iOS 26.1)", "curl" from "curl/8.7.1"): self-reported, so
@@ -289,7 +309,10 @@ export class Tokens {
               connection: id,
               client: row.name,
               reason,
-              token: row.name
+              token: row.name,
+              // The token's own sign-out (/oauth/revoke) names it by id too,
+              // as every row through a token does (API 1.4.0).
+              ...(reason === 'client' ? { token_id: id } : {})
             }
           }
         ],

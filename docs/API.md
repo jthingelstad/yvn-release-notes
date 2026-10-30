@@ -560,7 +560,7 @@ A capture tool with four verbs:
 
 It never reads the archive. The web is where you read, search, look back
 and change settings. It lives in its own public repo,
-`jthingelstad/changelog-ios` (MIT, bundle ID `com.thingelstad.changelog`),
+`jthingelstad/changelog-ios` (MIT, bundle ID `com.yourversionnumber.changelog`),
 which holds its own design.
 
 - **Open to typing.** The keyboard is up when it opens. A line goes in two
@@ -577,7 +577,9 @@ which holds its own design.
   - SwiftUI, for iOS 26 and later;
   - no third-party packages;
   - the token in the Keychain;
-  - background URLSession for the queue;
+  - the queue sent again when the connection comes back, finished in the
+    background time iOS gives an app leaving the screen, and tried by
+    background refresh;
   - App Intents, widgets and a share extension later.
 
 | Version | Adds                                                                                                                                                      | Needs   |
@@ -747,7 +749,8 @@ recommendations"):
 4. **The first live note** through a token is Jamie's own. (Overtaken the
    same day, when Jamie opened tokens to everyone "so we can continue with
    build".)
-5. **The app's repo:** public, MIT, `com.thingelstad.changelog`.
+5. **The app's repo:** public, MIT, `com.thingelstad.changelog` (now
+   `com.yourversionnumber.changelog`, Jamie's ask on 2026-10-29).
 6. **This design** merges after the automated review, without waiting for
    Jamie's read. Anything beyond it comes back as a question.
 7. **Order:** 0, then 1 with Changelog 0.1, then 2 and 4, then 3.

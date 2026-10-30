@@ -328,6 +328,8 @@ export interface EventActivity extends ActivityHead {
   status?: string;
   mail?: string;
   photos?: number;
+  // An import's source (dayone), or the app a token was signed in for, as
+  // it named itself (docs/API.md, Phase 5).
   app?: string;
   notes?: number;
   // egg.found: which easter egg (packages/domain/eggs.ts)

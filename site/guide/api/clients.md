@@ -9,7 +9,18 @@ Anyone building an app on [the API](/guide/api/), for a phone, a desktop or anyt
 
 ## Ask for a token, never a password
 
-Your app asks for a token the person makes in Settings, named for the app and the device, like "Changelog on my iPhone" (see [API tokens](/guide/tokens/)). Keep it in the platform's secure storage, like the Keychain on an iPhone or the Keystore on Android, and never in a log line, a crash report or anything you send elsewhere. When the person signs out of your app, send `DELETE /v1/token` so the token ends there too.
+Your app signs the person in, or takes a token they make in Settings, named for the app and the device, like "Changelog on my iPhone" (see [API tokens](/guide/tokens/)). Either way it ends up with one token. Keep it in the platform's secure storage, like the Keychain on an iPhone or the Keystore on Android, and never in a log line, a crash report or anything you send elsewhere. When the person signs out of your app, send `DELETE /v1/token` so the token ends there too.
+
+## Signing in
+
+Signing in is OAuth's authorization code with PKCE, and what it gives your app is a token like any other.
+
+- Register at `POST /oauth/register` as a public client with your own callback: an `https` address, or a scheme of your own written as a domain you control in reverse, like `com.example.jotter:/oauth`.
+- Open `/oauth/authorize` in the platform's sign-in browser (`ASWebAuthenticationSession` on an iPhone, a Custom Tab on Android) with `response_type=code`, your `client_id` and `redirect_uri`, `resource=https://notes.yourversionnumber.com/v1`, the scopes you need from `notes:write`, `media:write`, `upcoming` and `activity`, a `state`, and a `code_challenge` with `code_challenge_method=S256`.
+- The person names the token, can untick what you asked for, and picks when it expires. Your callback gets a `code` and your `state`. Within five minutes, post the code to `/oauth/token` with `grant_type=authorization_code`, the same `client_id`, `redirect_uri` and `resource`, and your `code_verifier`.
+- The answer is the token, `rn_...`, with the `scope` the person allowed, which may be less than you asked for, and `expires_in` unless it never expires. There is no refresh token: keep it as you would a pasted one, and when it expires, sign in again.
+- A code works once. Sent again, the token it made ends.
+- To sign out, send `DELETE /v1/token`, or post the token and your `client_id` to `/oauth/revoke`.
 
 ## Save first, then send
 
@@ -42,7 +53,7 @@ Don't work out a reminder on the device either. `GET /v1/upcoming/reminders` say
 
 - Act on the `code`, never the wording, and show the `message` when the person has to do something.
 - On `rate_limited`, wait the seconds `Retry-After` says. The queue holds the rest.
-- On `token_missing`, `token_unknown`, `token_revoked` or `token_expired`, stop sending, keep the queue, and ask for a new token.
+- On `token_missing`, `token_unknown`, `token_revoked` or `token_expired`, stop sending, keep the queue, and sign in again or ask for a new token.
 - On `scope_required`, say what the token can't do: the `message` says it in words the person can read.
 - On `revision_mismatch`, the note or date was changed somewhere else, on the web say. Read it again before changing it.
 

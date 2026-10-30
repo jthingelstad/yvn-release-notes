@@ -23,7 +23,8 @@ test('every /v1 route is one operation with its scope, plus the description itse
   assert.equal(new Set(ids).size, ids.length);
   for (const route of V1_ROUTES) {
     const op = doc.paths[route.template][route.method.toLowerCase()] as Doc;
-    assert.deepEqual(op.security, [{ token: route.scope ? [route.scope] : [] }], route.name);
+    const scopes = route.scope ? [route.scope] : [];
+    assert.deepEqual(op.security, [{ token: scopes }, { signIn: scopes }], route.name);
     assert.ok(op.summary, route.name);
     assert.ok(op.responses.default, route.name);
     // Every write takes an Idempotency-Key.

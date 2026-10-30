@@ -19,11 +19,17 @@ import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.2.0';
+export const API_VERSION = '1.3.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. A new version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.3.0',
+    date: '2026-10-29',
+    summary:
+      'Signing in: an app can get its token with OAuth (the authorization code with PKCE, for the resource /v1, with its own https or reverse-DNS callback), choosing among notes:write, media:write, upcoming and activity; the owner names the token, ticks its scopes and picks its expiry, and the answer is that token, with no refresh. The app can sign out at /oauth/revoke as well as DELETE /v1/token.'
+  },
   {
     version: '1.2.0',
     date: '2026-10-29',

@@ -21,6 +21,10 @@ Every token can read your version, today's date and your tags, whatever you tick
 
 Treat a token like a password. Anyone who has it can add notes as you, so keep it out of anything you share, like a screenshot or a public repository.
 
+## Signing in an app
+
+An app can sign you in instead, so there's nothing to copy. It opens Release Notes in your browser (sign in there if you need to), and the page says which app is asking. It's the same form: the token's name, what it may do, ticked from what the app asked for, and when it expires. Untick anything you'd rather it didn't do. **Allow** gives the app its token and **Cancel** makes nothing. The token is listed under **API tokens** with the others, and your activity log says which app you signed in.
+
 ## Notes from a token
 
 A note a token adds is yours, in your own voice. On the web it shows "via" the token's name, like "via Terminal", and nothing marks it in the email. It counts toward your streak like a note you typed, and you can edit or delete it like any other.

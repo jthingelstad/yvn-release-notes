@@ -161,6 +161,21 @@ export interface ApiAnswer {
 
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/i;
 
+/** An RFC 3339 time whose every field is real: `Date.parse` rolls
+ * February 30 over to March 2, and 24:00 to the next day. */
+function realTime(at: string): boolean {
+  if (!RFC3339.test(at)) return false;
+  const [, h, m, s = '00'] = /T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(at)!,
+    offset = /([+-])(\d{2}):(\d{2})$/.exec(at);
+  return (
+    validDay(at.slice(0, 10)) &&
+    Number(h) < 24 &&
+    Number(m) < 60 &&
+    Number(s) < 60 &&
+    (!offset || (Number(offset[2]) < 24 && Number(offset[3]) < 60))
+  );
+}
+
 /** Seconds until the UTC day ends, when every daily count starts again. */
 export const untilUtcMidnight = (now: number): number => (Math.floor(now / 86400) + 1) * 86400 - now;
 
@@ -639,16 +654,30 @@ export async function writeApi(
           if (Object.hasOwn(args, 'written_at')) {
             const at = String(args.written_at),
               seconds = Date.parse(at) / 1000;
-            if (!RFC3339.test(at) || !Number.isFinite(seconds))
+            if (!realTime(at) || !Number.isFinite(seconds))
               throw new ApiRefusal('invalid_request', 'written_at is an RFC 3339 time.', { field: 'written_at' });
             if (seconds > now + 300)
               throw new ApiRefusal('invalid_request', 'written_at is in the future.', { field: 'written_at' });
+            // A day and a half before the birthday began in UTC is before it
+            // in every zone; checked first, since a time near year 1 is past
+            // what a zone's calendar (localDay) can name.
+            if (seconds < Date.parse(`${birthday}T00:00:00Z`) / 1000 - 1.5 * 86400)
+              throw new ApiRefusal('date_out_of_range', 'Choose a time from your birthday through now.', {
+                field: 'written_at'
+              });
             // A minute or two ahead of this clock is still now.
             typed = Math.min(Math.floor(seconds), now);
           }
           // Words typed offline file to the day they were typed, unless a date
           // says otherwise.
-          d = day(Object.hasOwn(args, 'date') ? args.date : localDay(typed, tz));
+          if (Object.hasOwn(args, 'date')) d = day(args.date);
+          else {
+            d = localDay(typed, tz);
+            if (d < birthday)
+              throw new ApiRefusal('date_out_of_range', 'Choose a time from your birthday through now.', {
+                field: 'written_at'
+              });
+          }
           if (Object.hasOwn(args, 'place')) {
             place = notePlaceOf(args.place);
             if (!place)

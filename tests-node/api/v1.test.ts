@@ -566,6 +566,16 @@ test('note fields: dates, written_at, sizes, bodies and plain text', async () =>
     [{ text: 'Hi', date: 'yesterday' }, 'invalid_request', 'date'],
     [{ text: 'Hi', written_at: 'last night' }, 'invalid_request', 'written_at'],
     [{ text: 'Hi', written_at: '2026-10-13T12:10:00Z' }, 'invalid_request', 'written_at'],
+    // Real times only: Date.parse would roll these over to another day.
+    [{ text: 'Hi', written_at: '2026-02-30T10:00:00Z' }, 'invalid_request', 'written_at'],
+    [{ text: 'Hi', written_at: '2026-10-12T24:00:00Z' }, 'invalid_request', 'written_at'],
+    [{ text: 'Hi', written_at: '2026-10-12T10:60:00Z' }, 'invalid_request', 'written_at'],
+    [{ text: 'Hi', written_at: '2026-10-12T10:00:00+24:00' }, 'invalid_request', 'written_at'],
+    // Before the birthday, however far: a refusal naming written_at, never
+    // a failure (year 1 is past what a zone's calendar can name).
+    [{ text: 'Hi', written_at: '1981-06-13T12:00:00Z' }, 'date_out_of_range', 'written_at'],
+    [{ text: 'Hi', written_at: '0001-01-01T00:00:00Z' }, 'date_out_of_range', 'written_at'],
+    [{ text: 'Hi', written_at: '0000-06-01T00:00:00Z' }, 'invalid_request', 'written_at'],
     [{ text: 'Hi', mood: 'great' }, 'invalid_request', 'mood']
   ] as [OAuthRow, string, string][]) {
     const r = await post(body);

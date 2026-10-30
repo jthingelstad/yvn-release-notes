@@ -327,8 +327,10 @@ know whose account a token opens and which rows are its own:
   Hashtags in the text are its tags, and links get their titles fetched
   once, as on the web.
 - `date` is optional, any day from the birthday through today.
-- `written_at` is optional: the moment the words were typed. It must not be
-  more than five minutes in the future. A note queued offline at 11:58pm
+- `written_at` is optional: the moment the words were typed, a real time
+  (no February 30, no 24:00) from the birthday on. It must not be
+  more than five minutes in the future; a time before the birthday is
+  `date_out_of_range` with `field: written_at`. A note queued offline at 11:58pm
   and sent at 12:05am files to the day it was typed, in the account's zone,
   unless `date` says otherwise. It also orders the note within its day.
 - `uploads` (with `media:write`) and `place` are as under Phase 3.

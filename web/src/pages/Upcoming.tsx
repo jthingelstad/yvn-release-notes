@@ -389,7 +389,8 @@ function CalendarLink({
       </h2>
       <p className="hint">
         Subscribe from your calendar app and it keeps these dates current: each birthday with the version it turns,
-        every anniversary, trip and event. Reminders still come only in your daily email.
+        every anniversary, trip and event. It sets no alarms: reminders come in your daily email, and in an app if you
+        turn them on there.
       </p>
       {calendar && (
         <p className="value mono" data-field="calendar">

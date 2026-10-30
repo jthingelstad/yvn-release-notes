@@ -12,6 +12,7 @@ It numbers itself the way Release Notes numbers you. It started on October 29, 2
 ## 0.0.1 · October 30
 
 - Changelog opens again. The build from the night of October 29 closed itself as it opened, once Today had a note in it.
+- **Moments:** start a note from one of your iPhone's suggestions. A workout, a song, a place or photos fill it in, and it files to the day it happened, or to today if you'd rather. Nothing goes until you Commit.
 - Deleting a note from **Today** asks first, since its photos and files go with it.
 - Siri answers sooner on a slow connection, and Changelog sends the note itself, so Siri never asks you to say it again.
 

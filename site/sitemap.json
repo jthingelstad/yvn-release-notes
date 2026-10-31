@@ -72,11 +72,11 @@
     "lastmod": "2026-10-29"
   },
   "/guide/tokens/": {
-    "said": "cd44b695bcaf528d198eb71a2d186f96092afcb8f7c8eaaf7ce80206e09bf554",
-    "lastmod": "2026-10-29"
+    "said": "1c62d790dc0159bf0bca1cc790ce1d8de0e3fe7a3ad2edccc153486600332dcc",
+    "lastmod": "2026-10-30"
   },
   "/guide/api/": {
-    "said": "7b78756e02b75f842529581b47c3319592d0b61a4e830ad03572d7c2b6464e8a",
+    "said": "5fa3f272720674536ee9d1fc5a2435bdf3f01a3092dc3b4813547fc5153695a9",
     "lastmod": "2026-10-30"
   },
   "/guide/api/clients/": {
@@ -96,7 +96,7 @@
     "lastmod": "2026-10-30"
   },
   "/changelog/": {
-    "said": "97a8a3027abb8ae67c39ae32487eabebf4b2a1af85586328978f6af5efb4ca57",
+    "said": "8e22856bdbbeb8b80ea39506e2443e44955fb1d76632c1bb20363ba3c4dfcebf",
     "lastmod": "2026-10-30"
   }
 }

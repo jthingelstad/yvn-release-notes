@@ -55,7 +55,7 @@ It answers with one line: `Filed in 5.2.113.`
 - `GET /v1/activity`: your activity log, newest first, without any words: no note text, no email's subject or sender, no setting's value. A row a token wrote names it by `token` and, from version 1.4.0 of the API, by `token_id`, the `id` that `GET /v1/me` gives; older rows have no `token_id`. `after` gives only rows newer than one you've seen, and `before`, with the `next` from the answer, the page older. `kinds` keeps some kinds, like `note,mail`, `from` and `to` keep some days, as they do for notes, and `limit` sets how many rows a page holds.
 - `DELETE /v1/token`: this token revokes itself. Any token may ask.
 
-Reading back, adding, changing and deleting notes, pinning tags and finding places need a token that may add notes, and only ever read or touch the notes that same token added. Files need a token that may add files too, which comes only with adding notes. Upcoming needs a token that may read and change your Upcoming dates; it reaches all of them, not only the ones it added, and no other token reaches them. The activity log needs a token that may read it.
+Reading back, adding, changing and deleting notes, pinning tags and finding places need a token that may add notes, and only ever read or touch the notes that same token added. A token that may also read all your notes reads every note and changes or adds to any of them, wherever you wrote it; it still deletes, and adds files to, only its own. Files need a token that may add files too, which comes only with adding notes. Upcoming needs a token that may read and change your Upcoming dates; it reaches all of them, not only the ones it added, and no other token reaches them. The activity log needs a token that may read it.
 
 ## Errors
 
@@ -76,7 +76,7 @@ Act on the code, and show the sentence. Here is each one, with its HTTP status:
 - `token_revoked` (401): the token was revoked.
 - `token_expired` (401): the token expired.
 - `scope_required` (403): this token may not do that.
-- `not_yours` (403): this token didn't add that note.
+- `not_yours` (403): this token didn't add that note, and can't reach all your notes (or it asked to delete one, or add files to one, it didn't add).
 - `origin_refused` (403): the API isn't for web pages in a browser.
 - `not_found` (404): there is no such request, or no such note or date, or no city for the spot sent to Here.
 - `method_not_allowed` (405): that request doesn't take that method.

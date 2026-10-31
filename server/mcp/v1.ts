@@ -26,13 +26,19 @@ import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.9.0';
+export const API_VERSION = '1.10.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.10.0',
+    date: '2026-10-30',
+    summary:
+      'Every note: a token with the new notes:all scope (only beside notes:write, chosen by the owner) reads any note in the account, whatever channel wrote it, lists them all by day, fetches their files, and changes their words with PUT and append, from the revision it read. Delete and adding files stay on the notes it wrote. A note now says where it came from as `source` (email, web, api, an agent or an import) and whether this token wrote it as `mine`, and GET /v1/notes takes mine=true for this token’s alone. Without notes:all, nothing changes. Fixed: an activity cursor outside the from/to days answers an empty page, not 503.'
+  },
   {
     version: '1.9.0',
     date: '2026-10-30',
@@ -362,8 +368,9 @@ const fileView = (m: OAuthRow): OAuthRow => {
   };
 };
 
-/** A note as a token reads it, alone or in a day's list. */
-function noteView(item: OAuthRow, birthday: string): OAuthRow {
+/** A note as a token reads it, alone or in a day's list; `mine` when this
+ * token wrote it (1.10.0). */
+function noteView(item: OAuthRow, birthday: string, tid: string): OAuthRow {
   const [, date = '', ...rest] = String(item.sk).split('#'),
     media = (item.media as OAuthRow[] | undefined) ?? [];
   return {
@@ -375,7 +382,9 @@ function noteView(item: OAuthRow, birthday: string): OAuthRow {
     written_at: writtenAt(item as NoteRecord) || null,
     files: media.length,
     media: media.map(fileView),
-    token: item.token ?? null
+    token: item.token ?? null,
+    source: String(item.source ?? 'email'),
+    mine: item.source === 'api' && item.connection === tid
   };
 }
 
@@ -590,7 +599,13 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         retry_after: until(now)
       });
     type Read = { status: number; body: unknown; line: string } | { code: string; message: string; extra?: OAuthRow };
+    // A token reaches the notes it wrote, and every note with notes:all.
     const own = (item: OAuthRow) => item.source === 'api' && item.connection === tid,
+      reaches = (item: OAuthRow) => own(item) || scopes.includes('notes:all'),
+      unreached = {
+        code: 'not_yours',
+        message: 'A token reads only the notes it wrote, unless it may reach all your notes.'
+      },
       q = new URL(request.url).searchParams;
     const read = async (): Promise<Read> => {
       if (route.name === 'me') {
@@ -639,8 +654,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         if (!validDay(date)) return { code: 'not_found', message: 'There is no note with that date and id.' };
         const item = await store.note(uid, date, id, true);
         if (!item) return { code: 'not_found', message: 'There is no note with that date and id.' };
-        if (!own(item)) return { code: 'not_yours', message: 'A token reads only the notes it wrote.' };
-        return { status: 200, body: noteView(item, birthday), line: String(item.text ?? '') };
+        if (!reaches(item)) return unreached;
+        return { status: 200, body: noteView(item, birthday, tid), line: String(item.text ?? '') };
       }
       if (route.name === 'upcoming') {
         // As an agent's upcoming_list: a one-time date already over is left
@@ -657,7 +672,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         };
       }
       if (route.name === 'notes') {
-        // The notes this token wrote on some days, oldest first (1.9.0).
+        // The notes this token reaches on some days, oldest first (1.9.0):
+        // its own, or every note with notes:all, or its own with mine=true.
         const range = dayRange(q) ?? {
           code: 'invalid_request',
           message: 'from is a day, YYYY-MM-DD.',
@@ -667,6 +683,10 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         const limit = q.get('limit') === null ? 50 : Number(q.get('limit'));
         if (!Number.isInteger(limit) || limit < 1 || limit > 100)
           return { code: 'invalid_request', message: 'limit is 1 to 100.', extra: { field: 'limit' } };
+        const only = q.get('mine');
+        if (only !== null && only !== 'true' && only !== 'false')
+          return { code: 'invalid_request', message: 'mine is true or false.', extra: { field: 'mine' } };
+        const kept = only === 'true' ? own : reaches;
         // A page ends at a place in the order, not at a note, so a note
         // deleted since still lets the next page start where it was.
         const order = (item: OAuthRow) => [
@@ -694,12 +714,12 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
             return false;
           },
           mine = (await store.notesBetween(uid, range.first, range.last, { ConsistentRead: true }))
-            .filter(own)
+            .filter(kept)
             .map((item) => ({ item, at: order(item) }))
             .sort((x, y) => (later(x.at, y.at) ? 1 : later(y.at, x.at) ? -1 : 0))
             .filter((n) => !after || later(n.at, after)),
           page = mine.slice(0, limit),
-          items = page.map((n) => noteView(n.item, birthday));
+          items = page.map((n) => noteView(n.item, birthday, tid));
         return {
           status: 200,
           body: {
@@ -718,7 +738,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         if (!validDay(date)) return { code: 'not_found', message: 'There is no note with that date and id.' };
         const item = await store.note(uid, date, id, true);
         if (!item) return { code: 'not_found', message: 'There is no note with that date and id.' };
-        if (!own(item)) return { code: 'not_yours', message: 'A token reads only the notes it wrote.' };
+        if (!reaches(item)) return unreached;
         const file = ((item.media as OAuthRow[] | undefined) ?? []).find((m) => Number(m.n) === Number(n));
         if (!file) return { code: 'not_found', message: 'That note has no file by that number. Read the note again.' };
         const size = q.get('size');
@@ -827,8 +847,11 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
       let more = false,
         read = 0,
         from = before;
-      scan: for (;;) {
-        const bottom = lowest ?? after,
+      // Bounds that do not overlap (a cursor outside the days asked) hold
+      // nothing; the store's range query cannot be asked for them.
+      const floor = lowest ?? after;
+      scan: for (; !(floor !== undefined && from !== undefined && floor >= from);) {
+        const bottom = floor,
           page = await store.activity(uid, { before: from, ...(bottom ? { from: bottom } : {}), limit: 200 });
         for (const row of page.rows) {
           const id = activityId(String(row.sk));

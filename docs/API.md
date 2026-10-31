@@ -182,15 +182,18 @@ There is no new DNS record, certificate or function.
 | ------------- | ----------------------------------------------------------------------------------------------- | --------------- |
 | `notes:write` | creating notes; appending to, editing, reading and deleting notes this token wrote; pinned tags | MCP             |
 | `media:write` | files on this token's notes; only beside `notes:write`                                          | MCP             |
+| `notes:all`   | reading every note, and editing and appending to any; only beside `notes:write` (1.10.0)        | new, `/v1` only |
 | `upcoming`    | Upcoming dates and their reminders                                                              | MCP             |
 | `activity`    | the activity log, trimmed of words                                                              | new, `/v1` only |
 
 - **Every token can** read `/v1/me` and the owner's tags, and can revoke
   itself.
-- **Not in v1: `notes:read` and `media:read`.** A key that lives a year in
-  shell history and can read a whole journal is a bigger risk than MCP's
-  hour-long access tokens. Archive reads come after v1 if a client needs
-  them.
+- **Reading the whole journal is `notes:all`** (API 1.10.0, Quinn's issue
+  #279; Jamie, 2026-10-30: "Changelog should be able to read back any notes that the user has recorded… going forward changelog users should be able to open a previous note and be able to edit it, regardless of where it was created."). v1 began without it, since a key
+  that lives a year in shell history and can read a whole journal is a
+  bigger risk than MCP's hour-long access tokens; it is ticked by the owner,
+  never by default, and its own line on the token says so. There is still
+  no `media:read`: files come with the note they are on.
 - **No token can** make tokens, change settings, export, or delete the
   account. The one exception is the pinned tags list (Tags), which Jamie
   wants the same on the web and every phone.
@@ -382,9 +385,10 @@ it was said the first time. A `revision` is an opaque string, as MCP's is;
 send it back unchanged.
 
 **`GET`, `PUT`, `DELETE /v1/notes/{date}/{id}`** and **`POST
-/v1/notes/{date}/{id}/append`**, `notes:write`. These work only on a note
-this token wrote. Any other note is a 403, `not_yours`, as MCP's appends
-and edits are.
+/v1/notes/{date}/{id}/append`**, `notes:write`. These work on a note this
+token wrote. Any other note is a 403, `not_yours`, as MCP's appends and
+edits are, unless the token has `notes:all` (below): then `GET`, `PUT` and
+`append` reach any note in the account.
 
 - `GET` returns the note's text, `revision`, `written_at` and file count, so
   an app can pick up an edit made on the web.
@@ -421,6 +425,23 @@ memos, and steps back to earlier days:
   a HEIC) is `not_found`. It answers JSON rather than a redirect, since a
   client that carried its `Authorization` header across a redirect would
   send S3 two kinds of credentials.
+
+**Any note, from any channel** (API 1.10.0, 2026-10-30; Quinn's issue #279).
+A token with `notes:all`, which comes only beside `notes:write`:
+
+- **Reads** any note of the account: `GET` one, `GET /v1/notes?from=&to=`
+  lists every note on those days (`mine=true` keeps the token's own), and
+  `.../media/{n}` gives a file of any of them. Each note says its `source`
+  (`email`, `web`, `api`, ...) and `mine`, whether this token wrote it.
+- **Edits and appends** to any note, from the revision it read, as on its
+  own. The capture function proves `notes:all` on the live token in the
+  same transaction as the write, with the note's words and revision as
+  they were read (or their absence: a web note may have neither yet). The
+  note keeps its `source` and its "via"; the change is the owner's, logged
+  with the token's name. A rich-text note keeps its markup.
+- **Not delete, not files.** Deleting and adding files stay with the
+  token's own notes (`not_yours`) until Jamie says otherwise.
+- Never another account's: every key is the token's own account.
 
 **`GET /v1/tags`**, any scope. The tag row:
 
@@ -579,8 +600,8 @@ a sign-in. Built 2026-10-29 (`packages/backend/oauth.ts`, `tokens.ts`,
   consent page (`/connect/`, in the owner's email-verified session) is the
   token form: a name (the app's registered name, or with the first number
   no live token has, "Changelog 2"), what it may do, ticked from the scopes
-  the app asked for (`notes:write`, `media:write` only beside it, `upcoming`,
-  `activity`; never `notes:read`), and an expiry (90 days, 1 year, the
+  the app asked for (`notes:write`, `media:write` and `notes:all` only
+  beside it, `upcoming`, `activity`), and an expiry (90 days, 1 year, the
   default, or never). Allowing makes nothing yet: the code holds the
   choice for five minutes. Spending it at `/oauth/token` (PKCE S256, the
   same client, redirect and resource) makes the token in the same
@@ -673,9 +694,11 @@ which holds its own design.
   taps, and the button says **Commit**.
 - **Never lose a note.** Everything goes through an offline queue, sent with
   its idempotency key and `written_at`, so a retry never duplicates.
-- **Never reads your words.** It asks for `notes:write`, `media:write`,
-  `upcoming` and `activity`. A lost phone can add notes and see that things
-  happened, but can read back only what it sent itself.
+- **Reads back your notes.** It began asking only for `notes:write`,
+  `media:write`, `upcoming` and `activity`, reading back only what it sent
+  itself. Since API 1.10.0 it can ask for `notes:all` too, to open and
+  edit any earlier note wherever it was made (Jamie, 2026-10-30). The
+  owner sees that line on the sign-in page and can untick it.
 - **The software metaphor in small doses.** Today's version is at the top in
   monospace. A sent note says "Filed in 4.5.137", and an empty day says "No
   changes yet in 4.5.137".

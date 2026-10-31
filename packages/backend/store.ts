@@ -2598,7 +2598,8 @@ export class Store {
   /** A token's note (docs/API.md), as captureCommit is an agent's: the live
    * account and token, the note, the receipt, the audit and the daily count
    * in one transaction, with `extra` (an older receipt's guard) after. A
-   * change goes only to the token's own note, from the words it read. */
+   * change goes to the token's own note, or with notes:all (API 1.10.0),
+   * proved here too, to any note, from the words it read. */
   async apiNoteCommit(
     note: Item,
     old: Item | null,
@@ -2613,16 +2614,22 @@ export class Store {
   ) {
     // Files ride on a note: their write proves media:write as well.
     const files = Boolean(added?.length || (!old && Array.isArray(note.media) && note.media.length)),
+      mine = !old || (old.source === 'api' && old.connection === token.id),
       ops: Ops = [
         this.profileProof(String(token.user_id)),
-        ...this.tokenProof(token, now, files ? ['notes:write', 'media:write'] : 'notes:write')
+        ...this.tokenProof(token, now, [
+          'notes:write',
+          ...(files ? ['media:write'] : []),
+          ...(mine ? [] : ['notes:all'])
+        ])
       ];
     if (old) {
+      // A note from another channel may have no words yet, or no revision:
+      // the web's own edits keep none.
       const values: Item = {
-        ':api': 'api',
-        ':token': token.id,
-        ':old': old.text ?? '',
-        ':revision': old.revision,
+        ...(mine ? { ':api': 'api', ':token': token.id } : {}),
+        ...(old.text === undefined ? {} : { ':old': old.text }),
+        ...(old.revision === undefined ? {} : { ':revision': old.revision }),
         ':text': note.text,
         ':tags': note.tags,
         ':links': note.links,
@@ -2642,14 +2649,20 @@ export class Store {
             'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next' +
             (added?.length ? ', media = list_append(if_not_exists(media, :none), :m)' : ''),
           ConditionExpression:
-            '#src = :api AND #c = :token AND #t = :old AND #r = :revision AND ' +
+            (mine ? '#src = :api AND #c = :token AND ' : 'attribute_exists(pk) AND ') +
+            (old.text === undefined ? 'attribute_not_exists(#t) AND ' : '#t = :old AND ') +
+            (old.revision === undefined ? 'attribute_not_exists(#r) AND ' : '#r = :revision AND ') +
             (old.updated_at ? 'updated_at = :edited' : 'attribute_not_exists(updated_at)') +
             (added?.length
               ? had
                 ? ' AND size(media) = :had'
                 : ' AND (attribute_not_exists(media) OR size(media) = :had)'
               : ''),
-          ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection', '#src': 'source' },
+          ExpressionAttributeNames: {
+            '#t': 'text',
+            '#r': 'revision',
+            ...(mine ? { '#c': 'connection', '#src': 'source' } : {})
+          },
           ExpressionAttributeValues: values
         }
       });

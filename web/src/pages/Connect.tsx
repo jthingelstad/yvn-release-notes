@@ -4,7 +4,7 @@
 // it an API token (docs/API.md, Phase 5).
 import { useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
-import { EXPIRY, OFFERED } from '../components/api-tokens.tsx';
+import { EXPIRY, NEEDS_NOTES, OFFERED } from '../components/api-tokens.tsx';
 import { AppLink, Bar, ErrorLine, Failed, Loading, useBusy, useProblem, useTitle } from '../components/common.tsx';
 import { api, load } from '../lib/api.ts';
 import { useHashParam, useMe } from '../lib/nav.ts';
@@ -221,12 +221,12 @@ export function AppSignIn({ info, request, email }: { info: RequestInfo; request
               <input
                 type="checkbox"
                 checked={scopes.includes(scope)}
-                disabled={scope === 'media:write' && !scopes.includes('notes:write')}
+                disabled={NEEDS_NOTES.includes(scope) && !scopes.includes('notes:write')}
                 onChange={(e) =>
                   setScopes((now) =>
                     e.target.checked
                       ? [...now, scope]
-                      : now.filter((s) => s !== scope && !(scope === 'notes:write' && s === 'media:write'))
+                      : now.filter((s) => s !== scope && !(scope === 'notes:write' && NEEDS_NOTES.includes(s)))
                   )
                 }
               />{' '}

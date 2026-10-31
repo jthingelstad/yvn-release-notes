@@ -13,7 +13,7 @@ import { codePointLength } from '../domain/unicode.ts';
 import type { ActivityEvent } from '../domain/activity.ts';
 import { again, recordActivity } from './activity.ts';
 import { safeLog, type Log } from './services.ts';
-import { TOKEN_EXPIRY, TOKEN_SCOPES, tokenFields, tokenId, Tokens, type TokenStore } from './tokens.ts';
+import { NEEDS_NOTES, TOKEN_EXPIRY, TOKEN_SCOPES, tokenFields, tokenId, Tokens, type TokenStore } from './tokens.ts';
 import { ApiError } from './sessions.ts';
 export type OAuthRow = Record<string, unknown>;
 export type OAuthChange = [OAuthRow, number | null];
@@ -646,7 +646,7 @@ export async function publicOAuth(
         !/^[A-Za-z0-9_-]{43}$/.test(challenge) ||
         requested.some((s) => !(app ? APP_SCOPES : SCOPES).includes(s)) ||
         (app
-          ? !requested.length || (requested.includes('media:write') && !requested.includes('notes:write'))
+          ? !requested.length || (requested.some((s) => NEEDS_NOTES.includes(s)) && !requested.includes('notes:write'))
           : !requested.includes('notes:read')) ||
         codePointLength(state) > 1024
       )

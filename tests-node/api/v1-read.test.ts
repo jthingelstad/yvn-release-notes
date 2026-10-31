@@ -85,15 +85,25 @@ test('GET /v1/notes lists only this token’s notes on the days asked, oldest fi
     'files',
     'id',
     'media',
+    'mine',
     'revision',
+    'source',
     'text',
     'token',
     'version',
     'written_at'
   ]);
   assert.deepEqual(
-    { text: first.text, date: first.date, token: first.token, files: first.files, media: first.media },
-    { text: 'Morning', date: '2026-10-12', token: 'Changelog', files: 0, media: [] }
+    {
+      text: first.text,
+      date: first.date,
+      token: first.token,
+      files: first.files,
+      media: first.media,
+      source: first.source,
+      mine: first.mine
+    },
+    { text: 'Morning', date: '2026-10-12', token: 'Changelog', files: 0, media: [], source: 'api', mine: true }
   );
   // Read alone, a note is the same.
   assert.deepEqual((await get(app, `/v1/notes/2026-10-12/${String(a)}`, token.token)).json, first);
@@ -262,6 +272,19 @@ test('GET /v1/activity takes from and to, days in the account’s time zone', as
     token.token
   );
   assert.deepEqual(notes(newer), ['w-today']);
+  // A cursor outside the days asked: nothing, not an error (Codex on #280).
+  const today = (both.json!.items as OAuthRow[])[0]!.id as string;
+  const outside = await get(
+    app,
+    `/v1/activity?kinds=note&from=2026-10-12&to=2026-10-12&after=${encodeURIComponent(today)}`,
+    token.token
+  );
+  assert.equal(outside.status, 200);
+  assert.deepEqual(outside.json!.items, []);
+  assert.equal(outside.json!.next, null);
+  const early = (p2.json!.items as OAuthRow[])[1]!.id as string;
+  const older = await get(app, `/v1/activity?from=2026-10-13&before=${encodeURIComponent(early)}`, token.token);
+  assert.deepEqual([older.status, older.json!.items], [200, []]);
 
   const wide = await get(app, '/v1/activity?from=2026-09-01&to=2026-10-13', token.token);
   assert.equal(wide.error.code, 'range_too_wide');

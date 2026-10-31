@@ -42,11 +42,12 @@ const OPERATIONS: Record<string, Doc> = {
   },
   notes: {
     operationId: 'listNotes',
-    summary: 'The notes this token wrote on some days, oldest first',
+    summary: 'The notes this token wrote, or with notes:all every note, on some days, oldest first',
     description:
       `From \`from\` to \`to\`, days in the account’s time zone, both in, at most ${RANGE_DAYS_MAX} days a ` +
       'request; a wider span is `range_too_wide`, so ask in pieces. Each note is as `getNote` reads it. A ' +
-      'range with none is an empty list. Only this token’s notes, whatever else the days hold.',
+      'range with none is an empty list. Only this token’s notes, whatever else the days hold, unless it has ' +
+      '`notes:all` (1.10.0): then every note on those days, or with `mine=true` its own alone.',
     parameters: [
       {
         name: 'from',
@@ -62,7 +63,13 @@ const OPERATIONS: Record<string, Doc> = {
         schema: { type: 'string', format: 'date' }
       },
       cursor('after', 'The next page: `next` from the answer before.'),
-      { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } }
+      { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } },
+      {
+        name: 'mine',
+        in: 'query',
+        description: 'true keeps only the notes this token wrote (1.10.0).',
+        schema: { type: 'string', enum: ['true', 'false'], default: 'false' }
+      }
     ],
     responses: { '200': answer('NoteList', 'One line a note: its day and its words.') }
   },
@@ -89,13 +96,16 @@ const OPERATIONS: Record<string, Doc> = {
   },
   note: {
     operationId: 'getNote',
-    summary: 'Read a note this token wrote',
-    description: 'Its text and revision, so an app can pick up an edit made on the web.',
+    summary: 'Read a note this token wrote, or any note with notes:all',
+    description:
+      'Its text and revision, so an app can pick up an edit made on the web. With `notes:all` (1.10.0), any ' +
+      'note in the account, from any channel; `source` says where it was made and `mine` whether this token ' +
+      'wrote it.',
     responses: { '200': answer('Note', 'The note’s text.') }
   },
   'notes.edit': {
     operationId: 'editNote',
-    summary: 'Replace the text of a note this token wrote',
+    summary: 'Replace the text of a note this token wrote, or any note with notes:all',
     description:
       'From the revision the client read: a note changed since is a 409 `revision_mismatch` with its current ' +
       '`revision`. No history is kept.',
@@ -105,11 +115,12 @@ const OPERATIONS: Record<string, Doc> = {
   'notes.delete': {
     operationId: 'deleteNote',
     summary: 'Delete a note this token wrote',
+    description: 'Only a note this token wrote, even with `notes:all`.',
     responses: { '204': { description: 'Deleted.', headers: writeHeaders() } }
   },
   'notes.append': {
     operationId: 'appendNote',
-    summary: 'Add a paragraph to a note this token wrote',
+    summary: 'Add a paragraph to a note this token wrote, or any note with notes:all',
     requestBody: { required: true, content: { 'application/json': { schema: ref('NoteAppend') } } },
     responses: { '200': answer('NoteWritten', 'Changed in 4.5.137.', true) }
   },
@@ -117,6 +128,7 @@ const OPERATIONS: Record<string, Doc> = {
     operationId: 'addNoteFiles',
     summary: 'Add files to a note this token wrote',
     description:
+      'Only a note this token wrote, even with `notes:all`. ' +
       `Uploads from \`POST /v1/uploads\`, each checked against the bytes that arrived, up to ${MAX_FILES} files on ` +
       'a note in all. It counts as a change. A note takes each upload once; a write refused or lost before it ' +
       'lands leaves the uploads for a retry with the same Idempotency-Key.',
@@ -125,7 +137,7 @@ const OPERATIONS: Record<string, Doc> = {
   },
   'notes.file': {
     operationId: 'getNoteFile',
-    summary: 'An address for one file on a note this token wrote',
+    summary: 'An address for one file on a note this token wrote, or any note with notes:all',
     description:
       `A signed address for the file, good for ${FILE_SECONDS / 60} minutes; fetch it with no token. With ` +
       '`size=thumb`, the small JPEG copy a photo has, for a list; a file without one is `not_found`. `n` is ' +
@@ -574,7 +586,12 @@ const SCHEMAS: Record<string, Doc> = {
       written_at: { anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }] },
       files: { type: 'integer', minimum: 0 },
       media: { type: 'array', items: ref('NoteFileEntry'), description: 'Its files, in order (1.9.0).' },
-      token: { anyOf: [{ type: 'string' }, { type: 'null' }] }
+      token: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      source: {
+        type: 'string',
+        description: 'Where the note was made: email, web, api and the rest (1.10.0).'
+      },
+      mine: { type: 'boolean', description: 'Whether this token wrote it (1.10.0).' }
     }
   },
   NoteFileEntry: {
@@ -832,6 +849,7 @@ const NO_RECEIPT = new Set(['uploads.start', 'places.here']);
 const SIGN_IN_SCOPES: Record<string, string> = {
   'notes:write': 'Add notes, and change or delete the notes it adds',
   'media:write': 'Add files to the notes it adds (only beside notes:write)',
+  'notes:all': 'Read all your notes, from anywhere, and change their words (only beside notes:write)',
   upcoming: 'Read and change Upcoming dates and their reminders',
   activity: 'Read the activity log, without any words from it'
 };

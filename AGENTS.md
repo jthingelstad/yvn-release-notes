@@ -851,8 +851,10 @@ sign-in, which makes an API token) are built.
   `notes:write`, for files on the notes the token wrote, kept as web
   uploads are), `notes:all` (only beside `notes:write`; API 1.10.0, Jamie,
   2026-10-30: "Changelog should be able to read back any notes that the user has recorded… going forward changelog users should be able to open a previous note and be able to edit it, regardless of where it was created."; it reads every note and edits or appends to
-  any, proved on the live token in the write's transaction; delete and
-  files stay own-only until Jamie says), `upcoming` and `activity`.
+  any, proved on the live token in the write's transaction; API 1.11.0,
+  Jamie, 2026-10-30: "Approved: notes:all also deletes and adds files to any note in Release Notes"; a token's delete
+  removes the note's files and its email as the web's does), `upcoming`
+  and `activity`.
   A token reads back what it wrote by day, with its files (API 1.9.0:
   `GET /v1/notes?from=&to=`, at most 31 days, and `.../media/{n}`).
   `upcoming` keeps MCP's rules (revisions, dry runs, all or nothing, 50
@@ -865,7 +867,7 @@ sign-in, which makes an API token) are built.
   honoured until `PER_TOKEN_RECEIPTS_UNTIL`, `/v1/me` gives a derived
   `account` id and the token's `id`, and a token's activity rows carry
   `token_id`. Ownership stays the token's: it changes only the notes it
-  wrote, or with `notes:all` the words of any.
+  wrote, or with `notes:all` any note.
 - **When `/v1` changes**, regenerate the contract with
   `node --import tsx tools/export-api-contract.ts`. Every change is a new
   `API_VERSION` with its `API_CHANGES` entry (`server/mcp/v1.ts`), or the

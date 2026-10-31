@@ -142,6 +142,43 @@ test('the capture role grants every DynamoDB and S3 request the write tools make
   assert.equal((await api('upcoming.delete', { id: date.id, revision: date.revision })).status, 204);
   // Deleting the note deletes its kept files.
   assert.equal((await api('notes.delete', at)).status, 204);
+  // A token that reaches all the notes (1.11.0) adds files to an emailed
+  // note, then deletes it with the email behind it and every file, as the
+  // web's delete does.
+  const all = String(
+      (
+        await aws.aside(ctx.store, null, () =>
+          new Tokens({ store: ctx.store, origin: ctx.origin, now: ctx.now }).make('u', {
+            name: 'Everything',
+            scopes: ['notes:write', 'media:write', 'notes:all'],
+            expiry: 'never'
+          })
+        )
+      ).token
+    ),
+    emailed = { date: '2026-10-13', id: 'e-mail' },
+    emailedPhoto = 'media/u/2026-10-13/e-mail/1.jpg';
+  ctx.store.seed({
+    pk: 'USER#u',
+    sk: 'NOTE#2026-10-13#e-mail',
+    text: 'By email',
+    source: 'email',
+    raw_key: 'raw/m-1',
+    written_at: '2026-10-13T12:00:00Z',
+    media: [{ n: 1, kind: 'image', type: 'image/jpeg', key: emailedPhoto, size: 3 }]
+  });
+  for (const key of ['raw/m-1', emailedPhoto, 'media/u/2026-10-13/e-mail/1.thumb.jpg'])
+    await bucket.put(key, Buffer.from('abc'), { type: 'application/octet-stream' });
+  const everything = async (op: string, args: Input) =>
+    (await captureNote({ api: op, token: all, arguments: args, key: null }, context, {
+      fetchTitle: () => null
+    })) as OAuthRow;
+  const filed = await everything('notes.media', { ...emailed, uploads: await upload() });
+  assert.equal(filed.status, 200, JSON.stringify(filed));
+  assert.equal((await everything('notes.delete', emailed)).status, 204);
+  const gone = bucket.calls.filter((c) => c.operation === 'remove' && !c.version).map((c) => c.key);
+  for (const key of ['raw/m-1', emailedPhoto, 'media/u/2026-10-13/e-mail/1.thumb.jpg'])
+    assert.ok(gone.includes(key), key);
   assert.equal((await api('token.revoke', {})).status, 204);
 
   const made = aws.granted();

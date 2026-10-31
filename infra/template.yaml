@@ -1668,9 +1668,19 @@ Resources:
                 # Files an agent sends with a note (media:write), and a
                 # token's checked uploads, kept where a web upload's checked
                 # copy is, tagged kept, and removed again when no note takes
-                # them or the token deletes its note. Nothing here is read.
+                # them. Nothing here is read.
                 Action: [s3:PutObject, s3:PutObjectTagging, s3:DeleteObject]
                 Resource: !Sub "${MailBucket.Arn}/media/*/files/*"
+              - Effect: Allow
+                # A token that may reach all the notes deletes any of them
+                # (API 1.11.0, Jamie, 2026-10-30), and with it what the web's
+                # delete removes: the email behind it and its files, as the
+                # web role may. The note is proved the account's in the same
+                # request's transaction first. Nothing here is read.
+                Action: s3:DeleteObject
+                Resource:
+                  - !Sub "${MailBucket.Arn}/raw/*"
+                  - !Sub "${MailBucket.Arn}/media/*"
               - Effect: Allow
                 # A token's files (POST /v1/uploads, uploads.ts), as the web
                 # role takes the web's: signs the form that sends one

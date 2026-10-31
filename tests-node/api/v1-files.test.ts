@@ -283,10 +283,17 @@ test('files added to a token’s own note go after the ones it has, and count as
     uploads = [{ upload: third.upload, type: third.type }];
   const theirs = await s.write(t.token, 'notes.media', { date: TODAY, id: 'w-web', uploads });
   assert.equal(theirs.error, 'not_yours');
-  // Reaching all the notes (1.10.0) changes their words, never their files.
+  // Reaching all the notes adds files to any of them (1.11.0).
   const all = await make(s.ctx, ['notes:write', 'media:write', 'notes:all'], 'All'),
-    reached = await s.write(all.token, 'notes.media', { date: TODAY, id: 'w-web', uploads });
-  assert.equal(reached.error, 'not_yours');
+    fourth = await upload(s, all.token, 'image/png', png(), 'four.png'),
+    reached = await s.write(all.token, 'notes.media', {
+      date: TODAY,
+      id: 'w-web',
+      uploads: [{ upload: fourth.upload, type: fourth.type }]
+    });
+  assert.equal(reached.status, 200, JSON.stringify(reached));
+  const web = await s.ctx.store.note('u', TODAY, 'w-web', true);
+  assert.deepEqual([web!.source, (web!.media as OAuthRow[]).length, web!.text], ['web', 1, 'From the web']);
   s.ctx.store.seed({
     ...row!,
     media: Array.from({ length: media.MAX_FILES }, (_, i) => ({ ...(row!.media as OAuthRow[])[0], n: i + 1 }))

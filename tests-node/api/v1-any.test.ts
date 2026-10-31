@@ -1,7 +1,7 @@
 /** A token that may reach all the account's notes (notes:all, API 1.10.0,
  * issue #279): it reads, lists and rewrites notes from any channel, the
- * web's and email's too, while deleting and adding files stay with its own
- * notes and another account's notes stay out of reach. Fictional accounts
+ * web's and email's too, and from 1.11.0 deletes them and adds files to
+ * them, while another account's notes stay out of reach. Fictional accounts
  * only. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -100,12 +100,12 @@ test('notes:all reads and lists every note, and rewrites and appends to the webâ
   });
   assert.equal(theirsEdit.status, 200);
 
-  // Deleting stays with a token's own notes.
-  for (const id of ['w-web', 'e-mail', String(theirs.id)]) {
+  // And deletes any of them (1.11.0), the web's, email's and another token's.
+  for (const id of ['w-web', 'e-mail', 'w-photo', String(theirs.id)]) {
     const r = await call(app, 'DELETE', `/v1/notes/${TODAY}/${id}`, all.token);
-    assert.equal(r.error.code, 'not_yours', id);
+    assert.equal(r.status, 204, id);
+    assert.equal(await ctx.store.note('u', TODAY, id, true), null, id);
   }
-  assert.ok(await ctx.store.note('u', TODAY, 'w-web', true));
 });
 
 test('without notes:all a token still reaches only its own', async () => {
@@ -115,6 +115,7 @@ test('without notes:all a token still reaches only its own', async () => {
   assert.equal((await call(app, 'GET', `/v1/notes/${TODAY}/w-web`, plain.token)).error.code, 'not_yours');
   const put = await call(app, 'PUT', `/v1/notes/${TODAY}/w-web`, plain.token, { text: 'x', revision: 'r' });
   assert.equal(put.error.code, 'not_yours');
+  assert.equal((await call(app, 'DELETE', `/v1/notes/${TODAY}/w-web`, plain.token)).error.code, 'not_yours');
   assert.deepEqual((await call(app, 'GET', `/v1/notes?from=${TODAY}`, plain.token)).json!.items, []);
 });
 
@@ -131,5 +132,6 @@ test('notes:all never reaches another accountâ€™s notes', async () => {
   assert.equal((await call(app, 'GET', `/v1/notes/${TODAY}/w-v`, all.token)).error.code, 'not_found');
   const put = await call(app, 'PUT', `/v1/notes/${TODAY}/w-v`, all.token, { text: 'x', revision: 'r' });
   assert.equal(put.error.code, 'not_found');
+  assert.equal((await call(app, 'DELETE', `/v1/notes/${TODAY}/w-v`, all.token)).error.code, 'not_found');
   assert.deepEqual((await call(app, 'GET', `/v1/notes?from=${TODAY}`, all.token)).json!.items, []);
 });

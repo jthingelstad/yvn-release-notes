@@ -2697,7 +2697,9 @@ export class Store {
     }
   }
   /** A token deletes its own note, as it read it, with the same proofs and
-   * `extra` after, as apiNoteCommit. */
+   * `extra` after, as apiNoteCommit. With notes:all (API 1.11.0), proved
+   * here too, any note: as it was read, its words, revision, last edit and
+   * files, so nothing added meanwhile is left behind in the bucket. */
   async apiNoteDelete(
     old: Item,
     receipt: Item,
@@ -2708,16 +2710,36 @@ export class Store {
     now: number,
     extra: Ops = []
   ) {
+    const mine = old.source === 'api' && old.connection === token.id,
+      had = ((old.media as Item[] | undefined) ?? []).length;
     return this.transact([
       this.profileProof(String(token.user_id)),
-      ...this.tokenProof(token, now, 'notes:write'),
+      ...this.tokenProof(token, now, mine ? 'notes:write' : ['notes:write', 'notes:all']),
       {
         Delete: {
           TableName: this.tableName,
           Key: { pk: String(old.pk), sk: String(old.sk) },
-          ConditionExpression: '#src = :api AND #c = :token AND #r = :revision',
-          ExpressionAttributeNames: { '#r': 'revision', '#c': 'connection', '#src': 'source' },
-          ExpressionAttributeValues: { ':api': 'api', ':token': token.id, ':revision': old.revision }
+          ...(mine
+            ? {
+                ConditionExpression: '#src = :api AND #c = :token AND #r = :revision',
+                ExpressionAttributeNames: { '#r': 'revision', '#c': 'connection', '#src': 'source' },
+                ExpressionAttributeValues: { ':api': 'api', ':token': token.id, ':revision': old.revision }
+              }
+            : {
+                ConditionExpression:
+                  'attribute_exists(pk) AND ' +
+                  (old.text === undefined ? 'attribute_not_exists(#t) AND ' : '#t = :old AND ') +
+                  (old.revision === undefined ? 'attribute_not_exists(#r) AND ' : '#r = :revision AND ') +
+                  (old.updated_at ? 'updated_at = :edited AND ' : 'attribute_not_exists(updated_at) AND ') +
+                  (had ? 'size(media) = :had' : '(attribute_not_exists(media) OR size(media) = :had)'),
+                ExpressionAttributeNames: { '#t': 'text', '#r': 'revision' },
+                ExpressionAttributeValues: {
+                  ...(old.text === undefined ? {} : { ':old': old.text }),
+                  ...(old.revision === undefined ? {} : { ':revision': old.revision }),
+                  ...(old.updated_at ? { ':edited': old.updated_at } : {}),
+                  ':had': had
+                }
+              })
         }
       },
       ...this.agentReceipts(receipt, audit, rate, previous, now),

@@ -432,7 +432,7 @@ test('the fake table says whether the count or the token refused an upload form'
   }
 });
 
-test('a token deletes only its own note, at the revision it read, with the same proofs', async () => {
+test('a token deletes its own note, at the revision it read, with the same proofs', async () => {
   const { store, only } = recorder();
   assert.equal(await store.apiNoteDelete(note, receipt, audit, rate, previous, token, 100), true);
   assert.deepEqual(only(), [
@@ -456,6 +456,59 @@ test('a token deletes only its own note, at the revision it read, with the same 
       }
     ]
   ]);
+});
+
+test('with notes:all, any note is deleted as it was read: words, revision, last edit and files', async () => {
+  const all = { ...token, scope: 'notes:write notes:all' },
+    reach = {
+      ConditionCheck: {
+        ...tokenProof.ConditionCheck,
+        ConditionExpression: tokenProof.ConditionCheck.ConditionExpression + ' AND contains(#s, :also0)',
+        ExpressionAttributeValues: { ...tokenProof.ConditionCheck.ExpressionAttributeValues, ':also0': 'notes:all' }
+      }
+    },
+    sk = 'NOTE#2026-10-29#e-n';
+  for (const [old, condition, values] of [
+    [
+      { pk: 'USER#u', sk, text: 'By email', source: 'email', media: [{ n: 1 }, { n: 2 }] },
+      'attribute_exists(pk) AND #t = :old AND attribute_not_exists(#r) AND attribute_not_exists(updated_at) AND size(media) = :had',
+      { ':old': 'By email', ':had': 2 }
+    ],
+    [
+      { pk: 'USER#u', sk, source: 'web', updated_at: 150 },
+      'attribute_exists(pk) AND attribute_not_exists(#t) AND attribute_not_exists(#r) AND updated_at = :edited AND (attribute_not_exists(media) OR size(media) = :had)',
+      { ':edited': 150, ':had': 0 }
+    ],
+    [
+      { ...note, sk, connection: 'b', revision: 'r2' },
+      'attribute_exists(pk) AND #t = :old AND #r = :revision AND attribute_not_exists(updated_at) AND (attribute_not_exists(media) OR size(media) = :had)',
+      { ':old': 'Coffee #walks', ':revision': 'r2', ':had': 0 }
+    ]
+  ] as [Item, string, Item][]) {
+    const { store, only } = recorder();
+    assert.equal(await store.apiNoteDelete(old, receipt, audit, rate, previous, all, 100), true);
+    assert.deepEqual(only(), [
+      [
+        'TransactWriteCommand',
+        {
+          TransactItems: [
+            profileProof,
+            reach,
+            {
+              Delete: {
+                TableName: 'T',
+                Key: { pk: 'USER#u', sk },
+                ConditionExpression: condition,
+                ExpressionAttributeNames: { '#t': 'text', '#r': 'revision' },
+                ExpressionAttributeValues: values
+              }
+            },
+            ...receipts(previous)
+          ]
+        }
+      ]
+    ]);
+  }
 });
 
 test('pinned tags are set from the list read, first or replacing, with any proofs after', async () => {

@@ -27,7 +27,7 @@ import { live, type OAuthRow } from '../packages/backend/oauth.ts';
 import { isRich } from '../packages/domain/rich.ts';
 import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
 import { addedEvents, earnedBy, unlockedBy } from '../packages/backend/badges.ts';
-import { keys as mediaKeys, MAX_FILES } from '../packages/backend/media.ts';
+import { keys as mediaKeys, MAX_FILES, thumbKeys } from '../packages/backend/media.ts';
 import { nameSpot, notePlaceOf, search, spotOf, type SpotNames } from '../packages/backend/places.ts';
 import { errorFields, safeLog } from '../packages/backend/services.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
@@ -450,20 +450,15 @@ export async function writeApi(
       throw new ApiRefusal('date_out_of_range', 'Choose a day from your birthday through today.', { field: 'date' });
     return value;
   };
-  // A note this token may change: one it wrote, or, for the words of any
-  // note, one it reaches with notes:all (1.10.0). Deleting and adding files
-  // stay on its own notes.
-  const own = async (any = false): Promise<OAuthRow> => {
+  // A note this token may change: one it wrote, or any note it reaches with
+  // notes:all (1.10.0 its words; 1.11.0, Jamie, 2026-10-30, deleting it and
+  // adding files too).
+  const own = async (): Promise<OAuthRow> => {
     const d = day(args.date),
       old = await store.note(uid, d, String(args.id), true);
     if (!old) throw new ApiRefusal('not_found', 'There is no note with that date and id.');
-    if ((old.source !== 'api' || old.connection !== tid) && !(any && scopesOf(token).includes('notes:all')))
-      throw new ApiRefusal(
-        'not_yours',
-        any
-          ? 'A token changes only the notes it wrote, unless it may reach all your notes.'
-          : 'A token deletes, and adds files to, only the notes it wrote.'
-      );
+    if ((old.source !== 'api' || old.connection !== tid) && !scopesOf(token).includes('notes:all'))
+      throw new ApiRefusal('not_yours', 'A token changes only the notes it wrote, unless it may reach all your notes.');
     return old;
   };
   // Upcoming: the dates a save would change, checked as a whole against
@@ -628,7 +623,15 @@ export async function writeApi(
         const old = await own(),
           d = String(args.date),
           id = String(args.id),
-          files = mediaKeys(old as NoteRecord);
+          // Everything behind the note, as the web's delete removes it: the
+          // email it came in (raw/) and every file and small copy.
+          files = [
+            ...new Set([
+              ...(String(old.raw_key ?? '').startsWith('raw/') ? [String(old.raw_key)] : []),
+              ...mediaKeys(old as NoteRecord),
+              ...thumbKeys(old as NoteRecord)
+            ])
+          ];
         landed = await store.apiNoteDelete(
           old,
           receiptFor(204, null),
@@ -641,9 +644,8 @@ export async function writeApi(
         );
         answer = { status: 204, body: null, replayed: false, limit };
         after = async () => {
-          // The capture role may remove only what was uploaded; a token's notes
-          // have nothing else.
-          const ours = files.filter((k) => k.startsWith(`media/${uid}/files/`));
+          // Only this account's: its files, and the email behind the note.
+          const ours = files.filter((k) => k.startsWith(`media/${uid}/`) || k.startsWith('raw/'));
           if (ours.length && context.objects) await Promise.allSettled(ours.map((k) => context.objects!.remove(k)));
           await record([
             {
@@ -704,7 +706,7 @@ export async function writeApi(
               );
           }
         } else {
-          old = await own(op !== 'notes.media');
+          old = await own();
           d = String(args.date);
           if (op === 'notes.edit' && editRevision(old) !== args.revision)
             throw new ApiRefusal(

@@ -182,7 +182,7 @@ There is no new DNS record, certificate or function.
 | ------------- | ----------------------------------------------------------------------------------------------- | --------------- |
 | `notes:write` | creating notes; appending to, editing, reading and deleting notes this token wrote; pinned tags | MCP             |
 | `media:write` | files on this token's notes; only beside `notes:write`                                          | MCP             |
-| `notes:all`   | reading every note, and editing and appending to any; only beside `notes:write` (1.10.0)        | new, `/v1` only |
+| `notes:all`   | every note: reading, editing, appending, deleting, files; only beside `notes:write` (1.10.0)    | new, `/v1` only |
 | `upcoming`    | Upcoming dates and their reminders                                                              | MCP             |
 | `activity`    | the activity log, trimmed of words                                                              | new, `/v1` only |
 
@@ -387,8 +387,8 @@ send it back unchanged.
 **`GET`, `PUT`, `DELETE /v1/notes/{date}/{id}`** and **`POST
 /v1/notes/{date}/{id}/append`**, `notes:write`. These work on a note this
 token wrote. Any other note is a 403, `not_yours`, as MCP's appends and
-edits are, unless the token has `notes:all` (below): then `GET`, `PUT` and
-`append` reach any note in the account.
+edits are, unless the token has `notes:all` (below): then they reach any
+note in the account.
 
 - `GET` returns the note's text, `revision`, `written_at` and file count, so
   an app can pick up an edit made on the web.
@@ -439,8 +439,14 @@ A token with `notes:all`, which comes only beside `notes:write`:
   they were read (or their absence: a web note may have neither yet). The
   note keeps its `source` and its "via"; the change is the owner's, logged
   with the token's name. A rich-text note keeps its markup.
-- **Not delete, not files.** Deleting and adding files stay with the
-  token's own notes (`not_yours`) until Jamie says otherwise.
+- **Deletes and adds files to** any note (API 1.11.0; Jamie, 2026-10-30:
+  "Approved: notes:all also deletes and adds files to any note in Release Notes"). A delete is proved against the note as read: its
+  words, revision, last edit and number of files, so a file added on the
+  web meanwhile refuses it rather than being left behind. Then, as the
+  web's delete does, its files and small copies go, and for an emailed
+  note the email under `raw/`; the capture role may delete under `raw/`
+  and `media/` for this, as the web role may. Files go on with
+  `media:write`, after the ones the note had when read.
 - Never another account's: every key is the token's own account.
 
 **`GET /v1/tags`**, any scope. The tag row:

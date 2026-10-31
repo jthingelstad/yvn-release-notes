@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.10.0",
+    "version": "1.11.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.11.0",
+        "date": "2026-10-30",
+        "summary": "notes:all reaches the rest: a token with it deletes any note in the account (with its files, and an emailed note’s email, as the web’s delete does) and adds files to any note (with media:write). Without notes:all, nothing changes."
+      },
       {
         "version": "1.10.0",
         "date": "2026-10-30",
@@ -456,8 +461,8 @@
       },
       "delete": {
         "operationId": "deleteNote",
-        "summary": "Delete a note this token wrote",
-        "description": "Only a note this token wrote, even with `notes:all`.",
+        "summary": "Delete a note this token wrote, or any note with notes:all",
+        "description": "With `notes:all` (1.11.0), any note in the account. The note goes with everything behind it, as on the web: its files, and for an emailed note the email.",
         "responses": {
           "204": {
             "description": "Deleted.",
@@ -610,8 +615,8 @@
     "/v1/notes/{date}/{id}/media": {
       "post": {
         "operationId": "addNoteFiles",
-        "summary": "Add files to a note this token wrote",
-        "description": "Only a note this token wrote, even with `notes:all`. Uploads from `POST /v1/uploads`, each checked against the bytes that arrived, up to 20 files on a note in all. It counts as a change. A note takes each upload once; a write refused or lost before it lands leaves the uploads for a retry with the same Idempotency-Key.",
+        "summary": "Add files to a note this token wrote, or any note with notes:all",
+        "description": "With `notes:all` (1.11.0), any note in the account. Uploads from `POST /v1/uploads`, each checked against the bytes that arrived, up to 20 files on a note in all. It counts as a change. A note takes each upload once; a write refused or lost before it lands leaves the uploads for a retry with the same Idempotency-Key.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1438,7 +1443,7 @@
             "scopes": {
               "notes:write": "Add notes, and change or delete the notes it adds",
               "media:write": "Add files to the notes it adds (only beside notes:write)",
-              "notes:all": "Read all your notes, from anywhere, and change their words (only beside notes:write)",
+              "notes:all": "Read all your notes, from anywhere, and change or delete them (only beside notes:write)",
               "upcoming": "Read and change Upcoming dates and their reminders",
               "activity": "Read the activity log, without any words from it"
             }
@@ -1707,7 +1712,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.10.0"
+            "example": "1.11.0"
           }
         }
       },

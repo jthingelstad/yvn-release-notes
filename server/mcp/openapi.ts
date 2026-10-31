@@ -114,8 +114,10 @@ const OPERATIONS: Record<string, Doc> = {
   },
   'notes.delete': {
     operationId: 'deleteNote',
-    summary: 'Delete a note this token wrote',
-    description: 'Only a note this token wrote, even with `notes:all`.',
+    summary: 'Delete a note this token wrote, or any note with notes:all',
+    description:
+      'With `notes:all` (1.11.0), any note in the account. The note goes with everything behind it, as on the ' +
+      'web: its files, and for an emailed note the email.',
     responses: { '204': { description: 'Deleted.', headers: writeHeaders() } }
   },
   'notes.append': {
@@ -126,9 +128,9 @@ const OPERATIONS: Record<string, Doc> = {
   },
   'notes.media': {
     operationId: 'addNoteFiles',
-    summary: 'Add files to a note this token wrote',
+    summary: 'Add files to a note this token wrote, or any note with notes:all',
     description:
-      'Only a note this token wrote, even with `notes:all`. ' +
+      'With `notes:all` (1.11.0), any note in the account. ' +
       `Uploads from \`POST /v1/uploads\`, each checked against the bytes that arrived, up to ${MAX_FILES} files on ` +
       'a note in all. It counts as a change. A note takes each upload once; a write refused or lost before it ' +
       'lands leaves the uploads for a retry with the same Idempotency-Key.',
@@ -849,7 +851,7 @@ const NO_RECEIPT = new Set(['uploads.start', 'places.here']);
 const SIGN_IN_SCOPES: Record<string, string> = {
   'notes:write': 'Add notes, and change or delete the notes it adds',
   'media:write': 'Add files to the notes it adds (only beside notes:write)',
-  'notes:all': 'Read all your notes, from anywhere, and change their words (only beside notes:write)',
+  'notes:all': 'Read all your notes, from anywhere, and change or delete them (only beside notes:write)',
   upcoming: 'Read and change Upcoming dates and their reminders',
   activity: 'Read the activity log, without any words from it'
 };

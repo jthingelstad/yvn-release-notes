@@ -23,7 +23,7 @@ export const NEEDS_NOTES = ['media:write', 'notes:all'];
 export const OFFERED: [string, string][] = [
   ['notes:write', 'Add notes, and change or delete the notes it adds'],
   ['media:write', 'Add files to the notes it adds: photos, recordings and PDFs'],
-  ['notes:all', 'Read all your notes, from anywhere, and change their words'],
+  ['notes:all', 'Read all your notes, from anywhere, and change or delete them'],
   ['upcoming', 'Read and change your Upcoming dates and their reminders'],
   ['activity', 'Read the activity log, without any words from it']
 ];

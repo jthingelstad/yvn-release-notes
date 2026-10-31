@@ -1,6 +1,7 @@
 /** Exact DynamoDB shapes for API tokens and their writes (docs/API.md): the
  * token list, the owner's revoke with its 30-day pointer, a client's own
- * revoke, the token proof, a token's note added, changed and deleted, its
+ * revoke, the token proof, a token's note added, changed and deleted, a
+ * change to any note with notes:all (API 1.10.0), its
  * files and upload count, the pinned tags and the recent tags' read, and
  * the guard on a receipt under its older per-token key. The fake table runs the same
  * requests in tests-node/api/v1.test.ts; these pin what goes to AWS. */
@@ -230,6 +231,75 @@ test('a token’s change goes only to its own note, from the words and revision 
       ]
     ]);
   }
+});
+
+test('with notes:all, a change to another channel’s note proves that scope, and the words and revision as read, or their absence', async () => {
+  const all = { ...token, scope: 'notes:write notes:all' },
+    changed = { ...note, text: 'Written in the app', tags: [], updated_at: 200, revision: 'r1' },
+    reach = {
+      ConditionCheck: {
+        ...tokenProof.ConditionCheck,
+        ConditionExpression: tokenProof.ConditionCheck.ConditionExpression + ' AND contains(#s, :also0)',
+        ExpressionAttributeValues: { ...tokenProof.ConditionCheck.ExpressionAttributeValues, ':also0': 'notes:all' }
+      }
+    };
+  // A web note as the web keeps it (no revision), and a files-only note (no words either).
+  for (const old of [
+    { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n', text: 'Coffee #walks', source: 'web' },
+    { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n', source: 'web', updated_at: 150 }
+  ] as Item[]) {
+    const { store, only } = recorder();
+    assert.equal(await store.apiNoteCommit(changed, old, receipt, audit, rate, previous, all, 100), true);
+    assert.deepEqual(only(), [
+      [
+        'TransactWriteCommand',
+        {
+          TransactItems: [
+            profileProof,
+            reach,
+            {
+              Update: {
+                TableName: 'T',
+                Key: { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n' },
+                UpdateExpression: 'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next',
+                ConditionExpression:
+                  'attribute_exists(pk) AND ' +
+                  (old.text === undefined ? 'attribute_not_exists(#t)' : '#t = :old') +
+                  ' AND attribute_not_exists(#r) AND ' +
+                  (old.updated_at ? 'updated_at = :edited' : 'attribute_not_exists(updated_at)'),
+                ExpressionAttributeNames: { '#t': 'text', '#r': 'revision' },
+                ExpressionAttributeValues: {
+                  ...(old.text === undefined ? {} : { ':old': 'Coffee #walks' }),
+                  ':text': 'Written in the app',
+                  ':tags': [],
+                  ':links': [],
+                  ':updated_at': 200,
+                  ':next': 'r1',
+                  ...(old.updated_at ? { ':edited': 150 } : {})
+                }
+              }
+            },
+            ...receipts(previous)
+          ]
+        }
+      ]
+    ]);
+  }
+  // Another token's note, with its revision: still notes:all, never its source and connection.
+  const { store, only } = recorder(),
+    theirs = { ...note, connection: 'b', revision: 'r2' };
+  assert.equal(
+    await store.apiNoteCommit({ ...changed, revision: 'r3' }, theirs, receipt, audit, rate, previous, all, 100),
+    true
+  );
+  const update = (only()[0]![1] as { TransactItems: Item[] }).TransactItems[2]!.Update as Item;
+  assert.deepEqual((only()[0]![1] as { TransactItems: Item[] }).TransactItems[1], reach);
+  assert.equal(
+    update.ConditionExpression,
+    'attribute_exists(pk) AND #t = :old AND #r = :revision AND attribute_not_exists(updated_at)'
+  );
+  assert.deepEqual(update.ExpressionAttributeNames, { '#t': 'text', '#r': 'revision' });
+  assert.equal((update.ExpressionAttributeValues as Item)[':revision'], 'r2');
 });
 
 test('a token’s files prove media:write too, and new ones go after those the note had when read', async () => {

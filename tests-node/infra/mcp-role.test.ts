@@ -119,7 +119,18 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
       // The city search is Open-Meteo, over the internet, with no grant.
       geocode: async () => [
         { name: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 }
-      ]
+      ],
+      // As server/mcp/index.ts: a signed GetObject link.
+      media: {
+        async download(uid: string, key: string) {
+          assert.ok(key.startsWith(`media/${uid}/`));
+          aws.add('media.download', 's3:GetObject', `arn:aws:s3:::${aws.env.MAIL_BUCKET}/${key}`);
+          return 'https://private.example/signed';
+        },
+        async bytes() {
+          return Buffer.from('fixture');
+        }
+      }
     },
     // Tokens are made on the web, under its own role.
     made = (await new Tokens({ store: ctx.store, origin: ctx.origin, now: ctx.now }).make('u', {
@@ -187,6 +198,9 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
   await v1('POST', path + '/media', { uploads: await upload() });
   await v1('GET', '/v1/places?q=Paris');
   await v1('POST', '/v1/places/here', { lat: 48.856613, lon: 2.352222 });
+  // Reading back by day, and a file's address: a signed GetObject link.
+  await v1('GET', `/v1/notes?from=${String(shown.date)}`);
+  await v1('GET', `/v1/notes/${String(pictured.date)}/${String(pictured.id)}/media/1`);
   const dates = (await v1('POST', '/v1/upcoming/batch', {
     add: [{ kind: 'birthday', title: 'Mom', date: '11-04', year: 1955 }]
   })) as { added: OAuthRow[] };

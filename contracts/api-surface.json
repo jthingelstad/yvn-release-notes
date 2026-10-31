@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.8.0",
+    "version": "1.9.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.9.0",
+        "date": "2026-10-30",
+        "summary": "Reading back by day: GET /v1/notes?from=&to= lists the notes this token wrote on those days, oldest first, a page at a time, up to 31 days a request (wider is range_too_wide). A note now lists its files as `media` (number, kind, type, name, size and its small copy), and GET /v1/notes/{date}/{id}/media/{n} gives a ten-minute address for one, or its small copy with ?size=thumb. GET /v1/activity takes the same from and to, days in the account’s time zone."
+      },
       {
         "version": "1.8.0",
         "date": "2026-10-30",
@@ -125,6 +130,84 @@
       }
     },
     "/v1/notes": {
+      "get": {
+        "operationId": "listNotes",
+        "summary": "The notes this token wrote on some days, oldest first",
+        "description": "From `from` to `to`, days in the account’s time zone, both in, at most 31 days a request; a wider span is `range_too_wide`, so ask in pieces. Each note is as `getNote` reads it. A range with none is an empty list. Only this token’s notes, whatever else the days hold.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "description": "The first day.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "The last day, from or later; left out, it is from.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "The next page: `next` from the answer before.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteList"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: One line a note: its day and its words."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      },
       "post": {
         "operationId": "createNote",
         "summary": "Add a note",
@@ -192,10 +275,14 @@
         ],
         "security": [
           {
-            "token": ["notes:write"]
+            "token": [
+              "notes:write"
+            ]
           },
           {
-            "signIn": ["notes:write"]
+            "signIn": [
+              "notes:write"
+            ]
           }
         ],
         "x-scope": "notes:write"
@@ -250,10 +337,14 @@
         ],
         "security": [
           {
-            "token": ["notes:write"]
+            "token": [
+              "notes:write"
+            ]
           },
           {
-            "signIn": ["notes:write"]
+            "signIn": [
+              "notes:write"
+            ]
           }
         ],
         "x-scope": "notes:write"
@@ -333,10 +424,14 @@
         ],
         "security": [
           {
-            "token": ["notes:write"]
+            "token": [
+              "notes:write"
+            ]
           },
           {
-            "signIn": ["notes:write"]
+            "signIn": [
+              "notes:write"
+            ]
           }
         ],
         "x-scope": "notes:write"
@@ -392,10 +487,14 @@
         ],
         "security": [
           {
-            "token": ["notes:write"]
+            "token": [
+              "notes:write"
+            ]
           },
           {
-            "signIn": ["notes:write"]
+            "signIn": [
+              "notes:write"
+            ]
           }
         ],
         "x-scope": "notes:write"
@@ -476,10 +575,14 @@
         ],
         "security": [
           {
-            "token": ["notes:write"]
+            "token": [
+              "notes:write"
+            ]
           },
           {
-            "signIn": ["notes:write"]
+            "signIn": [
+              "notes:write"
+            ]
           }
         ],
         "x-scope": "notes:write"
@@ -561,13 +664,99 @@
         ],
         "security": [
           {
-            "token": ["media:write"]
+            "token": [
+              "media:write"
+            ]
           },
           {
-            "signIn": ["media:write"]
+            "signIn": [
+              "media:write"
+            ]
           }
         ],
         "x-scope": "media:write"
+      }
+    },
+    "/v1/notes/{date}/{id}/media/{n}": {
+      "get": {
+        "operationId": "getNoteFile",
+        "summary": "An address for one file on a note this token wrote",
+        "description": "A signed address for the file, good for 10 minutes; fetch it with no token. With `size=thumb`, the small JPEG copy a photo has, for a list; a file without one is `not_found`. `n` is the number in the note’s `media`.",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+            }
+          },
+          {
+            "name": "n",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "description": "thumb for the small copy; left out, the file itself.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "thumb"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteFile"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: The address."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
       }
     },
     "/v1/uploads": {
@@ -608,10 +797,14 @@
         },
         "security": [
           {
-            "token": ["media:write"]
+            "token": [
+              "media:write"
+            ]
           },
           {
-            "signIn": ["media:write"]
+            "signIn": [
+              "media:write"
+            ]
           }
         ],
         "x-scope": "media:write"
@@ -658,10 +851,14 @@
         },
         "security": [
           {
-            "token": ["notes:write"]
+            "token": [
+              "notes:write"
+            ]
           },
           {
-            "signIn": ["notes:write"]
+            "signIn": [
+              "notes:write"
+            ]
           }
         ],
         "x-scope": "notes:write"
@@ -716,10 +913,14 @@
         },
         "security": [
           {
-            "token": ["notes:write"]
+            "token": [
+              "notes:write"
+            ]
           },
           {
-            "signIn": ["notes:write"]
+            "signIn": [
+              "notes:write"
+            ]
           }
         ],
         "x-scope": "notes:write"
@@ -818,10 +1019,14 @@
         ],
         "security": [
           {
-            "token": ["notes:write"]
+            "token": [
+              "notes:write"
+            ]
           },
           {
-            "signIn": ["notes:write"]
+            "signIn": [
+              "notes:write"
+            ]
           }
         ],
         "x-scope": "notes:write"
@@ -847,6 +1052,24 @@
             "description": "Only rows newer than this one, an `id` the client has seen.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Only rows from this day on, in the account’s time zone (1.9.0). With `to`, at most 31 days.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Only rows up to the end of this day; left out, it is from.",
+            "schema": {
+              "type": "string",
+              "format": "date"
             }
           },
           {
@@ -892,10 +1115,14 @@
         },
         "security": [
           {
-            "token": ["activity"]
+            "token": [
+              "activity"
+            ]
           },
           {
-            "signIn": ["activity"]
+            "signIn": [
+              "activity"
+            ]
           }
         ],
         "x-scope": "activity"
@@ -929,10 +1156,14 @@
         },
         "security": [
           {
-            "token": ["upcoming"]
+            "token": [
+              "upcoming"
+            ]
           },
           {
-            "signIn": ["upcoming"]
+            "signIn": [
+              "upcoming"
+            ]
           }
         ],
         "x-scope": "upcoming"
@@ -995,10 +1226,14 @@
         ],
         "security": [
           {
-            "token": ["upcoming"]
+            "token": [
+              "upcoming"
+            ]
           },
           {
-            "signIn": ["upcoming"]
+            "signIn": [
+              "upcoming"
+            ]
           }
         ],
         "x-scope": "upcoming"
@@ -1045,10 +1280,14 @@
         },
         "security": [
           {
-            "token": ["upcoming"]
+            "token": [
+              "upcoming"
+            ]
           },
           {
-            "signIn": ["upcoming"]
+            "signIn": [
+              "upcoming"
+            ]
           }
         ],
         "x-scope": "upcoming"
@@ -1107,10 +1346,14 @@
         },
         "security": [
           {
-            "token": ["upcoming"]
+            "token": [
+              "upcoming"
+            ]
           },
           {
-            "signIn": ["upcoming"]
+            "signIn": [
+              "upcoming"
+            ]
           }
         ],
         "x-scope": "upcoming"
@@ -1242,7 +1485,7 @@
     },
     "responses": {
       "Error": {
-        "description": "400 invalid_request, 400 text_required, 400 date_out_of_range, 401 token_missing, 401 token_unknown, 401 token_revoked, 401 token_expired, 403 scope_required, 403 not_yours, 403 origin_refused, 404 not_found, 405 method_not_allowed, 409 revision_mismatch, 409 account_closing, 409 busy, 413 too_large, 422 idempotency_mismatch, 429 rate_limited, 503 unavailable",
+        "description": "400 invalid_request, 400 text_required, 400 date_out_of_range, 400 range_too_wide, 401 token_missing, 401 token_unknown, 401 token_revoked, 401 token_expired, 403 scope_required, 403 not_yours, 403 origin_refused, 404 not_found, 405 method_not_allowed, 409 revision_mismatch, 409 account_closing, 409 busy, 413 too_large, 422 idempotency_mismatch, 429 rate_limited, 503 unavailable",
         "headers": {
           "Retry-After": {
             "$ref": "#/components/headers/Retry-After"
@@ -1265,11 +1508,16 @@
     "schemas": {
       "Error": {
         "type": "object",
-        "required": ["error"],
+        "required": [
+          "error"
+        ],
         "properties": {
           "error": {
             "type": "object",
-            "required": ["code", "message"],
+            "required": [
+              "code",
+              "message"
+            ],
             "properties": {
               "code": {
                 "type": "string",
@@ -1277,6 +1525,7 @@
                   "invalid_request",
                   "text_required",
                   "date_out_of_range",
+                  "range_too_wide",
                   "token_missing",
                   "token_unknown",
                   "token_revoked",
@@ -1313,7 +1562,15 @@
       },
       "Me": {
         "type": "object",
-        "required": ["account", "today", "version", "tz", "days", "token", "api_version"],
+        "required": [
+          "account",
+          "today",
+          "version",
+          "tz",
+          "days",
+          "token",
+          "api_version"
+        ],
         "properties": {
           "account": {
             "type": "string",
@@ -1361,7 +1618,10 @@
           },
           "status": {
             "type": "string",
-            "enum": ["active", "stopped"]
+            "enum": [
+              "active",
+              "stopped"
+            ]
           },
           "show_badges": {
             "type": "boolean"
@@ -1371,7 +1631,10 @@
             "description": "14 days from today; a birthday shows as a new major or minor version on its day.",
             "items": {
               "type": "object",
-              "required": ["date", "version"],
+              "required": [
+                "date",
+                "version"
+              ],
               "properties": {
                 "date": {
                   "type": "string",
@@ -1388,7 +1651,12 @@
           },
           "token": {
             "type": "object",
-            "required": ["id", "name", "scopes", "expires_at"],
+            "required": [
+              "id",
+              "name",
+              "scopes",
+              "expires_at"
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -1419,7 +1687,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.8.0"
+            "example": "1.9.0"
           }
         }
       },
@@ -1428,10 +1696,14 @@
         "description": "Text, files or both.",
         "anyOf": [
           {
-            "required": ["text"]
+            "required": [
+              "text"
+            ]
           },
           {
-            "required": ["uploads"]
+            "required": [
+              "uploads"
+            ]
           }
         ],
         "additionalProperties": false,
@@ -1463,7 +1735,9 @@
       "NoteForm": {
         "type": "object",
         "description": "A form, as a Shortcut’s Form body sends it, read as these fields when every name is one of them and `text` is there; any other form body is the words. Since 1.7.0.",
-        "required": ["text"],
+        "required": [
+          "text"
+        ],
         "additionalProperties": false,
         "properties": {
           "text": {
@@ -1486,7 +1760,9 @@
       },
       "NoteMedia": {
         "type": "object",
-        "required": ["uploads"],
+        "required": [
+          "uploads"
+        ],
         "additionalProperties": false,
         "properties": {
           "uploads": {
@@ -1501,7 +1777,10 @@
         "description": "Files posted to forms from `POST /v1/uploads`, each once. Needs `media:write`.",
         "items": {
           "type": "object",
-          "required": ["upload", "type"],
+          "required": [
+            "upload",
+            "type"
+          ],
           "additionalProperties": false,
           "properties": {
             "upload": {
@@ -1522,7 +1801,10 @@
       },
       "UploadStart": {
         "type": "object",
-        "required": ["type", "size"],
+        "required": [
+          "type",
+          "size"
+        ],
         "additionalProperties": false,
         "properties": {
           "name": {
@@ -1545,7 +1827,13 @@
       },
       "UploadForm": {
         "type": "object",
-        "required": ["upload", "type", "url", "fields", "expires_in"],
+        "required": [
+          "upload",
+          "type",
+          "url",
+          "fields",
+          "expires_in"
+        ],
         "properties": {
           "upload": {
             "type": "string",
@@ -1576,7 +1864,14 @@
       },
       "City": {
         "type": "object",
-        "required": ["name", "region", "country", "tz", "lat", "lon"],
+        "required": [
+          "name",
+          "region",
+          "country",
+          "tz",
+          "lat",
+          "lon"
+        ],
         "properties": {
           "name": {
             "type": "string"
@@ -1601,7 +1896,9 @@
       },
       "Places": {
         "type": "object",
-        "required": ["places"],
+        "required": [
+          "places"
+        ],
         "properties": {
           "places": {
             "type": "array",
@@ -1613,7 +1910,10 @@
       },
       "Spot": {
         "type": "object",
-        "required": ["lat", "lon"],
+        "required": [
+          "lat",
+          "lon"
+        ],
         "additionalProperties": false,
         "properties": {
           "lat": {
@@ -1635,7 +1935,12 @@
       },
       "DevicePlace": {
         "type": "object",
-        "required": ["name", "lat", "lon", "from"],
+        "required": [
+          "name",
+          "lat",
+          "lon",
+          "from"
+        ],
         "description": "A spot, kept to six decimal places, with its names.",
         "properties": {
           "name": {
@@ -1687,7 +1992,10 @@
       },
       "Here": {
         "type": "object",
-        "required": ["place", "nearby"],
+        "required": [
+          "place",
+          "nearby"
+        ],
         "properties": {
           "place": {
             "$ref": "#/components/schemas/DevicePlace"
@@ -1697,7 +2005,12 @@
             "maxItems": 6,
             "items": {
               "type": "object",
-              "required": ["name", "lat", "lon", "distance_m"],
+              "required": [
+                "name",
+                "lat",
+                "lon",
+                "distance_m"
+              ],
               "properties": {
                 "name": {
                   "type": "string",
@@ -1719,7 +2032,10 @@
       },
       "NoteEdit": {
         "type": "object",
-        "required": ["text", "revision"],
+        "required": [
+          "text",
+          "revision"
+        ],
         "additionalProperties": false,
         "properties": {
           "text": {
@@ -1736,7 +2052,9 @@
       },
       "NoteAppend": {
         "type": "object",
-        "required": ["text"],
+        "required": [
+          "text"
+        ],
         "additionalProperties": false,
         "properties": {
           "text": {
@@ -1749,11 +2067,19 @@
       },
       "NoteWritten": {
         "type": "object",
-        "required": ["note"],
+        "required": [
+          "note"
+        ],
         "properties": {
           "note": {
             "type": "object",
-            "required": ["id", "date", "version", "revision", "token"],
+            "required": [
+              "id",
+              "date",
+              "version",
+              "revision",
+              "token"
+            ],
             "properties": {
               "id": {
                 "type": "string"
@@ -1802,7 +2128,13 @@
       },
       "Note": {
         "type": "object",
-        "required": ["id", "date", "version", "text", "revision"],
+        "required": [
+          "id",
+          "date",
+          "version",
+          "text",
+          "revision"
+        ],
         "properties": {
           "id": {
             "type": "string"
@@ -1838,6 +2170,13 @@
             "type": "integer",
             "minimum": 0
           },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteFileEntry"
+            },
+            "description": "Its files, in order (1.9.0)."
+          },
           "token": {
             "anyOf": [
               {
@@ -1850,9 +2189,155 @@
           }
         }
       },
+      "NoteFileEntry": {
+        "type": "object",
+        "required": [
+          "n",
+          "kind",
+          "type",
+          "name",
+          "size",
+          "thumb"
+        ],
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Its number, for `getNoteFile`."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "audio",
+              "file"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "example": "image/jpeg"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Bytes."
+          },
+          "thumb": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "image/jpeg"
+                  },
+                  "width": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "height": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The small copy, when it has one: ask with size=thumb."
+          }
+        }
+      },
+      "NoteList": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "items",
+          "next"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date",
+            "description": "A day in the account’s own time zone."
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "A day in the account’s own time zone."
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            }
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The `after` for the next page."
+          }
+        }
+      },
+      "NoteFile": {
+        "type": "object",
+        "required": [
+          "url",
+          "type",
+          "expires_in"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "type": {
+            "type": "string"
+          },
+          "expires_in": {
+            "type": "integer",
+            "const": 600
+          }
+        }
+      },
       "TagRow": {
         "type": "object",
-        "required": ["pinned", "recent", "window_days"],
+        "required": [
+          "pinned",
+          "recent",
+          "window_days"
+        ],
         "properties": {
           "pinned": {
             "type": "array",
@@ -1866,7 +2351,11 @@
             "maxItems": 20,
             "items": {
               "type": "object",
-              "required": ["tag", "count", "last_used"],
+              "required": [
+                "tag",
+                "count",
+                "last_used"
+              ],
               "properties": {
                 "tag": {
                   "type": "string"
@@ -1890,7 +2379,9 @@
       },
       "Pins": {
         "type": "object",
-        "required": ["pinned"],
+        "required": [
+          "pinned"
+        ],
         "additionalProperties": false,
         "properties": {
           "pinned": {
@@ -1905,11 +2396,20 @@
       "UpcomingFields": {
         "type": "object",
         "description": "A date as it is saved. A change sends every field again, as it should be.",
-        "required": ["kind", "title", "date"],
+        "required": [
+          "kind",
+          "title",
+          "date"
+        ],
         "properties": {
           "kind": {
             "type": "string",
-            "enum": ["birthday", "anniversary", "trip", "event"]
+            "enum": [
+              "birthday",
+              "anniversary",
+              "trip",
+              "event"
+            ]
           },
           "title": {
             "type": "string",
@@ -1995,7 +2495,13 @@
           },
           {
             "type": "object",
-            "required": ["id", "revision", "next", "status", "line"],
+            "required": [
+              "id",
+              "revision",
+              "next",
+              "status",
+              "line"
+            ],
             "properties": {
               "id": {
                 "type": "string"
@@ -2016,7 +2522,12 @@
               },
               "status": {
                 "type": "string",
-                "enum": ["upcoming", "today", "ongoing", "past"]
+                "enum": [
+                  "upcoming",
+                  "today",
+                  "ongoing",
+                  "past"
+                ]
               },
               "line": {
                 "type": "string",
@@ -2028,7 +2539,12 @@
       },
       "UpcomingList": {
         "type": "object",
-        "required": ["today", "entries", "past_left_out", "max_entries"],
+        "required": [
+          "today",
+          "entries",
+          "past_left_out",
+          "max_entries"
+        ],
         "properties": {
           "today": {
             "type": "string",
@@ -2071,7 +2587,10 @@
                 },
                 {
                   "type": "object",
-                  "required": ["id", "revision"],
+                  "required": [
+                    "id",
+                    "revision"
+                  ],
                   "properties": {
                     "id": {
                       "type": "string"
@@ -2088,7 +2607,10 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["id", "revision"],
+              "required": [
+                "id",
+                "revision"
+              ],
               "additionalProperties": false,
               "properties": {
                 "id": {
@@ -2108,7 +2630,12 @@
       },
       "UpcomingSaved": {
         "type": "object",
-        "required": ["dry_run", "added", "changed", "removed"],
+        "required": [
+          "dry_run",
+          "added",
+          "changed",
+          "removed"
+        ],
         "properties": {
           "dry_run": {
             "type": "boolean"
@@ -2152,7 +2679,11 @@
       },
       "Reminders": {
         "type": "object",
-        "required": ["from", "through", "days"],
+        "required": [
+          "from",
+          "through",
+          "days"
+        ],
         "properties": {
           "from": {
             "type": "string",
@@ -2169,7 +2700,11 @@
             "description": "Only the days with a reminder due.",
             "items": {
               "type": "object",
-              "required": ["date", "send_at", "reminders"],
+              "required": [
+                "date",
+                "send_at",
+                "reminders"
+              ],
               "properties": {
                 "date": {
                   "type": "string",
@@ -2185,7 +2720,12 @@
                   "type": "array",
                   "items": {
                     "type": "object",
-                    "required": ["upcoming", "date", "when", "line"],
+                    "required": [
+                      "upcoming",
+                      "date",
+                      "when",
+                      "line"
+                    ],
                     "properties": {
                       "upcoming": {
                         "type": "string",
@@ -2214,7 +2754,10 @@
       },
       "Activity": {
         "type": "object",
-        "required": ["items", "next"],
+        "required": [
+          "items",
+          "next"
+        ],
         "properties": {
           "items": {
             "type": "array",
@@ -2237,7 +2780,11 @@
       },
       "ActivityRow": {
         "type": "object",
-        "required": ["id", "at", "kind"],
+        "required": [
+          "id",
+          "at",
+          "kind"
+        ],
         "description": "One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`; a reads row `calls` and `tools`); `via` says through what, and a token’s rows name it as `token` and, from 1.4.0, by id as `token_id`.",
         "properties": {
           "id": {

@@ -36,7 +36,9 @@ It answers with one line: `Filed in 5.2.113.`
 
 - `GET /v1/me`: today's date and version, the versions for the next 14 days, your streak, your time zone, when your email goes, your `account`, and this token's `id`, name, what it may do and when it expires. Never your birthday. `account` is the same for every token you make and never changes, so an app can tell whose account a token opens; the token's `id` never changes either, and is never the token itself. Any token may ask.
 - `POST /v1/notes`: add a note. Send `{"text": "…"}`, or the words alone as `text/plain`. A form works too, as a Shortcut's **Form** body or `curl --data-urlencode "text=…"` sends it, with `text` and, if you like, `date` or `written_at`. Any other form is taken as the words, so `curl -d "my words"` still works, and a `multipart` body is refused. Hashtags in the words are its tags, and links get their names, as on the web. `date` puts it on an earlier day, back to your birthday. `written_at` is the moment the words were typed: a note sent late files to the day it was typed. With neither, it's today's. `uploads` gives it files (see [Photos, recordings and PDFs](#photos-recordings-and-pdfs)), and then it needs no words. `place` says where it was (see [Places](#places)). The answer has the note's `id`, `date`, `version` and `revision`, and how many `files` it has.
-- `GET /v1/notes/{date}/{id}`: one note this token added, with its text, `revision` and `written_at`.
+- `GET /v1/notes?from=YYYY-MM-DD&to=YYYY-MM-DD`: the notes this token added on those days, oldest first, each as the request below gives it. `to` is the last day, and left out it's `from`, so one day is `?from=` alone. A request reads up to 31 days; ask for a longer span in pieces. `limit` sets how many a page holds, and `next` in the answer, sent back as `after`, gives the next page. Days with none give an empty list.
+- `GET /v1/notes/{date}/{id}`: one note this token added, with its text, `revision` and `written_at`, and its files as `media`: each one's number `n`, `kind`, `type`, `name`, `size`, and `thumb` when it has a small copy.
+- `GET /v1/notes/{date}/{id}/media/{n}`: an address for one of its files, as `url`, good for ten minutes and fetched with no token. `?size=thumb` gives a photo's small copy instead, for a list.
 - `PUT /v1/notes/{date}/{id}`: replace its text. Send `{"text": "…", "revision": "…"}` with the revision you read; a note changed since, on the web say, is refused with the current one.
 - `POST /v1/notes/{date}/{id}/append`: add a paragraph to it, with `{"text": "…"}`.
 - `POST /v1/notes/{date}/{id}/media`: add files to it, with `{"uploads": […]}`.
@@ -50,10 +52,10 @@ It answers with one line: `Filed in 5.2.113.`
 - `POST /v1/upcoming/batch`: add, change and remove dates together, up to 50 dates a request, as `{"add": […], "change": […], "remove": […]}`. It saves all or nothing: if one date isn't right, none is saved, and `field` names the one, like `add[1]`. With `"dry_run": true` it checks everything and finds each trip's city, and saves nothing. The answer lists what was `added`, in the order you sent it, then what was `changed` and `removed`.
 - `GET /v1/upcoming/reminders`: the reminders each morning's email carries, day by day, for the next 14 days, or up to 31 days ahead with `days`. Each day has `send_at`, the moment that morning's email is due, and each reminder the date's `id` as `upcoming`, the day it falls on as `date`, and its `when` and `line`, as the email says them. A date with its email reminders turned off isn't there; a paused email doesn't change the list.
 - `DELETE /v1/upcoming/{id}`: remove one date, with the revision you read as `?revision=`.
-- `GET /v1/activity`: your activity log, newest first, without any words: no note text, no email's subject or sender, no setting's value. A row a token wrote names it by `token` and, from version 1.4.0 of the API, by `token_id`, the `id` that `GET /v1/me` gives; older rows have no `token_id`. `after` gives only rows newer than one you've seen, and `before`, with the `next` from the answer, the page older. `kinds` keeps some kinds, like `note,mail`, and `limit` sets how many rows a page holds.
+- `GET /v1/activity`: your activity log, newest first, without any words: no note text, no email's subject or sender, no setting's value. A row a token wrote names it by `token` and, from version 1.4.0 of the API, by `token_id`, the `id` that `GET /v1/me` gives; older rows have no `token_id`. `after` gives only rows newer than one you've seen, and `before`, with the `next` from the answer, the page older. `kinds` keeps some kinds, like `note,mail`, `from` and `to` keep some days, as they do for notes, and `limit` sets how many rows a page holds.
 - `DELETE /v1/token`: this token revokes itself. Any token may ask.
 
-Adding, changing and deleting notes, pinning tags and finding places need a token that may add notes, and only ever touch the notes that same token added. Files need a token that may add files too, which comes only with adding notes. Upcoming needs a token that may read and change your Upcoming dates; it reaches all of them, not only the ones it added, and no other token reaches them. The activity log needs a token that may read it.
+Reading back, adding, changing and deleting notes, pinning tags and finding places need a token that may add notes, and only ever read or touch the notes that same token added. Files need a token that may add files too, which comes only with adding notes. Upcoming needs a token that may read and change your Upcoming dates; it reaches all of them, not only the ones it added, and no other token reaches them. The activity log needs a token that may read it.
 
 ## Errors
 
@@ -68,6 +70,7 @@ Act on the code, and show the sentence. Here is each one, with its HTTP status:
 - `invalid_request` (400): something in the request isn't right, and `field` names it.
 - `text_required` (400): a note needs words.
 - `date_out_of_range` (400): `date` is before your birthday or after today.
+- `range_too_wide` (400): `from` and `to` span more days than one request reads. Ask in pieces.
 - `token_missing` (401): no token was sent.
 - `token_unknown` (401): that isn't a token Release Notes made.
 - `token_revoked` (401): the token was revoked.

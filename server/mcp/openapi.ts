@@ -16,7 +16,17 @@ import { PINS_MAX, RECENT_DAYS, RECENT_MAX } from '../../packages/backend/tag-ro
 import { TOKEN_SCOPES, V1_LIMITS, V1_RECEIPT_SECONDS, V1_UPCOMING_MAX } from '../../packages/backend/tokens.ts';
 import { MAX_TAG } from '../../packages/domain/tags.ts';
 import { UPCOMING_KINDS, UPCOMING_MAX, UPCOMING_TITLE_MAX } from '../../packages/domain/upcoming.ts';
-import { API_CHANGES, API_VERSION, ME_DAYS, REMINDER_DAYS_MAX, V1_BODY, V1_ERRORS, V1_ROUTES } from './v1.ts';
+import {
+  API_CHANGES,
+  API_VERSION,
+  FILE_SECONDS,
+  ME_DAYS,
+  RANGE_DAYS_MAX,
+  REMINDER_DAYS_MAX,
+  V1_BODY,
+  V1_ERRORS,
+  V1_ROUTES
+} from './v1.ts';
 
 type Doc = Record<string, unknown>;
 
@@ -29,6 +39,32 @@ const OPERATIONS: Record<string, Doc> = {
       'What a client needs to show the version and fire reminders offline, without ever working out a version ' +
       'itself. The birthday is never sent. Any token may read it.',
     responses: { '200': answer('Me', "You're 4.5.137 today.") }
+  },
+  notes: {
+    operationId: 'listNotes',
+    summary: 'The notes this token wrote on some days, oldest first',
+    description:
+      `From \`from\` to \`to\`, days in the account’s time zone, both in, at most ${RANGE_DAYS_MAX} days a ` +
+      'request; a wider span is `range_too_wide`, so ask in pieces. Each note is as `getNote` reads it. A ' +
+      'range with none is an empty list. Only this token’s notes, whatever else the days hold.',
+    parameters: [
+      {
+        name: 'from',
+        in: 'query',
+        required: true,
+        description: 'The first day.',
+        schema: { type: 'string', format: 'date' }
+      },
+      {
+        name: 'to',
+        in: 'query',
+        description: 'The last day, from or later; left out, it is from.',
+        schema: { type: 'string', format: 'date' }
+      },
+      cursor('after', 'The next page: `next` from the answer before.'),
+      { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } }
+    ],
+    responses: { '200': answer('NoteList', 'One line a note: its day and its words.') }
   },
   'notes.create': {
     operationId: 'createNote',
@@ -86,6 +122,23 @@ const OPERATIONS: Record<string, Doc> = {
       'lands leaves the uploads for a retry with the same Idempotency-Key.',
     requestBody: { required: true, content: { 'application/json': { schema: ref('NoteMedia') } } },
     responses: { '200': answer('NoteWritten', 'Changed in 4.5.137.', true) }
+  },
+  'notes.file': {
+    operationId: 'getNoteFile',
+    summary: 'An address for one file on a note this token wrote',
+    description:
+      `A signed address for the file, good for ${FILE_SECONDS / 60} minutes; fetch it with no token. With ` +
+      '`size=thumb`, the small JPEG copy a photo has, for a list; a file without one is `not_found`. `n` is ' +
+      'the number in the note’s `media`.',
+    parameters: [
+      {
+        name: 'size',
+        in: 'query',
+        description: 'thumb for the small copy; left out, the file itself.',
+        schema: { type: 'string', enum: ['thumb'] }
+      }
+    ],
+    responses: { '200': answer('NoteFile', 'The address.') }
   },
   'uploads.start': {
     operationId: 'startUpload',
@@ -148,6 +201,18 @@ const OPERATIONS: Record<string, Doc> = {
     parameters: [
       cursor('before', 'The next older page: `next` from the answer before.'),
       cursor('after', 'Only rows newer than this one, an `id` the client has seen.'),
+      {
+        name: 'from',
+        in: 'query',
+        description: `Only rows from this day on, in the account’s time zone (1.9.0). With \`to\`, at most ${RANGE_DAYS_MAX} days.`,
+        schema: { type: 'string', format: 'date' }
+      },
+      {
+        name: 'to',
+        in: 'query',
+        description: 'Only rows up to the end of this day; left out, it is from.',
+        schema: { type: 'string', format: 'date' }
+      },
       {
         name: 'kinds',
         in: 'query',
@@ -508,7 +573,52 @@ const SCHEMAS: Record<string, Doc> = {
       revision: { type: 'string' },
       written_at: { anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }] },
       files: { type: 'integer', minimum: 0 },
+      media: { type: 'array', items: ref('NoteFileEntry'), description: 'Its files, in order (1.9.0).' },
       token: { anyOf: [{ type: 'string' }, { type: 'null' }] }
+    }
+  },
+  NoteFileEntry: {
+    type: 'object',
+    required: ['n', 'kind', 'type', 'name', 'size', 'thumb'],
+    properties: {
+      n: { type: 'integer', minimum: 1, description: 'Its number, for `getNoteFile`.' },
+      kind: { type: 'string', enum: ['image', 'audio', 'file'] },
+      type: { type: 'string', example: 'image/jpeg' },
+      name: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      size: { type: 'integer', minimum: 0, description: 'Bytes.' },
+      thumb: {
+        anyOf: [
+          {
+            type: 'object',
+            properties: {
+              type: { type: 'string', const: 'image/jpeg' },
+              width: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
+              height: { anyOf: [{ type: 'integer' }, { type: 'null' }] }
+            }
+          },
+          { type: 'null' }
+        ],
+        description: 'The small copy, when it has one: ask with size=thumb.'
+      }
+    }
+  },
+  NoteList: {
+    type: 'object',
+    required: ['from', 'to', 'items', 'next'],
+    properties: {
+      from: day,
+      to: day,
+      items: { type: 'array', maxItems: 100, items: ref('Note') },
+      next: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'The `after` for the next page.' }
+    }
+  },
+  NoteFile: {
+    type: 'object',
+    required: ['url', 'type', 'expires_in'],
+    properties: {
+      url: { type: 'string', format: 'uri' },
+      type: { type: 'string' },
+      expires_in: { type: 'integer', const: FILE_SECONDS }
     }
   },
   TagRow: {
@@ -746,7 +856,9 @@ export function openApi(): Doc {
         { name: 'date', in: 'path', required: true, schema: day },
         { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[A-Za-z0-9_.-]{1,80}$' } }
       );
-    else if (route.template.includes('{id}'))
+    if (route.template.includes('{n}'))
+      parameters.push({ name: 'n', in: 'path', required: true, schema: { type: 'integer', minimum: 1 } });
+    else if (route.template.includes('{id}') && !route.template.includes('{date}'))
       parameters.push({
         name: 'id',
         in: 'path',

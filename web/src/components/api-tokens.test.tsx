@@ -50,4 +50,16 @@ describe('ApiTokens', () => {
     const [, made] = fetch.mock.calls.find(([, init]) => init?.method === 'POST')!;
     expect(JSON.parse(String(made!.body)).scopes).toEqual(['notes:write', 'media:write']);
   });
+
+  it('offers All your notes only beside Add notes too', async () => {
+    serve();
+    await waitFor(() => expect(screen.getByText('None yet')).toBeTruthy());
+    const notes = box(/^Add notes/),
+      all = box(/^Read all your notes/);
+    await userEvent.click(all);
+    expect(all.checked).toBe(true);
+    await userEvent.click(notes);
+    expect(all.checked).toBe(false);
+    expect(all.disabled).toBe(true);
+  });
 });

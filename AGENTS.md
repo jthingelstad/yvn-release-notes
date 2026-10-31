@@ -57,7 +57,8 @@ Every write proves the writer owns the subscriber's address:
   gets it once for its code (OAuth for the resource `/v1`, no refresh;
   docs/API.md, Phase 5). The capture function checks it again
   and proves the live account and token in the same transaction as each
-  write, and a token changes only the notes it wrote.
+  write, and a token changes only the notes it wrote, unless the owner
+  ticked `notes:all` (below).
 
 Each subscriber's data is their own. Do not add an endpoint that writes
 without these ownership proofs.
@@ -848,7 +849,10 @@ sign-in, which makes an API token) are built.
   removes every token and its pointer with the agent connections.
 - **Offered scopes** are `notes:write`, `media:write` (only beside
   `notes:write`, for files on the notes the token wrote, kept as web
-  uploads are), `upcoming` and `activity`. There is no `notes:read` in v1.
+  uploads are), `notes:all` (only beside `notes:write`; API 1.10.0, Jamie,
+  2026-10-30: "Changelog should be able to read back any notes that the user has recorded… going forward changelog users should be able to open a previous note and be able to edit it, regardless of where it was created."; it reads every note and edits or appends to
+  any, proved on the live token in the write's transaction; delete and
+  files stay own-only until Jamie says), `upcoming` and `activity`.
   A token reads back what it wrote by day, with its files (API 1.9.0:
   `GET /v1/notes?from=&to=`, at most 31 days, and `.../media/{n}`).
   `upcoming` keeps MCP's rules (revisions, dry runs, all or nothing, 50
@@ -861,7 +865,7 @@ sign-in, which makes an API token) are built.
   honoured until `PER_TOKEN_RECEIPTS_UNTIL`, `/v1/me` gives a derived
   `account` id and the token's `id`, and a token's activity rows carry
   `token_id`. Ownership stays the token's: it changes only the notes it
-  wrote.
+  wrote, or with `notes:all` the words of any.
 - **When `/v1` changes**, regenerate the contract with
   `node --import tsx tools/export-api-contract.ts`. Every change is a new
   `API_VERSION` with its `API_CHANGES` entry (`server/mcp/v1.ts`), or the

@@ -118,6 +118,8 @@ test('a token is made once, kept only as its hash, listed and ended in Settings'
     [{ scopes: ['notes:write', 'notes:write'] }, 'token-scopes'],
     // Files ride on adding notes.
     [{ scopes: ['media:write'] }, 'token-scopes'],
+    // So does reaching every note (1.10.0).
+    [{ scopes: ['notes:all', 'activity'] }, 'token-scopes'],
     [{ expiry: '10y' }, 'token-expiry']
   ] as [OAuthRow, string][])
     await assert.rejects(make(ctx, { name: 'Other', ...body }), { status: 400, error: code }, JSON.stringify(body));

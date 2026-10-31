@@ -95,7 +95,7 @@ test('discovery names /v1 as a resource with the token scopes', async () => {
       await publicOAuth(ctx, new Request(ORIGIN + '/.well-known/oauth-authorization-server'), viewer)
     ).json()) as OAuthRow;
   assert.equal(resource.resource, ORIGIN + '/v1');
-  assert.deepEqual(resource.scopes_supported, ['notes:write', 'media:write', 'upcoming', 'activity']);
+  assert.deepEqual(resource.scopes_supported, ['notes:write', 'media:write', 'notes:all', 'upcoming', 'activity']);
   assert.ok((server.scopes_supported as string[]).includes('activity'));
   assert.ok((server.scopes_supported as string[]).includes('notes:read'));
 });
@@ -103,8 +103,19 @@ test('discovery names /v1 as a resource with the token scopes', async () => {
 test('a sign-in asks only for token scopes, files only beside adding notes', async () => {
   const ctx = fixture(),
     cid = await register(ctx);
-  for (const scope of ['notes:read', 'notes:write notes:read', 'media:write', 'upcoming media:write', '', 'mystery'])
+  for (const scope of [
+    'notes:read',
+    'notes:write notes:read',
+    'media:write',
+    'upcoming media:write',
+    'notes:all',
+    'activity notes:all',
+    '',
+    'mystery'
+  ])
     assert.equal((await publicOAuth(ctx, authorizing(cid, scope), viewer)).status, 400, scope);
+  // Every note, beside adding notes (1.10.0).
+  assert.equal((await publicOAuth(ctx, authorizing(cid, 'notes:write notes:all'), viewer)).status, 303);
   // No scope asked for is adding notes alone.
   const r = await publicOAuth(ctx, authorizing(cid, null), viewer),
     id = new URLSearchParams(new URL(r.headers.get('location')!).hash.slice(1)).get('request')!;

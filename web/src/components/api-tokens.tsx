@@ -18,9 +18,12 @@ interface ApiToken {
 }
 // What a token may be given. Files go only on the notes it adds, so Add
 // files comes only with Add notes.
+// Scopes that come only beside notes:write (packages/backend/tokens.ts).
+export const NEEDS_NOTES = ['media:write', 'notes:all'];
 export const OFFERED: [string, string][] = [
   ['notes:write', 'Add notes, and change or delete the notes it adds'],
   ['media:write', 'Add files to the notes it adds: photos, recordings and PDFs'],
+  ['notes:all', 'Read all your notes, from anywhere, and change their words'],
   ['upcoming', 'Read and change your Upcoming dates and their reminders'],
   ['activity', 'Read the activity log, without any words from it']
 ];
@@ -154,12 +157,12 @@ export function ApiTokens() {
                 <input
                   type="checkbox"
                   checked={scopes.includes(scope)}
-                  disabled={scope === 'media:write' && !scopes.includes('notes:write')}
+                  disabled={NEEDS_NOTES.includes(scope) && !scopes.includes('notes:write')}
                   onChange={(e) =>
                     setScopes((now) =>
                       e.target.checked
                         ? [...now, scope]
-                        : now.filter((s) => s !== scope && !(scope === 'notes:write' && s === 'media:write'))
+                        : now.filter((s) => s !== scope && !(scope === 'notes:write' && NEEDS_NOTES.includes(s)))
                     )
                   }
                 />{' '}

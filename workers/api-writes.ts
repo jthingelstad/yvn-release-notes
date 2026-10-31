@@ -24,6 +24,7 @@ import {
   type TitleFetcher
 } from '../packages/backend/links.ts';
 import { live, type OAuthRow } from '../packages/backend/oauth.ts';
+import { isRich } from '../packages/domain/rich.ts';
 import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
 import { addedEvents, earnedBy, unlockedBy } from '../packages/backend/badges.ts';
 import { keys as mediaKeys, MAX_FILES } from '../packages/backend/media.ts';
@@ -449,12 +450,20 @@ export async function writeApi(
       throw new ApiRefusal('date_out_of_range', 'Choose a day from your birthday through today.', { field: 'date' });
     return value;
   };
-  const own = async (): Promise<OAuthRow> => {
+  // A note this token may change: one it wrote, or, for the words of any
+  // note, one it reaches with notes:all (1.10.0). Deleting and adding files
+  // stay on its own notes.
+  const own = async (any = false): Promise<OAuthRow> => {
     const d = day(args.date),
       old = await store.note(uid, d, String(args.id), true);
     if (!old) throw new ApiRefusal('not_found', 'There is no note with that date and id.');
-    if (old.source !== 'api' || old.connection !== tid)
-      throw new ApiRefusal('not_yours', 'A token changes only the notes it wrote.');
+    if ((old.source !== 'api' || old.connection !== tid) && !(any && scopesOf(token).includes('notes:all')))
+      throw new ApiRefusal(
+        'not_yours',
+        any
+          ? 'A token changes only the notes it wrote, unless it may reach all your notes.'
+          : 'A token deletes, and adds files to, only the notes it wrote.'
+      );
     return old;
   };
   // Upcoming: the dates a save would change, checked as a whole against
@@ -695,7 +704,7 @@ export async function writeApi(
               );
           }
         } else {
-          old = await own();
+          old = await own(op !== 'notes.media');
           d = String(args.date);
           if (op === 'notes.edit' && editRevision(old) !== args.revision)
             throw new ApiRefusal(
@@ -747,7 +756,12 @@ export async function writeApi(
           links:
             op === 'notes.media'
               ? ((old?.links as Link[] | undefined) ?? [])
-              : await collect(words, { keep: old?.links as Link[] | undefined, fetch: titleOnce }),
+              : await collect(words, {
+                  keep: old?.links as Link[] | undefined,
+                  fetch: titleOnce,
+                  // An edit keeps the note's markup, as the web's does.
+                  ...(old && isRich(old) ? { rich: true } : {})
+                }),
           revision: Number(old?.revision ?? 0) + 1
         });
         if (old) note.updated_at = iso(now);

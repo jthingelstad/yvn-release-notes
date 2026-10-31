@@ -20,8 +20,13 @@ import { codePointLength, pythonTrim } from '../domain/unicode.ts';
 import type { Log } from './services.ts';
 
 /** What a token may be given. `activity` is a token's alone: the OAuth
- * consent screen never offers it in v1. */
-export const TOKEN_SCOPES = ['notes:write', 'media:write', 'upcoming', 'activity'] as const;
+ * consent screen never offers it in v1. `notes:all` (API 1.10.0; Jamie,
+ * 2026-10-30: "changelog users should be able to open a previous note and
+ * be able to edit it, regardless of where it was created") reads every
+ * note and changes any note's words, only beside `notes:write`. */
+export const TOKEN_SCOPES = ['notes:write', 'media:write', 'notes:all', 'upcoming', 'activity'] as const;
+/** The scopes that come only beside `notes:write`. */
+export const NEEDS_NOTES: readonly unknown[] = ['media:write', 'notes:all'];
 export const TOKENS_MAX = 20,
   TOKEN_NAME_MAX = 40;
 /** The expiry choices, in seconds; `never` has no expiry. */
@@ -39,6 +44,7 @@ export const V1_UPCOMING_MAX = 50;
 export const SCOPE_REFUSALS: Record<string, string> = {
   'notes:write': "This token can't add notes. Make a token with Add notes ticked.",
   'media:write': "This token can't add files. Make a token with Add files ticked.",
+  'notes:all': 'This token reaches only the notes it added. Make a token with All your notes ticked.',
   upcoming: "This token can't read or change Upcoming. Make a token with Upcoming ticked.",
   activity: "This token can't read the activity log. Make a token that may read it."
 };
@@ -160,8 +166,9 @@ export function tokenFields(body: OAuthRow): TokenFields {
     scopes.some((s) => !(TOKEN_SCOPES as readonly unknown[]).includes(s))
   )
     reject(400, 'token-scopes');
-  // Files ride on adding notes, as they do for an agent.
-  if (scopes.includes('media:write') && !scopes.includes('notes:write')) reject(400, 'token-scopes');
+  // Files ride on adding notes, as they do for an agent, and so does
+  // reaching every note.
+  if (scopes.some((s) => NEEDS_NOTES.includes(s)) && !scopes.includes('notes:write')) reject(400, 'token-scopes');
   if (typeof body.expiry !== 'string' || !Object.hasOwn(TOKEN_EXPIRY, body.expiry)) reject(400, 'token-expiry');
   return { name, scope: TOKEN_SCOPES.filter((s) => scopes.includes(s)).join(' '), expiry: body.expiry };
 }

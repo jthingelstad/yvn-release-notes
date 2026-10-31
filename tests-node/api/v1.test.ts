@@ -256,7 +256,7 @@ test('routes, methods and scopes', async () => {
   assert.equal((await call(app, 'GET', '/v1/me', { token: bare.token })).status, 200);
   assert.equal((await call(app, 'GET', '/v1/tags', { token: bare.token })).status, 200);
   for (const route of V1_ROUTES.filter((r) => r.scope)) {
-    const path = route.template.replace('{date}', TODAY).replace('{id}', 't-x'),
+    const path = route.template.replace('{date}', TODAY).replace('{id}', 't-x').replace('{n}', '1'),
       r = await call(app, route.method, path, {
         token: route.scope === 'upcoming' ? other.token : bare.token,
         ...(route.method === 'GET' ? {} : { body: { text: 'Hi' } })

@@ -849,6 +849,8 @@ sign-in, which makes an API token) are built.
 - **Offered scopes** are `notes:write`, `media:write` (only beside
   `notes:write`, for files on the notes the token wrote, kept as web
   uploads are), `upcoming` and `activity`. There is no `notes:read` in v1.
+  A token reads back what it wrote by day, with its files (API 1.9.0:
+  `GET /v1/notes?from=&to=`, at most 31 days, and `.../media/{n}`).
   `upcoming` keeps MCP's rules (revisions, dry runs, all or nothing, 50
   dates a request, past one-time dates left out) and reaches every date,
   as MCP's does, with its own count of 50 saves a UTC day across tokens;

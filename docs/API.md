@@ -396,6 +396,32 @@ and edits are.
   has no others), as a web delete does. This is new: MCP has no delete. A token writes in the owner's voice, and an app
   needs to undo a mistake it just sent.
 
+**Reading back by day** (API 1.9.0, 2026-10-30; Quinn's issue #278, from
+Jamie's 10-29 call that an app reads back what it sent). Changelog's Log
+shows the notes this phone filed on a day, with their photos and voice
+memos, and steps back to earlier days:
+
+- **`GET /v1/notes?from=&to=`**, `notes:write`: the notes this token wrote
+  on those days, in the account's zone, both in, oldest first (by day,
+  then `written_at`), each as `GET` reads it. `to` defaults to `from`. At
+  most `RANGE_DAYS_MAX` (31) days a request; a wider span is
+  `range_too_wide`, so a client asks in pieces. `limit` 1 to 100 (50), and
+  `next` is the `after` for the next page: a place in the order, not a
+  note id, so a note deleted between pages moves nothing. Nothing on those
+  days is an empty list, never a 404. Other channels' and other tokens'
+  notes on those days are never read out.
+- **A note lists its files** as `media`, beside the `files` count it
+  already had: each file's number `n`, `kind`, `type`, `name`, `size` and
+  `thumb` (the small JPEG's width and height, or null). Never a key:
+  originals have no stored width, height or duration, so none is given.
+- **`GET /v1/notes/{date}/{id}/media/{n}`**, `notes:write`, on a note this
+  token wrote: a signed address for the file, good for `FILE_SECONDS`
+  (ten minutes, as MCP's downloads), fetched with no token. `?size=thumb`
+  gives the small copy for a list; a file with none (a recording, a PDF,
+  a HEIC) is `not_found`. It answers JSON rather than a redirect, since a
+  client that carried its `Authorization` header across a redirect would
+  send S3 two kinds of credentials.
+
 **`GET /v1/tags`**, any scope. The tag row:
 
 ```json
@@ -445,6 +471,10 @@ GET /v1/activity?after=<id>&kinds=note,mail,badge,status&limit=50
   cursor for it.
 - `kinds` filters by family (`ACTIVITY_FAMILIES`).
 - `limit` is 1 to 100, 50 by default.
+- `from` and `to` (1.9.0) keep the rows of some days, in the account's
+  time zone, both in, at most `RANGE_DAYS_MAX` (31) days; `to` defaults to
+  `from`. They narrow `before` and `after` rather than replace them, so a
+  long day still pages.
 
 A test pins the trimming: no `/v1/activity` answer ever carries a mail
 subject, mail words, another sender or a settings value.

@@ -37,7 +37,7 @@ import { PINS_MAX, RECENT_DAYS, RECENT_MAX } from '../packages/backend/tag-row.t
 import { UPCOMING_MAX, UPCOMING_SHOWN } from '../packages/domain/upcoming.ts';
 import { DOTS, PHOTOS_AN_EMAIL, PHOTOS_A_DAY } from '../packages/mail/compose.ts';
 import { MAX_INLINE_BYTES, MAX_INLINE_FILES } from '../server/mcp/files.ts';
-import { ME_DAYS, REMINDER_DAYS_MAX, V1_BODY, V1_ERRORS, V1_ROUTES } from '../server/mcp/v1.ts';
+import { ME_DAYS, RANGE_DAYS_MAX, REMINDER_DAYS_MAX, V1_BODY, V1_ERRORS, V1_ROUTES } from '../server/mcp/v1.ts';
 import { FEATURES } from '../web/src/lib/features.ts';
 import { shareTags } from '../web/src/lib/share-card.ts';
 import { ORIGIN, SCOPES, readPages, sitemapDates } from '../web/src/site-pages.ts';
@@ -302,6 +302,7 @@ async function checkedPhrases() {
     `up to ${NEARBY_MAX} businesses`,
     `up to ${V1_UPCOMING_MAX} dates a request`,
     `up to ${REMINDER_DAYS_MAX} days ahead`,
+    `reads up to ${RANGE_DAYS_MAX} days`,
     `up to ${RECENT_MAX} recent ones`,
     `newest ${SEARCH_DAYS} days`,
     `up to ${UPCOMING_MAX} dates`,

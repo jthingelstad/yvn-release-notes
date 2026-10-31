@@ -26,13 +26,19 @@ import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.8.0';
+export const API_VERSION = '1.9.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.9.0',
+    date: '2026-10-30',
+    summary:
+      'Reading back by day: GET /v1/notes?from=&to= lists the notes this token wrote on those days, oldest first, a page at a time, up to 31 days a request (wider is range_too_wide). A note now lists its files as `media` (number, kind, type, name, size and its small copy), and GET /v1/notes/{date}/{id}/media/{n} gives a ten-minute address for one, or its small copy with ?size=thumb. GET /v1/activity takes the same from and to, days in the account’s time zone.'
+  },
   {
     version: '1.8.0',
     date: '2026-10-30',
@@ -107,10 +113,15 @@ export const NOTE_FORM = ['text', 'date', 'written_at'] as const;
 export const ME_DAYS = 14;
 /** How far ahead `/v1/upcoming/reminders` reads: a month of mornings. */
 export const REMINDER_DAYS_MAX = 31;
+/** The most days one `GET /v1/notes` or `GET /v1/activity` reads (1.9.0). */
+export const RANGE_DAYS_MAX = 31;
+/** How long a file's signed address lasts, as MCP's downloads do. */
+export const FILE_SECONDS = 600;
 
 const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
   APPEND = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/append$/,
   MEDIA = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/media$/,
+  FILE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/media\/([1-9]\d{0,2})$/,
   UPCOMING = /^\/v1\/upcoming\/([A-Za-z0-9_-]{1,80})$/;
 
 /** Every route: method, path, name, and the scope it needs (none: any token). */
@@ -122,6 +133,7 @@ export const V1_ROUTES: readonly {
   scope: string | null;
 }[] = [
   { method: 'GET', path: /^\/v1\/me$/, template: '/v1/me', name: 'me', scope: null },
+  { method: 'GET', path: /^\/v1\/notes$/, template: '/v1/notes', name: 'notes', scope: 'notes:write' },
   { method: 'POST', path: /^\/v1\/notes$/, template: '/v1/notes', name: 'notes.create', scope: 'notes:write' },
   { method: 'GET', path: NOTE, template: '/v1/notes/{date}/{id}', name: 'note', scope: 'notes:write' },
   { method: 'PUT', path: NOTE, template: '/v1/notes/{date}/{id}', name: 'notes.edit', scope: 'notes:write' },
@@ -139,6 +151,13 @@ export const V1_ROUTES: readonly {
     template: '/v1/notes/{date}/{id}/media',
     name: 'notes.media',
     scope: 'media:write'
+  },
+  {
+    method: 'GET',
+    path: FILE,
+    template: '/v1/notes/{date}/{id}/media/{n}',
+    name: 'notes.file',
+    scope: 'notes:write'
   },
   { method: 'POST', path: /^\/v1\/uploads$/, template: '/v1/uploads', name: 'uploads.start', scope: 'media:write' },
   { method: 'GET', path: /^\/v1\/places$/, template: '/v1/places', name: 'places', scope: 'notes:write' },
@@ -182,6 +201,7 @@ export const V1_ERRORS: Record<string, number> = {
   invalid_request: 400,
   text_required: 400,
   date_out_of_range: 400,
+  range_too_wide: 400,
   token_missing: 401,
   token_unknown: 401,
   token_revoked: 401,
@@ -327,6 +347,60 @@ const placeLine = (names: unknown[]) => names.filter((n) => typeof n === 'string
 
 const until = (now: number) => (Math.floor(now / 86400) + 1) * 86400 - now;
 
+/** A note's file as a token reads it (1.9.0): what it is, never where. */
+const fileView = (m: OAuthRow): OAuthRow => {
+  const thumb = object(m.thumb) && typeof m.thumb.key === 'string' ? m.thumb : null;
+  return {
+    n: Number(m.n),
+    kind: m.kind,
+    type: m.type,
+    name: typeof m.name === 'string' && m.name ? m.name : null,
+    size: Number(m.size) || 0,
+    thumb: thumb
+      ? { type: 'image/jpeg', width: Number(thumb.width) || null, height: Number(thumb.height) || null }
+      : null
+  };
+};
+
+/** A note as a token reads it, alone or in a day's list. */
+function noteView(item: OAuthRow, birthday: string): OAuthRow {
+  const [, date = '', ...rest] = String(item.sk).split('#'),
+    media = (item.media as OAuthRow[] | undefined) ?? [];
+  return {
+    id: rest.join('#'),
+    date,
+    version: String(item.version ?? computeVersion(birthday, date).toString()),
+    text: String(item.text ?? ''),
+    revision: editRevision(item),
+    written_at: writtenAt(item as NoteRecord) || null,
+    files: media.length,
+    media: media.map(fileView),
+    token: item.token ?? null
+  };
+}
+
+/** `from` and `to`, account-local days, both in; `to` defaults to `from`.
+ * Null when neither came; a refusal when they aren't a range (1.9.0). */
+function dayRange(
+  q: URLSearchParams
+): { first: string; last: string } | { code: string; message: string; extra?: OAuthRow } | null {
+  const first = q.get('from'),
+    last = q.get('to') ?? first;
+  if (first === null && last === null) return null;
+  if (first === null || !validDay(first))
+    return { code: 'invalid_request', message: 'from is a day, YYYY-MM-DD.', extra: { field: 'from' } };
+  if (last === null || !validDay(last))
+    return { code: 'invalid_request', message: 'to is a day, YYYY-MM-DD.', extra: { field: 'to' } };
+  if (last < first)
+    return { code: 'invalid_request', message: 'to is the same day as from or later.', extra: { field: 'to' } };
+  if ((Date.parse(last) - Date.parse(first)) / 86_400_000 + 1 > RANGE_DAYS_MAX)
+    return {
+      code: 'range_too_wide',
+      message: `A request reads at most ${RANGE_DAYS_MAX} days. Ask for a longer span in pieces.`
+    };
+  return { first, last };
+}
+
 export async function handleV1(request: Request, options: McpOptions): Promise<Response> {
   const asText = wantsPlain(request);
   let context: ReaderContext | undefined,
@@ -335,6 +409,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
     context = await options.context();
     const store = context.store as V1Store,
       now = context.now,
+      files = context.media,
       cities = context.geocode ?? search;
     if (request.headers.has('origin') && request.headers.get('origin') !== context.origin)
       return refuse('origin_refused', asText);
@@ -515,6 +590,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         retry_after: until(now)
       });
     type Read = { status: number; body: unknown; line: string } | { code: string; message: string; extra?: OAuthRow };
+    const own = (item: OAuthRow) => item.source === 'api' && item.connection === tid,
+      q = new URL(request.url).searchParams;
     const read = async (): Promise<Read> => {
       if (route.name === 'me') {
         const [days, pauses] = await Promise.all([store.noteDays(uid), store.pauses(uid, true)]),
@@ -562,22 +639,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         if (!validDay(date)) return { code: 'not_found', message: 'There is no note with that date and id.' };
         const item = await store.note(uid, date, id, true);
         if (!item) return { code: 'not_found', message: 'There is no note with that date and id.' };
-        if (item.source !== 'api' || item.connection !== tid)
-          return { code: 'not_yours', message: 'A token reads only the notes it wrote.' };
-        return {
-          status: 200,
-          body: {
-            id,
-            date,
-            version: String(item.version ?? computeVersion(birthday, date).toString()),
-            text: String(item.text ?? ''),
-            revision: editRevision(item),
-            written_at: writtenAt(item as NoteRecord) || null,
-            files: ((item.media as OAuthRow[] | undefined) ?? []).length,
-            token: item.token ?? null
-          },
-          line: String(item.text ?? '')
-        };
+        if (!own(item)) return { code: 'not_yours', message: 'A token reads only the notes it wrote.' };
+        return { status: 200, body: noteView(item, birthday), line: String(item.text ?? '') };
       }
       if (route.name === 'upcoming') {
         // As an agent's upcoming_list: a one-time date already over is left
@@ -593,8 +656,83 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
           line: views.map((v) => `${String(v.next)} ${String(v.line)}`).join('\n') || 'Nothing upcoming.'
         };
       }
-      const url = new URL(request.url),
-        q = url.searchParams;
+      if (route.name === 'notes') {
+        // The notes this token wrote on some days, oldest first (1.9.0).
+        const range = dayRange(q) ?? {
+          code: 'invalid_request',
+          message: 'from is a day, YYYY-MM-DD.',
+          extra: { field: 'from' }
+        };
+        if ('code' in range) return range;
+        const limit = q.get('limit') === null ? 50 : Number(q.get('limit'));
+        if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+          return { code: 'invalid_request', message: 'limit is 1 to 100.', extra: { field: 'limit' } };
+        // A page ends at a place in the order, not at a note, so a note
+        // deleted since still lets the next page start where it was.
+        const order = (item: OAuthRow) => [
+          String(item.sk).split('#')[1]!,
+          writtenAt(item as NoteRecord) || '',
+          String(item.sk)
+        ];
+        let after: string[] | null = null;
+        if (q.get('after') !== null) {
+          try {
+            const parsed: unknown = JSON.parse(Buffer.from(q.get('after')!, 'base64url').toString('utf8'));
+            if (!Array.isArray(parsed) || parsed.length !== 3 || !parsed.every((v) => typeof v === 'string'))
+              throw new Error('after');
+            after = parsed as string[];
+          } catch {
+            return {
+              code: 'invalid_request',
+              message: 'after is the next from an earlier answer.',
+              extra: { field: 'after' }
+            };
+          }
+        }
+        const later = (a: string[], b: string[]) => {
+            for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i]! > b[i]!;
+            return false;
+          },
+          mine = (await store.notesBetween(uid, range.first, range.last, { ConsistentRead: true }))
+            .filter(own)
+            .map((item) => ({ item, at: order(item) }))
+            .sort((x, y) => (later(x.at, y.at) ? 1 : later(y.at, x.at) ? -1 : 0))
+            .filter((n) => !after || later(n.at, after)),
+          page = mine.slice(0, limit),
+          items = page.map((n) => noteView(n.item, birthday));
+        return {
+          status: 200,
+          body: {
+            from: range.first,
+            to: range.last,
+            items,
+            next:
+              mine.length > limit ? Buffer.from(JSON.stringify(page.at(-1)!.at), 'utf8').toString('base64url') : null
+          },
+          line: items.map((n) => `${String(n.date)} ${String(n.text).replace(/\s*\n\s*/g, ' ')}`).join('\n')
+        };
+      }
+      if (route.name === 'notes.file') {
+        // One file on a note this token wrote, as a short-lived address.
+        const [date, id, n] = params as [string, string, string];
+        if (!validDay(date)) return { code: 'not_found', message: 'There is no note with that date and id.' };
+        const item = await store.note(uid, date, id, true);
+        if (!item) return { code: 'not_found', message: 'There is no note with that date and id.' };
+        if (!own(item)) return { code: 'not_yours', message: 'A token reads only the notes it wrote.' };
+        const file = ((item.media as OAuthRow[] | undefined) ?? []).find((m) => Number(m.n) === Number(n));
+        if (!file) return { code: 'not_found', message: 'That note has no file by that number. Read the note again.' };
+        const size = q.get('size');
+        if (size !== null && size !== 'thumb')
+          return { code: 'invalid_request', message: 'size is thumb, or left out.', extra: { field: 'size' } };
+        const thumb = object(file.thumb) ? file.thumb : null,
+          key = size ? thumb?.key : file.key,
+          type = size ? 'image/jpeg' : String(file.type);
+        if (typeof key !== 'string')
+          return { code: 'not_found', message: 'That file has no small copy. Ask without size for the file itself.' };
+        if (!key.startsWith(`media/${uid}/`) || !files) throw new Error('File unavailable');
+        const url = await files.download(uid, key, type, FILE_SECONDS);
+        return { status: 200, body: { url, type, expires_in: FILE_SECONDS }, line: url };
+      }
       if (route.name === 'places') {
         // The web's city search, for a note's place (docs/API.md, Phase 3).
         const words = pythonTrim(q.get('q') ?? '');
@@ -650,13 +788,23 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         if (!/^\d{4}-\d{2}-\d{2}T[\d:.]+Z#[a-z.]+#[\x21\x22\x24-\x7e]{1,200}$/.test(value)) throw new Error(field);
         return value;
       };
-      let before: string | undefined, after: string | undefined;
+      let before: string | undefined, after: string | undefined, lowest: string | undefined;
       try {
         before = cursor('before');
         after = cursor('after');
       } catch (error) {
         const field = (error as Error).message;
         return { code: 'invalid_request', message: `${field} is an id from an earlier answer.`, extra: { field } };
+      }
+      // Days in the account's zone (1.9.0), as instants the log's ids start with.
+      const days = dayRange(q);
+      if (days && 'code' in days) return days;
+      if (days) {
+        const start = (day: string) => new Date(Date.parse(localMoment(day, '00:00', tz))).toISOString(),
+          lo = start(days.first),
+          hi = start(addDays(days.last, 1));
+        before = before === undefined || before > hi ? hi : before;
+        if (after === undefined || after < lo) lowest = lo;
       }
       const kinds = q.get('kinds')
         ? q
@@ -680,7 +828,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         read = 0,
         from = before;
       scan: for (;;) {
-        const page = await store.activity(uid, { before: from, ...(after ? { from: after } : {}), limit: 200 });
+        const bottom = lowest ?? after,
+          page = await store.activity(uid, { before: from, ...(bottom ? { from: bottom } : {}), limit: 200 });
         for (const row of page.rows) {
           const id = activityId(String(row.sk));
           if (id === after) continue;

@@ -23,8 +23,9 @@ It numbers itself the way Release Notes numbers you. It started on October 29, 2
 
 ## 0.0.3 · November 1
 
-- **A new icon:** Versions, three folded v marks stacked on navy, so Changelog stands apart from Release Notes' single v on your Home Screen.
+- **A new icon:** Versions, three folded v marks stacked on navy, so Changelog stands apart from Release Notes' single v on your Home Screen. It's the mark at the top of every tab and on the widgets too.
 - **Four more icons for Supporting Members** of the Weekly Thing: Paper, Copper, Terminal and Afterglow. Choose one in Settings, under App icon. [About membership](https://weekly.thingelstad.com/members/).
+- **Your week and day:** Log and the Today widget say which week and day you're on, under the version, as Release Notes does on the web and in the morning email.
 
 ## 0.0.1 · October 30
 

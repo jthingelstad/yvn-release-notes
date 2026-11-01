@@ -10,7 +10,7 @@ import { writtenAt, type NoteRecord } from '../../packages/domain/notes.ts';
 import { codePointLength, pythonTrim, wellFormed } from '../../packages/domain/unicode.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { remindersFor, UPCOMING_MAX, upcomingViews } from '../../packages/domain/upcoming.ts';
-import { computeVersion } from '../../packages/domain/version.ts';
+import { computeVersion, lifeCount } from '../../packages/domain/version.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { search, type City } from '../../packages/backend/places.ts';
 import { tagRow, type TagRowStore } from '../../packages/backend/tag-row.ts';
@@ -27,13 +27,19 @@ import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.12.0';
+export const API_VERSION = '1.13.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.13.0',
+    date: '2026-11-01',
+    summary:
+      'GET /v1/me says `lived`, the weeks and days lived (both from 1), as Release Notes’ Today page and morning email set them ("Week 2,826 — Day 19,779"), for today and for each of its `days`. Changelog’s widget shows it.'
+  },
   {
     version: '1.12.0',
     date: '2026-11-01',
@@ -641,9 +647,11 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
             status: profile.status ?? 'active',
             show_badges: profile.badges !== false,
             supporting_member: supportingMember(profile, adminUserId),
+            lived: lifeCount(computeVersion(birthday, today), birthday),
             days: Array.from({ length: ME_DAYS }, (_, i) => {
-              const date = addDays(today, i);
-              return { date, version: computeVersion(birthday, date).toString() };
+              const date = addDays(today, i),
+                v = computeVersion(birthday, date);
+              return { date, version: v.toString(), lived: lifeCount(v, birthday) };
             }),
             token: {
               id: tid,

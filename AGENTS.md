@@ -118,8 +118,9 @@ Where things are (each module's design comment has its contract):
   `workers/` the Event Function handlers, `packages/testing/` the fictional
   fakes, and `tools/dev-server.ts` serves the built app and the real API
   against them.
-- `web/` is the React app; `scripts/make_icons.mjs` draws the Home Screen
-  icons. UI glyphs are Lucide React through `web/src/components/icon.tsx`
+- `web/` is the React app; `scripts/make_icons.mjs` draws the logo files
+  from the header mark, and `scripts/make_app_icons.mjs` makes the tab and
+  Home Screen icons from the 2026-11-01 icon study (docs/BRAND.md). UI glyphs are Lucide React through `web/src/components/icon.tsx`
   (2026-10-14): named imports only, icon-only actions named for assistive
   technology, with hover titles, visible focus and 44px targets. Brand marks
   stay their own artwork.

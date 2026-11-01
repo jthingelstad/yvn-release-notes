@@ -2631,23 +2631,32 @@ Resources:
           "start": "-P14D",
           "periodOverride": "inherit",
           "widgets": [
-            {"type": "text", "x": 0, "y": 0, "width": 24, "height": 2, "properties": {
-              "markdown": "# Release Notes\nCounts only: no addresses, no note text. Subscribers, notes and writers come from the sender's census line every quarter hour (`packages/backend/census.ts`); emails from SES; mail in and account events from the functions' logs, kept 90 days. One row per person: `tools/subscribers.ts`."}},
+            {
+            "type": "text",
+            "x": 0,
+            "y": 0,
+            "width": 24,
+            "height": 2,
+            "properties": {
+              "markdown": "# Release Notes\nCounts only: no addresses, no note text. Subscribers, notes and writers come from the sender's census line every quarter hour (`packages/backend/census.ts`); emails from SES; mail in and account events from the functions' logs, kept 90 days. One row per person: `tools/subscribers.ts`.\nCensus charts query existing logs (90 days); only overdue delivery publishes a paid census metric. Historical metric series remain available separately."
+            }
+          },
             {"type": "alarm", "x": 0, "y": 2, "width": 24, "height": 3, "properties": {
               "title": "Alarms",
               "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${InboundErrorsAlarm.Arn}", "${EventsErrorsAlarm.Arn}", "${McpErrorsAlarm.Arn}", "${ExportErrorsAlarm.Arn}", "${FailedQueueAlarm.Arn}", "${InboundFailedQueueAlarm.Arn}", "${NativeAppErrorsAlarm.Arn}", "${NativeMcpErrorsAlarm.Arn}", "${NativeAppCapacityAlarm.Arn}", "${NativeMcpCapacityAlarm.Arn}", "${NativeAppRateAlarm.Arn}", "${NativeMcpRateAlarm.Arn}", "${TranscribeErrorsAlarm.Arn}", "${DescribeErrorsAlarm.Arn}", "${SignInTotalAlarm.Arn}"]}},
-            {"type": "metric", "x": 0, "y": 5, "width": 24, "height": 4, "properties": {
-              "title": "Right now", "view": "singleValue", "region": "${AWS::Region}",
-              "period": 900, "stat": "Maximum", "setPeriodToTimeRange": false, "sparkline": true,
-              "metrics": [
-                ["ReleaseNotes", "Subscribers", {"label": "Getting the email"}],
-                ["ReleaseNotes", "Paused", {"label": "Paused"}],
-                ["ReleaseNotes", "Stopped", {"label": "Stopped"}],
-                ["ReleaseNotes", "Overdue", {"label": "Email overdue"}],
-                ["ReleaseNotes", "Notes", {"label": "Notes"}],
-                ["ReleaseNotes", "Writers7", {"label": "Wrote this week"}],
-                ["ReleaseNotes", "ReplyRate30", {"label": "Reply rate, 30 days (%)"}]
-              ]}},
+            {
+            "type": "log",
+            "x": 0,
+            "y": 5,
+            "width": 24,
+            "height": 4,
+            "properties": {
+              "title": "Right now",
+              "view": "table",
+              "region": "${AWS::Region}",
+              "query": "SOURCE '${SenderLogs}' | fields coalesce(event, message.event) as kind | filter kind = 'census' | fields coalesce(Subscribers, message.Subscribers) as censusSubscribers, coalesce(Paused, message.Paused) as censusPaused, coalesce(Stopped, message.Stopped) as censusStopped, coalesce(Overdue, message.Overdue) as censusOverdue, coalesce(Notes, message.Notes) as censusNotes, coalesce(Writers7, message.Writers7) as censusWriters7, coalesce(ReplyRate30, message.ReplyRate30) as censusReplyRate30 | stats latest(censusSubscribers) as Subscribers, latest(censusPaused) as Paused, latest(censusStopped) as Stopped, latest(censusOverdue) as Overdue, latest(censusNotes) as Notes, latest(censusWriters7) as Writers7, latest(censusReplyRate30) as ReplyRate30"
+            }
+          },
             {"type": "metric", "x": 0, "y": 9, "width": 12, "height": 6, "properties": {
               "title": "Emails a day, by kind (SES)", "view": "timeSeries", "region": "${AWS::Region}",
               "period": 86400, "stat": "Sum",
@@ -2665,25 +2674,32 @@ Resources:
                 {"value": 0.05, "label": "Bounces: AWS reviews at 5%"},
                 {"value": 0.001, "label": "Complaints: AWS reviews at 0.1%", "yAxis": "right"}
               ]}}},
-            {"type": "metric", "x": 0, "y": 15, "width": 12, "height": 6, "properties": {
-              "title": "Notes, by where they came from", "view": "timeSeries", "stacked": true, "region": "${AWS::Region}",
-              "period": 3600, "stat": "Maximum",
-              "metrics": [
-                ["ReleaseNotes", "EmailNotes", {"label": "By email"}],
-                ["ReleaseNotes", "WebNotes", {"label": "On the web"}],
-                ["ReleaseNotes", "ImportedNotes", {"label": "Imported"}],
-                ["ReleaseNotes", "AgentNotes", {"label": "Added by agents"}],
-                ["ReleaseNotes", "ApiNotes", {"label": "Through API tokens"}]
-              ]}},
-            {"type": "metric", "x": 12, "y": 15, "width": 12, "height": 6, "properties": {
-              "title": "Subscribers and writers", "view": "timeSeries", "region": "${AWS::Region}",
-              "period": 3600, "stat": "Maximum",
-              "metrics": [
-                ["ReleaseNotes", "Subscribers", {"label": "Getting the email"}],
-                ["ReleaseNotes", "Writers7", {"label": "Wrote in the last 7 days"}],
-                ["ReleaseNotes", "Writers30", {"label": "Wrote in the last 30 days"}],
-                ["ReleaseNotes", "ReplyRate30", {"label": "Reply rate, 30 days (%)", "yAxis": "right"}]
-              ]}},
+            {
+            "type": "log",
+            "x": 0,
+            "y": 15,
+            "width": 12,
+            "height": 6,
+            "properties": {
+              "title": "Notes, by where they came from",
+              "view": "timeSeries",
+              "region": "${AWS::Region}",
+              "query": "SOURCE '${SenderLogs}' | fields coalesce(event, message.event) as kind | filter kind = 'census' | fields coalesce(EmailNotes, message.EmailNotes) as censusEmailNotes, coalesce(WebNotes, message.WebNotes) as censusWebNotes, coalesce(ImportedNotes, message.ImportedNotes) as censusImportedNotes, coalesce(AgentNotes, message.AgentNotes) as censusAgentNotes, coalesce(ApiNotes, message.ApiNotes) as censusApiNotes | stats max(censusEmailNotes) as EmailNotes, max(censusWebNotes) as WebNotes, max(censusImportedNotes) as ImportedNotes, max(censusAgentNotes) as AgentNotes, max(censusApiNotes) as ApiNotes by bin(1h)"
+            }
+          },
+            {
+            "type": "log",
+            "x": 12,
+            "y": 15,
+            "width": 12,
+            "height": 6,
+            "properties": {
+              "title": "Subscribers and writers",
+              "view": "timeSeries",
+              "region": "${AWS::Region}",
+              "query": "SOURCE '${SenderLogs}' | fields coalesce(event, message.event) as kind | filter kind = 'census' | fields coalesce(Subscribers, message.Subscribers) as censusSubscribers, coalesce(Writers7, message.Writers7) as censusWriters7, coalesce(Writers30, message.Writers30) as censusWriters30, coalesce(ReplyRate30, message.ReplyRate30) as censusReplyRate30 | stats max(censusSubscribers) as Subscribers, max(censusWriters7) as Writers7, max(censusWriters30) as Writers30, max(censusReplyRate30) as ReplyRate30 by bin(1h)"
+            }
+          },
             {"type": "log", "x": 0, "y": 21, "width": 12, "height": 6, "properties": {
               "title": "Mail in: filed or ignored, and why", "view": "table", "region": "${AWS::Region}",
               "query": "SOURCE '${InboundLogs}' | filter event = 'inbound' | stats count(*) as messages by outcome, reason | sort messages desc"}},

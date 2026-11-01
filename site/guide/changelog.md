@@ -21,6 +21,11 @@ Changelog isn't a second Release Notes: you read, search and look back on the we
 
 It numbers itself the way Release Notes numbers you. It started on October 29, 2026, so that day is 0.0.0, and the foot of its Settings names the version and the build. Newest first.
 
+## 0.0.3 · November 1
+
+- **A new icon:** Versions, three folded v marks stacked on navy, so Changelog stands apart from Release Notes' single v on your Home Screen.
+- **Four more icons for Supporting Members** of the Weekly Thing: Paper, Copper, Terminal and Afterglow. Choose one in Settings, under App icon. [About membership](https://weekly.thingelstad.com/members/).
+
 ## 0.0.1 · October 30
 
 - **On paper:** every screen, sheet and widget now looks like Release Notes on the web, with its paper and inks in light and dark, its type, and a tangerine Commit. It opens on the paper too, with no flash of white.

@@ -21,7 +21,7 @@ import {
 import { fingerprint } from '../../server/mcp/common.ts';
 import { OAuthService, publicOAuth, type OAuthRow } from '../../packages/backend/oauth.ts';
 import { activityKey, activityTime } from '../../packages/domain/activity.ts';
-import { computeVersion } from '../../packages/domain/version.ts';
+import { computeVersion, lifeCount } from '../../packages/domain/version.ts';
 import { digest } from '../../packages/backend/auth.ts';
 import { FakeObjects } from '../../packages/testing/services.ts';
 import { fixture, connected, note, ORIGIN, NOW, PROFILE } from '../oauth/fixtures.ts';
@@ -490,6 +490,26 @@ test('/v1/me says supporting_member (1.12.0): a member as last looked at, or the
   assert.equal(await member(), true);
   (ctx as Ctx & { adminUserId?: string }).adminUserId = 'v';
   assert.equal(await member(), false);
+});
+
+test('/v1/me says lived (1.13.0): weeks and days lived, as the Today page sets them, today and on each of its days', async () => {
+  const { ctx, app } = setup(),
+    made = await make(ctx),
+    r = await call(app, 'GET', '/v1/me', { token: made.token });
+  assert.equal(r.status, 200, r.text);
+  const body = r.json! as {
+    lived: { week: number; day: number };
+    days: { date: string; lived: { week: number; day: number } }[];
+  };
+  assert.deepEqual(body.lived, lifeCount(computeVersion(PROFILE.birthday, TODAY), PROFILE.birthday));
+  assert.deepEqual(body.days[0].lived, body.lived);
+  // A day more each day, and the week follows from the day.
+  body.days.forEach((d, i) => {
+    assert.equal(d.lived.day, body.lived.day + i, d.date);
+    assert.equal(d.lived.week, Math.floor((d.lived.day - 1) / 7) + 1, d.date);
+  });
+  // Still never the birthday itself.
+  assert.ok(!r.text.includes(PROFILE.birthday));
 });
 
 test('an Idempotency-Key holds for the account: another of its tokens gets the first answer, another account’s never', async () => {

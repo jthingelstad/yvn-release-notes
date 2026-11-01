@@ -314,9 +314,10 @@ birthday is never sent.
   "status": "active",
   "show_badges": true,
   "supporting_member": false,
+  "lived": { "week": 2368, "day": 16574 },
   "days": [
-    { "date": "2026-10-29", "version": "4.5.137" },
-    { "date": "2026-10-30", "version": "4.5.138" }
+    { "date": "2026-10-29", "version": "4.5.137", "lived": { "week": 2368, "day": 16574 } },
+    { "date": "2026-10-30", "version": "4.5.138", "lived": { "week": 2368, "day": 16575 } }
   ],
   "token": {
     "id": "0f8e2c4a9b7d4e1f8a6c3b5d7e9f1a2b",
@@ -354,6 +355,16 @@ packages/backend/weekly-thing.ts). Any token reads it, as it reads the rest
 of `/v1/me`. It is a standing, not a proof: a lapsed member reads `false`
 within nine days, and an app keeps what it already gave (an icon already
 chosen stays).
+
+`lived` came in 1.13.0 (2026-11-01, from Jamie's TestFlight note: "On the
+widget we would have some space to include the week number and day number
+like we do on the release notes website and emails"): the weeks and days
+lived, both from 1, as the Today page and the morning email set them
+("Week 2,368 — Day 16,574", `livedText`), for today and on each of `days`.
+`day` grows by one a day and `week` is `floor((day - 1) / 7) + 1`, so a
+client can count on past the 14 days. It says nothing the version doesn't:
+with today's date, the version already pins the birthday, which is still
+never sent.
 
 **`POST /v1/notes`**, `notes:write`.
 

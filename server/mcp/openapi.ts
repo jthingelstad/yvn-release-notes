@@ -327,6 +327,15 @@ function answer(schema: string, plain: string, write = false, receipt = write): 
 
 const day = { type: 'string', format: 'date', description: 'A day in the account’s own time zone.' },
   version = { type: 'string', pattern: '^\\d+\\.\\d+\\.\\d+$', example: '4.5.137' },
+  lived = {
+    type: 'object',
+    required: ['week', 'day'],
+    description:
+      'Weeks and days lived, both from 1, as the Today page and the morning email set them ' +
+      '("Week 2,826 — Day 19,779"): `day` grows by one a day, and `week` is (day − 1) ÷ 7, rounded down, plus 1. ' +
+      'Since 1.13.0.',
+    properties: { week: { type: 'integer', minimum: 1 }, day: { type: 'integer', minimum: 1 } }
+  },
   text = {
     type: 'string',
     minLength: 1,
@@ -388,10 +397,11 @@ const SCHEMAS: Record<string, Doc> = {
           'Whether the account gets what Supporting Members of the Weekly Thing get, as Release Notes last looked ' +
           '(every nine days, and at a web sign-in); Changelog offers its other app icons by it. Since 1.12.0.'
       },
+      lived,
       days: {
         type: 'array',
         description: `${ME_DAYS} days from today; a birthday shows as a new major or minor version on its day.`,
-        items: { type: 'object', required: ['date', 'version'], properties: { date: day, version } }
+        items: { type: 'object', required: ['date', 'version'], properties: { date: day, version, lived } }
       },
       token: {
         type: 'object',

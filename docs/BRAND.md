@@ -38,6 +38,8 @@ identity detail.
 
 - **Tabs:** the study's Flat version. `icon-16.png` and `icon-32.png` are its
   reviewed 16 and 32 pixel files, copied as they are.
+- **Email sender logo (BIMI):** the Flat v again, traced to SVG Tiny PS in
+  `web/public/brand/release-notes-bimi.svg`, shrunk to fit a round crop.
 - **Home Screen and installed app:** the full paper fold, resized from the
   1254 pixel master: the 180 pixel Apple touch icon and the 192 and 512 pixel
   app icons. The maskable 512 pixel icon shrinks the whole picture to 84% on a

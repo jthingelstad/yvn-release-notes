@@ -607,10 +607,14 @@ Where things are (each module's design comment has its contract):
 - **The sender's logo** (Jamie, 2026-10-28: the cake beside our email
   should be "the Release Notes icon we now have"): mail clients that read
   BIMI (Fastmail does without a certificate, since our DMARC is
-  `p=reject`) show `web/public/brand/release-notes-bimi.svg`, the mark in
-  SVG Tiny PS on paper, under 16 KB, named by `default._bimi` in the
-  yourversionnumber.com zone. Without that record a client falls back to
-  the site's cake favicon. Keep the file's name and format.
+  `p=reject`) show `web/public/brand/release-notes-bimi.svg`, SVG Tiny PS
+  under 16 KB, named by `default._bimi` in the yourversionnumber.com zone.
+  Since 2026-11-01 it is the icon study's Flat v, traced (Jamie: "Approved: redraw the Release Notes BIMI logo from the Flat icon, same file and URL"): the
+  v as one path, the period a true circle, in the colours measured from
+  `docs/design/icon-study-2026-11-01/favicons/flat.png`, on a cobalt
+  square, the mark within 80% of the inscribed circle so a round crop
+  never clips it. Without the record a client falls back to the site's
+  favicon. Keep the file's name and format.
 - **The number stands alone.** No decades/years/days breakdown under it
   (Jamie, 2026-10-07: "super redundant"). Below it: 24 text dots for how far
   through the year, the ask, then the streak.

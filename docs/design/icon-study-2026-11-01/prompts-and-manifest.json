@@ -1,0 +1,39 @@
+{
+  "title": "Release Notes icon design study",
+  "saved_date": "2026-11-01",
+  "mode": "Built-in image_gen tool",
+  "status": "Design concepts only; active app icons and website code unchanged.",
+  "selected_direction": "Single folded ivory v with tangerine period on cobalt.",
+  "favicon_recommendation": "Flat for browser tabs; full paper fold for the PWA icon. This is a design recommendation, not an implemented change.",
+  "files": [
+    "app-icons/release-notes-primary.png",
+    "app-icons/release-notes-primary-60px.png",
+    "favicons/flat-128px.png",
+    "favicons/flat-16px.png",
+    "favicons/flat-32px.png",
+    "favicons/flat.png",
+    "favicons/full-fold-128px.png",
+    "favicons/full-fold-16px.png",
+    "favicons/full-fold-32px.png",
+    "favicons/full-fold.png",
+    "favicons/micro-fold-128px.png",
+    "favicons/micro-fold-16px.png",
+    "favicons/micro-fold-32px.png",
+    "favicons/micro-fold.png"
+  ],
+  "prompts": {
+    "app_icon": "Use case: logo-brand\nAsset type: new iPhone app icon design exploration for Changelog, the quick-capture companion to Release Notes / Your Version Number, a personal journal where every day is a new version of yourself.\nPrimary request: Create ONE exceptionally bold premium app icon, called \"The next page\". Reimagine the existing lowercase v plus a tangerine period as a single elegant folded-paper emblem. The main ivory mark reads clearly as a broad lowercase v, but its two strokes are thick sculptural folded journal-paper strips meeting in a crisp low valley, the right stroke subtly curling at its top like a turning page. Treat it as a very simple iconic custom silhouette, not a literal book illustration. One large saturated tangerine circular dot to the lower right of the v anchors the version-number punctuation. The v and dot must feel designed together, visually centered as a unit.\nScene/backdrop: full bleed vivid cobalt blue square background, brand cobalt #1A4FE0 with only a very subtle cobalt tonal gradient, no border or surrounding presentation.\nStyle/medium: modern expertly art-directed iPhone icon, minimal dimensional paper sculpture, pristine warm ivory #FFFBF2 surfaces, just enough ambient shadow and one clean fold to communicate paper thickness; more iconic graphic silhouette than 3D rendering. Impact comes from big shapes and contrast.\nComposition/framing: straight-on, emblem fills about 72 percent of canvas width, generous clean safe margins; square image filled edge to edge; sharp square outer corners, iOS will apply its own mask. The paper v is left of center, orange dot near its lower-right outside edge with a clean blue gap; dot diameter about 15 percent canvas width. Be optically balanced.\nColor palette: only cobalt #1A4FE0, warm paper #FFFBF2, tangerine #FF5A1F, shadows in blue.\nText: NO words, NO numbers; only the abstract folded v-shaped mark and the single circular period.\nConstraints: recognizable at 60px, no thin lines, no tiny details, no notebooks with covers or spiral bindings, no pens or pencils, no envelopes, no chevrons inside boxes, no badges, no glows, no rainbow, no glossy plastic, no platform logos, no added symbols, no mockup or device, no labels, no watermark. This is an original icon concept, not an edit of existing image.",
+    "favicons": [
+      {
+        "name": "flat",
+        "prompt": "Use case: precise-object-edit.\nAsset type: Release Notes browser FAVICON optical-size design, derived from its selected full-size app icon.\nInput image: EDIT TARGET and identity reference, the selected Release Notes single folded ivory v and tangerine period on cobalt.\nDesign purpose: retain the same brand at only 16 by 16 pixels. Make a deliberately simplified micro version of this mark; a tiny clear v and orange dot are essential.\nInvariants: exactly ONE warm-ivory #FFFBF2 lowercase-v-shaped emblem and ONE tangerine #FF5A1F circular period at its lower right, on a full-bleed solid cobalt #1A4FE0 square. Preserve the reference's broad v strokes, rounded low valley, balance of v on the left and dot on the right, and basic overall silhouette. No extra elements, no words, no numbers, no labels, no frames, no mockup, no watermark.\nOptical adjustment: the emblem and period together occupy about the middle 86 percent of canvas width, using less padding than the app icon to stay legible in a browser tab. Maintain a generous clear cobalt gap between v and dot. Period diameter about 19 percent of canvas width so it will still be visible when reduced to 16px. Optically center the complete v-and-dot unit. Sharp square outer corners.\n Direction: FLAT. Remove ALL texture, ALL shading, ALL cast shadows, ALL gradients and ALL three-dimensional rendering. Render the v as one pristine solid warm-ivory shape with smooth broad strokes, subtly rounded ends and a clean rounded bottom valley. Translate the original upper-right paper curl into only a gently curved terminal in the silhouette, with no fold line, interior hole or thin detail. The period is one solid flat tangerine circle. The backdrop is solid flat cobalt. Precisely THREE opaque colors in the entire icon, apart from edge antialiasing. An exceptionally clean flat brand symbol; no skeuomorphism. This is an intentionally flat reduced companion to the original sculptural app icon."
+      },
+      {
+        "name": "micro-fold",
+        "prompt": "Use case: precise-object-edit.\nAsset type: Release Notes browser FAVICON optical-size design, derived from its selected full-size app icon.\nInput image: EDIT TARGET and identity reference, the selected Release Notes single folded ivory v and tangerine period on cobalt.\nDesign purpose: retain the same brand at only 16 by 16 pixels. Make a deliberately simplified micro version of this mark; a tiny clear v and orange dot are essential.\nInvariants: exactly ONE warm-ivory #FFFBF2 lowercase-v-shaped emblem and ONE tangerine #FF5A1F circular period at its lower right, on a full-bleed solid cobalt #1A4FE0 square. Preserve the reference's broad v strokes, rounded low valley, balance of v on the left and dot on the right, and basic overall silhouette. No extra elements, no words, no numbers, no labels, no frames, no mockup, no watermark.\nOptical adjustment: the emblem and period together occupy about the middle 86 percent of canvas width, using less padding than the app icon to stay legible in a browser tab. Maintain a generous clear cobalt gap between v and dot. Period diameter about 19 percent of canvas width so it will still be visible when reduced to 16px. Optically center the complete v-and-dot unit. Sharp square outer corners.\n Direction: MICRO FOLD. Keep a tiny suggestion of the paper curl at the upper-right terminal, but reduce it to ONE simple ivory curved shape and ONE broad deep-cobalt-blue fold shadow. Limit the v to two large tones: warm ivory main face and a simple slightly darker ivory plane at the valley; the upper-right curl may use the cobalt backdrop as its underside. No paper grain, no soft lighting, no cast shadow, no gradients, no thin fold edges. The silhouette must stay bold and clear. A minimalist two-plane paper-cut interpretation of the reference, retaining the curl with the least possible detail. The period is a single flat solid tangerine circle. Prioritize extreme small-size readability over realism."
+      }
+    ]
+  },
+  "prompt_history_note": "The original single-v generation prompt named Changelog. The user subsequently assigned this design to Release Notes; the selected_direction above is current.",
+  "companion": "jthingelstad/changelog-ios: docs/design/icon-study-2026-11-01"
+}

@@ -47,6 +47,14 @@ test('dashboard widgets fit without overlap, use emitted count metrics and never
     if (widget.type === 'log') {
       assert.match(widget.properties.query!, /^SOURCE /);
       assert.doesNotMatch(widget.properties.query!, /\b(text|email|subject)\b/);
+      // Logs Insights resolves field references across the query. Reusing a
+      // source field as a stats output alias creates cycles or blank cells.
+      const query = widget.properties.query!;
+      const sourceFields = new Set(
+        [...query.matchAll(/coalesce\((\w+), message\.\1\)/g)].map((m) => m[1]!.toLowerCase())
+      );
+      for (const match of query.matchAll(/(?:latest|max)\(census\w+\) as (\w+)/g))
+        assert.ok(!sourceFields.has(match[1]!.toLowerCase()));
     }
   }
   assert.ok(shown > 0);

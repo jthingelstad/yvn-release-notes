@@ -2654,7 +2654,7 @@ Resources:
               "title": "Right now",
               "view": "table",
               "region": "${AWS::Region}",
-              "query": "SOURCE '${SenderLogs}' | fields coalesce(event, message.event) as kind | filter kind = 'census' | fields coalesce(Subscribers, message.Subscribers) as censusSubscribers, coalesce(Paused, message.Paused) as censusPaused, coalesce(Stopped, message.Stopped) as censusStopped, coalesce(Overdue, message.Overdue) as censusOverdue, coalesce(Notes, message.Notes) as censusNotes, coalesce(Writers7, message.Writers7) as censusWriters7, coalesce(ReplyRate30, message.ReplyRate30) as censusReplyRate30 | stats latest(censusSubscribers) as Subscribers, latest(censusPaused) as Paused, latest(censusStopped) as Stopped, latest(censusOverdue) as Overdue, latest(censusNotes) as Notes, latest(censusWriters7) as Writers7, latest(censusReplyRate30) as ReplyRate30"
+              "query": "SOURCE '${SenderLogs}' | fields coalesce(event, message.event) as kind | filter kind = 'census' | fields coalesce(Subscribers, message.Subscribers) as censusSubscribers, coalesce(Paused, message.Paused) as censusPaused, coalesce(Stopped, message.Stopped) as censusStopped, coalesce(Overdue, message.Overdue) as censusOverdue, coalesce(Notes, message.Notes) as censusNotes, coalesce(Writers7, message.Writers7) as censusWriters7, coalesce(ReplyRate30, message.ReplyRate30) as censusReplyRate30 | stats latest(censusSubscribers) as total_Subscribers, latest(censusPaused) as total_Paused, latest(censusStopped) as total_Stopped, latest(censusOverdue) as total_Overdue, latest(censusNotes) as total_Notes, latest(censusWriters7) as total_Writers7, latest(censusReplyRate30) as total_ReplyRate30"
             }
           },
             {"type": "metric", "x": 0, "y": 9, "width": 12, "height": 6, "properties": {
@@ -2684,7 +2684,7 @@ Resources:
               "title": "Notes, by where they came from",
               "view": "timeSeries",
               "region": "${AWS::Region}",
-              "query": "SOURCE '${SenderLogs}' | fields coalesce(event, message.event) as kind | filter kind = 'census' | fields coalesce(EmailNotes, message.EmailNotes) as censusEmailNotes, coalesce(WebNotes, message.WebNotes) as censusWebNotes, coalesce(ImportedNotes, message.ImportedNotes) as censusImportedNotes, coalesce(AgentNotes, message.AgentNotes) as censusAgentNotes, coalesce(ApiNotes, message.ApiNotes) as censusApiNotes | stats max(censusEmailNotes) as EmailNotes, max(censusWebNotes) as WebNotes, max(censusImportedNotes) as ImportedNotes, max(censusAgentNotes) as AgentNotes, max(censusApiNotes) as ApiNotes by bin(1h)"
+              "query": "SOURCE '${SenderLogs}' | fields coalesce(event, message.event) as kind | filter kind = 'census' | fields coalesce(EmailNotes, message.EmailNotes) as censusEmailNotes, coalesce(WebNotes, message.WebNotes) as censusWebNotes, coalesce(ImportedNotes, message.ImportedNotes) as censusImportedNotes, coalesce(AgentNotes, message.AgentNotes) as censusAgentNotes, coalesce(ApiNotes, message.ApiNotes) as censusApiNotes | stats max(censusEmailNotes) as total_EmailNotes, max(censusWebNotes) as total_WebNotes, max(censusImportedNotes) as total_ImportedNotes, max(censusAgentNotes) as total_AgentNotes, max(censusApiNotes) as total_ApiNotes by bin(1h)"
             }
           },
             {
@@ -2697,7 +2697,7 @@ Resources:
               "title": "Subscribers and writers",
               "view": "timeSeries",
               "region": "${AWS::Region}",
-              "query": "SOURCE '${SenderLogs}' | fields coalesce(event, message.event) as kind | filter kind = 'census' | fields coalesce(Subscribers, message.Subscribers) as censusSubscribers, coalesce(Writers7, message.Writers7) as censusWriters7, coalesce(Writers30, message.Writers30) as censusWriters30, coalesce(ReplyRate30, message.ReplyRate30) as censusReplyRate30 | stats max(censusSubscribers) as Subscribers, max(censusWriters7) as Writers7, max(censusWriters30) as Writers30, max(censusReplyRate30) as ReplyRate30 by bin(1h)"
+              "query": "SOURCE '${SenderLogs}' | fields coalesce(event, message.event) as kind | filter kind = 'census' | fields coalesce(Subscribers, message.Subscribers) as censusSubscribers, coalesce(Writers7, message.Writers7) as censusWriters7, coalesce(Writers30, message.Writers30) as censusWriters30, coalesce(ReplyRate30, message.ReplyRate30) as censusReplyRate30 | stats max(censusSubscribers) as total_Subscribers, max(censusWriters7) as total_Writers7, max(censusWriters30) as total_Writers30, max(censusReplyRate30) as total_ReplyRate30 by bin(1h)"
             }
           },
             {"type": "log", "x": 0, "y": 21, "width": 12, "height": 6, "properties": {

@@ -23,13 +23,12 @@ import {
   isPageSize,
   type PageSize
 } from '../book/limits.ts';
-import { isAdmin } from './product-updates.ts';
+import { supportingMember } from './weekly-thing.ts';
 import { addDays } from '../domain/dates.ts';
 import { computeVersion, releaseName } from '../domain/version.ts';
 
 /** Who may add Claude's commentary: a thank-you to Supporting Members. */
-export const mayAnnotate = (p: Item, adminUserId?: string): boolean =>
-  p.weekly_thing === 'member' || isAdmin(p, adminUserId);
+export const mayAnnotate = (p: Item, adminUserId?: string): boolean => supportingMember(p, adminUserId);
 
 /** What a span holds, from its notes' keys and files alone. */
 async function counted(service: SessionService, uid: string, from: string, to: string) {

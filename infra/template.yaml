@@ -372,6 +372,8 @@ Resources:
           WEB_ORIGIN: !Sub "https://${WebDomain}"
           APP_VERSION: !Ref BuildId
           CAPTURE_FUNCTION: !Ref CaptureAlias
+          # /v1/me's supporting_member is true for the administrator too.
+          ADMIN_USER_ID: !If [HasAdmin, !Ref AdminUserId, !Ref AWS::NoValue]
         TelemetryConfig:
           LoggingConfig:
             LogGroup: !Ref NativeMcpLogs

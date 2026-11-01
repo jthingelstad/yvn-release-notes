@@ -8,6 +8,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 ## 0.0.25 · November 1
 
 - New icons. A browser tab shows a flat ivory v with its tangerine period on cobalt, and on a Home Screen the same v is folded from paper. If you added Release Notes to your Home Screen before today, it keeps the old icon until you add it again.
+- Apps on [the API](/guide/api/) can tell whether you're a Supporting Member of the Weekly Thing, so Changelog can offer members its other icons.
 
 ## 0.0.23 · October 30
 

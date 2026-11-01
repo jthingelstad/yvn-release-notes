@@ -5,6 +5,10 @@ description: Everything Release Notes has learned to do, one release at a time.
 
 Release Notes numbers itself the way it numbers you. It shipped on October 7, 2026, so that day is 0.0.0. Newest first. Changelog, the iPhone app, keeps [its own](/guide/changelog/).
 
+## 0.0.25 · November 1
+
+- New icons. A browser tab shows a flat ivory v with its tangerine period on cobalt, and on a Home Screen the same v is folded from paper. If you added Release Notes to your Home Screen before today, it keeps the old icon until you add it again.
+
 ## 0.0.23 · October 30
 
 - Notes written on the web can have **bold** and _italic_ words, lists, numbered lists and quotes: use the buttons under the box, or type the marks. They show on the web and in the email. [Getting started](/guide/start/) says how.

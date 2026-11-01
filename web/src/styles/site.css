@@ -127,12 +127,6 @@ strong {
   height: 26px;
   flex: none;
 }
-.brand-mark-blue {
-  fill: var(--blue);
-}
-.brand-mark-dot {
-  fill: var(--orange);
-}
 .bar a:not(.brand) {
   text-decoration: none;
   padding: 4px 0;

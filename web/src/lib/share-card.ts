@@ -7,7 +7,7 @@
  * `summary_large_image`. */
 export const SHARE_CARD = {
   image: 'https://notes.yourversionnumber.com/brand/release-notes-paper-512.png',
-  alt: 'The Release Notes mark: a blue V and an orange dot over two lines',
+  alt: 'The Release Notes mark: an ivory v and an orange period on a blue tile',
   twitterCard: 'summary'
 } as const;
 

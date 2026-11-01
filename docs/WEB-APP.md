@@ -693,16 +693,15 @@ or new CSP exception.
   Done. A spot within 150 m of the last one named reuses its names without
   asking the server. "Not there" takes it off for that note.
 - **Home Screen**: `web/public/manifest.webmanifest` (standalone, opening
-  on `/today/`) and the icons in `web/public/icons/`, drawn by
-  `scripts/make_icons.mjs`: a cobalt "v", its tangerine dot and two note
-  lines on warm paper. The font-independent shapes in
-  `web/src/lib/brand-mark.ts` also draw the small decorative mark beside
-  "Release Notes" in every header, using the theme's blue in dark mode.
-  [The logo files](BRAND.md) include scalable masters and reusable PNGs
-  through 4096px, with transparent or warm-paper backgrounds.
-  Favicons have their own 16px and 32px renders; Home Screen icons have
-  more breathing room, and the maskable icon keeps the whole mark inside
-  its central safe circle. No service worker: every page needs the API,
+  on `/today/`) and the icons in `web/public/icons/`, from the 2026-11-01
+  icon study by `scripts/make_app_icons.mjs`: the folded ivory v on cobalt
+  for the Home Screen, the Flat v for tabs, and a maskable icon that keeps
+  the whole fold inside its central safe circle. The small decorative mark
+  beside "Release Notes" in every header is the Flat v on its cobalt tile,
+  traced into the font-independent shapes in `web/src/lib/brand-mark.ts`,
+  the same in both themes. [The logo files](BRAND.md) are drawn from it by
+  `scripts/make_icons.mjs`: a scalable master and PNGs through 4096px,
+  with transparent corners or on warm paper. No service worker: every page needs the API,
   and one would only risk an old build. On an iPhone the Home Screen app keeps its own
   cookies, so the emailed link signs in Safari, not the app; there the
   sign-in page points at the code.

@@ -2,7 +2,8 @@
 
 The mark combines a cobalt version "v", a tangerine dot and two written
 lines. The same font-independent shapes in `web/src/lib/brand-mark.ts`
-draw the site header, browser icons, Home Screen icons and reusable exports.
+draw the site header and the reusable exports below. The browser and Home
+Screen icons are separate artwork (below).
 The header uses the theme's lighter blue in dark mode.
 
 Regenerate all files using Node 24:
@@ -30,8 +31,27 @@ frame, shadow or texture.
 
 ## Browser and Home Screen
 
-`web/public/icons/` contains dedicated 16px and 32px favicons, the 180px
-Apple touch icon, 192px and 512px app icons, a maskable 512px icon, and an
-SVG copy of the mark. Favicon framing is tighter to preserve detail. Home
-Screen files include warm-paper backgrounds and extra space; the maskable
-file keeps the complete mark inside the central circle of radius 40%.
+The tab and Home Screen icons are not drawn from the header mark. They are
+the 2026-11-01 icon study (`docs/design/icon-study-2026-11-01/`): a single
+folded ivory v with a tangerine period on cobalt. The paper curl is the
+identity detail.
+
+- **Tabs:** the study's Flat version. `icon-16.png` and `icon-32.png` are its
+  reviewed 16 and 32 pixel files, copied as they are.
+- **Home Screen and installed app:** the full paper fold, resized from the
+  1254 pixel master: the 180 pixel Apple touch icon and the 192 and 512 pixel
+  app icons. The maskable 512 pixel icon shrinks the whole picture to 84% on a
+  cobalt field, so the fold stays inside the central circle of radius 40%.
+
+Regenerate them with Node 24:
+
+```sh
+node scripts/make_app_icons.mjs
+```
+
+`icons/release-notes.svg` stays the header mark's vector, from
+`scripts/make_icons.mjs`. The companion iPhone app, Changelog, uses three
+stacked folded v marks on ink navy (`jthingelstad/changelog-ios`,
+`docs/design/icon-study-2026-11-01/`); the two must stay distinct side by
+side on a Home Screen. The rejected directions (a literal open journal, three
+paper slips) stay rejected.

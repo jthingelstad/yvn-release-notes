@@ -24,6 +24,7 @@ The Weekly Thing has [Supporting Members](https://weekly.thingelstad.com/members
 - A badge for each year you give, on its own shelf.
 - A thank-you in your birthday email, naming the nonprofits your membership gave to.
 - Commentary by Claude in a book of your notes, for up to 10 books a release, if you tick the box for that book.
+- Four more icons for Changelog, the iPhone app: Paper, Copper, Terminal and Afterglow.
 
 Everything else is the same for everyone.
 

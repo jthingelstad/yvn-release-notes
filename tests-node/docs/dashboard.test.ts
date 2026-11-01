@@ -41,6 +41,7 @@ test('dashboard widgets fit without overlap, use emitted count metrics and never
       for (const metric of widget.properties.metrics ?? [])
         if (metric[0] === NAMESPACE) {
           assert.ok(known.has(String(metric[1])));
+          assert.ok(['Overdue', 'McpFailures'].includes(String(metric[1])));
           shown++;
         }
     if (widget.type === 'log') {
@@ -49,4 +50,12 @@ test('dashboard widgets fit without overlap, use emitted count metrics and never
     }
   }
   assert.ok(shown > 0);
+  const queries = widgets
+    .filter((w) => w.type === 'log')
+    .map((w) => w.properties.query!)
+    .join('\n');
+  for (const name of ['Subscribers', 'Writers7', 'ReplyRate30', 'ImportedNotes', 'ApiNotes'])
+    assert.ok(queries.includes(name));
+  assert.match(queries, /latest\(censusSubscribers\)/);
+  assert.match(queries, /max\(censusEmailNotes\).*by bin\(1h\)/);
 });

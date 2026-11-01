@@ -118,7 +118,7 @@ export function counts(items: Item[], now: number): Counts {
   return totals;
 }
 
-export function line(values: Counts, now: number) {
+export function line<T extends Counts>(values: T, now: number) {
   return {
     _aws: {
       Timestamp: Math.trunc(now * 1000),
@@ -126,10 +126,9 @@ export function line(values: Counts, now: number) {
         {
           Namespace: NAMESPACE,
           Dimensions: [[]],
-          Metrics: Object.keys(values).map((name) => ({
-            Name: name,
-            Unit: name === 'ReplyRate30' ? 'Percent' : 'Count'
-          }))
+          // Only this outcome drives an alarm. Other counts remain queryable
+          // in the same census log without thirteen paid metric series.
+          Metrics: [{ Name: 'Overdue', Unit: 'Count' }]
         }
       ]
     },

@@ -246,3 +246,13 @@ hand. Read current values from DNS or the stack, never from this repo.
   `WebDistributionDomain`. The certificate lives outside the stack (an
   in-stack one would hold every deploy until DNS validated); `deploy.sh`
   finds it once ACM says ISSUED and only then attaches the alias.
+
+### Census monitoring cost
+
+The sender still logs every count-only census each quarter hour. Only `Overdue`
+is promoted to a custom metric for its delivery alarm; informational counts are
+queried from the existing 90-day sender logs by the CloudWatch dashboard. This
+stops publishing thirteen informational metric series without changing census
+calculations or the sender schedule. Old metric history remains in CloudWatch;
+the replacement charts cover the log retention window. Revert the change to
+restore metric publication and the prior dashboard widgets.

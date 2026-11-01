@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.11.0",
+    "version": "1.12.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.12.0",
+        "date": "2026-11-01",
+        "summary": "GET /v1/me says `supporting_member`: whether the account gets what Supporting Members of the Weekly Thing get, as Release Notes last looked (every nine days, and at a web sign-in). Changelog reads it to offer its other app icons."
+      },
       {
         "version": "1.11.0",
         "date": "2026-10-30",
@@ -1651,6 +1656,10 @@
           "show_badges": {
             "type": "boolean"
           },
+          "supporting_member": {
+            "type": "boolean",
+            "description": "Whether the account gets what Supporting Members of the Weekly Thing get, as Release Notes last looked (every nine days, and at a web sign-in); Changelog offers its other app icons by it. Since 1.12.0."
+          },
           "days": {
             "type": "array",
             "description": "14 days from today; a birthday shows as a new major or minor version on its day.",
@@ -1712,7 +1721,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.11.0"
+            "example": "1.12.0"
           }
         }
       },

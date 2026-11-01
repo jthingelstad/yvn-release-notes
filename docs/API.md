@@ -313,6 +313,7 @@ birthday is never sent.
   "paused_until": null,
   "status": "active",
   "show_badges": true,
+  "supporting_member": false,
   "days": [
     { "date": "2026-10-29", "version": "4.5.137" },
     { "date": "2026-10-30", "version": "4.5.138" }
@@ -342,6 +343,17 @@ know whose account a token opens and which rows are its own:
 - `token.id` is the token's own record id, 32 hex characters, the one notes
   already carry as `connection`. It grants nothing and is never the token
   or its hash.
+
+`supporting_member` came in 1.12.0 (2026-11-01; Jamie: "Approved: Changelog
+member icons unlock for Supporting Members"), for Changelog's other app
+icons. It is true for a Supporting Member of the Weekly Thing, as the
+profile's `weekly_thing` last said (looked at again every nine days, at a
+web sign-in and after the morning email), and for the administrator, the
+same rule as a book's commentary (`supportingMember`,
+packages/backend/weekly-thing.ts). Any token reads it, as it reads the rest
+of `/v1/me`. It is a standing, not a proof: a lapsed member reads `false`
+within nine days, and an app keeps what it already gave (an icon already
+chosen stays).
 
 **`POST /v1/notes`**, `notes:write`.
 
@@ -731,7 +743,9 @@ Until then, builds go on a device from Xcode. For the App Store it needs:
 - a privacy label: user content, linked to you, no tracking;
 - a review account;
 - a link to `/delete/`;
-- no membership links in the app until the purchase rules are checked.
+- no membership links in the app until the purchase rules are checked:
+  Changelog shows its other icons only when `supporting_member` is true,
+  and says nothing of them, or of membership, to anyone else.
 
 ## Badges
 

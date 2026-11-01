@@ -4,8 +4,9 @@
  * for Weekly Thing supporting members and also gated by subscribing to Weekly
  * Thing." A new account needs its verified address on the Weekly Thing's
  * list; accounts made before the gate keep everything (Jamie: "Keep them").
- * Supporting membership changes only the framing for now (Jamie: "Framing
- * only for now"), and every account's standing is looked at again after
+ * Supporting membership changed only the framing at first (Jamie: "Framing
+ * only for now"); since then it adds the book's commentary and Changelog's
+ * icons (`supportingMember`). Every account's standing is looked at again after
  * `RECHECK_SECONDS`, as Thingy does (Jamie: "Re-check like Thingy").
  *
  * The Librarian answers, the way it answers Thingy (Jamie: "Use the
@@ -23,6 +24,7 @@
  */
 import { iso } from '../domain/dates.ts';
 import type { Item } from './store-types.ts';
+import { isAdmin } from './product-updates.ts';
 
 export const LIBRARIAN_AUTH = 'https://librarian.thingelstad.com/auth';
 const SOURCE = 'release-notes';
@@ -44,6 +46,14 @@ export type Standing = 'member' | 'reader' | 'unconfirmed' | 'none';
 export const STANDINGS: readonly Standing[] = ['member', 'reader', 'unconfirmed', 'none'];
 /** Standings that may make an account. */
 export const welcome = (s: Standing) => s === 'member' || s === 'reader';
+/** Who gets what Release Notes gives Supporting Members as a thank-you: the
+ * book's commentary (books.ts) and, through `supporting_member` on
+ * `GET /v1/me` (API 1.12.0), Changelog's other app icons (Jamie, 2026-11-01:
+ * "Approved: Changelog member icons unlock for Supporting Members"). A
+ * member as last looked at, or the administrator, whose own account may be
+ * gate-free. */
+export const supportingMember = (p: Item, adminUserId?: string): boolean =>
+  p.weekly_thing === 'member' || isAdmin(p, adminUserId);
 /** Jamie's own plus addresses skip the gate (Jamie, 2026-10-29: "it would be
  * fine to allow jamie+<anything> to bypass the Weekly Thing subscriber
  * check"), for test accounts and an app reviewer's. Such an address is never

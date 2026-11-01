@@ -14,6 +14,7 @@ import { computeVersion } from '../../packages/domain/version.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { search, type City } from '../../packages/backend/places.ts';
 import { tagRow, type TagRowStore } from '../../packages/backend/tag-row.ts';
+import { supportingMember } from '../../packages/backend/weekly-thing.ts';
 import {
   accountId,
   checkToken,
@@ -26,13 +27,19 @@ import { failure, object } from './common.ts';
 import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.11.0';
+export const API_VERSION = '1.12.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.12.0',
+    date: '2026-11-01',
+    summary:
+      'GET /v1/me says `supporting_member`: whether the account gets what Supporting Members of the Weekly Thing get, as Release Notes last looked (every nine days, and at a web sign-in). Changelog reads it to offer its other app icons.'
+  },
   {
     version: '1.11.0',
     date: '2026-10-30',
@@ -425,7 +432,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
     const store = context.store as V1Store,
       now = context.now,
       files = context.media,
-      cities = context.geocode ?? search;
+      cities = context.geocode ?? search,
+      adminUserId = context.adminUserId;
     if (request.headers.has('origin') && request.headers.get('origin') !== context.origin)
       return refuse('origin_refused', asText);
     const path = new URL(request.url).pathname,
@@ -632,6 +640,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
             paused_until: paused,
             status: profile.status ?? 'active',
             show_badges: profile.badges !== false,
+            supporting_member: supportingMember(profile, adminUserId),
             days: Array.from({ length: ME_DAYS }, (_, i) => {
               const date = addDays(today, i);
               return { date, version: computeVersion(birthday, date).toString() };

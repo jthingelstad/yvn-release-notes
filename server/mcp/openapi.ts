@@ -382,6 +382,12 @@ const SCHEMAS: Record<string, Doc> = {
       paused_until: { anyOf: [day, { type: 'null' }] },
       status: { type: 'string', enum: ['active', 'stopped'] },
       show_badges: { type: 'boolean' },
+      supporting_member: {
+        type: 'boolean',
+        description:
+          'Whether the account gets what Supporting Members of the Weekly Thing get, as Release Notes last looked ' +
+          '(every nine days, and at a web sign-in); Changelog offers its other app icons by it. Since 1.12.0.'
+      },
       days: {
         type: 'array',
         description: `${ME_DAYS} days from today; a birthday shows as a new major or minor version on its day.`,

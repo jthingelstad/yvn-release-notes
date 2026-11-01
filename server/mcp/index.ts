@@ -55,7 +55,13 @@ const media: MediaReader = {
 listen(
   createMcpApp({
     log: (fields) => console.info(fields),
-    context: () => ({ store, media, origin: process.env.WEB_ORIGIN ?? '', now: Math.floor(Date.now() / 1000) }),
+    context: () => ({
+      store,
+      media,
+      origin: process.env.WEB_ORIGIN ?? '',
+      now: Math.floor(Date.now() / 1000),
+      adminUserId: process.env.ADMIN_USER_ID ?? ''
+    }),
     async capture(event) {
       const response = await lambda.send(
         new InvokeCommand({

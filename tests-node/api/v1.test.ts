@@ -466,6 +466,32 @@ test('/v1/me names the account and the token by id: stable, one for the account,
   }
 });
 
+test('/v1/me says supporting_member (1.12.0): a member as last looked at, or the administrator', async () => {
+  const { ctx, app } = setup(),
+    made = await make(ctx),
+    member = async () => {
+      const r = await call(app, 'GET', '/v1/me', { token: made.token });
+      assert.equal(r.status, 200, r.text);
+      return r.json!.supporting_member;
+    };
+  // An account from before the gate, or a gate-free one, has no standing.
+  assert.equal(await member(), false);
+  for (const [standing, expected] of [
+    ['member', true],
+    ['reader', false],
+    ['unconfirmed', false],
+    ['none', false]
+  ] as const) {
+    ctx.store.seed({ ...PROFILE, weekly_thing: standing, weekly_thing_at: '2026-10-12T00:00:00Z' });
+    assert.equal(await member(), expected, standing);
+  }
+  // The administrator gets what members get, whatever the standing says.
+  (ctx as Ctx & { adminUserId?: string }).adminUserId = 'u';
+  assert.equal(await member(), true);
+  (ctx as Ctx & { adminUserId?: string }).adminUserId = 'v';
+  assert.equal(await member(), false);
+});
+
 test('an Idempotency-Key holds for the account: another of its tokens gets the first answer, another account’s never', async () => {
   const { ctx, app } = setup();
   ctx.store.seed({ ...PROFILE, pk: 'USER#v', email: 'bob@example.com' });

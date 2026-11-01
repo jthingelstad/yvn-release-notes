@@ -65,6 +65,9 @@ export interface ReaderContext extends OAuthContext {
   media?: MediaReader;
   /** The city search (`places.search`), injected by tests and the dev server. */
   geocode?: (q: string) => Promise<City[]>;
+  /** The administrator's account (`ADMIN_USER_ID`), who gets what Supporting
+   * Members get (weekly-thing.ts `supportingMember`). */
+  adminUserId?: string;
 }
 export type Content = { type: string; mimeType: string; data: string };
 /** The longest code-point prefix of `text` whose JSON takes at most `budget`

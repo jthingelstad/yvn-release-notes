@@ -454,6 +454,12 @@ Where things are (each module's design comment has its contract):
     members get, up front (Jamie, 2026-10-25: "remember we are raising money
     for non-profits, we can be up front about the benefits"): what only a
     member can do is shown to everyone, off, with a link to become one.
+    Changelog's other app icons are a member's too (API 1.12.0, Jamie,
+    2026-11-01: "Approved: Changelog member icons unlock for Supporting Members"): `supporting_member` on `/v1/me`, from
+    `supportingMember` (a member or the administrator, as for a book's
+    commentary). The app is the exception to showing it to everyone: it
+    shows the icons only to members, with no link, until the App Store's
+    purchase rules are settled (docs/API.md).
   - A failed lookup never locks anyone out: sign-up goes ahead and a
     re-check keeps what was known. A failed subscribe asks the reader to
     try again (503 `weekly-thing-busy`); one Buttondown's firewall holds,

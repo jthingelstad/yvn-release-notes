@@ -337,7 +337,7 @@ Where things are (each module's design comment has its contract):
   needs Jamie's go**. A repeat skips what was imported before, deleted since
   or not (`IMPORT#`). The export is read as untrusted.
 - **Imported days count** toward streaks and every lifetime count (Jamie,
-  2026-10-09). The dashboard splits notes into email, web and imported.
+  2026-10-09). The census splits notes into email, web and imported.
 
 ### Subscribers and accounts
 
@@ -739,10 +739,14 @@ Where things are (each module's design comment has its contract):
   restarts, bounces, complaints and deletes, one number each a month. A
   stopped subscriber gets nothing from the product, so the unsubscribe count
   is the one to watch (Jamie, 2026-10-08).
-- **The operations dashboard is CloudWatch, not the web app** (Jamie,
-  2026-10-09: "instead of part of the application ... an AWS dashboard"):
-  counts only, no address, user id or note text; a new number goes in
-  `packages/backend/census.ts`. Jamie's 2026-10-13 addition permits a
+- **The operations dashboards are outside the web app** (Jamie,
+  2026-10-09: "instead of part of the application ... an AWS dashboard").
+  Since 2026-11-02 they are Grafana on Otto (otto-ops: Release Notes and
+  Release Notes product), reading this stack's CloudWatch metrics and logs;
+  the stack owns no CloudWatch dashboard (Jamie, 2026-11-02:
+  "Approved: delete the CloudWatch dashboards yvn-release-notes, elixir-mcp and elixir-drop-operations from their product stacks now that Grafana has their panels"). Counts only, no address, user id or note text; a new
+  number goes in `packages/backend/census.ts`, and its panel in otto-ops
+  `scripts/build_grafana_dashboards.py`. Jamie's 2026-10-13 addition permits a
   metadata-only subscriber overview at `/admin-users/` for the configured
   administrator: addresses, delivery state, counts and activity dates,
   never journal contents.

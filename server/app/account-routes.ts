@@ -153,6 +153,8 @@ export async function accountRoutes(
       const user = String(found.user_id);
       await store.stop(user, 'unsubscribed', iso(ctx.now));
       await service.tally('unsubscribes');
+      // Counted on the dashboards; the tally alone is monthly and not in the logs.
+      service.log({ event: 'unsubscribe', user, reason: 'unsubscribed' });
       await recordActivity(
         store,
         user,

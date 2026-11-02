@@ -1073,4 +1073,4 @@ remain after an imported entry is deleted. This is not an activity audit log.
 Deleting accounts are omitted, and no subscriber details enter request logs.
 The WebRole's new Scan permission requires SPECIFIC_ATTRIBUTES and allows only
 the projection's metadata attributes; existing owner journal readers are not
-used by this endpoint. CloudWatch remains the count-only operations dashboard.
+used by this endpoint. Grafana on Otto, reading CloudWatch, is the count-only operations dashboard.

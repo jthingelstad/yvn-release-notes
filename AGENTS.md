@@ -139,6 +139,10 @@ Where things are (each module's design comment has its contract):
 - `infra/template.yaml` is the stack. `infra/github-deploy-role.yaml` is the
   `yvn-release-notes-deploy` stack (the deploy role and the CloudFormation
   service role), applied by hand from its header.
+- The distribution sits behind the account's shared `edge` web ACL
+  (projects-sysadmin's `edge-waf` stack, since 2026-11-02; its rules count
+  and none blocks yet). CloudFront reads that web ACL as the caller on every
+  distribution update, so the service role may `wafv2:GetWebACL` it.
 - **Backups** (Jamie, 2026-10-20: "keep the data in monthly copies for as
   long as we want ... We make no promise about backups"): `infra/backup.yaml`
   is the `yvn-release-notes-backup` stack, applied by hand and never from a

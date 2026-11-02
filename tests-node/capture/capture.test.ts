@@ -220,6 +220,45 @@ test('title fetches are cached over conflicts; unexpected errors sanitized and c
   assert.ok(logs.some((i) => i.event === 'mcp-error' && i.kind === 'Error'));
   assert.ok(!JSON.stringify(logs).includes('ada@example.com'));
 });
+test('a failure with no log given is counted: bare JSON lines on stdout, not console.log (2026-11-02)', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx);
+  ctx.store.captureCommit = async () => {
+    throw new Error('Private note ada@example.com');
+  };
+  const written: string[] = [],
+    logged: unknown[] = [],
+    write = process.stdout.write,
+    log = console.log;
+  process.stdout.write = ((chunk: string) => {
+    written.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  console.log = (...args: unknown[]) => {
+    logged.push(args);
+  };
+  try {
+    const result = await captureNote(
+      {
+        token: a.token,
+        tool: 'notes_create',
+        arguments: { date: '2026-10-07', text: 'Dinner', idempotency_key: 'bare' }
+      },
+      ctx,
+      { fetchTitle: noFetch }
+    );
+    assert.equal(result.error, 'temporarily_unavailable');
+  } finally {
+    process.stdout.write = write;
+    console.log = log;
+  }
+  const lines = written.map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.ok(lines.some((line) => line.event === 'mcp-error'));
+  // CloudWatch reads the embedded metric only from a whole line that starts with it.
+  assert.ok(written.some((line) => line.startsWith('{"_aws"') && JSON.parse(line).McpFailures === 1));
+  assert.ok(!JSON.stringify(logged).includes('mcp-error'));
+  assert.ok(!written.join('').includes('ada@example.com'));
+});
 test('no implicit write approval and receipts expire at 24 hours', async () => {
   const ctx = fixture(),
     read = await connected(ctx, false);

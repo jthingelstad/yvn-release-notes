@@ -841,6 +841,14 @@ test('each change on the web leaves its activity row, never words, titles, addre
     [date.id]
   );
   assert.deepEqual(by('status.restarted')[0]!.reason, 'unsubscribed');
+  // The dashboards count stops and restarts from these lines (2026-11-02).
+  assert.deepEqual(
+    s.logs.filter((l) => l.event === 'unsubscribe' || l.event === 'restart').map((l) => [l.event, l.reason]),
+    [
+      ['unsubscribe', 'unsubscribed'],
+      ['restart', 'unsubscribed']
+    ]
+  );
   assert.deepEqual(by('export.words')[0]!.format, 'md');
   const kept_ = JSON.stringify(rows);
   for (const hidden of [

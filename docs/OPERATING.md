@@ -177,7 +177,7 @@ then goes ahead), and `weekly-thing-subscribe` with its outcome (`added`,
 address. Subscribes are in the Librarian's ledger and its morning digest
 names the `release-notes form`.
 
-## Alarms, the dashboard and failures
+## Alarms, dashboards and failures
 
 - Alarms go to SNS `yvn-release-notes-alarms`, which is subscribed to the
   sysadmin `projects-ops-alerts` queue. The queue's policy must list the
@@ -209,7 +209,13 @@ names the `release-notes form`.
   wait and are tried again without using up their retries, and throttled
   async events are tried for up to six hours, so a busy moment is slower,
   not lost.
-- The dashboard: stack output `DashboardUrl`. Alarm
+- The dashboards are Grafana on Otto (https://otto.tail09aaf9.ts.net:10003,
+  tailnet only): Release Notes for the sends and the plumbing, Release Notes
+  product for use. otto-ops `scripts/build_grafana_dashboards.py` writes
+  them; the stack owns no CloudWatch dashboard since 2026-11-02. They count
+  stops and restarts from the web function's `{"event":"unsubscribe"}` (a
+  link unsubscribe) and `{"event":"restart","reason":...}` lines, and
+  bounces and complaints from the events function's `mail-event` lines. Alarm
   `yvn-release-notes-overdue` fires when anyone's email is over half an hour
   late for two quarter hours (census `Overdue`); a send time moved past
   today's window also trips it, for that day.
@@ -221,7 +227,7 @@ names the `release-notes form`.
   limits are checked first and a refused request counts against none, so
   reaching the total takes many networks.
 - The distribution's access log is the log group
-  `/yvn-release-notes/web-access`, kept 14 days: one JSON line per request
+  `/yvn-release-notes/web-access`, kept 731 days: one JSON line per request
   with the method, status, bytes, timing, edge result and user agent, never
   the client's address, the query string (where OAuth codes travel) or the
   path (a calendar link is its token). Logs
@@ -251,8 +257,8 @@ hand. Read current values from DNS or the stack, never from this repo.
 
 The sender still logs every count-only census each quarter hour. Only `Overdue`
 is promoted to a custom metric for its delivery alarm; informational counts are
-queried from the existing 90-day sender logs by the CloudWatch dashboard. This
+queried from the existing 90-day sender logs by the Grafana dashboards. This
 stops publishing thirteen informational metric series without changing census
 calculations or the sender schedule. Old metric history remains in CloudWatch;
 the replacement charts cover the log retention window. Revert the change to
-restore metric publication and the prior dashboard widgets.
+restore metric publication.

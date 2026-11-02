@@ -2523,88 +2523,6 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlarmTopic]
 
-  EventsErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-events-errors"
-      AlarmDescription: A bounce or complaint could not be applied to its subscriber.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref EventsFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  ExportErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-export-errors"
-      AlarmDescription: A zip export or a book failed to build. The page says so and offers to try again.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref ExportFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  TranscribeErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-transcribe-errors"
-      AlarmDescription: A recording's transcript could not be started or kept. The recording itself is safe.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref TranscribeFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  DescribeErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-describe-errors"
-      AlarmDescription: A photo's description could not be made or kept. The photo itself is safe.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref DescribeFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  InboundErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-inbound-errors"
-      AlarmDescription: A reply failed to file. The raw message is still in the mail bucket.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref InboundFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  # Anyone's email overdue: their send time was over half an hour ago and
-  # nothing went (packages/backend/census.ts). A count from the sender's census line.
   OverdueAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -2643,7 +2561,7 @@ Resources:
           },
             {"type": "alarm", "x": 0, "y": 2, "width": 24, "height": 3, "properties": {
               "title": "Alarms",
-              "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${InboundErrorsAlarm.Arn}", "${EventsErrorsAlarm.Arn}", "${McpErrorsAlarm.Arn}", "${ExportErrorsAlarm.Arn}", "${FailedQueueAlarm.Arn}", "${InboundFailedQueueAlarm.Arn}", "${NativeAppErrorsAlarm.Arn}", "${NativeMcpErrorsAlarm.Arn}", "${NativeAppCapacityAlarm.Arn}", "${NativeMcpCapacityAlarm.Arn}", "${NativeAppRateAlarm.Arn}", "${NativeMcpRateAlarm.Arn}", "${TranscribeErrorsAlarm.Arn}", "${DescribeErrorsAlarm.Arn}", "${SignInTotalAlarm.Arn}"]}},
+              "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${McpErrorsAlarm.Arn}", "${FailedQueueAlarm.Arn}", "${InboundFailedQueueAlarm.Arn}", "${NativeAppErrorsAlarm.Arn}", "${NativeMcpErrorsAlarm.Arn}", "${NativeAppCapacityAlarm.Arn}", "${NativeMcpCapacityAlarm.Arn}", "${NativeAppRateAlarm.Arn}", "${NativeMcpRateAlarm.Arn}", "${SignInTotalAlarm.Arn}"]}},
             {
             "type": "log",
             "x": 0,

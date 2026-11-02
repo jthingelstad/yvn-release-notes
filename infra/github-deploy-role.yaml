@@ -233,6 +233,13 @@ Resources:
                   - acm:DescribeCertificate
                   - acm:ListCertificates
                 Resource: "*"
+              # The distribution uses the account's shared web ACL (projects-sysadmin's
+              # edge-waf stack). CloudFront reads it as the caller whenever the distribution
+              # is updated.
+              - Sid: EdgeWebAcl
+                Effect: Allow
+                Action: wafv2:GetWebACL
+                Resource: !Sub "arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/webacl/edge/*"
 
   DeployRole:
     Type: AWS::IAM::Role

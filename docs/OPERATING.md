@@ -181,7 +181,12 @@ names the `release-notes form`.
 
 - Alarms go to SNS `yvn-release-notes-alarms`, which is subscribed to the
   sysadmin `projects-ops-alerts` queue. The queue's policy must list the
-  topic.
+  topic. The stack has two alarms since 2026-11-03,
+  `yvn-release-notes-failed-queue` and `yvn-release-notes-overdue`: the
+  account keeps alarms only where someone acts on them, and the other ten
+  (sender and MCP errors, the sign-in total, the inbound-failed queue's age
+  and the web and MCP endpoints' errors and ceilings) were removed. Their
+  numbers are still in Grafana and the logs.
 - SQS `yvn-release-notes-failed` holds what gave up after its retries: a
   bounce or complaint the events function could not apply (the SNS message,
   address included, so it never goes to the ops queue), an inbound email
@@ -200,10 +205,10 @@ names the `release-notes form`.
 - SQS `yvn-release-notes-inbound-failed` holds inbound's failure records on
   their way to the failed queue. Inbound reads each, writes its failed row
   and notice (a timeout or crash has neither until then), and sends it on
-  unchanged; three failed reads send it on unread. Alarm
-  `yvn-release-notes-inbound-failed-queue` fires when one waits a quarter
-  hour, which means inbound is not reading it: check the `live` alias's
-  event source mapping.
+  unchanged; three failed reads send it on unread. One that waits a quarter
+  hour (its `ApproximateAgeOfOldestMessage`) means inbound is not reading
+  it: check the `live` alias's event source mapping. No alarm watches it
+  since 2026-11-03.
 - The describe, transcribe and export functions each run at most two at
   once (reserved concurrency 2, 2026-10-09 audit). Throttled stream batches
   wait and are tried again without using up their retries, and throttled
@@ -219,11 +224,12 @@ names the `release-notes form`.
   `yvn-release-notes-overdue` fires when anyone's email is over half an hour
   late for two quarter hours (census `Overdue`); a send time moved past
   today's window also trips it, for that day.
-- Alarm `yvn-release-notes-signin-total` fires when the hour's sign-in
-  emails for everyone (200, `LIMIT_TOTAL` in `packages/backend/auth.ts`) are
-  used up, counted from the web function's
+- Metric `ReleaseNotes/SignInTotalLimited` counts each time the hour's
+  sign-in emails for everyone (200, `LIMIT_TOTAL` in
+  `packages/backend/auth.ts`) are used up, from the web function's
   `{"event":"mail-limited","limit":"total"}` log line (renaming it silently
-  breaks the alarm): nobody can sign in until the hour turns. The narrower
+  breaks the metric): nobody can sign in until the hour turns. No alarm
+  watches it since 2026-11-03. The narrower
   limits are checked first and a refused request counts against none, so
   reaching the total takes many networks.
 - The distribution's access log is the log group

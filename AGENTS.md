@@ -730,7 +730,8 @@ Where things are (each module's design comment has its contract):
   `observe` (the default) refuses nobody, `off` skips the check, and
   `enforce` refuses `fail` and `missing`; since a Cloudflare outage also
   means `missing`, enforcing is its own decision, made from the observe
-  numbers. The sign-in rate limits and their alarm stay as they are.
+  numbers. The sign-in rate limits stay as they are (their alarm was removed
+  2026-11-03; the metric stays).
 - **The API answers only CloudFront.** Each Lambda Web Function endpoint uses
   IAM authentication and CloudFront OAC signs every origin request; the
   policy lets only this distribution invoke the live endpoint.

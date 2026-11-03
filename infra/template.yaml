@@ -441,118 +441,6 @@ Resources:
           MetricName: ActivityUnrecorded
           MetricValue: "1"
 
-  NativeAppErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-web-native-errors"
-      AlarmDescription: Native web endpoint returned a server error; counts only.
-      Namespace: AWS/Lambda/Web
-      MetricName: HTTPResponseStatusClass5XX
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-web-native" }
-        - { Name: EndpointName, Value: live }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  NativeAppCapacityAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-web-native-capacity"
-      AlarmDescription: Native web endpoint refused a request at its environment ceiling; counts only.
-      Namespace: AWS/Lambda/Web/Usage
-      MetricName: EndpointActiveEnvironmentThrottles
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-web-native" }
-        - { Name: EndpointName, Value: live }
-        - { Name: ExecutionRegion, Value: !Ref AWS::Region }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  NativeAppRateAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-web-native-rate"
-      AlarmDescription: Native web endpoint refused a request at its rate ceiling; counts only.
-      Namespace: AWS/Lambda/Web/Usage
-      MetricName: EndpointRequestThrottles
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-web-native" }
-        - { Name: EndpointName, Value: live }
-        - { Name: ExecutionRegion, Value: !Ref AWS::Region }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  NativeMcpErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-mcp-native-errors"
-      AlarmDescription: Native mcp endpoint returned a server error; counts only.
-      Namespace: AWS/Lambda/Web
-      MetricName: HTTPResponseStatusClass5XX
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-mcp-native" }
-        - { Name: EndpointName, Value: live }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  NativeMcpCapacityAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-mcp-native-capacity"
-      AlarmDescription: Native mcp endpoint refused a request at its environment ceiling; counts only.
-      Namespace: AWS/Lambda/Web/Usage
-      MetricName: EndpointActiveEnvironmentThrottles
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-mcp-native" }
-        - { Name: EndpointName, Value: live }
-        - { Name: ExecutionRegion, Value: !Ref AWS::Region }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  NativeMcpRateAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-mcp-native-rate"
-      AlarmDescription: Native mcp endpoint refused a request at its rate ceiling; counts only.
-      Namespace: AWS/Lambda/Web/Usage
-      MetricName: EndpointRequestThrottles
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-mcp-native" }
-        - { Name: EndpointName, Value: live }
-        - { Name: ExecutionRegion, Value: !Ref AWS::Region }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
   # --- storage ------------------------------------------------------------
 
   Table:
@@ -2372,6 +2260,9 @@ Resources:
       Description: !Ref BuildId
 
   # --- alarms -----------------------------------------------------------------
+  # Two alarms since 2026-11-03, failed-queue and overdue: the account keeps
+  # alarms only where someone acts on them. The topic also carries the events
+  # worker's scrubbed mail-event lines.
 
   AlarmTopic:
     Type: AWS::SNS::Topic
@@ -2431,24 +2322,6 @@ Resources:
         deadLetterTargetArn: !GetAtt FailedQueue.Arn
         maxReceiveCount: 3
 
-  # Normally read within seconds; one waiting a quarter hour means inbound
-  # is not reading it, and the failed queue's own alarm would never fire.
-  InboundFailedQueueAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-inbound-failed-queue"
-      AlarmDescription: An email inbound gave up on has waited a quarter hour to be logged and handed on to the failed queue.
-      Namespace: AWS/SQS
-      MetricName: ApproximateAgeOfOldestMessage
-      Dimensions: [{ Name: QueueName, Value: !GetAtt InboundFailedQueue.QueueName }]
-      Statistic: Maximum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 900
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
   FailedQueueAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -2459,67 +2332,6 @@ Resources:
       Dimensions: [{ Name: QueueName, Value: !GetAtt FailedQueue.QueueName }]
       Statistic: Maximum
       Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  SenderErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-sender-errors"
-      AlarmDescription: The daily sender failed. Someone may not have had today's email.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref SenderFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  McpErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-mcp-errors"
-      AlarmDescription: Delegated MCP capture and count-only tool failures
-      Metrics:
-        - Id: failures
-          Expression: SUM(METRICS())
-          ReturnData: true
-        - Id: writer
-          ReturnData: false
-          MetricStat:
-            Metric:
-              Namespace: AWS/Lambda
-              MetricName: Errors
-              Dimensions: [{ Name: FunctionName, Value: !Ref CaptureFunction }]
-            Stat: Sum
-            Period: 300
-        - Id: tools
-          ReturnData: false
-          MetricStat:
-            Metric: { Namespace: ReleaseNotes, MetricName: McpFailures }
-            Stat: Sum
-            Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  SignInTotalAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-signin-total"
-      AlarmDescription: The hour's sign-in emails for everyone are used up. Nobody can sign in until the hour turns; someone may be sending from many networks.
-      Namespace: ReleaseNotes
-      MetricName: SignInTotalLimited
-      Statistic: Sum
-      Period: 900
       EvaluationPeriods: 1
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold

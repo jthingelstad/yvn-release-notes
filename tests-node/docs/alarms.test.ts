@@ -9,7 +9,7 @@ test('the stack owns no CloudWatch dashboard: Grafana on Otto has the panels (Ja
   assert.doesNotMatch(source, /AWS::CloudWatch::Dashboard|DashboardUrl/);
 });
 
-test('retired worker alarms retain final-failure destinations and delivery safety alarms', async () => {
+test('retired alarms retain final-failure destinations and the two delivery alarms', async () => {
   const source = await readFile(new URL('../../infra/template.yaml', import.meta.url), 'utf8');
   const resource = (name: string) => {
     const body = new RegExp(`^  ${name}:\\n[\\s\\S]*?(?=^  [A-Za-z0-9]+:|^Outputs:)`, 'm').exec(source)?.[0];
@@ -23,23 +23,17 @@ test('retired worker alarms retain final-failure destinations and delivery safet
     assert.match(resource(name), /MaximumRetryAttempts: 3/);
     assert.match(resource(name), /Destination: !GetAtt FailedQueue\.Arn/);
   }
-  for (const [name, queue, metric] of [
-    ['FailedQueueAlarm', 'FailedQueue', 'ApproximateNumberOfMessagesVisible'],
-    ['InboundFailedQueueAlarm', 'InboundFailedQueue', 'ApproximateAgeOfOldestMessage']
-  ]) {
-    const alarm = resource(name!);
-    assert.ok(alarm.includes(`MetricName: ${metric}`));
-    assert.ok(alarm.includes(`!GetAtt ${queue}.QueueName`));
-    assert.match(alarm, /AlarmActions: \[!Ref AlarmTopic\]/);
-  }
-  for (const name of [
-    'SenderErrorsAlarm',
-    'OverdueAlarm',
-    'NativeAppErrorsAlarm',
-    'NativeMcpErrorsAlarm',
-    'SignInTotalAlarm'
-  ])
-    assert.match(resource(name), /AlarmActions: \[!Ref AlarmTopic\]/);
+  const failed = resource('FailedQueueAlarm');
+  assert.ok(failed.includes('MetricName: ApproximateNumberOfMessagesVisible'));
+  assert.ok(failed.includes('!GetAtt FailedQueue.QueueName'));
+  assert.match(failed, /AlarmActions: \[!Ref AlarmTopic\]/);
+  assert.match(resource('OverdueAlarm'), /AlarmActions: \[!Ref AlarmTopic\]/);
+  // The account keeps alarms only where someone acts on them (Jamie, 2026-11-03):
+  // failed-queue and overdue are this stack's two.
+  assert.deepEqual(
+    [...source.matchAll(/^  ([A-Za-z0-9]+):\n    Type: AWS::CloudWatch::Alarm$/gm)].map((match) => match[1]),
+    ['FailedQueueAlarm', 'OverdueAlarm']
+  );
   for (const name of [
     'EventsErrorsAlarm',
     'ExportErrorsAlarm',

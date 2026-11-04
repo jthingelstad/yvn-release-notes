@@ -100,6 +100,10 @@ export interface CaptureOptions {
   fetchTitle?: TitleFetcher;
   log?: SafeLog;
 }
+/** This worker logs raw stdout (LogFormat Text), where console.log prefixes a
+ * line and CloudWatch reads neither the embedded McpFailures metric nor a JSON
+ * filter from it; a failure is written as a bare JSON line instead. */
+const bareLine: SafeLog = (fields) => process.stdout.write(`${JSON.stringify(fields)}\n`);
 const FIELDS = [
   'pk',
   'sk',
@@ -690,7 +694,7 @@ export async function captureNote(
       return { ...(await writeApi(context, event, options)) };
     } catch (error) {
       if (error instanceof ApiRefusal) return { error: error.code, message: error.detail, ...error.extra };
-      failure(context.now, uid, options.log, error);
+      failure(context.now, uid, options.log ?? bareLine, error);
       return { error: 'unavailable', message: 'Try again shortly with the same Idempotency-Key.' };
     }
   try {
@@ -718,7 +722,7 @@ export async function captureNote(
         : writeCapture(context, family, name, args, options));
   } catch (error) {
     if (error instanceof ToolError) return { error: error.code, next_step: error.nextStep };
-    failure(context.now, uid, options.log, error);
+    failure(context.now, uid, options.log ?? bareLine, error);
     return {
       error: 'temporarily_unavailable',
       next_step: 'Try again shortly with exactly the same idempotency_key and arguments.'

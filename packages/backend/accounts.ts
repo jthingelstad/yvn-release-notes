@@ -239,6 +239,7 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
         }
       }
       await service.tally('restarts');
+      service.log({ event: 'restart', user: uid, reason: String(p.stopped_reason ?? 'unknown') });
     }
   }
   if (!Object.keys(fields).length) reject(400, 'nothing-to-change');

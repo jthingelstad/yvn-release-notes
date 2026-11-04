@@ -441,118 +441,6 @@ Resources:
           MetricName: ActivityUnrecorded
           MetricValue: "1"
 
-  NativeAppErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-web-native-errors"
-      AlarmDescription: Native web endpoint returned a server error; counts only.
-      Namespace: AWS/Lambda/Web
-      MetricName: HTTPResponseStatusClass5XX
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-web-native" }
-        - { Name: EndpointName, Value: live }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  NativeAppCapacityAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-web-native-capacity"
-      AlarmDescription: Native web endpoint refused a request at its environment ceiling; counts only.
-      Namespace: AWS/Lambda/Web/Usage
-      MetricName: EndpointActiveEnvironmentThrottles
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-web-native" }
-        - { Name: EndpointName, Value: live }
-        - { Name: ExecutionRegion, Value: !Ref AWS::Region }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  NativeAppRateAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-web-native-rate"
-      AlarmDescription: Native web endpoint refused a request at its rate ceiling; counts only.
-      Namespace: AWS/Lambda/Web/Usage
-      MetricName: EndpointRequestThrottles
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-web-native" }
-        - { Name: EndpointName, Value: live }
-        - { Name: ExecutionRegion, Value: !Ref AWS::Region }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  NativeMcpErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-mcp-native-errors"
-      AlarmDescription: Native mcp endpoint returned a server error; counts only.
-      Namespace: AWS/Lambda/Web
-      MetricName: HTTPResponseStatusClass5XX
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-mcp-native" }
-        - { Name: EndpointName, Value: live }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  NativeMcpCapacityAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-mcp-native-capacity"
-      AlarmDescription: Native mcp endpoint refused a request at its environment ceiling; counts only.
-      Namespace: AWS/Lambda/Web/Usage
-      MetricName: EndpointActiveEnvironmentThrottles
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-mcp-native" }
-        - { Name: EndpointName, Value: live }
-        - { Name: ExecutionRegion, Value: !Ref AWS::Region }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  NativeMcpRateAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-mcp-native-rate"
-      AlarmDescription: Native mcp endpoint refused a request at its rate ceiling; counts only.
-      Namespace: AWS/Lambda/Web/Usage
-      MetricName: EndpointRequestThrottles
-      Dimensions:
-        - { Name: FunctionName, Value: !Sub "${AWS::StackName}-mcp-native" }
-        - { Name: EndpointName, Value: live }
-        - { Name: ExecutionRegion, Value: !Ref AWS::Region }
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
   # --- storage ------------------------------------------------------------
 
   Table:
@@ -1246,6 +1134,9 @@ Resources:
         HttpVersion: http2and3
         IPV6Enabled: true
         PriceClass: PriceClass_100
+        # The account's shared web ACL (projects-sysadmin's edge-waf stack). Its rules
+        # count only until they are tuned; none blocks yet.
+        WebACLId: !ImportValue edge-waf-WebAclArn
         # / is front.html whichever comes first, this or WebIndexFunction.
         DefaultRootObject: front.html
         Aliases: !If [HasWebCertificate, [!Ref WebDomain], !Ref AWS::NoValue]
@@ -2369,6 +2260,9 @@ Resources:
       Description: !Ref BuildId
 
   # --- alarms -----------------------------------------------------------------
+  # Two alarms since 2026-11-03, failed-queue and overdue: the account keeps
+  # alarms only where someone acts on them. The topic also carries the events
+  # worker's scrubbed mail-event lines.
 
   AlarmTopic:
     Type: AWS::SNS::Topic
@@ -2428,24 +2322,6 @@ Resources:
         deadLetterTargetArn: !GetAtt FailedQueue.Arn
         maxReceiveCount: 3
 
-  # Normally read within seconds; one waiting a quarter hour means inbound
-  # is not reading it, and the failed queue's own alarm would never fire.
-  InboundFailedQueueAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-inbound-failed-queue"
-      AlarmDescription: An email inbound gave up on has waited a quarter hour to be logged and handed on to the failed queue.
-      Namespace: AWS/SQS
-      MetricName: ApproximateAgeOfOldestMessage
-      Dimensions: [{ Name: QueueName, Value: !GetAtt InboundFailedQueue.QueueName }]
-      Statistic: Maximum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 900
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
   FailedQueueAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -2462,149 +2338,6 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlarmTopic]
 
-  SenderErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-sender-errors"
-      AlarmDescription: The daily sender failed. Someone may not have had today's email.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref SenderFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  McpErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-mcp-errors"
-      AlarmDescription: Delegated MCP capture and count-only tool failures
-      Metrics:
-        - Id: failures
-          Expression: SUM(METRICS())
-          ReturnData: true
-        - Id: writer
-          ReturnData: false
-          MetricStat:
-            Metric:
-              Namespace: AWS/Lambda
-              MetricName: Errors
-              Dimensions: [{ Name: FunctionName, Value: !Ref CaptureFunction }]
-            Stat: Sum
-            Period: 300
-        - Id: tools
-          ReturnData: false
-          MetricStat:
-            Metric: { Namespace: ReleaseNotes, MetricName: McpFailures }
-            Stat: Sum
-            Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  SignInTotalAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-signin-total"
-      AlarmDescription: The hour's sign-in emails for everyone are used up. Nobody can sign in until the hour turns; someone may be sending from many networks.
-      Namespace: ReleaseNotes
-      MetricName: SignInTotalLimited
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  EventsErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-events-errors"
-      AlarmDescription: A bounce or complaint could not be applied to its subscriber.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref EventsFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  ExportErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-export-errors"
-      AlarmDescription: A zip export or a book failed to build. The page says so and offers to try again.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref ExportFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  TranscribeErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-transcribe-errors"
-      AlarmDescription: A recording's transcript could not be started or kept. The recording itself is safe.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref TranscribeFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  DescribeErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-describe-errors"
-      AlarmDescription: A photo's description could not be made or kept. The photo itself is safe.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref DescribeFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  InboundErrorsAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub "${AWS::StackName}-inbound-errors"
-      AlarmDescription: A reply failed to file. The raw message is still in the mail bucket.
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions: [{ Name: FunctionName, Value: !Ref InboundFunction }]
-      Statistic: Sum
-      Period: 900
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlarmTopic]
-
-  # Anyone's email overdue: their send time was over half an hour ago and
-  # nothing went (packages/backend/census.ts). A count from the sender's census line.
   OverdueAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -2619,119 +2352,6 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlarmTopic]
-
-  # The operations dashboard (Jamie, 2026-10-09). Counts only: no address,
-  # no user id, no note text. Behind AWS sign-in, so nothing in the web app.
-  Dashboard:
-    Type: AWS::CloudWatch::Dashboard
-    Properties:
-      DashboardName: !Ref AWS::StackName
-      DashboardBody: !Sub |
-        {
-          "start": "-P14D",
-          "periodOverride": "inherit",
-          "widgets": [
-            {"type": "text", "x": 0, "y": 0, "width": 24, "height": 2, "properties": {
-              "markdown": "# Release Notes\nCounts only: no addresses, no note text. Subscribers, notes and writers come from the sender's census line every quarter hour (`packages/backend/census.ts`); emails from SES; mail in and account events from the functions' logs, kept 90 days. One row per person: `tools/subscribers.ts`."}},
-            {"type": "alarm", "x": 0, "y": 2, "width": 24, "height": 3, "properties": {
-              "title": "Alarms",
-              "alarms": ["${SenderErrorsAlarm.Arn}", "${OverdueAlarm.Arn}", "${InboundErrorsAlarm.Arn}", "${EventsErrorsAlarm.Arn}", "${McpErrorsAlarm.Arn}", "${ExportErrorsAlarm.Arn}", "${FailedQueueAlarm.Arn}", "${InboundFailedQueueAlarm.Arn}", "${NativeAppErrorsAlarm.Arn}", "${NativeMcpErrorsAlarm.Arn}", "${NativeAppCapacityAlarm.Arn}", "${NativeMcpCapacityAlarm.Arn}", "${NativeAppRateAlarm.Arn}", "${NativeMcpRateAlarm.Arn}", "${TranscribeErrorsAlarm.Arn}", "${DescribeErrorsAlarm.Arn}", "${SignInTotalAlarm.Arn}"]}},
-            {"type": "metric", "x": 0, "y": 5, "width": 24, "height": 4, "properties": {
-              "title": "Right now", "view": "singleValue", "region": "${AWS::Region}",
-              "period": 900, "stat": "Maximum", "setPeriodToTimeRange": false, "sparkline": true,
-              "metrics": [
-                ["ReleaseNotes", "Subscribers", {"label": "Getting the email"}],
-                ["ReleaseNotes", "Paused", {"label": "Paused"}],
-                ["ReleaseNotes", "Stopped", {"label": "Stopped"}],
-                ["ReleaseNotes", "Overdue", {"label": "Email overdue"}],
-                ["ReleaseNotes", "Notes", {"label": "Notes"}],
-                ["ReleaseNotes", "Writers7", {"label": "Wrote this week"}],
-                ["ReleaseNotes", "ReplyRate30", {"label": "Reply rate, 30 days (%)"}]
-              ]}},
-            {"type": "metric", "x": 0, "y": 9, "width": 12, "height": 6, "properties": {
-              "title": "Emails a day, by kind (SES)", "view": "timeSeries", "region": "${AWS::Region}",
-              "period": 86400, "stat": "Sum",
-              "metrics": [
-                [{"expression": "SEARCH('{AWS/SES,\"release-notes-mail\"}', 'Sum', 86400)", "id": "mail"}]
-              ]}},
-            {"type": "metric", "x": 12, "y": 9, "width": 12, "height": 6, "properties": {
-              "title": "SES account reputation", "view": "timeSeries", "region": "${AWS::Region}",
-              "period": 3600, "stat": "Maximum",
-              "metrics": [
-                ["AWS/SES", "Reputation.BounceRate", {"label": "Bounce rate"}],
-                ["AWS/SES", "Reputation.ComplaintRate", {"label": "Complaint rate", "yAxis": "right"}]
-              ],
-              "annotations": {"horizontal": [
-                {"value": 0.05, "label": "Bounces: AWS reviews at 5%"},
-                {"value": 0.001, "label": "Complaints: AWS reviews at 0.1%", "yAxis": "right"}
-              ]}}},
-            {"type": "metric", "x": 0, "y": 15, "width": 12, "height": 6, "properties": {
-              "title": "Notes, by where they came from", "view": "timeSeries", "stacked": true, "region": "${AWS::Region}",
-              "period": 3600, "stat": "Maximum",
-              "metrics": [
-                ["ReleaseNotes", "EmailNotes", {"label": "By email"}],
-                ["ReleaseNotes", "WebNotes", {"label": "On the web"}],
-                ["ReleaseNotes", "ImportedNotes", {"label": "Imported"}],
-                ["ReleaseNotes", "AgentNotes", {"label": "Added by agents"}],
-                ["ReleaseNotes", "ApiNotes", {"label": "Through API tokens"}]
-              ]}},
-            {"type": "metric", "x": 12, "y": 15, "width": 12, "height": 6, "properties": {
-              "title": "Subscribers and writers", "view": "timeSeries", "region": "${AWS::Region}",
-              "period": 3600, "stat": "Maximum",
-              "metrics": [
-                ["ReleaseNotes", "Subscribers", {"label": "Getting the email"}],
-                ["ReleaseNotes", "Writers7", {"label": "Wrote in the last 7 days"}],
-                ["ReleaseNotes", "Writers30", {"label": "Wrote in the last 30 days"}],
-                ["ReleaseNotes", "ReplyRate30", {"label": "Reply rate, 30 days (%)", "yAxis": "right"}]
-              ]}},
-            {"type": "log", "x": 0, "y": 21, "width": 12, "height": 6, "properties": {
-              "title": "Mail in: filed or ignored, and why", "view": "table", "region": "${AWS::Region}",
-              "query": "SOURCE '${InboundLogs}' | filter event = 'inbound' | stats count(*) as messages by outcome, reason | sort messages desc"}},
-            {"type": "log", "x": 12, "y": 21, "width": 12, "height": 6, "properties": {
-              "title": "Accounts: sign-ups, stops and sign-ins", "view": "table", "region": "${AWS::Region}",
-              "query": "SOURCE '${NativeAppLogs}' | SOURCE '${EventsLogs}' | fields coalesce(event, message.event) as kind, coalesce(reason, message.reason) as why | filter kind in ['signup', 'signin-sent', 'unsubscribe', 'pause', 'resume', 'account-deleted'] or (kind = 'mail-event' and outcome = 'stopped') | stats count(*) as times by kind, why | sort times desc"}},
-            {"type": "metric", "x": 0, "y": 27, "width": 16, "height": 6, "properties": {
-              "title": "Function errors", "view": "timeSeries", "region": "${AWS::Region}",
-              "period": 3600, "stat": "Sum",
-              "metrics": [
-                ["AWS/Lambda", "Errors", "FunctionName", "${SenderFunction}", {"label": "sender"}],
-                ["AWS/Lambda", "Errors", "FunctionName", "${InboundFunction}", {"label": "inbound"}],
-                ["AWS/Lambda", "Errors", "FunctionName", "${CaptureFunction}", {"label": "capture"}],
-                ["ReleaseNotes", "McpFailures", {"label": "MCP tool failures"}],
-                ["AWS/Lambda", "Errors", "FunctionName", "${EventsFunction}", {"label": "events"}],
-                ["AWS/Lambda", "Errors", "FunctionName", "${ExportFunction}", {"label": "export"}],
-                ["AWS/Lambda", "Errors", "FunctionName", "${TranscribeFunction}", {"label": "transcribe"}],
-                ["AWS/Lambda", "Errors", "FunctionName", "${DescribeFunction}", {"label": "describe"}]
-              ]}},
-            {"type": "metric", "x": 16, "y": 27, "width": 8, "height": 6, "properties": {
-              "title": "Mail bucket size (emails, photos, exports)", "view": "timeSeries", "region": "${AWS::Region}",
-              "period": 86400, "stat": "Average",
-              "metrics": [
-                ["AWS/S3", "BucketSizeBytes", "BucketName", "${MailBucket}", "StorageType", "StandardStorage", {"label": "bytes"}]
-              ]}},
-            {"type": "log", "x": 0, "y": 33, "width": 24, "height": 7, "properties": {
-              "title": "Recent problems", "view": "table", "region": "${AWS::Region}",
-              "query": "SOURCE '${SenderLogs}' | SOURCE '${InboundLogs}' | SOURCE '${EventsLogs}' | SOURCE '${ExportLogs}' | SOURCE '${NativeAppLogs}' | SOURCE '${NativeMcpLogs}' | fields coalesce(event, message.event) as kind, coalesce(status, message.status) as responseStatus | filter (ispresent(kind) and (kind like /error|failed|out-of-time|census-skipped/ or responseStatus >= 500)) or (not ispresent(kind) and @message like /ERROR|Task timed out/) | fields @timestamp, @log, coalesce(kind, @message) as what, coalesce(error, message.error) as errorKind, coalesce(code, message.code) as errorCode, responseStatus | sort @timestamp desc | limit 25"}},
-            {"type": "metric", "x": 0, "y": 40, "width": 12, "height": 6, "properties": {
-              "title": "Native app HTTP", "view": "timeSeries", "region": "${AWS::Region}",
-              "period": 300, "stat": "Sum", "metrics": [
-                ["AWS/Lambda/Web", "ExecutedRequests", "FunctionName", "${AWS::StackName}-web-native", "EndpointName", "live", {"label": "requests"}],
-                ["AWS/Lambda/Web", "HTTPResponseStatusClass4XX", "FunctionName", "${AWS::StackName}-web-native", "EndpointName", "live", {"label": "4xx"}],
-                ["AWS/Lambda/Web", "HTTPResponseStatusClass5XX", "FunctionName", "${AWS::StackName}-web-native", "EndpointName", "live", {"label": "5xx"}],
-                ["AWS/Lambda/Web/Usage", "EndpointActiveEnvironmentThrottles", "FunctionName", "${AWS::StackName}-web-native", "EndpointName", "live", "ExecutionRegion", "${AWS::Region}", {"label": "environment throttles"}],
-                ["AWS/Lambda/Web/Usage", "EndpointRequestThrottles", "FunctionName", "${AWS::StackName}-web-native", "EndpointName", "live", "ExecutionRegion", "${AWS::Region}", {"label": "rate throttles"}]
-              ]}},
-            {"type": "metric", "x": 12, "y": 40, "width": 12, "height": 6, "properties": {
-              "title": "Native MCP HTTP", "view": "timeSeries", "region": "${AWS::Region}",
-              "period": 300, "stat": "Sum", "metrics": [
-                ["AWS/Lambda/Web", "ExecutedRequests", "FunctionName", "${AWS::StackName}-mcp-native", "EndpointName", "live", {"label": "requests"}],
-                ["AWS/Lambda/Web", "HTTPResponseStatusClass4XX", "FunctionName", "${AWS::StackName}-mcp-native", "EndpointName", "live", {"label": "4xx"}],
-                ["AWS/Lambda/Web", "HTTPResponseStatusClass5XX", "FunctionName", "${AWS::StackName}-mcp-native", "EndpointName", "live", {"label": "5xx"}],
-                ["AWS/Lambda/Web/Usage", "EndpointActiveEnvironmentThrottles", "FunctionName", "${AWS::StackName}-mcp-native", "EndpointName", "live", "ExecutionRegion", "${AWS::Region}", {"label": "environment throttles"}],
-                ["AWS/Lambda/Web/Usage", "EndpointRequestThrottles", "FunctionName", "${AWS::StackName}-mcp-native", "EndpointName", "live", "ExecutionRegion", "${AWS::Region}", {"label": "rate throttles"}]
-              ]}}
-          ]
-        }
 
 Outputs:
   SenderLiveVersion:
@@ -2793,9 +2413,6 @@ Outputs:
     Value: !Sub "${EmailIdentity.DkimDNSTokenName2} CNAME ${EmailIdentity.DkimDNSTokenValue2}"
   DkimRecord3:
     Value: !Sub "${EmailIdentity.DkimDNSTokenName3} CNAME ${EmailIdentity.DkimDNSTokenValue3}"
-  DashboardUrl:
-    Description: The operations dashboard
-    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/${Dashboard}"
   SenderWorkerAlias:
     Value: !Ref SenderAlias
   InboundWorkerAlias:

@@ -409,8 +409,8 @@ notes.yourversionnumber.com
   network (an IPv4 address or an IPv6 /64), 60 per IPv6 /48 and 200 in all,
   each per hour; past one, the answer is 429. They are checked narrowest
   first and only an email that goes counts, so one network past its own
-  limit cannot use up the total (2026-10-09); alarm
-  `yvn-release-notes-signin-total` fires when the total is reached. The
+  limit cannot use up the total (2026-10-09); the metric
+  `ReleaseNotes/SignInTotalLimited` counts each time the total is reached. The
   network comes from CloudFront's `CloudFront-Viewer-Address`, which the
   API's own origin request policy passes on. The API answers only
   CloudFront through IAM-authenticated Web Function endpoints. CloudFront
@@ -1073,4 +1073,4 @@ remain after an imported entry is deleted. This is not an activity audit log.
 Deleting accounts are omitted, and no subscriber details enter request logs.
 The WebRole's new Scan permission requires SPECIFIC_ATTRIBUTES and allows only
 the projection's metadata attributes; existing owner journal readers are not
-used by this endpoint. CloudWatch remains the count-only operations dashboard.
+used by this endpoint. Grafana on Otto, reading CloudWatch, is the count-only operations dashboard.

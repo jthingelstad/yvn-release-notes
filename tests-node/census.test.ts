@@ -131,11 +131,9 @@ test('EMF shape emits count/percent units and never copies input fields', async 
   assert.deepEqual(metrics._aws.CloudWatchMetrics[0]?.Dimensions, [[]]);
   assert.equal(metrics._aws.Timestamp, now * 1000);
   assert.equal(metrics._aws.CloudWatchMetrics[0]?.Namespace, 'ReleaseNotes');
-  assert.ok(
-    metrics._aws.CloudWatchMetrics[0]?.Metrics.every(
-      (metric) => metric.Unit === (metric.Name === 'ReplyRate30' ? 'Percent' : 'Count')
-    )
-  );
+  assert.deepEqual(metrics._aws.CloudWatchMetrics[0]?.Metrics, [{ Name: 'Overdue', Unit: 'Count' }]);
+  assert.equal(metrics.ReplyRate30, 50);
+  assert.equal(Reflect.get(metrics, 'Subscribers'), c.Subscribers);
   let output: unknown;
   await report({ censusItems: async () => input }, now, (value) => {
     output = value;

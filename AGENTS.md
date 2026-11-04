@@ -139,6 +139,10 @@ Where things are (each module's design comment has its contract):
 - `infra/template.yaml` is the stack. `infra/github-deploy-role.yaml` is the
   `yvn-release-notes-deploy` stack (the deploy role and the CloudFormation
   service role), applied by hand from its header.
+- The distribution sits behind the account's shared `edge` web ACL
+  (projects-sysadmin's `edge-waf` stack, since 2026-11-02; its rules count
+  and none blocks yet). CloudFront reads that web ACL as the caller on every
+  distribution update, so the service role may `wafv2:GetWebACL` it.
 - **Backups** (Jamie, 2026-10-20: "keep the data in monthly copies for as
   long as we want ... We make no promise about backups"): `infra/backup.yaml`
   is the `yvn-release-notes-backup` stack, applied by hand and never from a
@@ -337,7 +341,7 @@ Where things are (each module's design comment has its contract):
   needs Jamie's go**. A repeat skips what was imported before, deleted since
   or not (`IMPORT#`). The export is read as untrusted.
 - **Imported days count** toward streaks and every lifetime count (Jamie,
-  2026-10-09). The dashboard splits notes into email, web and imported.
+  2026-10-09). The census splits notes into email, web and imported.
 
 ### Subscribers and accounts
 
@@ -726,7 +730,8 @@ Where things are (each module's design comment has its contract):
   `observe` (the default) refuses nobody, `off` skips the check, and
   `enforce` refuses `fail` and `missing`; since a Cloudflare outage also
   means `missing`, enforcing is its own decision, made from the observe
-  numbers. The sign-in rate limits and their alarm stay as they are.
+  numbers. The sign-in rate limits stay as they are (their alarm was removed
+  2026-11-03; the metric stays).
 - **The API answers only CloudFront.** Each Lambda Web Function endpoint uses
   IAM authentication and CloudFront OAC signs every origin request; the
   policy lets only this distribution invoke the live endpoint.
@@ -739,10 +744,14 @@ Where things are (each module's design comment has its contract):
   restarts, bounces, complaints and deletes, one number each a month. A
   stopped subscriber gets nothing from the product, so the unsubscribe count
   is the one to watch (Jamie, 2026-10-08).
-- **The operations dashboard is CloudWatch, not the web app** (Jamie,
-  2026-10-09: "instead of part of the application ... an AWS dashboard"):
-  counts only, no address, user id or note text; a new number goes in
-  `packages/backend/census.ts`. Jamie's 2026-10-13 addition permits a
+- **The operations dashboards are outside the web app** (Jamie,
+  2026-10-09: "instead of part of the application ... an AWS dashboard").
+  Since 2026-11-02 they are Grafana on Otto (otto-ops: Release Notes and
+  Release Notes product), reading this stack's CloudWatch metrics and logs;
+  the stack owns no CloudWatch dashboard (Jamie, 2026-11-02:
+  "Approved: delete the CloudWatch dashboards yvn-release-notes, elixir-mcp and elixir-drop-operations from their product stacks now that Grafana has their panels"). Counts only, no address, user id or note text; a new
+  number goes in `packages/backend/census.ts`, and its panel in otto-ops
+  `scripts/build_grafana_dashboards.py`. Jamie's 2026-10-13 addition permits a
   metadata-only subscriber overview at `/admin-users/` for the configured
   administrator: addresses, delivery state, counts and activity dates,
   never journal contents.

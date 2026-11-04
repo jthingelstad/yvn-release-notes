@@ -177,11 +177,16 @@ then goes ahead), and `weekly-thing-subscribe` with its outcome (`added`,
 address. Subscribes are in the Librarian's ledger and its morning digest
 names the `release-notes form`.
 
-## Alarms, the dashboard and failures
+## Alarms, dashboards and failures
 
 - Alarms go to SNS `yvn-release-notes-alarms`, which is subscribed to the
   sysadmin `projects-ops-alerts` queue. The queue's policy must list the
-  topic.
+  topic. The stack has two alarms since 2026-11-03,
+  `yvn-release-notes-failed-queue` and `yvn-release-notes-overdue`: the
+  account keeps alarms only where someone acts on them, and the other ten
+  (sender and MCP errors, the sign-in total, the inbound-failed queue's age
+  and the web and MCP endpoints' errors and ceilings) were removed. Their
+  numbers are still in Grafana and the logs.
 - SQS `yvn-release-notes-failed` holds what gave up after its retries: a
   bounce or complaint the events function could not apply (the SNS message,
   address included, so it never goes to the ops queue), an inbound email
@@ -200,28 +205,35 @@ names the `release-notes form`.
 - SQS `yvn-release-notes-inbound-failed` holds inbound's failure records on
   their way to the failed queue. Inbound reads each, writes its failed row
   and notice (a timeout or crash has neither until then), and sends it on
-  unchanged; three failed reads send it on unread. Alarm
-  `yvn-release-notes-inbound-failed-queue` fires when one waits a quarter
-  hour, which means inbound is not reading it: check the `live` alias's
-  event source mapping.
+  unchanged; three failed reads send it on unread. One that waits a quarter
+  hour (its `ApproximateAgeOfOldestMessage`) means inbound is not reading
+  it: check the `live` alias's event source mapping. No alarm watches it
+  since 2026-11-03.
 - The describe, transcribe and export functions each run at most two at
   once (reserved concurrency 2, 2026-10-09 audit). Throttled stream batches
   wait and are tried again without using up their retries, and throttled
   async events are tried for up to six hours, so a busy moment is slower,
   not lost.
-- The dashboard: stack output `DashboardUrl`. Alarm
+- The dashboards are Grafana on Otto (https://otto.tail09aaf9.ts.net:10003,
+  tailnet only): Release Notes for the sends and the plumbing, Release Notes
+  product for use. otto-ops `scripts/build_grafana_dashboards.py` writes
+  them; the stack owns no CloudWatch dashboard since 2026-11-02. They count
+  stops and restarts from the web function's `{"event":"unsubscribe"}` (a
+  link unsubscribe) and `{"event":"restart","reason":...}` lines, and
+  bounces and complaints from the events function's `mail-event` lines. Alarm
   `yvn-release-notes-overdue` fires when anyone's email is over half an hour
   late for two quarter hours (census `Overdue`); a send time moved past
   today's window also trips it, for that day.
-- Alarm `yvn-release-notes-signin-total` fires when the hour's sign-in
-  emails for everyone (200, `LIMIT_TOTAL` in `packages/backend/auth.ts`) are
-  used up, counted from the web function's
+- Metric `ReleaseNotes/SignInTotalLimited` counts each time the hour's
+  sign-in emails for everyone (200, `LIMIT_TOTAL` in
+  `packages/backend/auth.ts`) are used up, from the web function's
   `{"event":"mail-limited","limit":"total"}` log line (renaming it silently
-  breaks the alarm): nobody can sign in until the hour turns. The narrower
+  breaks the metric): nobody can sign in until the hour turns. No alarm
+  watches it since 2026-11-03. The narrower
   limits are checked first and a refused request counts against none, so
   reaching the total takes many networks.
 - The distribution's access log is the log group
-  `/yvn-release-notes/web-access`, kept 14 days: one JSON line per request
+  `/yvn-release-notes/web-access`, kept 731 days: one JSON line per request
   with the method, status, bytes, timing, edge result and user agent, never
   the client's address, the query string (where OAuth codes travel) or the
   path (a calendar link is its token). Logs
@@ -246,3 +258,13 @@ hand. Read current values from DNS or the stack, never from this repo.
   `WebDistributionDomain`. The certificate lives outside the stack (an
   in-stack one would hold every deploy until DNS validated); `deploy.sh`
   finds it once ACM says ISSUED and only then attaches the alias.
+
+### Census monitoring cost
+
+The sender still logs every count-only census each quarter hour. Only `Overdue`
+is promoted to a custom metric for its delivery alarm; informational counts are
+queried from the existing 90-day sender logs by the Grafana dashboards. This
+stops publishing thirteen informational metric series without changing census
+calculations or the sender schedule. Old metric history remains in CloudWatch;
+the replacement charts cover the log retention window. Revert the change to
+restore metric publication.

@@ -108,7 +108,7 @@ and expire after 90 days.
 ## Verification, telemetry and capacity
 
 The probe covers each release. Beyond it, check the unauthenticated `/mcp`
-challenge without signing in, the count-only alarms, failure-queue depth, HTTP
+challenge without signing in, failure-queue depth, HTTP
 requests and the next natural sender cycle. Report unobserved real flows as
 pending; never manufacture subscriber traffic, imports, backfills or acceptance
 events.
@@ -123,10 +123,10 @@ cookies, addresses, note text or place data may be logged.
 
 Live endpoint ceilings are rate 100 and eight environments, with 64 as the
 per-environment concurrency upper bound; the service may choose lower admission
-concurrency. The rehearsal's burst results below are not throughput claims. Alarms
-distinguish HTTP 5xx (`AWS/Lambda/Web`) from environment/rate throttling
-(`AWS/Lambda/Web/Usage`, including ExecutionRegion). Sparse metrics use
-missing-data=notBreaching. Budget/capacity changes follow measured fictional
+concurrency. The rehearsal's burst results below are not throughput claims. The
+metrics distinguish HTTP 5xx (`AWS/Lambda/Web`) from environment/rate throttling
+(`AWS/Lambda/Web/Usage`, including ExecutionRegion); no alarm watches them since
+2026-11-03. Budget/capacity changes follow measured fictional
 application staging workloads.
 
 ## What the 2026-10-13 platform rehearsal established

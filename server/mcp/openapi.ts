@@ -248,6 +248,42 @@ const OPERATIONS: Record<string, Doc> = {
     requestBody: { required: true, content: { 'application/json': { schema: ref('NoteAppend') } } },
     responses: { '200': answer('NoteWritten', 'Changed in 4.5.137.', true) }
   },
+  'notes.place': {
+    operationId: 'setNotePlace',
+    summary: 'Say where a note this token wrote was, or any note with notes:all',
+    description:
+      'A city from `GET /v1/places`, or the `place` from `POST /v1/places/here`, sent as it came. It replaces the ' +
+      'one the note has, a photo’s too. The words and `revision` stay. The day’s weather follows, and never fails ' +
+      'the write. Since 1.16.0.',
+    requestBody: { required: true, content: { 'application/json': { schema: ref('NotePlaceWrite') } } },
+    responses: { '200': answer('NoteWritten', 'Changed in 4.5.137.', true) }
+  },
+  'notes.place.clear': {
+    operationId: 'removeNotePlace',
+    summary: 'Take the place off a note this token wrote, or any note with notes:all',
+    description:
+      'The note then says `no_place`, shows no place from its day, and a photo’s spot won’t fill it in again. The ' +
+      'words and `revision` stay. The day’s weather follows, and never fails the write. Since 1.16.0.',
+    responses: { '200': answer('NoteWritten', 'Changed in 4.5.137.', true) }
+  },
+  'days.place': {
+    operationId: 'setDayPlace',
+    summary: 'Say where a day was, for the notes that day without a place',
+    description:
+      'A city from `GET /v1/places`, sent as it came; a day takes a city, not a device’s spot. It is what every ' +
+      'note that day without a place shows, so it takes `notes:all`. The day’s weather follows, and never fails ' +
+      'the write. Since 1.16.0.',
+    requestBody: { required: true, content: { 'application/json': { schema: ref('DayPlaceWrite') } } },
+    responses: { '200': answer('DayPlaceWritten', 'Paris, France', true) }
+  },
+  'days.place.clear': {
+    operationId: 'removeDayPlace',
+    summary: 'Take a day’s own place away',
+    description:
+      'Its notes go back to what they showed without it. Removing a place the day doesn’t have is still a 204. ' +
+      'The day’s weather follows, and never fails the write. Since 1.16.0.',
+    responses: { '204': { description: 'Removed.', headers: writeHeaders() } }
+  },
   'notes.media': {
     operationId: 'addNoteFiles',
     summary: 'Add files to a note this token wrote, or any note with notes:all',
@@ -554,8 +590,31 @@ const SCHEMAS: Record<string, Doc> = {
       date: noteDate,
       written_at: noteWritten,
       uploads: ref('Uploads'),
-      place: ref('NotePlace')
+      place: ref('NotePlace'),
+      markup: {
+        anyOf: [{ type: 'string', const: 'rich' }, { type: 'null' }],
+        description:
+          '`rich` when `text` holds rich-text marks; left out or null, the words are plain. An edit keeps it. ' +
+          'Since 1.16.0.'
+      }
     }
+  },
+  NotePlaceWrite: {
+    type: 'object',
+    required: ['place'],
+    additionalProperties: false,
+    properties: { place: ref('NotePlace') }
+  },
+  DayPlaceWrite: {
+    type: 'object',
+    required: ['place'],
+    additionalProperties: false,
+    properties: { place: ref('City') }
+  },
+  DayPlaceWritten: {
+    type: 'object',
+    required: ['date', 'place'],
+    properties: { date: day, place: ref('NotePlaceRead') }
   },
   NoteForm: {
     type: 'object',

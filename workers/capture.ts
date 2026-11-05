@@ -41,7 +41,7 @@ import { fileFeedback, newFeedbackId, type FeedbackStore } from '../packages/bac
 import { InlineImageError, inlineImages } from '../packages/backend/inline-images.ts';
 import { feedbackFields, SCREENSHOTS_MAX } from '../packages/domain/feedback.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
-import { chosen, search, type City, type Spot, type SpotNames } from '../packages/backend/places.ts';
+import { chosen, search, type City, type JsonFetch, type Spot, type SpotNames } from '../packages/backend/places.ts';
 import {
   prepareUpcomingBatch,
   resolvePlace,
@@ -95,6 +95,8 @@ export interface CaptureContext extends ReaderContext {
   objects?: Objects;
   /** Names a device's spot for a token's Here; Amazon Location by default. */
   nameSpot?: (spot: Spot) => Promise<SpotNames | null>;
+  /** A day's weather, kept when a token says where it was; Open-Meteo by default. */
+  weatherFetch?: JsonFetch;
 }
 export interface CaptureOptions {
   fetchTitle?: TitleFetcher;

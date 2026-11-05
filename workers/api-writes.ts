@@ -24,11 +24,21 @@ import {
   type TitleFetcher
 } from '../packages/backend/links.ts';
 import { live, type OAuthRow } from '../packages/backend/oauth.ts';
-import { isRich } from '../packages/domain/rich.ts';
+import { isRich, RICH } from '../packages/domain/rich.ts';
 import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
 import { addedEvents, earnedBy, unlockedBy } from '../packages/backend/badges.ts';
 import { keys as mediaKeys, MAX_FILES, thumbKeys } from '../packages/backend/media.ts';
-import { nameSpot, notePlaceOf, search, spotOf, type SpotNames } from '../packages/backend/places.ts';
+import {
+  chosen,
+  clean,
+  fetchJson,
+  nameSpot,
+  notePlaceOf,
+  search,
+  spotOf,
+  type SpotNames
+} from '../packages/backend/places.ts';
+import { keepDay, placeOf, type WeatherStore } from '../packages/backend/weather.ts';
 import { errorFields, safeLog } from '../packages/backend/services.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
 import { pinnedTags, pinsOf, tagRow, type TagRowStore } from '../packages/backend/tag-row.ts';
@@ -70,7 +80,7 @@ import { codePointLength } from '../packages/domain/unicode.ts';
 import { computeVersion } from '../packages/domain/version.ts';
 import type { ActivityEvent } from '../packages/domain/activity.ts';
 import type { Unlocked } from '../packages/domain/badges.ts';
-import { agentUpcomingView, editRevision } from '../server/mcp/reader.ts';
+import { agentUpcomingView, editRevision, placeView } from '../server/mcp/reader.ts';
 import { fingerprint, object, type Arguments, type SafeLog } from '../server/mcp/common.ts';
 import { FILE_TYPES } from '../server/mcp/files.ts';
 import type { CaptureContext } from './capture.ts';
@@ -111,17 +121,34 @@ export interface ApiStore extends TokenReads, TagRowStore {
     now: number,
     extra?: Ops
   ): Promise<boolean>;
+  apiNotePlace(
+    old: OAuthRow,
+    place: OAuthRow | null,
+    receipt: OAuthRow,
+    audit: OAuthRow,
+    rate: OAuthRow,
+    previous: OAuthRow | null,
+    token: OAuthRow,
+    now: number,
+    extra?: Ops
+  ): Promise<boolean>;
+  apiDayPlace(user: string, day: string, place: OAuthRow | null, extra?: Ops): Promise<boolean>;
+  forLiveAccount(user: string): WeatherStore;
   setPins(user: string, pins: readonly string[], old: readonly string[] | null, extra?: Ops): Promise<boolean>;
   revokeToken(token: OAuthRow): Promise<boolean>;
 }
 
 /** The operations the router hands on, each with its body's fields. */
 export const API_WRITES: Record<string, readonly string[]> = {
-  'notes.create': ['text', 'date', 'written_at', 'place', 'uploads'],
+  'notes.create': ['text', 'date', 'written_at', 'place', 'uploads', 'markup'],
   'notes.edit': ['date', 'id', 'text', 'revision'],
   'notes.append': ['date', 'id', 'text'],
   'notes.media': ['date', 'id', 'uploads'],
   'notes.delete': ['date', 'id'],
+  'notes.place': ['date', 'id', 'place'],
+  'notes.place.clear': ['date', 'id'],
+  'days.place': ['date', 'place'],
+  'days.place.clear': ['date'],
   'uploads.start': ['name', 'type', 'size'],
   'places.here': ['lat', 'lon', 'accuracy_m'],
   'tags.pinned': ['pinned'],
@@ -135,7 +162,9 @@ const scopeFor = (op: string) =>
     ? 'upcoming'
     : op === 'uploads.start' || op === 'notes.media'
       ? 'media:write'
-      : 'notes:write';
+      : op.startsWith('days.place')
+        ? 'notes:all'
+        : 'notes:write';
 
 /** Here's naming client, made on first use, as the web's is. */
 let geo: GeoPlacesClient | undefined;
@@ -218,6 +247,9 @@ function shape(op: string, args: Arguments): void {
       throw new ApiRefusal('invalid_request', 'Send the revision you read, a whole number.', { field: 'revision' });
     return;
   }
+  // Plain words are the default, and null is how a read says so.
+  if (Object.hasOwn(args, 'markup') && args.markup !== RICH && args.markup !== null)
+    throw new ApiRefusal('invalid_request', 'markup is rich, or left out for plain words.', { field: 'markup' });
   for (const field of ['date', 'id', 'revision', 'written_at'])
     if (Object.hasOwn(args, field) && (typeof args[field] !== 'string' || codePointLength(String(args[field])) > 80))
       throw new ApiRefusal('invalid_request', `${field} is a string.`, { field });
@@ -255,6 +287,18 @@ function upcomingRefusal(error: ApiError, one = false): ApiRefusal {
       extra
     );
   return new ApiRefusal('invalid_request', (UPCOMING_HINTS[error.error] ?? "That date isn't right.") + where, extra);
+}
+
+/** A note's place, from the search or Here. */
+function placeFrom(raw: unknown): OAuthRow {
+  const place = notePlaceOf(raw);
+  if (!place)
+    throw new ApiRefusal(
+      'invalid_request',
+      'place is a city from GET /v1/places, or the place POST /v1/places/here answered, sent back as it came.',
+      { field: 'place' }
+    );
+  return place;
 }
 
 /** A refused file in `/v1`'s words (uploads.ts says which). */
@@ -461,6 +505,36 @@ export async function writeApi(
       throw new ApiRefusal('not_yours', 'A token changes only the notes it wrote, unless it may reach all your notes.');
     return old;
   };
+  // What a write to a note answers.
+  const written = (full: OAuthRow, d: string, id: string): OAuthRow => ({
+    note: {
+      id,
+      date: d,
+      version: String(full.version ?? computeVersion(birthday, d).toString()),
+      revision: editRevision(full),
+      files: ((full.media as OAuthRow[] | undefined) ?? []).length,
+      token: String(full.token ?? name)
+    }
+  });
+  // The day's weather follows where it was, as on the web. The write has
+  // landed by now, so nothing here may fail it.
+  const keepWeather = async (d: string, changed: boolean) => {
+    try {
+      await keepDay(
+        store.forLiveAccount(uid),
+        uid,
+        placeOf(profile),
+        tz,
+        d,
+        today,
+        context.weatherFetch ?? fetchJson,
+        iso(now),
+        changed
+      );
+    } catch {
+      (options.log ?? safeLog)({ event: 'weather-error', user: uid, date: d });
+    }
+  };
   // Upcoming: the dates a save would change, checked as a whole against
   // what is saved now, and what it answers.
   const upcomingChanges = async (): Promise<UpcomingChange[]> => {
@@ -619,6 +693,91 @@ export async function writeApi(
             answer.body = { ...body, unlocked: won.unlocked.map((u) => ({ key: u.key, name: u.name })) };
           await record([...named(upcomingEvents(changes, 'token', client ?? undefined)), ...named(won.events)]);
         };
+      } else if (op === 'notes.place' || op === 'notes.place.clear') {
+        const old = await own(),
+          d = String(args.date),
+          id = String(args.id),
+          place = op === 'notes.place' ? placeFrom(args.place) : null,
+          full: OAuthRow = { ...old };
+        delete full[place ? 'place_cleared' : 'place'];
+        Object.assign(full, place ? { place } : { place_cleared: true });
+        const body = written(full, d, id);
+        landed = await store.apiNotePlace(
+          old,
+          place,
+          receiptFor(200, body),
+          audit({ date: d, note_id: id }),
+          rate,
+          previous,
+          token,
+          now,
+          legacyGuard()
+        );
+        answer = { status: 200, body, replayed: false, limit };
+        after = async () => {
+          let unlocked: Unlocked[] = [];
+          if (profile.badges !== false) {
+            try {
+              unlocked = await unlockedBy(context.store, uid, profile, today, full, old, [], (f) =>
+                (options.log ?? safeLog)(f)
+              );
+            } catch {
+              (options.log ?? safeLog)({ event: 'badges-error', user: uid, date: d });
+            }
+            answer.body = { ...body, unlocked: unlocked.map((u) => ({ key: u.key, name: u.name })) };
+          }
+          await record([
+            {
+              kind: 'note.edited',
+              id: again(id),
+              fields: {
+                via: 'token',
+                token: name,
+                ...(client ? { client } : {}),
+                day: d,
+                note: id,
+                place: place ? 'set' : 'removed'
+              }
+            },
+            ...badgeEvents(unlocked, 'token', d, id, client).map((e) => ({
+              ...e,
+              fields: { ...e.fields, token: name }
+            }))
+          ]);
+          await keepWeather(d, true);
+        };
+      } else if (op === 'days.place' || op === 'days.place.clear') {
+        const d = day(args.date);
+        let place: OAuthRow | null = null;
+        if (op === 'days.place') {
+          // A day is a city; an exact spot is a note's (Jamie, 2026-10-24).
+          const raw = args.place,
+            city = object(raw) && raw.from === 'device' ? null : clean(raw);
+          if (!city)
+            throw new ApiRefusal('invalid_request', 'place is a city from GET /v1/places, sent back as it came.', {
+              field: 'place'
+            });
+          place = { ...chosen(city) };
+          delete place.from;
+        }
+        const status = place ? 200 : 204,
+          body = place ? { date: d, place: placeView(place) } : null;
+        landed = await store.apiDayPlace(uid, d, place, [
+          ...store.tokenProof(token, now, 'notes:all'),
+          ...store.agentReceipts(receiptFor(status, body), audit({ date: d }), rate, previous, now),
+          ...legacyGuard()
+        ]);
+        answer = { status, body, replayed: false, limit };
+        after = async () => {
+          await record([
+            {
+              kind: place ? 'place.set' : 'place.removed',
+              id: again(d),
+              fields: { via: 'token', token: name, ...(client ? { client } : {}), day: d }
+            }
+          ]);
+          await keepWeather(d, true);
+        };
       } else if (op === 'notes.delete') {
         const old = await own(),
           d = String(args.date),
@@ -697,13 +856,7 @@ export async function writeApi(
               });
           }
           if (Object.hasOwn(args, 'place')) {
-            place = notePlaceOf(args.place);
-            if (!place)
-              throw new ApiRefusal(
-                'invalid_request',
-                'place is a city from GET /v1/places, or the place POST /v1/places/here answered, sent back as it came.',
-                { field: 'place' }
-              );
+            place = placeFrom(args.place);
           }
         } else {
           old = await own();
@@ -749,7 +902,8 @@ export async function writeApi(
               written_at: iso(typed),
               tz,
               version: computeVersion(birthday, d).toString(),
-              ...(place ? { place } : {})
+              ...(place ? { place } : {}),
+              ...(args.markup === RICH ? { markup: RICH } : {})
             };
         Object.assign(note, {
           text: words,
@@ -761,8 +915,9 @@ export async function writeApi(
               : await collect(words, {
                   keep: old?.links as Link[] | undefined,
                   fetch: titleOnce,
-                  // An edit keeps the note's markup, as the web's does.
-                  ...(old && isRich(old) ? { rich: true } : {})
+                  // A note's markup is its own, from its writing; an edit
+                  // keeps it, as the web's does.
+                  ...(isRich(old ?? note) ? { rich: true } : {})
                 }),
           revision: Number(old?.revision ?? 0) + 1
         });
@@ -770,16 +925,7 @@ export async function writeApi(
         if (added.length) note.media = [...before, ...added];
         const id = String(note.sk).split('#').slice(2).join('#'),
           full = { ...old, ...note },
-          body: OAuthRow = {
-            note: {
-              id,
-              date: d,
-              version: String(full.version ?? computeVersion(birthday, d).toString()),
-              revision: editRevision(full),
-              files: ((full.media as OAuthRow[] | undefined) ?? []).length,
-              token: String(full.token ?? name)
-            }
-          };
+          body = written(full, d, id);
         const status = old ? 200 : 201;
         try {
           landed = await store.apiNoteCommit(
@@ -844,6 +990,7 @@ export async function writeApi(
               fields: { ...e.fields, token: name }
             }))
           ]);
+          if (place) await keepWeather(d, false);
         };
       }
       if (landed) {

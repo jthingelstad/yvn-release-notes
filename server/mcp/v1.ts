@@ -21,7 +21,7 @@ import {
   validDay,
   validTimezone
 } from '../../packages/domain/dates.ts';
-import { mapUrl, placeLabel, writtenAt, type NoteRecord, type PlaceRecord } from '../../packages/domain/notes.ts';
+import { placeLabel, writtenAt, type NoteRecord, type PlaceRecord } from '../../packages/domain/notes.ts';
 import { isRich, RICH } from '../../packages/domain/rich.ts';
 import { found, isTag, split, tagTotals } from '../../packages/domain/tags.ts';
 import { codePointLength, pythonTrim, wellFormed } from '../../packages/domain/unicode.ts';
@@ -57,6 +57,7 @@ import {
   RAW_TERMS,
   record,
   releaseDetail,
+  placeView,
   releaseList,
   type MediaReader,
   type ReaderContext,
@@ -64,13 +65,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.15.0';
+export const API_VERSION = '1.16.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.16.0',
+    date: '2026-11-05',
+    summary:
+      'Writing as the web does. POST /v1/notes takes `markup: "rich"`, for a note whose words hold rich-text marks. PUT and DELETE /v1/notes/{date}/{id}/place set, change or remove where a note was, on a note this token wrote, or any note with `notes:all`. PUT and DELETE /v1/days/{date}/place set or remove a day’s own place, with `notes:all`. The day’s weather follows each of these, and a new note with a place on an earlier day, and never fails the write.'
+  },
   {
     version: '1.15.0',
     date: '2026-11-05',
@@ -200,7 +207,9 @@ const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
   MEDIA = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/media$/,
   FILE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/media\/([1-9]\d{0,2})$/,
   UPCOMING = /^\/v1\/upcoming\/([A-Za-z0-9_-]{1,80})$/,
+  NOTE_PLACE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/place$/,
   DAY = /^\/v1\/days\/([^/]{1,40})$/,
+  DAY_PLACE = /^\/v1\/days\/([^/]{1,40})\/place$/,
   RELEASE = /^\/v1\/releases\/([^/]{1,12})$/;
 /** Reads that reach the whole archive (1.15.0). */
 const ARCHIVE = { scope: 'notes:read', also: ['notes:all'] } as const;
@@ -256,6 +265,28 @@ export const V1_ROUTES: readonly {
     name: 'notes.file',
     scope: 'notes:write',
     also: ['notes:read']
+  },
+  {
+    method: 'PUT',
+    path: NOTE_PLACE,
+    template: '/v1/notes/{date}/{id}/place',
+    name: 'notes.place',
+    scope: 'notes:write'
+  },
+  {
+    method: 'DELETE',
+    path: NOTE_PLACE,
+    template: '/v1/notes/{date}/{id}/place',
+    name: 'notes.place.clear',
+    scope: 'notes:write'
+  },
+  { method: 'PUT', path: DAY_PLACE, template: '/v1/days/{date}/place', name: 'days.place', scope: 'notes:all' },
+  {
+    method: 'DELETE',
+    path: DAY_PLACE,
+    template: '/v1/days/{date}/place',
+    name: 'days.place.clear',
+    scope: 'notes:all'
   },
   { method: 'POST', path: /^\/v1\/uploads$/, template: '/v1/uploads', name: 'uploads.start', scope: 'media:write' },
   { method: 'GET', path: /^\/v1\/places$/, template: '/v1/places', name: 'places', scope: 'notes:write' },
@@ -474,23 +505,6 @@ const fileView = (m: OAuthRow, transcribing: boolean): OAuthRow => {
     writing: transcribing && stillWriting(m)
   };
 };
-
-/** A note's own place as a token reads it (1.14.0), never the one it inherits. */
-function placeView(place: unknown): OAuthRow | null {
-  if (!object(place)) return null;
-  const label = placeLabel(place as PlaceRecord);
-  if (!label) return null;
-  const spot = (k: string) => (place[k] == null || !Number.isFinite(Number(place[k])) ? null : Number(place[k]));
-  return {
-    label,
-    map: mapUrl(place as PlaceRecord),
-    ...Object.fromEntries(
-      ['venue', 'district', 'city', 'region', 'country'].map((k) => [k, typeof place[k] === 'string' ? place[k] : null])
-    ),
-    lat: spot('lat'),
-    lon: spot('lon')
-  };
-}
 
 const tagsOf = (item: OAuthRow): string[] =>
   Array.isArray(item.tags) ? item.tags.map(String) : found(String(item.text ?? ''));
@@ -760,7 +774,9 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
           'invalid_request',
           asText,
           headers,
-          other === 'date' ? 'A note keeps its day: the path names it.' : 'The path names what this changes.',
+          other === 'date' && route.template.startsWith('/v1/notes')
+            ? 'A note keeps its day: the path names it.'
+            : 'The path names what this changes.',
           { field: other }
         );
       named.forEach((field, i) => (args[field] = params[i]));
@@ -836,10 +852,12 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         line =
           route.name === 'tags.pinned'
             ? ((body?.pinned as string[] | undefined) ?? []).map((t) => '#' + t).join(' ') || 'No pinned tags.'
-            : note
-              ? `${route.name === 'notes.create' ? 'Filed' : 'Changed'} in ${String(note.version)}.` +
-                (unlocked.length ? ` Unlocked: ${unlocked.map((u) => String(u.name)).join(', ')}.` : '')
-              : '';
+            : route.name === 'days.place'
+              ? String((body?.place as OAuthRow | undefined)?.label ?? '')
+              : note
+                ? `${route.name === 'notes.create' ? 'Filed' : 'Changed'} in ${String(note.version)}.` +
+                  (unlocked.length ? ` Unlocked: ${unlocked.map((u) => String(u.name)).join(', ')}.` : '')
+                : '';
       return respond(status, body, line, extra);
     }
 

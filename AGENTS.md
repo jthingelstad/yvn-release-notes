@@ -896,7 +896,10 @@ sign-in, which makes an API token) are built.
   honoured until `PER_TOKEN_RECEIPTS_UNTIL`, `/v1/me` gives a derived
   `account` id and the token's `id`, and a token's activity rows carry
   `token_id`. Ownership stays the token's: it changes only the notes it
-  wrote, or with `notes:all` any note.
+  wrote, or with `notes:all` any note. A note's place too (1.16.0); a day's
+  own place takes `notes:all`, since every note that day without a place
+  shows it. Each place write keeps the day's weather from the capture
+  function, best effort, after the write has landed.
 - **When `/v1` changes**, regenerate the contract with
   `node --import tsx tools/export-api-contract.ts`. Every change is a new
   `API_VERSION` with its `API_CHANGES` entry (`server/mcp/v1.ts`), or the

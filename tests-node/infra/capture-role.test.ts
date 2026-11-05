@@ -27,6 +27,11 @@ test('the capture role grants every DynamoDB and S3 request the write tools make
       ...ctx,
       objects,
       geocode: async () => [],
+      // A past day's weather, kept when a token says where it was.
+      weatherFetch: async (url: string) => {
+        const day = new URL(url).searchParams.get('start_date');
+        return { daily: { time: [day], temperature_2m_max: [20], temperature_2m_min: [10], weather_code: [1] } };
+      },
       // Naming a device's spot, the real adapter as IAM authorizes it.
       nameSpot: (spot: { lat: number; lon: number }) =>
         nameSpot(spot, {
@@ -179,6 +184,17 @@ test('the capture role grants every DynamoDB and S3 request the write tools make
   const gone = bucket.calls.filter((c) => c.operation === 'remove' && !c.version).map((c) => c.key);
   for (const key of ['raw/m-1', emailedPhoto, 'media/u/2026-10-13/e-mail/1.thumb.jpg'])
     assert.ok(gone.includes(key), key);
+  // Places through a token (1.16.0), with the day's weather kept after them:
+  // the weather row is a write proved against the live account.
+  const city = { name: 'Paris', region: '', country: 'France', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 },
+    earlier = '2026-10-10',
+    other = (await everything('notes.create', { date: earlier, text: 'Away' })).body as OAuthRow,
+    away = { date: earlier, id: (other.note as OAuthRow).id };
+  assert.equal((await everything('notes.place', { ...away, place: city })).status, 200);
+  assert.equal((await everything('notes.place.clear', away)).status, 200);
+  assert.equal((await everything('days.place', { date: earlier, place: city })).status, 200);
+  assert.equal(((await ctx.store.weatherBetween('u', earlier, earlier, true)) as OAuthRow)[earlier] != null, true);
+  assert.equal((await everything('days.place.clear', { date: earlier })).status, 204);
   assert.equal((await api('token.revoke', {})).status, 204);
 
   const made = aws.granted();

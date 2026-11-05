@@ -37,7 +37,7 @@ test('the MCP role grants every request each tool makes', async () => {
       }
     },
     options: McpOptions = {
-      context: () => ({ ...ctx, media }),
+      context: () => ({ ...ctx, media, geocode: async () => [] }),
       capture: (event) => {
         aws.add('capture', 'lambda:InvokeFunction', functionArn(aws.env.CAPTURE_FUNCTION!));
         return aws.aside(ctx.store, capture, () => captureNote(event, ctx, { fetchTitle: () => null }));
@@ -71,6 +71,8 @@ test('the MCP role grants every request each tool makes', async () => {
   await call('notes_get_day', { date: '2026-10-07' });
   await call('notes_get_note', { date: '2026-10-07', id: 'media' });
   await call('notes_tags');
+  await call('notes_map');
+  await call('notes_find_place', { q: 'Paris' });
   await call('notes_view_photo', { date: '2026-10-07', id: 'media', n: 1 });
   await call('notes_view_photo', { date: '2026-10-07', id: 'media', n: 1, original: true });
   await call('notes_get_audio', { date: '2026-10-07', id: 'media', n: 2, inline: true });

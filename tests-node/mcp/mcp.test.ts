@@ -1256,3 +1256,282 @@ test('every tool change ships as a new server version with a changes entry', asy
     'the tools changed: bump server_version, add a changes entry, then run tools/export-mcp-contract.ts'
   );
 });
+
+test('notes_create takes markup: rich; reads say so, and appending and rewriting keep it', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx),
+    made = (await rpc(ctx, a.token, 'notes_create', { text: '**Big** day', markup: 'rich', idempotency_key: 'r' }))
+      .value;
+  assert.equal(made.error, undefined, JSON.stringify(made));
+  const shown = made.note as OAuthRow,
+    date = String(shown.date),
+    id = String(shown.id);
+  assert.equal(shown.markup, 'rich');
+  const [stored] = await ctx.store.allNotes('u');
+  assert.equal(stored!.markup, 'rich');
+  assert.equal(stored!.text, '**Big** day');
+  assert.equal(((await rpc(ctx, a.token, 'notes_get_note', { date, id })).value.note as OAuthRow).markup, 'rich');
+  const appended = (await rpc(ctx, a.token, 'notes_append', { date, id, text: '- More', idempotency_key: 'a' })).value;
+  assert.equal((appended.note as OAuthRow).markup, 'rich');
+  const titled: McpOptions = {
+      context: () => ctx,
+      capture: (e) => captureNote(e, ctx, { fetchTitle: async () => ({ title: 'A page', site: 'example.com' }) }),
+      log: () => {}
+    },
+    edited = (
+      await rpc(
+        ctx,
+        a.token,
+        'notes_edit',
+        {
+          date,
+          id,
+          text: 'See **https://example.com/a**',
+          revision: (appended.note as OAuthRow).revision,
+          idempotency_key: 'e'
+        },
+        titled
+      )
+    ).value;
+  assert.equal((edited.note as OAuthRow).markup, 'rich');
+  const [after] = await ctx.store.allNotes('u');
+  assert.equal(after!.markup, 'rich');
+  // In a rich note, the closing stars are marks and not part of the address.
+  assert.equal((after!.links as OAuthRow[])[0]!.url, 'https://example.com/a');
+  // Without it a note's words are as typed, and only rich is taken.
+  const plain = (await rpc(ctx, a.token, 'notes_create', { text: '**Big**', idempotency_key: 'p' })).value;
+  assert.equal((plain.note as OAuthRow).markup, undefined);
+  assert.equal(
+    (await rpc(ctx, a.token, 'notes_create', { text: 'x', markup: 'html', idempotency_key: 'h' })).value.error,
+    'invalid_arguments'
+  );
+  assert.equal(
+    (await rpc(ctx, a.token, 'notes_append', { date, id, text: 'x', markup: 'rich', idempotency_key: 'm' })).value
+      .error,
+    'invalid_arguments'
+  );
+});
+
+test('notes_map reads the pins oldest first, a page at a time, with reading alone', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx, false, false),
+    paris = { city: 'Paris', country: 'France', lat: 48.85, lon: 2.35, from: 'chosen' };
+  note(ctx, 'b', 'Later #trip', '2026-10-08', { place: paris });
+  note(ctx, 'a', 'Earlier', '2026-10-07', { place: { ...paris, from: 'device' } });
+  note(ctx, 'c', 'Nowhere', '2026-10-07');
+  note(ctx, 'd', 'Cleared', '2026-10-07', { place: paris, place_cleared: true });
+  const first = (await rpc(ctx, a.token, 'notes_map', { limit: 1 })).value,
+    pins = first.pins as OAuthRow[];
+  assert.equal(first.error, undefined, JSON.stringify(first));
+  assert.equal(first.total, 2);
+  assert.equal(first.notes_total, 4);
+  assert.deepEqual(pins[0], {
+    date: '2026-10-07',
+    id: 'a',
+    lat: 48.85,
+    lon: 2.35,
+    place: 'Paris, France',
+    exact: true,
+    tags: [],
+    release: pins[0]!.release,
+    version: pins[0]!.version,
+    text: 'Earlier'
+  });
+  const next = (await rpc(ctx, a.token, 'notes_map', { limit: 1, cursor: first.next_cursor as string })).value;
+  assert.deepEqual(
+    (next.pins as OAuthRow[]).map((p) => [p.id, p.exact]),
+    [['b', false]]
+  );
+  assert.equal(next.next_cursor, null);
+});
+
+test('notes_find_place lists cities, each as words that resolve back to it', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx),
+    geocode = async (q: string) => {
+      if (q === 'down') throw new Error('Search down');
+      return q === 'Paris'
+        ? [
+            { name: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 },
+            { name: 'Paris', region: 'Texas', country: 'United States', tz: 'America/Chicago', lat: 33.66, lon: -95.56 }
+          ]
+        : [];
+    },
+    live = { ...ctx, geocode },
+    opts: McpOptions = {
+      context: () => live,
+      capture: (e) => captureNote(e, live, { fetchTitle: () => null }),
+      log: () => {}
+    },
+    found = (await rpc(ctx, a.token, 'notes_find_place', { q: ' Paris ' }, opts)).value;
+  assert.deepEqual(found.places, [
+    { place: 'Paris, Ile-de-France, France', name: 'Paris', region: 'Ile-de-France', country: 'France' },
+    { place: 'Paris, Texas, United States', name: 'Paris', region: 'Texas', country: 'United States' }
+  ]);
+  const made = (
+    await rpc(
+      ctx,
+      a.token,
+      'notes_create',
+      { text: 'Café', place: String((found.places as OAuthRow[])[1]!.place), idempotency_key: 'c' },
+      opts
+    )
+  ).value;
+  assert.equal(((await ctx.store.allNotes('u'))[0]!.place as OAuthRow).region, 'Texas', JSON.stringify(made));
+  assert.equal((await rpc(ctx, a.token, 'notes_find_place', { q: 'P' }, opts)).value.error, 'invalid_arguments');
+  assert.equal(
+    (await rpc(ctx, a.token, 'notes_find_place', { q: 'down' }, opts)).value.error,
+    'temporarily_unavailable'
+  );
+  assert.deepEqual((await rpc(ctx, a.token, 'notes_find_place', { q: 'Nowhere' }, opts)).value.places, []);
+});
+
+test('notes_set_place changes or clears the place on this connection’s notes, and nothing else', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx),
+    other = await connected(ctx),
+    asked: string[] = [],
+    weather: string[] = [],
+    logs: OAuthRow[] = [],
+    live = {
+      ...ctx,
+      geocode: async (q: string) => {
+        asked.push(q);
+        if (q === 'down') throw new Error('Search down');
+        return q === 'Paris'
+          ? [
+              {
+                name: 'Paris',
+                region: 'Texas',
+                country: 'United States',
+                tz: 'America/Chicago',
+                lat: 33.66,
+                lon: -95.56
+              }
+            ]
+          : [];
+      },
+      weatherFetch: async (url: string) => {
+        weather.push(url);
+        const day = new URL(url).searchParams.get('start_date');
+        return { daily: { time: [day], temperature_2m_max: [20], temperature_2m_min: [10], weather_code: [1] } };
+      }
+    },
+    opts: McpOptions = {
+      context: () => live,
+      capture: (e) => captureNote(e, live, { fetchTitle: () => null, log: (f) => logs.push(f) }),
+      log: () => {}
+    },
+    made = (await rpc(ctx, a.token, 'notes_create', { date: '2026-10-07', text: 'Café', idempotency_key: 'c' }, opts))
+      .value.note as OAuthRow,
+    target = { date: '2026-10-07', id: String(made.id) },
+    set = (await rpc(ctx, a.token, 'notes_set_place', { ...target, place: 'Paris', idempotency_key: 's' }, opts)).value;
+  assert.equal(set.error, undefined, JSON.stringify(set));
+  assert.equal((set.note as OAuthRow).place, 'Paris, Texas');
+  assert.equal((set.note as OAuthRow).revision, made.revision);
+  const [stored] = await ctx.store.allNotes('u');
+  assert.equal(stored!.text, 'Café');
+  assert.equal((stored!.place as OAuthRow).from, 'chosen');
+  assert.equal(stored!.updated_at, undefined);
+  // The day's weather follows, for a past day.
+  assert.equal(weather.length, 1);
+  // An exact retry replays, without searching again.
+  const again = await rpc(ctx, a.token, 'notes_set_place', { ...target, place: 'Paris', idempotency_key: 's' }, opts);
+  assert.equal(again.value.replayed, true);
+  assert.deepEqual(asked, ['Paris']);
+  const cleared = (await rpc(ctx, a.token, 'notes_set_place', { ...target, clear: true, idempotency_key: 'x' }, opts))
+    .value;
+  assert.equal((cleared.note as OAuthRow).place, undefined);
+  const [gone] = await ctx.store.allNotes('u');
+  assert.equal(gone!.place, undefined);
+  assert.equal(gone!.place_cleared, true);
+  // It logs that the place changed, never the place.
+  assert.deepEqual(
+    ctx.store.memory
+      .all()
+      .filter((i) => String(i.sk).startsWith('ACTIVITY#') && i.kind === 'note.edited')
+      .map((i) => [i.via, i.place])
+      .sort(),
+    [
+      ['assistant', 'removed'],
+      ['assistant', 'set']
+    ]
+  );
+  // One of place or clear; a city it can find; a working search.
+  for (const [args, error] of [
+    [{}, 'invalid_arguments'],
+    [{ clear: false }, 'invalid_arguments'],
+    [{ place: 'Paris', clear: true }, 'invalid_arguments'],
+    [{ place: 'Nowhere' }, 'invalid_arguments'],
+    [{ place: 'down' }, 'temporarily_unavailable']
+  ] as [OAuthRow, string][])
+    assert.equal(
+      (await rpc(ctx, a.token, 'notes_set_place', { ...target, ...args, idempotency_key: 'bad' }, opts)).value.error,
+      error,
+      JSON.stringify(args)
+    );
+  // Another connection's note, the owner's own note, or a connection without
+  // adding, are all refused, and nothing is searched for them.
+  note(ctx, 'w-mine', 'By me', '2026-10-07', { source: 'web' });
+  const searches = asked.length;
+  assert.equal(
+    (await rpc(ctx, other.token, 'notes_set_place', { ...target, place: 'Paris', idempotency_key: 'o' }, opts)).value
+      .error,
+    'forbidden_not_author'
+  );
+  assert.equal(
+    (
+      await rpc(
+        ctx,
+        a.token,
+        'notes_set_place',
+        { date: '2026-10-07', id: 'w-mine', place: 'Paris', idempotency_key: 'w' },
+        opts
+      )
+    ).value.error,
+    'forbidden_not_author'
+  );
+  assert.equal(asked.length, searches);
+  const reader = await connected(ctx, false, false);
+  assert.equal(
+    (await rpc(ctx, reader.token, 'notes_set_place', { ...target, clear: true, idempotency_key: 'n' }, opts)).value
+      .error,
+    'scope_required'
+  );
+  assert.equal((await ctx.store.allNotes('u')).find((n) => n.sk === gone!.sk)!.place_cleared, true);
+});
+
+test('notes_set_place keeps its answer when the weather cannot be kept, and tries again if the note moved', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx),
+    logs: OAuthRow[] = [],
+    live = {
+      ...ctx,
+      geocode: async () => [
+        { name: 'Paris', region: 'Texas', country: 'United States', tz: 'America/Chicago', lat: 33.66, lon: -95.56 }
+      ],
+      weatherFetch: async () => {
+        throw new Error('Weather down');
+      }
+    },
+    opts: McpOptions = {
+      context: () => live,
+      capture: (e) => captureNote(e, live, { fetchTitle: () => null, log: (f) => logs.push(f) }),
+      log: () => {}
+    },
+    made = (await rpc(ctx, a.token, 'notes_create', { date: '2026-10-07', text: 'Café', idempotency_key: 'c' }, opts))
+      .value.note as OAuthRow,
+    target = { date: '2026-10-07', id: String(made.id) },
+    commit = ctx.store.agentNotePlace.bind(ctx.store);
+  let lost = 1;
+  ctx.store.agentNotePlace = async (...args) => (lost-- > 0 ? false : commit(...args));
+  const set = (await rpc(ctx, a.token, 'notes_set_place', { ...target, place: 'Paris', idempotency_key: 's' }, opts))
+    .value;
+  assert.equal((set.note as OAuthRow).place, 'Paris, Texas', JSON.stringify(set));
+  assert.equal(lost, -1);
+  ctx.store.agentNotePlace = async () => false;
+  assert.equal(
+    (await rpc(ctx, a.token, 'notes_set_place', { ...target, clear: true, idempotency_key: 'b' }, opts)).value.error,
+    'busy'
+  );
+});

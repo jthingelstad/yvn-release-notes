@@ -5,8 +5,9 @@ This is the answer. Jamie merged the pull request that built it (#257,
 2026-10-30: "Approved: merge Release Notes #257, rich text"), which settled
 decisions 1, 3, 4, 5 and 8 as built, and then took the rest as recommended
 (2026-10-30: "Approved: RICH-TEXT decisions 2, 6, 7, 9 and 10 as
-recommended"). `/v1` takes `markup` since API 1.16.0. Still to build: MCP taking it
-(decision 2), then Changelog's composer (decision 7), then email replies.
+recommended"). `/v1` takes `markup` since API 1.16.0 and MCP since 1.12.0 (Jamie, 2026-11-05:
+"MCP should get rich text ability"). Still to build: Changelog's composer
+(decision 7), then email replies.
 
 ## Recommendation
 
@@ -112,7 +113,7 @@ typed. `packages/domain/rich.ts` is the one reader of the subset.
 | A cut excerpt (Yesterday's sentence cut, On this day's budget) | closes any bold or italic the cut left open; the ellipsis sits inside the last paragraph or item                                               |
 | Export: Markdown and JSON                                      | the text as typed; JSON adds `markup`                                                                                                          |
 | The book                                                       | blocks of strings with `strong`, `em`, `quote` flags and numbered lists; Typst never sees markup                                               |
-| MCP tools and `/v1`                                            | unchanged: the text as typed and `parts` (phase 2 adds `markup`)                                                                               |
+| MCP tools and `/v1`                                            | the text as typed and `parts`, with `markup` on a rich note                                                                                    |
 | Changelog's Today words                                        | unchanged: it reads only its own token's notes, which can't be rich until `/v1` takes `markup`                                                 |
 | Search                                                         | matches the words, so `"long day"` finds `**long** day`                                                                                        |
 

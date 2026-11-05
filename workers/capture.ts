@@ -24,6 +24,7 @@ import {
 import { OAuthService, live, type OAuthRow } from '../packages/backend/oauth.ts';
 import { Store } from '../packages/backend/store.ts';
 import { iso } from '../packages/domain/dates.ts';
+import { isRich, RICH } from '../packages/domain/rich.ts';
 import { MAX_NOTE, noteWords } from '../packages/domain/notes.ts';
 import { found } from '../packages/domain/tags.ts';
 import { computeVersion } from '../packages/domain/version.ts';
@@ -41,7 +42,16 @@ import { fileFeedback, newFeedbackId, type FeedbackStore } from '../packages/bac
 import { InlineImageError, inlineImages } from '../packages/backend/inline-images.ts';
 import { feedbackFields, SCREENSHOTS_MAX } from '../packages/domain/feedback.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
-import { chosen, search, type City, type JsonFetch, type Spot, type SpotNames } from '../packages/backend/places.ts';
+import {
+  chosen,
+  fetchJson,
+  search,
+  type City,
+  type JsonFetch,
+  type Spot,
+  type SpotNames
+} from '../packages/backend/places.ts';
+import { keepDay, placeOf, type WeatherStore } from '../packages/backend/weather.ts';
 import {
   prepareUpcomingBatch,
   resolvePlace,
@@ -74,6 +84,17 @@ export interface CaptureStore extends ReaderStore, ApiStore, Omit<FeedbackStore,
   familyProof(family: OAuthRow, now: number, scope: string | readonly string[]): Ops;
   agentReceipts(receipt: OAuthRow, audit: OAuthRow, rate: OAuthRow, previous: OAuthRow | null, now: number): Ops;
   putActivity(user: string, rows: readonly OAuthRow[]): Promise<boolean>;
+  agentNotePlace(
+    old: OAuthRow,
+    place: OAuthRow | null,
+    receipt: OAuthRow,
+    audit: OAuthRow,
+    rate: OAuthRow,
+    previous: OAuthRow | null,
+    family: OAuthRow,
+    now: number
+  ): Promise<boolean>;
+  forLiveAccount(user: string): WeatherStore;
   captureCommit(
     note: OAuthRow,
     old: OAuthRow | null,
@@ -125,13 +146,21 @@ const FIELDS = [
   'revision'
 ];
 /** Daily writes an account takes from all its connections, by tool. */
-const CAPS: Record<string, number> = { notes_create: 20, notes_append: 50, notes_edit: 50, notes_attach: 20 };
+const CAPS: Record<string, number> = {
+  notes_create: 20,
+  notes_append: 50,
+  notes_edit: 50,
+  notes_attach: 20,
+  notes_set_place: 50
+};
 /** The connection's own notes: an append, a rewrite or new files go nowhere else. */
 const OWN: Record<string, string> = {
   notes_append: 'Append only to a note created by this same connection; create a new note for anything else.',
   notes_edit:
     'Rewrite only a note created by this same connection; the owner edits their own notes on the web. Create a new note instead, or ask the user to change it.',
-  notes_attach: 'Add files only to a note created by this same connection; create a new note with the files instead.'
+  notes_attach: 'Add files only to a note created by this same connection; create a new note with the files instead.',
+  notes_set_place:
+    'Set a place only on a note created by this same connection; the owner changes their own notes on the web.'
 };
 export async function writeCapture(
   context: CaptureContext,
@@ -151,6 +180,8 @@ export async function writeCapture(
     );
   // Checked whole now, and kept only once the rest of the write has passed.
   const files: InlineFile[] = Object.hasOwn(args, 'files') ? inlineFiles(args.files) : [];
+  if (Object.hasOwn(args, 'markup') && args.markup !== RICH)
+    throw new ToolError('invalid_arguments', 'markup is rich, or left out for words shown as typed.');
   const uid = String(family.user_id),
     fid = String(family.id),
     key = 'CAPTURE#' + fid + '#' + digest(String(args.idempotency_key)),
@@ -232,7 +263,8 @@ export async function writeCapture(
             written_at: iso(context.now),
             tz: reader.profile.tz,
             version: computeVersion(reader.birthday, day).toString(),
-            ...(place ? { place } : {})
+            ...(place ? { place } : {}),
+            ...(args.markup === RICH ? { markup: RICH } : {})
           };
       Object.assign(note, {
         text,
@@ -241,7 +273,12 @@ export async function writeCapture(
         links:
           name === 'notes_attach'
             ? ((old?.links as Link[] | undefined) ?? [])
-            : await collect(text, { keep: old?.links as Link[] | undefined, fetch: titleOnce }),
+            : await collect(text, {
+                keep: old?.links as Link[] | undefined,
+                fetch: titleOnce,
+                // A note's markup is its own, from its writing; an edit keeps it.
+                ...(isRich(old ?? note) ? { rich: true } : {})
+              }),
         revision: Number(old?.revision ?? 0) + 1
       });
       if (old) note.updated_at = iso(context.now);
@@ -342,6 +379,134 @@ export async function writeCapture(
       await dropFiles(context.objects!, kept);
   }
 }
+/** Where a note this connection wrote was: a city found as notes_create finds
+ * one, or none. Like /v1's, its words and revision stay, so a rewrite in hand
+ * still lands, and the day's weather follows once the write has landed. */
+async function writePlace(
+  context: CaptureContext,
+  family: OAuthRow,
+  name: string,
+  args: Arguments,
+  options: CaptureOptions = {}
+): Promise<OAuthRow> {
+  if (!String(family.scope).split(/\s+/).includes('notes:write'))
+    throw new ToolError('scope_required', 'Reconnect and explicitly approve adding agent notes.');
+  const named = typeof args.place === 'string';
+  if (named === (args.clear === true) || args.clear === false)
+    throw new ToolError('invalid_arguments', 'Give place, the city the note was written in, or clear: true; not both.');
+  const uid = String(family.user_id),
+    fid = String(family.id),
+    key = 'CAPTURE#' + fid + '#' + digest(String(args.idempotency_key)),
+    hash = fingerprint({ tool: name, arguments: args }),
+    reader = await Reader.create(context, family);
+  let place: OAuthRow | null = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const receipt = await context.store.mcpGet('USER#' + uid, key);
+    if (live(receipt, context.now)) {
+      if (receipt.request_hash !== hash)
+        throw new ToolError(
+          'duplicate_idempotency_key',
+          'Use a new key for a different operation; reuse the original key only for an exact retry.'
+        );
+      return { note: JSON.parse(String(receipt.result)), replayed: true };
+    }
+    const old = await reader.note(args);
+    if (old.author !== 'assistant' || old.connection !== fid || old.client_id !== family.client_id)
+      throw new ToolError('forbidden_not_author', OWN[name]!);
+    // Found once, and never for a retry the receipt answers.
+    if (named) place ??= await namedPlace(String(args.place), context.geocode ?? search);
+    const rateKey = `WRITERATE#${name}#${Math.floor(context.now / 86400)}`,
+      previous = await context.store.mcpGet('MCPMETA#' + uid, rateKey),
+      count = Number(previous?.n ?? 0);
+    if (count >= CAPS[name]!)
+      throw new ToolError(
+        'rate_limited',
+        'Try again after this UTC day ends; exact retries of completed writes are still safe.'
+      );
+    const full: OAuthRow = { ...old },
+      day = String(old.sk).split('#')[1]!,
+      id = String(old.sk).split('#').slice(2).join('#');
+    delete full[place ? 'place_cleared' : 'place'];
+    Object.assign(full, place ? { place } : { place_cleared: true });
+    const shown = reader.view(full, true),
+      landed = await context.store.agentNotePlace(
+        old,
+        place,
+        {
+          pk: 'USER#' + uid,
+          sk: key,
+          request_hash: hash,
+          result: JSON.stringify(shown),
+          expires_at: context.now + 86400
+        },
+        {
+          pk: 'MCPMETA#' + uid,
+          sk: `LOG#${String(context.now).padStart(12, '0')}#${randomUUID().replace(/-/g, '')}`,
+          at: context.now,
+          tool: name,
+          outcome: 'ok',
+          connection: fid,
+          client: family.client_name,
+          date: day,
+          note_id: id,
+          expires_at: context.now + 14 * 86400
+        },
+        {
+          pk: 'MCPMETA#' + uid,
+          sk: rateKey,
+          n: count + 1,
+          revision: Number(previous?.revision ?? 0) + 1,
+          expires_at: (Math.floor(context.now / 86400) + 2) * 86400
+        },
+        previous,
+        family,
+        context.now
+      );
+    if (landed) {
+      const log = options.log ?? safeLog;
+      await recordNote(
+        context,
+        family,
+        name,
+        full,
+        old,
+        day,
+        reader.profile,
+        reader.today,
+        0,
+        options.log,
+        place ? 'set' : 'removed'
+      );
+      try {
+        await keepDay(
+          context.store.forLiveAccount(uid),
+          uid,
+          placeOf(reader.profile),
+          String(reader.profile.tz),
+          day,
+          reader.today,
+          context.weatherFetch ?? fetchJson,
+          iso(context.now),
+          true
+        );
+      } catch {
+        log({ event: 'weather-error', user: uid, date: day });
+      }
+      return { note: shown, replayed: false };
+    }
+    const current = await context.store.mcpGet('OAUTHFAMILY#' + fid),
+      profile = await context.store.mcpProfile(uid);
+    if (
+      !live(current, context.now) ||
+      !profile ||
+      profile.mcp_deleting ||
+      current.revision !== family.revision ||
+      !String(current.scope).split(/\s+/).includes('notes:write')
+    )
+      throw new ToolError('scope_required', 'This connection changed or was disconnected; reconnect before writing.');
+  }
+  throw new ToolError('busy', 'Try again shortly with exactly the same idempotency_key and arguments.');
+}
 /** Whether a commit whose answer was lost wrote this request's receipt. A
  * failed read counts as landed: an orphan file beats a note without its file. */
 async function mayHaveLanded(context: CaptureContext, uid: string, key: string, hash: string): Promise<boolean> {
@@ -382,7 +547,8 @@ async function recordNote(
   profile: OAuthRow,
   today: string,
   files: number,
-  log?: SafeLog
+  log?: SafeLog,
+  place?: 'set' | 'removed'
 ): Promise<void> {
   const uid = String(family.user_id),
     id = String(note.sk).split('#').slice(2).join('#'),
@@ -420,7 +586,8 @@ async function recordNote(
               day,
               note: id,
               version: note.version,
-              ...(files ? { files } : {})
+              ...(files ? { files } : {}),
+              ...(place ? { place } : {})
             }
           },
       ...badgeEvents(unlocked, 'assistant', day, id, family.client_name)
@@ -721,7 +888,9 @@ export async function captureNote(
       ? writeFeedback(context, family, name, args)
       : UPCOMING_TOOLS.has(name)
         ? writeUpcoming(context, family, name, args, options)
-        : writeCapture(context, family, name, args, options));
+        : name === 'notes_set_place'
+          ? writePlace(context, family, name, args, options)
+          : writeCapture(context, family, name, args, options));
   } catch (error) {
     if (error instanceof ToolError) return { error: error.code, next_step: error.nextStep };
     failure(context.now, uid, options.log ?? bareLine, error);

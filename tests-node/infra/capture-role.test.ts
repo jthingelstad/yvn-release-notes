@@ -67,6 +67,14 @@ test('the capture role grants every DynamoDB and S3 request the write tools make
     idempotency_key: 'e'
   });
   assert.ok(edited.note, JSON.stringify(edited));
+  // A place on this connection's note, and the past day's weather it moves.
+  const placeless = await run('notes_set_place', {
+    date: shown.date,
+    id: shown.id,
+    clear: true,
+    idempotency_key: 'pc'
+  });
+  assert.ok(placeless.note, JSON.stringify(placeless));
   const commit = ctx.store.captureCommit.bind(ctx.store);
   ctx.store.captureCommit = async () => false;
   const lost = await run('notes_create', { text: 'Lost', files: photo, idempotency_key: 'l' });

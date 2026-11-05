@@ -140,7 +140,7 @@ export const SCOPES: [string, string][] = [
   ['media:read', 'also read the photos, recordings and files themselves.'],
   [
     'notes:write',
-    'add notes at the subscriber’s request, and add to or edit the notes that same connection added. It never deletes a note.'
+    'add notes at the subscriber’s request, and add to, edit or change the place of the notes that same connection added. It never deletes a note.'
   ],
   [
     'media:write',

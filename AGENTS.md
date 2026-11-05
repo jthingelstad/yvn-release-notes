@@ -241,7 +241,8 @@ Where things are (each module's design comment has its contract):
   `places.nameSpot`), one tap to name the note by one (`venue`); it never
   picks one itself, since the nearest is as often a bus stop. An
   assistant can name the city with `notes_create`'s `place` (MCP 1.7.0),
-  found by the same city search. Email has no text convention. Any note's place can be set, changed or cleared
+  found by the same city search, and change or clear it on a note that
+  connection wrote with `notes_set_place` (MCP 1.12.0). Email has no text convention. Any note's place can be set, changed or cleared
   after it is saved, whatever channel brought it. Precision (Jamie,
   2026-10-24: "for a note detailed location, specific. For a day the
   city"): a device or photo spot is kept to six places with its city's name,

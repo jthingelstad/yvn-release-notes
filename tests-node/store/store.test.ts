@@ -686,6 +686,55 @@ test('capture exact request proves owner, live scope, receipt, quota and audit i
   assert.equal((await s.allNotes('u')).length, 1);
   assert.equal((await s.mcpGet(String(rate.pk), String(rate.sk)))?.n, 1);
 });
+test('an agent note’s place is set or removed on its own note as read, with the connection’s proofs', async () => {
+  const old = {
+      pk: 'USER#u',
+      sk: 'NOTE#2026-10-07#a-n',
+      text: 'Words',
+      revision: 2,
+      author: 'assistant',
+      connection: 'f',
+      updated_at: '2026-10-07T10:00:00Z',
+      media: [{ n: 1 }]
+    },
+    paris = { city: 'Paris', lat: 48.85, lon: 2.35, from: 'chosen' };
+  for (const [place, update] of [
+    [paris, 'SET #p = :p REMOVE place_cleared'],
+    [null, 'SET place_cleared = :p REMOVE #p']
+  ] as [Item | null, string][]) {
+    const { s, family, receipt, audit, rate } = captureFixture();
+    s.seed(old);
+    assert.equal(await s.agentNotePlace(old, place, receipt, audit, rate, null, family, 100), true);
+    const ops = s.memory.calls[0]!.input.TransactItems!;
+    assert.equal(ops.length, 6);
+    assert.equal(
+      ops[0]!.ConditionCheck?.ConditionExpression,
+      'attribute_exists(pk) AND attribute_not_exists(mcp_deleting)'
+    );
+    assert.equal(ops[1]!.ConditionCheck?.ExpressionAttributeValues?.[':write'], 'notes:write');
+    assert.deepEqual(ops[2], {
+      Update: {
+        TableName: 'T',
+        Key: { pk: old.pk, sk: old.sk },
+        UpdateExpression: update,
+        ConditionExpression:
+          'author = :author AND #c = :connection AND attribute_exists(pk) AND #t = :old AND #r = :revision AND updated_at = :edited AND size(media) = :had',
+        ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#p': 'place', '#c': 'connection' },
+        ExpressionAttributeValues: {
+          ':old': 'Words',
+          ':revision': 2,
+          ':edited': '2026-10-07T10:00:00Z',
+          ':had': 1,
+          ':p': place ?? true,
+          ':author': 'assistant',
+          ':connection': family.id
+        }
+      }
+    });
+    assert.equal(ops[3]?.Put?.ConditionExpression, 'attribute_not_exists(pk) OR expires_at <= :now');
+    assert.equal(ops[5]?.Put?.Item?.n, 1);
+  }
+});
 test('capture revoked/deleting/expired/removed-scope/current-revision conflicts write no note or receipts', async () => {
   for (const mutation of ['revoked', 'deleting', 'expired', 'scope', 'revision', 'missing']) {
     const { s, family, receipt, audit, rate } = captureFixture();

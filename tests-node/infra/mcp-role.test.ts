@@ -135,7 +135,7 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
     // Tokens are made on the web, under its own role.
     made = (await new Tokens({ store: ctx.store, origin: ctx.origin, now: ctx.now }).make('u', {
       name: 'Changelog',
-      scopes: ['notes:write', 'media:write', 'notes:read', 'upcoming', 'activity'],
+      scopes: ['notes:write', 'media:write', 'notes:read', 'notes:all', 'upcoming', 'activity'],
       expiry: 'never'
     })) as OAuthRow & { token: string },
     // Here's naming, the real adapter as IAM authorizes it, in capture.
@@ -180,6 +180,13 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
   const shown = (await v1('POST', '/v1/notes', { text: 'Dinner #home' }, 201)).note as OAuthRow,
     path = `/v1/notes/${String(shown.date)}/${String(shown.id)}`;
   await v1('GET', path);
+  // A place written through the capture function (1.16.0). Today has no
+  // weather to keep yet, so nothing goes to Open-Meteo.
+  const city = { name: 'Paris', region: 'Île-de-France', country: 'France', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 };
+  await v1('PUT', `${path}/place`, { place: city });
+  await v1('DELETE', `${path}/place`);
+  await v1('PUT', `/v1/days/${String(shown.date)}/place`, { place: city });
+  await v1('DELETE', `/v1/days/${String(shown.date)}/place`, undefined, 204);
   const appended = (await v1('POST', path + '/append', { text: 'Walk' })).note as OAuthRow;
   await v1('PUT', path, { text: 'Dinner and a walk', revision: appended.revision });
   await v1('PUT', '/v1/tags/pinned', { pinned: ['home'] });

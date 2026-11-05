@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.15.0",
+    "version": "1.16.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. With `notes:read`, a token reads the whole archive and writes nothing (1.15.0). The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.16.0",
+        "date": "2026-11-05",
+        "summary": "Writing as the web does. POST /v1/notes takes `markup: \"rich\"`, for a note whose words hold rich-text marks. PUT and DELETE /v1/notes/{date}/{id}/place set, change or remove where a note was, on a note this token wrote, or any note with `notes:all`. PUT and DELETE /v1/days/{date}/place set or remove a day’s own place, with `notes:all`. The day’s weather follows each of these, and a new note with a place on an earlier day, and never fails the write."
+      },
       {
         "version": "1.15.0",
         "date": "2026-11-05",
@@ -858,6 +863,307 @@
         "x-scope-also": [
           "notes:read"
         ]
+      }
+    },
+    "/v1/notes/{date}/{id}/place": {
+      "put": {
+        "operationId": "setNotePlace",
+        "summary": "Say where a note this token wrote was, or any note with notes:all",
+        "description": "A city from `GET /v1/places`, or the `place` from `POST /v1/places/here`, sent as it came. It replaces the one the note has, a photo’s too. The words and `revision` stay. The day’s weather follows, and never fails the write. Since 1.16.0.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotePlaceWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Changed in 4.5.137."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      },
+      "delete": {
+        "operationId": "removeNotePlace",
+        "summary": "Take the place off a note this token wrote, or any note with notes:all",
+        "description": "The note then says `no_place`, shows no place from its day, and a photo’s spot won’t fill it in again. The words and `revision` stay. The day’s weather follows, and never fails the write. Since 1.16.0.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Changed in 4.5.137."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      }
+    },
+    "/v1/days/{date}/place": {
+      "put": {
+        "operationId": "setDayPlace",
+        "summary": "Say where a day was, for the notes that day without a place",
+        "description": "A city from `GET /v1/places`, sent as it came; a day takes a city, not a device’s spot. It is what every note that day without a place shows, so it takes `notes:all`. The day’s weather follows, and never fails the write. Since 1.16.0.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DayPlaceWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayPlaceWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Paris, France"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:all"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:all"
+            ]
+          }
+        ],
+        "x-scope": "notes:all"
+      },
+      "delete": {
+        "operationId": "removeDayPlace",
+        "summary": "Take a day’s own place away",
+        "description": "Its notes go back to what they showed without it. Removing a place the day doesn’t have is still a 204. The day’s weather follows, and never fails the write. Since 1.16.0.",
+        "responses": {
+          "204": {
+            "description": "Removed.",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:all"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:all"
+            ]
+          }
+        ],
+        "x-scope": "notes:all"
       }
     },
     "/v1/uploads": {
@@ -2535,7 +2841,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.15.0"
+            "example": "1.16.0"
           }
         }
       },
@@ -2577,6 +2883,59 @@
           },
           "place": {
             "$ref": "#/components/schemas/NotePlace"
+          },
+          "markup": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "rich"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`rich` when `text` holds rich-text marks; left out or null, the words are plain. An edit keeps it. Since 1.16.0."
+          }
+        }
+      },
+      "NotePlaceWrite": {
+        "type": "object",
+        "required": [
+          "place"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "place": {
+            "$ref": "#/components/schemas/NotePlace"
+          }
+        }
+      },
+      "DayPlaceWrite": {
+        "type": "object",
+        "required": [
+          "place"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "place": {
+            "$ref": "#/components/schemas/City"
+          }
+        }
+      },
+      "DayPlaceWritten": {
+        "type": "object",
+        "required": [
+          "date",
+          "place"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "A day in the account’s own time zone."
+          },
+          "place": {
+            "$ref": "#/components/schemas/NotePlaceRead"
           }
         }
       },

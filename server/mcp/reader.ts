@@ -19,7 +19,7 @@ import { computeVersion, releaseAge, releaseName, releaseSpan, sameDayBefore } f
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { collectedOn, evaluateBadges, releaseBadges } from '../../packages/domain/badges.ts';
 import { badgeFacts } from '../../packages/backend/badges.ts';
-import { writtenAt, placeLabel, type NoteRecord, type PlaceRecord } from '../../packages/domain/notes.ts';
+import { mapUrl, writtenAt, placeLabel, type NoteRecord, type PlaceRecord } from '../../packages/domain/notes.ts';
 import { found, isTag, split } from '../../packages/domain/tags.ts';
 import { searchTerms, searchedText } from '../../packages/domain/search.ts';
 import { codePointLength, codePointSlice } from '../../packages/domain/unicode.ts';
@@ -36,6 +36,23 @@ export const editRevision = (item: OAuthRow): string =>
     .update(asciiJson([String(item.text ?? ''), item.updated_at ?? null, item.revision ?? null]))
     .digest('hex')
     .slice(0, 24);
+/** A place as `/v1` shows it: its label and map, its names and its spot.
+ * A note's own (1.14.0) is never the one it inherits. */
+export function placeView(place: unknown): OAuthRow | null {
+  if (!object(place)) return null;
+  const label = placeLabel(place as PlaceRecord);
+  if (!label) return null;
+  const spot = (k: string) => (place[k] == null || !Number.isFinite(Number(place[k])) ? null : Number(place[k]));
+  return {
+    label,
+    map: mapUrl(place as PlaceRecord),
+    ...Object.fromEntries(
+      ['venue', 'district', 'city', 'region', 'country'].map((k) => [k, typeof place[k] === 'string' ? place[k] : null])
+    ),
+    lat: spot('lat'),
+    lon: spot('lon')
+  };
+}
 export interface ReaderStore extends OAuthStore {
   upcomingEntries(uid: string): Promise<UpcomingEntry[]>;
   noteDays(uid: string): Promise<string[] | Set<string>>;

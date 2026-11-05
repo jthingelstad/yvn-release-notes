@@ -36,6 +36,7 @@ It answers with one line: `Filed in 5.2.113.`
 
 - `GET /v1/me`: today's date and version, the versions for the next 14 days, your streak, your time zone, when your email goes, your `account`, whether you're a Supporting Member of the Weekly Thing (`supporting_member`, from version 1.12.0 of the API), the week and day you're on, as Today and the morning email show them (`lived`, from 1.13.0), and this token's `id`, name, what it may do and when it expires. Never your birthday. `account` is the same for every token you make and never changes, so an app can tell whose account a token opens; the token's `id` never changes either, and is never the token itself. Any token may ask.
 - `POST /v1/notes`: add a note. Send `{"text": "…"}`, or the words alone as `text/plain`. A form works too, as a Shortcut's **Form** body or `curl --data-urlencode "text=…"` sends it, with `text` and, if you like, `date` or `written_at`. Any other form is taken as the words, so `curl -d "my words"` still works, and a `multipart` body is refused. Hashtags in the words are its tags, and links get their names, as on the web. `date` puts it on an earlier day, back to your birthday. `written_at` is the moment the words were typed: a note sent late files to the day it was typed. With neither, it's today's. `uploads` gives it files (see [Photos, recordings and PDFs](#photos-recordings-and-pdfs)), and then it needs no words. `place` says where it was (see [Places](#places)). The answer has the note's `id`, `date`, `version` and `revision`, and how many `files` it has.
+- A note with rich-text marks, like `**bold**` and lists, says so: send `"markup": "rich"` with its `text`. Without it, the words are plain and the marks show as typed. An edit keeps what the note is. From version 1.16.0.
 - `GET /v1/notes?from=YYYY-MM-DD&to=YYYY-MM-DD`: the notes this token added on those days, or every note on them if it may read all your notes, oldest first, each as the request below gives it. A page stops at about a megabyte, so it can hold fewer than `limit` notes: keep asking with `after` until `next` is null. `to` is the last day, and left out it's `from`, so one day is `?from=` alone. A request reads up to 31 days; ask for a longer span in pieces. `limit` sets how many a page holds, and `next` in the answer, sent back as `after`, gives the next page. Days with none give an empty list.
 - `GET /v1/notes/{date}/{id}`: one note this token added, or any note if it may read all your notes, with its text, `revision` and `written_at`, and its files as `media`: each one's number `n`, `kind`, `type`, `name`, `size`, and `thumb` when it has a small copy.
 - A note also says its `tags`, `markup` (`rich`, or null for plain words), `parts` (its words cut into strings, links and tags, ready to show), its own `place`, `no_place` if you took its place away, `edited_at`, `tz`, `late`, who wrote it (`author` and `client`), `from` for an import, and `attachments`, how many files its email carried that weren't kept. Each file says its `transcript` and `description`, the words Release Notes kept if you turned those on, or null, and `writing` while a transcript is still to come. A transcript arriving doesn't change the note's `revision`; `transcript.added` in the activity log says when.
@@ -44,6 +45,8 @@ It answers with one line: `Filed in 5.2.113.`
 - `PUT /v1/notes/{date}/{id}`: replace its text. Send `{"text": "…", "revision": "…"}` with the revision you read; a note changed since, on the web say, is refused with the current one.
 - `POST /v1/notes/{date}/{id}/append`: add a paragraph to it, with `{"text": "…"}`.
 - `POST /v1/notes/{date}/{id}/media`: add files to it, with `{"uploads": […]}`.
+- `PUT /v1/notes/{date}/{id}/place`: say where it was, with `{"place": …}`. See [Where a note was](#where-a-note-was).
+- `DELETE /v1/notes/{date}/{id}/place`: take its place away, so it says `no_place` and shows none from its day.
 - `POST /v1/uploads`: a form to upload one file to, before a note takes it.
 - `DELETE /v1/notes/{date}/{id}`: delete it.
 - `GET /v1/tags`: your tag row, the pinned tags and then up to 20 recent ones, the tags used most in the last 30 days. Any token may ask.
@@ -153,6 +156,12 @@ A note's `place` says where it was. Send one of two things, as it came:
 A place is kept as you send it. Release Notes checks its shape, its names, time zone and spot, but doesn't look it up again, so send the one the person picked.
 
 On the web, a note with a spot links to your map. A note with no place shows the day's city, or your home's.
+
+Changing a saved note's place, with `PUT /v1/notes/{date}/{id}/place`, takes either of those too, and leaves its words and its `revision` alone. A token changes the place of the notes it added, or of any note if it may read and change all your notes.
+
+A token that may do that can also say where a whole day was: `PUT /v1/days/{date}/place` with `{"place": …}` and a city, and `DELETE /v1/days/{date}/place` to take it away. It's what every note that day with no place of its own shows. A day takes a city, not a device's spot.
+
+An earlier day's weather follows its place, as on the web. A new note with a place on an earlier day brings it along too. If the weather can't be had just then, your write still counts.
 
 ## Upcoming dates
 

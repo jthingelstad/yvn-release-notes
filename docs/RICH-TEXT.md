@@ -5,8 +5,8 @@ This is the answer. Jamie merged the pull request that built it (#257,
 2026-10-30: "Approved: merge Release Notes #257, rich text"), which settled
 decisions 1, 3, 4, 5 and 8 as built, and then took the rest as recommended
 (2026-10-30: "Approved: RICH-TEXT decisions 2, 6, 7, 9 and 10 as
-recommended"). Still to build: MCP and `/v1` taking `markup` (decision 2),
-then Changelog's composer (decision 7), then email replies.
+recommended"). `/v1` takes `markup` since API 1.16.0. Still to build: MCP taking it
+(decision 2), then Changelog's composer (decision 7), then email replies.
 
 ## Recommendation
 

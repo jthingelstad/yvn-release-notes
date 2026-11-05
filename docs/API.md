@@ -910,6 +910,15 @@ the map's pins and a search's results stop at about a megabyte, with `next`.
   note with a place on an earlier day, keeps the day's weather as the web
   does, never failing the write it follows.
 
+Built as: a place write leaves a note's words and `revision` alone, as the
+web's does, and commits only on the note as it was read, so its answer is
+never a stale `revision`. `PUT` answers the note as other writes do, and the
+day's `{date, place}`; removing a day's place is a 204, and a note's answers
+the note. A day takes a city, not a device's spot, as on the web (note = exact
+spot, day = city). `notes:all` comes only beside `notes:write`, so a read-only
+token writes none of this. No IAM change: the capture role's table grants
+already cover the weather row, proved by `capture-role.test.ts`.
+
 ### 1.17.0: taking one file off a note
 
 No channel can do this yet (call 4), so the web and `/v1` get it together,

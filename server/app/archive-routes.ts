@@ -100,13 +100,16 @@ export async function archiveRoutes(
       have = await store.noteDays(uid),
       found = earlier.filter((d) => have.has(d)),
       age = computeVersion(String(p.birthday), today).age,
-      views = await renderedDays(service, uid, p, found.slice(0, SHOWN));
+      // One read a day: the days are a year or more apart, and a range would
+      // read everything between them.
+      views = (await Promise.all(found.slice(0, SHOWN).map((d) => renderedDays(service, uid, p, [d])))).flat();
     return json({
       days: views.map((view) => ({
         ...view,
         years: age - computeVersion(String(p.birthday), String(view.date)).age
       })),
-      more: found.slice(SHOWN)
+      more: found.slice(SHOWN),
+      tz: String(p.tz)
     });
   }
   if (pattern === '/api/days') {

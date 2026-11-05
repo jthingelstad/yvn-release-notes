@@ -1,3 +1,4 @@
+import { Store } from '../../packages/backend/store.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
@@ -1792,7 +1793,7 @@ test('On this day on the web: the email’s picks, the newest four with their no
   // Today is 2026-10-13 in Chicago, and the account was born 1981-06-14.
   const empty = await s.call('GET', '/api/on-this-day');
   assert.equal(empty.r.status, 200);
-  assert.deepEqual(empty.b, { days: [], more: [] });
+  assert.deepEqual(empty.b, { days: [], more: [], tz: 'America/Chicago' });
   const dates = sameDayBefore('1981-06-14', '2026-10-13').slice(0, 6);
   for (const [i, d] of dates.entries())
     s.store.seed({
@@ -1802,9 +1803,22 @@ test('On this day on the web: the email’s picks, the newest four with their no
       source: 'web',
       written_at: `${d}T12:00:00Z`
     });
-  const r = await s.call('GET', '/api/on-this-day'),
+  // Each day is read alone: never the years between them.
+  const ranges: string[][] = [],
+    between = Store.prototype.notesBetween;
+  Store.prototype.notesBetween = function (this: Store, ...args: Parameters<typeof between>) {
+    ranges.push([args[1], args[2]]);
+    return between.apply(this, args);
+  };
+  const r = await s.call('GET', '/api/on-this-day').finally(() => {
+      Store.prototype.notesBetween = between;
+    }),
     b = r.b as Item,
     days = b.days as Item[];
+  assert.deepEqual(
+    ranges.sort().reverse(),
+    dates.slice(0, 4).map((d) => [d, d])
+  );
   assert.deepEqual(
     days.map((d) => d.date),
     dates.slice(0, 4)

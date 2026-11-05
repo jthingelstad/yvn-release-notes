@@ -823,7 +823,7 @@ test('capture with files proves media:write in the one family check and appends 
     UpdateExpression:
       'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next, media = list_append(if_not_exists(media, :none), :m)',
     ConditionExpression:
-      'author = :author AND #c = :connection AND #t = :old AND #r = :revision AND attribute_not_exists(updated_at) AND size(media) = :had',
+      'author = :author AND #c = :connection AND #t = :old AND #r = :revision AND attribute_not_exists(updated_at) AND size(media) = :had AND attribute_not_exists(media_gone)',
     ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection' },
     ExpressionAttributeValues: {
       ':author': 'assistant',

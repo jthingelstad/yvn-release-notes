@@ -1754,3 +1754,21 @@ test('the web takes one file off a note: the rest stay, and a note with no words
   );
   assert.equal(s.store.memory.all().filter((r) => r.kind === 'note.files' && r.removed === 1).length, 2);
 });
+test('a stalled addition reads the note again after a removal and an addition left its length as it was', async () => {
+  const s = await setup(),
+    day = '2026-10-13',
+    sk = `NOTE#${day}#race`,
+    file = (n: number) => ({ n, kind: 'file', type: 'application/pdf', key: `media/u/${day}/race/${n}.pdf` });
+  s.store.seed({ pk: 'USER#u', sk, text: 'Words', media: [file(1), file(2)], written_at: '2026-10-13T11:00:00Z' });
+  const stalled = s.store.memory.all().find((r) => r.sk === sk)!;
+  const raw = s.ctx.store as unknown as typeof s.store;
+  assert.equal(await raw.removeMedia(stalled, 1, 'later'), true);
+  assert.ok(await raw.addMedia('u', day, 'race', [file(3)], 1, 'later', 1));
+  // As read before all that: two files, nothing taken off. Same length now.
+  assert.equal(await raw.addMedia('u', day, 'race', [file(3)], 2, 'later', 0), null);
+  const row = s.store.memory.all().find((r) => r.sk === sk)!;
+  assert.deepEqual(
+    (row.media as Item[]).map((m) => m.n),
+    [2, 3]
+  );
+});

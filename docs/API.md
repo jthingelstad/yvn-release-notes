@@ -936,9 +936,10 @@ as their own change: `DELETE /v1/notes/{date}/{id}/media/{n}` with
 Built as: Edit on the web lists a note's files, each with a Remove that asks
 first. A removal commits on the note's whole list as read, so a transcript
 landing on another file meanwhile isn't lost, and goes round again if the note
-moved. It deletes the file's transcribing and describing leases in the same
-transaction, since its number can come round again; a worker that finishes
-later finds no file with that number and key, and stops. Badges already earned
+moved. Its number goes on the note's `media_gone` list and never comes round
+again (1.17.1), so a worker still running for it finds no such file and stops,
+and every write that adds files proves that list hasn't grown since it read
+the note, since a removal and an addition leave the length as it was. Badges already earned
 stay. A place that came from the photo stays on the note too, and the owner
 can remove it. The stored `revision` doesn't move, as for the web's added
 files, but `updated_at` does, so the `revision` a client reads changes. MCP

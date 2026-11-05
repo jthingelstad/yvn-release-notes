@@ -27,7 +27,7 @@ import { live, type OAuthRow } from '../packages/backend/oauth.ts';
 import { isRich, RICH } from '../packages/domain/rich.ts';
 import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
 import { addedEvents, earnedBy, unlockedBy } from '../packages/backend/badges.ts';
-import { keys as mediaKeys, MAX_FILES, thumbKeys, withoutFile } from '../packages/backend/media.ts';
+import { keys as mediaKeys, MAX_FILES, nextFile, thumbKeys, withoutFile } from '../packages/backend/media.ts';
 import {
   chosen,
   clean,
@@ -937,7 +937,7 @@ export async function writeApi(
           }
         }
         // Numbered after the note's last file, as the web numbers them.
-        const first = Math.max(0, ...before.map((m) => Number(m.n))) + 1,
+        const first = nextFile(old),
           added = (claimed?.entries ?? []).map((f, i) => ({ n: first + i, ...f }));
         const note: OAuthRow = old
           ? { pk: old.pk, sk: old.sk }

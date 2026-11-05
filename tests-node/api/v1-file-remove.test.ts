@@ -135,18 +135,14 @@ test('the same key answers the same way, and removes nothing twice', async () =>
   assert.equal(s.ctx.store.memory.all().filter((r) => r.kind === 'note.files' && r.removed).length, 1);
 });
 
-test('a number that comes round again isn’t held by the old file’s lease', async () => {
+test('a removed number never comes round, and nothing about it shows', async () => {
   const s = setup(),
     t = await make(s),
     at = await pictured(s, t.token, 'Lake day'),
-    lease = `PROCESS#transcribe#${at.date}#${at.id}#2`;
-  s.ctx.store.seed({ pk: 'USER#u', sk: lease, owner: 'worker', expires_at: s.ctx.now + 1000 });
-  assert.equal((await s.write(t.token, 'notes.media.remove', { date: at.date, id: at.id, n: 2 })).status, 200);
-  assert.equal(
-    s.ctx.store.memory.all().some((r) => r.sk === lease),
-    false
-  );
-  // The next file takes the number the last one left.
+    gone = await s.write(t.token, 'notes.media.remove', { date: at.date, id: at.id, n: 2 });
+  assert.equal(gone.status, 200, JSON.stringify(gone));
+  assert.deepEqual(row(s).media_gone, [2]);
+  assert.equal(JSON.stringify(gone.body).includes('media_gone'), false);
   s.ctx.now += 5;
   const next = await s.write(t.token, 'notes.media', {
     date: at.date,
@@ -156,6 +152,12 @@ test('a number that comes round again isn’t held by the old file’s lease', a
   assert.equal(next.status, 200, JSON.stringify(next));
   assert.deepEqual(
     (row(s).media as OAuthRow[]).map((m) => m.n),
-    [1, 2]
+    [1, 3]
   );
+  // Nor when the note has lost every file.
+  for (const n of [1, 3]) {
+    s.ctx.now += 5;
+    assert.equal((await s.write(t.token, 'notes.media.remove', { date: at.date, id: at.id, n })).status, 200);
+  }
+  assert.equal(media.nextFile(row(s)), 4);
 });

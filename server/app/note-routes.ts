@@ -178,20 +178,22 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
   }
   if (pattern.endsWith('/media')) {
     const uploads = (await body(service.request)).uploads;
-    let had = (old.media as Item[]) ?? [];
+    let seen: Item = old,
+      had = (old.media as Item[]) ?? [];
     if (Array.isArray(uploads) && had.length + uploads.length > media.MAX_FILES) reject(400, 'too-many-files');
     const files = await attachUploads(service, uid, uploads);
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
         if (had.length + files.length > media.MAX_FILES) reject(400, 'too-many-files');
-        const first = Math.max(0, ...had.map((m) => Number(m.n))) + 1,
+        const first = media.nextFile(seen),
           item = await store.addMedia(
             uid,
             day,
             id!,
             files.map((f, i) => ({ n: first + i, ...f })),
             had.length,
-            iso(ctx.now)
+            iso(ctx.now),
+            ((seen.media_gone as unknown[] | undefined) ?? []).length
           );
         if (item) {
           await record([
@@ -202,6 +204,7 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
         }
         const current = await store.note(uid, day, id!, true);
         if (!current) reject(404, 'note');
+        seen = current;
         had = (current.media as Item[]) ?? [];
       }
       reject(409, 'busy');

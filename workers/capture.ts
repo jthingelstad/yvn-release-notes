@@ -10,7 +10,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createObjects } from '../packages/backend/aws.ts';
 import type { Objects } from '../packages/backend/services.ts';
-import { MAX_FILES } from '../packages/backend/media.ts';
+import { MAX_FILES, nextFile } from '../packages/backend/media.ts';
 import { dropFiles, inlineFiles, keepFiles, type InlineFile } from '../server/mcp/files.ts';
 import { digest } from '../packages/backend/auth.ts';
 import {
@@ -258,7 +258,7 @@ export async function writeCapture(
         kept = await keepFiles(context.objects, uid, files);
       }
       // Numbered after the note's last file, as the web numbers them.
-      const first = Math.max(0, ...before.map((m) => Number(m.n))) + 1,
+      const first = nextFile(old),
         added = (kept ?? []).map((f, i) => ({ n: first + i, ...f }));
       if (added.length) note.media = [...before, ...added];
       const rate = {

@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { captureNote } from '../../workers/capture.ts';
+import { V1_ROUTES } from '../../server/mcp/v1.ts';
 import { Tokens } from '../../packages/backend/tokens.ts';
 import * as media from '../../packages/backend/media.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
@@ -160,4 +161,10 @@ test('a removed number never comes round, and nothing about it shows', async () 
     assert.equal((await s.write(t.token, 'notes.media.remove', { date: at.date, id: at.id, n })).status, 200);
   }
   assert.equal(media.nextFile(row(s)), 4);
+});
+
+test('a note far along in its numbers still has every file reachable', () => {
+  const file = V1_ROUTES.find((r) => r.name === 'notes.media.remove')!;
+  assert.ok(file.path.test('/v1/notes/2026-10-13/t-a/media/1000'));
+  assert.ok(!file.path.test('/v1/notes/2026-10-13/t-a/media/0'));
 });

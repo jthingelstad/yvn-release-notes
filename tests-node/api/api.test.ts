@@ -1772,3 +1772,17 @@ test('a stalled addition reads the note again after a removal and an addition le
     [2, 3]
   );
 });
+test('a file number past the old two digits still reaches its route', async () => {
+  const s = await setup(),
+    day = '2026-10-13',
+    file = { n: 100, kind: 'file', type: 'application/pdf', key: `media/u/${day}/far/100.pdf` };
+  s.store.seed({
+    pk: 'USER#u',
+    sk: `NOTE#${day}#far`,
+    text: 'Words',
+    media: [file],
+    written_at: '2026-10-13T11:00:00Z'
+  });
+  assert.equal((await s.call('DELETE', `/api/days/${day}/notes/far/media/100`)).r.status, 200);
+  assert.equal(s.store.memory.all().find((r) => r.sk === `NOTE#${day}#far`)!.media, undefined);
+});

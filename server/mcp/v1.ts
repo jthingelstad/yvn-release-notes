@@ -65,13 +65,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.17.1';
+export const API_VERSION = '1.17.2';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.17.2',
+    date: '2026-11-05',
+    summary:
+      'A file’s address takes a number of up to six digits. Since numbers no longer come round (1.17.1), a note that has had many files added and removed can pass the old limit of three, which would have read as not_found.'
+  },
   {
     version: '1.17.1',
     date: '2026-11-05',
@@ -217,7 +223,7 @@ export const NOTES_PAGE_BYTES = 1024 * 1024;
 const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
   APPEND = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/append$/,
   MEDIA = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/media$/,
-  FILE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/media\/([1-9]\d{0,2})$/,
+  FILE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/media\/([1-9]\d{0,5})$/,
   UPCOMING = /^\/v1\/upcoming\/([A-Za-z0-9_-]{1,80})$/,
   NOTE_PLACE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/place$/,
   DAY = /^\/v1\/days\/([^/]{1,40})$/,

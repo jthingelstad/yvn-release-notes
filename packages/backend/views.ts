@@ -41,6 +41,14 @@ export function profileView(p: Item, now: number, inboundDomain: string): Item {
     view.pause = { from: p.pause_from, through: p.pause_through };
   return view;
 }
+/** Whether a recording's transcript is still to come, for an owner who has
+ * "Write out what I say" on. */
+export const stillWriting = (m: Item): boolean =>
+  m.kind === 'audio' &&
+  ['audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/flac'].includes(String(m.type)) &&
+  !Object.hasOwn(m, 'transcript') &&
+  Number(m.size ?? 0) <= MAX_UPLOAD &&
+  String(m.key ?? '').startsWith('media/');
 export type MediaLink = (key: unknown, type: string) => Promise<string | null>;
 export function mediaLinks(objects: Objects, uid: string): MediaLink {
   return async (key, type) =>
@@ -94,15 +102,7 @@ export async function noteView(item: Item, tz: string, writingOut = false, link?
         }
         if (m.transcript) shown.transcript = m.transcript;
         if (m.description) shown.description = m.description;
-        if (writingOut)
-          shown.writing =
-            m.kind === 'audio' &&
-            ['audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/flac'].includes(
-              String(m.type)
-            ) &&
-            !Object.hasOwn(m, 'transcript') &&
-            Number(m.size ?? 0) <= MAX_UPLOAD &&
-            String(m.key ?? '').startsWith('media/');
+        if (writingOut) shown.writing = stillWriting(m);
         return shown;
       })
     );

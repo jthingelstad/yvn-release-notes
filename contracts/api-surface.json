@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.13.0",
+    "version": "1.14.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.14.0",
+        "date": "2026-11-05",
+        "summary": "The complete note. A note now says its `tags`, `markup`, `parts` (its words cut into strings, links and tags), `place`, `no_place`, `edited_at`, `tz`, `late`, `author`, `client`, `from` and `attachments`. Each of its `media` says its `transcript`, `description` and whether a transcript is `writing`. `include=urls` on GET /v1/notes and GET /v1/notes/{date}/{id} puts each file’s ten-minute address in the answer. A page of GET /v1/notes stops at about a megabyte, so it may hold fewer than `limit` notes: follow `next` until it is null."
+      },
       {
         "version": "1.13.0",
         "date": "2026-11-01",
@@ -153,8 +158,17 @@
       "get": {
         "operationId": "listNotes",
         "summary": "The notes this token wrote, or with notes:all every note, on some days, oldest first",
-        "description": "From `from` to `to`, days in the account’s time zone, both in, at most 31 days a request; a wider span is `range_too_wide`, so ask in pieces. Each note is as `getNote` reads it. A range with none is an empty list. Only this token’s notes, whatever else the days hold, unless it has `notes:all` (1.10.0): then every note on those days, or with `mine=true` its own alone.",
+        "description": "From `from` to `to`, days in the account’s time zone, both in, at most 31 days a request; a wider span is `range_too_wide`, so ask in pieces. Each note is as `getNote` reads it. A range with none is an empty list. Only this token’s notes, whatever else the days hold, unless it has `notes:all` (1.10.0): then every note on those days, or with `mine=true` its own alone. A page stops at about 1 MB (1.14.0), so it may hold fewer than `limit`: follow `next` until it is null.",
         "parameters": [
+          {
+            "name": "include",
+            "in": "query",
+            "description": "`urls` puts each file’s address, and its small copy’s, in the answer, for one read rather than one for each file. They last 10 minutes and are fetched with no token (1.14.0).",
+            "schema": {
+              "type": "string",
+              "const": "urls"
+            }
+          },
           {
             "name": "from",
             "in": "query",
@@ -326,6 +340,36 @@
         "operationId": "getNote",
         "summary": "Read a note this token wrote, or any note with notes:all",
         "description": "Its text and revision, so an app can pick up an edit made on the web. With `notes:all` (1.10.0), any note in the account, from any channel; `source` says where it was made and `mine` whether this token wrote it.",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+            }
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "description": "`urls` puts each file’s address, and its small copy’s, in the answer, for one read rather than one for each file. They last 10 minutes and are fetched with no token (1.14.0).",
+            "schema": {
+              "type": "string",
+              "const": "urls"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -347,27 +391,6 @@
             "$ref": "#/components/responses/Error"
           }
         },
-        "parameters": [
-          {
-            "name": "date",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "date",
-              "description": "A day in the account’s own time zone."
-            }
-          },
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
-            }
-          }
-        ],
         "security": [
           {
             "token": [
@@ -1762,7 +1785,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.13.0"
+            "example": "1.14.0"
           }
         }
       },
@@ -2269,6 +2292,139 @@
           "mine": {
             "type": "boolean",
             "description": "Whether this token wrote it (1.10.0)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Its hashtags, normalized (1.14.0)."
+          },
+          "markup": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "rich"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`rich` when `text` holds rich-text marks, null when it is plain (1.14.0)."
+          },
+          "parts": {
+            "type": "array",
+            "description": "Its words cut up to show them: strings, links by name and hashtags, in order (1.14.0). A rich note’s parts carry the marks as typed.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "url",
+                    "label"
+                  ],
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "site": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "tag",
+                    "text"
+                  ],
+                  "properties": {
+                    "tag": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "place": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotePlaceRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The note’s own place, never one it inherits from its day (1.14.0)."
+          },
+          "no_place": {
+            "type": "boolean",
+            "description": "The owner removed its place (1.14.0)."
+          },
+          "edited_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When its words last changed, or null if they never have (1.14.0)."
+          },
+          "tz": {
+            "type": "string",
+            "description": "The zone it was written in (1.14.0)."
+          },
+          "late": {
+            "type": "boolean",
+            "description": "Written after the day it is filed on had ended (1.14.0)."
+          },
+          "author": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "description": "`assistant` when an agent wrote it, in its own voice (1.14.0)."
+          },
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The app or agent that sent it, by the name it gives itself (1.14.0)."
+          },
+          "from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What it was imported from, or null (1.14.0)."
+          },
+          "attachments": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many files its email carried that Release Notes did not keep (1.14.0)."
           }
         }
       },
@@ -2343,6 +2499,17 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "url": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 }
               },
@@ -2350,7 +2517,142 @@
                 "type": "null"
               }
             ],
-            "description": "The small copy, when it has one: ask with size=thumb."
+            "description": "The small copy, when it has one: ask with size=thumb, or `url` here with `include=urls` (1.14.0)."
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A recording’s words, once the owner’s opt-in transcript is kept, up to 50,000 characters (1.14.0). Null until then, for a recording never written out, and when nothing could be made out. Reading never starts one, and one arriving does not change the note’s `revision`."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A photo’s description, once the owner’s opt-in one is kept, or null (1.14.0)."
+          },
+          "writing": {
+            "type": "boolean",
+            "description": "A transcript of this recording is still to come (1.14.0)."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With `include=urls`: the file’s address, fetched with no token (1.14.0)."
+          },
+          "expires_in": {
+            "type": "integer",
+            "description": "With `include=urls`: seconds its addresses last (1.14.0)."
+          }
+        }
+      },
+      "NotePlaceRead": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "The place as one line, as the web shows it."
+          },
+          "map": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "venue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "district": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

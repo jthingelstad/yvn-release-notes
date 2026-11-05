@@ -5,15 +5,20 @@
  * cookie, and no MCP access token, is ever read here. Not for browsers: no
  * CORS, and any Origin but the site's is refused. */
 import { activityId, ACTIVITY_FAMILIES, familyOf, tokenActivityView, titled } from '../../packages/domain/activity.ts';
-import { addDays, iso, localDay, localMoment, validDay } from '../../packages/domain/dates.ts';
-import { writtenAt, type NoteRecord } from '../../packages/domain/notes.ts';
+import { addDays, iso, localDay, localMoment, validDay, validTimezone } from '../../packages/domain/dates.ts';
+import { mapUrl, placeLabel, writtenAt, type NoteRecord, type PlaceRecord } from '../../packages/domain/notes.ts';
+import { isRich, RICH } from '../../packages/domain/rich.ts';
+import { found, split } from '../../packages/domain/tags.ts';
 import { codePointLength, pythonTrim, wellFormed } from '../../packages/domain/unicode.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { remindersFor, UPCOMING_MAX, upcomingViews } from '../../packages/domain/upcoming.ts';
 import { computeVersion, lifeCount } from '../../packages/domain/version.ts';
+import { segments, type Link } from '../../packages/backend/links.ts';
+import { others } from '../../packages/backend/media.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { search, type City } from '../../packages/backend/places.ts';
 import { tagRow, type TagRowStore } from '../../packages/backend/tag-row.ts';
+import { stillWriting } from '../../packages/backend/views.ts';
 import { supportingMember } from '../../packages/backend/weekly-thing.ts';
 import {
   accountId,
@@ -24,16 +29,29 @@ import {
   V1_LIMITS
 } from '../../packages/backend/tokens.ts';
 import { failure, object } from './common.ts';
-import { agentUpcomingView, editRevision, record, type ReaderContext, type ReaderStore } from './reader.ts';
+import {
+  agentUpcomingView,
+  editRevision,
+  record,
+  type MediaReader,
+  type ReaderContext,
+  type ReaderStore
+} from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.13.0';
+export const API_VERSION = '1.14.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.14.0',
+    date: '2026-11-05',
+    summary:
+      'The complete note. A note now says its `tags`, `markup`, `parts` (its words cut into strings, links and tags), `place`, `no_place`, `edited_at`, `tz`, `late`, `author`, `client`, `from` and `attachments`. Each of its `media` says its `transcript`, `description` and whether a transcript is `writing`. `include=urls` on GET /v1/notes and GET /v1/notes/{date}/{id} puts each file’s ten-minute address in the answer. A page of GET /v1/notes stops at about a megabyte, so it may hold fewer than `limit` notes: follow `next` until it is null.'
+  },
   {
     version: '1.13.0',
     date: '2026-11-01',
@@ -142,6 +160,9 @@ export const REMINDER_DAYS_MAX = 31;
 export const RANGE_DAYS_MAX = 31;
 /** How long a file's signed address lasts, as MCP's downloads do. */
 export const FILE_SECONDS = 600;
+/** About where a page of GET /v1/notes stops (1.14.0): a note can hold 400 KB
+ * and a page 100 notes. A page always holds one, and `next` goes on. */
+export const NOTES_PAGE_BYTES = 1024 * 1024;
 
 const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
   APPEND = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/append$/,
@@ -372,8 +393,10 @@ const placeLine = (names: unknown[]) => names.filter((n) => typeof n === 'string
 
 const until = (now: number) => (Math.floor(now / 86400) + 1) * 86400 - now;
 
-/** A note's file as a token reads it (1.9.0): what it is, never where. */
-const fileView = (m: OAuthRow): OAuthRow => {
+/** A note's file as a token reads it (1.9.0): what it is, never where, and
+ * the words kept about it (1.14.0). An empty transcript is one where nothing
+ * could be made out, and reads as none. */
+const fileView = (m: OAuthRow, transcribing: boolean): OAuthRow => {
   const thumb = object(m.thumb) && typeof m.thumb.key === 'string' ? m.thumb : null;
   return {
     n: Number(m.n),
@@ -383,29 +406,101 @@ const fileView = (m: OAuthRow): OAuthRow => {
     size: Number(m.size) || 0,
     thumb: thumb
       ? { type: 'image/jpeg', width: Number(thumb.width) || null, height: Number(thumb.height) || null }
-      : null
+      : null,
+    transcript: typeof m.transcript === 'string' && m.transcript ? m.transcript : null,
+    description: typeof m.description === 'string' && m.description ? m.description : null,
+    writing: transcribing && stillWriting(m)
   };
 };
 
+/** A note's own place as a token reads it (1.14.0), never the one it inherits. */
+function placeView(place: unknown): OAuthRow | null {
+  if (!object(place)) return null;
+  const label = placeLabel(place as PlaceRecord);
+  if (!label) return null;
+  const spot = (k: string) => (place[k] == null || !Number.isFinite(Number(place[k])) ? null : Number(place[k]));
+  return {
+    label,
+    map: mapUrl(place as PlaceRecord),
+    ...Object.fromEntries(
+      ['venue', 'district', 'city', 'region', 'country'].map((k) => [k, typeof place[k] === 'string' ? place[k] : null])
+    ),
+    lat: spot('lat'),
+    lon: spot('lon')
+  };
+}
+
 /** A note as a token reads it, alone or in a day's list; `mine` when this
- * token wrote it (1.10.0). */
-function noteView(item: OAuthRow, birthday: string, tid: string): OAuthRow {
+ * token wrote it (1.10.0); all a client needs to show it as the web does
+ * (1.14.0). */
+function noteView(item: OAuthRow, profile: OAuthRow, tid: string): OAuthRow {
   const [, date = '', ...rest] = String(item.sk).split('#'),
-    media = (item.media as OAuthRow[] | undefined) ?? [];
+    media = (item.media as OAuthRow[] | undefined) ?? [],
+    words = String(item.text ?? ''),
+    rich = isRich(item as NoteRecord),
+    zone = validTimezone(item.tz) ? String(item.tz) : String(profile.tz),
+    at = writtenAt(item as NoteRecord),
+    epoch = Date.parse(at),
+    origin = object(item.origin) ? item.origin : null;
   return {
     id: rest.join('#'),
     date,
-    version: String(item.version ?? computeVersion(birthday, date).toString()),
-    text: String(item.text ?? ''),
+    version: String(item.version ?? computeVersion(String(profile.birthday), date).toString()),
+    text: words,
     revision: editRevision(item),
-    written_at: writtenAt(item as NoteRecord) || null,
+    written_at: at || null,
     files: media.length,
-    media: media.map(fileView),
+    media: media.map((m) => fileView(m, Boolean(profile.transcribe))),
     token: item.token ?? null,
     source: String(item.source ?? 'email'),
-    mine: item.source === 'api' && item.connection === tid
+    mine: item.source === 'api' && item.connection === tid,
+    tags: Array.isArray(item.tags) ? item.tags.map(String) : found(words),
+    markup: rich ? RICH : null,
+    parts: split(segments(words, item.links as Link[] | undefined, rich)),
+    place: item.place_cleared ? null : placeView(item.place),
+    no_place: Boolean(item.place_cleared),
+    edited_at: item.updated_at ?? null,
+    tz: zone,
+    late: Number.isFinite(epoch) && localDay(Math.floor(epoch / 1000), zone) > date,
+    author: item.author ?? 'user',
+    client: item.client ?? null,
+    from: origin ? (origin.app === 'dayone' ? 'Day One' : 'an import') : null,
+    attachments: others(item as NoteRecord)
   };
 }
+
+/** `include=urls` on a note's reads (1.14.0): each file's address and its
+ * small copy's in the answer, one read rather than one for each file. */
+async function withUrls(view: OAuthRow, item: OAuthRow, uid: string, files: MediaReader | undefined) {
+  const stored = (item.media as OAuthRow[] | undefined) ?? [],
+    sign = async (key: unknown, type: string) =>
+      files && typeof key === 'string' && key.startsWith(`media/${uid}/`)
+        ? files.download(uid, key, type, FILE_SECONDS)
+        : null;
+  view.media = await Promise.all(
+    (view.media as OAuthRow[]).map(async (shown, i) => {
+      const m = stored[i]!,
+        small = object(m.thumb) ? await sign(m.thumb.key, 'image/jpeg') : null;
+      return {
+        ...shown,
+        url: await sign(m.key, String(m.type)),
+        expires_in: FILE_SECONDS,
+        ...(shown.thumb ? { thumb: { ...(shown.thumb as OAuthRow), url: small } } : {})
+      };
+    })
+  );
+  return view;
+}
+
+/** Whether a note's read asks for addresses; null when `include` is anything
+ * else, so a mistyped word isn't quietly ignored. */
+const includeUrls = (q: URLSearchParams): boolean | null =>
+  q.get('include') === null ? false : q.get('include') === 'urls' ? true : null;
+const badInclude = {
+  code: 'invalid_request',
+  message: 'include is urls, or left out.',
+  extra: { field: 'include' }
+};
 
 /** `from` and `to`, account-local days, both in; `to` defaults to `from`.
  * Null when neither came; a refusal when they aren't a range (1.9.0). */
@@ -678,7 +773,14 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         const item = await store.note(uid, date, id, true);
         if (!item) return { code: 'not_found', message: 'There is no note with that date and id.' };
         if (!reaches(item)) return unreached;
-        return { status: 200, body: noteView(item, birthday, tid), line: String(item.text ?? '') };
+        const urls = includeUrls(q);
+        if (urls === null) return badInclude;
+        const body = noteView(item, profile, tid);
+        return {
+          status: 200,
+          body: urls ? await withUrls(body, item, uid, files) : body,
+          line: String(item.text ?? '')
+        };
       }
       if (route.name === 'upcoming') {
         // As an agent's upcoming_list: a one-time date already over is left
@@ -706,6 +808,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         const limit = q.get('limit') === null ? 50 : Number(q.get('limit'));
         if (!Number.isInteger(limit) || limit < 1 || limit > 100)
           return { code: 'invalid_request', message: 'limit is 1 to 100.', extra: { field: 'limit' } };
+        const urls = includeUrls(q);
+        if (urls === null) return badInclude;
         const only = q.get('mine');
         if (only !== null && only !== 'true' && only !== 'false')
           return { code: 'invalid_request', message: 'mine is true or false.', extra: { field: 'mine' } };
@@ -741,8 +845,16 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
             .map((item) => ({ item, at: order(item) }))
             .sort((x, y) => (later(x.at, y.at) ? 1 : later(y.at, x.at) ? -1 : 0))
             .filter((n) => !after || later(n.at, after)),
-          page = mine.slice(0, limit),
-          items = page.map((n) => noteView(n.item, birthday, tid));
+          items: OAuthRow[] = [];
+        let bytes = 0;
+        for (const n of mine.slice(0, limit)) {
+          const plain = noteView(n.item, profile, tid),
+            view = urls ? await withUrls(plain, n.item, uid, files) : plain,
+            cost = Buffer.byteLength(JSON.stringify(view));
+          if (items.length && bytes + cost > NOTES_PAGE_BYTES) break;
+          items.push(view);
+          bytes += cost;
+        }
         return {
           status: 200,
           body: {
@@ -750,7 +862,9 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
             to: range.last,
             items,
             next:
-              mine.length > limit ? Buffer.from(JSON.stringify(page.at(-1)!.at), 'utf8').toString('base64url') : null
+              mine.length > items.length
+                ? Buffer.from(JSON.stringify(mine[items.length - 1]!.at), 'utf8').toString('base64url')
+                : null
           },
           line: items.map((n) => `${String(n.date)} ${String(n.text).replace(/\s*\n\s*/g, ' ')}`).join('\n')
         };

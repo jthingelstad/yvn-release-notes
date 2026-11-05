@@ -21,6 +21,7 @@ import {
   API_VERSION,
   FILE_SECONDS,
   ME_DAYS,
+  NOTES_PAGE_BYTES,
   RANGE_DAYS_MAX,
   REMINDER_DAYS_MAX,
   V1_BODY,
@@ -29,6 +30,15 @@ import {
 } from './v1.ts';
 
 type Doc = Record<string, unknown>;
+
+const includeUrlsParameter: Doc = {
+  name: 'include',
+  in: 'query',
+  description:
+    '`urls` puts each file’s address, and its small copy’s, in the answer, for one read rather than one for ' +
+    `each file. They last ${FILE_SECONDS / 60} minutes and are fetched with no token (1.14.0).`,
+  schema: { type: 'string', const: 'urls' }
+};
 
 /** Each route's operation: its id, summary and what it reads and answers. */
 const OPERATIONS: Record<string, Doc> = {
@@ -47,8 +57,11 @@ const OPERATIONS: Record<string, Doc> = {
       `From \`from\` to \`to\`, days in the account’s time zone, both in, at most ${RANGE_DAYS_MAX} days a ` +
       'request; a wider span is `range_too_wide`, so ask in pieces. Each note is as `getNote` reads it. A ' +
       'range with none is an empty list. Only this token’s notes, whatever else the days hold, unless it has ' +
-      '`notes:all` (1.10.0): then every note on those days, or with `mine=true` its own alone.',
+      '`notes:all` (1.10.0): then every note on those days, or with `mine=true` its own alone. A page stops ' +
+      `at about ${NOTES_PAGE_BYTES / 1024 / 1024} MB (1.14.0), so it may hold fewer than \`limit\`: follow ` +
+      '`next` until it is null.',
     parameters: [
+      includeUrlsParameter,
       {
         name: 'from',
         in: 'query',
@@ -101,6 +114,7 @@ const OPERATIONS: Record<string, Doc> = {
       'Its text and revision, so an app can pick up an edit made on the web. With `notes:all` (1.10.0), any ' +
       'note in the account, from any channel; `source` says where it was made and `mine` whether this token ' +
       'wrote it.',
+    parameters: [includeUrlsParameter],
     responses: { '200': answer('Note', 'The note’s text.') }
   },
   'notes.edit': {
@@ -609,7 +623,62 @@ const SCHEMAS: Record<string, Doc> = {
         type: 'string',
         description: 'Where the note was made: email, web, api and the rest (1.10.0).'
       },
-      mine: { type: 'boolean', description: 'Whether this token wrote it (1.10.0).' }
+      mine: { type: 'boolean', description: 'Whether this token wrote it (1.10.0).' },
+      tags: { type: 'array', items: { type: 'string' }, description: 'Its hashtags, normalized (1.14.0).' },
+      markup: {
+        anyOf: [{ type: 'string', const: 'rich' }, { type: 'null' }],
+        description: '`rich` when `text` holds rich-text marks, null when it is plain (1.14.0).'
+      },
+      parts: {
+        type: 'array',
+        description:
+          'Its words cut up to show them: strings, links by name and hashtags, in order (1.14.0). A rich ' +
+          'note’s parts carry the marks as typed.',
+        items: {
+          anyOf: [
+            { type: 'string' },
+            {
+              type: 'object',
+              required: ['url', 'label'],
+              properties: { url: { type: 'string' }, label: { type: 'string' }, site: { type: 'string' } }
+            },
+            {
+              type: 'object',
+              required: ['tag', 'text'],
+              properties: { tag: { type: 'string' }, text: { type: 'string' } }
+            }
+          ]
+        }
+      },
+      place: {
+        anyOf: [ref('NotePlaceRead'), { type: 'null' }],
+        description: 'The note’s own place, never one it inherits from its day (1.14.0).'
+      },
+      no_place: { type: 'boolean', description: 'The owner removed its place (1.14.0).' },
+      edited_at: {
+        anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+        description: 'When its words last changed, or null if they never have (1.14.0).'
+      },
+      tz: { type: 'string', description: 'The zone it was written in (1.14.0).' },
+      late: { type: 'boolean', description: 'Written after the day it is filed on had ended (1.14.0).' },
+      author: {
+        type: 'string',
+        enum: ['user', 'assistant'],
+        description: '`assistant` when an agent wrote it, in its own voice (1.14.0).'
+      },
+      client: {
+        anyOf: [{ type: 'string' }, { type: 'null' }],
+        description: 'The app or agent that sent it, by the name it gives itself (1.14.0).'
+      },
+      from: {
+        anyOf: [{ type: 'string' }, { type: 'null' }],
+        description: 'What it was imported from, or null (1.14.0).'
+      },
+      attachments: {
+        type: 'integer',
+        minimum: 0,
+        description: 'How many files its email carried that Release Notes did not keep (1.14.0).'
+      }
     }
   },
   NoteFileEntry: {
@@ -628,13 +697,46 @@ const SCHEMAS: Record<string, Doc> = {
             properties: {
               type: { type: 'string', const: 'image/jpeg' },
               width: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
-              height: { anyOf: [{ type: 'integer' }, { type: 'null' }] }
+              height: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
+              url: { anyOf: [{ type: 'string', format: 'uri' }, { type: 'null' }] }
             }
           },
           { type: 'null' }
         ],
-        description: 'The small copy, when it has one: ask with size=thumb.'
-      }
+        description: 'The small copy, when it has one: ask with size=thumb, or `url` here with `include=urls` (1.14.0).'
+      },
+      transcript: {
+        anyOf: [{ type: 'string' }, { type: 'null' }],
+        description:
+          'A recording’s words, once the owner’s opt-in transcript is kept, up to 50,000 characters (1.14.0). ' +
+          'Null until then, for a recording never written out, and when nothing could be made out. Reading never ' +
+          'starts one, and one arriving does not change the note’s `revision`.'
+      },
+      description: {
+        anyOf: [{ type: 'string' }, { type: 'null' }],
+        description: 'A photo’s description, once the owner’s opt-in one is kept, or null (1.14.0).'
+      },
+      writing: { type: 'boolean', description: 'A transcript of this recording is still to come (1.14.0).' },
+      url: {
+        anyOf: [{ type: 'string', format: 'uri' }, { type: 'null' }],
+        description: 'With `include=urls`: the file’s address, fetched with no token (1.14.0).'
+      },
+      expires_in: { type: 'integer', description: 'With `include=urls`: seconds its addresses last (1.14.0).' }
+    }
+  },
+  NotePlaceRead: {
+    type: 'object',
+    required: ['label'],
+    properties: {
+      label: { type: 'string', description: 'The place as one line, as the web shows it.' },
+      map: { anyOf: [{ type: 'string', format: 'uri' }, { type: 'null' }] },
+      venue: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      district: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      city: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      region: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      country: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      lat: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+      lon: { anyOf: [{ type: 'number' }, { type: 'null' }] }
     }
   },
   NoteList: {

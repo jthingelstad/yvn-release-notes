@@ -19,7 +19,8 @@ primary thing and I also think Upcoming should be supported as well. That is
 a great feature that could then power notifications." So v1 adds notes with
 their files, places and tags, plus Upcoming dates and their reminders. Its
 one wider read is the activity log, trimmed of words. Reading the archive
-waits until after v1.
+waits until after v1. That was where it began: since 2026-11-05 the aim is
+a client that can make a complete experience (Expansion, below).
 
 ```sh
 echo "Fixed the kitchen faucet #house" | curl -sS --data-binary @- \
@@ -820,6 +821,120 @@ These land with phase 1, and the reminder rule with phase 4:
 
 The order agreed: 0, then 1 (with Changelog 0.1 alongside), then 2 and 4,
 then 3. Phases 3 and 4 don't depend on each other.
+
+## Expansion
+
+Designed 2026-11-05, from Quinn's issue #301. Jamie, 2026-11-04: "I think we
+need to be more expansive. The API was scoped very limited to begin with.
+The first version couldn't even see notes. Please do a design pass on
+expanding the API so that clients can create 'complete' experiences." The
+calls below are Jamie's, 2026-11-05: "Approved: open a Release Notes design
+PR for API expansion with calls 1-6 as recommended".
+
+**The aim:** a client can do what the owner does day to day on the web,
+except for the short list that stays there. It is built in steps, each its
+own `API_VERSION`, on what MCP's reader already does on the same function.
+No step adds a function or a table, and every write still goes through the
+capture function. Sections earlier in this file that say what `/v1` can't do
+change as each step lands.
+
+### 1.14.0: the complete note
+
+What a note is, in `GET /v1/notes/{date}/{id}` and `GET /v1/notes`:
+
+- **`tags`**, **`markup`** (`rich`, or null for plain, so a client can tell
+  `**bold**` is formatting), and **`parts`**: the words cut into strings,
+  links by name and tags, as the web and MCP read them, so no client writes
+  its own link and hashtag parser. A rich note's parts carry the markup as
+  typed.
+- **`place`**: the note's own place with its `label` and `map`, or null.
+  **`no_place`** is true when the owner removed it, so the note doesn't
+  inherit the day's.
+- **`edited_at`**, **`tz`**, **`late`**, and who wrote it: **`author`**
+  (`user` or `assistant`), **`client`**, and **`from`** for an import.
+  **`attachments`** names the files an emailed note kept only in its email.
+- **On each of `media`:** **`transcript`** and **`description`**, the words
+  Release Notes kept, null until there are some and when nothing could be
+  made out, with the same reach as the note's own words (issue #301). Neither
+  is ever started by a read. **`writing`** says a transcript is still to
+  come. A transcript arriving doesn't change `revision`: `transcript.added`
+  in the activity log says when.
+- **`?include=urls`** puts each file's ten-minute address, and its small
+  copy's, in the answer, as the web's views do, for one read rather than one
+  for each file. Without it, a client asks `.../media/{n}` as before.
+- **A list page is at most about a megabyte** (`NOTES_PAGE_BYTES`), so a day
+  of long transcripts can't outgrow an answer: a page may hold fewer than
+  `limit` notes, always at least one, and `next` goes on. A client follows
+  `next` until it is null, never by counting.
+
+### 1.15.0: reading the archive
+
+A new scope, **`notes:read`**, stands alone (call 1): every note and
+everything made from them, and no write. `notes:all` opens all of this too.
+`notes:write` alone still reads only what its token wrote.
+
+| Request                                             | Gives                                                                                           |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `GET /v1/notes`, `.../{date}/{id}`, `.../media/{n}` | as today, now with `notes:read` as well, reaching every note                                    |
+| `GET /v1/days?before=&limit=`                       | the timeline, newest first: days with notes, an email, a pause or a place                       |
+| `GET /v1/days/{date}`                               | one day: version, notes, its place and the place its notes inherit, weather, paused, collected  |
+| `GET /v1/search?q=&tag=&from=&to=`                  | every word in the text, places, link names, transcripts and descriptions; `tag` is a tag's page |
+| `GET /v1/on-this-day?date=`                         | the same day of each earlier release, as the email's On this day                                |
+| `GET /v1/releases`, `.../{v}`                       | each year of life, and one in detail                                                            |
+| `GET /v1/tags/all`                                  | every tag with its notes, days, first and last                                                  |
+| `GET /v1/map/pins`                                  | where the notes were, as the Map's pins; a client draws its own map                             |
+| `GET /v1/badges`                                    | earned and tracks, or `show_badges` false and nothing else                                      |
+| `GET /v1/mail-log`                                  | what became of each email in the last 30 days                                                   |
+
+Each counts as one read. Search, tags, releases and the map read the whole
+archive, as the web and MCP do. The token form and an app's sign-in
+(`/connect/`) offer the new tick, and an app may ask for it.
+
+### 1.16.0: writing as the web does
+
+- **`markup: 'rich'`** on `POST /v1/notes` (RICH-TEXT.md, decision 2). An edit
+  keeps a note's markup, as it does now.
+- **`PUT` and `DELETE /v1/notes/{date}/{id}/place`**, a note's place set,
+  changed or removed, with `notes:write` on its own notes and `notes:all` on
+  any, as the web's.
+- **`PUT` and `DELETE /v1/days/{date}/place`**, a day's own place, with
+  `notes:all`, since it is what every note that day without a place shows.
+- **Weather follows.** The capture function records nothing of a day's weather
+  today, where the web does on each of these. Each place write, and a new
+  note with a place on an earlier day, keeps the day's weather as the web
+  does, never failing the write it follows.
+
+### 1.17.0: taking one file off a note
+
+No channel can do this yet (call 4), so the web and `/v1` get it together,
+as their own change: `DELETE /v1/notes/{date}/{id}/media/{n}` with
+`media:write`, and the web's note editor.
+
+- The file, its small copy, transcript and description go. The other files
+  keep their numbers.
+- A note with no words can't lose its last file: `text_required`. Delete the
+  note instead.
+- **An emailed file stays in that note's email** under `raw/`, kept as filed
+  mail is, and readable by no client. Deleting the note removes the email, as
+  it does now.
+
+### Jamie's calls
+
+1. **Read-only tokens:** yes, `notes:read` works on its own.
+2. **Settings from a token:** dropped. "At this point we will not do the
+   account via api", so no `account` scope: settings, pauses, feedback, the
+   profile photo and marking badges seen stay as they are. `/v1/me` keeps
+   saying what it says.
+3. **Transcripts and photo descriptions** are turned on only on the web.
+4. **Taking one file off a note:** yes, on the web and `/v1` together.
+5. **Web only:** sign-up, the email address, the birthday, deleting the
+   account, making tokens and agent connections, the standing address, the
+   calendar link, export, the book and the admin pages.
+6. **iPhone Changelog** stays as it is until 1.15.0 is live, then it is a
+   separate decision whether it becomes a reader as well as a capture tool.
+
+Still deferred: webhooks (below), and a change feed for a client that keeps
+the archive offline, until one needs it. Clients read the days on screen.
 
 ## Deferred: webhooks
 

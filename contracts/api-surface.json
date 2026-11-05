@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.16.0",
+    "version": "1.17.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. With `notes:read`, a token reads the whole archive and writes nothing (1.15.0). The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.17.0",
+        "date": "2026-11-05",
+        "summary": "Taking one file off a note. DELETE /v1/notes/{date}/{id}/media/{n} removes it with its small copy, transcript and description, with `media:write` on a note this token wrote, and `notes:all` as well on any other. The other files keep their numbers. A note with no words can’t lose its last file (text_required). A note’s activity row of kind note.files can now say `removed` rather than `added`."
+      },
       {
         "version": "1.16.0",
         "date": "2026-11-05",
@@ -863,6 +868,92 @@
         "x-scope-also": [
           "notes:read"
         ]
+      },
+      "delete": {
+        "operationId": "removeNoteFile",
+        "summary": "Take one file off a note this token wrote, or any note with notes:all",
+        "description": "The file goes with its small copy, transcript and description, and the note’s `revision` changes. The other files keep their numbers; a file added later may take a number the last file left. A note with no words can’t lose its last file: `text_required`, so delete the note instead. An emailed file stays in the note’s email, which no client can read, until the note is deleted. Since 1.17.0.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Changed in 4.5.137."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "A day in the account’s own time zone."
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+            }
+          },
+          {
+            "name": "n",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "media:write"
+            ]
+          },
+          {
+            "signIn": [
+              "media:write"
+            ]
+          }
+        ],
+        "x-scope": "media:write"
       }
     },
     "/v1/notes/{date}/{id}/place": {
@@ -2841,7 +2932,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.16.0"
+            "example": "1.17.0"
           }
         }
       },

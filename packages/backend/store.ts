@@ -2721,6 +2721,69 @@ export class Store {
       } as Item
     };
   }
+  /** One file off a note, from the whole list as read, so a transcript that
+   * has just landed on another file isn't lost. What was still being worked
+   * out for this file goes too: its number may come round again, and a lease
+   * left behind would stop the next file with it. A worker that finishes
+   * after this finds no file with its number and key, and stops. */
+  private fileRemoval(old: Item, n: number, at: string): Ops {
+    const had = (old.media as Item[] | undefined) ?? [],
+      rest = had.filter((m) => Number(m.n) !== n),
+      asRead = this.noteAsRead(old),
+      [, day, ...id] = String(old.sk).split('#'),
+      lease = (kind: string) => ({
+        Delete: {
+          TableName: this.tableName,
+          Key: { pk: String(old.pk), sk: `PROCESS#${kind}#${String(day)}#${id.join('#')}#${n}` }
+        }
+      });
+    return [
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: { pk: String(old.pk), sk: String(old.sk) },
+          UpdateExpression: rest.length ? 'SET media = :rest, updated_at = :at' : 'SET updated_at = :at REMOVE media',
+          ConditionExpression: asRead.ConditionExpression + ' AND media = :media',
+          ExpressionAttributeNames: asRead.ExpressionAttributeNames,
+          ExpressionAttributeValues: {
+            ...asRead.ExpressionAttributeValues,
+            ':media': had,
+            ':at': at,
+            ...(rest.length ? { ':rest': rest } : {})
+          }
+        }
+      },
+      lease('transcribe'),
+      lease('describe')
+    ];
+  }
+  /** The owner takes one file off a note on the web. */
+  async removeMedia(old: Item, n: number, at: string) {
+    return this.transact(this.fileRemoval(old, n, at));
+  }
+  /** A token takes one file off a note (`/v1` 1.17.0), with `media:write`, and
+   * `notes:all` on a note it didn't write. */
+  async apiMediaRemove(
+    old: Item,
+    n: number,
+    at: string,
+    receipt: Item,
+    audit: Item,
+    rate: Item,
+    previous: Item | null,
+    token: Item,
+    now: number,
+    extra: Ops = []
+  ) {
+    const mine = old.source === 'api' && old.connection === token.id;
+    return this.transact([
+      this.profileProof(String(token.user_id)),
+      ...this.tokenProof(token, now, ['notes:write', 'media:write', ...(mine ? [] : ['notes:all'])]),
+      ...this.fileRemoval(old, n, at),
+      ...this.agentReceipts(receipt, audit, rate, previous, now),
+      ...extra
+    ]);
+  }
   /** Where a note was, set or removed through a token (`/v1` 1.16.0), as the
    * owner's change on the web: removing it marks `place_cleared`. Its words
    * and revision stay. */

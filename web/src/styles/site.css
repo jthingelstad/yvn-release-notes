@@ -3339,3 +3339,17 @@ fieldset.book-fields {
 .site-links a[aria-current='page'] {
   color: var(--ink);
 }
+/* A note's files while it's edited, each with a Remove. */
+.note-files ul {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.note-files li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}

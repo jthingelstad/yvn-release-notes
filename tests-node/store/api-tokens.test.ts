@@ -458,6 +458,64 @@ test('a token deletes its own note, at the revision it read, with the same proof
   ]);
 });
 
+test('a file comes off on the whole list as read, and its leases go with it', async () => {
+  const one = { n: 1, kind: 'image', key: 'media/u/2026-10-29/t-n/1.jpg' },
+    two = { n: 2, kind: 'audio', key: 'media/u/2026-10-29/t-n/2.m4a' },
+    old = { ...note, media: [one, two], updated_at: 'then' },
+    proof = {
+      ConditionCheck: {
+        ...tokenProof.ConditionCheck,
+        ConditionExpression: tokenProof.ConditionCheck.ConditionExpression + ' AND contains(#s, :also0)',
+        ExpressionAttributeValues: { ...tokenProof.ConditionCheck.ExpressionAttributeValues, ':also0': 'media:write' }
+      }
+    },
+    lease = (kind: string) => ({
+      Delete: { TableName: 'T', Key: { pk: 'USER#u', sk: `PROCESS#${kind}#2026-10-29#t-n#2` } }
+    }),
+    { store, only } = recorder(),
+    media = { ...token, scope: 'notes:write media:write' };
+  assert.equal(await store.apiMediaRemove(old, 2, 'now', receipt, audit, rate, previous, media, 100), true);
+  const [[name, input]] = only() as [[string, { TransactItems: { Update?: Record<string, unknown> }[] }]],
+    items = input.TransactItems;
+  assert.equal(name, 'TransactWriteCommand');
+  assert.deepEqual(items[0], profileProof);
+  assert.deepEqual(items[1], proof);
+  assert.deepEqual(items[2], {
+    Update: {
+      TableName: 'T',
+      Key: { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n' },
+      UpdateExpression: 'SET media = :rest, updated_at = :at',
+      ConditionExpression:
+        'attribute_exists(pk) AND #t = :old AND #r = :revision AND updated_at = :edited AND size(media) = :had AND media = :media',
+      ExpressionAttributeNames: { '#t': 'text', '#r': 'revision' },
+      ExpressionAttributeValues: {
+        ':old': 'Coffee #walks',
+        ':revision': 'r1',
+        ':edited': 'then',
+        ':had': 2,
+        ':media': [one, two],
+        ':at': 'now',
+        ':rest': [one]
+      }
+    }
+  });
+  assert.deepEqual(items[3], lease('transcribe'));
+  assert.deepEqual(items[4], lease('describe'));
+  assert.deepEqual(items.slice(5), receipts(previous));
+});
+
+test('the last file off leaves no list, and the web’s removal has no token to prove', async () => {
+  const one = { n: 1, kind: 'image', key: 'media/u/2026-10-29/t-n/1.jpg' },
+    old = { ...note, media: [one], updated_at: 'then' },
+    { store, only } = recorder();
+  assert.equal(await store.removeMedia(old, 1, 'now'), true);
+  const [[, input]] = only() as [[string, { TransactItems: { Update?: Record<string, unknown> }[] }]],
+    update = input.TransactItems[0]!.Update!;
+  assert.equal(input.TransactItems.length, 3);
+  assert.equal(update.UpdateExpression, 'SET updated_at = :at REMOVE media');
+  assert.equal((update.ExpressionAttributeValues as Record<string, unknown>)[':rest'], undefined);
+});
+
 test('with notes:all, any note is deleted as it was read: words, revision, last edit and files', async () => {
   const all = { ...token, scope: 'notes:write notes:all' },
     reach = {

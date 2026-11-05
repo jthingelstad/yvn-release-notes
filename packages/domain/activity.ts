@@ -22,7 +22,7 @@
  * - note.added, note.edited, note.deleted: `day`, `note` (its id), `files`
  *   (a count), `version`; note.edited also `place` (set or removed) when
  *   it was where the note was that changed, never the place; note.files:
- *   `day`, `note`, `added`. A note filed by email is its mail row.
+ *   `day`, `note`, and `added` or `removed` (a count). A note filed by email is its mail row.
  * - transcript.added: `day`, `note`, `file` (its place in the note),
  *   `empty` (nothing could be made out); description.added: `day`, `note`,
  *   `photos` (how many that pass described). Never the words.

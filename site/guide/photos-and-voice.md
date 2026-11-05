@@ -36,3 +36,5 @@ The photos are sent to Claude, an AI from Anthropic, to be described. HEIC photo
 ## Where a photo was taken
 
 If a note has no place of its own, its first photo's location names it, by neighbourhood. Your photo itself is never changed. [Places and the map](/guide/places-and-map/) has more.
+
+To take one file off a note, open the note with **Edit**. Each file has a **Remove**, and the others stay as they are. A note with no words keeps its last file, so delete the note instead. A file that came by email stays in that note's email until you delete the note.

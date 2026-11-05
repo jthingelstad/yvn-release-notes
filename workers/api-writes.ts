@@ -27,7 +27,7 @@ import { live, type OAuthRow } from '../packages/backend/oauth.ts';
 import { isRich, RICH } from '../packages/domain/rich.ts';
 import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
 import { addedEvents, earnedBy, unlockedBy } from '../packages/backend/badges.ts';
-import { keys as mediaKeys, MAX_FILES, thumbKeys } from '../packages/backend/media.ts';
+import { keys as mediaKeys, MAX_FILES, thumbKeys, withoutFile } from '../packages/backend/media.ts';
 import {
   chosen,
   clean,
@@ -133,6 +133,18 @@ export interface ApiStore extends TokenReads, TagRowStore {
     extra?: Ops
   ): Promise<boolean>;
   apiDayPlace(user: string, day: string, place: OAuthRow | null, extra?: Ops): Promise<boolean>;
+  apiMediaRemove(
+    old: OAuthRow,
+    n: number,
+    at: string,
+    receipt: OAuthRow,
+    audit: OAuthRow,
+    rate: OAuthRow,
+    previous: OAuthRow | null,
+    token: OAuthRow,
+    now: number,
+    extra?: Ops
+  ): Promise<boolean>;
   forLiveAccount(user: string): WeatherStore;
   setPins(user: string, pins: readonly string[], old: readonly string[] | null, extra?: Ops): Promise<boolean>;
   revokeToken(token: OAuthRow): Promise<boolean>;
@@ -144,6 +156,7 @@ export const API_WRITES: Record<string, readonly string[]> = {
   'notes.edit': ['date', 'id', 'text', 'revision'],
   'notes.append': ['date', 'id', 'text'],
   'notes.media': ['date', 'id', 'uploads'],
+  'notes.media.remove': ['date', 'id', 'n'],
   'notes.delete': ['date', 'id'],
   'notes.place': ['date', 'id', 'place'],
   'notes.place.clear': ['date', 'id'],
@@ -160,7 +173,7 @@ export const API_WRITES: Record<string, readonly string[]> = {
 const scopeFor = (op: string) =>
   op.startsWith('upcoming.')
     ? 'upcoming'
-    : op === 'uploads.start' || op === 'notes.media'
+    : op === 'uploads.start' || op.startsWith('notes.media')
       ? 'media:write'
       : op.startsWith('days.place')
         ? 'notes:all'
@@ -692,6 +705,42 @@ export async function writeApi(
           if (body && profile.badges !== false)
             answer.body = { ...body, unlocked: won.unlocked.map((u) => ({ key: u.key, name: u.name })) };
           await record([...named(upcomingEvents(changes, 'token', client ?? undefined)), ...named(won.events)]);
+        };
+      } else if (op === 'notes.media.remove') {
+        const old = await own(),
+          d = String(args.date),
+          id = String(args.id),
+          n = Number(args.n),
+          had = (old.media as OAuthRow[] | undefined) ?? [],
+          entry = had.find((m) => Number(m.n) === n);
+        if (!entry) throw new ApiRefusal('not_found', 'That note has no file with that number.');
+        if (had.length === 1 && !noteWords(String(old.text ?? '')))
+          throw new ApiRefusal('text_required', 'A note with no words keeps its last file. Delete the note instead.');
+        const at = iso(now),
+          body = written(withoutFile(old, n, at), d, id);
+        landed = await store.apiMediaRemove(
+          old,
+          n,
+          at,
+          receiptFor(200, body),
+          audit({ date: d, note_id: id, files: 1 }),
+          rate,
+          previous,
+          token,
+          now,
+          legacyGuard()
+        );
+        answer = { status: 200, body, replayed: false, limit };
+        after = async () => {
+          const ours = mediaKeys({ media: [entry] } as NoteRecord).filter((k) => k.startsWith(`media/${uid}/`));
+          if (ours.length && context.objects) await Promise.allSettled(ours.map((k) => context.objects!.remove(k)));
+          await record([
+            {
+              kind: 'note.files',
+              id: again(id),
+              fields: { via: 'token', token: name, ...(client ? { client } : {}), day: d, note: id, removed: 1 }
+            }
+          ]);
         };
       } else if (op === 'notes.place' || op === 'notes.place.clear') {
         const old = await own(),

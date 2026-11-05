@@ -295,6 +295,16 @@ const OPERATIONS: Record<string, Doc> = {
     requestBody: { required: true, content: { 'application/json': { schema: ref('NoteMedia') } } },
     responses: { '200': answer('NoteWritten', 'Changed in 4.5.137.', true) }
   },
+  'notes.media.remove': {
+    operationId: 'removeNoteFile',
+    summary: 'Take one file off a note this token wrote, or any note with notes:all',
+    description:
+      'The file goes with its small copy, transcript and description, and the note’s `revision` changes. The ' +
+      'other files keep their numbers; a file added later may take a number the last file left. A note with no ' +
+      'words can’t lose its last file: `text_required`, so delete the note instead. An emailed file stays in the ' +
+      'note’s email, which no client can read, until the note is deleted. Since 1.17.0.',
+    responses: { '200': answer('NoteWritten', 'Changed in 4.5.137.', true) }
+  },
   'notes.file': {
     operationId: 'getNoteFile',
     summary: 'An address for one file on a note this token wrote, or any note with notes:all',

@@ -224,6 +224,10 @@ test('the web role grants every request each route and the OAuth endpoints make'
     400
   );
   await call('GET', `/api/days/${day}/notes/${id}/media/1`, undefined, 302);
+  // One file off, with its leases and thumbnail, then one back on for what
+  // follows. The new one takes the number the last one left.
+  await call('DELETE', `/api/days/${day}/notes/${id}/media/1`);
+  await call('POST', `/api/days/${day}/notes/${id}/media`, { uploads: [await upload()] });
   await call('PUT', `/api/days/${day}/notes/${id}`, { text: 'Lake day, edited #made' });
   await call('PUT', `/api/days/${day}/notes/${id}/place`, { place: here });
   await call('DELETE', `/api/days/${day}/notes/${id}/place`);

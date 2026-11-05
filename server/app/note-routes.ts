@@ -13,6 +13,7 @@ import { localDay, iso, validTimezone } from '../../packages/domain/dates.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
 import { found } from '../../packages/domain/tags.ts';
 import { isRich, RICH } from '../../packages/domain/rich.ts';
+import { noteWords, type NoteRecord } from '../../packages/domain/notes.ts';
 import { again, badgeEvents, recordActivity } from '../../packages/backend/activity.ts';
 import type { ActivityEvent } from '../../packages/domain/activity.ts';
 import { json, body, dayFrom, textFrom } from './requests.ts';
@@ -129,6 +130,33 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
   }
   const old = id ? await store.note(uid, day, id, true) : null;
   if (!old) reject(404, 'note');
+  if (pattern.endsWith('/media/{n}') && method === 'DELETE') {
+    // One file off a note: the others keep their numbers. An emailed file
+    // stays in the note's email, until the note goes.
+    const n = Number(args[2]);
+    let note: Item | null = old;
+    for (let attempt = 0; attempt < 3 && note; attempt++) {
+      const had = (note.media as Item[] | undefined) ?? [],
+        entry = had.find((m) => Number(m.n) === n);
+      if (!entry) reject(404, 'media');
+      if (had.length === 1 && !noteWords(String(note.text ?? ''))) reject(400, 'last-file');
+      if (await store.removeMedia(note, n, iso(ctx.now))) {
+        await Promise.allSettled(
+          media
+            .keys({ media: [entry] } as NoteRecord)
+            .filter((k) => k.startsWith(`media/${uid}/`))
+            .map((k) => ctx.objects.remove(k))
+        );
+        await record([{ kind: 'note.files', id: again(id!), fields: { via: 'web', day, note: id!, removed: 1 } }]);
+        return json(
+          await noteView(media.withoutFile(note, n, iso(ctx.now)), String(p.tz), Boolean(p.transcribe), links)
+        );
+      }
+      note = await store.note(uid, day, id!, true);
+    }
+    if (!note) reject(404, 'note');
+    reject(409, 'busy');
+  }
   if (pattern.endsWith('/media/{n}')) {
     const entry = ((old.media as Item[]) ?? []).find((m) => Number(m.n) === Number(args[2])),
       url = entry ? await links(entry.key, String(entry.type)) : null;

@@ -208,6 +208,9 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
   // Reading back by day, and a file's address: a signed GetObject link.
   await v1('GET', `/v1/notes?from=${String(shown.date)}`);
   await v1('GET', `/v1/notes/${String(pictured.date)}/${String(pictured.id)}/media/1`);
+  // Taking a file off, through the capture function (1.17.0): this note has
+  // words, so it can lose the one it was given.
+  await v1('DELETE', `${path}/media/1`);
   const dates = (await v1('POST', '/v1/upcoming/batch', {
     add: [{ kind: 'birthday', title: 'Mom', date: '11-04', year: 1955 }]
   })) as { added: OAuthRow[] };

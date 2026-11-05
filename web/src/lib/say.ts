@@ -63,6 +63,7 @@ export const SAY: Record<string, Line> = {
   'token-limit': 'That’s 20 tokens, the most an account can have. Revoke one first.',
   'token-gone': 'That token is already gone. Reload the page.',
   'too-many-files': 'A note holds up to 20 files.',
+  'last-file': 'A note with no words keeps its last file. Delete the note instead.',
   'upload-limit': 'That’s more files than one day takes. Try again tomorrow.',
   busy: 'That note just changed. Reload the page and try again.',
   microphone:

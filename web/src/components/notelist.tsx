@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type FormEvent } from 'react';
 import { api } from '../lib/api.ts';
 import { FILES, sendFiles } from '../lib/files.ts';
+import { NoteFiles } from './notefiles.tsx';
 import { isPending } from '../lib/notecache.ts';
 import { sayFor, type Line, type Problem } from '../lib/say.ts';
 import type { Note } from '../lib/types.ts';
@@ -119,6 +120,7 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
         <NoteBody n={shown} />
       )}
       <NoteMedia day={day} n={n} version={version} />
+      {mode.is === 'edit' && <NoteFiles n={n} path={path} onRemoved={refresh} />}
       <NoteMeta n={n} day={day} tz={tz} cls="meta" />
       {mode.is === 'where' && (
         <SavedNoteWhere

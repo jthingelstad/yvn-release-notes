@@ -235,6 +235,13 @@ export function keys(note: NoteRecord): string[] {
   }
   return out;
 }
+/** A note without one of its files, as a removal leaves it. The others keep
+ * their numbers; an emptied list goes, as a note that never had files has none. */
+export function withoutFile<T extends { media?: unknown }>(note: T, n: number, at: string): T {
+  const { media, ...rest } = note,
+    left = ((media ?? []) as { n?: unknown }[]).filter((m) => Number(m.n) !== n);
+  return { ...rest, ...(left.length ? { media: left } : {}), updated_at: at } as unknown as T;
+}
 export const thumbKeys = (note: NoteRecord): string[] =>
   (note.media ?? [])
     .filter((m) => m.kind === 'image' && String(m.key ?? '').startsWith('media/'))

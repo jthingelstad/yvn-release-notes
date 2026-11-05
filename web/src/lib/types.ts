@@ -308,6 +308,7 @@ export interface EventActivity extends ActivityHead {
   // note.edited: where the note was, set or cleared (never the place)
   place?: 'set' | 'removed';
   added?: number;
+  removed?: number;
   name?: string;
   upcoming?: string;
   title?: string | null;

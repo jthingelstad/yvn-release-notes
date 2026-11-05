@@ -65,13 +65,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.16.0';
+export const API_VERSION = '1.17.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.17.0',
+    date: '2026-11-05',
+    summary:
+      'Taking one file off a note. DELETE /v1/notes/{date}/{id}/media/{n} removes it with its small copy, transcript and description, with `media:write` on a note this token wrote, and `notes:all` as well on any other. The other files keep their numbers. A note with no words can’t lose its last file (text_required). A note’s activity row of kind note.files can now say `removed` rather than `added`.'
+  },
   {
     version: '1.16.0',
     date: '2026-11-05',
@@ -287,6 +293,13 @@ export const V1_ROUTES: readonly {
     template: '/v1/days/{date}/place',
     name: 'days.place.clear',
     scope: 'notes:all'
+  },
+  {
+    method: 'DELETE',
+    path: FILE,
+    template: '/v1/notes/{date}/{id}/media/{n}',
+    name: 'notes.media.remove',
+    scope: 'media:write'
   },
   { method: 'POST', path: /^\/v1\/uploads$/, template: '/v1/uploads', name: 'uploads.start', scope: 'media:write' },
   { method: 'GET', path: /^\/v1\/places$/, template: '/v1/places', name: 'places', scope: 'notes:write' },

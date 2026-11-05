@@ -69,7 +69,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 88);
+  assert.equal(ROUTES.length, 89);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -1713,4 +1713,44 @@ test('a note written with rich text keeps its markup through views, edits and se
   assert.ok(!Object.hasOwn(still.b as Item, 'markup'));
   // Search reads a rich note's words, so a phrase runs across its marks.
   assert.equal(((await s.call('POST', '/api/search', { q: '"longer day"' })).b as Item).notes, 1);
+});
+test('the web takes one file off a note: the rest stay, and a note with no words keeps its last', async () => {
+  const s = await setup(),
+    day = '2026-10-13',
+    one = { n: 1, kind: 'image', type: 'image/jpeg', key: 'media/u/2026-10-13/w/1.jpg' },
+    two = { n: 2, kind: 'file', type: 'application/pdf', name: 'b.pdf', key: 'media/u/2026-10-13/w/2.pdf' },
+    other = { n: 3, kind: 'file', type: 'application/pdf', key: 'media/someone/2026-10-13/w/3.pdf' };
+  s.store.seed({
+    pk: 'USER#u',
+    sk: `NOTE#${day}#w`,
+    text: '',
+    source: 'email',
+    raw_key: 'raw/w',
+    media: [one, two, other],
+    written_at: '2026-10-13T11:00:00Z',
+    updated_at: '2026-10-13T11:00:00Z'
+  });
+  const path = `/api/days/${day}/notes/w/media`;
+  assert.equal((await s.call('DELETE', `${path}/9`)).r.status, 404);
+  const first = await s.call('DELETE', `${path}/1`);
+  assert.equal(first.r.status, 200, JSON.stringify(first.b));
+  assert.deepEqual(
+    ((first.b as Item).media as Item[]).map((m) => m.n),
+    [2, 3]
+  );
+  const removed = s.objects.calls.filter((c) => c.operation === 'remove').map((c) => c.key);
+  assert.ok(removed.includes(one.key));
+  assert.ok(!removed.includes('raw/w'));
+  assert.equal((await s.call('DELETE', `${path}/3`)).r.status, 200);
+  // Only this account's keys are ever removed.
+  assert.ok(!s.objects.calls.some((c) => c.operation === 'remove' && c.key === other.key));
+  const last = await s.call('DELETE', `${path}/2`);
+  assert.equal(last.r.status, 400);
+  assert.equal((last.b as Item).error, 'last-file');
+  const row = s.store.memory.all().find((r) => r.sk === `NOTE#${day}#w`)!;
+  assert.deepEqual(
+    (row.media as Item[]).map((m) => m.n),
+    [2]
+  );
+  assert.equal(s.store.memory.all().filter((r) => r.kind === 'note.files' && r.removed === 1).length, 2);
 });

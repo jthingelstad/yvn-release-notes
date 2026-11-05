@@ -921,7 +921,7 @@ already cover the weather row, proved by `capture-role.test.ts`.
 
 ### 1.17.0: taking one file off a note
 
-No channel can do this yet (call 4), so the web and `/v1` get it together,
+No channel could do this before (call 4), so the web and `/v1` got it together,
 as their own change: `DELETE /v1/notes/{date}/{id}/media/{n}` with
 `media:write`, and the web's note editor.
 
@@ -932,6 +932,17 @@ as their own change: `DELETE /v1/notes/{date}/{id}/media/{n}` with
 - **An emailed file stays in that note's email** under `raw/`, kept as filed
   mail is, and readable by no client. Deleting the note removes the email, as
   it does now.
+
+Built as: Edit on the web lists a note's files, each with a Remove that asks
+first. A removal commits on the note's whole list as read, so a transcript
+landing on another file meanwhile isn't lost, and goes round again if the note
+moved. It deletes the file's transcribing and describing leases in the same
+transaction, since its number can come round again; a worker that finishes
+later finds no file with that number and key, and stops. Badges already earned
+stay. A place that came from the photo stays on the note too, and the owner
+can remove it. The stored `revision` doesn't move, as for the web's added
+files, but `updated_at` does, so the `revision` a client reads changes. MCP
+doesn't get this.
 
 ### Jamie's calls
 

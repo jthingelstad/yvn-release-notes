@@ -47,6 +47,7 @@ It answers with one line: `Filed in 5.2.113.`
 - `POST /v1/notes/{date}/{id}/media`: add files to it, with `{"uploads": […]}`.
 - `PUT /v1/notes/{date}/{id}/place`: say where it was, with `{"place": …}`. See [Where a note was](#where-a-note-was).
 - `DELETE /v1/notes/{date}/{id}/place`: take its place away, so it says `no_place` and shows none from its day.
+- `DELETE /v1/notes/{date}/{id}/media/{n}`: take one file off it, with its small copy, transcript and description. The other files keep their numbers, and its `revision` changes. A note with no words can't lose its last file, so delete the note instead. A file that came by email stays in that note's email until the note is deleted, and no app can read it there. Taking a file off a note you didn't add through this token also needs a token that may read and change all your notes. From version 1.17.0.
 - `POST /v1/uploads`: a form to upload one file to, before a note takes it.
 - `DELETE /v1/notes/{date}/{id}`: delete it.
 - `GET /v1/tags`: your tag row, the pinned tags and then up to 20 recent ones, the tags used most in the last 30 days. Any token may ask.
@@ -90,7 +91,7 @@ Every error is the same shape, a code that never changes meaning and a sentence 
 Act on the code, and show the sentence. Here is each one, with its HTTP status:
 
 - `invalid_request` (400): something in the request isn't right, and `field` names it.
-- `text_required` (400): a note needs words.
+- `text_required` (400): a note needs words, or its last file.
 - `date_out_of_range` (400): `date` is before your birthday or after today.
 - `range_too_wide` (400): `from` and `to` span more days than one request reads. Ask in pieces.
 - `token_missing` (401): no token was sent.

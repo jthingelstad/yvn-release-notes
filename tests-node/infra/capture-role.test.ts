@@ -180,6 +180,19 @@ test('the capture role grants every DynamoDB and S3 request the write tools make
     })) as OAuthRow;
   const filed = await everything('notes.media', { ...emailed, uploads: await upload() });
   assert.equal(filed.status, 200, JSON.stringify(filed));
+  // A file off an emailed note (1.17.0), its leases too: the email stays.
+  const filedNote = (await ctx.store.note('u', '2026-10-13', 'e-mail', true)) as OAuthRow,
+    taken = (filedNote.media as OAuthRow[]).at(-1)!,
+    takenOff = await everything('notes.media.remove', { ...emailed, n: taken.n });
+  assert.equal(takenOff.status, 200, JSON.stringify(takenOff));
+  assert.equal(
+    bucket.calls.some((c) => c.operation === 'remove' && !c.version && c.key === String(taken.key)),
+    true
+  );
+  assert.equal(
+    bucket.calls.some((c) => c.operation === 'remove' && !c.version && c.key === 'raw/m-1'),
+    false
+  );
   assert.equal((await everything('notes.delete', emailed)).status, 204);
   const gone = bucket.calls.filter((c) => c.operation === 'remove' && !c.version).map((c) => c.key);
   for (const key of ['raw/m-1', emailedPhoto, 'media/u/2026-10-13/e-mail/1.thumb.jpg'])

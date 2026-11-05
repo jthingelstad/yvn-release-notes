@@ -220,9 +220,15 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
       ];
     case 'note.files':
       return [
-        <>
-          Added {count(e.added || 0, 'file', 'files')} to a note on {day}
-        </>
+        e.removed ? (
+          <>
+            Removed {count(e.removed, 'file', 'files')} from a note on {day}
+          </>
+        ) : (
+          <>
+            Added {count(e.added || 0, 'file', 'files')} to a note on {day}
+          </>
+        )
       ];
     case 'badge.earned':
       return [

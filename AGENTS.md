@@ -880,6 +880,10 @@ sign-in, which makes an API token) are built.
   and `activity`.
   A token reads back what it wrote by day, with its files (API 1.9.0:
   `GET /v1/notes?from=&to=`, at most 31 days, and `.../media/{n}`).
+  One file comes off a note with `media:write` (API 1.17.0, Jamie,
+  2026-11-05: "Approved: build Release Notes API 1.17.0, taking one file off a note on the web and /v1"),
+  on the whole file list as read, with its leases in the same transaction;
+  an emailed file stays in the note's email until the note is deleted.
   A note reads whole since API 1.14.0 (Jamie, 2026-11-05, the expansion in
   `docs/API.md`; issue #301): tags, markup, parts, place, who wrote it, and
   each file's transcript, description and `writing`, under the same reach

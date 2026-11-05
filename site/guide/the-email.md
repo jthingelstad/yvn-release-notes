@@ -43,6 +43,8 @@ What you wrote on the same day in earlier releases. It goes by version, not the 
 
 Photos travel inside the email itself, small copies only: up to 4 for a day and 6 in all. A day with more says how many and links to them.
 
+Today on the web shows the same, under your notes.
+
 ## The foot
 
 At the bottom:

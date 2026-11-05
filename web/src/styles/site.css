@@ -3353,3 +3353,16 @@ fieldset.book-fields {
   padding: 4px 0;
   overflow-wrap: anywhere;
 }
+/* Today: the same day of each earlier release, under today's notes. */
+.on-this-day {
+  margin-top: 40px;
+}
+.on-this-day article {
+  margin-top: 24px;
+}
+.on-this-day h3 {
+  margin: 0;
+}
+.on-this-day .hint {
+  margin-top: 2px;
+}

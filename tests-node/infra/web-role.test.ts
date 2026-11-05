@@ -234,6 +234,7 @@ test('the web role grants every request each route and the OAuth endpoints make'
   await call('DELETE', `/api/days/${day}/place`);
   for (const path of [
     '/api/today',
+    '/api/on-this-day',
     '/api/days',
     `/api/days/${day}`,
     '/api/releases',

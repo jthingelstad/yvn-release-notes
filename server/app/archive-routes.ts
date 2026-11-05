@@ -1,9 +1,17 @@
 /** Archive projections share version, search and streak domain helpers. */
+import { SHOWN } from '../../packages/mail/compose.ts';
 import { SessionService, reject } from '../../packages/backend/sessions.ts';
 import { dayView, mediaLinks } from '../../packages/backend/views.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { localDay, addDays, iso } from '../../packages/domain/dates.ts';
-import { computeVersion, lifeCount, releaseAge, releaseName, releaseSpan } from '../../packages/domain/version.ts';
+import {
+  computeVersion,
+  lifeCount,
+  releaseAge,
+  releaseName,
+  releaseSpan,
+  sameDayBefore
+} from '../../packages/domain/version.ts';
 import { pauseDays, computeStreak } from '../../packages/domain/streak.ts';
 import { searchedText } from '../../packages/domain/search.ts';
 import { rounded } from '../../packages/backend/places.ts';
@@ -47,6 +55,7 @@ export async function archiveRoutes(
   if (
     ![
       '/api/today',
+      '/api/on-this-day',
       '/api/days',
       '/api/days/{date}',
       '/api/releases',
@@ -83,6 +92,22 @@ export async function archiveRoutes(
     });
     if (paused.has(today)) view.paused_through = p.pause_through;
     return json(view);
+  }
+  if (pattern === '/api/on-this-day') {
+    // What the morning email's On this day picks: the same day of each earlier
+    // release, the newest few with their notes and the rest by date.
+    const earlier = sameDayBefore(String(p.birthday), today),
+      have = await store.noteDays(uid),
+      found = earlier.filter((d) => have.has(d)),
+      age = computeVersion(String(p.birthday), today).age,
+      views = await renderedDays(service, uid, p, found.slice(0, SHOWN));
+    return json({
+      days: views.map((view) => ({
+        ...view,
+        years: age - computeVersion(String(p.birthday), String(view.date)).age
+      })),
+      more: found.slice(SHOWN)
+    });
   }
   if (pattern === '/api/days') {
     const limit = pageLimit(query),

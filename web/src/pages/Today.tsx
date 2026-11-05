@@ -6,6 +6,7 @@ import { StreakLine } from '../components/days.tsx';
 import { Icon } from '../components/icon.tsx';
 import { NoteForm } from '../components/noteform.tsx';
 import { NoteList } from '../components/notelist.tsx';
+import { OnThisDay } from '../components/onthisday.tsx';
 import { DayWhere } from '../components/where.tsx';
 import { count, dayName } from '../lib/format.ts';
 import { livedText } from '../../../packages/domain/version.ts';
@@ -82,6 +83,7 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
         <NoteList day={t.date} notes={t.notes} tz={t.tz} version={t.version} />
         <EmptyLine t={t} me={me} />
       </section>
+      <OnThisDay />
 
       <AppLink className="quiet another-day" href="/day/">
         <Icon name="calendar" />

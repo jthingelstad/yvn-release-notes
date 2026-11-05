@@ -9,6 +9,7 @@ import type { ApiContext } from '../../packages/backend/sessions.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import * as auth from '../../packages/backend/auth.ts';
 import { withWebProof } from '../../packages/backend/guarded-store.ts';
+import { sameDayBefore } from '../../packages/domain/version.ts';
 const origin = 'https://notes.example.com',
   now = Date.parse('2026-10-13T12:00:00Z') / 1000,
   profile = {
@@ -69,7 +70,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 89);
+  assert.equal(ROUTES.length, 90);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -1785,4 +1786,31 @@ test('a file number past the old two digits still reaches its route', async () =
   });
   assert.equal((await s.call('DELETE', `/api/days/${day}/notes/far/media/100`)).r.status, 200);
   assert.equal(s.store.memory.all().find((r) => r.sk === `NOTE#${day}#far`)!.media, undefined);
+});
+test('On this day on the web: the email’s picks, the newest four with their notes and the rest by date', async () => {
+  const s = await setup();
+  // Today is 2026-10-13 in Chicago, and the account was born 1981-06-14.
+  const empty = await s.call('GET', '/api/on-this-day');
+  assert.equal(empty.r.status, 200);
+  assert.deepEqual(empty.b, { days: [], more: [] });
+  const dates = sameDayBefore('1981-06-14', '2026-10-13').slice(0, 6);
+  for (const [i, d] of dates.entries())
+    s.store.seed({
+      pk: 'USER#u',
+      sk: `NOTE#${d}#w-${i}`,
+      text: `Then ${i}`,
+      source: 'web',
+      written_at: `${d}T12:00:00Z`
+    });
+  const r = await s.call('GET', '/api/on-this-day'),
+    b = r.b as Item,
+    days = b.days as Item[];
+  assert.deepEqual(
+    days.map((d) => d.date),
+    dates.slice(0, 4)
+  );
+  assert.equal(days[0]!.years, 1);
+  assert.equal(days[3]!.years, 4);
+  assert.equal((days[0]!.notes as Item[])[0]!.text, 'Then 0');
+  assert.deepEqual(b.more, dates.slice(4));
 });

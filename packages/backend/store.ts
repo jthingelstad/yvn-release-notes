@@ -2700,35 +2700,26 @@ export class Store {
    * `extra` after, as apiNoteCommit. With notes:all (API 1.11.0), proved
    * here too, any note: as it was read, its words, revision, last edit and
    * files, so nothing added meanwhile is left behind in the bucket. */
-  /** The note a token read, unchanged since: its own, by token and revision,
-   * or any other by what shows it changed. A note may have no revision. */
-  private noteAsRead(old: Item, token: Item) {
-    const mine = old.source === 'api' && old.connection === token.id,
-      had = ((old.media as Item[] | undefined) ?? []).length;
-    return mine
-      ? {
-          ConditionExpression: '#src = :api AND #c = :token AND #r = :revision',
-          ExpressionAttributeNames: { '#r': 'revision', '#c': 'connection', '#src': 'source' } as Record<
-            string,
-            string
-          >,
-          ExpressionAttributeValues: { ':api': 'api', ':token': token.id, ':revision': old.revision } as Item
-        }
-      : {
-          ConditionExpression:
-            'attribute_exists(pk) AND ' +
-            (old.text === undefined ? 'attribute_not_exists(#t) AND ' : '#t = :old AND ') +
-            (old.revision === undefined ? 'attribute_not_exists(#r) AND ' : '#r = :revision AND ') +
-            (old.updated_at ? 'updated_at = :edited AND ' : 'attribute_not_exists(updated_at) AND ') +
-            (had ? 'size(media) = :had' : '(attribute_not_exists(media) OR size(media) = :had)'),
-          ExpressionAttributeNames: { '#t': 'text', '#r': 'revision' } as Record<string, string>,
-          ExpressionAttributeValues: {
-            ...(old.text === undefined ? {} : { ':old': old.text }),
-            ...(old.revision === undefined ? {} : { ':revision': old.revision }),
-            ...(old.updated_at ? { ':edited': old.updated_at } : {}),
-            ':had': had
-          } as Item
-        };
+  /** A note unchanged since it was read: its words, revision, last edit and
+   * how many files. A web edit keeps a token's revision, so that alone isn't
+   * enough. A note may have no revision. */
+  private noteAsRead(old: Item) {
+    const had = ((old.media as Item[] | undefined) ?? []).length;
+    return {
+      ConditionExpression:
+        'attribute_exists(pk) AND ' +
+        (old.text === undefined ? 'attribute_not_exists(#t) AND ' : '#t = :old AND ') +
+        (old.revision === undefined ? 'attribute_not_exists(#r) AND ' : '#r = :revision AND ') +
+        (old.updated_at ? 'updated_at = :edited AND ' : 'attribute_not_exists(updated_at) AND ') +
+        (had ? 'size(media) = :had' : '(attribute_not_exists(media) OR size(media) = :had)'),
+      ExpressionAttributeNames: { '#t': 'text', '#r': 'revision' } as Record<string, string>,
+      ExpressionAttributeValues: {
+        ...(old.text === undefined ? {} : { ':old': old.text }),
+        ...(old.revision === undefined ? {} : { ':revision': old.revision }),
+        ...(old.updated_at ? { ':edited': old.updated_at } : {}),
+        ':had': had
+      } as Item
+    };
   }
   /** Where a note was, set or removed through a token (`/v1` 1.16.0), as the
    * owner's change on the web: removing it marks `place_cleared`. Its words
@@ -2745,7 +2736,7 @@ export class Store {
     extra: Ops = []
   ) {
     const mine = old.source === 'api' && old.connection === token.id,
-      asRead = this.noteAsRead(old, token);
+      asRead = this.noteAsRead(old);
     return this.transact([
       this.profileProof(String(token.user_id)),
       ...this.tokenProof(token, now, mine ? 'notes:write' : ['notes:write', 'notes:all']),
@@ -2754,9 +2745,17 @@ export class Store {
           TableName: this.tableName,
           Key: { pk: String(old.pk), sk: String(old.sk) },
           UpdateExpression: place ? 'SET #p = :p REMOVE place_cleared' : 'SET place_cleared = :p REMOVE #p',
-          ConditionExpression: asRead.ConditionExpression,
-          ExpressionAttributeNames: { ...asRead.ExpressionAttributeNames, '#p': 'place' },
-          ExpressionAttributeValues: { ...asRead.ExpressionAttributeValues, ':p': place ?? true }
+          ConditionExpression: (mine ? '#src = :api AND #c = :token AND ' : '') + asRead.ConditionExpression,
+          ExpressionAttributeNames: {
+            ...asRead.ExpressionAttributeNames,
+            '#p': 'place',
+            ...(mine ? { '#c': 'connection', '#src': 'source' } : {})
+          },
+          ExpressionAttributeValues: {
+            ...asRead.ExpressionAttributeValues,
+            ':p': place ?? true,
+            ...(mine ? { ':api': 'api', ':token': token.id } : {})
+          }
         }
       },
       ...this.agentReceipts(receipt, audit, rate, previous, now),
@@ -2792,7 +2791,13 @@ export class Store {
         Delete: {
           TableName: this.tableName,
           Key: { pk: String(old.pk), sk: String(old.sk) },
-          ...this.noteAsRead(old, token)
+          ...(mine
+            ? {
+                ConditionExpression: '#src = :api AND #c = :token AND #r = :revision',
+                ExpressionAttributeNames: { '#r': 'revision', '#c': 'connection', '#src': 'source' },
+                ExpressionAttributeValues: { ':api': 'api', ':token': token.id, ':revision': old.revision }
+              }
+            : this.noteAsRead(old))
         }
       },
       ...this.agentReceipts(receipt, audit, rate, previous, now),

@@ -216,6 +216,35 @@ test('a note changed while its place is written answers the revision it ends wit
   assert.equal((read.place as OAuthRow).city, 'Paris');
 });
 
+test('a web edit of a token’s own note, while its place is written, is in the answer', async () => {
+  const s = setup(),
+    { token } = await make(s, ['notes:write']),
+    made = await call(s, 'POST', '/v1/notes', token, { text: 'First words' }),
+    id = String(created(made).id),
+    store = s.ctx.store as unknown as ApiStore,
+    commit = store.apiNotePlace.bind(store);
+  let raced = false;
+  store.apiNotePlace = async (...args) => {
+    if (!raced) {
+      raced = true;
+      // As the web's edit: new words and last edit, the same revision.
+      await s.ctx.store.updateNote('u', TODAY, id, 'Newer words', '2026-10-13T09:00:00');
+    }
+    return commit(...args);
+  };
+  const set = await call(s, 'PUT', `/v1/notes/${TODAY}/${id}/place`, token, { place: PARIS });
+  assert.equal(set.status, 200, set.text);
+  const read = (await call(s, 'GET', `/v1/notes/${TODAY}/${id}`, token)).json!;
+  assert.equal(read.text, 'Newer words');
+  assert.equal(created(set).revision, read.revision);
+  // The revision answered is good for the next edit.
+  const edit = await call(s, 'PUT', `/v1/notes/${TODAY}/${id}`, token, {
+    text: 'Newest',
+    revision: created(set).revision
+  });
+  assert.equal(edit.status, 200, edit.text);
+});
+
 test('a day’s own place takes notes:all, a city, and a day that can be written', async () => {
   const s = setup(),
     { token } = await make(s, ['notes:write']),

@@ -5,6 +5,10 @@ description: Everything Release Notes has learned to do, one release at a time.
 
 Release Notes numbers itself the way it numbers you. It shipped on October 7, 2026, so that day is 0.0.0. Newest first. Changelog, the iPhone app, keeps [its own](/guide/changelog/).
 
+## 0.0.29 · November 5
+
+- Apps on [the API](/guide/api/) can read a whole note now: its tags, its place, who wrote it, whether it has bold or lists, and the transcript of a voice memo or the description of a photo, if you turned those on. So an app can show a voice memo's words under its player.
+
 ## 0.0.25 · November 1
 
 - New icons. A browser tab shows a flat ivory v with its tangerine period on cobalt, and on a Home Screen the same v is folded from paper. If you added Release Notes to your Home Screen before today, it keeps the old icon until you add it again. Mail apps that show a sender's logo show the flat v beside the morning email, and the header on every page shows it too, on its blue tile.

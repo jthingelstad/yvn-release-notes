@@ -76,8 +76,8 @@
     "lastmod": "2026-10-30"
   },
   "/guide/api/": {
-    "said": "0919e23318719e04d77bcc150209b76e87ab724ae72c5b7477e49a6a7dd91a26",
-    "lastmod": "2026-11-01"
+    "said": "bfc953bd5fead853775d7a8b970cd2f594b0183eb72ca6b2c5d18ee91f6cf312",
+    "lastmod": "2026-11-05"
   },
   "/guide/api/clients/": {
     "said": "c15a58ef08bd03c625446c9ff33aa772db92c79ca807414d7e91832b84c11a70",
@@ -96,7 +96,7 @@
     "lastmod": "2026-10-30"
   },
   "/changelog/": {
-    "said": "a65dda3c1b4a51c587f5e075afc17a946291693e294fd8ff810ced318fd0dd2b",
-    "lastmod": "2026-11-01"
+    "said": "21617c4af10023a812f259fa9b575d33e23c2822c66bc14143b2481a01cd997a",
+    "lastmod": "2026-11-05"
   }
 }

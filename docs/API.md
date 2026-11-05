@@ -442,6 +442,8 @@ memos, and steps back to earlier days:
   already had: each file's number `n`, `kind`, `type`, `name`, `size` and
   `thumb` (the small JPEG's width and height, or null). Never a key:
   originals have no stored width, height or duration, so none is given.
+  Since 1.14.0 each also says its `transcript`, `description` and
+  `writing`, and a note says the rest of itself (Expansion, below).
 - **`GET /v1/notes/{date}/{id}/media/{n}`**, `notes:write`, on a note this
   token wrote: a signed address for the file, good for `FILE_SECONDS`
   (ten minutes, as MCP's downloads), fetched with no token. `?size=thumb`
@@ -852,7 +854,7 @@ What a note is, in `GET /v1/notes/{date}/{id}` and `GET /v1/notes`:
   inherit the day's.
 - **`edited_at`**, **`tz`**, **`late`**, and who wrote it: **`author`**
   (`user` or `assistant`), **`client`**, and **`from`** for an import.
-  **`attachments`** names the files an emailed note kept only in its email.
+  **`attachments`** counts the files its email carried that weren't kept.
 - **On each of `media`:** **`transcript`** and **`description`**, the words
   Release Notes kept, null until there are some and when nothing could be
   made out, with the same reach as the note's own words (issue #301). Neither

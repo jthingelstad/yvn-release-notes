@@ -5,13 +5,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMcpApp, type McpOptions } from '../../server/mcp/app.ts';
-import { FILE_SECONDS, RANGE_DAYS_MAX } from '../../server/mcp/v1.ts';
+import { FILE_SECONDS, NOTES_PAGE_BYTES, RANGE_DAYS_MAX } from '../../server/mcp/v1.ts';
 import { captureNote } from '../../workers/capture.ts';
 import { Tokens } from '../../packages/backend/tokens.ts';
 import { activityKey, activityTime } from '../../packages/domain/activity.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { FakeObjects } from '../../packages/testing/services.ts';
-import { fixture, note, ORIGIN } from '../oauth/fixtures.ts';
+import { fixture, note, ORIGIN, PROFILE } from '../oauth/fixtures.ts';
 
 const TODAY = '2026-10-13';
 
@@ -81,15 +81,27 @@ test('GET /v1/notes lists only this token’s notes on the days asked, oldest fi
   assert.deepEqual(ids(one), [a, b]);
   const first = (one.json!.items as OAuthRow[])[0]!;
   assert.deepEqual(Object.keys(first).sort(), [
+    'attachments',
+    'author',
+    'client',
     'date',
+    'edited_at',
     'files',
+    'from',
     'id',
+    'late',
+    'markup',
     'media',
     'mine',
+    'no_place',
+    'parts',
+    'place',
     'revision',
     'source',
+    'tags',
     'text',
     'token',
+    'tz',
     'version',
     'written_at'
   ]);
@@ -196,9 +208,22 @@ test('a note lists its files, and a token gets a short-lived address for one on 
       type: 'image/jpeg',
       name: 'lake.jpg',
       size: 2048,
-      thumb: { type: 'image/jpeg', width: 640, height: 480 }
+      thumb: { type: 'image/jpeg', width: 640, height: 480 },
+      transcript: null,
+      description: null,
+      writing: false
     },
-    { n: 2, kind: 'audio', type: 'audio/mp4', name: null, size: 4096, thumb: null }
+    {
+      n: 2,
+      kind: 'audio',
+      type: 'audio/mp4',
+      name: null,
+      size: 4096,
+      thumb: null,
+      transcript: null,
+      description: null,
+      writing: false
+    }
   ]);
   // Where a file is kept never comes with the note.
   assert.ok(!read.text.includes('media/u/'));
@@ -296,4 +321,160 @@ test('GET /v1/activity takes from and to, days in the account’s time zone', as
     'w-early',
     'w-sunday'
   ]);
+});
+
+test('a note reads whole (1.14.0): its tags, markup, parts, place and who wrote it', async () => {
+  const { ctx, app } = setup(),
+    made = await make(ctx, 'All', ['notes:write', 'notes:all']);
+  note(ctx, 'w-rich', '**Lake** day #Maine see https://example.com/a', TODAY, {
+    source: 'web',
+    markup: 'rich',
+    tags: ['maine'],
+    links: [{ url: 'https://example.com/a', title: 'A page' }],
+    tz: 'America/Chicago',
+    updated_at: '2026-10-13T18:00:00Z',
+    place: { label: 'Dock', city: 'Duluth', region: 'Minnesota', country: 'United States', lat: 46.78, lon: -92.1 }
+  });
+  note(ctx, 'a-agent', 'From an agent', TODAY, {
+    source: 'agent',
+    author: 'assistant',
+    client: 'Otto',
+    place_cleared: true,
+    place: { city: 'Gone' }
+  });
+  note(ctx, 'w-day', 'From Day One', TODAY, {
+    source: 'import',
+    origin: { app: 'dayone' },
+    attachments: [{ filename: 'old.zip', content_type: 'application/zip' }]
+  });
+  const rich = (await get(app, `/v1/notes/${TODAY}/w-rich`, made.token)).json!;
+  assert.equal(rich.markup, 'rich');
+  assert.deepEqual(rich.tags, ['maine']);
+  assert.deepEqual(rich.parts, [
+    '**Lake** day ',
+    { tag: 'maine', text: '#Maine' },
+    ' see ',
+    { url: 'https://example.com/a', label: 'A page', site: '' }
+  ]);
+  assert.equal(rich.edited_at, '2026-10-13T18:00:00Z');
+  assert.equal(rich.tz, 'America/Chicago');
+  assert.equal(rich.author, 'user');
+  assert.equal(rich.no_place, false);
+  const place = rich.place as OAuthRow;
+  assert.equal(place.label, 'Dock, Duluth');
+  assert.equal(place.lat, 46.78);
+  assert.match(String(place.map), /^https:\/\/maps\.apple\.com\//);
+  const agent = (await get(app, `/v1/notes/${TODAY}/a-agent`, made.token)).json!;
+  assert.deepEqual(
+    [agent.author, agent.client, agent.place, agent.no_place, agent.markup],
+    ['assistant', 'Otto', null, true, null]
+  );
+  const imported = (await get(app, `/v1/notes/${TODAY}/w-day`, made.token)).json!;
+  assert.deepEqual([imported.from, imported.attachments], ['Day One', 1]);
+});
+
+test('a file says its transcript and description (1.14.0), as far as the token reaches', async () => {
+  const { ctx, app } = setup(),
+    all = await make(ctx, 'All', ['notes:write', 'notes:all']),
+    own = await make(ctx, 'Own', ['notes:write']),
+    audio = { kind: 'audio', type: 'audio/mp4', size: 10 };
+  note(ctx, 'w-memo', 'Memo', TODAY, {
+    source: 'web',
+    media: [
+      { n: 1, ...audio, key: 'media/u/1.m4a', transcript: 'Words from the lake' },
+      { n: 2, ...audio, key: 'media/u/2.m4a', transcript: '' },
+      { n: 3, ...audio, key: 'media/u/3.m4a' },
+      { n: 4, kind: 'image', type: 'image/jpeg', size: 10, key: 'media/u/4.jpg', description: 'A dock' }
+    ]
+  });
+  const media = async () => (await get(app, `/v1/notes/${TODAY}/w-memo`, all.token)).json!.media as OAuthRow[];
+  let files = await media();
+  assert.deepEqual(
+    files.map((f) => f.transcript),
+    ['Words from the lake', null, null, null]
+  );
+  assert.equal(files[3]!.description, 'A dock');
+  // Nothing is still to come while the owner has transcripts off.
+  assert.ok(files.every((f) => f.writing === false));
+  ctx.store.memory.seed({ ...PROFILE, transcribe: true });
+  files = await media();
+  assert.deepEqual(
+    files.map((f) => f.writing),
+    [false, false, true, false]
+  );
+  // The same rule as the note's own words: no reach, no transcript.
+  const refused = await get(app, `/v1/notes/${TODAY}/w-memo`, own.token);
+  assert.equal(refused.status, 403);
+  assert.ok(!refused.text.includes('Words from the lake'));
+  const listed = await get(app, `/v1/notes?from=${TODAY}`, own.token);
+  assert.ok(!listed.text.includes('Words from the lake'));
+  const listedAll = await get(app, `/v1/notes?from=${TODAY}`, all.token);
+  assert.ok(listedAll.text.includes('Words from the lake'));
+});
+
+test('include=urls gives each file its address in one read (1.14.0), and anything else is refused', async () => {
+  const { ctx, app } = setup(),
+    made = await make(ctx, 'All', ['notes:write', 'notes:all']);
+  note(ctx, 'w-photo', 'Photo', TODAY, {
+    source: 'web',
+    media: [
+      {
+        n: 1,
+        kind: 'image',
+        type: 'image/jpeg',
+        size: 10,
+        key: 'media/u/1.jpg',
+        thumb: { key: 'media/u/1.small.jpg', width: 640, height: 480 }
+      },
+      { n: 2, kind: 'image', type: 'image/jpeg', size: 10, key: 'media/other/2.jpg' }
+    ]
+  });
+  const plain = (await get(app, `/v1/notes/${TODAY}/w-photo`, made.token)).json!;
+  assert.ok(!Object.hasOwn((plain.media as OAuthRow[])[0]!, 'url'));
+  for (const path of [`/v1/notes/${TODAY}/w-photo?include=urls`, `/v1/notes?from=${TODAY}&include=urls`]) {
+    const r = (await get(app, path, made.token)).json!,
+      files = ((r.items as OAuthRow[] | undefined)?.[0] ?? r).media as OAuthRow[];
+    assert.equal(files[0]!.url, `https://files.example/media/u/1.jpg?signed=${FILE_SECONDS}`);
+    assert.equal(files[0]!.expires_in, FILE_SECONDS);
+    assert.deepEqual(files[0]!.thumb, {
+      type: 'image/jpeg',
+      width: 640,
+      height: 480,
+      url: `https://files.example/media/u/1.small.jpg?signed=${FILE_SECONDS}`
+    });
+    // Never a key outside the account.
+    assert.equal(files[1]!.url, null);
+  }
+  for (const path of [`/v1/notes/${TODAY}/w-photo?include=everything`, `/v1/notes?from=${TODAY}&include=`]) {
+    const r = await get(app, path, made.token);
+    assert.equal(r.status, 400);
+    assert.equal(r.error.field, 'include');
+  }
+});
+
+test('a page of notes stops at about a megabyte, holds at least one, and next goes on (1.14.0)', async () => {
+  const { ctx, app } = setup(),
+    made = await make(ctx, 'All', ['notes:write', 'notes:all']),
+    long = 'w'.repeat(Math.floor(NOTES_PAGE_BYTES * 0.6));
+  for (const [i, words] of [long, long, 'short', long].entries())
+    note(ctx, `w-${i}`, 'Memo ' + i, TODAY, {
+      source: 'web',
+      written_at: `${TODAY}T0${i}:00:00Z`,
+      media: [{ n: 1, kind: 'audio', type: 'audio/mp4', size: 1, key: 'media/u/a.m4a', transcript: words }]
+    });
+  const seen: number[] = [];
+  let after: unknown = null,
+    pages = 0;
+  do {
+    const r = (await get(app, `/v1/notes?from=${TODAY}&limit=100${after ? `&after=${String(after)}` : ''}`, made.token))
+      .json!;
+    const items = r.items as OAuthRow[];
+    assert.ok(items.length >= 1);
+    seen.push(...items.map((n) => Number(String(n.id).slice(2))));
+    assert.ok(items.length === 1 || Buffer.byteLength(JSON.stringify(items)) <= NOTES_PAGE_BYTES + 200);
+    after = r.next;
+    pages++;
+  } while (after);
+  assert.deepEqual(seen, [0, 1, 2, 3]);
+  assert.equal(pages, 3);
 });

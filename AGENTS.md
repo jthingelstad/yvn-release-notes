@@ -877,6 +877,12 @@ sign-in, which makes an API token) are built.
   and `activity`.
   A token reads back what it wrote by day, with its files (API 1.9.0:
   `GET /v1/notes?from=&to=`, at most 31 days, and `.../media/{n}`).
+  A note reads whole since API 1.14.0 (Jamie, 2026-11-05, the expansion in
+  `docs/API.md`; issue #301): tags, markup, parts, place, who wrote it, and
+  each file's transcript, description and `writing`, under the same reach
+  as its words. `include=urls` signs every file in one read, and a page of
+  notes stops at about a megabyte (`NOTES_PAGE_BYTES`), so a short page
+  with a `next` is normal.
   `upcoming` keeps MCP's rules (revisions, dry runs, all or nothing, 50
   dates a request, past one-time dates left out) and reaches every date,
   as MCP's does, with its own count of 50 saves a UTC day across tokens;

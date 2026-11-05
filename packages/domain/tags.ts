@@ -175,3 +175,24 @@ export function removingTag(text: string, tag: string): string {
 }
 export const togglingTag = (text: string, tag: string): string =>
   spans(text).some(([, , t]) => t === tag) ? removingTag(text, tag) : addingTag(text, tag);
+
+/** Every tag with its notes, days, first day and last, most used first: the
+ * web's Tags page and `/v1/tags/all`, from the rows `noteTags` reads. */
+export function tagTotals(
+  rows: readonly { sk?: unknown; tags?: unknown }[]
+): { tag: string; notes: number; days: number; first: string; last: string }[] {
+  const counts = new Map<string, { tag: string; notes: number; days: Set<string>; first: string; last: string }>();
+  for (const n of rows)
+    for (const tag of (n.tags as string[] | undefined) ?? []) {
+      const d = String(n.sk).split('#')[1]!,
+        e = counts.get(tag) ?? { tag, notes: 0, days: new Set<string>(), first: d, last: d };
+      e.notes++;
+      e.days.add(d);
+      if (d < e.first) e.first = d;
+      if (d > e.last) e.last = d;
+      counts.set(tag, e);
+    }
+  return [...counts.values()]
+    .sort((a, b) => b.notes - a.notes || (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0))
+    .map((e) => ({ ...e, days: e.days.size }));
+}

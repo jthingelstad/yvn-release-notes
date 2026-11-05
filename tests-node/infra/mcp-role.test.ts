@@ -135,7 +135,7 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
     // Tokens are made on the web, under its own role.
     made = (await new Tokens({ store: ctx.store, origin: ctx.origin, now: ctx.now }).make('u', {
       name: 'Changelog',
-      scopes: ['notes:write', 'media:write', 'upcoming', 'activity'],
+      scopes: ['notes:write', 'media:write', 'notes:read', 'upcoming', 'activity'],
       expiry: 'never'
     })) as OAuthRow & { token: string },
     // Here's naming, the real adapter as IAM authorizes it, in capture.
@@ -213,6 +213,17 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
     204
   );
   await v1('GET', '/v1/activity');
+  // The archive (1.15.0), all reads under the MCP role.
+  const liveDay = String((await v1('GET', '/v1/days')).today);
+  await v1('GET', `/v1/days/${liveDay}?include=urls`);
+  await v1('GET', '/v1/search?q=dinner&include=urls');
+  await v1('GET', '/v1/on-this-day?include=urls');
+  const releases = (await v1('GET', '/v1/releases')).releases as OAuthRow[];
+  await v1('GET', `/v1/releases/${String(releases[0]!.v)}`);
+  await v1('GET', '/v1/tags/all');
+  await v1('GET', '/v1/map/pins');
+  await v1('GET', '/v1/badges');
+  await v1('GET', '/v1/mail-log');
   await v1('DELETE', path, undefined, 204);
   await v1('DELETE', `/v1/notes/${String(pictured.date)}/${String(pictured.id)}`, undefined, 204);
   await v1('DELETE', '/v1/token', undefined, 204);

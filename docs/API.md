@@ -199,7 +199,7 @@ There is no new DNS record, certificate or function.
   account. The one exception is the pinned tags list (Tags), which Jamie
   wants the same on the web and every phone.
 - An agent's OAuth consent (`/mcp`) never offers `activity`. An app's
-  sign-in (`/v1`, Phase 5) offers the four token scopes, because what it
+  sign-in (`/v1`, Phase 5) offers the token scopes, because what it
   gets is a token.
 
 ## The API
@@ -892,6 +892,10 @@ Each counts as one read. Search, tags, releases and the map read the whole
 archive, as the web and MCP do. The token form and an app's sign-in
 (`/connect/`) offer the new tick, and an app may ask for it.
 
+Built as: the timeline's days carry counts rather than notes, so a page stays
+small and a client reads what's on them with `GET /v1/notes`. A day's notes,
+the map's pins and a search's results stop at about a megabyte, with `next`.
+
 ### 1.16.0: writing as the web does
 
 - **`markup: 'rich'`** on `POST /v1/notes` (RICH-TEXT.md, decision 2). An edit
@@ -999,7 +1003,7 @@ assessment."):
 Then, later the same day:
 
 - **v1 is for adding things,** plus Upcoming: "adding content is the
-  primary thing". So archive reads left v1.
+  primary thing". So archive reads left v1, until 1.15.0 (Expansion).
 - **Files:** JPEG from the app ("Fine with this").
 - **Reminders on the phone:** yes. "Reminders are going to show up in other
   places. The daily email is already doing too much work."

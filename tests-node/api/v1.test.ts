@@ -114,7 +114,7 @@ test('a token is made once, kept only as its hash, listed and ended in Settings'
     [{ name: 'x'.repeat(41) }, 'token-name'],
     [{ name: 'tab\there' }, 'token-name'],
     [{ scopes: [] }, 'token-scopes'],
-    [{ scopes: ['notes:read'] }, 'token-scopes'],
+    [{ scopes: ['media:read'] }, 'token-scopes'],
     [{ scopes: ['notes:write', 'notes:write'] }, 'token-scopes'],
     // Files ride on adding notes.
     [{ scopes: ['media:write'] }, 'token-scopes'],
@@ -258,7 +258,11 @@ test('routes, methods and scopes', async () => {
   assert.equal((await call(app, 'GET', '/v1/me', { token: bare.token })).status, 200);
   assert.equal((await call(app, 'GET', '/v1/tags', { token: bare.token })).status, 200);
   for (const route of V1_ROUTES.filter((r) => r.scope)) {
-    const path = route.template.replace('{date}', TODAY).replace('{id}', 't-x').replace('{n}', '1'),
+    const path = route.template
+        .replace('{date}', TODAY)
+        .replace('{id}', 't-x')
+        .replace('{n}', '1')
+        .replace('{v}', '1.0'),
       r = await call(app, route.method, path, {
         token: route.scope === 'upcoming' ? other.token : bare.token,
         ...(route.method === 'GET' ? {} : { body: { text: 'Hi' } })

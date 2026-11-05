@@ -15,7 +15,7 @@ const given = (giving: string[]) => (giving.length ? { giving } : {});
 /** The most badge keys one welcome back marks seen: more than are earnable. */
 const MAX_TOLD = 500;
 import { json, body, dayFrom, dateOf, pageLimit, searchFrom } from './requests.ts';
-import { isTag } from '../../packages/domain/tags.ts';
+import { isTag, tagTotals } from '../../packages/domain/tags.ts';
 export async function renderedDays(
   service: SessionService,
   uid: string,
@@ -206,24 +206,7 @@ export async function archiveRoutes(
     if (keys.length && !(await store.addSeenBadges(uid, keys, iso(ctx.now)))) reject(401, 'signed-out');
     return json({ seen: keys.length });
   }
-  if (pattern === '/api/tags') {
-    const counts = new Map<string, { tag: string; notes: number; days: Set<string>; first: string; last: string }>();
-    for (const n of await store.noteTags(uid))
-      for (const tag of (n.tags as string[]) ?? []) {
-        const d = dateOf(n),
-          e = counts.get(tag) ?? { tag, notes: 0, days: new Set(), first: d, last: d };
-        e.notes++;
-        e.days.add(d);
-        if (d < e.first) e.first = d;
-        if (d > e.last) e.last = d;
-        counts.set(tag, e);
-      }
-    return json({
-      tags: [...counts.values()]
-        .sort((a, b) => b.notes - a.notes || (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0))
-        .map((e) => ({ ...e, days: e.days.size }))
-    });
-  }
+  if (pattern === '/api/tags') return json({ tags: tagTotals(await store.noteTags(uid)) });
   const by: Record<string, Item[]> = {};
   let terms: string[] = [],
     every: Item[] | null = null;

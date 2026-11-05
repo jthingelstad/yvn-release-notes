@@ -51,11 +51,23 @@ describe('ApiTokens', () => {
     expect(JSON.parse(String(made!.body)).scopes).toEqual(['notes:write', 'media:write']);
   });
 
+  it('offers reading all your notes on its own, with Add notes off', async () => {
+    serve();
+    await waitFor(() => expect(screen.getByText('None yet')).toBeTruthy());
+    const notes = box(/^Add notes/),
+      reads = box(/^Read all your notes, from anywhere, and the days/);
+    await userEvent.click(notes);
+    expect(notes.checked).toBe(false);
+    expect(reads.disabled).toBe(false);
+    await userEvent.click(reads);
+    expect(reads.checked).toBe(true);
+  });
+
   it('offers All your notes only beside Add notes too', async () => {
     serve();
     await waitFor(() => expect(screen.getByText('None yet')).toBeTruthy());
     const notes = box(/^Add notes/),
-      all = box(/^Read all your notes/);
+      all = box(/^Read all your notes, from anywhere, and change/);
     await userEvent.click(all);
     expect(all.checked).toBe(true);
     await userEvent.click(notes);

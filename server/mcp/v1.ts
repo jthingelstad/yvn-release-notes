@@ -4,21 +4,41 @@
  * again in the transaction it writes. Only an API token opens it; no
  * cookie, and no MCP access token, is ever read here. Not for browsers: no
  * CORS, and any Origin but the site's is refused. */
-import { activityId, ACTIVITY_FAMILIES, familyOf, tokenActivityView, titled } from '../../packages/domain/activity.ts';
-import { addDays, iso, localDay, localMoment, validDay, validTimezone } from '../../packages/domain/dates.ts';
+import {
+  activityId,
+  activityTime,
+  ACTIVITY_FAMILIES,
+  familyOf,
+  tokenActivityView,
+  titled
+} from '../../packages/domain/activity.ts';
+import {
+  addDays,
+  iso,
+  localDay,
+  localMoment,
+  localStart,
+  validDay,
+  validTimezone
+} from '../../packages/domain/dates.ts';
 import { mapUrl, placeLabel, writtenAt, type NoteRecord, type PlaceRecord } from '../../packages/domain/notes.ts';
 import { isRich, RICH } from '../../packages/domain/rich.ts';
-import { found, split } from '../../packages/domain/tags.ts';
+import { found, isTag, split, tagTotals } from '../../packages/domain/tags.ts';
 import { codePointLength, pythonTrim, wellFormed } from '../../packages/domain/unicode.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { remindersFor, UPCOMING_MAX, upcomingViews } from '../../packages/domain/upcoming.ts';
-import { computeVersion, lifeCount } from '../../packages/domain/version.ts';
+import { collectedOn, evaluateBadges } from '../../packages/domain/badges.ts';
+import { computeVersion, lifeCount, releaseAge, sameDayBefore } from '../../packages/domain/version.ts';
+import { searchTerms, searchedText } from '../../packages/domain/search.ts';
+import { badgeFacts } from '../../packages/backend/badges.ts';
 import { segments, type Link } from '../../packages/backend/links.ts';
+import { pins } from '../../packages/backend/maps.ts';
 import { others } from '../../packages/backend/media.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
 import { search, type City } from '../../packages/backend/places.ts';
 import { tagRow, type TagRowStore } from '../../packages/backend/tag-row.ts';
 import { stillWriting } from '../../packages/backend/views.ts';
+import { dayLine, dayPlace, fahrenheit, placeOf, type Reading } from '../../packages/backend/weather.ts';
 import { supportingMember } from '../../packages/backend/weekly-thing.ts';
 import {
   accountId,
@@ -30,22 +50,33 @@ import {
 } from '../../packages/backend/tokens.ts';
 import { failure, object } from './common.ts';
 import {
+  agentMailView,
   agentUpcomingView,
   editRevision,
+  PAST_NOTES,
+  RAW_TERMS,
   record,
+  releaseDetail,
+  releaseList,
   type MediaReader,
   type ReaderContext,
   type ReaderStore
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.14.0';
+export const API_VERSION = '1.15.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.15.0',
+    date: '2026-11-05',
+    summary:
+      'Reading the archive. A new scope, `notes:read`, stands alone: it reads every note and what is made from them, and writes nothing. GET /v1/notes, GET /v1/notes/{date}/{id} and its media open to it, reaching every note. New with `notes:read` or `notes:all`: GET /v1/days (the timeline), GET /v1/days/{date}, GET /v1/search, GET /v1/on-this-day, GET /v1/releases, GET /v1/releases/{v}, GET /v1/tags/all, GET /v1/map/pins, GET /v1/badges and GET /v1/mail-log. `notes:write` alone still reads only what its token wrote.'
+  },
   {
     version: '1.14.0',
     date: '2026-11-05',
@@ -168,20 +199,40 @@ const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
   APPEND = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/append$/,
   MEDIA = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/media$/,
   FILE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/media\/([1-9]\d{0,2})$/,
-  UPCOMING = /^\/v1\/upcoming\/([A-Za-z0-9_-]{1,80})$/;
+  UPCOMING = /^\/v1\/upcoming\/([A-Za-z0-9_-]{1,80})$/,
+  DAY = /^\/v1\/days\/([^/]{1,40})$/,
+  RELEASE = /^\/v1\/releases\/([^/]{1,12})$/;
+/** Reads that reach the whole archive (1.15.0). */
+const ARCHIVE = { scope: 'notes:read', also: ['notes:all'] } as const;
 
-/** Every route: method, path, name, and the scope it needs (none: any token). */
+/** Every route: method, path, name, and the scope it needs (none: any token),
+ * or any one of `scope` and `also`. */
 export const V1_ROUTES: readonly {
   method: string;
   path: RegExp;
   template: string;
   name: string;
   scope: string | null;
+  also?: readonly string[];
 }[] = [
   { method: 'GET', path: /^\/v1\/me$/, template: '/v1/me', name: 'me', scope: null },
-  { method: 'GET', path: /^\/v1\/notes$/, template: '/v1/notes', name: 'notes', scope: 'notes:write' },
+  {
+    method: 'GET',
+    path: /^\/v1\/notes$/,
+    template: '/v1/notes',
+    name: 'notes',
+    scope: 'notes:write',
+    also: ['notes:read']
+  },
   { method: 'POST', path: /^\/v1\/notes$/, template: '/v1/notes', name: 'notes.create', scope: 'notes:write' },
-  { method: 'GET', path: NOTE, template: '/v1/notes/{date}/{id}', name: 'note', scope: 'notes:write' },
+  {
+    method: 'GET',
+    path: NOTE,
+    template: '/v1/notes/{date}/{id}',
+    name: 'note',
+    scope: 'notes:write',
+    also: ['notes:read']
+  },
   { method: 'PUT', path: NOTE, template: '/v1/notes/{date}/{id}', name: 'notes.edit', scope: 'notes:write' },
   { method: 'DELETE', path: NOTE, template: '/v1/notes/{date}/{id}', name: 'notes.delete', scope: 'notes:write' },
   {
@@ -203,7 +254,8 @@ export const V1_ROUTES: readonly {
     path: FILE,
     template: '/v1/notes/{date}/{id}/media/{n}',
     name: 'notes.file',
-    scope: 'notes:write'
+    scope: 'notes:write',
+    also: ['notes:read']
   },
   { method: 'POST', path: /^\/v1\/uploads$/, template: '/v1/uploads', name: 'uploads.start', scope: 'media:write' },
   { method: 'GET', path: /^\/v1\/places$/, template: '/v1/places', name: 'places', scope: 'notes:write' },
@@ -239,6 +291,16 @@ export const V1_ROUTES: readonly {
     scope: 'upcoming'
   },
   { method: 'DELETE', path: UPCOMING, template: '/v1/upcoming/{id}', name: 'upcoming.delete', scope: 'upcoming' },
+  { method: 'GET', path: /^\/v1\/days$/, template: '/v1/days', name: 'days', ...ARCHIVE },
+  { method: 'GET', path: DAY, template: '/v1/days/{date}', name: 'day', ...ARCHIVE },
+  { method: 'GET', path: /^\/v1\/search$/, template: '/v1/search', name: 'search', ...ARCHIVE },
+  { method: 'GET', path: /^\/v1\/on-this-day$/, template: '/v1/on-this-day', name: 'on-this-day', ...ARCHIVE },
+  { method: 'GET', path: /^\/v1\/releases$/, template: '/v1/releases', name: 'releases', ...ARCHIVE },
+  { method: 'GET', path: RELEASE, template: '/v1/releases/{v}', name: 'release', ...ARCHIVE },
+  { method: 'GET', path: /^\/v1\/tags\/all$/, template: '/v1/tags/all', name: 'tags.all', ...ARCHIVE },
+  { method: 'GET', path: /^\/v1\/map\/pins$/, template: '/v1/map/pins', name: 'map.pins', ...ARCHIVE },
+  { method: 'GET', path: /^\/v1\/badges$/, template: '/v1/badges', name: 'badges', ...ARCHIVE },
+  { method: 'GET', path: /^\/v1\/mail-log$/, template: '/v1/mail-log', name: 'mail-log', ...ARCHIVE },
   { method: 'DELETE', path: /^\/v1\/token$/, template: '/v1/token', name: 'token.revoke', scope: null }
 ];
 
@@ -430,6 +492,35 @@ function placeView(place: unknown): OAuthRow | null {
   };
 }
 
+const tagsOf = (item: OAuthRow): string[] =>
+  Array.isArray(item.tags) ? item.tags.map(String) : found(String(item.text ?? ''));
+
+/** What a day says of itself, on the timeline and alone (1.15.0): its version,
+ * the place set on it, the place a note with none shows, as the web's day
+ * does (the day's own, then the first note's that day, then home), and its
+ * weather. */
+function dayHead(profile: OAuthRow, day: string, notes: OAuthRow[], own: OAuthRow | null, sky: OAuthRow | null) {
+  const shared = dayPlace(own as PlaceRecord | null, notes as NoteRecord[], String(profile.tz)),
+    near = shared ?? placeOf(profile),
+    label = near && placeLabel({ city: near.city, region: near.region, country: near.country });
+  return {
+    date: day,
+    version: computeVersion(String(profile.birthday), day).toString(),
+    place: own ? placeView(own) : null,
+    around: label ? { label, from: shared ? 'day' : 'home' } : null,
+    weather: sky
+      ? {
+          ...Object.fromEntries(
+            ['high_c', 'low_c', 'code', 'city']
+              .filter((k) => Object.hasOwn(sky, k))
+              .map((k) => [k, k === 'city' ? sky[k] : Number(sky[k])])
+          ),
+          line: dayLine(sky as Reading, fahrenheit(placeOf(profile) ?? (sky as PlaceRecord)))
+        }
+      : null
+  };
+}
+
 /** A note as a token reads it, alone or in a day's list; `mine` when this
  * token wrote it (1.10.0); all a client needs to show it as the web does
  * (1.14.0). */
@@ -454,7 +545,7 @@ function noteView(item: OAuthRow, profile: OAuthRow, tid: string): OAuthRow {
     token: item.token ?? null,
     source: String(item.source ?? 'email'),
     mine: item.source === 'api' && item.connection === tid,
-    tags: Array.isArray(item.tags) ? item.tags.map(String) : found(words),
+    tags: tagsOf(item),
     markup: rich ? RICH : null,
     parts: split(segments(words, item.links as Link[] | undefined, rich)),
     place: item.place_cleared ? null : placeView(item.place),
@@ -501,6 +592,50 @@ const badInclude = {
   message: 'include is urls, or left out.',
   extra: { field: 'include' }
 };
+
+type Refusal = { code: string; message: string; extra?: OAuthRow };
+const isRefusal = (v: unknown): v is Refusal =>
+  object(v) && typeof v.code === 'string' && typeof v.message === 'string';
+/** Where a note falls in a list: its day, when it was written, and its key. */
+const noteAt = (item: OAuthRow) => [
+  String(item.sk).split('#')[1]!,
+  writtenAt(item as NoteRecord) || '',
+  String(item.sk)
+];
+const later = (a: string[], b: string[]) => {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i]! > b[i]!;
+  return false;
+};
+const oldestFirst = (x: { at: string[] }, y: { at: string[] }) => (later(x.at, y.at) ? 1 : later(y.at, x.at) ? -1 : 0);
+const cursorFor = (at: string[]) => Buffer.from(JSON.stringify(at), 'utf8').toString('base64url');
+/** `after`: a place in a list's order, not a note, so a note deleted since
+ * still lets the next page start where it was. */
+function afterFrom(q: URLSearchParams, parts: number): string[] | null | Refusal {
+  if (q.get('after') === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(q.get('after')!, 'base64url').toString('utf8'));
+    if (!Array.isArray(parsed) || parsed.length !== parts || !parsed.every((v) => typeof v === 'string'))
+      throw new Error('after');
+    return parsed as string[];
+  } catch {
+    return { code: 'invalid_request', message: 'after is the next from an earlier answer.', extra: { field: 'after' } };
+  }
+}
+/** `limit`, from 1 to `most`, or `fallback` when it didn't come. */
+function limitFrom(q: URLSearchParams, fallback: number, most: number): number | Refusal {
+  const limit = q.get('limit') === null ? fallback : Number(q.get('limit'));
+  return Number.isInteger(limit) && limit >= 1 && limit <= most
+    ? limit
+    : { code: 'invalid_request', message: `limit is 1 to ${most}.`, extra: { field: 'limit' } };
+}
+/** A day the account has lived, for the requests that read one (1.15.0). */
+function livedDay(value: string, field: string, birthday: string, today: string): string | Refusal {
+  if (!validDay(value)) return { code: 'invalid_request', message: `${field} is a day, YYYY-MM-DD.`, extra: { field } };
+  return value < birthday || value > today
+    ? { code: 'date_out_of_range', message: 'Choose a day from your birthday through today.', extra: { field } }
+    : value;
+}
+const WEATHER_CREDIT = 'Open-Meteo (CC BY 4.0), https://open-meteo.com/';
 
 /** `from` and `to`, account-local days, both in; `to` defaults to `from`.
  * Null when neither came; a refusal when they aren't a range (1.9.0). */
@@ -572,8 +707,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
       family = { user_id: token.user_id, id: tid, client_name: token.name, kind: 'token' },
       params = (route.path.exec(path) ?? []).slice(1);
     uid = String(token.user_id);
-    if (route.scope && !scopes.includes(route.scope))
-      return refuse('scope_required', asText, headers, SCOPE_REFUSALS[route.scope]);
+    if (route.scope && ![route.scope, ...(route.also ?? [])].some((s) => scopes.includes(s)))
+      return refuse('scope_required', asText, headers, SCOPE_REFUSALS[route.also ? 'notes:read' : route.scope]);
 
     // Writes go on to the capture function, which proves the token again.
     if (route.method !== 'GET') {
@@ -714,14 +849,35 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         retry_after: until(now)
       });
     type Read = { status: number; body: unknown; line: string } | { code: string; message: string; extra?: OAuthRow };
-    // A token reaches the notes it wrote, and every note with notes:all.
+    // A token reaches the notes it wrote, and every note with notes:all or
+    // notes:read.
     const own = (item: OAuthRow) => item.source === 'api' && item.connection === tid,
-      reaches = (item: OAuthRow) => own(item) || scopes.includes('notes:all'),
+      reaches = (item: OAuthRow) => own(item) || scopes.includes('notes:all') || scopes.includes('notes:read'),
       unreached = {
         code: 'not_yours',
         message: 'A token reads only the notes it wrote, unless it may reach all your notes.'
       },
-      q = new URL(request.url).searchParams;
+      q = new URL(request.url).searchParams,
+      // A page of notes in their order, at most `limit` and about `room`
+      // bytes, always one, with where the next begins.
+      page = async (
+        rows: { item: OAuthRow; at: string[] }[],
+        limit: number,
+        urls: boolean,
+        room = NOTES_PAGE_BYTES
+      ) => {
+        const items: OAuthRow[] = [];
+        let bytes = 0;
+        for (const n of rows.slice(0, limit)) {
+          const plain = noteView(n.item, profile, tid),
+            view = urls ? await withUrls(plain, n.item, uid, files) : plain,
+            cost = Buffer.byteLength(JSON.stringify(view));
+          if (items.length && bytes + cost > room) break;
+          items.push(view);
+          bytes += cost;
+        }
+        return { items, next: rows.length > items.length ? cursorFor(rows[items.length - 1]!.at) : null };
+      };
     const read = async (): Promise<Read> => {
       if (route.name === 'me') {
         const [days, pauses] = await Promise.all([store.noteDays(uid), store.pauses(uid, true)]),
@@ -805,68 +961,276 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
           extra: { field: 'from' }
         };
         if ('code' in range) return range;
-        const limit = q.get('limit') === null ? 50 : Number(q.get('limit'));
-        if (!Number.isInteger(limit) || limit < 1 || limit > 100)
-          return { code: 'invalid_request', message: 'limit is 1 to 100.', extra: { field: 'limit' } };
+        const limit = limitFrom(q, 50, 100);
+        if (isRefusal(limit)) return limit;
         const urls = includeUrls(q);
         if (urls === null) return badInclude;
         const only = q.get('mine');
         if (only !== null && only !== 'true' && only !== 'false')
           return { code: 'invalid_request', message: 'mine is true or false.', extra: { field: 'mine' } };
-        const kept = only === 'true' ? own : reaches;
-        // A page ends at a place in the order, not at a note, so a note
-        // deleted since still lets the next page start where it was.
-        const order = (item: OAuthRow) => [
-          String(item.sk).split('#')[1]!,
-          writtenAt(item as NoteRecord) || '',
-          String(item.sk)
-        ];
-        let after: string[] | null = null;
-        if (q.get('after') !== null) {
-          try {
-            const parsed: unknown = JSON.parse(Buffer.from(q.get('after')!, 'base64url').toString('utf8'));
-            if (!Array.isArray(parsed) || parsed.length !== 3 || !parsed.every((v) => typeof v === 'string'))
-              throw new Error('after');
-            after = parsed as string[];
-          } catch {
-            return {
-              code: 'invalid_request',
-              message: 'after is the next from an earlier answer.',
-              extra: { field: 'after' }
-            };
-          }
-        }
-        const later = (a: string[], b: string[]) => {
-            for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i]! > b[i]!;
-            return false;
-          },
-          mine = (await store.notesBetween(uid, range.first, range.last, { ConsistentRead: true }))
+        const kept = only === 'true' ? own : reaches,
+          after = afterFrom(q, 3);
+        if (isRefusal(after)) return after;
+        const mine = (await store.notesBetween(uid, range.first, range.last, { ConsistentRead: true }))
             .filter(kept)
-            .map((item) => ({ item, at: order(item) }))
-            .sort((x, y) => (later(x.at, y.at) ? 1 : later(y.at, x.at) ? -1 : 0))
+            .map((item) => ({ item, at: noteAt(item) }))
+            .sort(oldestFirst)
             .filter((n) => !after || later(n.at, after)),
-          items: OAuthRow[] = [];
+          { items, next } = await page(mine, limit, urls);
+        return {
+          status: 200,
+          body: { from: range.first, to: range.last, items, next },
+          line: items.map((n) => `${String(n.date)} ${String(n.text).replace(/\s*\n\s*/g, ' ')}`).join('\n')
+        };
+      }
+      if (route.name === 'days') {
+        // The timeline, newest first, as the web's: a day with notes, an
+        // email, a pause or a place, and today. What's on a day comes from
+        // GET /v1/notes or GET /v1/days/{date}, so a page stays small.
+        const limit = limitFrom(q, 30, 100);
+        if (isRefusal(limit)) return limit;
+        const before = q.get('before');
+        if (before !== null && !validDay(before))
+          return { code: 'invalid_request', message: 'before is a day, YYYY-MM-DD.', extra: { field: 'before' } };
+        const [sent, have, pauses, placed] = await Promise.all([
+            store.sentDays(uid),
+            store.noteDays(uid),
+            store.pauses(uid, true),
+            store.placesBetween(uid, birthday, today)
+          ]),
+          emailed = new Set(sent),
+          paused = pauseDays(pauses, today),
+          dates = new Set([...emailed, ...have, ...paused, ...Object.keys(placed)]);
+        if (before === null) dates.add(today);
+        const picked = [...dates]
+            .filter((d) => d >= birthday && d <= today && (before === null || d < before))
+            .sort()
+            .reverse(),
+          shown = picked.slice(0, limit);
+        if (!shown.length) return { status: 200, body: { today, tz, days: [], next: null }, line: 'No days.' };
+        const first = shown.at(-1)!,
+          last = shown[0]!,
+          [notes, sky] = await Promise.all([
+            store.notesBetween(uid, first, last, { ConsistentRead: true }),
+            store.weatherBetween(uid, first, last)
+          ]),
+          by: Record<string, OAuthRow[]> = {};
+        for (const n of notes) (by[String(n.sk).split('#')[1]!] ??= []).push(n);
+        const days = shown.map((d) => ({
+          ...dayHead(profile, d, by[d] ?? [], placed[d] ?? null, sky[d] ?? null),
+          notes_total: (by[d] ?? []).length,
+          files: (by[d] ?? []).reduce((sum, n) => sum + ((n.media as unknown[] | undefined)?.length ?? 0), 0),
+          emailed: emailed.has(d),
+          paused: paused.has(d)
+        }));
+        return {
+          status: 200,
+          body: {
+            today,
+            tz,
+            days,
+            next: picked.length > shown.length ? first : null,
+            ...(days.some((d) => d.weather) ? { weather_credit: WEATHER_CREDIT } : {})
+          },
+          line: days.map((d) => `${d.date} ${d.version} ${d.notes_total} notes`).join('\n')
+        };
+      }
+      if (route.name === 'day') {
+        const date = livedDay(params[0]!, 'date', birthday, today);
+        if (isRefusal(date)) return date;
+        const urls = includeUrls(q);
+        if (urls === null) return badInclude;
+        const [notes, own, weather, pauses] = await Promise.all([
+            store.notesBetween(uid, date, date, { ConsistentRead: true }),
+            store.dayPlace(uid, date, true),
+            store.weatherBetween(uid, date, date, true),
+            store.pauses(uid, true)
+          ]),
+          sky = weather[date] ?? null,
+          rows = notes.map((item) => ({ item, at: noteAt(item) })).sort(oldestFirst),
+          { items, next } = await page(rows, Math.max(rows.length, 1), urls),
+          collected = notes.length && profile.badges !== false ? collectedOn(birthday, date) : [];
+        return {
+          status: 200,
+          body: {
+            ...dayHead(profile, date, notes, own, sky),
+            today: date === today,
+            tz,
+            paused: pauseDays(pauses, today).has(date),
+            ...(collected.length ? { collected } : {}),
+            notes_total: notes.length,
+            notes: items,
+            next,
+            ...(sky ? { weather_credit: WEATHER_CREDIT } : {})
+          },
+          line: items.map((n) => String(n.text).replace(/\s*\n\s*/g, ' ')).join('\n')
+        };
+      }
+      if (route.name === 'search') {
+        // Every word, in the words, places, link names, transcripts and
+        // descriptions, as the web and MCP search; newest first.
+        const words = q.get('q') ?? '',
+          tag = q.get('tag');
+        if ((words.match(RAW_TERMS) ?? []).length > 10)
+          return {
+            code: 'invalid_request',
+            message: 'q is at most ten words or quoted phrases.',
+            extra: { field: 'q' }
+          };
+        const terms = searchTerms(words);
+        if (tag !== null && !isTag(tag))
+          return { code: 'invalid_request', message: 'tag is a tag, without its #.', extra: { field: 'tag' } };
+        if (!terms.length && tag === null)
+          return { code: 'invalid_request', message: 'Send q, the words to find, or a tag.', extra: { field: 'q' } };
+        const first = q.get('from') === null ? birthday : livedDay(q.get('from')!, 'from', birthday, today),
+          last = q.get('to') === null ? today : livedDay(q.get('to')!, 'to', birthday, today);
+        if (isRefusal(first)) return first;
+        if (isRefusal(last)) return last;
+        if (last < first)
+          return { code: 'invalid_request', message: 'to is the same day as from or later.', extra: { field: 'to' } };
+        const limit = limitFrom(q, 50, 100);
+        if (isRefusal(limit)) return limit;
+        const urls = includeUrls(q);
+        if (urls === null) return badInclude;
+        const after = afterFrom(q, 3);
+        if (isRefusal(after)) return after;
+        const matched = (await store.notesBetween(uid, first, last, { ConsistentRead: true }))
+            .filter(
+              (i) =>
+                terms.every((t) => searchedText(i as NoteRecord).includes(t)) &&
+                (tag === null || tagsOf(i).includes(tag))
+            )
+            .map((item) => ({ item, at: noteAt(item) }))
+            .sort((x, y) => oldestFirst(y, x)),
+          rest = matched.filter((n) => !after || later(after, n.at)),
+          { items, next } = await page(rest, limit, urls);
+        return {
+          status: 200,
+          body: { terms, tag, from: first, to: last, total: matched.length, items, next },
+          line: items.map((n) => `${String(n.date)} ${String(n.text).replace(/\s*\n\s*/g, ' ')}`).join('\n')
+        };
+      }
+      if (route.name === 'on-this-day') {
+        // The same patch of each earlier release, newest first, as the daily
+        // email's. A day shows its first few notes; GET /v1/days/{date} reads
+        // the rest.
+        const day = q.get('date') === null ? today : livedDay(q.get('date')!, 'date', birthday, today);
+        if (isRefusal(day)) return day;
+        const limit = limitFrom(q, 10, 50);
+        if (isRefusal(limit)) return limit;
+        const urls = includeUrls(q);
+        if (urls === null) return badInclude;
+        const before = q.get('before');
+        if (before !== null && !validDay(before))
+          return { code: 'invalid_request', message: 'before is a day, YYYY-MM-DD.', extra: { field: 'before' } };
+        const have = new Set(await store.noteDays(uid)),
+          earlier = sameDayBefore(birthday, day).filter((d) => have.has(d) && (before === null || d < before)),
+          days: OAuthRow[] = [];
+        let bytes = 0,
+          read = 0;
+        for (const d of earlier.slice(0, limit)) {
+          const notes = await store.notesBetween(uid, d, d, { ConsistentRead: true }),
+            rows = notes.map((item) => ({ item, at: noteAt(item) })).sort(oldestFirst),
+            { items } = await page(rows, PAST_NOTES, urls, NOTES_PAGE_BYTES / 4),
+            entry = {
+              date: d,
+              version: computeVersion(birthday, d).toString(),
+              notes_total: notes.length,
+              notes: items
+            },
+            cost = Buffer.byteLength(JSON.stringify(entry));
+          if (days.length && bytes + cost > NOTES_PAGE_BYTES) break;
+          read++;
+          bytes += cost;
+          if (notes.length) days.push(entry);
+        }
+        return {
+          status: 200,
+          body: {
+            date: day,
+            version: computeVersion(birthday, day).toString(),
+            days,
+            next: earlier.length > read ? earlier[read - 1]! : null
+          },
+          line:
+            days.map((d) => `${String(d.date)} ${String(d.version)} ${String(d.notes_total)} notes`).join('\n') ||
+            'Nothing on this day.'
+        };
+      }
+      if (route.name === 'releases') {
+        const releases = releaseList(birthday, today, await store.noteTags(uid));
+        return {
+          status: 200,
+          body: { today, releases },
+          line: releases.map((r) => `${String(r.v)} ${String(r.notes)} notes`).join('\n')
+        };
+      }
+      if (route.name === 'release') {
+        const age = releaseAge(params[0]!);
+        if (age === null || age > computeVersion(birthday, today).age)
+          return { code: 'not_found', message: 'There is no such release. GET /v1/releases lists them.' };
+        const [index, pauses] = await Promise.all([store.noteTags(uid), store.pauses(uid, true)]),
+          release = releaseDetail(profile, today, age, index, pauses);
+        return {
+          status: 200,
+          body: { today, release },
+          line: `${String(release.v)} ${String(release.notes)} notes`
+        };
+      }
+      if (route.name === 'tags.all') {
+        const tags = tagTotals(await store.noteTags(uid));
+        return {
+          status: 200,
+          body: { tags },
+          line: tags.map((t) => `#${t.tag} ${t.notes}`).join('\n') || 'No tags yet.'
+        };
+      }
+      if (route.name === 'map.pins') {
+        // The Map's pins, a page at a time by size. A client draws its own
+        // map: the base map stays the web's.
+        const after = afterFrom(q, 2);
+        if (isRefusal(after)) return after;
+        const notes = await store.allNotes(uid, true),
+          all = pins(notes as NoteRecord[], birthday)
+            .map((pin) => ({ pin, at: [pin.date, pin.id] }))
+            .sort(oldestFirst)
+            .filter((n) => !after || later(n.at, after)),
+          shown: (typeof all)[number]['pin'][] = [];
         let bytes = 0;
-        for (const n of mine.slice(0, limit)) {
-          const plain = noteView(n.item, profile, tid),
-            view = urls ? await withUrls(plain, n.item, uid, files) : plain,
-            cost = Buffer.byteLength(JSON.stringify(view));
-          if (items.length && bytes + cost > NOTES_PAGE_BYTES) break;
-          items.push(view);
+        for (const { pin } of all) {
+          const cost = Buffer.byteLength(JSON.stringify(pin));
+          if (shown.length && bytes + cost > NOTES_PAGE_BYTES) break;
+          shown.push(pin);
           bytes += cost;
         }
         return {
           status: 200,
           body: {
-            from: range.first,
-            to: range.last,
-            items,
-            next:
-              mine.length > items.length
-                ? Buffer.from(JSON.stringify(mine[items.length - 1]!.at), 'utf8').toString('base64url')
-                : null
+            notes: notes.length,
+            pins: shown,
+            next: all.length > shown.length ? cursorFor(all[shown.length - 1]!.at) : null
           },
-          line: items.map((n) => `${String(n.date)} ${String(n.text).replace(/\s*\n\s*/g, ' ')}`).join('\n')
+          line: shown.map((p) => `${p.date} ${p.place}`).join('\n') || 'No places yet.'
+        };
+      }
+      if (route.name === 'badges') {
+        const head = { today, version, show_badges: profile.badges !== false };
+        if (!head.show_badges) return { status: 200, body: head, line: 'Badges are turned off.' };
+        const facts = await badgeFacts(store, uid, profile, today, {
+            consistent: true,
+            ...(context!.log ? { log: context!.log } : {})
+          }),
+          answer = evaluateBadges(facts, today);
+        return { status: 200, body: { ...head, ...answer }, line: `${answer.earned.length} badges earned.` };
+      }
+      if (route.name === 'mail-log') {
+        // What became of each email in the last 30 days, newest first.
+        const from = activityTime(localStart(addDays(today, -29), tz)),
+          entries = (await store.activityAll(uid, from)).filter((r) => r.kind === 'mail').map(agentMailView);
+        return {
+          status: 200,
+          body: { today, tz, entries },
+          line: entries.map((e) => `${String(e.received_at)} ${String(e.outcome)}`).join('\n') || 'No email in 30 days.'
         };
       }
       if (route.name === 'notes.file') {

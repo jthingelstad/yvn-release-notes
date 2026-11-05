@@ -8,6 +8,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 ## 0.0.29 · November 5
 
 - Apps on [the API](/guide/api/) can read a whole note now: its tags, its place, who wrote it, whether it has bold or lists, and the transcript of a voice memo or the description of a photo, if you turned those on. So an app can show a voice memo's words under its player.
+- A token can read your whole archive now and change nothing. Tick the new read option when you make one, and an app can show your days, search your notes, look back on this day, list your tags and releases, draw your map and show your badges. [The API guide](/guide/api/) has the list.
 
 ## 0.0.25 · November 1
 

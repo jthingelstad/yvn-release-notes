@@ -54,6 +54,9 @@ describe('ApiTokens', () => {
   it('offers reading all your notes on its own, with Add notes off', async () => {
     serve();
     await waitFor(() => expect(screen.getByText('None yet')).toBeTruthy());
+    // The form never promises what a tick can undo.
+    expect(screen.getByText(/reads your other notes only if you tick Read all your notes/)).toBeTruthy();
+    expect(screen.queryByText(/No token reads your notes/)).toBeNull();
     const notes = box(/^Add notes/),
       reads = box(/^Read all your notes, from anywhere, and the days/);
     await userEvent.click(notes);

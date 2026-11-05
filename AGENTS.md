@@ -869,7 +869,10 @@ sign-in, which makes an API token) are built.
   removes every token and its pointer with the agent connections.
 - **Offered scopes** are `notes:write`, `media:write` (only beside
   `notes:write`, for files on the notes the token wrote, kept as web
-  uploads are), `notes:all` (only beside `notes:write`; API 1.10.0, Jamie,
+  uploads are), `notes:read` (stands alone, API 1.15.0: every note and the
+  days, search, on this day, releases, tags, map, badges and mail log made
+  from them, and no write; Jamie, 2026-11-05, in the expansion in
+  `docs/API.md`), `notes:all` (only beside `notes:write`; API 1.10.0, Jamie,
   2026-10-30: "Changelog should be able to read back any notes that the user has recorded… going forward changelog users should be able to open a previous note and be able to edit it, regardless of where it was created."; it reads every note and edits or appends to
   any, proved on the live token in the write's transaction; API 1.11.0,
   Jamie, 2026-10-30: "Approved: notes:all also deletes and adds files to any note in Release Notes"; a token's delete

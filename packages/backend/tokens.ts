@@ -23,8 +23,10 @@ import type { Log } from './services.ts';
  * consent screen never offers it in v1. `notes:all` (API 1.10.0; Jamie,
  * 2026-10-30: "changelog users should be able to open a previous note and
  * be able to edit it, regardless of where it was created") reads every
- * note and changes any note's words, only beside `notes:write`. */
-export const TOKEN_SCOPES = ['notes:write', 'media:write', 'notes:all', 'upcoming', 'activity'] as const;
+ * note and changes any note's words, only beside `notes:write`. `notes:read`
+ * (API 1.15.0; Jamie, 2026-11-05, docs/API.md, Expansion) stands alone: every
+ * note and what is made from them, and no write. */
+export const TOKEN_SCOPES = ['notes:write', 'media:write', 'notes:read', 'notes:all', 'upcoming', 'activity'] as const;
 /** The scopes that come only beside `notes:write`. */
 export const NEEDS_NOTES: readonly unknown[] = ['media:write', 'notes:all'];
 export const TOKENS_MAX = 20,
@@ -44,6 +46,7 @@ export const V1_UPCOMING_MAX = 50;
 export const SCOPE_REFUSALS: Record<string, string> = {
   'notes:write': "This token can't add notes. Make a token with Add notes ticked.",
   'media:write': "This token can't add files. Make a token with Add files ticked.",
+  'notes:read': "This token can't read your notes. Make a token that may read them.",
   'notes:all': 'This token reaches only the notes it added. Make a token with All your notes ticked.',
   upcoming: "This token can't read or change Upcoming. Make a token with Upcoming ticked.",
   activity: "This token can't read the activity log. Make a token that may read it."

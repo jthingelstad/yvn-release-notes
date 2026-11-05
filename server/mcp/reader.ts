@@ -39,6 +39,7 @@ export const editRevision = (item: OAuthRow): string =>
 export interface ReaderStore extends OAuthStore {
   upcomingEntries(uid: string): Promise<UpcomingEntry[]>;
   noteDays(uid: string): Promise<string[] | Set<string>>;
+  sentDays(uid: string): Promise<string[] | Set<string>>;
   notesBetween(uid: string, first: string, last: string, options?: { ConsistentRead?: boolean }): Promise<OAuthRow[]>;
   note(uid: string, day: string, id: string, consistent?: boolean): Promise<OAuthRow | null>;
   allNotes(uid: string, consistent?: boolean): Promise<OAuthRow[]>;
@@ -52,6 +53,7 @@ export interface ReaderStore extends OAuthStore {
   activityAll(uid: string, from?: string): Promise<OAuthRow[]>;
   badgeActivity(uid: string, consistent?: boolean): Promise<OAuthRow[]>;
   dayPlace(uid: string, day: string, consistent?: boolean): Promise<OAuthRow | null>;
+  placesBetween(uid: string, first: string, last: string): Promise<Record<string, OAuthRow>>;
   weatherBetween(uid: string, first: string, last: string, consistent?: boolean): Promise<Record<string, OAuthRow>>;
   feedbackItems(uid: string): Promise<FeedbackItem[]>;
   feedbackFiled(uid: string, day: string): Promise<number>;
@@ -191,6 +193,63 @@ const cut = (value: unknown, size: number): [string | null, boolean] =>
   value == null ? [null, false] : [codePointSlice(String(value), 0, size), codePointLength(String(value)) > size];
 /** A mail log row as the web shows it (docs/WEB-APP.md, Mail log), the
  * subject and words cut short so a row stays well inside one page. */
+/** Each year of life, newest first, with its days and notes: MCP's
+ * notes_releases and `/v1/releases`, from the rows `noteTags` reads. */
+export function releaseList(birthday: string, today: string, index: readonly OAuthRow[]): OAuthRow[] {
+  const current = computeVersion(birthday, today).age,
+    seen = new Map<number, { days: Set<string>; notes: number }>([[current, { days: new Set(), notes: 0 }]]);
+  for (const n of index) {
+    const age = computeVersion(birthday, dayOf(n)).age,
+      item = seen.get(age) ?? { days: new Set(), notes: 0 };
+    item.days.add(dayOf(n));
+    item.notes++;
+    seen.set(age, item);
+  }
+  return [...seen]
+    .filter(([age]) => age >= 0 && age <= current)
+    .sort(([a], [b]) => b - a)
+    .map(([age, n]) => {
+      const [from, through] = releaseSpan(birthday, age);
+      return { v: releaseName(age), from, through, days: n.days.size, notes: n.notes, current: age === current };
+    });
+}
+
+/** One year of life in detail: MCP's notes_releases and `/v1/releases/{v}`. */
+export function releaseDetail(
+  profile: OAuthRow,
+  today: string,
+  age: number,
+  index: readonly OAuthRow[],
+  pauses: [string, string][]
+): OAuthRow {
+  const birthday = String(profile.birthday),
+    [first, last] = releaseSpan(birthday, age),
+    shown = last < today ? last : today,
+    rows = index.filter((n) => dayOf(n) >= first && dayOf(n) <= shown),
+    have = [...new Set(rows.map(dayOf))].sort(),
+    paused = new Set([...pauseDays(pauses, today)].filter((d) => d >= first && d <= shown)),
+    counts = new Map<string, number>();
+  for (const n of rows) for (const tag of (n.tags as string[]) ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  const tags = [...counts]
+    .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
+    .map(([tag, notes]) => ({ tag, notes }));
+  return {
+    v: releaseName(age),
+    current: age === computeVersion(birthday, today).age,
+    from: first,
+    through: last,
+    days_with_notes: have.length,
+    notes: rows.length,
+    first_note_day: have[0] ?? null,
+    last_note_day: have.at(-1) ?? null,
+    longest: computeStreak(new Set(have), addDays(shown, 1), paused).longest,
+    paused_days: paused.size,
+    ...(profile.badges !== false ? { badges: releaseBadges(birthday, age, new Set(have)) } : {}),
+    tags: tags.slice(0, 100),
+    tags_total: tags.length
+  };
+}
+
 export function agentMailView(r: OAuthRow): OAuthRow {
   const [subject, subjectCut] = cut(r.subject ?? '', MAIL_SUBJECT),
     [text, textCut] = cut(r.text, MAIL_TEXT);
@@ -211,12 +270,12 @@ export function agentMailView(r: OAuthRow): OAuthRow {
   };
 }
 /** Note previews an on-this-day day carries; notes_get_day reads the rest. */
-const PAST_NOTES = 5;
+export const PAST_NOTES = 5;
 const dayOf = (row: OAuthRow) => String(row.sk).split('#')[1]!;
 const revision = (item: OAuthRow | null): number | null => (item ? Number(item.revision) : null);
 // Match Python's whitespace set rather than JavaScript's narrower \s.
 /* eslint-disable no-control-regex */
-const RAW_TERMS =
+export const RAW_TERMS =
   /"([^"]*)"|([^\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+)/g;
 /* eslint-enable no-control-regex */
 export async function quota(context: OAuthContext, uid: string): Promise<void> {
@@ -707,64 +766,18 @@ export class Reader {
       ];
     }
     if (name === 'notes_releases') {
-      const current = computeVersion(this.birthday, this.today).age,
-        index = await this.context.store.noteTags(this.uid);
+      const index = await this.context.store.noteTags(this.uid);
       if (Object.hasOwn(a, 'release')) {
         if (Object.hasOwn(a, 'cursor'))
           throw new ToolError('invalid_arguments', 'Read one release or page the list, not both.');
         const age = this.release(a.release),
-          [first, last] = releaseSpan(this.birthday, age),
-          shown = last < this.today ? last : this.today,
-          rows = index.filter((n) => dayOf(n) >= first && dayOf(n) <= shown),
-          have = [...new Set(rows.map(dayOf))].sort(),
-          paused = new Set(
-            [...pauseDays(await this.context.store.pauses(this.uid, true), this.today)].filter(
-              (d) => d >= first && d <= shown
-            )
-          ),
-          counts = new Map<string, number>();
-        for (const n of rows) for (const tag of (n.tags as string[]) ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-        const tags = [...counts]
-          .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
-          .map(([tag, notes]) => ({ tag, notes }));
-        return [
-          {
-            today: this.today,
-            release: {
-              v: releaseName(age),
-              current: age === current,
-              from: first,
-              through: last,
-              days_with_notes: have.length,
-              notes: rows.length,
-              first_note_day: have[0] ?? null,
-              last_note_day: have.at(-1) ?? null,
-              longest: computeStreak(new Set(have), addDays(shown, 1), paused).longest,
-              paused_days: paused.size,
-              ...(this.profile.badges !== false ? { badges: releaseBadges(this.birthday, age, new Set(have)) } : {}),
-              tags: tags.slice(0, 100),
-              tags_total: tags.length
-            }
-          },
-          content
-        ];
+          pauses = await this.context.store.pauses(this.uid, true);
+        return [{ today: this.today, release: releaseDetail(this.profile, this.today, age, index, pauses) }, content];
       }
-      const seen = new Map<number, { days: Set<string>; notes: number }>([[current, { days: new Set(), notes: 0 }]]);
-      for (const n of index) {
-        const age = computeVersion(this.birthday, dayOf(n)).age,
-          item = seen.get(age) ?? { days: new Set(), notes: 0 };
-        item.days.add(dayOf(n));
-        item.notes++;
-        seen.set(age, item);
-      }
-      const releases = [...seen]
-        .filter(([age]) => age >= 0 && age <= current)
-        .sort(([a], [b]) => b - a)
-        .map(([age, n]) => {
-          const [from, through] = releaseSpan(this.birthday, age);
-          return { v: releaseName(age), from, through, days: n.days.size, notes: n.notes, current: age === current };
-        });
-      return [{ ...this.page(releases, a, 'releases'), today: this.today }, content];
+      return [
+        { ...this.page(releaseList(this.birthday, this.today, index), a, 'releases'), today: this.today },
+        content
+      ];
     }
     if (name === 'notes_badges') {
       const head = {

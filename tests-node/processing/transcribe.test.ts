@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as t from '../../packages/backend/transcribe.ts';
+import * as media from '../../packages/backend/media.ts';
 import * as worker from '../../workers/transcribe.ts';
 import { setup, audio, day, id, now, stream } from './helpers.ts';
 import type { Item } from '../../packages/backend/store.ts';
@@ -242,4 +243,38 @@ test('a new UTC day starts recordings left by quota, existing running jobs consu
   s.services.clock = () => now + 86400;
   assert.equal(await t.start(note, 'u', s.services), 1);
   assert.equal(s.starts.length, 31);
+});
+test('a job for a removed recording finishes on nothing, not on the recording added after it', async () => {
+  const s = configured(),
+    n = Number(audio().n);
+  await t.start(s.note, 'u', s.services);
+  assert.equal(await s.store.removeMedia((await s.store.note('u', day, id, true))!, n, 'later'), true);
+  const after = (await s.store.note('u', day, id, true))!,
+    next = Math.max(n + 1, media.nextFile(after));
+  assert.notEqual(next, n);
+  const added = await s.store.addMedia(
+    'u',
+    day,
+    id,
+    [{ ...audio(next), key: `media/u/${day}/${id}/${next}.mp3` }],
+    0,
+    'later',
+    1
+  );
+  assert.ok(added);
+  await s.objects.put(
+    t.outputKey('u', day, id, n),
+    Buffer.from(JSON.stringify({ results: { transcripts: [{ transcript: 'The old recording' }] } })),
+    { type: 'application/json' }
+  );
+  assert.equal(
+    await t.finished(
+      { TranscriptionJobName: t.jobName('u', day, id, n), TranscriptionJobStatus: 'COMPLETED' },
+      s.services
+    ),
+    'note-gone'
+  );
+  const [file] = (await s.store.note('u', day, id, true))!.media as Item[];
+  assert.equal(file!.transcript, undefined);
+  assert.equal(await s.store.processing('u', 'transcribe', day, id, n), null);
 });

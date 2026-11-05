@@ -235,6 +235,14 @@ export function keys(note: NoteRecord): string[] {
   }
   return out;
 }
+/** The number the note's next file takes. A number never comes round again,
+ * since work on a file, and the file's own key, go by it. */
+export const nextFile = (note: { media?: unknown; media_gone?: unknown } | null | undefined): number =>
+  Math.max(
+    0,
+    ...((note?.media ?? []) as { n?: unknown }[]).map((m) => Number(m.n)),
+    ...((note?.media_gone ?? []) as unknown[]).map(Number)
+  ) + 1;
 /** A note without one of its files, as a removal leaves it. The others keep
  * their numbers; an emptied list goes, as a note that never had files has none. */
 export function withoutFile<T extends { media?: unknown }>(note: T, n: number, at: string): T {

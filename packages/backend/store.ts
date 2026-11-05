@@ -890,15 +890,26 @@ export class Store {
       throw e;
     }
   }
-  async addMedia(user: string, day: string, id: string, entries: Item[], had: number, at: string) {
+  /** New files go after the ones read: `had` and `gone` (how many have been
+   * taken off) together tell whether the list has moved, since a removal and
+   * an addition leave its length as it was. */
+  async addMedia(user: string, day: string, id: string, entries: Item[], had: number, at: string, gone = 0) {
     try {
       return (
         (
           await this.update(key(user, `NOTE#${day}#${id}`), {
             UpdateExpression: 'SET media = list_append(if_not_exists(media, :none), :m), updated_at = :at',
             ConditionExpression:
-              'attribute_exists(pk) AND ' + (had ? 'size(media) = :had' : 'attribute_not_exists(media)'),
-            ExpressionAttributeValues: { ':m': entries, ':none': [], ':at': at, ...(had ? { ':had': had } : {}) },
+              'attribute_exists(pk) AND ' +
+              (had ? 'size(media) = :had' : 'attribute_not_exists(media)') +
+              (gone ? ' AND size(media_gone) = :gone' : ' AND attribute_not_exists(media_gone)'),
+            ExpressionAttributeValues: {
+              ':m': entries,
+              ':none': [],
+              ':at': at,
+              ...(had ? { ':had': had } : {}),
+              ...(gone ? { ':gone': gone } : {})
+            },
             ReturnValues: 'ALL_NEW'
           })
         ).Attributes ?? null
@@ -2402,7 +2413,9 @@ export class Store {
       // into an existing entry meanwhile is kept, and a file added on the
       // web meanwhile refuses this, to be read again.
       const had = ((old.media as Item[] | undefined) ?? []).length;
-      if (added?.length) Object.assign(values, { ':m': added, ':none': [], ':had': had });
+      const gone = ((old.media_gone as unknown[] | undefined) ?? []).length;
+      if (added?.length)
+        Object.assign(values, { ':m': added, ':none': [], ':had': had, ...(gone ? { ':gone': gone } : {}) });
       ops.push({
         Update: {
           TableName: this.tableName,
@@ -2417,7 +2430,8 @@ export class Store {
               ? had
                 ? ' AND size(media) = :had'
                 : ' AND (attribute_not_exists(media) OR size(media) = :had)'
-              : ''),
+              : '') +
+            (added?.length ? (gone ? ' AND size(media_gone) = :gone' : ' AND attribute_not_exists(media_gone)') : ''),
           ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection' },
           ExpressionAttributeValues: values
         }
@@ -2640,7 +2654,9 @@ export class Store {
       // New files go after the ones the note had when read, as an agent's do
       // (captureCommit): a file added on the web meanwhile refuses this.
       const had = ((old.media as Item[] | undefined) ?? []).length;
-      if (added?.length) Object.assign(values, { ':m': added, ':none': [], ':had': had });
+      const gone = ((old.media_gone as unknown[] | undefined) ?? []).length;
+      if (added?.length)
+        Object.assign(values, { ':m': added, ':none': [], ':had': had, ...(gone ? { ':gone': gone } : {}) });
       ops.push({
         Update: {
           TableName: this.tableName,
@@ -2657,7 +2673,8 @@ export class Store {
               ? had
                 ? ' AND size(media) = :had'
                 : ' AND (attribute_not_exists(media) OR size(media) = :had)'
-              : ''),
+              : '') +
+            (added?.length ? (gone ? ' AND size(media_gone) = :gone' : ' AND attribute_not_exists(media_gone)') : ''),
           ExpressionAttributeNames: {
             '#t': 'text',
             '#r': 'revision',
@@ -2722,39 +2739,34 @@ export class Store {
     };
   }
   /** One file off a note, from the whole list as read, so a transcript that
-   * has just landed on another file isn't lost. What was still being worked
-   * out for this file goes too: its number may come round again, and a lease
-   * left behind would stop the next file with it. A worker that finishes
-   * after this finds no file with its number and key, and stops. */
+   * has just landed on another file isn't lost. Its number goes on `media_gone`
+   * and never comes round again: work still running for it is named by that
+   * number, finds no such file, and stops. */
   private fileRemoval(old: Item, n: number, at: string): Ops {
     const had = (old.media as Item[] | undefined) ?? [],
       rest = had.filter((m) => Number(m.n) !== n),
       asRead = this.noteAsRead(old),
-      [, day, ...id] = String(old.sk).split('#'),
-      lease = (kind: string) => ({
-        Delete: {
-          TableName: this.tableName,
-          Key: { pk: String(old.pk), sk: `PROCESS#${kind}#${String(day)}#${id.join('#')}#${n}` }
-        }
-      });
+      gone = 'media_gone = list_append(if_not_exists(media_gone, :none), :gone)';
     return [
       {
         Update: {
           TableName: this.tableName,
           Key: { pk: String(old.pk), sk: String(old.sk) },
-          UpdateExpression: rest.length ? 'SET media = :rest, updated_at = :at' : 'SET updated_at = :at REMOVE media',
+          UpdateExpression: rest.length
+            ? `SET media = :rest, updated_at = :at, ${gone}`
+            : `SET updated_at = :at, ${gone} REMOVE media`,
           ConditionExpression: asRead.ConditionExpression + ' AND media = :media',
           ExpressionAttributeNames: asRead.ExpressionAttributeNames,
           ExpressionAttributeValues: {
             ...asRead.ExpressionAttributeValues,
             ':media': had,
             ':at': at,
+            ':none': [],
+            ':gone': [n],
             ...(rest.length ? { ':rest': rest } : {})
           }
         }
-      },
-      lease('transcribe'),
-      lease('describe')
+      }
     ];
   }
   /** The owner takes one file off a note on the web. */

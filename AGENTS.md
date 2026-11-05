@@ -882,7 +882,8 @@ sign-in, which makes an API token) are built.
   `GET /v1/notes?from=&to=`, at most 31 days, and `.../media/{n}`).
   One file comes off a note with `media:write` (API 1.17.0, Jamie,
   2026-11-05: "Approved: build Release Notes API 1.17.0, taking one file off a note on the web and /v1"),
-  on the whole file list as read, with its leases in the same transaction;
+  on the whole file list as read. Its number goes on the note's `media_gone`
+  and never comes round again, since jobs and file keys go by it (1.17.1);
   an emailed file stays in the note's email until the note is deleted.
   A note reads whole since API 1.14.0 (Jamie, 2026-11-05, the expansion in
   `docs/API.md`; issue #301): tags, markup, parts, place, who wrote it, and

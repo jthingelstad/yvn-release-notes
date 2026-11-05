@@ -65,13 +65,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.17.0';
+export const API_VERSION = '1.17.1';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.17.1',
+    date: '2026-11-05',
+    summary:
+      'A file’s number never comes round again. 1.17.0 let a later file take the number a removed last file left, so a transcript still being made for the old one could land on the new one. Two writers racing a removal could also give two files one number; now the later write reads the note again.'
+  },
   {
     version: '1.17.0',
     date: '2026-11-05',

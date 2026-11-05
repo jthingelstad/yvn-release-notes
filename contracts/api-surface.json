@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.17.0",
+    "version": "1.17.1",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. With `notes:read`, a token reads the whole archive and writes nothing (1.15.0). The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.17.1",
+        "date": "2026-11-05",
+        "summary": "A file’s number never comes round again. 1.17.0 let a later file take the number a removed last file left, so a transcript still being made for the old one could land on the new one. Two writers racing a removal could also give two files one number; now the later write reads the note again."
+      },
       {
         "version": "1.17.0",
         "date": "2026-11-05",
@@ -872,7 +877,7 @@
       "delete": {
         "operationId": "removeNoteFile",
         "summary": "Take one file off a note this token wrote, or any note with notes:all",
-        "description": "The file goes with its small copy, transcript and description, and the note’s `revision` changes. The other files keep their numbers; a file added later may take a number the last file left. A note with no words can’t lose its last file: `text_required`, so delete the note instead. An emailed file stays in the note’s email, which no client can read, until the note is deleted. Since 1.17.0.",
+        "description": "The file goes with its small copy, transcript and description, and the note’s `revision` changes. The other files keep their numbers, and no later file takes this one. A note with no words can’t lose its last file: `text_required`, so delete the note instead. An emailed file stays in the note’s email, which no client can read, until the note is deleted. Since 1.17.0.",
         "responses": {
           "200": {
             "description": "OK",
@@ -2932,7 +2937,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.17.0"
+            "example": "1.17.1"
           }
         }
       },

@@ -352,7 +352,8 @@ test('a token’s files prove media:write too, and new ones go after those the n
                 ConditionExpression:
                   '#src = :api AND #c = :token AND #t = :old AND #r = :revision AND ' +
                   'attribute_not_exists(updated_at) AND ' +
-                  (had ? 'size(media) = :had' : '(attribute_not_exists(media) OR size(media) = :had)'),
+                  (had ? 'size(media) = :had' : '(attribute_not_exists(media) OR size(media) = :had)') +
+                  ' AND attribute_not_exists(media_gone)',
                 ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection', '#src': 'source' },
                 ExpressionAttributeValues: {
                   ':api': 'api',
@@ -458,7 +459,7 @@ test('a token deletes its own note, at the revision it read, with the same proof
   ]);
 });
 
-test('a file comes off on the whole list as read, and its leases go with it', async () => {
+test('a file comes off on the whole list as read, and its number is kept from coming round', async () => {
   const one = { n: 1, kind: 'image', key: 'media/u/2026-10-29/t-n/1.jpg' },
     two = { n: 2, kind: 'audio', key: 'media/u/2026-10-29/t-n/2.m4a' },
     old = { ...note, media: [one, two], updated_at: 'then' },
@@ -469,9 +470,6 @@ test('a file comes off on the whole list as read, and its leases go with it', as
         ExpressionAttributeValues: { ...tokenProof.ConditionCheck.ExpressionAttributeValues, ':also0': 'media:write' }
       }
     },
-    lease = (kind: string) => ({
-      Delete: { TableName: 'T', Key: { pk: 'USER#u', sk: `PROCESS#${kind}#2026-10-29#t-n#2` } }
-    }),
     { store, only } = recorder(),
     media = { ...token, scope: 'notes:write media:write' };
   assert.equal(await store.apiMediaRemove(old, 2, 'now', receipt, audit, rate, previous, media, 100), true);
@@ -484,7 +482,8 @@ test('a file comes off on the whole list as read, and its leases go with it', as
     Update: {
       TableName: 'T',
       Key: { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n' },
-      UpdateExpression: 'SET media = :rest, updated_at = :at',
+      UpdateExpression:
+        'SET media = :rest, updated_at = :at, media_gone = list_append(if_not_exists(media_gone, :none), :gone)',
       ConditionExpression:
         'attribute_exists(pk) AND #t = :old AND #r = :revision AND updated_at = :edited AND size(media) = :had AND media = :media',
       ExpressionAttributeNames: { '#t': 'text', '#r': 'revision' },
@@ -495,13 +494,13 @@ test('a file comes off on the whole list as read, and its leases go with it', as
         ':had': 2,
         ':media': [one, two],
         ':at': 'now',
+        ':none': [],
+        ':gone': [2],
         ':rest': [one]
       }
     }
   });
-  assert.deepEqual(items[3], lease('transcribe'));
-  assert.deepEqual(items[4], lease('describe'));
-  assert.deepEqual(items.slice(5), receipts(previous));
+  assert.deepEqual(items.slice(3), receipts(previous));
 });
 
 test('the last file off leaves no list, and the web’s removal has no token to prove', async () => {
@@ -511,8 +510,11 @@ test('the last file off leaves no list, and the web’s removal has no token to 
   assert.equal(await store.removeMedia(old, 1, 'now'), true);
   const [[, input]] = only() as [[string, { TransactItems: { Update?: Record<string, unknown> }[] }]],
     update = input.TransactItems[0]!.Update!;
-  assert.equal(input.TransactItems.length, 3);
-  assert.equal(update.UpdateExpression, 'SET updated_at = :at REMOVE media');
+  assert.equal(input.TransactItems.length, 1);
+  assert.equal(
+    update.UpdateExpression,
+    'SET updated_at = :at, media_gone = list_append(if_not_exists(media_gone, :none), :gone) REMOVE media'
+  );
   assert.equal((update.ExpressionAttributeValues as Record<string, unknown>)[':rest'], undefined);
 });
 
@@ -814,4 +816,15 @@ test('the fake table refuses a write while the older receipt is live, and takes 
     );
     assert.equal((await s.allNotes('u')).length, state === 'live' ? 0 : 1, state);
   }
+});
+
+test('files added to a note that has lost one prove how many it has lost', async () => {
+  const { store, only } = recorder(),
+    old = { ...note, media: [{ n: 2 }], media_gone: [1] },
+    changed = { ...old, updated_at: 'now', revision: 'r2' };
+  await store.apiNoteCommit(changed, old, receipt, audit, rate, previous, token, 100, [{ n: 3 }]);
+  const [[, input]] = only() as [[string, { TransactItems: { Update?: Record<string, unknown> }[] }]],
+    update = input.TransactItems.find((op) => op.Update)!.Update!;
+  assert.ok(String(update.ConditionExpression).endsWith(' AND size(media) = :had AND size(media_gone) = :gone'));
+  assert.equal((update.ExpressionAttributeValues as Record<string, unknown>)[':gone'], 1);
 });

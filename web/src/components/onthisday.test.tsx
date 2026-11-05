@@ -36,7 +36,8 @@ describe('OnThisDay', () => {
         { date: '2025-10-13', version: '44.2.1', years: 1, notes: [note('a', 'First snow')] },
         { date: '2024-10-13', version: '43.2.1', years: 2, notes: [note('b', 'New job')] }
       ],
-      more: ['2019-10-13']
+      more: ['2019-10-13'],
+      tz: 'America/Chicago'
     });
     show();
     expect(await screen.findByText('First snow')).toBeTruthy();
@@ -56,7 +57,8 @@ describe('OnThisDay', () => {
           notes: ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => note(id, `Note ${id}`))
         }
       ],
-      more: []
+      more: [],
+      tz: 'America/Chicago'
     });
     show();
     expect(await screen.findByText('Note e')).toBeTruthy();
@@ -64,8 +66,26 @@ describe('OnThisDay', () => {
     expect(screen.getByRole('link', { name: '2 more notes' })).toBeTruthy();
   });
 
+  it('says who wrote a note an agent added', async () => {
+    answer({
+      days: [
+        {
+          date: '2025-10-13',
+          version: '44.2.1',
+          years: 1,
+          notes: [{ id: 'a', source: 'agent', author: 'assistant', client: 'Claude', text: 'From an agent' }]
+        }
+      ],
+      more: [],
+      tz: 'America/Chicago'
+    });
+    show();
+    expect(await screen.findByText('From an agent')).toBeTruthy();
+    expect(screen.getByText(/added by Claude/)).toBeTruthy();
+  });
+
   it('is no section at all with nothing to show', async () => {
-    answer({ days: [], more: [] });
+    answer({ days: [], more: [], tz: 'America/Chicago' });
     const { container } = show();
     await new Promise((r) => setTimeout(r, 20));
     expect(container.querySelector('section')).toBeNull();

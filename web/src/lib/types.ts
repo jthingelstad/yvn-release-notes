@@ -69,6 +69,7 @@ export interface Streak {
 export interface OnThisDay {
   days: (Day & { years: number })[];
   more: string[];
+  tz: string;
 }
 export interface Today extends Day {
   tz: string;

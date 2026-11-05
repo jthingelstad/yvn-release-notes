@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { dayName } from '../lib/format.ts';
 import { onThisDayQuery } from '../lib/queries.ts';
 import { AppLink } from './common.tsx';
-import { NoteBody, NoteMedia } from './notes.tsx';
+import { NoteBody, NoteMedia, NoteMeta } from './notes.tsx';
 
 /** The notes a day shows here; its own page has the rest. */
 const NOTES = 5;
@@ -34,6 +34,7 @@ export function OnThisDay() {
               <div className="note" key={n.id}>
                 <NoteBody n={n} />
                 <NoteMedia day={d.date} n={n} version={d.version} small />
+                <NoteMeta n={n} day={d.date} tz={past.tz} cls="count" />
               </div>
             ))}
             {left > 0 && (

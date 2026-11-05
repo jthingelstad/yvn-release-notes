@@ -94,9 +94,15 @@ const KEY: JsonSchema = {
   pattern: '^[A-Za-z0-9_-]+$'
 };
 export const MCP_CONTRACT: McpContract = {
-  server_version: '1.11.0',
+  server_version: '1.11.1',
   protocol_versions: ['2025-06-18', '2025-03-26'],
   changes: [
+    {
+      version: '1.11.1',
+      date: '2026-11-05',
+      summary:
+        'notes_get_audio and notes_view_photo take a file number of up to six digits, since a removed file’s number no longer comes round.'
+    },
     {
       version: '1.11.0',
       date: '2026-10-30',
@@ -670,7 +676,7 @@ export const MCP_CONTRACT: McpContract = {
           n: {
             type: 'integer',
             minimum: 1,
-            maximum: 100
+            maximum: 999999
           },
           original: {
             type: 'boolean',
@@ -744,7 +750,7 @@ export const MCP_CONTRACT: McpContract = {
           n: {
             type: 'integer',
             minimum: 1,
-            maximum: 100
+            maximum: 999999
           },
           offset: {
             type: 'integer',

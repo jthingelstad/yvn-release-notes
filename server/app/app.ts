@@ -117,7 +117,7 @@ const compiled = ROUTES.map(([method, path]) => ({
         .replace('{date}', '([0-9]{4}-[0-9]{2}-[0-9]{2})')
         .replace('{owner}', '([A-Za-z0-9_-]{1,80})')
         .replace('{id}', '([A-Za-z0-9_-]{1,80})')
-        .replace('{n}', '([1-9][0-9]?)')
+        .replace('{n}', '([1-9][0-9]{0,5})')
         .replace('{v}', '([0-9]{1,3}\\.[0-9])')
         // A tag in any script comes percent-encoded; archive-routes reads it.
         .replace('{tag}', '((?:[a-z0-9-]|%[0-9A-Fa-f]{2}){1,600})')

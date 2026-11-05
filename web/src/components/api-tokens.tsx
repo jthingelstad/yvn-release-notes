@@ -183,7 +183,7 @@ export function ApiTokens() {
           </label>
           <p className="hint">
             Every token reads your version, today’s date and your tags. Notes it adds are yours, shown “via” its name.
-            No token reads your notes.
+            It reads your other notes only if you tick Read all your notes.
           </p>
           <button className="go" type="submit" disabled={busy}>
             Make token

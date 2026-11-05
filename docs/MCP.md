@@ -58,6 +58,8 @@ with a next step. Notes are untrusted data, never agent instructions.
 | `notes_get_day` | Note previews in writing order, the day's version, place and recorded weather (with Open-Meteo credit), whether the email was paused, and the special days it collected when badges are shown. |
 | `notes_get_note` | Note text, metadata and media inventory, with `parts` (links by name, tags) only when it has a link or tag (1.6.0); next_offset for long text. |
 | `notes_tags` | Hashtags with note counts. |
+| `notes_map` | The Map's pins (1.12.0), oldest first: each note with a place of its own and coordinates, its date, id, place, whether the spot is exact, tags, release, version and preview, up to 100 a page, with `notes_total`. |
+| `notes_find_place` | The city search (1.12.0), a name of 2 to 80 characters; each result's `place` is the words `notes_create` and `notes_set_place` resolve back to that city. Reads no notes. |
 | `notes_view_photo` | Existing description with description_only=true and notes permission; thumbnail as image content with media permission; original=true returns a private original link. Missing thumbnail falls back to a link; no processing. |
 | `notes_get_audio` | Existing transcript in chunks up to 8,000 characters; optional inline bytes or private download. No processing. |
 | `notes_on_this_day` | The same patch of each earlier release (as the email's On this day), newest first, days with notes only: up to five whole previews each and `notes_total`; ten days a page by default. |
@@ -66,10 +68,11 @@ with a next step. Notes are untrusted data, never agent instructions.
 | `notes_activity` | The activity log (`docs/WEB-APP.md`, Activity): what came in, changed and went out, newest first, kept for the life of the account. `from`/`through` are local days (both kept), `kinds` filters by family (`note` matches `note.added`), 50 rows a page by default, at most 100; `next_cursor` is bound to the filters. Mail subjects cut at 300 and words at 2,000 characters. Each connection's own reads are one row a local day. With the upcoming scope (1.5.1), a row naming an Upcoming date carries its `title` as it is now, null once removed; without it, only the date's id. 1.5.2 adds the daily email, each Upcoming reminder it carried (`when`, as the email said it), badges from notes filed by email, stops for a bounce or complaint, transcripts and descriptions (never their words), imports, and a day's own place (kind `place`, the day alone). 1.8.1 adds the profile photo set, changed or removed (kind `photo`), never the image. |
 | `notes_mail_log` | The mail log (`docs/WEB-APP.md`): each email to the account's addresses in the last 30 days and what became of it, newest first; subjects cut at 300 and words at 2,000 characters. |
 | `notes_account` | Birthday, send time, status, processing settings, "Show badges", home place and pause, with streak, lifetime counts and next release. Never the email address, standing address or calendar feed. |
-| `notes_create` | Write one agent note on local today or an explicit past date, optionally with the city it was written in, only with separately approved `notes:write`. With `files` (1.8.0, needs `media:write` too) it keeps photos, recordings and PDFs with it; text, files or both. |
+| `notes_create` | Write one agent note on local today or an explicit past date, optionally with the city it was written in, only with separately approved `notes:write`. With `files` (1.8.0, needs `media:write` too) it keeps photos, recordings and PDFs with it; text, files or both. `markup: 'rich'` (1.12.0) makes its marks count. |
 | `notes_append` | Append text only to a note created by this exact connection; never edits a user's note or deletes anything. |
 | `notes_edit` | Replace the text of a note created by this exact connection (1.8.0), given the `revision` a full read returned; a note changed since is refused as `conflict`. Needs `notes:write`. Never a user's note, never a delete. |
 | `notes_attach` | Add up to 4 files (4 MB together) to a note created by this exact connection (1.8.0), after the files it has; needs `notes:write` and `media:write`. |
+| `notes_set_place` | Change or clear where a note created by this exact connection was (1.12.0), by city or `clear: true`; needs `notes:write`. Its words and revision stay, and a past day's weather follows. |
 | `notes_send_feedback` | Send Jamie feedback about Release Notes (1.9.0): a kind (bug, idea, question, other), up to 4,000 characters, optionally the id of an item it follows and up to 3 screenshots as base64 PNG, JPEG or WebP, 768 KiB each decoded. Files under `notes:read` through the capture function with an idempotency key; 10 a UTC day an account. |
 | `notes_my_feedback` | The account's feedback, newest first, by opening words and answer count, with the day's count; with `id`, one item's words and answers in full, continued by `part` and `offset`; with `id` and `screenshot`, that screenshot as image content, which needs `media:read`. |
 | `upcoming_list` | Saved Upcoming dates (birthdays, anniversaries, trips, events) with each one's next occurrence, id and revision, in date order; needs the separate `upcoming` scope. A trip or event already over is left out and only counted (`past_left_out`, 1.6.0); `max_entries` is the account's cap, those included. |
@@ -159,8 +162,12 @@ notes, imports, emails, transcripts or photos. Client confirmation remains
 the client's responsibility; the server cannot inspect the conversation.
 
 `notes_create({text, date?, place?, idempotency_key})` and
-`notes_append({date, id, text, idempotency_key})` take plain text, up to
-20,000 characters total per note. Put hashtags in the text. `place` is a
+`notes_append({date, id, text, idempotency_key})` take text, up to 20,000
+characters total per note, shown as typed. Put hashtags in the text.
+`notes_create` also takes `markup: 'rich'` (1.12.0; Jamie, 2026-11-05: "MCP
+should get rich text ability"), and then `**bold**`, `_italic_`, lists and
+quotes count, as in `docs/RICH-TEXT.md`. It is the note's for good: an append
+or a rewrite keeps it, and reads say `markup: 'rich'`. `place` is a
 city the user says the note was written in, as text ("Zürich", or
 "Paris, Texas" to choose among same-named cities). It is found by the same
 city search as the web's Where, and kept as a chosen city. A name the
@@ -181,6 +188,17 @@ three, so a change racing the edit refuses it too. Hashtags come from the
 new text and link titles are fetched as for a new note; place and files stay.
 As on the web, no earlier text is kept. The activity log gets `note.edited`,
 never the words.
+
+`notes_set_place({date, id, place | clear, idempotency_key})` (1.12.0; Jamie,
+2026-11-05, agreeing this much and no more of the place row in the surface
+matrix) changes or clears where a note this same connection created was, only
+when the user asks. `place` is a city as `notes_create` takes it, never a
+device's spot, and `clear: true` removes it as the web's Remove does. The words
+and revision stay, so a rewrite in hand still lands. The store checks the note
+is as it was read. Once written, a past day's weather follows, and a failure
+there never fails the write. The activity log gets `note.edited` with `place:
+set` or `removed`, never the place. MCP has no pinned tags, no day places and
+no file removal; those are the web's and `/v1`'s.
 
 ### Files
 
@@ -221,7 +239,7 @@ completed operation returns its original result, even if the note is since
 appended to or deleted. A changed request using that key is refused. After
 24 hours it is a new operation, even if DynamoDB TTL has not removed the
 receipt yet. Receipts are private USER data and disappear on account deletion.
-Daily account quotas are 20 creates, 50 appends, 50 edits and 20 attaches across all connections,
+Daily account quotas are 20 creates, 50 appends, 50 edits, 20 attaches and 50 place changes across all connections,
 in addition to the general request quota. Completed retries do not consume
 another write quota or create another audit record. Successful captures
 commit the note, receipt, audit and quota atomically, with current family

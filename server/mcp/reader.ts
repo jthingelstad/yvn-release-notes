@@ -4,8 +4,9 @@ import { createHash } from 'node:crypto';
 import { newToken } from '../../packages/backend/auth.ts';
 import { type OAuthContext, type OAuthRow, type OAuthStore } from '../../packages/backend/oauth.ts';
 import { segments, type Link } from '../../packages/backend/links.ts';
-import { isRich } from '../../packages/domain/rich.ts';
-import type { City } from '../../packages/backend/places.ts';
+import { isRich, RICH } from '../../packages/domain/rich.ts';
+import { search, type City } from '../../packages/backend/places.ts';
+import { pins } from '../../packages/backend/maps.ts';
 import { localDay, localStart, validDay, validTimezone, parseDay, addDays } from '../../packages/domain/dates.ts';
 import {
   ACTIVITY,
@@ -22,7 +23,7 @@ import { badgeFacts } from '../../packages/backend/badges.ts';
 import { mapUrl, writtenAt, placeLabel, type NoteRecord, type PlaceRecord } from '../../packages/domain/notes.ts';
 import { found, isTag, split } from '../../packages/domain/tags.ts';
 import { searchTerms, searchedText } from '../../packages/domain/search.ts';
-import { codePointLength, codePointSlice } from '../../packages/domain/unicode.ts';
+import { codePointLength, codePointSlice, pythonTrim } from '../../packages/domain/unicode.ts';
 import { asciiJson, MAX_MEDIA, ToolError, object, type Arguments } from './common.ts';
 import { upcomingViews, UPCOMING_MAX, type UpcomingEntry, type UpcomingView } from '../../packages/domain/upcoming.ts';
 import { placeText } from '../../packages/domain/upcoming-text.ts';
@@ -454,6 +455,8 @@ export class Reader {
         // Without a link or tag, parts would only repeat the text.
         ...(parts.some((p) => typeof p !== 'string') ? { parts } : {})
       };
+      // `parts` and `text` keep the marks as typed; this says to read them.
+      if (isRich(item)) shown.markup = RICH;
       if (item.connection) shown.connection = item.connection;
       if (item.tags) shown.tags = item.tags;
       if (item.place && placeLabel(item.place as PlaceRecord)) shown.place = placeLabel(item.place as PlaceRecord);
@@ -895,6 +898,37 @@ export class Reader {
           tz: this.profile.tz,
           max_entries: UPCOMING_MAX,
           past_left_out: all.length - views.length
+        },
+        content
+      ];
+    }
+    if (name === 'notes_map') {
+      // As /v1's map.pins, without `parts`: an agent reads the preview's words.
+      const notes = await this.context.store.allNotes(this.uid, true),
+        all = pins(notes as NoteRecord[], this.birthday)
+          .sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
+          .map(({ parts: _parts, ...pin }) => pin as OAuthRow);
+      return [{ ...this.page(all, { ...a, limit: a.limit ?? 50 }, 'pins'), notes_total: notes.length }, content];
+    }
+    if (name === 'notes_find_place') {
+      const words = pythonTrim(String(a.q));
+      if (codePointLength(words) < 2 || codePointLength(words) > 80)
+        throw new ToolError('invalid_arguments', "q is a city's name, 2 to 80 characters.");
+      let found: City[];
+      try {
+        found = await (this.context.geocode ?? search)(words);
+      } catch {
+        throw new ToolError('temporarily_unavailable', 'The city search is unavailable; try again shortly.');
+      }
+      return [
+        {
+          places: found.map(({ name: city, region, country }) => ({
+            // The words notes_create and notes_set_place resolve back to it.
+            place: [city, region, country].filter(Boolean).join(', '),
+            name: city,
+            region,
+            country
+          }))
         },
         content
       ];

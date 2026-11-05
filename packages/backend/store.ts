@@ -2796,6 +2796,39 @@ export class Store {
       ...extra
     ]);
   }
+  /** Where a note its own connection wrote was, set or removed through MCP,
+   * as apiNotePlace does for a token: its words and revision stay. */
+  async agentNotePlace(
+    old: Item,
+    place: Item | null,
+    receipt: Item,
+    audit: Item,
+    rate: Item,
+    previous: Item | null,
+    family: Item,
+    now: number
+  ) {
+    const asRead = this.noteAsRead(old);
+    return this.transact([
+      ...this.agentProof(family, now, 'notes:write'),
+      {
+        Update: {
+          TableName: this.tableName,
+          Key: { pk: String(old.pk), sk: String(old.sk) },
+          UpdateExpression: place ? 'SET #p = :p REMOVE place_cleared' : 'SET place_cleared = :p REMOVE #p',
+          ConditionExpression: 'author = :author AND #c = :connection AND ' + asRead.ConditionExpression,
+          ExpressionAttributeNames: { ...asRead.ExpressionAttributeNames, '#p': 'place', '#c': 'connection' },
+          ExpressionAttributeValues: {
+            ...asRead.ExpressionAttributeValues,
+            ':p': place ?? true,
+            ':author': 'assistant',
+            ':connection': family.id
+          }
+        }
+      },
+      ...this.agentReceipts(receipt, audit, rate, previous, now)
+    ]);
+  }
   /** Where a note was, set or removed through a token (`/v1` 1.16.0), as the
    * owner's change on the web: removing it marks `place_cleared`. Its words
    * and revision stay. */

@@ -21,7 +21,7 @@ Reading is the one approval every connection has. The rest are separate boxes, s
 
 - **Read your notes.** Your whole archive: the words, tags, places and weather, with any transcripts and photo descriptions you turned on, and the rest of your account to read: releases, badges (while they're shown), your settings and the activity log. Never your email address, your own address for notes or your calendar link.
 - **Also allow photos and recordings.** The photos, recordings and PDFs themselves, by private links that last ten minutes.
-- **Also allow adding notes when I ask.** It can add notes when you ask it to, and add to or rewrite the notes it added itself. It can't change your other notes, and it can't delete anything.
+- **Also allow adding notes when I ask.** It can add notes when you ask it to, with [bold, lists and quotes](/guide/start/) if it likes, and add to or rewrite the notes it added itself, or change where they were. It can't change your other notes, and it can't delete anything.
 - **Also allow adding photos, recordings and PDFs to those notes.** Only with adding notes, at most 4 files and 4 MB a call. They're kept like the files you add yourself.
 - **Also allow reading and changing my Upcoming dates.** Your [Upcoming](/guide/upcoming/) dates, to list, add, change and remove. It never touches a note.
 

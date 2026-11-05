@@ -511,6 +511,114 @@ test('with notes:all, any note is deleted as it was read: words, revision, last 
   }
 });
 
+test('a note’s place is set or removed on the note as read, with its proofs', async () => {
+  const paris = { city: 'Paris', tz: 'Europe/Paris', lat: 48.85, lon: 2.35, from: 'chosen' },
+    all = { ...token, scope: 'notes:write notes:all' },
+    reach = {
+      ConditionCheck: {
+        ...tokenProof.ConditionCheck,
+        ConditionExpression: tokenProof.ConditionCheck.ConditionExpression + ' AND contains(#s, :also0)',
+        ExpressionAttributeValues: { ...tokenProof.ConditionCheck.ExpressionAttributeValues, ':also0': 'notes:all' }
+      }
+    },
+    sk = 'NOTE#2026-10-29#e-n',
+    set = 'SET #p = :p REMOVE place_cleared',
+    cleared = 'SET place_cleared = :p REMOVE #p',
+    names = { '#t': 'text', '#r': 'revision', '#p': 'place' },
+    own = { ...names, '#c': 'connection', '#src': 'source' };
+  for (const [old, by, proof, place, update, condition, attributes, values] of [
+    // A token's own note: a web edit keeps its revision, so words and the
+    // last edit are checked too.
+    [
+      note,
+      token,
+      tokenProof,
+      paris,
+      set,
+      '#src = :api AND #c = :token AND attribute_exists(pk) AND #t = :old AND #r = :revision AND attribute_not_exists(updated_at) AND (attribute_not_exists(media) OR size(media) = :had)',
+      own,
+      { ':old': 'Coffee #walks', ':revision': 'r1', ':had': 0, ':p': paris, ':api': 'api', ':token': 'a' }
+    ],
+    [
+      { ...note, updated_at: '2026-10-29T10:00:00', media: [{ n: 1 }] },
+      token,
+      tokenProof,
+      null,
+      cleared,
+      '#src = :api AND #c = :token AND attribute_exists(pk) AND #t = :old AND #r = :revision AND updated_at = :edited AND size(media) = :had',
+      own,
+      {
+        ':old': 'Coffee #walks',
+        ':revision': 'r1',
+        ':edited': '2026-10-29T10:00:00',
+        ':had': 1,
+        ':p': true,
+        ':api': 'api',
+        ':token': 'a'
+      }
+    ],
+    // Any other note, with notes:all.
+    [
+      { pk: 'USER#u', sk, text: 'By email', source: 'email', media: [{ n: 1 }, { n: 2 }] },
+      all,
+      reach,
+      paris,
+      set,
+      'attribute_exists(pk) AND #t = :old AND attribute_not_exists(#r) AND attribute_not_exists(updated_at) AND size(media) = :had',
+      names,
+      { ':old': 'By email', ':had': 2, ':p': paris }
+    ],
+    [
+      { pk: 'USER#u', sk, source: 'web', updated_at: 150 },
+      all,
+      reach,
+      null,
+      cleared,
+      'attribute_exists(pk) AND attribute_not_exists(#t) AND attribute_not_exists(#r) AND updated_at = :edited AND (attribute_not_exists(media) OR size(media) = :had)',
+      names,
+      { ':edited': 150, ':had': 0, ':p': true }
+    ]
+  ] as [Item, Item, Item, Item | null, string, string, Item, Item][]) {
+    const { store, only } = recorder();
+    assert.equal(await store.apiNotePlace(old, place, receipt, audit, rate, previous, by, 100), true);
+    assert.deepEqual(only(), [
+      [
+        'TransactWriteCommand',
+        {
+          TransactItems: [
+            profileProof,
+            proof,
+            {
+              Update: {
+                TableName: 'T',
+                Key: { pk: 'USER#u', sk: old.sk },
+                UpdateExpression: update,
+                ConditionExpression: condition,
+                ExpressionAttributeNames: attributes,
+                ExpressionAttributeValues: values
+              }
+            },
+            ...receipts(previous)
+          ]
+        }
+      ]
+    ]);
+  }
+});
+
+test('a day’s own place is put or deleted with the proofs the caller sends', async () => {
+  const paris = { city: 'Paris', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 },
+    key = { pk: 'USER#u', sk: 'PLACE#2026-10-29' };
+  for (const [place, write] of [
+    [paris, { Put: { TableName: 'T', Item: { ...key, ...paris } } }],
+    [null, { Delete: { TableName: 'T', Key: key } }]
+  ] as [Item | null, Item][]) {
+    const { store, only } = recorder();
+    assert.equal(await store.apiDayPlace('u', '2026-10-29', place, [tokenProof]), true);
+    assert.deepEqual(only(), [['TransactWriteCommand', { TransactItems: [profileProof, write, tokenProof] }]]);
+  }
+});
+
 test('pinned tags are set from the list read, first or replacing, with any proofs after', async () => {
   const { store, only } = recorder(),
     pins = (condition: string, values: Item) => ({

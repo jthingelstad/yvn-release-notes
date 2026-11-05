@@ -643,8 +643,8 @@ a sign-in. Built 2026-10-29 (`packages/backend/oauth.ts`, `tokens.ts`,
 - **No refresh token.** An app, its share extension and its Siri intent
   are separate processes that all send notes. A rotating refresh token
   shared between them, whose reuse ends the grant, would sign the phone
-  out whenever two refreshed at once. One long-lived key, scoped so it
-  can't read a word, is what a pasted token already is (Scopes, above), so
+  out whenever two refreshed at once. One long-lived key, with the scopes
+  the owner ticked, is what a pasted token already is (Scopes, above), so
   the sign-in adds no new kind of credential: it saves the copying.
 - **A code that comes back** a second time ends the token it made (RFC
   6749, 4.1.2), and the activity log says why (`token-reuse`).
@@ -717,8 +717,11 @@ A capture tool with four verbs:
   would be a good thing in there too, because it's a way to confirm what
   did the app do and what did other entities do".
 
-It never reads the archive. The web is where you read, search, look back
-and change settings. It lives in its own public repo,
+It is the fast way in, with your notes along. It began as capture alone; a
+Notes tab now reads the archive once the owner allows it (Jamie, 2026-11-05:
+"Approved: build iPhone Changelog phases 0-2 on notes:all, with calls 1-6 as
+recommended"), with an optional Face ID lock on reading, never on capture.
+Account and settings stay on the web. It lives in its own public repo,
 `jthingelstad/changelog-ios` (MIT, bundle ID `com.yourversionnumber.changelog`),
 which holds its own design.
 
@@ -728,9 +731,11 @@ which holds its own design.
   its idempotency key and `written_at`, so a retry never duplicates.
 - **Reads back your notes.** It began asking only for `notes:write`,
   `media:write`, `upcoming` and `activity`, reading back only what it sent
-  itself. Since API 1.10.0 it can ask for `notes:all` too, to open and
-  edit any earlier note wherever it was made (Jamie, 2026-10-30). The
-  owner sees that line on the sign-in page and can untick it.
+  itself. It asks for `notes:all` too now, to read and edit any note
+  wherever it was made (Jamie, 2026-10-30 and 2026-11-05), though a lost
+  phone's token could then do the same. The owner sees that line on the
+  sign-in page and can untick it. A token signed in before this keeps
+  capturing, and one button in the Notes tab trades it for a reading one.
 - **The software metaphor in small doses.** Today's version is at the top in
   monospace. A sent note says "Filed in 4.5.137", and an empty day says "No
   changes yet in 4.5.137".

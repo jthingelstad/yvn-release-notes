@@ -18,7 +18,8 @@ import type {
   Releases,
   TagRow,
   TaggedDays,
-  Today
+  Today,
+  OnThisDay
 } from './types.ts';
 import type { UpcomingView } from '../../../packages/domain/upcoming.ts';
 
@@ -46,6 +47,11 @@ export const todayQuery = queryOptions({
   queryKey: ['today'],
   queryFn: () => get<Today>('/api/today'),
   refetchInterval: pollWhileWriting
+});
+
+export const onThisDayQuery = queryOptions({
+  queryKey: ['on-this-day'],
+  queryFn: () => get<OnThisDay>('/api/on-this-day')
 });
 
 export const daysQuery = infiniteQueryOptions({

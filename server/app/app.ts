@@ -44,6 +44,7 @@ export const ROUTES: [string, string][] = [
   ['GET', '/api/book/plan'],
   ['GET', '/api/book/file'],
   ['GET', '/api/today'],
+  ['GET', '/api/on-this-day'],
   ['GET', '/api/upcoming'],
   ['POST', '/api/upcoming'],
   ['POST', '/api/upcoming/batch'],

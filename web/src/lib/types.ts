@@ -65,6 +65,11 @@ export interface Streak {
   today: boolean;
 }
 
+/** The same day of each earlier release: the newest with notes, the rest by date. */
+export interface OnThisDay {
+  days: (Day & { years: number })[];
+  more: string[];
+}
 export interface Today extends Day {
   tz: string;
   dots: number;

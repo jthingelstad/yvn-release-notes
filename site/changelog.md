@@ -7,7 +7,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 
 ## 0.0.30 · November 6
 
-- Apps on [the API](/guide/api/) can keep [check-ins](/guide/api/check-ins/) now: the places you stopped, with when you got there and left, and names for the ones you go back to. Changelog doesn't send them yet, and they'll have their own place on the web when it does.
+- [Check-ins](/guide/check-ins/) have their own place on the web: the stops an app sends, with when you got there and left. They have a filter in Activity, a page each to name or delete them or write about them, their own marks on the Map, and a section in Settings for the places you remember. [The API](/guide/api/check-ins/) can send them. Changelog doesn't yet.
 - [The API's guide](/guide/api/) is a set of pages now, not one long one: errors and limits, notes, your archive, places, check-ins, Upcoming and recipes to copy, with [a reference](/guide/api/reference/) of every request. Tools and agents can fetch [the same description](https://notes.yourversionnumber.com/v1/openapi.json) as OpenAPI, with no token.
 
 ## 0.0.29 · November 5

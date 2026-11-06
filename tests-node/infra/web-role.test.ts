@@ -25,6 +25,7 @@ import { REDIRECT, VERIFIER } from '../oauth/fixtures.ts';
 import { createHash } from 'node:crypto';
 import { b64, png } from '../../packages/testing/images.ts';
 import { Recorder, REGION, ACCOUNT, STACK } from './grants.ts';
+import { checkInId, checkInKey } from '../../packages/domain/check-ins.ts';
 
 const origin = 'https://notes.example.com',
   now = Date.parse('2026-10-13T12:00:00Z') / 1000,
@@ -256,6 +257,33 @@ test('the web role grants every request each route and the OAuth endpoints make'
   await call('POST', '/api/badges/seen', { keys: ['hello'] });
   await call('POST', '/api/eggs', { egg: 'rtfm' });
   await call('POST', '/api/map/search', { q: 'lake' });
+
+  // Check-ins, one seeded as a phone would send it: read, named, remembered,
+  // renamed, forgotten, deleted one and all.
+  const at = '2026-10-13T09:00:00.000Z',
+    stop = checkInId(at, 'ab12');
+  store.seed({
+    pk: 'USER#' + currentUser,
+    sk: checkInKey(at, stop),
+    id: stop,
+    at,
+    arrived: at,
+    left: null,
+    lat: 48.85,
+    lon: 2.35,
+    source: 'visit',
+    day,
+    revision: 1
+  });
+  await call('GET', '/api/check-ins');
+  await call('GET', '/api/check-ins/' + stop);
+  await call('PUT', '/api/check-ins/' + stop, { name: 'Corner Bakery', revision: 1 });
+  await call('PUT', '/api/check-ins/' + stop, { name: 'Corner Bakery', remember: true, revision: 2 });
+  const place = String(((await call('GET', '/api/check-ins/places')).b.places as { id: string }[])[0]!.id);
+  await call('PUT', '/api/check-ins/places/' + place, { name: 'The Bakery' });
+  await call('DELETE', '/api/check-ins/places/' + place, undefined, 204);
+  await call('DELETE', '/api/check-ins/' + stop, undefined, 204);
+  await call('DELETE', '/api/check-ins', { confirm: 'all' });
 
   // Upcoming and its calendar feed.
   const birthday = { kind: 'birthday', title: 'Alex', date: '10-20', year: 1976 },

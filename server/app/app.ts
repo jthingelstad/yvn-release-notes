@@ -9,6 +9,7 @@ import { adminRoutes } from './admin-routes.ts';
 import { feedbackRoutes } from './feedback-routes.ts';
 import { upcomingRoutes } from './upcoming-routes.ts';
 import { BASE_MAP, mapRoutes } from './map-routes.ts';
+import { checkInRoutes } from './check-in-routes.ts';
 import { exportRoutes } from '../../packages/backend/exports.ts';
 import { bookRoutes } from '../../packages/backend/books.ts';
 import { errorFields } from '../../packages/backend/services.ts';
@@ -67,6 +68,14 @@ export const ROUTES: [string, string][] = [
   ['GET', '/api/map/tiles/{z}/{x}/{y}'],
   ['GET', '/api/map/glyphs/{fonts}/{range}'],
   ['GET', '/api/map/sprites/{scheme}/{sprite}'],
+  ['GET', '/api/check-ins'],
+  ['DELETE', '/api/check-ins'],
+  ['GET', '/api/check-ins/places'],
+  ['PUT', '/api/check-ins/places/{id}'],
+  ['DELETE', '/api/check-ins/places/{id}'],
+  ['GET', '/api/check-ins/{id}'],
+  ['PUT', '/api/check-ins/{id}'],
+  ['DELETE', '/api/check-ins/{id}'],
   ['POST', '/api/days/{date}/notes'],
   ['PUT', '/api/days/{date}/notes/{id}'],
   ['DELETE', '/api/days/{date}/notes/{id}'],
@@ -169,6 +178,7 @@ export function createApp(options: AppOptions = {}): Hono {
             (await adminRoutes(service, matched.path, args)) ??
             (await upcomingRoutes(service, matched.path, args)) ??
             (await mapRoutes(service, matched.path, args)) ??
+            (await checkInRoutes(service, matched.path, args)) ??
             (await exportRoutes(service, matched.path, url.searchParams)) ??
             (await bookRoutes(service, matched.path, url.searchParams)) ??
             json({ error: 'not-found' }, 404);

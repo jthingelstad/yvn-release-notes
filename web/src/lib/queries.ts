@@ -12,10 +12,12 @@ import type {
   DaysPage,
   MapNotes,
   Me,
+  NamedPlace,
   NewBadges,
   Note,
   ReleasePage,
   Releases,
+  Stay,
   TagRow,
   TaggedDays,
   Today,
@@ -75,6 +77,13 @@ export const releaseQuery = (v: string | null) =>
     enabled: !!v
   });
 
+export const checkInActivityQuery = infiniteQueryOptions({
+  queryKey: ['activity', 'checkin'],
+  queryFn: ({ pageParam }) =>
+    get<Activity>('/api/activity?family=checkin' + (pageParam ? `&before=${encodeURIComponent(pageParam)}` : '')),
+  initialPageParam: '',
+  getNextPageParam: (last) => last.next || undefined
+});
 export const activityQuery = infiniteQueryOptions({
   queryKey: ['activity'],
   queryFn: ({ pageParam }) =>
@@ -135,6 +144,20 @@ export function pickDay(asked: string | null | undefined, p: Me): string {
   return yesterday < p.birthday ? p.birthday : yesterday;
 }
 
+// Every check-in, spot and all, for the Map page and Settings.
+export const checkInsQuery = queryOptions({
+  queryKey: ['check-ins'],
+  queryFn: () => get<{ stays: Stay[] }>('/api/check-ins')
+});
+export const checkInQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['check-in', id],
+    queryFn: () => get<{ check_in: Stay }>('/api/check-ins/' + encodeURIComponent(id))
+  });
+export const namedPlacesQuery = queryOptions({
+  queryKey: ['named-places'],
+  queryFn: () => get<{ places: NamedPlace[] }>('/api/check-ins/places')
+});
 // The Map page's pins: every note with a place of its own.
 export const mapQuery = queryOptions({
   queryKey: ['map'],

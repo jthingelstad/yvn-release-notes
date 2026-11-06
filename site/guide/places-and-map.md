@@ -33,4 +33,6 @@ A note with no place of its own, like most email replies, shows the day's city, 
 
 **Map** shows every note with a place of its own, as pins that gather into numbered groups as you zoom out. Choose a pin or a group, and its notes are listed under the map, newest first; each version number opens its day.
 
+[Check-ins](/guide/check-ins/), if an app sends them, show there too, as rings where notes are dots, and **Show** picks either or both.
+
 Narrow it down with **Words**, **Tag** and **Release**, and **Clear filters** to see everything again. A place on a note, on the web or in the morning email's Yesterday, opens the map right on that note.

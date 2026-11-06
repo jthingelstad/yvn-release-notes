@@ -100,6 +100,7 @@ const icons = {
   files: Paperclip,
   record: Mic,
   where: MapPin,
+  checkin: CircleDot,
   here: LocateFixed,
   out: LogOut,
   edit: Pencil,

@@ -74,3 +74,18 @@ export async function stayPage(
   if (top && o.before !== undefined) top.push(...(await store.laterInStay(user, top.at(-1)!, places)));
   return { stays, next, places };
 }
+
+/** Every stay, newest first, for the web's Map. Read whole, as its pins are. */
+export async function everyStay(
+  store: CheckInReads,
+  user: string
+): Promise<{ stays: CheckIn[][]; places: NamedPlace[] }> {
+  const stays: CheckIn[][] = [];
+  let before: string | undefined;
+  for (;;) {
+    const page = await stayPage(store, user, { ...(before === undefined ? {} : { before }), limit: 500 });
+    stays.push(...page.stays);
+    if (!page.next) return { stays, places: page.places };
+    before = page.next;
+  }
+}

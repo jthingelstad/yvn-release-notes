@@ -15,6 +15,7 @@ import {
   useTitle
 } from '../components/common.tsx';
 import { Avatar } from '../components/avatar.tsx';
+import { CheckInSettings } from '../components/check-in-settings.tsx';
 import { Connections } from '../components/connections.tsx';
 import { ApiTokens } from '../components/api-tokens.tsx';
 import { Icon } from '../components/icon.tsx';
@@ -494,6 +495,7 @@ function Account({ p }: { p: Me }) {
           fetched.
         </p>
       </SettingsGroup>
+      <CheckInSettings />
       <Connections />
       <ApiTokens />
       <SettingsGroup

@@ -1,4 +1,4 @@
-import { SessionService, reject } from '../../packages/backend/sessions.ts';
+import { SessionService, reject, type ApiContext } from '../../packages/backend/sessions.ts';
 import {
   updateAccount,
   changePause,
@@ -20,13 +20,37 @@ import { pythonTrim, codePointLength } from '../../packages/domain/unicode.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { signinMessage, deleteMessage } from '../../packages/mail/auth.ts';
 import { checkTurnstile, turnstileClient, turnstileToken } from '../../packages/backend/turnstile.ts';
-import { activityId, activityView, titled } from '../../packages/domain/activity.ts';
+import { ACTIVITY_FAMILIES, activityId, activityView, familyOf, titled } from '../../packages/domain/activity.ts';
 import { eventId, recordActivity } from '../../packages/backend/activity.ts';
 import { spotOf, type SpotNames } from '../../packages/backend/places.ts';
 import { photoLink, removePhoto, setPhoto } from '../../packages/backend/profile-photo.ts';
 import { findEgg } from '../../packages/backend/eggs.ts';
 import { json, body } from './requests.ts';
 const ACTIVITY_SHOWN = 100;
+/** A page of one family's rows, reading on past the others, up to a limit: a
+ * page cut there says where to go on from, with few rows or none. */
+async function familyPage(
+  store: ApiContext['store'],
+  user: string,
+  family: string,
+  before: string | undefined
+): Promise<{ rows: Item[]; next: string | null }> {
+  const rows: Item[] = [];
+  let from = before,
+    read = 0;
+  for (;;) {
+    const page = await store.activity(user, { before: from, limit: 200 });
+    for (const row of page.rows) {
+      if (familyOf(String(row.kind)) === family) {
+        if (rows.length >= ACTIVITY_SHOWN) return { rows, next: from ?? null };
+        rows.push(row);
+      }
+      from = activityId(String(row.sk));
+      if (++read >= 2000) return { rows, next: page.more || row !== page.rows.at(-1) ? from : null };
+    }
+    if (!page.more) return { rows, next: null };
+  }
+}
 export async function accountRoutes(
   service: SessionService,
   pattern: string,
@@ -216,10 +240,17 @@ export async function accountRoutes(
     // mail row's words appear only when its sender was proven and it was not
     // filed.
     const { uid, profile: p } = await service.account(),
-      before = query.get('before') ?? undefined;
+      before = query.get('before') ?? undefined,
+      family = query.get('family');
     if (before !== undefined && (before.length > 300 || !/^\d{4}-\d{2}-\d{2}T[\d:.]+Z(#|$)/.test(before)))
       reject(400, 'before');
-    const page = await store.activity(uid, { before, limit: ACTIVITY_SHOWN }),
+    if (family !== null && !(ACTIVITY_FAMILIES as readonly string[]).includes(family)) reject(400, 'family');
+    const page = family
+        ? await familyPage(store, uid, family, before)
+        : await store.activity(uid, { before, limit: ACTIVITY_SHOWN }).then(({ rows, more }) => ({
+            rows,
+            next: more ? activityId(String(rows.at(-1)!.sk)) : null
+          })),
       // An Upcoming date's title, read now: the log never keeps it.
       titles = new Map(
         page.rows.some((r) => r.upcoming)
@@ -231,7 +262,9 @@ export async function accountRoutes(
       tz: p.tz,
       today: localDay(ctx.now, String(p.tz)),
       entries: page.rows.map((r) => titled(activityView(r), titles)),
-      next: page.more ? activityId(String(page.rows.at(-1)!.sk)) : null
+      next: page.next,
+      // Whether the page offers its Check-ins filter.
+      ...(before === undefined ? { check_ins: (await store.checkInsBelow(uid, undefined, 1)).items.length > 0 } : {})
     });
   }
   if (pattern === '/api/places') {

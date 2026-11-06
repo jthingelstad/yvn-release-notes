@@ -3,11 +3,14 @@
 // filed keeps its words only when its sender was proven; "Add to" puts them
 // in that day's draft, and nothing is saved until the note is.
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { Fragment, type ReactNode, useState } from 'react';
 import { AppLink, Bar, Crumb, Failed, Loading, useTitle } from '../components/common.tsx';
 import { Icon, type IconName } from '../components/icon.tsx';
+import { checkInHref, stayLine, stopName } from '../lib/check-ins.ts';
 import { clock, count, dayName, listed, thisYearOf, zoneTime } from '../lib/format.ts';
-import { activityQuery } from '../lib/queries.ts';
+import { useHashParam } from '../lib/nav.ts';
+import { activityQuery, checkInActivityQuery } from '../lib/queries.ts';
 import { store } from '../lib/storage.ts';
 import type {
   Activity as ActivityData,
@@ -19,10 +22,17 @@ import type {
 
 export function Activity() {
   useTitle('Activity');
-  const log = useInfiniteQuery(activityQuery);
+  const navigate = useNavigate();
+  // The filter stays in the address, so Back from a check-in comes back to it.
+  const only = useHashParam('only') === 'check-ins';
+  const all = useInfiniteQuery({ ...activityQuery, enabled: !only });
+  const stops = useInfiniteQuery({ ...checkInActivityQuery, enabled: only });
+  const log = only ? stops : all;
   const pages = log.data?.pages || [];
   const l = pages[0];
   const entries = pages.flatMap((p) => p.entries);
+  // Offered once there is something to filter by, and kept once it is on.
+  const offered = only || all.data?.pages[0]?.check_ins;
   return (
     <>
       <Bar />
@@ -40,12 +50,33 @@ export function Activity() {
           <li>Upcoming dates, settings, sign-ins and connected assistants</li>
           <li>Each email sent to your Release Notes addresses, and what became of it</li>
           <li>Each day an assistant read your notes</li>
+          <li>Each check-in, and each one you name or delete</li>
         </ul>
         <p className="hint">
           When an email isn’t filed because of a problem, you get an email about it too. A row never copies the words of
           a note.
         </p>
       </details>
+      {offered && (
+        <p className="row activity-filter" role="group" aria-label="Show">
+          <button
+            className="quiet"
+            type="button"
+            aria-pressed={!only}
+            onClick={() => navigate({ to: '/activity/', hash: '', replace: true })}
+          >
+            Everything
+          </button>
+          <button
+            className="quiet"
+            type="button"
+            aria-pressed={only}
+            onClick={() => navigate({ to: '/activity/', hash: 'only=check-ins', replace: true })}
+          >
+            Check-ins
+          </button>
+        </p>
+      )}
       {log.isPending && <Loading />}
       {log.isError && !l && <Failed />}
       {l &&
@@ -63,9 +94,11 @@ export function Activity() {
             ))}
           </div>
         ) : (
-          <p className="hint spaced" id="activity-empty">
-            Nothing yet.
-          </p>
+          !log.hasNextPage && (
+            <p className="hint spaced" id="activity-empty">
+              {only ? 'No check-ins yet.' : 'Nothing yet.'}
+            </p>
+          )
         ))}
       {log.isFetchNextPageError && <Failed />}
       <button
@@ -120,7 +153,8 @@ function Line({
 }) {
   return (
     <>
-      <span className="activity-time">{zoneTime(at(e), l.tz)}</span>
+      {/* A check-in's time, as it read there. */}
+      <span className="activity-time">{zoneTime(at(e), (e as EventActivity).time_zone || l.tz)}</span>
       <Icon name={icon} />
       <div>
         <p className="activity-what">{what}</p>
@@ -152,7 +186,8 @@ const GLYPHS: Record<string, IconName> = {
   calendar: 'calendar',
   connection: 'assistant',
   feedback: 'feedback',
-  egg: 'badges'
+  egg: 'badges',
+  checkin: 'checkin'
 };
 
 function Row({ e, l }: { e: ActivityEntry; l: ActivityData }) {
@@ -369,6 +404,34 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
       ];
     case 'egg.found':
       return [e.egg === 'developer' ? 'Became a developer' : e.egg === 'rtfm' ? 'Read the manual' : 'Found something'];
+    case 'checkin':
+      return [
+        <>
+          Checked in at <AppLink href={checkInHref(e.checkin!)}>{stopName(e.label ?? '')}</AppLink>
+        </>,
+        stayLine(e, e.time_zone || l.tz) || undefined
+      ];
+    case 'checkin.named':
+      return [
+        <>
+          Named <AppLink href={checkInHref(e.checkin!)}>a check-in</AppLink> from{' '}
+          {e.day ? dayName(e.day, year) : 'a day'}
+        </>
+      ];
+    case 'checkin.deleted':
+      return e.all
+        ? ['Deleted all your check-ins', `${count(e.count ?? 0, 'check-in', 'check-ins')} went.`]
+        : [`Deleted a check-in from ${e.day ? dayName(e.day, year) : 'a day'}`];
+    case 'checkin.place':
+      return [
+        e.change === 'added'
+          ? 'Remembered a place'
+          : e.change === 'spot'
+            ? 'Added a spot to a remembered place'
+            : e.change === 'renamed'
+              ? 'Renamed a remembered place'
+              : 'Forgot a remembered place'
+      ];
     case 'account.created':
       return ['Joined Release Notes'];
     default:

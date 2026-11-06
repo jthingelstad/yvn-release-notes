@@ -179,9 +179,9 @@ A check-in says you were somewhere, from about one time to about another. It isn
 
 Send each stop as the phone reports it, with `POST /v1/check-ins` and an `Idempotency-Key`. Send `source`, which is `visit` for a stop the phone noticed or `tap` for one you asked for, with `lat` and `lon`, and if you have them `accuracy_m`, `time_zone`, `arrived` and `left`. A `visit` needs one of those two times. A `tap` has no `left`: send the moment it was tapped as `arrived`, so one that waited in a queue keeps its time, or nothing, for now. Older times are fine, since a phone can be offline for days. Over a week ahead is refused.
 
-A later report with the same `source` and arrival, to the second, is the same stay. It fills in what was missing, so an arrival and then a departure, or the same report twice, land in one check-in and your app keeps no ids. A `tap` is never filled in.
+A later report from the same token with the same `source` and arrival, to the second, is the same stay. It fills in what was missing, so an arrival and then a departure, or the same report twice, land in one check-in and your app keeps no ids. A `tap` is never filled in.
 
-Each answer has its `check_in`: its `id`, `at`, `day`, `arrived` and `left` (either can be null), `lat`, `lon`, `accuracy_m`, `time_zone`, `source`, `revision`, and the name it shows as `label`. A name is worked out when it's read, the first of these that fits:
+Each answer has its `check_in`: its `id`, `at`, `day`, `arrived` and `left` (either can be null), `lat`, `lon`, `accuracy_m`, `time_zone`, `source`, `revision`, and the name it shows as `label`. A token that can't read the log or all your notes isn't told a remembered place's name. A name is worked out when it's read, the first of these that fits:
 
 1. Its own `name`, given once.
 2. A remembered place, the nearest within 100 m of its spot, whose id is `place`.

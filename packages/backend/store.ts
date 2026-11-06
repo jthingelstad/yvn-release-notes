@@ -116,6 +116,7 @@ import type { ProductUpdate } from '../domain/product-updates.ts';
 import { upcomingEntry, UPCOMING_MAX, type UpcomingEntry } from '../domain/upcoming.ts';
 import { ACTIVITY, ACTIVITY_END, activityId } from '../domain/activity.ts';
 import {
+  STAY_WRITE_MAX,
   CHECKIN,
   CHECKIN_END,
   checkInCursor,
@@ -309,7 +310,7 @@ export class Store {
     changes: readonly UpcomingChange[],
     extra: NonNullable<TransactWriteCommandInput['TransactItems']> = []
   ): Promise<{ ok: boolean; applied: number }> {
-    const size = 90;
+    const size = STAY_WRITE_MAX;
     if (extra.length && changes.length > size) throw new RangeError('Batch too large for one transaction');
     let applied = 0;
     for (let start = 0; start < changes.length; start += size) {

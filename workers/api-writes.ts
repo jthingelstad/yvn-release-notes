@@ -74,6 +74,7 @@ import {
 } from '../packages/backend/upcoming.ts';
 import { stayOf, type CheckInReads } from '../packages/backend/check-ins.ts';
 import {
+  STAY_WRITE_MAX,
   CHECKIN_SOURCES,
   checkInId,
   checkInKey,
@@ -714,6 +715,10 @@ export async function writeApi(
       );
     return members;
   };
+  // Remembered places are the account's, read with the log. A token that may
+  // only add its own stops sees what it sent, and no name it could probe for.
+  const namesFor = (places: readonly NamedPlace[]) =>
+    scopesOf(token).some((scope) => scope === 'activity' || scope === 'notes:all') ? places : [];
   const stayProof = (members: readonly CheckIn[]) =>
     store.tokenProof(
       token,
@@ -807,16 +812,21 @@ export async function writeApi(
         const report = checkInReport(args, now, birthday, tz),
           second = (at: string | null) => at?.slice(0, 19) ?? null,
           // A later report of the same stay, to the second, fills it in. A tap
-          // is never continued.
-          same =
+          // is never continued. A token continues its own, or any with
+          // notes:all; otherwise its report is its own check-in, which reads
+          // as one stay with the other's.
+          matches =
             report.source === 'tap'
-              ? undefined
-              : (await store.checkInsAt(uid, second(report.at)!)).find(
+              ? []
+              : (await store.checkInsAt(uid, second(report.at)!)).filter(
                   (c) =>
                     c.source === report.source &&
                     second(c.arrived) === second(report.arrived) &&
                     (report.arrived !== null || second(c.left) === second(report.left))
                 ),
+          same =
+            matches.find((c) => c.connection === tid) ??
+            (scopesOf(token).includes('notes:all') ? matches[0] : undefined),
           lookups = Number(previous?.lookups ?? 0),
           paid = !same && (looked !== undefined || lookups < V1_LIMITS.lookups),
           district = paid ? (await lookUp(report)).district : null,
@@ -841,12 +851,12 @@ export async function writeApi(
           changed = !same || same.left !== left,
           status = same ? 200 : 201,
           places = await store.namedPlaces(uid),
-          body = { check_in: stayView([(changed ? item : same) as CheckIn], places) };
+          body = { check_in: stayView([(changed ? item : same) as CheckIn], namesFor(places)) };
         Object.assign(rate, { lookups: lookups + (paid ? 1 : 0) });
         landed = await store.checkInWrites(
           uid,
           changed ? [{ next: item, ...(same ? { old: same } : {}) }] : [],
-          store.tokenProof(token, now, 'notes:write'),
+          stayProof(same ? [same] : []),
           [
             ...store.agentReceipts(receiptFor(status, body), audit({ checkin: id }), rate, previous, now),
             ...legacyGuard()
@@ -875,8 +885,16 @@ export async function writeApi(
           throw new ApiRefusal('revision_mismatch', 'That check-in changed since you read it. Read it again.', {
             revision: stayRevision(members)
           });
+        // Naming has to land whole, or the stay would split on the way, so it
+        // stays inside one transaction.
+        if (members.length > STAY_WRITE_MAX)
+          throw new ApiRefusal(
+            'invalid_request',
+            `A stay of more than ${STAY_WRITE_MAX} check-ins can't take one name. Delete some of it first.`,
+            { field: 'id' }
+          );
         const named = members.map((m) => ({ ...m, name: given, revision: Number(m.revision) + 1 })),
-          body = { check_in: stayView(named, places) };
+          body = { check_in: stayView(named, namesFor(places)) };
         landed = await store.checkInWrites(
           uid,
           members.map((old, i) => ({ next: named[i]!, old })),

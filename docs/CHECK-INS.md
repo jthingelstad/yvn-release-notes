@@ -124,8 +124,7 @@ Stored check-ins stay as iOS reported them. Lists merge two neighbouring ones
 - nothing else lies between them,
 - they begin within 30 minutes of the last one ending,
 - any names of their own are the same, and
-- they are within 100 m of each other, or neither has its own name and they show
-  the same remembered place.
+- they are within 100 m of each other, or at the same remembered place.
 
 Deleting a merged row deletes every check-in in it, and a name given to one goes
 on every check-in in it.
@@ -232,8 +231,17 @@ What building it decided, past the design above. None of it changes what an owne
 was promised, and all of it can change with no data to rewrite except the first.
 
 - **A name on a merged stay goes on every check-in in it.** Otherwise naming one
-  would split the row it was given on. So the merge rule also takes the same own
-  name within 100 m.
+  would split the row it was given on. So the merge rule takes the same own name
+  as it takes none.
+- **A report continues only the token's own check-in,** or any with `notes:all`.
+  From another token it makes its own check-in, which reads as one stay with the
+  first, so an app signed in again loses nothing and a token can't reach what it
+  didn't send. Likewise a token with neither `activity` nor `notes:all` sees no
+  remembered place's name in an answer, so it can't probe spots for them.
+- **Naming lands whole or not at all,** so a stay of more than 90 check-ins
+  (`STAY_WRITE_MAX`, what one transaction holds) can't take one name, and is
+  refused with nothing changed. Deleting goes in steps, since a retry finishes
+  the job.
 - **`PATCH` and `DELETE /v1/check-ins/{id}` act on the whole stay,** and any id in
   it names the stay. The stay's `revision` is the sum of its check-ins', so a
   stop joining it moves the revision a client read.

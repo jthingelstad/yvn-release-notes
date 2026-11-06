@@ -5,7 +5,7 @@ description: The places you stop, in Activity and on the map, with names you giv
 
 A check-in says you were somewhere, from about one time to about another. It isn't a note: it counts toward no streak or badge, doesn't turn up in search, and isn't on a day's page or in the email. Together they're a record of where you've been, for you to look back on and write about.
 
-An app sends them, through [the API](/guide/api/check-ins/). Changelog, the iPhone app, doesn't send them yet. It's coming, off until you turn it on.
+[Changelog](/guide/changelog/), the iPhone app, sends them once you turn on **Notice where I stop** in its Settings, which is off until you do and asks to use your location Always. iOS says when you stop in its own time, often after you leave. **Check in now**, on Log and Activity, adds one with a tap and needs only While Using. Another app can send them through [the API](/guide/api/check-ins/).
 
 ## Where they show
 

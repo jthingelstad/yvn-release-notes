@@ -7,7 +7,7 @@ description: What Release Notes keeps, who can see it, and how to take it with y
 
 Your email address, your birthday, your city and the time your email comes. Every note, photo, voice memo and PDF you send or add, with the original emails they came in. Release Notes keeps them on Amazon Web Services, and shows your files only to you, through links that expire.
 
-If an app sends [check-ins](/guide/check-ins/), the places you stop are kept too: each spot, when you got there and left, and any name you give it. That's a history of where you've been, kept until you delete it. Delete any one, or all of them, on the web. Changelog, the iPhone app, doesn't send them yet.
+If you turn on [check-ins](/guide/check-ins/) in Changelog, the iPhone app, or another app sends them, the places you stop are kept too: each spot, when you got there and left, and any name you give it. That's a history of where you've been, kept until you delete it. Delete any one, or all of them, on the web or in the app.
 
 ## Who can see it
 
@@ -33,7 +33,7 @@ You can connect an agent such as Claude or ChatGPT to your notes. It asks for ea
 
 ## The iPhone app
 
-[Changelog](/guide/changelog/), the iPhone app, talks only to Release Notes, with the [API token](/guide/tokens/) it signs in with. The phone keeps that token, the note you're writing and any notes waiting to send. Notes you read in it stay in its memory and aren't saved on the phone, and a file you open sits in a temporary folder until you close it. It asks where you are only for Here or "Add where I am", never in the background. It has no analytics, and its widgets and notifications never show a note's words. Revoking its token in Settings signs it out, even on a phone you no longer have.
+[Changelog](/guide/changelog/), the iPhone app, talks only to Release Notes, with the [API token](/guide/tokens/) it signs in with. The phone keeps that token, the note you're writing and any notes waiting to send. Notes you read in it stay in its memory and aren't saved on the phone, and a file you open sits in a temporary folder until you close it. It asks where you are for Here, "Add where I am" and Check in now. Check-ins are off until you turn them on in its Settings: then it asks to use your location Always, iOS tells it in the background when you stop, and each stop goes to Release Notes. Turn them off and that ends. What was sent stays until you delete it. It has no analytics, and its widgets and notifications never show a note's words. Revoking its token in Settings signs it out, even on a phone you no longer have.
 
 ## No tracking
 

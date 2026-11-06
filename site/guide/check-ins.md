@@ -5,13 +5,15 @@ description: The places you stop, in Activity and on the map, with names you giv
 
 A check-in says you were somewhere, from about one time to about another. It isn't a note: it counts toward no streak or badge, doesn't turn up in search, and isn't on a day's page or in the email. Together they're a record of where you've been, for you to look back on and write about.
 
-[Changelog](/guide/changelog/), the iPhone app, sends them once you turn on **Notice where I stop** in its Settings, which is off until you do and asks to use your location Always. iOS says when you stop in its own time, often after you leave. **Check in now**, on Log and Activity, adds one with a tap and needs only While Using. Another app can send them through [the API](/guide/api/check-ins/).
+[Changelog](/guide/changelog/), the iPhone app, sends them once you turn on **Notice where I stop** in its Settings, which is off until you do and asks to use your location Always. iOS says when you stop in its own time, often after you leave. **Check in now**, on Log and Activity, adds one with a tap and needs only While Using. The **Check In** control does the same from Control Center, the Lock Screen or the Action Button: it opens Changelog and checks in. Another app can send them through [the API](/guide/api/check-ins/).
 
 ## Where they show
 
 In [Activity](/activity/), each one is a row like "Checked in at Home", with when you got there and left, and how long that was. The **Check-ins** button there shows them alone. Times read as they did where you were, and a stop you haven't left yet says when it began.
 
 On [the Map](/map/), a check-in is a ring and a note is a dot, each kind with its own numbered groups, and the **Show** menu picks notes, check-ins or both. A release narrows both. A tag or words keep notes alone, since a check-in has neither. Choose a mark or a group to list what's there.
+
+In Changelog, **Map of check-ins** in Activity has one pin for each place. Choose a pin to list your stops there.
 
 Stops right after one another at the same place read as one, so a phone that reports a stay twice doesn't make two rows.
 

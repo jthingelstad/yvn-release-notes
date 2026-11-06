@@ -4,9 +4,14 @@ Designed 2026-11-06, with Jamie's calls from 2026-11-05 and 2026-11-06 at the
 end, under "Jamie's calls". **Phase 1, the server and API 1.18.0, is built**
 (Jamie, 2026-11-06: "Approved: build Check-ins phase 1, the server and API
 1.18.0, from PR #317"), with what building it decided under "Built in phase 1".
-No client sends check-ins yet except the phone-only test that led to this
-(Changelog's "Record visits", build 84), and that keeps them on the phone. Every
-other phase needs Jamie's go.
+**Phase 2, the web, is built**, under "Built in phase 2". **Phase 3, Changelog
+sending them, is built and on the app's main, and on no phone** (Jamie,
+2026-11-06: "Approved: build Check-ins phase 3, Changelog sending check-ins to
+the server, with no TestFlight upload"), under "Built in phase 3". The newest
+build anyone has is still the phone-only test that led to this (Changelog's
+"Record visits", build 84), which keeps them on the phone. The reader-facing
+words go in with the upload that makes them true. Every other phase needs
+Jamie's go.
 
 Jamie, 2026-11-05: Changelog should notice "when I am at a place (not
 traveling)" and add it to Activity, so "I can see where I've been on a map" and
@@ -283,6 +288,33 @@ What building it decided, past the design above.
   the note's Where can add one.
 - **The privacy page says Changelog doesn't send them yet.** Its line that the app
   asks only for Here or "Add where I am" stands until phase 3 makes it false.
+
+## Built in phase 3
+
+- **No change here.** The app reads, names and deletes through `/v1` as it was.
+- **A row has no spot and `/v1` has no read by id,** so a check-in's page finds
+  its stay in the list for that day and the day before, by any of its `ids`.
+- **Only reports and taps queue.** A name, a delete and remembered places go at
+  once with a held key, as Upcoming's do: each is made from a revision, and a
+  refusal is for the owner there and then.
+- **Remember is a sequence in the app,** since `/v1` has only `POST places`: add
+  the place, read the stay again, take its own name off if it has one, and give
+  it the name as its own if another place still wins there, as the web's does.
+  Each step has its own key, so saving again picks up where it stopped.
+- **The test's switch does not carry over,** since it promised nothing goes to
+  Release Notes. Monitoring stops once on the way in. Its file stays on the phone
+  to read, share and delete, goes on sign-out as promised, and nothing in it goes
+  up without Jamie's answer.
+- **The switch and the queue survive the phone's first-unlock state.** iOS can
+  start the app before that, when defaults read empty and the token and queue
+  can't be read. So the switch is read at each visit and on opening, monitoring
+  is never stopped because defaults read empty, and a stop the queue can't take
+  yet is held in memory. One heard while the process then dies is lost.
+- **A tap at the same place merges** with the stop before it, by the merge rule,
+  so it says "Checked in at" that name and adds no row. A stay's page reads
+  again when one changes.
+- **Not proven by a simulator:** real delivery, a wake in the background, a locked
+  phone and a force-quit. The app's `docs/PHONE-TEST.md` step 23 is that pass.
 
 ## What has to be rewritten
 

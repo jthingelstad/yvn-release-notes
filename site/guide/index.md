@@ -28,6 +28,7 @@ description: How to get the most out of Release Notes, a page at a time.
 - [API recipes](/guide/api/recipes/): a terminal, a Shortcut, a schedule, Python and more, to copy.
 - [API reference](/guide/api/reference/): every request and answer, and the description tools can read.
 - [Building a client](/guide/api/clients/): how an app that adds notes should behave.
+- [API changelog](/guide/api/changelog/): what each version of the API added, with a feed.
 
 ## Other pages
 

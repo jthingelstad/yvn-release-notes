@@ -27,7 +27,19 @@ import { titleOf } from './components/common.tsx';
 import { Icon } from './components/icon.tsx';
 import { SiteLinks } from './components/site-links.tsx';
 import { shareTags } from './lib/share-card.ts';
-import { API_PAGES, ORIGIN, llmsTxt, readPages, sitemapDates, sitemapXml, SITE_DIR, type Page } from './site-pages.ts';
+import { agentGuide, changesFeed } from './api-agent.ts';
+import {
+  API_PAGES,
+  ORIGIN,
+  agentPages,
+  apiSpec,
+  llmsTxt,
+  readPages,
+  sitemapDates,
+  sitemapXml,
+  SITE_DIR,
+  type Page
+} from './site-pages.ts';
 
 const SRC_DIR = resolve('web/src');
 
@@ -47,6 +59,17 @@ export function pageHtml(page: Page, styles: string[], count: string | null): st
           <title>{title}</title>
           <meta name="description" content={page.description} />
           <link rel="canonical" href={url} />
+          {page.path.startsWith('/guide/api') && (
+            <>
+              <link rel="alternate" type="text/plain" title="The whole API guide" href="/guide/api/llms.txt" />
+              <link
+                rel="alternate"
+                type="application/atom+xml"
+                title="Release Notes API changes"
+                href="/guide/api/changelog.xml"
+              />
+            </>
+          )}
           <meta property="og:type" content="website" />
           <meta property="og:site_name" content="Your Version Number" />
           <meta property="og:title" content={title} />
@@ -128,6 +151,9 @@ export async function writeSite(outDir: string, index: string, dir = SITE_DIR): 
   }
   await writeFile(join(outDir, 'sitemap.xml'), sitemapXml(await sitemapDates(dir)));
   await writeFile(join(outDir, 'llms.txt'), llmsTxt(pages));
+  const spec = await apiSpec();
+  await writeFile(join(outDir, 'guide/api/llms.txt'), agentGuide(spec, ORIGIN, await agentPages(dir)));
+  await writeFile(join(outDir, 'guide/api/changelog.xml'), changesFeed(spec, ORIGIN));
 }
 
 // The page count, bundled on its own from lib/pagecount.ts and named by its

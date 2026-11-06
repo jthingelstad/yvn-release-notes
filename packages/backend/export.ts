@@ -15,6 +15,7 @@ import { extension } from './media.ts';
 import { object } from './places.ts';
 import type { Item } from './store.ts';
 import { upcomingEntry, type UpcomingEntry } from '../domain/upcoming.ts';
+import { CHECKIN, NAMED_PLACE, UNNAMED_STOP } from '../domain/check-ins.ts';
 import { badgesOf } from './badges.ts';
 import { ACTIVITY, activityView } from '../domain/activity.ts';
 import { feedbackItem, feedbackView, FEEDBACK_KIND_NAMES } from '../domain/feedback.ts';
@@ -67,12 +68,34 @@ export interface ExportData {
   weather: Item[];
   places: Item[];
   upcoming?: UpcomingEntry[];
+  /** Where the account stopped, each as it was reported, and the names it
+   * remembers (domain/check-ins.ts). */
+  check_ins?: Item[];
+  named_places?: Item[];
   badges?: ExportBadge[];
   activity?: Item[];
   /** Feedback to Jamie and the answers (domain/feedback.ts); screenshots by
    * their place in the zip, when it has them. */
   feedback?: Item[];
 }
+/** A check-in as the export keeps it: all of it but the table's keys. */
+const CHECK_IN_FIELDS = [
+  'id',
+  'at',
+  'arrived',
+  'left',
+  'lat',
+  'lon',
+  'accuracy_m',
+  'time_zone',
+  'day',
+  'source',
+  'district',
+  'name',
+  'via',
+  'token',
+  'client'
+] as const;
 /** The key filePaths files a feedback item's screenshots under. */
 export const feedbackFiles = (id: string) => `feedback:${id}`;
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -143,6 +166,8 @@ export function build(
     skies: Item[] = [],
     spots: Item[] = [],
     upcoming: UpcomingEntry[] = [],
+    checkIns: Item[] = [],
+    namedPlaces: Item[] = [],
     activity: Item[] = [],
     feedback: Item[] = [];
   for (const item of items) {
@@ -190,6 +215,9 @@ export function build(
       notes.push(note);
     } else if (sk.startsWith('PAUSE#')) pauses.push({ from: sk.slice(6), through: item.through ?? null });
     else if (sk.startsWith('UPCOMING#')) upcoming.push(upcomingEntry(item));
+    else if (sk.startsWith(CHECKIN))
+      checkIns.push(Object.fromEntries(CHECK_IN_FIELDS.filter((k) => item[k] != null).map((k) => [k, item[k]])));
+    else if (sk.startsWith(NAMED_PLACE)) namedPlaces.push({ id: item.id, name: item.name, spots: item.spots });
     else if (sk.startsWith(ACTIVITY)) activity.push(item);
     else if (sk.startsWith('FEEDBACK#')) {
       const f = feedbackItem(item),
@@ -260,6 +288,8 @@ export function build(
     weather: sortBy(skies, 'date'),
     places: sortBy(spots, 'date'),
     ...(upcoming.length ? { upcoming: upcoming.sort((a, b) => cmp(a.id, b.id)) } : {}),
+    ...(checkIns.length ? { check_ins: checkIns.sort((a, b) => cmp(String(a.at), String(b.at))) } : {}),
+    ...(namedPlaces.length ? { named_places: namedPlaces.sort((a, b) => cmp(String(a.name), String(b.name))) } : {}),
     ...(badges.length ? { badges } : {}),
     ...(feedback.length ? { feedback: feedback.sort((a, b) => cmp(String(a.filed_at), String(b.filed_at))) } : {}),
     ...(activity.length
@@ -314,6 +344,24 @@ export function markdown(data: ExportData): string {
           : 'Kept on the web only.'
       );
     }
+  }
+  if (data.check_ins?.length) {
+    lines.push('', '## Check-ins', '', 'Where you stopped, oldest first.', '');
+    for (const c of data.check_ins) {
+      const from = String(c.arrived ?? ''),
+        to = String(c.left ?? '');
+      lines.push(
+        `- ${String(c.day)}: ${escapeText(String(c.name ?? c.district ?? UNNAMED_STOP))}` +
+          ` (${String(c.lat)}, ${String(c.lon)})${from ? `, from ${from}` : ''}${to ? `, until ${to}` : ''}.`
+      );
+    }
+  }
+  if (data.named_places?.length) {
+    lines.push('', '## Remembered places', '');
+    for (const p of data.named_places)
+      lines.push(
+        `- ${escapeText(String(p.name))}: ${(p.spots as Item[]).map((s) => `${String(s.lat)}, ${String(s.lon)}`).join('; ')}.`
+      );
   }
   if (data.feedback?.length) {
     lines.push('', '## Feedback', '', 'What you told Jamie, and the answers.');

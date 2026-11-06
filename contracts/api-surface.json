@@ -2,10 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Release Notes API",
-    "version": "1.17.2",
+    "version": "1.18.0",
     "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. With `notes:read`, a token reads the whole archive and writes nothing (1.15.0). The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.18.0",
+        "date": "2026-11-06",
+        "summary": "Check-ins, the places you stop. POST /v1/check-ins sends a stop as a phone is told of it, and a later report of the same stay fills it in. GET /v1/check-ins lists them newest first with their spots and the names they show, and back-to-back stops at one place read as one. PATCH and DELETE /v1/check-ins/{id} name or delete a whole stay, and DELETE /v1/check-ins?confirm=all deletes them all. GET, POST, PATCH and DELETE /v1/check-ins/places keep the names you remember. GET /v1/activity has a new kind, `checkin`, whose `label` is the one place a row holds your own words, and never a spot. It takes no new scope."
+      },
       {
         "version": "1.17.2",
         "date": "2026-11-05",
@@ -2572,6 +2577,659 @@
         ]
       }
     },
+    "/v1/check-ins": {
+      "get": {
+        "operationId": "listCheckIns",
+        "summary": "The places you stopped, newest first",
+        "description": "A stay at a time, with its spot and the name it shows. Back-to-back stops at one place read as one, and `ids` lists the check-ins in it. `from` and `to` are your days, a stay going by when it began, up to 31 days; `before` is the `next` of an earlier page. Since 1.18.0.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First day, YYYY-MM-DD.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Last day; `from` if left out.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "The `next` of an earlier page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Stays a page holds.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckIns"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Each stay’s time and name, a line each."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "activity"
+            ]
+          },
+          {
+            "signIn": [
+              "activity"
+            ]
+          }
+        ],
+        "x-scope": "activity"
+      },
+      "post": {
+        "operationId": "addCheckIn",
+        "summary": "Send a stop, as a phone is told of it",
+        "description": "Forward each report as it comes, with an Idempotency-Key. A later report with the same `source` and arrival, to the second, is the same stay: it fills in `left` and answers 200, not 201, so a client keeps no ids. A report with no arrival is matched by its `left`. A `tap` sends the moment it was tapped as `arrived`, and is never continued. Times over a week ahead are refused; older ones are fine, since a phone can be offline. The first 100 new stays a UTC day get their `district`, one paid lookup each, and those past that are still saved with none; RateLimit-Limit counts those. After 1000 reports a day, `rate_limited`. Since 1.18.0.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Checked in at Home."
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Checked in at Home."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      },
+      "delete": {
+        "operationId": "deleteAllCheckIns",
+        "summary": "Delete every check-in",
+        "description": "Needs `?confirm=all`. Remembered places stay. One `checkin.deleted` row stays in the activity log with the `count`. Since 1.18.0.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "required": true,
+            "description": "all, to say you mean it.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInsDeleted"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Deleted 12."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "notes:all"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:all"
+            ]
+          }
+        ],
+        "x-scope": "notes:all"
+      }
+    },
+    "/v1/check-ins/{id}": {
+      "patch": {
+        "operationId": "nameCheckIn",
+        "summary": "Name a stay once, or take its name away",
+        "description": "A name on this stay alone, on every check-in in it, beating any remembered place. This token’s own, or any with `notes:all`. `revision` is the one you read. To name every stop at a spot, remember the place instead. Since 1.18.0.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInName"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Checked in at Home."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      },
+      "delete": {
+        "operationId": "deleteCheckIn",
+        "summary": "Delete a stay",
+        "description": "Every check-in in the stay goes, and its row in the activity log. `checkin.deleted` stays there with its `day` and `count`, and never the place. This token’s own, or any with `notes:all`. Since 1.18.0.",
+        "responses": {
+          "204": {
+            "description": "Deleted.",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:write"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:write"
+            ]
+          }
+        ],
+        "x-scope": "notes:write"
+      }
+    },
+    "/v1/check-ins/places": {
+      "get": {
+        "operationId": "listNamedPlaces",
+        "summary": "The places you remember",
+        "description": "Each name with its spots. The nearest within 100 m names a stop. Since 1.18.0.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NamedPlaces"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Their names, a line each."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "activity"
+            ]
+          },
+          {
+            "signIn": [
+              "activity"
+            ]
+          }
+        ],
+        "x-scope": "activity"
+      },
+      "post": {
+        "operationId": "rememberPlace",
+        "summary": "Remember a place, or add a spot to a name",
+        "description": "A name already in use, ignoring case, gains this spot and answers 200; a new one answers 201. It applies at once to every stop within 100 m, past and future. An account has up to 200 names, and a name up to 50 spots. Since 1.18.0.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NamedPlaceWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NamedPlaceWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Its name."
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NamedPlaceWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Its name."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:all"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:all"
+            ]
+          }
+        ],
+        "x-scope": "notes:all"
+      }
+    },
+    "/v1/check-ins/places/{id}": {
+      "patch": {
+        "operationId": "renameNamedPlace",
+        "summary": "Rename a remembered place",
+        "description": "Every spot and stop follows. A name another place has is refused. Since 1.18.0.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NamedPlaceName"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NamedPlaceWritten"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Its name."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:all"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:all"
+            ]
+          }
+        ],
+        "x-scope": "notes:all"
+      },
+      "delete": {
+        "operationId": "forgetNamedPlace",
+        "summary": "Forget a remembered place",
+        "description": "All its spots go, and stops there show their neighbourhood again. Since 1.18.0.",
+        "responses": {
+          "204": {
+            "description": "Forgotten.",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "notes:all"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:all"
+            ]
+          }
+        ],
+        "x-scope": "notes:all"
+      }
+    },
     "/v1/token": {
       "delete": {
         "operationId": "revokeToken",
@@ -2942,7 +3600,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.17.2"
+            "example": "1.18.0"
           }
         }
       },
@@ -5111,6 +5769,448 @@
           }
         }
       },
+      "CheckIn": {
+        "type": "object",
+        "description": "A stay: one check-in, or back-to-back ones at one place.",
+        "required": [
+          "id",
+          "ids",
+          "at",
+          "arrived",
+          "left",
+          "lat",
+          "lon",
+          "day",
+          "source",
+          "label",
+          "named_by",
+          "revision"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Its first check-in’s id; any in `ids` names the stay."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The check-ins in it, oldest first."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it began, or when it was first heard of."
+          },
+          "arrived": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null if unknown."
+          },
+          "left": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while still there, and for a tap."
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          },
+          "accuracy_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The circle’s radius."
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The zone there."
+          },
+          "day": {
+            "type": "string",
+            "format": "date",
+            "description": "A day in the account’s own time zone."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "visit",
+              "tap"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "description": "The name it shows."
+          },
+          "named_by": {
+            "type": "string",
+            "enum": [
+              "own",
+              "place",
+              "district",
+              "none"
+            ],
+            "description": "How `label` came about."
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The remembered place naming it."
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A name on this stay alone."
+          },
+          "district": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Neighbourhood and city."
+          },
+          "via": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "description": "Send it back to name this stay."
+          }
+        }
+      },
+      "CheckIns": {
+        "type": "object",
+        "required": [
+          "items",
+          "next"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckIn"
+            }
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The `before` for the next older page."
+          }
+        }
+      },
+      "CheckInWritten": {
+        "type": "object",
+        "required": [
+          "check_in"
+        ],
+        "properties": {
+          "check_in": {
+            "$ref": "#/components/schemas/CheckIn"
+          }
+        }
+      },
+      "CheckInsDeleted": {
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "integer"
+          }
+        }
+      },
+      "CheckInReport": {
+        "type": "object",
+        "required": [
+          "lat",
+          "lon",
+          "source"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "arrived": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null if unknown."
+          },
+          "left": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while still there."
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "accuracy_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An IANA name; the account’s if left out."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "visit",
+              "tap"
+            ]
+          }
+        }
+      },
+      "CheckInName": {
+        "type": "object",
+        "required": [
+          "name",
+          "revision"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "NamedPlace": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "spots",
+          "revision"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "spots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "lat",
+                "lon"
+              ],
+              "properties": {
+                "lat": {
+                  "type": "number"
+                },
+                "lon": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "revision": {
+            "type": "integer"
+          }
+        }
+      },
+      "NamedPlaces": {
+        "type": "object",
+        "required": [
+          "places"
+        ],
+        "properties": {
+          "places": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NamedPlace"
+            }
+          }
+        }
+      },
+      "NamedPlaceWritten": {
+        "type": "object",
+        "required": [
+          "place"
+        ],
+        "properties": {
+          "place": {
+            "$ref": "#/components/schemas/NamedPlace"
+          }
+        }
+      },
+      "NamedPlaceWrite": {
+        "type": "object",
+        "required": [
+          "name",
+          "lat",
+          "lon"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          }
+        }
+      },
+      "NamedPlaceName": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
       "Activity": {
         "type": "object",
         "required": [
@@ -5144,7 +6244,7 @@
           "at",
           "kind"
         ],
-        "description": "One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`; a reads row `calls` and `tools`); `via` says through what, and a token’s rows name it as `token` and, from 1.4.0, by id as `token_id`.",
+        "description": "One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`; a reads row `calls` and `tools`; a checkin `checkin`, `label`, `arrived`, `left` and `source`, and never a spot, its label being the one place a row holds your own words); `via` says through what, and a token’s rows name it as `token` and, from 1.4.0, by id as `token_id`.",
         "properties": {
           "id": {
             "type": "string",
@@ -5157,7 +6257,7 @@
           "kind": {
             "type": "string",
             "example": "note.added",
-            "description": "Its family is one of mail, reads, note, transcript, description, import, badge, email, reminder, place, upcoming, settings, pause, status, signin, export, photo, address, calendar, connection, feedback, egg, account."
+            "description": "Its family is one of mail, reads, note, transcript, description, import, badge, email, reminder, place, upcoming, settings, pause, status, signin, export, photo, address, calendar, connection, feedback, egg, checkin, account."
           },
           "via": {
             "type": "string"

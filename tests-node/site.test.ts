@@ -6,6 +6,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import {
+  CHECKIN_NAME_MAX,
+  MERGE_GAP_SECONDS,
+  NAMED_PLACES_MAX,
+  NAMED_PLACE_SPOTS_MAX,
+  SAME_PLACE_METRES
+} from '../packages/domain/check-ins.ts';
 import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -297,6 +304,13 @@ async function checkedPhrases() {
     `${V1_LIMITS.reads.toLocaleString('en-US')} times`,
     `save Upcoming ${V1_LIMITS.upcoming} times`,
     `name ${V1_LIMITS.here} spots`,
+    `report ${V1_LIMITS.checkin.toLocaleString('en-US')} check-ins`,
+    `look up ${V1_LIMITS.lookups} check-ins`,
+    `within ${SAME_PLACE_METRES} m`,
+    `within ${MERGE_GAP_SECONDS / 60} minutes`,
+    `up to ${CHECKIN_NAME_MAX} characters`,
+    `up to ${NAMED_PLACES_MAX} names`,
+    `up to ${NAMED_PLACE_SPOTS_MAX} spots`,
     `within ${FORM_SECONDS / 60} minutes`,
     `${UPLOADS_A_DAY} files and ${UPLOAD_BYTES_A_DAY / 1024 ** 3} GB a day`,
     `up to ${NEARBY_MAX} businesses`,

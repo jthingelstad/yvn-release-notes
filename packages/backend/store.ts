@@ -82,6 +82,16 @@
  * and guarded against until PER_TOKEN_RECEIPTS_UNTIL), its daily counts
  * MCPMETA#<owner> / WRITERATE#v1-create# and WRITERATE#v1-change#<UTC day>
  * for the account, and its reads MCPMETA#<owner> / TOKENREADS#<id>#<UTC day>.
+ * USER#<owner> / CHECKIN#<at>#<id> is a check-in (domain/check-ins.ts,
+ * docs/CHECK-INS.md): `id`, `at`, `arrived`, `left`, `lat`, `lon`, `accuracy_m`,
+ * `time_zone`, `day`, `source`, `district`, `name`, `via`, `token`, `token_id`,
+ * `client`, `connection` and `revision`. Nothing else is stored about a stay: the
+ * activity log's row for one and what it shows are worked out when read, and
+ * back-to-back ones merge when read. USER#<owner> / NAMEDPLACE#<id> is a
+ * remembered place: `id`, `name`, `spots` (`{lat, lon}`) and `revision`. Both are
+ * in the export and go with the account. MCPMETA#<owner> /
+ * WRITERATE#v1-checkin#<UTC day> counts the check-ins saved in `n` and the paid
+ * lookups in `lookups`.
  * PROFILE.pinned_tags is the pinned tags (up to 12, normalized as hashtags),
  * the same on the web and through every token.
  */
@@ -104,7 +114,18 @@ import type {
 import { Subscriber } from './store-types.ts';
 import type { ProductUpdate } from '../domain/product-updates.ts';
 import { upcomingEntry, UPCOMING_MAX, type UpcomingEntry } from '../domain/upcoming.ts';
-import { ACTIVITY, ACTIVITY_END } from '../domain/activity.ts';
+import { ACTIVITY, ACTIVITY_END, activityId } from '../domain/activity.ts';
+import {
+  CHECKIN,
+  CHECKIN_END,
+  checkInCursor,
+  checkInKey,
+  continues,
+  NAMED_PLACE,
+  stayRow,
+  type CheckIn,
+  type NamedPlace
+} from '../domain/check-ins.ts';
 import {
   feedbackItem,
   feedbackKey,
@@ -1562,14 +1583,79 @@ export class Store {
   }
   /** One page of the activity log, newest first: the rows below `before` (a
    * row's id, or an ISO time) and from `from` (an ISO time) on, merged from
-   * the account's rows and its assistants' daily reads. `more` says older
-   * rows remain. */
+   * the account's rows, its assistants' daily reads and its check-ins. `more`
+   * says older rows remain. A check-in has no row of its own (domain/check-ins.ts):
+   * one stay shows as one row, at its first check-in, never with its spot, so
+   * a page reads on past the rows a stay absorbs. */
   async activity(
     user: string,
     o: { before?: string; from?: string; limit: number }
   ): Promise<{ rows: Item[]; more: boolean }> {
-    const lo = ACTIVITY + (o.from ?? ''),
-      hi = o.before ? ACTIVITY + o.before : ACTIVITY_END,
+    const shown: Item[] = [];
+    let before = o.before,
+      places: NamedPlace[] | null = null;
+    for (;;) {
+      const page = await this.activityRange(user, before, o.from, o.limit),
+        // The rows of a page held whole, and one to say more remain.
+        raw = page.slice(0, o.limit + 1),
+        checks = raw.filter((row) => row.kind === 'checkin').map((row) => row.stay as CheckIn);
+      if (!checks.length) shown.push(...raw);
+      else {
+        places ??= await this.namedPlaces(user);
+        const stays = await this.staysAmong(user, checks, places, before !== undefined);
+        for (const row of raw) {
+          if (row.kind !== 'checkin') shown.push(row);
+          else {
+            const members = stays.get(String((row.stay as CheckIn).id));
+            if (members) shown.push(stayRow(members, places));
+          }
+        }
+      }
+      if (shown.length > o.limit || raw.length <= o.limit) break;
+      before = activityId(String(raw.at(-1)!.sk));
+    }
+    return { rows: shown.slice(0, o.limit), more: shown.length > o.limit };
+  }
+  /** The stays that begin among these check-ins (newest first and next to one
+   * another), by their first's id: each neighbour decides for itself, so a stay
+   * reads the same whichever page it falls on. A stay's later check-ins can lie
+   * above the page when one was asked for by `before`. */
+  private async staysAmong(user: string, checks: readonly CheckIn[], places: readonly NamedPlace[], above: boolean) {
+    const oldest = checks.at(-1)!,
+      below = (await this.checkInsBelow(user, checkInCursor(checkInKey(oldest.at, oldest.id)), 1)).items[0],
+      joins = checks.map((item, i) => {
+        const earlier = checks[i + 1] ?? below;
+        return earlier ? continues(earlier, item, places) : false;
+      }),
+      stays = new Map<string, CheckIn[]>();
+    for (let i = checks.length - 1; i >= 0; i--) {
+      if (joins[i]) continue;
+      const members = [checks[i]!];
+      for (let j = i - 1; j >= 0 && joins[j]; j--) members.push(checks[j]!);
+      if (above && members.at(-1) === checks[0]) members.push(...(await this.laterInStay(user, checks[0]!, places)));
+      stays.set(String(checks[i]!.id), members);
+    }
+    return stays;
+  }
+  /** The check-ins after this one in its stay, oldest first. */
+  async laterInStay(user: string, item: CheckIn, places: readonly NamedPlace[]): Promise<CheckIn[]> {
+    const later: CheckIn[] = [];
+    let last = item;
+    for (;;) {
+      const page = await this.checkInsAbove(user, checkInCursor(checkInKey(last.at, last.id)), 20);
+      for (const next of page.items) {
+        if (!continues(last, next, places)) return later;
+        later.push(next);
+        last = next;
+      }
+      if (!page.more) return later;
+    }
+  }
+  /** What one read of the log holds: the three ranges merged, newest first,
+   * with a check-in as a row keyed as the log's are and its item in `stay`. */
+  private async activityRange(user: string, before: string | undefined, from: string | undefined, limit: number) {
+    const lo = ACTIVITY + (from ?? ''),
+      hi = before ? ACTIVITY + before : ACTIVITY_END,
       within = (i: Item) => String(i.sk) >= lo && String(i.sk) < hi,
       // One more than a page, and one for the row at `before` itself; a
       // response stops at 1 MB, so read on until there are that many.
@@ -1583,20 +1669,156 @@ export class Store {
               KeyConditionExpression: 'pk = :p AND sk BETWEEN :lo AND :hi',
               ExpressionAttributeValues: { ':p': pk, ':lo': lo, ':hi': hi },
               ScanIndexForward: false,
-              Limit: o.limit + 2 - items.length,
+              Limit: limit + 2 - items.length,
               ...(cursor ? { ExclusiveStartKey: cursor } : {})
             })
           );
           items.push(...(result.Items ?? []));
           cursor = result.LastEvaluatedKey;
-        } while (cursor && items.length < o.limit + 2);
+        } while (cursor && items.length < limit + 2);
         return items;
       },
-      [own, reads] = await Promise.all([range(`USER#${user}`), range(`MCPMETA#${user}`)]),
+      // Keys hold the time then the id, so this reads from the last that could
+      // be below `before`, and keeps those that are as the log orders them.
+      stops = async () => {
+        const items: Item[] = [];
+        let cursor: Key | undefined;
+        do {
+          const result = await this.client.send(
+            new QueryCommand({
+              TableName: this.tableName,
+              KeyConditionExpression: 'pk = :p AND sk BETWEEN :lo AND :hi',
+              ExpressionAttributeValues: {
+                ':p': `USER#${user}`,
+                ':lo': CHECKIN + (from?.split('#')[0] ?? ''),
+                ':hi': before ? `${CHECKIN}${before.split('#')[0]}$` : CHECKIN_END
+              },
+              ScanIndexForward: false,
+              ConsistentRead: true,
+              Limit: limit + 2,
+              ...(cursor ? { ExclusiveStartKey: cursor } : {})
+            })
+          );
+          for (const item of result.Items ?? []) {
+            const row = {
+              pk: item.pk,
+              sk: `${ACTIVITY}${String(item.at)}#checkin#${String(item.id)}`,
+              kind: 'checkin',
+              stay: item
+            };
+            if (within(row)) items.push(row);
+          }
+          cursor = result.LastEvaluatedKey;
+        } while (cursor && items.length < limit + 2);
+        return items;
+      },
+      [own, reads, checks] = await Promise.all([range(`USER#${user}`), range(`MCPMETA#${user}`), stops()]),
       merged = new Map<string, Item>();
-    for (const row of [...reads, ...own]) if (within(row)) merged.set(String(row.sk), row);
-    const rows = [...merged.values()].sort((a, b) => compare(String(b.sk), String(a.sk)));
-    return { rows: rows.slice(0, o.limit), more: rows.length > o.limit };
+    for (const row of [...reads, ...own, ...checks]) if (within(row)) merged.set(String(row.sk), row);
+    return [...merged.values()].sort((a, b) => compare(String(b.sk), String(a.sk)));
+  }
+  /** Check-ins below `before` (a key without its prefix, or an ISO time),
+   * newest first, read strongly. */
+  async checkInsBelow(user: string, before: string | undefined, limit: number) {
+    const hi = before === undefined ? CHECKIN_END : CHECKIN + before,
+      items: CheckIn[] = [];
+    let cursor: Key | undefined;
+    do {
+      const result = await this.client.send(
+        new QueryCommand({
+          TableName: this.tableName,
+          KeyConditionExpression: 'pk = :p AND sk BETWEEN :lo AND :hi',
+          ExpressionAttributeValues: { ':p': `USER#${user}`, ':lo': CHECKIN, ':hi': hi },
+          ScanIndexForward: false,
+          ConsistentRead: true,
+          Limit: limit + 2 - items.length,
+          ...(cursor ? { ExclusiveStartKey: cursor } : {})
+        })
+      );
+      for (const item of result.Items ?? []) if (String(item.sk) < hi) items.push(item as CheckIn);
+      cursor = result.LastEvaluatedKey;
+    } while (cursor && items.length <= limit);
+    return { items: items.slice(0, limit), more: items.length > limit };
+  }
+  /** Check-ins above `after` (a key without its prefix), oldest first. */
+  async checkInsAbove(user: string, after: string, limit: number) {
+    const lo = CHECKIN + after,
+      items: CheckIn[] = [];
+    let cursor: Key | undefined;
+    do {
+      const result = await this.client.send(
+        new QueryCommand({
+          TableName: this.tableName,
+          KeyConditionExpression: 'pk = :p AND sk BETWEEN :lo AND :hi',
+          ExpressionAttributeValues: { ':p': `USER#${user}`, ':lo': lo, ':hi': CHECKIN_END },
+          ScanIndexForward: true,
+          ConsistentRead: true,
+          Limit: limit + 2 - items.length,
+          ...(cursor ? { ExclusiveStartKey: cursor } : {})
+        })
+      );
+      for (const item of result.Items ?? []) if (String(item.sk) > lo) items.push(item as CheckIn);
+      cursor = result.LastEvaluatedKey;
+    } while (cursor && items.length <= limit);
+    return { items: items.slice(0, limit), more: items.length > limit };
+  }
+  /** The check-ins that began in this second (an ISO time cut at its seconds),
+   * for finding the one a later report continues. */
+  async checkInsAt(user: string, second: string): Promise<CheckIn[]> {
+    return (await this.rows({
+      KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
+      ExpressionAttributeValues: { ':p': `USER#${user}`, ':s': CHECKIN + second },
+      ConsistentRead: true
+    })) as CheckIn[];
+  }
+  /** An account's remembered places, read whole (at most 200 names). */
+  async namedPlaces(user: string): Promise<NamedPlace[]> {
+    return (await this.rows({
+      KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
+      ExpressionAttributeValues: { ':p': `USER#${user}`, ':s': NAMED_PLACE },
+      ConsistentRead: true
+    })) as NamedPlace[];
+  }
+  /** Check-ins and remembered places saved and removed, each from the revision
+   * read, with the account and the writer's `proofs` in every transaction. A
+   * long list commits in order, and only its last transaction takes `last`, the
+   * receipt and count: a retry finds what's left. False once one is refused. */
+  async checkInWrites(
+    user: string,
+    changes: readonly { next?: Item; old?: Item }[],
+    proofs: Ops,
+    last: Ops
+  ): Promise<boolean> {
+    const size = 90;
+    for (let start = 0; start === 0 || start < changes.length; start += size) {
+      const chunk = changes.slice(start, start + size),
+        guard = (old: Item) => ({
+          ConditionExpression: '#revision = :revision',
+          ExpressionAttributeNames: { '#revision': 'revision' },
+          ExpressionAttributeValues: { ':revision': old.revision }
+        }),
+        ops: Ops = chunk.map(({ next, old }) =>
+          next
+            ? this.putOperation(next, old ? guard(old) : { ConditionExpression: 'attribute_not_exists(pk)' })
+            : {
+                Delete: {
+                  TableName: this.tableName,
+                  Key: { pk: String(old!.pk), sk: String(old!.sk) },
+                  ...guard(old!)
+                }
+              }
+        );
+      if (
+        !(await this.transact([
+          this.profileProof(user),
+          ...proofs,
+          ...ops,
+          ...(start + size >= changes.length ? last : [])
+        ]))
+      )
+        return false;
+    }
+    return true;
   }
   /** Activity rows (packages/backend/activity.ts), each transaction with the
    * account proof, 90 rows at most: false once one fails. */

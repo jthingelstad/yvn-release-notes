@@ -14,6 +14,13 @@ import { NEARBY_MAX } from '../../packages/backend/places.ts';
 import { FORM_SECONDS, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY } from '../../packages/backend/uploads.ts';
 import { PINS_MAX, RECENT_DAYS, RECENT_MAX } from '../../packages/backend/tag-row.ts';
 import { TOKEN_SCOPES, V1_LIMITS, V1_RECEIPT_SECONDS, V1_UPCOMING_MAX } from '../../packages/backend/tokens.ts';
+import {
+  CHECKIN_NAME_MAX,
+  CHECKIN_SOURCES,
+  NAMED_BY,
+  NAMED_PLACE_SPOTS_MAX,
+  NAMED_PLACES_MAX
+} from '../../packages/domain/check-ins.ts';
 import { MAX_TAG } from '../../packages/domain/tags.ts';
 import { UPCOMING_KINDS, UPCOMING_MAX, UPCOMING_TITLE_MAX } from '../../packages/domain/upcoming.ts';
 import {
@@ -321,6 +328,115 @@ const OPERATIONS: Record<string, Doc> = {
       }
     ],
     responses: { '200': answer('NoteFile', 'The address.') }
+  },
+  'check-ins': {
+    operationId: 'listCheckIns',
+    summary: 'The places you stopped, newest first',
+    description:
+      'A stay at a time, with its spot and the name it shows. Back-to-back stops at one place read as one, and `ids` ' +
+      'lists the check-ins in it. `from` and `to` are your days, a stay going by when it began, up to ' +
+      `${RANGE_DAYS_MAX} days; \`before\` is the \`next\` of an earlier page. Since 1.18.0.`,
+    parameters: [
+      { name: 'from', in: 'query', description: 'First day, YYYY-MM-DD.', schema: { type: 'string', format: 'date' } },
+      {
+        name: 'to',
+        in: 'query',
+        description: 'Last day; `from` if left out.',
+        schema: { type: 'string', format: 'date' }
+      },
+      { name: 'before', in: 'query', description: 'The `next` of an earlier page.', schema: { type: 'string' } },
+      {
+        name: 'limit',
+        in: 'query',
+        description: 'Stays a page holds.',
+        schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 }
+      }
+    ],
+    responses: { '200': answer('CheckIns', 'Each stay’s time and name, a line each.') }
+  },
+  'check-ins.add': {
+    operationId: 'addCheckIn',
+    summary: 'Send a stop, as a phone is told of it',
+    description:
+      'Forward each report as it comes, with an Idempotency-Key. A later report with the same `source` and arrival, ' +
+      'to the second, is the same stay: it fills in `left` and answers 200, not 201, so a client keeps no ids. A ' +
+      'report with no arrival is matched by its `left`. A `tap` sends the moment it was tapped as `arrived`, and is ' +
+      `never continued. Times over a week ahead are refused; older ones are fine, since a phone can be offline. The ` +
+      `first ${V1_LIMITS.lookups} new stays a UTC day get their \`district\`, one paid lookup each, and those past that ` +
+      `are still saved with none; RateLimit-Limit counts those. After ${V1_LIMITS.checkin} reports a day, \`rate_limited\`. ` +
+      'Since 1.18.0.',
+    requestBody: { required: true, content: { 'application/json': { schema: ref('CheckInReport') } } },
+    responses: {
+      '200': answer('CheckInWritten', 'Checked in at Home.', true),
+      '201': answer('CheckInWritten', 'Checked in at Home.', true)
+    }
+  },
+  'check-ins.name': {
+    operationId: 'nameCheckIn',
+    summary: 'Name a stay once, or take its name away',
+    description:
+      'A name on this stay alone, on every check-in in it, beating any remembered place. This token’s own, or any ' +
+      'with `notes:all`. `revision` is the one you read. To name every stop at a spot, remember the place instead. ' +
+      'Since 1.18.0.',
+    requestBody: { required: true, content: { 'application/json': { schema: ref('CheckInName') } } },
+    responses: { '200': answer('CheckInWritten', 'Checked in at Home.', true) }
+  },
+  'check-ins.delete': {
+    operationId: 'deleteCheckIn',
+    summary: 'Delete a stay',
+    description:
+      'Every check-in in the stay goes, and its row in the activity log. `checkin.deleted` stays there with its ' +
+      '`day` and `count`, and never the place. This token’s own, or any with `notes:all`. Since 1.18.0.',
+    responses: { '204': { description: 'Deleted.', headers: writeHeaders() } }
+  },
+  'check-ins.delete-all': {
+    operationId: 'deleteAllCheckIns',
+    summary: 'Delete every check-in',
+    description:
+      'Needs `?confirm=all`. Remembered places stay. One `checkin.deleted` row stays in the activity log with the ' +
+      '`count`. Since 1.18.0.',
+    parameters: [
+      {
+        name: 'confirm',
+        in: 'query',
+        required: true,
+        description: 'all, to say you mean it.',
+        schema: { type: 'string', enum: ['all'] }
+      }
+    ],
+    responses: { '200': answer('CheckInsDeleted', 'Deleted 12.', true) }
+  },
+  'check-ins.places': {
+    operationId: 'listNamedPlaces',
+    summary: 'The places you remember',
+    description: 'Each name with its spots. The nearest within 100 m names a stop. Since 1.18.0.',
+    responses: { '200': answer('NamedPlaces', 'Their names, a line each.') }
+  },
+  'check-ins.places.add': {
+    operationId: 'rememberPlace',
+    summary: 'Remember a place, or add a spot to a name',
+    description:
+      'A name already in use, ignoring case, gains this spot and answers 200; a new one answers 201. It applies at ' +
+      `once to every stop within 100 m, past and future. An account has up to ${NAMED_PLACES_MAX} names, and a name up ` +
+      `to ${NAMED_PLACE_SPOTS_MAX} spots. Since 1.18.0.`,
+    requestBody: { required: true, content: { 'application/json': { schema: ref('NamedPlaceWrite') } } },
+    responses: {
+      '200': answer('NamedPlaceWritten', 'Its name.', true),
+      '201': answer('NamedPlaceWritten', 'Its name.', true)
+    }
+  },
+  'check-ins.places.change': {
+    operationId: 'renameNamedPlace',
+    summary: 'Rename a remembered place',
+    description: 'Every spot and stop follows. A name another place has is refused. Since 1.18.0.',
+    requestBody: { required: true, content: { 'application/json': { schema: ref('NamedPlaceName') } } },
+    responses: { '200': answer('NamedPlaceWritten', 'Its name.', true) }
+  },
+  'check-ins.places.delete': {
+    operationId: 'forgetNamedPlace',
+    summary: 'Forget a remembered place',
+    description: 'All its spots go, and stops there show their neighbourhood again. Since 1.18.0.',
+    responses: { '204': { description: 'Forgotten.', headers: writeHeaders() } }
   },
   'uploads.start': {
     operationId: 'startUpload',
@@ -1361,6 +1477,115 @@ const SCHEMAS: Record<string, Doc> = {
       }
     }
   },
+  CheckIn: {
+    type: 'object',
+    description: 'A stay: one check-in, or back-to-back ones at one place.',
+    required: ['id', 'ids', 'at', 'arrived', 'left', 'lat', 'lon', 'day', 'source', 'label', 'named_by', 'revision'],
+    properties: {
+      id: { type: 'string', description: 'Its first check-in’s id; any in `ids` names the stay.' },
+      ids: { type: 'array', items: { type: 'string' }, description: 'The check-ins in it, oldest first.' },
+      at: { type: 'string', format: 'date-time', description: 'When it began, or when it was first heard of.' },
+      arrived: { anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }], description: 'Null if unknown.' },
+      left: {
+        anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+        description: 'Null while still there, and for a tap.'
+      },
+      lat: { type: 'number' },
+      lon: { type: 'number' },
+      accuracy_m: { anyOf: [{ type: 'number' }, { type: 'null' }], description: 'The circle’s radius.' },
+      time_zone: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'The zone there.' },
+      day,
+      source: { type: 'string', enum: [...CHECKIN_SOURCES] },
+      label: { type: 'string', description: 'The name it shows.' },
+      named_by: { type: 'string', enum: [...NAMED_BY], description: 'How `label` came about.' },
+      place: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'The remembered place naming it.' },
+      name: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'A name on this stay alone.' },
+      district: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Neighbourhood and city.' },
+      via: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      token: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      token_id: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      client: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      revision: { type: 'integer', description: 'Send it back to name this stay.' }
+    }
+  },
+  CheckIns: {
+    type: 'object',
+    required: ['items', 'next'],
+    properties: {
+      items: { type: 'array', items: ref('CheckIn') },
+      next: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'The `before` for the next older page.' }
+    }
+  },
+  CheckInWritten: { type: 'object', required: ['check_in'], properties: { check_in: ref('CheckIn') } },
+  CheckInsDeleted: { type: 'object', required: ['deleted'], properties: { deleted: { type: 'integer' } } },
+  CheckInReport: {
+    type: 'object',
+    required: ['lat', 'lon', 'source'],
+    additionalProperties: false,
+    properties: {
+      arrived: { anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }], description: 'Null if unknown.' },
+      left: {
+        anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+        description: 'Null while still there.'
+      },
+      lat: { type: 'number', minimum: -90, maximum: 90 },
+      lon: { type: 'number', minimum: -180, maximum: 180 },
+      accuracy_m: { anyOf: [{ type: 'number', minimum: 0 }, { type: 'null' }] },
+      time_zone: {
+        anyOf: [{ type: 'string' }, { type: 'null' }],
+        description: 'An IANA name; the account’s if left out.'
+      },
+      source: { type: 'string', enum: [...CHECKIN_SOURCES] }
+    }
+  },
+  CheckInName: {
+    type: 'object',
+    required: ['name', 'revision'],
+    additionalProperties: false,
+    properties: {
+      name: { anyOf: [{ type: 'string', minLength: 1, maxLength: CHECKIN_NAME_MAX }, { type: 'null' }] },
+      revision: { type: 'integer', minimum: 1 }
+    }
+  },
+  NamedPlace: {
+    type: 'object',
+    required: ['id', 'name', 'spots', 'revision'],
+    properties: {
+      id: { type: 'string' },
+      name: { type: 'string' },
+      spots: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['lat', 'lon'],
+          properties: { lat: { type: 'number' }, lon: { type: 'number' } }
+        }
+      },
+      revision: { type: 'integer' }
+    }
+  },
+  NamedPlaces: {
+    type: 'object',
+    required: ['places'],
+    properties: { places: { type: 'array', items: ref('NamedPlace') } }
+  },
+  NamedPlaceWritten: { type: 'object', required: ['place'], properties: { place: ref('NamedPlace') } },
+  NamedPlaceWrite: {
+    type: 'object',
+    required: ['name', 'lat', 'lon'],
+    additionalProperties: false,
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: CHECKIN_NAME_MAX },
+      lat: { type: 'number', minimum: -90, maximum: 90 },
+      lon: { type: 'number', minimum: -180, maximum: 180 }
+    }
+  },
+  NamedPlaceName: {
+    type: 'object',
+    required: ['name'],
+    additionalProperties: false,
+    properties: { name: { type: 'string', minLength: 1, maxLength: CHECKIN_NAME_MAX } }
+  },
   Activity: {
     type: 'object',
     required: ['items', 'next'],
@@ -1374,7 +1599,8 @@ const SCHEMAS: Record<string, Doc> = {
     required: ['id', 'at', 'kind'],
     description:
       'One thing that happened. Each kind keeps its own fields (note.added has `day` and `note`; a reads ' +
-      'row `calls` and `tools`); `via` says through ' +
+      'row `calls` and `tools`; a checkin `checkin`, `label`, `arrived`, `left` and `source`, and never a spot, its ' +
+      'label being the one place a row holds your own words); `via` says through ' +
       'what, and a token’s rows name it as `token` and, from 1.4.0, by id as `token_id`.',
     properties: {
       id: { type: 'string', description: 'A cursor for `before` and `after`.' },

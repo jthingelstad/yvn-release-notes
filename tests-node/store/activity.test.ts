@@ -13,7 +13,7 @@ const proof = {
   }
 };
 
-test('a page queries both partitions between its bounds, newest first', async () => {
+test('a page queries both partitions and the check-ins between its bounds, newest first', async () => {
   const s = new FakeStore([profile], 'T');
   s.memory.calls.length = 0;
   await s.activity('u', {
@@ -35,7 +35,25 @@ test('a page queries both partitions between its bounds, newest first', async ()
       Limit: 52
     }
   });
-  assert.deepEqual(s.memory.calls, [range('USER#u'), range('MCPMETA#u')]);
+  assert.deepEqual(s.memory.calls, [
+    range('USER#u'),
+    range('MCPMETA#u'),
+    {
+      name: 'QueryCommand',
+      input: {
+        TableName: 'T',
+        KeyConditionExpression: 'pk = :p AND sk BETWEEN :lo AND :hi',
+        ExpressionAttributeValues: {
+          ':p': 'USER#u',
+          ':lo': 'CHECKIN#2026-10-01T05:00:00.000Z',
+          ':hi': 'CHECKIN#2026-10-12T10:00:00.000Z$'
+        },
+        ScanIndexForward: false,
+        ConsistentRead: true,
+        Limit: 52
+      }
+    }
+  ]);
   s.memory.calls.length = 0;
   await s.activity('u', { limit: 10 });
   assert.deepEqual((s.memory.calls[0]!.input as { ExpressionAttributeValues: unknown }).ExpressionAttributeValues, {
@@ -96,7 +114,8 @@ test('a page reads on past a response DynamoDB cut short at 1 MB', async () => {
     [page.rows.map((r) => r.sk), page.more],
     [['ACTIVITY#2026-10-12T10:00:00.000Z#mail#10', 'ACTIVITY#2026-10-12T09:00:00.000Z#mail#09'], true]
   );
-  assert.equal(s.memory.calls.filter((c) => c.input.ExpressionAttributeValues?.[':p'] === 'USER#u').length, 4);
+  const values = s.memory.calls.map((c) => c.input.ExpressionAttributeValues ?? {});
+  assert.equal(values.filter((v) => v[':p'] === 'USER#u' && String(v[':lo']).startsWith('ACTIVITY#')).length, 4);
 });
 
 test('activity rows go in with the account proof, each only if new, 90 to a transaction', async () => {
@@ -268,4 +287,36 @@ test('an egg is claimed on BADGES with its rows and the account proof, once', as
   s.seed({ ...profile, mcp_deleting: true });
   s.memory.calls.length = 0;
   assert.equal(await s.findEgg('u', 'konami', [{ ...row('d'), egg: 'konami' }], at), false);
+});
+
+test('a page with check-ins reads the remembered places and the check-in before them', async () => {
+  const s = new FakeStore([profile], 'T'),
+    at = '2026-10-12T10:00:00.000Z',
+    id = `c${Date.parse(at)}-ab`;
+  s.seed({ pk: 'USER#u', sk: `CHECKIN#${at}#${id}`, id, at, arrived: at, left: null, lat: 1, lon: 1, source: 'visit' });
+  s.memory.calls.length = 0;
+  const page = await s.activity('u', { limit: 10 });
+  assert.equal(page.rows[0]!.kind, 'checkin');
+  assert.deepEqual(s.memory.calls.slice(3), [
+    {
+      name: 'QueryCommand',
+      input: {
+        TableName: 'T',
+        KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
+        ExpressionAttributeValues: { ':p': 'USER#u', ':s': 'NAMEDPLACE#' },
+        ConsistentRead: true
+      }
+    },
+    {
+      name: 'QueryCommand',
+      input: {
+        TableName: 'T',
+        KeyConditionExpression: 'pk = :p AND sk BETWEEN :lo AND :hi',
+        ExpressionAttributeValues: { ':p': 'USER#u', ':lo': 'CHECKIN#', ':hi': `CHECKIN#${at}#${id}` },
+        ScanIndexForward: false,
+        ConsistentRead: true,
+        Limit: 3
+      }
+    }
+  ]);
 });

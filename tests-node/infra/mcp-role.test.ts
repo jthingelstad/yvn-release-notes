@@ -72,6 +72,7 @@ test('the MCP role grants every request each tool makes', async () => {
   await call('notes_get_note', { date: '2026-10-07', id: 'media' });
   await call('notes_tags');
   await call('notes_map');
+  await call('notes_check_ins');
   await call('notes_find_place', { q: 'Paris' });
   await call('notes_view_photo', { date: '2026-10-07', id: 'media', n: 1 });
   await call('notes_view_photo', { date: '2026-10-07', id: 'media', n: 1, original: true });
@@ -224,6 +225,31 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
     undefined,
     204
   );
+  // Check-ins (1.18.0): their reads, and the activity log's join under this role.
+  const reported = await v1(
+    'POST',
+    '/v1/check-ins',
+    { lat: 48.85, lon: 2.35, source: 'visit', arrived: '2026-10-12T14:00:00Z' },
+    201
+  );
+  await v1('POST', '/v1/check-ins', { lat: 48.85, lon: 2.35, source: 'visit', arrived: '2026-10-12T15:00:00Z' }, 201);
+  await v1('GET', '/v1/check-ins?limit=1');
+  const pagedStays = await v1('GET', '/v1/check-ins');
+  await v1(
+    'GET',
+    `/v1/check-ins?before=${encodeURIComponent(String(pagedStays.next ?? '2030-01-01T00:00:00.000Z#c1-a'))}`
+  );
+  await v1('GET', '/v1/check-ins/places');
+  await v1('POST', '/v1/check-ins/places', { name: 'Home', lat: 48.85, lon: 2.35 }, 201);
+  const rememberedPlaces = await v1('GET', '/v1/check-ins/places'),
+    remembered = (rememberedPlaces.places as OAuthRow[])[0]!;
+  await v1('PATCH', `/v1/check-ins/places/${String(remembered.id)}`, { name: 'Our home' });
+  await v1('DELETE', `/v1/check-ins/places/${String(remembered.id)}`, undefined, 204);
+  const reportedStay = reported.check_in as OAuthRow;
+  await v1('PATCH', `/v1/check-ins/${String(reportedStay.id)}`, { name: 'Lunch', revision: reportedStay.revision });
+  await v1('DELETE', `/v1/check-ins/${String(reportedStay.id)}`, undefined, 204);
+  await v1('POST', '/v1/check-ins', { lat: 48.85, lon: 2.35, source: 'tap' }, 201);
+  await v1('DELETE', '/v1/check-ins?confirm=all');
   await v1('GET', '/v1/activity');
   // The archive (1.15.0), all reads under the MCP role.
   const liveDay = String((await v1('GET', '/v1/days')).today);

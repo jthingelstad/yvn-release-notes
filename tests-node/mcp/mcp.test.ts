@@ -1312,6 +1312,60 @@ test('notes_create takes markup: rich; reads say so, and appending and rewriting
   );
 });
 
+test('notes_check_ins reads where the account stopped, a page at a time, with reading alone', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx, false, false),
+    seed = (at: string, id: string, more: OAuthRow = {}) =>
+      ctx.store.seed({
+        pk: 'USER#u',
+        sk: `CHECKIN#${at}#${id}`,
+        id,
+        at,
+        arrived: at,
+        left: null,
+        lat: 44.97,
+        lon: -93.26,
+        source: 'visit',
+        day: at.slice(0, 10),
+        district: 'Uptown, Springfield',
+        revision: 1,
+        ...more
+      });
+  seed('2026-10-10T15:00:00.000Z', 'c1-a', { lat: 45.5 });
+  seed('2026-10-11T15:00:00.000Z', 'c2-a', { left: '2026-10-11T16:00:00.000Z' });
+  seed('2026-10-11T16:10:00.000Z', 'c3-a');
+  const first = (await rpc(ctx, a.token, 'notes_check_ins', { limit: 1 })).value,
+    stays = first.check_ins as OAuthRow[];
+  assert.equal(first.error, undefined, JSON.stringify(first));
+  assert.equal(stays.length, 1);
+  assert.deepEqual(stays[0]!.ids, ['c2-a', 'c3-a']);
+  assert.equal(stays[0]!.label, 'Uptown, Springfield');
+  assert.equal(stays[0]!.lat, 44.97);
+  const next = (await rpc(ctx, a.token, 'notes_check_ins', { limit: 1, cursor: first.next_cursor as string })).value;
+  assert.deepEqual((next.check_ins as OAuthRow[])[0]!.ids, ['c1-a']);
+  assert.equal(next.next_cursor, null);
+  const day = (await rpc(ctx, a.token, 'notes_check_ins', { from: '2026-10-10', through: '2026-10-10' })).value;
+  assert.deepEqual(
+    (day.check_ins as OAuthRow[]).map((c) => c.id),
+    ['c1-a']
+  );
+  assert.equal(
+    (await rpc(ctx, a.token, 'notes_check_ins', { from: '2026-10-11', through: '2026-10-10' })).value.error,
+    'invalid_arguments'
+  );
+  assert.equal(
+    (await rpc(ctx, a.token, 'notes_check_ins', { cursor: first.next_cursor as string, from: '2026-10-10' })).value
+      .error,
+    'invalid_cursor'
+  );
+  // Its row in notes_activity has a name and no spot.
+  const log = (await rpc(ctx, a.token, 'notes_activity', { kinds: ['checkin'] })).value,
+    entries = log.entries as OAuthRow[];
+  assert.equal(entries.length, 2);
+  assert.equal(entries[0]!.label, 'Uptown, Springfield');
+  assert.ok(!('lat' in entries[0]!));
+});
+
 test('notes_map reads the pins oldest first, a page at a time, with reading alone', async () => {
   const ctx = fixture(),
     a = await connected(ctx, false, false),

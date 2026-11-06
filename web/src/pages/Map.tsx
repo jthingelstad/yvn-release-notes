@@ -109,6 +109,22 @@ export function mapLede(notes: number, shown: number | undefined, stays: number,
   return notes ? `${notesLine}, and ${staysLine}.` : `${staysLine}.`;
 }
 
+/** The release menu: the notes' and the check-ins' releases by age, each with
+ * how many. `stays` come by the other filters only, as sift's list does, or
+ * choosing a release would take the rest off the menu. */
+export function releaseMenu(
+  notes: readonly { release: string; notes: number }[],
+  stays: readonly Pick<Stay, 'release'>[],
+  chosen: string
+) {
+  const tally = new Map(notes.map((r) => [r.release, r.notes]));
+  if (chosen) tally.set(chosen, tally.get(chosen) ?? 0);
+  for (const s of stays) tally.set(s.release, (tally.get(s.release) ?? 0) + 1);
+  return [...tally]
+    .sort(([a], [b]) => (releaseAge(b) ?? -1) - (releaseAge(a) ?? -1))
+    .map(([release, notes]) => ({ release, notes }));
+}
+
 export function MapPage() {
   useTitle('Map');
   const navigate = useNavigate();
@@ -145,19 +161,17 @@ export function MapPage() {
   );
   const sifted = useMemo(() => {
     if (!noted) return noted;
-    // The release menu offers what shows: the notes, the check-ins or both.
-    const notes = show === 'check-ins' ? [] : noted.releases,
-      tally = new Map(notes.map((r) => [r.release, r.notes]));
-    if (release) tally.set(release, tally.get(release) ?? 0);
-    for (const s of stayed) tally.set(s.release, (tally.get(s.release) ?? 0) + 1);
     return {
       ...noted,
       shown: show === 'check-ins' ? [] : noted.shown,
-      releases: [...tally]
-        .sort(([a], [b]) => (releaseAge(b) ?? -1) - (releaseAge(a) ?? -1))
-        .map(([release, notes]) => ({ release, notes }))
+      // The release menu offers what shows: the notes, the check-ins or both.
+      releases: releaseMenu(
+        show === 'check-ins' ? [] : noted.releases,
+        siftStays(stays ?? [], { show, tag, release: '', asked }),
+        release
+      )
     };
-  }, [noted, stayed, show, release]);
+  }, [noted, stays, show, tag, release, asked]);
   // A menu shows when there is something to choose at all, whatever the
   // other filters leave, so it never comes and goes.
   const menus = useMemo(

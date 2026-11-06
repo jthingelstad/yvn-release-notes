@@ -198,6 +198,59 @@ test('Remember names every stop near the spot, past and future, and takes this o
   );
 });
 
+test('Remember shows the name chosen, on a spot another place already has', async () => {
+  const here = stop('u', A, HOME),
+    f = await fixture([here]),
+    home = await f.call('PUT', '/api/check-ins/' + here.id, { name: 'Home', remember: true, revision: 1 });
+  assert.equal(home.data.check_in.label, 'Home');
+  // A tie, so the stay keeps the name as its own, which outranks both places.
+  const tie = await f.call('PUT', '/api/check-ins/' + here.id, {
+    name: 'Other',
+    remember: true,
+    revision: home.data.check_in.revision
+  });
+  assert.equal(tie.status, 200);
+  assert.equal(tie.data.check_in.label, 'Other');
+  assert.equal(tie.data.check_in.named_by, 'own');
+  assert.equal((await f.call('GET', '/api/check-ins/' + here.id)).data.check_in.label, 'Other');
+  const { places } = (await f.call('GET', '/api/check-ins/places')).data;
+  assert.deepEqual(places.map((p: Item) => p.name).sort(), ['Home', 'Other']);
+  // Saving it again changes nothing and adds no spot.
+  const again = await f.call('PUT', '/api/check-ins/' + here.id, {
+    name: 'Other',
+    remember: true,
+    revision: tie.data.check_in.revision
+  });
+  assert.equal(again.status, 200);
+  const other = (await f.call('GET', '/api/check-ins/places')).data.places.find((p: Item) => p.name === 'Other');
+  assert.equal(other.spots.length, 1);
+});
+
+test('Remember with a name kept farther off gives that place this spot, once', async () => {
+  // About 90 m north of HOME, then a stop 30 m north of it, so both places reach
+  // it and Home is the nearer.
+  const first = stop('u', A, HOME),
+    second = stop('u', B, { lat: HOME.lat + 0.00081, lon: HOME.lon }),
+    third = stop('u', C, { lat: HOME.lat + 0.00027, lon: HOME.lon }),
+    f = await fixture([first, second, third]);
+  await f.call('PUT', '/api/check-ins/' + first.id, { name: 'Home', remember: true, revision: 1 });
+  await f.call('PUT', '/api/check-ins/' + second.id, { name: 'Shed', remember: true, revision: 1 });
+  const before = (await f.call('GET', '/api/check-ins/' + third.id)).data.check_in;
+  assert.equal(before.label, 'Home');
+  const saved = await f.call('PUT', '/api/check-ins/' + third.id, {
+    name: 'Shed',
+    remember: true,
+    revision: before.revision
+  });
+  assert.equal(saved.data.check_in.label, 'Shed');
+  assert.equal(saved.data.check_in.named_by, 'place');
+  assert.equal((await f.call('GET', '/api/check-ins/' + third.id)).data.check_in.label, 'Shed');
+  const shed = (await f.call('GET', '/api/check-ins/places')).data.places.find((p: Item) => p.name === 'Shed');
+  assert.equal(shed.spots.length, 2);
+  // Home keeps its own stop.
+  assert.equal((await f.call('GET', '/api/check-ins/' + first.id)).data.check_in.label, 'Home');
+});
+
 test('remembering a stay keeps every spot it needs to stay whole', () => {
   assert.deepEqual(spotsFor([], [HOME, NEAR]), [HOME]);
   assert.deepEqual(spotsFor([], [HOME, SHOP]), [HOME, SHOP]);

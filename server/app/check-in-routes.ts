@@ -36,6 +36,9 @@ export function spotsFor(have: readonly Spot[], members: readonly Spot[]): Spot[
   return spots;
 }
 
+/** How far the nearest of these spots is: Infinity if there are none. */
+const nearestOf = (spot: Spot, spots: readonly Spot[]) => Math.min(...spots.map((other) => metres(spot, other)));
+
 export async function checkInRoutes(
   service: SessionService,
   pattern: string,
@@ -140,11 +143,20 @@ export async function checkInRoutes(
   const clear = (m: CheckIn, name: string | null) => ({ ...m, name, revision: Number(m.revision) + 1 });
   if (remember) {
     // The name goes on the place, so this stop's own name comes off, or it
-    // would keep outranking the place from here on.
+    // would keep outranking the place from here on (but see the tie below).
     const old = places.find((place) => sameName(place.name, given!));
     if (!old && places.length >= NAMED_PLACES_MAX) reject(400, 'check-in-places-full');
-    const spots = spotsFor(old?.spots ?? [], members);
+    const others = places.filter((other) => other.id !== old?.id).flatMap((other) => other.spots),
+      spots = spotsFor(old?.spots ?? [], members);
+    // Saving a name has to show it. Where another place is as near or nearer,
+    // this one takes the member's own spot, and a tie (the other place has that
+    // very spot) leaves the stay its own name, which outranks them both.
+    for (const { lat, lon } of members) {
+      const mine = nearestOf({ lat, lon }, spots);
+      if (mine > 0 && mine >= nearestOf({ lat, lon }, others)) spots.push({ lat, lon });
+    }
     if (spots.length > NAMED_PLACE_SPOTS_MAX) reject(400, 'check-in-spots-full');
+    const own = members.some((m) => nearestOf(m, spots) >= nearestOf(m, others)) ? given : null;
     const grew = spots.length > (old?.spots.length ?? 0),
       id = old?.id ?? `p-${randomUUID().replace(/-/g, '')}`,
       place = (
@@ -152,10 +164,10 @@ export async function checkInRoutes(
           ? { ...old, spots, revision: Number(old.revision) + 1 }
           : { pk: 'USER#' + uid, sk: namedPlaceKey(id), id, name: given!, spots, revision: 1 }
       ) as NamedPlace,
-      named = members.filter((m) => m.name),
+      named = members.filter((m) => (m.name ?? null) !== own),
       changes = [
         ...(grew ? [{ next: place, ...(old ? { old } : {}) }] : []),
-        ...named.map((m) => ({ next: clear(m, null), old: m }))
+        ...named.map((m) => ({ next: clear(m, own), old: m }))
       ];
     if (changes.length > STAY_WRITE_MAX) reject(400, 'check-in-stay-long');
     if (!(await store.checkInWrites(uid, changes, [], []))) reject(409, 'check-in-changed');
@@ -163,7 +175,7 @@ export async function checkInRoutes(
     else if (named.length) await note('checkin.named', { checkin: members[0]!.id, day: members[0]!.day });
     return json({
       check_in: shown(
-        members.map((m) => (m.name ? clear(m, null) : m)),
+        members.map((m) => ((m.name ?? null) !== own ? clear(m, own) : m)),
         [...places.filter((other) => other.id !== id), grew ? place : (old ?? place)]
       )
     });

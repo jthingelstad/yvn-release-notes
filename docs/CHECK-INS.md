@@ -271,6 +271,9 @@ What building it decided, past the design above.
 - **Remember takes the stop's own name off,** or it would go on outranking the
   place, and adds the spot of each check-in in the stay that no spot of that name
   is near, or remembering could split the stay.
+- **Remember always shows the name chosen.** Where another place is as near or
+  nearer, the chosen place takes the stop's own spot. On a spot another place
+  already has, a tie, the stay keeps the name as its own too, which outranks both.
 - **A tag or words hide check-ins on the Map,** since a check-in has neither, and
   choosing Check-ins clears them. A release narrows both, by the check-in's day.
 - **Activity's Check-ins button shows once there are any,** so nobody without them

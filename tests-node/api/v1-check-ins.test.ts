@@ -4,6 +4,7 @@
  * spot or name goes into the log or a stored activity row. Fictional account,
  * fake Amazon Location. */
 import { test } from 'node:test';
+import { STAY_WRITE_MAX } from '../../packages/domain/check-ins.ts';
 import assert from 'node:assert/strict';
 import { createMcpApp, type McpOptions } from '../../server/mcp/app.ts';
 import { captureNote, type CaptureContext } from '../../workers/capture.ts';
@@ -571,4 +572,136 @@ test('a check-in touches no note count, and the export has them all', async () =
   const words = markdown(exported);
   assert.match(words, /## Check-ins/);
   assert.match(words, /## Remembered places/);
+});
+
+test('another token never fills in or reads a stop it did not send, and its report is its own', async () => {
+  const s = setup(),
+    first = await make(s, ['notes:write'], 'Old phone'),
+    second = await make(s, ['notes:write'], 'New phone');
+  const sent = await call(s, first.token, 'POST', '/v1/check-ins', report());
+  assert.equal(sent.status, 201);
+  const other = await call(s, second.token, 'POST', '/v1/check-ins', report({ left: '2026-10-12T15:00:00Z' }));
+  assert.equal(other.status, 201, JSON.stringify(other.json));
+  assert.notEqual(shown(other).id, shown(sent).id);
+  assert.equal(checkIns(s).length, 2);
+  assert.equal(checkIns(s).find((c) => c.id === shown(sent).id)!.left, null);
+  // Each goes on filling in its own.
+  const again = await call(s, second.token, 'POST', '/v1/check-ins', report({ left: '2026-10-12T15:10:00Z' }));
+  assert.equal(again.status, 200);
+  assert.equal(shown(again).id, shown(other).id);
+  // They read as the one stay.
+  const all = await make(s),
+    items = (await call(s, all.token, 'GET', '/v1/check-ins')).json.items as OAuthRow[];
+  assert.equal(items.length, 1);
+  assert.equal((items[0]!.ids as string[]).length, 2);
+  assert.equal(items[0]!.left, '2026-10-12T15:10:00.000Z');
+});
+
+test('with notes:all a report fills in another token’s stop, and the write proves that scope', async () => {
+  const s = setup(),
+    first = await make(s, ['notes:write'], 'Old phone'),
+    all = await make(s),
+    sent = await call(s, first.token, 'POST', '/v1/check-ins', report()),
+    filled = await call(s, all.token, 'POST', '/v1/check-ins', report({ left: '2026-10-12T15:00:00Z' }));
+  assert.equal(filled.status, 200, JSON.stringify(filled.json));
+  assert.equal(shown(filled).id, shown(sent).id);
+  assert.equal(checkIns(s).length, 1);
+  // Lose the scope and the same report no longer reaches it.
+  const narrowed = await make(s, ['notes:write'], 'Narrow');
+  const own = await call(s, narrowed.token, 'POST', '/v1/check-ins', report({ left: '2026-10-12T15:20:00Z' }));
+  assert.equal(own.status, 201);
+  assert.equal(checkIns(s).find((c) => c.id === shown(sent).id)!.left, '2026-10-12T15:00:00.000Z');
+});
+
+test('only a token that reads the log or all your notes is told a remembered name', async () => {
+  const s = setup(),
+    all = await make(s),
+    writer = await make(s, ['notes:write'], 'Writer'),
+    reader = await make(s, ['notes:write', 'activity'], 'Reader');
+  await call(s, all.token, 'POST', '/v1/check-ins/places', { name: 'Home', ...HOME });
+  const blind = await call(s, writer.token, 'POST', '/v1/check-ins', report());
+  assert.equal(shown(blind).label, 'Uptown, Springfield');
+  assert.equal(shown(blind).place, null);
+  const told = await call(s, reader.token, 'POST', '/v1/check-ins', report({ arrived: '2026-10-12T16:00:00Z' }));
+  assert.equal(shown(told).label, 'Home');
+  // Taking its own name away tells the writer no more.
+  const named = await call(s, writer.token, 'PATCH', `/v1/check-ins/${String(shown(blind).id)}`, {
+    name: 'Lunch',
+    revision: shown(blind).revision
+  });
+  assert.equal(shown(named).label, 'Lunch');
+  const cleared = await call(s, writer.token, 'PATCH', `/v1/check-ins/${String(shown(named).id)}`, {
+    name: null,
+    revision: shown(named).revision
+  });
+  assert.equal(shown(cleared).label, 'Uptown, Springfield');
+});
+
+test('a stay across two spots of one remembered place stays one when named', async () => {
+  const s = setup(),
+    t = await make(s),
+    far = { lat: HOME.lat + 0.01, lon: HOME.lon };
+  await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'Campus', ...HOME });
+  await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'Campus', ...far });
+  await call(
+    s,
+    t.token,
+    'POST',
+    '/v1/check-ins',
+    report({ arrived: '2026-10-12T14:00:00Z', left: '2026-10-12T15:00:00Z' })
+  );
+  await call(
+    s,
+    t.token,
+    'POST',
+    '/v1/check-ins',
+    report({ arrived: '2026-10-12T15:05:00Z', left: '2026-10-12T16:00:00Z', ...far })
+  );
+  const stay = ((await call(s, t.token, 'GET', '/v1/check-ins')).json.items as OAuthRow[])[0]!;
+  assert.equal((stay.ids as string[]).length, 2);
+  const named = await call(s, t.token, 'PATCH', `/v1/check-ins/${String(stay.id)}`, {
+    name: 'Reunion',
+    revision: stay.revision
+  });
+  assert.equal(named.status, 200, JSON.stringify(named.json));
+  const items = (await call(s, t.token, 'GET', '/v1/check-ins')).json.items as OAuthRow[];
+  assert.equal(items.length, 1);
+  assert.equal(items[0]!.label, 'Reunion');
+  assert.equal((await call(s, t.token, 'DELETE', `/v1/check-ins/${String(stay.id)}`)).status, 204);
+  assert.equal(checkIns(s).length, 0);
+});
+
+test('a stay too long for one transaction refuses a name and changes nothing, and still deletes', async () => {
+  const s = setup(),
+    t = await make(s),
+    start = Date.parse('2026-10-01T00:00:00Z');
+  for (let i = 0; i <= STAY_WRITE_MAX; i++) {
+    const at = new Date(start + i * 600_000).toISOString(),
+      id = `c${Date.parse(at)}-a${i.toString(16)}`;
+    s.base.store.memory.seed({
+      pk: 'USER#u',
+      sk: `CHECKIN#${at}#${id}`,
+      id,
+      at,
+      arrived: at,
+      left: null,
+      ...HOME,
+      source: 'visit',
+      day: at.slice(0, 10),
+      name: null,
+      connection: t.id,
+      revision: 1
+    });
+  }
+  const stay = ((await call(s, t.token, 'GET', '/v1/check-ins')).json.items as OAuthRow[])[0]!;
+  assert.equal((stay.ids as string[]).length, STAY_WRITE_MAX + 1);
+  const refused = await call(s, t.token, 'PATCH', `/v1/check-ins/${String(stay.id)}`, {
+    name: 'Long',
+    revision: stay.revision
+  });
+  assert.equal(refused.status, 400);
+  assert.equal(failed(refused).code, 'invalid_request');
+  assert.ok(checkIns(s).every((c) => c.name === null && c.revision === 1));
+  assert.equal((await call(s, t.token, 'DELETE', `/v1/check-ins/${String(stay.id)}`)).status, 204);
+  assert.equal(checkIns(s).length, 0);
 });

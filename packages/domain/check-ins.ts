@@ -28,6 +28,8 @@ export const NAMED_PLACES_MAX = 200;
 /** Spots one name holds, so its item stays small. */
 export const NAMED_PLACE_SPOTS_MAX = 50;
 export const CHECKIN_NAME_MAX = 100;
+/** The check-ins one transaction changes, with room for its proofs and receipt. */
+export const STAY_WRITE_MAX = 90;
 /** What a stop shows with no name and no neighbourhood. */
 export const UNNAMED_STOP = 'Unnamed stop';
 export const CHECKIN_SOURCES = ['visit', 'tap'] as const;
@@ -127,17 +129,16 @@ export function shownName(item: CheckIn, places: readonly NamedPlace[]): ShownNa
 const seconds = (at: string): number => Date.parse(at) / 1000;
 
 /** Whether `later`, the check-in straight after `earlier`, is the same stay.
- * It begins within 30 minutes of the other ending, and they show the same
- * remembered place, or are within 100 m with the same own name or none. A short
- * gap alone says nothing: two real shops can be a minute apart. A name given to
- * a merged stay goes on every check-in in it, so its stay holds together. */
+ * It begins within 30 minutes of the other ending, any own names are the same,
+ * and they are within 100 m or at the same remembered place. A short gap alone
+ * says nothing: two real shops can be a minute apart. A name given to a merged
+ * stay goes on every check-in in it, so its stay holds together. */
 export function continues(earlier: CheckIn, later: CheckIn, places: readonly NamedPlace[]): boolean {
   const ended = seconds(earlier.left ?? earlier.at);
   if (seconds(later.at) - ended > MERGE_GAP_SECONDS) return false;
   const own = earlier.name ?? null;
   if (own !== (later.name ?? null)) return false;
   if (metres(earlier, later) <= SAME_PLACE_METRES) return true;
-  if (own) return false;
   const here = nearestPlace(earlier, places);
   return Boolean(here && nearestPlace(later, places)?.id === here.id);
 }
@@ -147,15 +148,14 @@ export interface Stay {
   members: CheckIn[];
 }
 /** The stay as one record: the first one's spot, from its arrival to the last
- * one's leaving. Still there if the last of them is an open visit. */
+ * one's leaving. Still there if the last of them is an open visit nothing has
+ * left after: two tokens can report one stop, and only one hear of its end. */
 export function stayTimes(members: readonly CheckIn[]): { arrived: string | null; left: string | null } {
   const last = members.at(-1)!,
-    open = last.source !== 'tap' && last.left === null,
-    lefts = members.map((m) => m.left).filter((left): left is string => left !== null);
-  return {
-    arrived: members[0]!.arrived,
-    left: open || !lefts.length ? null : lefts.reduce((a, b) => (a > b ? a : b))
-  };
+    lefts = members.map((m) => m.left).filter((left): left is string => left !== null),
+    latest = lefts.length ? lefts.reduce((a, b) => (a > b ? a : b)) : null,
+    open = last.source !== 'tap' && last.left === null && (latest === null || latest <= last.at);
+  return { arrived: members[0]!.arrived, left: open ? null : latest };
 }
 /** A stay's revision, read back to change it: the sum of its check-ins', so
  * it moves when any of them changes, or one joins or goes. */

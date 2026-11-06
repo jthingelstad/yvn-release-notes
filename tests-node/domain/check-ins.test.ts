@@ -114,9 +114,13 @@ test('a name kept apart holds two stops apart, and one name given to a stay hold
   assert.equal(continues(first, { ...next, name: 'Lunch' }, []), false);
   assert.equal(continues({ ...first, name: 'Lunch' }, { ...next, name: 'Coffee' }, []), false);
   assert.equal(continues({ ...first, name: 'Lunch' }, { ...next, name: 'Lunch' }, []), true);
-  // Far apart, one own name says nothing about a place, even a remembered one.
+  // Far apart, a name says nothing about a place. A remembered place does, with
+  // or without one, so naming a stay that holds two of its spots keeps it whole.
   const far = stop('2026-11-02T14:50:00.000Z', null, FAR);
   assert.equal(continues({ ...first, name: 'Lunch' }, { ...far, name: 'Lunch' }, []), false);
+  const both = place('p-b', 'Campus', first, far);
+  assert.equal(continues({ ...first, name: 'Lunch' }, { ...far, name: 'Lunch' }, [both]), true);
+  assert.equal(continues({ ...first, name: 'Lunch' }, far, [both]), false);
 });
 
 test('a stay runs from the first arrival to the last leaving, and an open visit is still there', () => {
@@ -129,6 +133,10 @@ test('a stay runs from the first arrival to the last leaving, and an open visit 
   // A tap is a moment, so the visit it fell in still says when it ended.
   assert.deepEqual(stayTimes([a, b, tap]), { arrived: a.arrived, left: b.left });
   assert.deepEqual(stayTimes([tap]), { arrived: tap.arrived, left: null });
+  // Two tokens' reports of one stop, whichever sorts last: one heard it end.
+  const heard = stop('2026-11-02T15:10:00.000Z', '2026-11-02T15:40:00.000Z');
+  assert.deepEqual(stayTimes([heard, open]), { arrived: heard.arrived, left: heard.left });
+  assert.deepEqual(stayTimes([open, heard]), { arrived: open.arrived, left: heard.left });
   assert.equal(stayRevision([a, { ...b, revision: 3 }]), 4);
 });
 

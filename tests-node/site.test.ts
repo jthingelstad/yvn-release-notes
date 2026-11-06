@@ -409,6 +409,15 @@ test('the APIâ€™s row of links is every page under /guide/api/, in the sitemapâ€
   assert.equal(html.get('/guide/tokens/')!.includes('class="doc-section"'), false);
 });
 
+test('the reference spells out every object, one made of others too', () => {
+  const reference = html.get('/guide/api/reference/')!,
+    said = text(article(reference));
+  assert.ok(!said.includes('It is any.'));
+  // Upcoming is made of two schemas, and a client needs these two to change one.
+  const upcoming = reference.slice(reference.indexOf('<h3 id="upcoming"'));
+  for (const field of ['id', 'revision', 'title']) assert.ok(upcoming.includes(`<code>${field}</code>`), field);
+});
+
 test('no page has two headings with one id, and the reference links only to its own', () => {
   for (const [path, page] of html) {
     const ids = Array.from(page.matchAll(/<h[23] id="([^"]*)"/g), (m) => m[1]!);

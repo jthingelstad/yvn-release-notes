@@ -54,6 +54,19 @@ function bounds(schema: Doc | undefined): string {
   return said.length ? ` (${said.join(', ')})` : '';
 }
 
+/** An object made of others (`allOf`), as the one object it reads as. */
+function composed(schema: Doc, schemas: Record<string, Doc>): Doc {
+  if (!schema.allOf) return schema;
+  const parts = (schema.allOf as Doc[]).map((part) =>
+    composed(part.$ref ? schemas[nameOf(part.$ref as string)]! : part, schemas)
+  );
+  return {
+    ...schema,
+    required: [...(schema.required ?? []), ...parts.flatMap((part) => (part.required ?? []) as string[])],
+    properties: Object.assign({}, ...parts.map((part) => part.properties), schema.properties)
+  };
+}
+
 function fields(schema: Doc): string {
   const required = new Set<string>(schema.required ?? []),
     rows = Object.entries((schema.properties ?? {}) as Record<string, Doc>).map(
@@ -130,7 +143,8 @@ export function referenceMarkdown(spec: Doc): string {
   }
   parts.push('## Objects\n\nWhat the requests above send and answer.\n');
   for (const [name, schema] of Object.entries(spec.components.schemas as Record<string, Doc>)) {
-    const shape = schema.properties ? fields(schema) : `It is ${typeOf(schema)}.\n`;
+    const whole = composed(schema, spec.components.schemas),
+      shape = whole.properties ? fields(whole) : `It is ${typeOf(whole)}.\n`;
     parts.push([`### ${name}`, schema.description ?? '', shape].filter(Boolean).join('\n\n'));
   }
   return parts.join('\n\n') + '\n';

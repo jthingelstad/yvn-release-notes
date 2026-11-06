@@ -26,7 +26,8 @@ detail lives with the code: each module's design comment, the table's key
 layout in `packages/backend/store.ts`, the web app in `docs/WEB-APP.md`,
 agent connections in `docs/MCP.md`, badges in `docs/BADGES.md`, and
 tokens, the public `/v1` API and the Changelog app in `docs/API.md`
-(designed 2026-10-29, built in phases). Read those before changing a
+(designed 2026-10-29, built in phases), and check-ins in `docs/CHECK-INS.md`
+(designed 2026-11-06, not built). Read those before changing a
 module.
 
 ## Who can write

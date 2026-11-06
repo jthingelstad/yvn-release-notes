@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import type { NoteRecord } from '../domain/notes.ts';
 import type { Store, Item } from './store.ts';
+import { HEIF } from './heif.ts';
 import { imageSize, MAX_UPLOAD } from './media.ts';
 import { missing, type Objects, type Log } from './services.ts';
 import { activityLog, again, recordActivity } from './activity.ts';
@@ -22,10 +23,10 @@ export const FORMATS = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/w
 export const PROMPT =
   'Describe this photo in one or two plain sentences, so it can be found by searching later: what is in it, where it seems to be, and any words you can read in it, such as signs. Answer with only those sentences: no preamble, no headings, no list of keywords or search terms.';
 export type Model = (body: Item) => Promise<Item>;
-/** A smaller JPEG of a photo too big to send as it is, or null if it can't be
- * read. Injected so the workers that only need this file's key reader don't
+/** A smaller JPEG of a photo too big to send as it is, or of a HEIC, or null if
+ * it can't be read. Injected so the workers that only need this file's key reader don't
  * carry an image library (thumbs.ts has the real one). */
-export type Shrinker = (data: Buffer) => Promise<Buffer | null>;
+export type Shrinker = (data: Buffer, type: string) => Promise<Buffer | null>;
 export class ApiError extends Error {
   status: number;
   kind: string | null;
@@ -135,19 +136,20 @@ export function waiting(note: NoteRecord) {
   return (note.media ?? []).filter(
     (m) =>
       m.kind === 'image' &&
-      FORMATS.has(String(m.type)) &&
+      (FORMATS.has(String(m.type)) || HEIF.has(String(m.type))) &&
       !('description' in m) &&
       Number(m.size ?? 0) <= MAX_UPLOAD &&
       String(m.key ?? '').startsWith('media/')
   );
 }
-/** A photo over the model's limits goes as a smaller copy, held only here. */
+/** A photo over the model's limits, or a HEIC, which it doesn't take, goes as a
+ * smaller JPEG, held only here. */
 export async function wordsFor(data: Buffer, type: string, model: Model, shrink?: Shrinker): Promise<string> {
   const size = imageSize(data);
   let sent = data,
     sentType = type;
-  if (data.length > MAX_BYTES || (size && Math.max(...size) > MAX_SIDE)) {
-    const small = shrink ? await shrink(data) : null;
+  if (HEIF.has(type) || data.length > MAX_BYTES || (size && Math.max(...size) > MAX_SIDE)) {
+    const small = shrink ? await shrink(data, type) : null;
     if (!small || small.length > MAX_BYTES) return '';
     sent = small;
     sentType = 'image/jpeg';

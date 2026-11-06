@@ -19,7 +19,7 @@ Any other kind of file attached to an email stays in the original email, which i
 
 ## In the morning email
 
-Each photo gets a small copy for the email, so photos travel inside the email itself: up to 4 for a day and 6 in all, with a link to the rest. A HEIC photo has no small copy, so the email leaves it out; on the web it shows where your browser opens HEIC, as Safari does. Your photos and recordings are only ever shown to you, by private links.
+Each photo gets a small copy for the email, so photos travel inside the email itself: up to 4 for a day and 6 in all, with a link to the rest. A HEIC's small copy is a JPEG, and the HEIC itself stays as you sent it. The whole photo shows on the web where your browser opens HEIC, as Safari does. Your photos and recordings are only ever shown to you, by private links.
 
 ## Write out what I say
 
@@ -31,7 +31,7 @@ The recordings are sent to Amazon Transcribe to do it, up to 30 recordings a day
 
 Under **Photos**, **Describe my photos** gives each photo a sentence or two about what's in it, so searching for "canoe" finds the canoe. You see a description only in search results. Turning it on describes the photos you already have, too.
 
-The photos are sent to Claude, an AI from Anthropic, to be described. HEIC photos aren't described. It's off until you turn it on.
+The photos are sent to Claude, an AI from Anthropic, to be described. A HEIC goes as a JPEG copy, since Claude doesn't take HEIC. It's off until you turn it on.
 
 ## Where a photo was taken
 

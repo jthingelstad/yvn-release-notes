@@ -11,6 +11,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 - [The API's guide](/guide/api/) is a set of pages now, not one long one: errors and limits, notes, your archive, places, check-ins, Upcoming and recipes to copy, with [a reference](/guide/api/reference/) of every request. Tools and agents can fetch [the same description](https://notes.yourversionnumber.com/v1/openapi.json) as OpenAPI, with no token.
 - The API has [a changelog of its own](/guide/api/changelog/), with a feed, and [one link to give an agent](/guide/api/llms.txt), which holds the whole guide.
 - [Describe my photos](/guide/photos-and-voice/) now describes your biggest photos too. It used to pass over a large photo without saying so. Now Claude gets a smaller copy, and your photo stays as it was.
+- [HEIC photos](/guide/photos-and-voice/), the iPhone's own format, get a small copy now, so they show in the daily email, and Describe my photos describes them. Both go by way of a JPEG, and your HEIC stays as you sent it.
 
 ## 0.0.29 · November 5
 

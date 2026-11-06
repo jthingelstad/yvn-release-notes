@@ -1,7 +1,9 @@
 /** Thumbnails run only in the describe stream worker. Originals stay intact;
- * only colour metadata survives in the small inline-email JPEG. */
+ * only colour metadata survives in the small inline-email JPEG. A HEIC's is made
+ * by way of libheif (heif.ts). */
 import sharp from 'sharp';
 import { read as exif } from './exif.ts';
+import { decodeHeif, HEIF } from './heif.ts';
 import { thumbKey } from './media.ts';
 import { object, rounded } from './places.ts';
 import { missing, type Objects } from './services.ts';
@@ -23,40 +25,45 @@ export interface Thumbnail {
   width: number;
   height: number;
 }
-export type Maker = (data: Buffer) => Promise<Thumbnail | null>;
-/** Photos not yet seen by this worker: those it can make a thumbnail of,
- * and HEICs, read only for their time and place. */
+export type Maker = (data: Buffer, type?: string) => Promise<Thumbnail | null>;
+const makes = (type: unknown) => FORMATS.has(String(type)) || HEIF.has(String(type));
+/** Photos not yet seen by this worker. */
 export function waiting(note: NoteRecord) {
   return (note.media ?? []).filter(
-    (m) =>
-      m.kind === 'image' &&
-      (FORMATS.has(String(m.type)) || EXIF.has(String(m.type))) &&
-      !('thumb' in m) &&
-      String(m.key ?? '').startsWith('media/')
+    (m) => m.kind === 'image' && makes(m.type) && !('thumb' in m) && String(m.key ?? '').startsWith('media/')
   );
 }
 export function counts(notes: readonly NoteRecord[]) {
   const out = { notes: 0, photos: 0, bytes: 0, left: {} as Record<string, number> };
   for (const note of notes) {
-    // Thumbnails still to make; a HEIC (read only for metadata) is `left`.
-    const todo = waiting(note).filter((m) => FORMATS.has(String(m.type)));
+    const todo = waiting(note);
     out.notes += Number(todo.length > 0);
     out.photos += todo.length;
     out.bytes += todo.reduce((sum, m) => sum + Number(m.size || 0), 0);
     for (const m of note.media ?? [])
-      if (m.kind === 'image' && !FORMATS.has(String(m.type)) && !('thumb' in m)) {
+      if (m.kind === 'image' && !makes(m.type) && !('thumb' in m)) {
         const type = String(m.type ?? '');
         out.left[type] = (out.left[type] ?? 0) + 1;
       }
   }
   return out;
 }
-export const make: Maker = async (data) => {
+/** A photo ready to resize, or null if it isn't one this worker reads. */
+async function open(data: Buffer, type?: string) {
+  if (type && HEIF.has(type)) {
+    const image = await decodeHeif(data, MAX_PIXELS);
+    return image && sharp(image.data, { raw: { width: image.width, height: image.height, channels: 4 } });
+  }
+  const source = sharp(data, { limitInputPixels: MAX_PIXELS, failOn: 'warning', pages: 1, sequentialRead: true }),
+    metadata = await source.metadata();
+  return metadata.width && metadata.height && ['jpeg', 'png', 'gif', 'webp'].includes(metadata.format ?? '')
+    ? source
+    : null;
+}
+export const make: Maker = async (data, type) => {
   try {
-    const source = sharp(data, { limitInputPixels: MAX_PIXELS, failOn: 'warning', pages: 1, sequentialRead: true }),
-      metadata = await source.metadata();
-    if (!metadata.width || !metadata.height || !['jpeg', 'png', 'gif', 'webp'].includes(metadata.format ?? ''))
-      return null;
+    const source = await open(data, type);
+    if (!source) return null;
     let longest = LONGEST;
     while (true) {
       for (const quality of QUALITIES) {
@@ -77,14 +84,13 @@ export const make: Maker = async (data) => {
     return null;
   }
 };
-/** The copy of a too-big photo that goes to the model to be described. It stays
- * in memory and is never stored; the original is untouched. */
-export const shrink = async (data: Buffer): Promise<Buffer | null> => {
+/** The copy that goes to the model to be described, of a photo too big to send
+ * or a HEIC, which it doesn't take. It stays in memory and is never stored; the
+ * original is untouched. */
+export const shrink = async (data: Buffer, type?: string): Promise<Buffer | null> => {
   try {
-    const source = sharp(data, { limitInputPixels: MAX_PIXELS, failOn: 'warning', pages: 1, sequentialRead: true }),
-      metadata = await source.metadata();
-    if (!metadata.width || !metadata.height || !['jpeg', 'png', 'gif', 'webp'].includes(metadata.format ?? ''))
-      return null;
+    const source = await open(data, type);
+    if (!source) return null;
     return await source
       .autoOrient()
       .resize({ width: DESCRIBE_LONGEST, height: DESCRIBE_LONGEST, fit: 'inside', withoutEnlargement: true })
@@ -119,8 +125,7 @@ export async function thumbnail(
       if (found.lat !== undefined && !('place' in m))
         await store.setMediaField(user, day, id, Number(m.n), 'place', { lat: found.lat, lon: found.lon });
     }
-    // A HEIC is read for its time and place, but no thumbnail is made of it.
-    const made = data && FORMATS.has(String(m.type)) ? await maker(data) : null;
+    const made = data ? await maker(data, String(m.type)) : null;
     let entry: Record<string, unknown> = {};
     if (made) {
       const key = thumbKey(String(m.key));

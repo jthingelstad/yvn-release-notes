@@ -84,7 +84,7 @@ curl -fsS https://notes.yourversionnumber.com/v1/notes \
 
 Release Notes checks each file against what arrived, then keeps it with the note, as it keeps one you add on the web: a photo gets its thumbnail and, on a note with no place of its own, the place it was taken, and photos and recordings get the descriptions and transcripts you've turned on. A note can have up to 20 files, at 50 MB a file. A note takes each upload once, and an upload no note takes is gone after a day. A form has no `Idempotency-Key`: if an upload fails, ask for a new one.
 
-Send photos as JPEG, PNG or WebP where you can. A HEIC photo is kept, with its time and place, but gets no thumbnail, so it never shows in the email.
+Send photos as JPEG, PNG or WebP where you can. A HEIC photo is kept as it is, with its time and place, and gets a JPEG thumbnail like any other, but only some browsers can open the whole photo.
 
 ### The other file requests
 

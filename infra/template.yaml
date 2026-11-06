@@ -2074,7 +2074,8 @@ Resources:
         S3Key: !Sub "native/workers/describe/${DescribeCode}.zip"
       Role: !GetAtt DescribeRole.Arn
       # Decoding a phone's photo for its thumbnail; more memory is more CPU too.
-      MemorySize: 1024
+      # A 48 MP HEIC decoded in WebAssembly peaked at about 1.2 GB.
+      MemorySize: 2048
       Timeout: 900
       # A ceiling on photos going to the model at once: a pass and a stream
       # batch, say. A throttled stream batch waits and is tried again

@@ -6,7 +6,8 @@ import * as worker from '../../workers/describe.ts';
 import { setup, photo, seedPhoto, day, id, now, stream } from './helpers.ts';
 import type { Item } from '../../packages/backend/store.ts';
 import { imageSize, MAX_UPLOAD, thumbKey } from '../../packages/backend/media.ts';
-import { DESCRIBE_LONGEST, shrink } from '../../packages/backend/thumbs.ts';
+import { DESCRIBE_LONGEST, make, shrink } from '../../packages/backend/thumbs.ts';
+import { TINY_HEIC } from '../../packages/backend/heif.ts';
 import sharp from 'sharp';
 import type { NoteRecord } from '../../packages/domain/notes.ts';
 test('model request is exact fixed photo+prompt; text-only answer normalizes and truncates Unicode', async () => {
@@ -83,13 +84,14 @@ test('waiting excludes completed, unsupported, past-upload-size and untrusted me
       media: [
         photo(),
         { ...photo(1), description: '' },
-        { ...photo(2), type: 'image/heic' },
+        { ...photo(2), type: 'image/tiff' },
         { ...photo(3), size: MAX_UPLOAD + 1 },
         { ...photo(4), key: 'remote' },
-        { ...photo(5), size: d.MAX_BYTES + 1 }
+        { ...photo(5), size: d.MAX_BYTES + 1 },
+        { ...photo(6), type: 'image/heic' }
       ]
     }),
-    [photo(), { ...photo(5), size: d.MAX_BYTES + 1 }]
+    [photo(), { ...photo(5), size: d.MAX_BYTES + 1 }, { ...photo(6), type: 'image/heic' }]
   );
 });
 test('a photo over the limits goes to the model as the smaller copy, as a JPEG', async () => {
@@ -132,6 +134,45 @@ test('every photo on a note is described when some are over the limit, and the o
   );
   assert.deepEqual(s.calls.length, 3);
   assert.equal((await s.objects.get(String(photo(1).key))).body.length, d.MAX_BYTES + 1);
+});
+test('a real HEIC gets a thumbnail and a description from JPEG copies, and stays a HEIC', async () => {
+  const heic = Buffer.from(TINY_HEIC, 'base64'),
+    entry = { ...photo(0), key: `media/u/${day}/${id}/0.heic`, type: 'image/heic', size: heic.length },
+    s = setup([entry]);
+  s.services.maker = make;
+  s.services.shrink = shrink;
+  await s.objects.put(entry.key, heic, { type: 'image/heic' });
+  assert.equal(await worker.changed(stream({ pk: 'USER#u', sk: `NOTE#${day}#${id}`, media: [entry] }), s.services), 1);
+  const after = (await s.services.store.note('u', day, id, true)) as NoteRecord,
+    saved = after.media![0]! as Item,
+    thumb = saved.thumb as Item;
+  assert.equal(saved.type, 'image/heic');
+  assert.equal(saved.description, 'A blue square.');
+  assert.equal(thumb.key, thumbKey(entry.key));
+  assert.equal((await sharp((await s.objects.get(String(thumb.key))).body).metadata()).format, 'jpeg');
+  assert.deepEqual((await s.objects.get(entry.key)).body, heic);
+  const source = ((s.calls[0]!.messages as Item[])[0]!.content as Item[])[0]!.source as Item;
+  assert.equal(source.media_type, 'image/jpeg');
+  assert.equal((await sharp(Buffer.from(String(source.data), 'base64')).metadata()).format, 'jpeg');
+});
+test('a HEIC that cannot be decoded gets no thumbnail and no words, and no error', async () => {
+  const bad = Buffer.from('not a heic');
+  assert.equal(await make(bad, 'image/heic'), null);
+  assert.equal(await shrink(bad, 'image/heic'), null);
+  let calls = 0;
+  assert.equal(
+    await d.wordsFor(
+      bad,
+      'image/heic',
+      async () => {
+        calls++;
+        return {};
+      },
+      shrink
+    ),
+    ''
+  );
+  assert.equal(calls, 0);
 });
 test('the real shrink makes a too-big photo fit, turned upright, with no metadata', async () => {
   const big = await sharp({
@@ -418,11 +459,13 @@ test('backfill chain hands on near limit, other chain refuses, same chain resume
   assert.equal(s.store.memory.read({ pk: 'USER#u', sk: 'PROCESSLOCK#describe' }), null);
 });
 test('thumb backfill dry-run is entirely read-only/no model; real near-limit pass hands remaining users on', async () => {
-  const s = setup([photo(), { ...photo(1), type: 'image/heic' }], { describe: false });
+  const s = setup([photo(), { ...photo(1), type: 'image/heic' }, { ...photo(2), type: 'image/tiff' }], {
+    describe: false
+  });
   const before = s.store.memory.all();
   const result = await worker.runEvent({ thumbs_all: '*', dry_run: true }, {}, s.services);
-  assert.equal(result?.photos, 1);
-  assert.deepEqual(result?.left, { 'image/heic': 1 });
+  assert.equal(result?.photos, 2);
+  assert.deepEqual(result?.left, { 'image/tiff': 1 });
   assert.deepEqual(s.store.memory.all(), before);
   assert.equal(s.calls.length, 0);
   assert.equal(s.objects.calls.length, 0);

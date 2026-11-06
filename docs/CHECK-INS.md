@@ -10,8 +10,11 @@ sending them, is built and on TestFlight internal as build 85, version 0.0.8**
 check-ins to the server, with no TestFlight upload" and "Approved: upload
 Changelog main (5e9a3be) to TestFlight internal, ending the visits test on that
 phone, and merge Release Notes #325 with its guide entry"), under "Built in
-phase 3". Real delivery waits on the phone pass, step 23 of the app's
-`docs/PHONE-TEST.md`. Every other phase needs Jamie's go.
+phase 3". Stops have arrived from a real phone in the background, and the
+locked, Airplane mode and force-quit cases wait on the phone pass, step 23 of the
+app's `docs/PHONE-TEST.md`. **Phases 4 and 5, the control, the app's map and Beta,
+are built** (Jamie, 2026-11-06: "Lets' move forward with phases 4 and 5. Let's
+complete this whole cycle."), under "Built in phases 4 and 5".
 
 Jamie, 2026-11-05: Changelog should notice "when I am at a place (not
 traveling)" and add it to Activity, so "I can see where I've been on a map" and
@@ -71,18 +74,18 @@ the numbers below, not the shape of the design.
 
 `USER#<owner> / CHECKIN#<at>#<id>`, where `at` is when it began:
 
-| Field          | What it holds                                                                   |
-| -------------- | ------------------------------------------------------------------------------- |
-| `arrived`      | ISO time, or null when iOS gave none                                            |
-| `left`         | ISO time, or null while still there, and always null for a tap                  |
-| `lat`, `lon`   | the spot, to six places, as a note's spot is                                    |
-| `accuracy_m`   | the circle's radius                                                             |
-| `time_zone`    | the phone's zone there, so a time reads as it did on the day                    |
-| `day`          | the account's day, the one a note written then would have landed on             |
-| `source`       | `visit` (iOS or Android reported it) or `tap` (the owner asked)                 |
-| `district`     | neighbourhood and city, looked up once when it arrives                          |
-| `name`         | a name given to this check-in alone, or null                                    |
-| `via`, `token` | as an activity row's                                                            |
+| Field          | What it holds                                                       |
+| -------------- | ------------------------------------------------------------------- |
+| `arrived`      | ISO time, or null when iOS gave none                                |
+| `left`         | ISO time, or null while still there, and always null for a tap      |
+| `lat`, `lon`   | the spot, to six places, as a note's spot is                        |
+| `accuracy_m`   | the circle's radius                                                 |
+| `time_zone`    | the phone's zone there, so a time reads as it did on the day        |
+| `day`          | the account's day, the one a note written then would have landed on |
+| `source`       | `visit` (iOS or Android reported it) or `tap` (the owner asked)     |
+| `district`     | neighbourhood and city, looked up once when it arrives              |
+| `name`         | a name given to this check-in alone, or null                        |
+| `via`, `token` | as an activity row's                                                |
 
 `at` is `arrived`, or else `left`, or else the time the server heard it. Items
 go with the account, are in every owner export and in the monthly backup.
@@ -136,16 +139,16 @@ on every check-in in it.
 
 ## The API (1.18.0)
 
-| Call                                       | Scope                            | Does                                                                              |
-| ------------------------------------------ | -------------------------------- | --------------------------------------------------------------------------------- |
-| `POST /v1/check-ins`                       | `notes:write`                    | adds one, or fills in the one it continues                                        |
-| `GET /v1/check-ins?from=&to=&before=`      | `activity`                       | newest first, with `lat`, `lon`, its shown name and how it was named              |
-| `PATCH /v1/check-ins/{id}`                 | `notes:write` own, `notes:all` any | `name`, with the revision read                                                  |
-| `DELETE /v1/check-ins/{id}`                | `notes:write` own, `notes:all` any | deletes it                                                                      |
-| `DELETE /v1/check-ins?confirm=all`         | `notes:all`                      | deletes every one, with one activity row and its count                            |
-| `GET /v1/check-ins/places`                 | `activity`                       | the remembered places                                                             |
-| `POST /v1/check-ins/places`                | `notes:all`                      | `{name, lat, lon}`: remembers it, or adds the spot to that name                   |
-| `PATCH`, `DELETE /v1/check-ins/places/{id}` | `notes:all`                     | renames or forgets it                                                             |
+| Call                                        | Scope                              | Does                                                                 |
+| ------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
+| `POST /v1/check-ins`                        | `notes:write`                      | adds one, or fills in the one it continues                           |
+| `GET /v1/check-ins?from=&to=&before=`       | `activity`                         | newest first, with `lat`, `lon`, its shown name and how it was named |
+| `PATCH /v1/check-ins/{id}`                  | `notes:write` own, `notes:all` any | `name`, with the revision read                                       |
+| `DELETE /v1/check-ins/{id}`                 | `notes:write` own, `notes:all` any | deletes it                                                           |
+| `DELETE /v1/check-ins?confirm=all`          | `notes:all`                        | deletes every one, with one activity row and its count               |
+| `GET /v1/check-ins/places`                  | `activity`                         | the remembered places                                                |
+| `POST /v1/check-ins/places`                 | `notes:all`                        | `{name, lat, lon}`: remembers it, or adds the spot to that name      |
+| `PATCH`, `DELETE /v1/check-ins/places/{id}` | `notes:all`                        | renames or forgets it                                                |
 
 No new scope, on Jamie's call. Remembered places live on the account, so a new
 phone, the web map and any other client see the same names (Jamie, 2026-11-06:
@@ -316,6 +319,24 @@ What building it decided, past the design above.
 - **Not proven by a simulator:** real delivery, a wake in the background, a locked
   phone and a force-quit. The app's `docs/PHONE-TEST.md` step 23 is that pass.
 
+## Built in phases 4 and 5
+
+- **No change here.** The map reads every page of `GET /v1/check-ins`, as the
+  web's reads its stays whole, and the control sends a `tap` as Check in now does.
+- **A control names an intent,** as New Note does, so it needs no link. The link
+  `com.yourversionnumber.changelog:check-in` is there too, for a test to reach it,
+  since a control can't be pressed from one.
+- **It opens Activity,** where the row shows and the toast says so. A press while
+  signed out is dropped, so nothing checks in later on signing in.
+- **The app's map is of check-ins alone,** one pin for each place: a remembered
+  place, or one name within 100 m. A pin opens a sheet of its stops. It opens with
+  reading locked, as a check-in's page does (Jamie's call 4). Notes stay off it, by
+  the app's rule that a map of notes is Jamie's word.
+- **The reason for Always** is in the app's `docs/DISTRIBUTION.md`, and goes in the
+  review notes with each build that carries check-ins.
+- **Not proven by a simulator:** pressing the control, on Control Center, the Lock
+  Screen and the Action Button. The app's `docs/PHONE-TEST.md` step 24 is that pass.
+
 ## What has to be rewritten
 
 Each goes in with the phase that makes it true, not before:
@@ -364,9 +385,9 @@ iOS can't report a visit in a simulator, so the app's test feeds one in, as
    leave it that way in the first version, and see how Activity and the Map feel.
 2. **The daily email.** Recommendation: no mention. It stays about what was
    written.
-3. **The test's week of visits.** Recommendation: when the switch moves, offer
-   once to send the test's file up as check-ins, so the week isn't lost, then
-   delete the file.
+3. **The test's visits.** Settled: Jamie sent the file over and one day's stops
+   were added by hand, once. The app has no way to send it, and its copy goes when
+   its owner clears it or signs out.
 
 Not in this design: badges, hiding home (Jamie's call 2 waits on real data), and
 a check-in setting a day's place or weather.

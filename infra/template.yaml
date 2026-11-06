@@ -973,6 +973,7 @@ Resources:
           '/guide/api/',
           '/guide/api/archive/',
           '/guide/api/basics/',
+          '/guide/api/changelog/',
           '/guide/api/check-ins/',
           '/guide/api/clients/',
           '/guide/api/notes/',

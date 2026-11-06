@@ -23,6 +23,20 @@ curl https://notes.yourversionnumber.com/v1/notes \
 
 It answers with one line: `Filed in 5.2.113.`
 
+## Give it to an agent
+
+To have an agent write against the API, give it this one link:
+
+```
+https://notes.yourversionnumber.com/guide/api/llms.txt
+```
+
+It's this whole guide in one plain file, with every request and what changed lately, so an agent can read it once and get to work. Tools that read an API description want [the OpenAPI file](https://notes.yourversionnumber.com/v1/openapi.json) instead. To talk to your notes from Claude or ChatGPT, you don't need the API at all: [connect it as an agent](/guide/agents/).
+
+## Keeping up
+
+[The changelog](/guide/api/changelog/) says what each version added, and [its feed](/guide/api/changelog.xml) tells a reader when there's a new one.
+
 ## Where everything is
 
 - [Requests, errors and limits](/guide/api/basics/): what every request has in common, what a token may reach, each error and the daily limits. Read this one first.
@@ -34,6 +48,7 @@ It answers with one line: `Filed in 5.2.113.`
 - [Recipes](/guide/api/recipes/): a terminal, an Apple Shortcut, a note for each commit, a schedule, Python, GitHub Actions and Home Assistant, to copy.
 - [Reference](/guide/api/reference/): every request and answer, one by one.
 - [Building a client](/guide/api/clients/): how an app that adds notes should behave, offline and on, so every client acts alike.
+- [Changelog](/guide/api/changelog/): what each version added, newest first.
 
 ## The API's description
 

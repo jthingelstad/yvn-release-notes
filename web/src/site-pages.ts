@@ -5,6 +5,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import MarkdownIt from 'markdown-it';
+import { changesMarkdown } from './api-agent.ts';
 import { referenceMarkdown } from './api-reference.ts';
 import { FEATURES } from './lib/features.ts';
 
@@ -61,6 +62,26 @@ export function parsePage(path: string, source: string): Page {
   return { path, title, description, html: markdown.render(body) };
 }
 
+/** The API's own description, as /v1/openapi.json serves it. */
+export const apiSpec = async () =>
+  JSON.parse(await readFile(resolve('contracts/api-surface.json'), 'utf8')) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/** The guide's pages an agent reads, for /guide/api/llms.txt: API_PAGES and the
+ * tokens page, without the two drawn from the description, which it lists itself. */
+export async function agentPages(dir = SITE_DIR): Promise<{ title: string; body: string }[]> {
+  const drawn = ['/guide/api/reference/', '/guide/api/changelog/'],
+    paths = API_PAGES.map(([path]) => path).filter((path) => !drawn.includes(path));
+  paths.splice(1, 0, '/guide/tokens/');
+  return Promise.all(
+    paths.map(async (path) => {
+      const file = join(dir, path === '/guide/api/' ? 'guide/api.md' : path.slice(1, -1) + '.md'),
+        source = await readFile(file, 'utf8'),
+        title = /^title:\s*(.*)$/m.exec(source)![1]!.trim();
+      return { title, body: source.slice(/^---\n[\s\S]*?\n---\n/.exec(source)![0].length) };
+    })
+  );
+}
+
 /** Every page in site/, in site/sitemap.json's order. */
 export async function readPages(dir = SITE_DIR): Promise<Page[]> {
   const files = (await readdir(dir, { recursive: true })).filter((f) => f.endsWith('.md')).sort();
@@ -72,14 +93,14 @@ export async function readPages(dir = SITE_DIR): Promise<Page[]> {
     if (path !== '/' && !pages.some((p) => p.path === path))
       throw new Error(`site/sitemap.json lists ${path}, which has no page`);
   pages.sort((a, b) => order.indexOf(a.path) - order.indexOf(b.path));
-  const reference = markdown.render(
-    referenceMarkdown(
-      JSON.parse(await readFile(resolve('contracts/api-surface.json'), 'utf8')) as Record<string, unknown>
-    )
-  );
+  const spec = await apiSpec(),
+    reference = markdown.render(referenceMarkdown(spec)),
+    changes = markdown.render(changesMarkdown(spec));
   return pages.map((page) => ({
     ...page,
-    html: fillLists(page, pages).replace('<p>{reference}</p>\n', () => reference)
+    html: fillLists(page, pages)
+      .replace('<p>{reference}</p>\n', () => reference)
+      .replace('<p>{changes}</p>\n', () => changes)
   }));
 }
 
@@ -128,7 +149,8 @@ export const API_PAGES: readonly (readonly [path: string, label: string])[] = [
   ['/guide/api/upcoming/', 'Upcoming'],
   ['/guide/api/recipes/', 'Recipes'],
   ['/guide/api/reference/', 'Reference'],
-  ['/guide/api/clients/', 'Building a client']
+  ['/guide/api/clients/', 'Building a client'],
+  ['/guide/api/changelog/', 'Changelog']
 ];
 
 /** Each address's <lastmod>, and the hash of its words that the date holds for. */
@@ -195,6 +217,8 @@ export function llmsTxt(pages: Page[]): string {
     ...SCOPES.map(([scope, words]) => `- \`${scope}\`: ${words}`),
     '',
     '## Scripts and apps',
+    '',
+    `An agent that will use the API should read ${ORIGIN}/guide/api/llms.txt, the whole guide in one file. What each version added is at ${ORIGIN}/guide/api/changelog/, with a feed at ${ORIGIN}/guide/api/changelog.xml.`,
     '',
     `Scripts and apps add notes through the API at ${ORIGIN}/v1, with an API token the subscriber makes in Settings, or one an app gets by signing the subscriber in. A token adds notes in the subscriber’s own voice and reads back only the notes it added, unless the subscriber allows it to read them all. It can give a new note a place, a city or the device’s own spot, and one allowed files adds photos, recordings and PDFs to its notes. One allowed Upcoming also keeps the subscriber’s Upcoming dates and reads the reminders each morning’s email carries, with when that email is due, and one allowed the activity log reads it, without any words from it. ${ORIGIN}/v1/openapi.json describes every request and needs no token, and ${ORIGIN}/guide/api/ is the guide.`,
     ''

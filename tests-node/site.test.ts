@@ -123,6 +123,7 @@ test('site/ has the pages phases 1, 3 and 4 promised, and the API’s, and site/
       '/guide/api/recipes/',
       '/guide/api/reference/',
       '/guide/api/clients/',
+      '/guide/api/changelog/',
       '/guide/changelog/',
       '/faq/',
       '/privacy/',
@@ -339,10 +340,10 @@ test('every number on the pages and in llms.txt is the product’s own', async (
   const phrases = await checkedPhrases(),
     used = new Set<string>();
   for (const [from, words] of [
-    // The reference is drawn from the API's own description, built from the
+    // The reference and changelog are drawn from the API's own description, built from the
     // constants, so it has nothing to check.
     ...[...html]
-      .filter(([path]) => path !== '/guide/api/reference/')
+      .filter(([path]) => path !== '/guide/api/reference/' && path !== '/guide/api/changelog/')
       .map(([path, page]) => [path, said(literalsOut(page))] as const),
     ['llms.txt', llms] as const
   ]) {
@@ -408,6 +409,57 @@ test('the API’s row of links is every page under /guide/api/, in the sitemap�
   );
   for (const path of ours) assert.ok(html.get(path)!.includes('class="doc-section"'), path);
   assert.equal(html.get('/guide/tokens/')!.includes('class="doc-section"'), false);
+});
+
+test('the API changelog and its feed say every version, newest first', async () => {
+  const spec = JSON.parse(await readFile('contracts/api-surface.json', 'utf8')),
+    changes = spec.info['x-changes'] as { version: string; date: string; summary: string }[],
+    page = html.get('/guide/api/changelog/')!,
+    feed = await readFile(join(out, 'guide/api/changelog.xml'), 'utf8');
+  assert.equal(changes[0]!.version, spec.info.version);
+  assert.deepEqual(
+    Array.from(page.matchAll(/<h2 id="([0-9-]+)">/g), (m) => m[1]),
+    changes.map((c) => c.version.replace(/\./g, '-'))
+  );
+  assert.deepEqual(
+    Array.from(feed.matchAll(/<title>([0-9.]+)<\/title>/g), (m) => m[1]),
+    changes.map((c) => c.version)
+  );
+  // Escaped, so a change that names a `<token>` can't break a reader.
+  assert.ok(!/<content type="text">[^<]*<[^/]/.test(feed));
+  assert.ok(feed.includes(`<updated>${changes[0]!.date}T00:00:00Z</updated>`));
+  assert.ok(page.includes('href="/guide/api/changelog.xml"'));
+});
+
+test('one link gives an agent the whole API: how to act, every request, what changed, the guide', async () => {
+  const spec = JSON.parse(await readFile('contracts/api-surface.json', 'utf8')),
+    guide = await readFile(join(out, 'guide/api/llms.txt'), 'utf8');
+  assert.ok(guide.startsWith('# Release Notes API\n'));
+  assert.ok(guide.includes(`API version ${spec.info.version}.`));
+  for (const route of V1_ROUTES) assert.ok(guide.includes(`\`${route.method} ${route.template}\``), route.name);
+  assert.ok(guide.includes(`**${spec.info['x-changes'][0].version}**`));
+  for (const [path] of API_PAGES) {
+    if (path === '/guide/api/reference/' || path === '/guide/api/changelog/') continue;
+    assert.ok(guide.includes(`\n## ${pages.find((p) => p.path === path)!.title}\n`), path);
+  }
+  assert.ok(guide.includes('\n### Your first note\n'));
+  assert.ok(guide.includes('\n## API tokens\n'));
+  // Links work from wherever the file was read, code stays as it was written, and
+  // no heading in it passes for the file's own title.
+  assert.ok(!/\]\(\//.test(guide), 'a link with no address');
+  assert.ok(guide.includes('curl https://notes.yourversionnumber.com/v1/notes'));
+  let code = false;
+  const titles = guide.split('\n').filter((line) => {
+    if (line.startsWith('```')) code = !code;
+    return !code && line.startsWith('# ');
+  });
+  assert.deepEqual(titles, ['# Release Notes API']);
+  // Each place that points at it.
+  assert.ok(llms.includes(`${ORIGIN}/guide/api/llms.txt`));
+  assert.ok(llms.includes(`${ORIGIN}/guide/api/changelog/`));
+  assert.ok(html.get('/guide/api/')!.includes(`${ORIGIN}/guide/api/llms.txt`));
+  assert.ok(html.get('/guide/api/')!.includes('rel="alternate" type="text/plain"'));
+  assert.ok(String(spec.info.description).includes('/guide/api/llms.txt'));
 });
 
 test('the reference spells out every object, one made of others too', () => {

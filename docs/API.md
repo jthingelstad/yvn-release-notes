@@ -714,6 +714,17 @@ Changelog written outside the project is the case the docs are written for.
   `contracts/api-surface.json` by `web/src/api-reference.ts`, so it can't drift
   from the API. The guide's other API pages (`API_PAGES`) explain and give recipes.
 
+- **`/guide/api/changelog/` and `/guide/api/changelog.xml`** (Jamie, 2026-11-06:
+  "Make sure there is also a changelog so devs can easily pick up new features"):
+  `API_CHANGES` as a page and an Atom feed, drawn at build time, so a new version's
+  entry is all it takes. A new version moves this page's `lastmod`, as it does the
+  reference's.
+- **`/guide/api/llms.txt`** (Jamie, 2026-11-06: "make sure we have a link that an
+  agent can easily use to understand and use the api"): one link to give an agent.
+  How to act, every request and its scope, the last five changes, then the guide's
+  pages, built by `web/src/api-agent.ts` from the description and their Markdown. The
+  root `llms.txt` and the description point at it.
+
 The guide's tests that pin numbers to code constants cover these pages too:
 limits, expiry choices, the 7 days.
 

@@ -1770,8 +1770,8 @@ export function openApi(): Doc {
           'Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, ' +
           'recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` ' +
           'scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. With `notes:read`, a ' +
-          'token reads the whole archive and writes nothing (1.15.0). The guide is at ' +
-          '/guide/api/.',
+          'token reads the whole archive and writes nothing (1.15.0). The guide is at /guide/api/, all of it in ' +
+          'one file for agents at /guide/api/llms.txt, and what each version added at /guide/api/changelog/.',
         `Bodies are JSON in UTF-8, at most ${V1_BODY / 1024} KB, which holds the longest note with every ` +
           'character escaped. With `Accept: text/plain`, any answer is ' +
           'text instead: a line, or a line for each thing a list holds, and a note’s words as they are.',

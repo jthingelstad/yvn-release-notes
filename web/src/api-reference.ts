@@ -76,7 +76,8 @@ function fields(schema: Doc): string {
   return rows.length ? `| Field | Type | What it is |\n| --- | --- | --- |\n${rows.join('\n')}\n` : '';
 }
 
-function needs(operation: Doc): string {
+/** What a request needs, in a sentence. */
+export function needs(operation: Doc): string {
   const security = operation.security as Doc[] | undefined;
   if (security && !security.length) return 'No token.';
   const scopes = [...new Set((security ?? []).flatMap((s) => Object.values(s).flat() as string[]))];
@@ -112,12 +113,16 @@ function answers(operation: Doc): string {
 
 /** Everything, in the order the description's tags give, with a list of the
  * requests up top and the objects they name at the foot. */
-export function referenceMarkdown(spec: Doc): string {
-  const operations = Object.entries(spec.paths as Record<string, Doc>).flatMap(([path, methods]) =>
+/** Every request in the description, as `GET /v1/me` and its operation. */
+export const operationsOf = (spec: Doc) =>
+  Object.entries(spec.paths as Record<string, Doc>).flatMap(([path, methods]) =>
     METHODS.flatMap((method) =>
       methods[method] ? [{ key: `${method.toUpperCase()} ${path}`, op: methods[method] as Doc }] : []
     )
   );
+
+export function referenceMarkdown(spec: Doc): string {
+  const operations = operationsOf(spec);
   const parts: string[] = [];
   for (const tag of spec.tags as Doc[]) {
     const ours = operations.filter((o) => (o.op.tags as string[]).includes(tag.name));

@@ -456,7 +456,7 @@ notes.yourversionnumber.com
   `/guide/pause-and-stop/`, `/guide/delete/`, and for apps and scripts
   `/guide/tokens/`, `/guide/api/`, `/guide/api/basics/`, `/guide/api/notes/`,
   `/guide/check-ins/`, `/guide/api/archive/`, `/guide/api/places/`, `/guide/api/check-ins/`,
-  `/guide/api/upcoming/`, `/guide/api/recipes/`, `/guide/api/reference/`,
+  `/guide/api/upcoming/`, `/guide/api/recipes/`, `/guide/api/reference/`, `/guide/api/changelog/`,
   `/guide/api/clients/` and `/guide/changelog/`,
   Release Notes for Changelog, the iPhone app's own changelog), `/faq/`, `/privacy/` and
   `/changelog/` (Release Notes for Release Notes, which the version at the
@@ -605,7 +605,7 @@ or new CSP exception.
   fail when the words change until both are moved to the day the change
   goes live. Never a build date: search ignores a `lastmod` that is always
   now. A release sends IndexNow every address whose entry here changed
-  (`tools/indexnow.ts`, `infra/NATIVE-WEB.md`). `robots.txt`, `sitemap.xml` and `llms.txt` go up named UTF-8;
+  (`tools/indexnow.ts`, `infra/NATIVE-WEB.md`). `robots.txt`, `sitemap.xml`, both `llms.txt` and the API's feed go up named UTF-8;
   `robots.txt` and `sitemap.xml` are served with their own CSP
   (`PlainFilesHeadersPolicy`), which lets the browser's viewer style the
   XML; under the app's CSP Chrome shows it unstyled, with "..." where it
@@ -624,7 +624,8 @@ or new CSP exception.
   script is `assets/count-<hash>.js`, bundled from `lib/pagecount.ts` so
   the pages are counted as the app's are. The same build writes
   `sitemap.xml` (from `site/sitemap.json`, which also sets the order) and
-  `llms.txt` (the pages, the MCP address and each scope in plain words).
+  `llms.txt` (the pages, the MCP address and each scope in plain words), and
+  `/guide/api/llms.txt` and `/guide/api/changelog.xml` (`docs/API.md`).
   The features are one typed list, `lib/features.ts` (each one's head,
   line and guide page): the front page's tour draws the ones it shows, and
   a paragraph of `{features}` in a page's Markdown becomes every feature,

@@ -50,6 +50,61 @@ const includeUrlsParameter: Doc = {
   schema: { type: 'string', const: 'urls' }
 };
 
+/** The groups a reader finds requests in, each route in one. */
+const GROUPS: readonly { name: string; description: string; routes: readonly string[] }[] = [
+  {
+    name: 'Account',
+    description: 'Who this token is, what today is, what it may do, and the activity log.',
+    routes: ['me', 'token.revoke', 'activity']
+  },
+  {
+    name: 'Notes',
+    description: 'Add, read, change and delete notes.',
+    routes: ['notes', 'notes.create', 'note', 'notes.edit', 'notes.append', 'notes.delete']
+  },
+  {
+    name: 'Files',
+    description: 'Upload photos, recordings and PDFs, add them to notes, and fetch them.',
+    routes: ['uploads.start', 'notes.media', 'notes.file', 'notes.media.remove']
+  },
+  {
+    name: 'Tags',
+    description: 'The tag row and every tag.',
+    routes: ['tags', 'tags.pinned', 'tags.all']
+  },
+  {
+    name: 'Location',
+    description: 'Find a city or the spot a device is at, and say where a note or a day was.',
+    routes: ['places', 'places.here', 'notes.place', 'notes.place.clear', 'days.place', 'days.place.clear']
+  },
+  {
+    name: 'Archive',
+    description: 'Read the days, search, On this day, releases, the map, badges and the mail log.',
+    routes: ['days', 'day', 'search', 'on-this-day', 'releases', 'release', 'map.pins', 'badges', 'mail-log']
+  },
+  {
+    name: 'Upcoming dates',
+    description: 'Birthdays, anniversaries, trips and events, and the reminders they make.',
+    routes: ['upcoming', 'upcoming.batch', 'upcoming.reminders', 'upcoming.delete']
+  },
+  {
+    name: 'Check-ins',
+    description: 'The places the account stopped, and the names it remembers.',
+    routes: [
+      'check-ins',
+      'check-ins.add',
+      'check-ins.name',
+      'check-ins.delete',
+      'check-ins.delete-all',
+      'check-ins.places',
+      'check-ins.places.add',
+      'check-ins.places.change',
+      'check-ins.places.delete'
+    ]
+  }
+];
+const groupOf = (route: string) => GROUPS.find((g) => g.routes.includes(route))!.name;
+
 /** Each route's operation: its id, summary and what it reads and answers. */
 const OPERATIONS: Record<string, Doc> = {
   me: {
@@ -1646,6 +1701,7 @@ export function openApi(): Doc {
     '/v1/openapi.json': {
       get: {
         operationId: 'getOpenApi',
+        tags: ['Account'],
         summary: 'This document',
         security: [],
         responses: { '200': { description: 'OK', content: { 'application/json': { schema: { type: 'object' } } } } }
@@ -1686,6 +1742,7 @@ export function openApi(): Doc {
       parameters.push({ $ref: '#/components/parameters/Idempotency-Key' });
     if (Array.isArray(operation.parameters)) parameters.push(...(operation.parameters as Doc[]));
     (paths[route.template] ??= {})[route.method.toLowerCase()] = {
+      tags: [groupOf(route.name)],
       ...operation,
       ...(parameters.length ? { parameters } : {}),
       // One token either way: made in Settings, or by an app's sign-in.
@@ -1701,10 +1758,12 @@ export function openApi(): Doc {
   }
   return {
     openapi: '3.1.0',
+    tags: GROUPS.map(({ name, description }) => ({ name, description })),
+    externalDocs: { description: 'The guide', url: 'https://notes.yourversionnumber.com/guide/api/' },
     info: {
       title: 'Release Notes API',
       version: API_VERSION,
-      summary: 'Add notes to Release Notes from anywhere: a terminal, a script or an app.',
+      summary: 'Add notes to Release Notes and read them back, from a terminal, a script or an app.',
       description: [
         'Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. ' +
           'An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. ' +

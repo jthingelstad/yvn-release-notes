@@ -27,7 +27,7 @@ import { titleOf } from './components/common.tsx';
 import { Icon } from './components/icon.tsx';
 import { SiteLinks } from './components/site-links.tsx';
 import { shareTags } from './lib/share-card.ts';
-import { ORIGIN, llmsTxt, readPages, sitemapDates, sitemapXml, SITE_DIR, type Page } from './site-pages.ts';
+import { API_PAGES, ORIGIN, llmsTxt, readPages, sitemapDates, sitemapXml, SITE_DIR, type Page } from './site-pages.ts';
 
 const SRC_DIR = resolve('web/src');
 
@@ -83,6 +83,15 @@ export function pageHtml(page: Page, styles: string[], count: string | null): st
               )}
               <h1>{page.title}</h1>
               <p className="lede">{page.description}</p>
+              {page.path.startsWith('/guide/api/') && (
+                <nav className="doc-section" aria-label="The API">
+                  {API_PAGES.map(([path, label]) => (
+                    <a key={path} href={path} {...(path === page.path ? { 'aria-current': 'page' as const } : {})}>
+                      {label}
+                    </a>
+                  ))}
+                </nav>
+              )}
               <div className="doc-body" />
             </article>
             <p className="foot">

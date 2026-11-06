@@ -704,7 +704,15 @@ Changelog written outside the project is the case the docs are written for.
 - **`/guide/changelog/`**: the app's own page, "Release Notes for Changelog",
   with what each version brought (Jamie, 2026-10-29: "Please make sure that
   there is a changelog page for changelog itself on the public site.").
-- **`/v1/openapi.json`**, and `llms.txt` lists the API next to MCP.
+- **`/v1/openapi.json`**, and `llms.txt` lists the API next to MCP. Since 1.18.1
+  it groups requests with tags, links the guide, and sends
+  `access-control-allow-origin: *`, unlike the API itself, so a tool in a browser
+  can load it. It reads nothing.
+- **`/guide/api/reference/`** (Jamie, 2026-11-06: "We need to improve the API
+  docs. It is one massive not well formatted doc. Also we should publish some api
+  spec"): every request and object, drawn at build time from
+  `contracts/api-surface.json` by `web/src/api-reference.ts`, so it can't drift
+  from the API. The guide's other API pages (`API_PAGES`) explain and give recipes.
 
 The guide's tests that pin numbers to code constants cover these pages too:
 limits, expiry choices, the 7 days.

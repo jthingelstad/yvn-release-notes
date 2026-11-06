@@ -218,7 +218,14 @@ export function createMcpApp(options: McpOptions): Hono {
   app.all('/mcp', (c) => handleMcp(c.req.raw, options));
   // The API's own description, open to anyone: no token, nothing read.
   app.get('/v1/openapi.json', () =>
-    Response.json(openApi(), { headers: { 'cache-control': 'public, max-age=300', 'api-version': API_VERSION } })
+    // Open to pages too, unlike the API, so a tool in a browser can load it.
+    Response.json(openApi(), {
+      headers: {
+        'cache-control': 'public, max-age=300',
+        'api-version': API_VERSION,
+        'access-control-allow-origin': '*'
+      }
+    })
   );
   app.all('/v1', (c) => handleV1(c.req.raw, options));
   app.all('/v1/*', (c) => handleV1(c.req.raw, options));

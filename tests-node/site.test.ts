@@ -47,7 +47,7 @@ import { MAX_INLINE_BYTES, MAX_INLINE_FILES } from '../server/mcp/files.ts';
 import { ME_DAYS, RANGE_DAYS_MAX, REMINDER_DAYS_MAX, V1_BODY, V1_ERRORS, V1_ROUTES } from '../server/mcp/v1.ts';
 import { FEATURES } from '../web/src/lib/features.ts';
 import { shareTags } from '../web/src/lib/share-card.ts';
-import { ORIGIN, SCOPES, readPages, sitemapDates } from '../web/src/site-pages.ts';
+import { API_PAGES, ORIGIN, SCOPES, readPages, sitemapDates } from '../web/src/site-pages.ts';
 import { LATE_NOTICES_A_DAY, REPLY_WINDOW } from '../workers/inbound.ts';
 
 const out = await mkdtemp(join(tmpdir(), 'yvn-site-'));
@@ -113,6 +113,14 @@ test('site/ has the pages phases 1, 3 and 4 promised, and the API’s, and site/
       '/guide/delete/',
       '/guide/tokens/',
       '/guide/api/',
+      '/guide/api/basics/',
+      '/guide/api/notes/',
+      '/guide/api/archive/',
+      '/guide/api/places/',
+      '/guide/api/check-ins/',
+      '/guide/api/upcoming/',
+      '/guide/api/recipes/',
+      '/guide/api/reference/',
       '/guide/api/clients/',
       '/guide/changelog/',
       '/faq/',
@@ -330,7 +338,11 @@ test('every number on the pages and in llms.txt is the product’s own', async (
   const phrases = await checkedPhrases(),
     used = new Set<string>();
   for (const [from, words] of [
-    ...[...html].map(([path, page]) => [path, said(literalsOut(page))] as const),
+    // The reference is drawn from the API's own description, built from the
+    // constants, so it has nothing to check.
+    ...[...html]
+      .filter(([path]) => path !== '/guide/api/reference/')
+      .map(([path, page]) => [path, said(literalsOut(page))] as const),
     ['llms.txt', llms] as const
   ]) {
     let left = words;
@@ -371,13 +383,40 @@ test('every number on the pages and in llms.txt is the product’s own', async (
   );
 });
 
-test('the API guide names every /v1 request and every error with its status, and the tokens page each expiry', () => {
-  const api = text(article(html.get('/guide/api/')!));
-  for (const route of V1_ROUTES) assert.ok(api.includes(`${route.method} ${route.template}`), route.name);
-  for (const [code, status] of Object.entries(V1_ERRORS)) assert.ok(api.includes(`${code} (${status})`), code);
+test('the API pages name every /v1 request and every error with its status, and the tokens page each expiry', () => {
+  const reference = text(article(html.get('/guide/api/reference/')!)),
+    basics = text(article(html.get('/guide/api/basics/')!)),
+    topics = ['basics', 'notes', 'archive', 'places', 'check-ins', 'upcoming']
+      .map((page) => text(article(html.get(`/guide/api/${page}/`)!)))
+      .join('\n');
+  for (const route of V1_ROUTES) {
+    assert.ok(reference.includes(`${route.method} ${route.template}`), route.name);
+    assert.ok(topics.includes(`${route.method} ${route.template}`), route.name);
+  }
+  for (const [code, status] of Object.entries(V1_ERRORS)) assert.ok(basics.includes(`${code} (${status})`), code);
   assert.deepEqual(Object.keys(TOKEN_EXPIRY), ['90d', '1y', 'never']);
   assert.equal(TOKEN_EXPIRY['1y'], 365 * 86400);
   assert.ok(text(article(html.get('/guide/tokens/')!)).includes('in 90 days, in a year, or never'));
+});
+
+test('the API’s row of links is every page under /guide/api/, in the sitemap’s order, and each has it', () => {
+  const ours = pages.map((page) => page.path).filter((path) => path.startsWith('/guide/api/'));
+  assert.deepEqual(
+    API_PAGES.map(([path]) => path),
+    ours
+  );
+  for (const path of ours) assert.ok(html.get(path)!.includes('class="doc-section"'), path);
+  assert.equal(html.get('/guide/tokens/')!.includes('class="doc-section"'), false);
+});
+
+test('no page has two headings with one id, and the reference links only to its own', () => {
+  for (const [path, page] of html) {
+    const ids = Array.from(page.matchAll(/<h[23] id="([^"]*)"/g), (m) => m[1]!);
+    assert.equal(new Set(ids).size, ids.length, path + ': ' + ids.filter((id, i) => ids.indexOf(id) !== i).join(', '));
+  }
+  const reference = html.get('/guide/api/reference/')!,
+    ids = new Set(Array.from(reference.matchAll(/ id="([^"]*)"/g), (m) => m[1]!));
+  for (const [, to] of reference.matchAll(/href="#([^"]*)"/g)) assert.ok(ids.has(to!), to);
 });
 
 test('llms.txt names each page and the MCP address, and each scope the server grants', () => {

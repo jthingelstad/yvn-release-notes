@@ -31,7 +31,7 @@ You can connect an agent such as Claude or ChatGPT to your notes. It asks for ea
 
 ## The iPhone app
 
-[Changelog](/guide/changelog/), the iPhone app, talks only to Release Notes, with the [API token](/guide/tokens/) it signs in with. The phone keeps that token, the note you're writing and any notes waiting to send. It asks where you are only for Here or "Add where I am", never in the background. It has no analytics, and its widgets and notifications never show a note's words. Revoking its token in Settings signs it out, even on a phone you no longer have.
+[Changelog](/guide/changelog/), the iPhone app, talks only to Release Notes, with the [API token](/guide/tokens/) it signs in with. The phone keeps that token, the note you're writing and any notes waiting to send. Notes you read in it stay in its memory and aren't saved on the phone, and a file you open sits in a temporary folder until you close it. It asks where you are only for Here or "Add where I am", never in the background. It has no analytics, and its widgets and notifications never show a note's words. Revoking its token in Settings signs it out, even on a phone you no longer have.
 
 ## No tracking
 

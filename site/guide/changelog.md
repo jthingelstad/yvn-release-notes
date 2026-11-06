@@ -1,9 +1,9 @@
 ---
 title: Release Notes for Changelog
-description: Changelog, the iPhone app for getting notes into Release Notes, how to get it, and everything it has learned to do, one version at a time.
+description: Changelog, the iPhone app for getting notes into Release Notes and reading them there, how to get it, and everything it has learned to do, one version at a time.
 ---
 
-Changelog is Release Notes on your iPhone. Write a line and Commit, and it's in today's notes: two taps. Add photos, a voice memo or where you are. Siri, a widget, the Action Button and the share sheet start a note too, and your Upcoming dates and everything that came in are a tab away.
+Changelog is Release Notes on your iPhone. Write a line and Commit, and it's in today's notes: two taps. Add photos, a voice memo or where you are. Siri, a widget, the Action Button and the share sheet start a note too, and your notes, your Upcoming dates and everything that came in are a tab away.
 
 ![Log in Changelog: today's version, 4.5.138, large, then "What changed today?" with a line being written, tags to tap and a tangerine Commit.](/guide/changelog/log.png)
 ![Upcoming in Changelog, in dark mode: a trip to Paris, a book club night, two birthdays and an anniversary, soonest first.](/guide/changelog/upcoming.png)
@@ -15,11 +15,17 @@ Changelog is in testing on TestFlight, Apple's app for trying an app before it's
 
 ## How it works
 
-Changelog isn't a second Release Notes: you read, search and look back on the web. You sign it in with Release Notes, which asks you to name the [API token](/guide/tokens/) it keeps and choose what it may do, and it talks to Release Notes through [the API](/guide/api/), as any app you write yourself can. Its code is open, [on GitHub](https://github.com/jthingelstad/changelog-ios).
+Changelog is the fast way in, with your notes along. Search and looking back, your account and your settings stay on the web. You sign it in with Release Notes, which asks you to name the [API token](/guide/tokens/) it keeps and choose what it may do, and it talks to Release Notes through [the API](/guide/api/), as any app you write yourself can. Its code is open, [on GitHub](https://github.com/jthingelstad/changelog-ios).
 
 ## Version by version
 
 It numbers itself the way Release Notes numbers you. It started on October 29, 2026, so that day is 0.0.0, and the foot of its Settings names the version and the build. Newest first.
+
+## 0.0.7 · November 5
+
+- **Your notes:** a new Notes tab reads your days, from today back, with every note from any channel. A note opens whole: its photos and files, transcripts and descriptions, the place and the weather. You can change or delete it from there too.
+- **Allow reading:** a new sign-in asks to read all your notes, and you can untick that. If you're already signed in, Changelog keeps doing what it did until you tap Allow reading in the Notes tab. Your switches, your draft and anything waiting to send all stay.
+- **An optional lock:** turn on Lock reading in Settings, and reading asks for Face ID. Log, Share and Siri still take a note while it's locked. Today shows only the notes this phone sent, and the app switcher shows no note.
 
 ## 0.0.3 · November 1
 

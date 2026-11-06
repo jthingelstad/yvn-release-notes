@@ -385,7 +385,7 @@ test('a concurrently deleted photo removes its generated thumbnail', async () =>
   assert.equal(done, 0);
   await assert.rejects(objects.get('media/u1/files/a.thumb.jpg'));
 });
-test("a HEIC photo's time and place are kept on its media entry, though no thumbnail is made", async () => {
+test("a HEIC photo's time and place are kept on its media entry, even if no thumbnail can be made", async () => {
   const sample = fixture.exif.find((x) => x.result.lat !== undefined && x.result.taken_at)!,
     jpeg = Buffer.from(sample.bytes, 'base64'),
     at = jpeg.indexOf('Exif\0\0', 0, 'latin1'),

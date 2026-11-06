@@ -20,6 +20,7 @@ import {
   type BookPlan,
   type Page
 } from './data.ts';
+import { decodeHeif, HEIF, TINY_HEIC } from '../backend/heif.ts';
 
 export const LONGEST = PAGES['6x9'].longest,
   QUALITY = 80,
@@ -28,7 +29,6 @@ const GUTTER = 6 / 72,
   /** No photo is stretched below this many pixels an inch: a small one
    * prints small and sharp. */
   DPI = 200;
-const HEIF = new Set(['image/heic', 'image/heif']);
 const FONTS = [
   'BricolageGrotesque-Regular.ttf',
   'BricolageGrotesque-Bold.ttf',
@@ -50,12 +50,9 @@ export async function photo(bytes: Buffer, type: string, longest = LONGEST): Pro
   try {
     let source;
     if (HEIF.has(type)) {
-      const decode = (await import('heic-decode')).default,
-        image = await decode({ buffer: bytes });
-      if (!image.width || !image.height || image.width * image.height > MAX_PIXELS) return null;
-      source = sharp(Buffer.from(image.data.buffer, image.data.byteOffset, image.data.byteLength), {
-        raw: { width: image.width, height: image.height, channels: 4 }
-      });
+      const image = await decodeHeif(bytes, MAX_PIXELS);
+      if (!image) return null;
+      source = sharp(image.data, { raw: { width: image.width, height: image.height, channels: 4 } });
     } else source = sharp(bytes, { limitInputPixels: MAX_PIXELS, failOn: 'none', pages: 1 }).autoOrient();
     const { data, info } = await source
       .resize({ width: longest, height: longest, fit: 'inside', withoutEnlargement: true })
@@ -184,19 +181,6 @@ export async function renderBook(
   }
 }
 
-/** A 16 by 16 pixel HEIC (a synthetic gradient, made with macOS sips), so
- * the deploy probe proves libheif decodes on Lambda. */
-const TINY_HEIC =
-  'AAAAJGZ0eXBoZWljAAAAAG1pZjFNaVBybWlhZk1pSEJoZWljAAABw21ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAHBpY3QAAAAAAAAA' +
-  'AAAAAAAAAAAAJGRpbmYAAAAcZHJlZgAAAAAAAAABAAAADHVybCAAAAABAAAADnBpdG0AAAAAAAEAAAA4aWluZgAAAAAAAgAAABVp' +
-  'bmZlAgAAAAABAABodmMxAAAAABVpbmZlAgAAAQACAABFeGlmAAAAABppcmVmAAAAAAAAAA5jZHNjAAIAAQABAAAA5mlwcnAAAADF' +
-  'aXBjbwAAABNjb2xybmNseAACAAIABoAAAAAMY2xsaQDLAEAAAAAUaXNwZQAAAAAAAAAQAAAAEAAAAAlpcm90AAAAABBwaXhpAAAA' +
-  'AAMICAgAAABxaHZjQwEDcAAAALAAAAAAAB7wAPz9+PgAAAsDoAABABdAAQwB//8DcAAAAwCwAAADAAADAB5wJKEAAQAjQgEBA3AA' +
-  'AAMAsAAAAwAAAwAeoBQgQcCTDOIe5FlU3AgIGAKiAAEACUQBwGFyyEBTJAAAABlpcG1hAAAAAAAAAAEAAQaBAgMFhoQAAAAsaWxv' +
-  'YwAAAABEAAACAAEAAAABAAACQwAAAGQAAgAAAAEAAAH3AAAATAAAAAFtZGF0AAAAAAAAAMAAAAAGRXhpZgAATU0AKgAAAAgAAwEa' +
-  'AAUAAAABAAAAMgEbAAUAAAABAAAAOgEoAAMAAAABAAIAAAAAAAAAAAAZAAAAAQAAABkAAAABAAAAYCgBr6N9Rn0chlK+NxX5fNSO' +
-  'uobktpkUDShsfhEKWtPaiHClObduCXXPkzLF9AZ7RlaYWBjA/00dH/94hf/rWZI9o/P9FR9lt8ZYnX9T2n1PbE4sxNXf9Y39dUgQ' +
-  't34UFw==';
 /** The export worker's self-test: a one-day book with a PNG and a HEIC,
  * proving Typst, the fonts, Sharp and libheif load where it runs. */
 export async function selfTest(): Promise<void> {

@@ -34,8 +34,10 @@ for (const [source, folder] of [
     banner: {
       js:
         "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" +
-        // libheif (the book's HEIC decoder) is CommonJS and names its folder.
-        (folder === 'dist/workers/export' ? ' const __dirname = import.meta.dirname;' : '')
+        // libheif (the HEIC decoder) is CommonJS and names its folder.
+        (folder === 'dist/workers/export' || folder === 'dist/workers/describe'
+          ? ' const __dirname = import.meta.dirname;'
+          : '')
     }
   });
 }

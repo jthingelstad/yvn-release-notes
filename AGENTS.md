@@ -322,8 +322,11 @@ Where things are (each module's design comment has its contract):
   are off until the subscriber ticks "Describe my photos".
 - **Thumbnails** (Jamie, 2026-10-12: photos in the email) are made once for
   every photo, opted in or not: about 640px, a JPEG under 80 KB, with no EXIF
-  or GPS. The email reads only these, never an original. A HEIC gets none
-  (`thumb: {}`), but its time and place are still read.
+  or GPS. The email reads only these, never an original. A HEIC's comes by
+  way of libheif in WebAssembly, since Sharp's prebuilt libvips reads none
+  (Jamie, 2026-11-06: "Approved: build Release Notes HEIC thumbnails and
+  descriptions from JPEG copies, keeping originals"), and the HEIC stays as it
+  was.
 - **A profile photo** (Jamie, 2026-10-28: "I feel like a user should be
   able to create a Profile photo for themselves"): the owner adds,
   changes and removes one in Settings; it shows in the You tab and on

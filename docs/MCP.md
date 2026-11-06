@@ -221,7 +221,7 @@ Files are kept as a web upload's checked copy is (`media/<user>/files/`,
 tagged as a note's), before the note that names them is written, and
 removed again if the note is not; the note's entries have the web's fields.
 The stream readers then treat them exactly as a web upload: every photo
-gets its thumbnail (a HEIC none, but its time and place are read), a
+gets its thumbnail, a
 photo's EXIF place names a note that has none, and transcripts and photo
 descriptions come only where the owner turned them on. Answers show the
 entries with their numbers, never a storage key. The audit and the

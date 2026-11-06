@@ -448,7 +448,7 @@ memos, and steps back to earlier days:
   token wrote: a signed address for the file, good for `FILE_SECONDS`
   (ten minutes, as MCP's downloads), fetched with no token. `?size=thumb`
   gives the small copy for a list; a file with none (a recording, a PDF,
-  a HEIC) is `not_found`. It answers JSON rather than a redirect, since a
+  a photo that couldn't be read) is `not_found`. It answers JSON rather than a redirect, since a
   client that carried its `Authorization` header across a redirect would
   send S3 two kinds of credentials.
 
@@ -575,9 +575,10 @@ subject, mail words, another sender or a settings value.
   copy and delete rights, ListBucket so a missing upload reads as missing,
   the account's upload count, and ReverseGeocode for Here), shipped through
   a normal deploy and reviewed as its own PR before any route reaches it.
-- **HEIC photos get no thumbnail** (AGENTS.md, Thumbnails), so they never
-  reach the email. Changelog sends the photo picker's compatible JPEG, with
-  place and time kept (Jamie's calls). Other clients should do the same.
+- **HEIC photos open whole only in some browsers**, though they get a JPEG
+  thumbnail (AGENTS.md, Thumbnails). Changelog sends the photo picker's
+  compatible JPEG, with place and time kept (Jamie's calls). Other clients
+  should do the same.
 
 ### Phase 4: Upcoming and reminders
 

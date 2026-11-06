@@ -13,6 +13,7 @@ import type { Item } from '../packages/backend/store.ts';
 import type { NoteRecord, PlaceRecord } from '../packages/domain/notes.ts';
 import { localDay, validTimezone } from '../packages/domain/dates.ts';
 import * as describe from '../packages/backend/describe.ts';
+import { TINY_HEIC } from '../packages/backend/heif.ts';
 import * as thumbs from '../packages/backend/thumbs.ts';
 import * as places from '../packages/backend/places.ts';
 import * as weather from '../packages/backend/weather.ts';
@@ -265,6 +266,8 @@ export async function runEvent(event: Item, context: Context = {}, injected?: Se
     const made = await thumbs.make(describe.testImage(1, 1));
     if (!made || made.width !== 1 || made.height !== 1 || made.body.length === 0)
       throw new Error('Thumbnail runtime self test failed');
+    const heic = await thumbs.make(Buffer.from(TINY_HEIC, 'base64'), 'image/heic');
+    if (!heic || heic.body.length === 0) throw new Error('HEIC runtime self test failed');
     return {
       ok: true,
       runtime: `Node ${process.versions.node}/${process.platform}/${process.arch}`,

@@ -21,6 +21,13 @@ Changelog is the fast way in, with your notes along. Search and looking back, yo
 
 It numbers itself the way Release Notes numbers you. It started on October 29, 2026, so that day is 0.0.0, and the foot of its Settings names the version and the build. Newest first.
 
+## 0.0.8 · November 6
+
+- **[Check-ins](/guide/check-ins/):** turn on **Notice where I stop** in Settings and allow your location Always, and iOS tells Changelog when you stop somewhere. Each stop goes to Release Notes, in Activity and on the Map. It's off until you turn it on.
+- **Check in now** on Log adds where you are with a tap, with the switch on or off.
+- **In Activity:** a check-in has its row and its own filter. A row opens a page to name the place, once or for good, write about it or delete it. Settings keeps the places you remember.
+- A stop that can't go yet waits on the phone and goes once you're back online.
+
 ## 0.0.7 · November 5
 
 - **Your notes:** a new Notes tab reads your days, from today back, with every note from any channel. A note opens whole: its photos and files, transcripts and descriptions, the place and the weather. You can change or delete it from there too.

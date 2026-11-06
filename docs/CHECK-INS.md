@@ -5,13 +5,13 @@ end, under "Jamie's calls". **Phase 1, the server and API 1.18.0, is built**
 (Jamie, 2026-11-06: "Approved: build Check-ins phase 1, the server and API
 1.18.0, from PR #317"), with what building it decided under "Built in phase 1".
 **Phase 2, the web, is built**, under "Built in phase 2". **Phase 3, Changelog
-sending them, is built and on the app's main, and on no phone** (Jamie,
-2026-11-06: "Approved: build Check-ins phase 3, Changelog sending check-ins to
-the server, with no TestFlight upload"), under "Built in phase 3". The newest
-build anyone has is still the phone-only test that led to this (Changelog's
-"Record visits", build 84), which keeps them on the phone. The reader-facing
-words go in with the upload that makes them true. Every other phase needs
-Jamie's go.
+sending them, is built and on TestFlight internal as build 85, version 0.0.8**
+(Jamie, 2026-11-06: "Approved: build Check-ins phase 3, Changelog sending
+check-ins to the server, with no TestFlight upload" and "Approved: upload
+Changelog main (5e9a3be) to TestFlight internal, ending the visits test on that
+phone, and merge Release Notes #325 with its guide entry"), under "Built in
+phase 3". Real delivery waits on the phone pass, step 23 of the app's
+`docs/PHONE-TEST.md`. Every other phase needs Jamie's go.
 
 Jamie, 2026-11-05: Changelog should notice "when I am at a place (not
 traveling)" and add it to Activity, so "I can see where I've been on a map" and

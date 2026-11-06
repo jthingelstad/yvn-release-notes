@@ -7,7 +7,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 
 ## 0.0.30 · November 6
 
-- [Check-ins](/guide/check-ins/) have their own place on the web: the stops an app sends, with when you got there and left. They have a filter in Activity, a page each to name or delete them or write about them, their own marks on the Map, and a section in Settings for the places you remember. [The API](/guide/api/check-ins/) can send them. Changelog doesn't yet.
+- [Check-ins](/guide/check-ins/) have their own place on the web: the stops an app sends, with when you got there and left. They have a filter in Activity, a page each to name or delete them or write about them, their own marks on the Map, and a section in Settings for the places you remember. [The API](/guide/api/check-ins/) can send them, and so can [Changelog](/guide/changelog/), the iPhone app, once you turn on **Notice where I stop** in its Settings.
 - [The API's guide](/guide/api/) is a set of pages now, not one long one: errors and limits, notes, your archive, places, check-ins, Upcoming and recipes to copy, with [a reference](/guide/api/reference/) of every request. Tools and agents can fetch [the same description](https://notes.yourversionnumber.com/v1/openapi.json) as OpenAPI, with no token.
 - The API has [a changelog of its own](/guide/api/changelog/), with a feed, and [one link to give an agent](/guide/api/llms.txt), which holds the whole guide.
 

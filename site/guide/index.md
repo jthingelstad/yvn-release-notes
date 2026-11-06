@@ -22,6 +22,7 @@ description: How to get the most out of Release Notes, a page at a time.
 - [Notes through the API](/guide/api/notes/): add, read, change and delete notes, with their files and tags.
 - [Reading your archive through the API](/guide/api/archive/): your account, days, search and the activity log.
 - [Places through the API](/guide/api/places/): say where a note or a day was.
+- [Check-ins](/guide/check-ins/): the places you stop, in Activity and on the map, with names you give them.
 - [Check-ins through the API](/guide/api/check-ins/): the places you stop, and the names you give them.
 - [Upcoming dates through the API](/guide/api/upcoming/): birthdays, anniversaries, trips, events and their reminders.
 - [API recipes](/guide/api/recipes/): a terminal, a Shortcut, a schedule, Python and more, to copy.

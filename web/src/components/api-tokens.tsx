@@ -26,7 +26,7 @@ export const OFFERED: [string, string][] = [
   ['notes:read', 'Read all your notes, from anywhere, and the days, tags, map and badges made from them'],
   ['notes:all', 'Read all your notes, from anywhere, and change or delete them'],
   ['upcoming', 'Read and change your Upcoming dates and their reminders'],
-  ['activity', 'Read the activity log, without any words from it']
+  ['activity', 'Read the activity log and your check-ins']
 ];
 export const EXPIRY: [string, string][] = [
   ['90d', '90 days'],

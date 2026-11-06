@@ -3045,6 +3045,43 @@ fieldset.book-fields {
 .map-picked-hint {
   margin-top: 16px;
 }
+/* What marks each kind on the map and in its list: a note a filled dot, a
+   check-in a ring, so they differ by more than colour. */
+.map-mark {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: baseline;
+}
+.map-mark.note {
+  background: var(--orange);
+}
+.map-mark.stay {
+  background: var(--paper);
+  border: 3px solid var(--ink);
+}
+.map-spot {
+  height: min(44vh, 340px);
+  margin: 20px 0 8px;
+}
+.activity-filter {
+  margin-top: 16px;
+}
+.activity-filter .quiet {
+  padding: 6px 12px;
+  text-decoration: none;
+}
+.activity-filter .quiet[aria-pressed='true'] {
+  background: var(--ink);
+  border-radius: 6px;
+  color: var(--paper);
+}
+.checkin-name {
+  margin-top: 24px;
+}
 .map-notes {
   list-style: none;
   margin: 20px 0 0;

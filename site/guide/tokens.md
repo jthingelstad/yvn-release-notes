@@ -12,7 +12,7 @@ A token is a key you make for one app or script, so it can add notes as you: a l
 Signed in, open Settings, then **API tokens** and **Make a token**:
 
 - **Name** it for where it will live, like "Changelog on my iPhone" or "Terminal", up to 40 characters. No two of your tokens share a name.
-- Tick what **it may** do: **Add notes, and change or delete the notes it adds**; **Add files to the notes it adds: photos, recordings and PDFs**, which comes only with adding notes; **Read all your notes, from anywhere, and the days, tags, map and badges made from them**, which changes nothing and needs nothing else ticked; **Read all your notes, from anywhere, and change or delete them**, which comes only with adding notes too; **Read and change your Upcoming dates and their reminders**; and **Read the activity log, without any words from it**.
+- Tick what **it may** do: **Add notes, and change or delete the notes it adds**; **Add files to the notes it adds: photos, recordings and PDFs**, which comes only with adding notes; **Read all your notes, from anywhere, and the days, tags, map and badges made from them**, which changes nothing and needs nothing else ticked; **Read all your notes, from anywhere, and change or delete them**, which comes only with adding notes too; **Read and change your Upcoming dates and their reminders**; and **Read the activity log and your check-ins**.
 - Pick when it **expires**: in 90 days, in a year, or never.
 
 Every token can read your version, today's date and your tags, whatever you tick. You can have up to 20 tokens at a time.
@@ -30,6 +30,10 @@ An app can sign you in instead, so there's nothing to copy. It opens Release Not
 A note a token adds is yours, in your own voice. On the web it shows "via" the token's name, like "via Terminal", and nothing marks it in the email. It counts toward your streak like a note you typed, and you can edit or delete it like any other.
 
 A token can read, change or delete only the notes it added itself, never your others, unless you ticked one of the two that say **Read all your notes**. The first only reads: every note, however you wrote it, with your days, search, tags, map, badges and what became of your email. The second can also change, add to or delete any note, as you can on the web. Deleting a note this way deletes its photos and recordings too, and for a note you emailed, the email. If it may add files, it can add them to any note. With Upcoming ticked, it reads and changes every Upcoming date, whoever added it, as you can on the web. Your [activity log](/activity/) shows each thing a token did, by its name.
+
+## Check-ins from a token
+
+A token that may add notes can send [check-ins](/guide/check-ins/), the places you stop, and name or delete its own. One that may read the activity log reads all of them, with their spots. One that can change any note can name or delete any of them.
 
 ## Revoking one
 

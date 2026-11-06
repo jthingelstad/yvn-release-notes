@@ -37,6 +37,17 @@ interface Props {
   here?: boolean;
 }
 
+// A place waiting for a day's next note (this tab only, as a draft is).
+export const carryPlace = (day: string, place: Place | null) =>
+  place ? store.set(`rn-draft-place-${day}`, JSON.stringify(place)) : store.drop(`rn-draft-place-${day}`);
+function carriedPlace(day: string): Place | null {
+  try {
+    return JSON.parse(store.get(`rn-draft-place-${day}`) ?? 'null') as Place | null;
+  } catch {
+    return null;
+  }
+}
+
 // Give it a `key` of the day, so another day starts with that day's draft.
 export function NoteForm({ day, label, placeholder, submit, initialTag, here = false }: Props) {
   const key = `rn-draft-${day}`;
@@ -48,7 +59,8 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
     return draft + (draft ? '\n\n' : '') + '#' + initialTag;
   });
   const [chosen, setChosen] = useState<string>('');
-  const [place, setPlace] = useState<Place | null>(null);
+  // A place brought along, as "Write about this" on a check-in brings its own.
+  const [place, setPlace] = useState<Place | null>(() => carriedPlace(day));
   // "Not there" on this note: it is saved with no place.
   const [notThere, setNotThere] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -134,6 +146,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
     }
     const pending = await addPending(client, day, text);
     store.drop(key);
+    carryPlace(day, null);
     setText('');
     if (pick.current) pick.current.value = '';
     showChosen();
@@ -223,7 +236,10 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
           <NoteWhere
             key={round}
             place={place}
-            onPick={setPlace}
+            onPick={(next) => {
+              setPlace(next);
+              carryPlace(day, null);
+            }}
             onProblem={show}
             onNotThere={() => setNotThere(true)}
             disabled={held}

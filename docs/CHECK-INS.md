@@ -256,9 +256,30 @@ was promised, and all of it can change with no data to rewrite except the first.
   `time_zone` and `merged`.
 - **A page of the log reads past the rows a stay folds away,** so `limit` means
   rows shown, and a stay goes by when it began.
-- **Until phase 2 the web's Activity gives these rows no wording of their own.**
-  Only a client sending check-ins makes any, and none does yet. `site/privacy.md`
-  waits for phase 2, as listed below.
+- **Until phase 2 the web's Activity gave these rows no wording of their own.**
+  Only a client sending check-ins makes any, and none did.
+
+## Built in phase 2
+
+What building it decided, past the design above.
+
+- **`/check-in/#c=<id>` keeps its id in the fragment,** so no address in a log
+  says when someone stopped.
+- **Nearby businesses are asked for when wanted,** on Name it or Write about this,
+  through `POST /api/places/here`, since each is a paid lookup. Opening a check-in
+  asks nothing.
+- **Remember takes the stop's own name off,** or it would go on outranking the
+  place, and adds the spot of each check-in in the stay that no spot of that name
+  is near, or remembering could split the stay.
+- **A tag or words hide check-ins on the Map,** since a check-in has neither, and
+  choosing Check-ins clears them. A release narrows both, by the check-in's day.
+- **Activity's Check-ins button shows once there are any,** so nobody without them
+  sees it. Rows read in the check-in's own zone, under the account's days.
+- **Settings shows its Check-ins group once there are stops or names.**
+- **Write about this goes on without a place** if the spot's city can't be named:
+  the note's Where can add one.
+- **The privacy page says Changelog doesn't send them yet.** Its line that the app
+  asks only for Here or "Add where I am" stands until phase 3 makes it false.
 
 ## What has to be rewritten
 

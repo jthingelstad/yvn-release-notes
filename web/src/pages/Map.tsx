@@ -12,6 +12,13 @@
 // release's name as on /release/?v=). The words are found as the Search
 // page finds them, by POST, so they stay in the #; the tag and the release
 // are read from the pins. Each menu offers what the other filters leave.
+//
+// Check-ins (docs/CHECK-INS.md) are on the map too, with their own mark and
+// their own groups, so they never read as notes (Jamie's call 6), and a menu
+// (#show=) shows notes, check-ins or both. A release narrows them as it does
+// notes. A tag or words keep notes alone, since a check-in has neither. Only
+// marks here: a check-in's real circle shows when it is opened. A check-in's
+// page links here as #c=<id>.
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -22,11 +29,12 @@ import { NoteBody } from '../components/notes.tsx';
 import { MAX_QUERY, searchTerms } from '../../../packages/domain/search.ts';
 import { releaseAge } from '../../../packages/domain/version.ts';
 import { ApiError, load } from '../lib/api.ts';
+import { checkInHref, stayLine, stopName } from '../lib/check-ins.ts';
 import { count, dayName } from '../lib/format.ts';
 import { useHashParam } from '../lib/nav.ts';
-import { mapQuery } from '../lib/queries.ts';
+import { checkInsQuery, mapQuery } from '../lib/queries.ts';
 import { sayFor } from '../lib/say.ts';
-import type { MapSearch, Pin } from '../lib/types.ts';
+import type { MapSearch, Pin, Stay } from '../lib/types.ts';
 
 const keyOf = (p: { date: string; id: string }) => p.date + '#' + p.id;
 
@@ -72,6 +80,35 @@ export function sift(pins: readonly Pin[], sieve: Sieve): Sifted {
   };
 }
 
+/** The check-ins these filters keep (see the top of this file). */
+export function siftStays(
+  stays: readonly Stay[],
+  sieve: { show: string; tag: string; release: string; asked: boolean }
+) {
+  if (sieve.show === 'notes' || sieve.tag || sieve.asked) return [];
+  return stays.filter((s) => !sieve.release || s.release === sieve.release);
+}
+/** The line over the map: what is on it, of how many. */
+export function mapLede(notes: number, shown: number | undefined, stays: number, stayed: number, filtering: boolean) {
+  const own = (n: number) => `with a place of ${n === 1 ? 'its' : 'their'} own`,
+    ofNotes = filtering && shown !== undefined ? `${shown} of ` : '',
+    ofStays = filtering ? `${stayed} of ` : '',
+    notesLine = `${ofNotes}${count(notes, 'note', 'notes')} ${own(notes)}`,
+    staysLine = `${ofStays}${count(stays, 'check-in', 'check-ins')}`;
+  if (!notes && !stays) return 'No note has a place of its own yet. Add one with Where, or Here on a note.';
+  if (filtering && !(shown ?? 1) && !stayed) {
+    const of = [
+      notes ? `your ${notesLine.slice(ofNotes.length)}` : '',
+      stays ? `your ${count(stays, 'check-in', 'check-ins')}` : ''
+    ]
+      .filter(Boolean)
+      .join(' or ');
+    return `None of ${of} ${notes + stays === 1 ? 'matches' : 'match'}.`;
+  }
+  if (!stays) return `${notesLine}.`;
+  return notes ? `${notesLine}, and ${staysLine}.` : `${staysLine}.`;
+}
+
 export function MapPage() {
   useTitle('Map');
   const navigate = useNavigate();
@@ -82,7 +119,10 @@ export function MapPage() {
     ll = useHashParam('ll'),
     q = (useHashParam('q') || '').trim(),
     tag = useHashParam('tag') || '',
-    release = useHashParam('v') || '';
+    release = useHashParam('v') || '',
+    show = useHashParam('show') || '',
+    stayId = useHashParam('c');
+  const stays = useQuery({ ...checkInsQuery, meta: { bounce: false } }).data?.stays;
   // Words with no terms in them (a pair of quotes) are no search.
   const asked = searchTerms(q).length > 0;
   const searched = useQuery({
@@ -98,25 +138,49 @@ export function MapPage() {
     () => (asked && searched.data ? new Set(searched.data.found.map(keyOf)) : null),
     [asked, searched.data]
   );
-  const sifted = useMemo(() => d && sift(d.pins, { tag, release, found: words }), [d, tag, release, words]);
+  const noted = useMemo(() => d && sift(d.pins, { tag, release, found: words }), [d, tag, release, words]);
+  const stayed = useMemo(
+    () => siftStays(stays ?? [], { show, tag, release, asked }),
+    [stays, show, tag, release, asked]
+  );
+  const sifted = useMemo(() => {
+    if (!noted) return noted;
+    // The release menu offers what shows: the notes, the check-ins or both.
+    const notes = show === 'check-ins' ? [] : noted.releases,
+      tally = new Map(notes.map((r) => [r.release, r.notes]));
+    if (release) tally.set(release, tally.get(release) ?? 0);
+    for (const s of stayed) tally.set(s.release, (tally.get(s.release) ?? 0) + 1);
+    return {
+      ...noted,
+      shown: show === 'check-ins' ? [] : noted.shown,
+      releases: [...tally]
+        .sort(([a], [b]) => (releaseAge(b) ?? -1) - (releaseAge(a) ?? -1))
+        .map(([release, notes]) => ({ release, notes }))
+    };
+  }, [noted, stayed, show, release]);
   // A menu shows when there is something to choose at all, whatever the
   // other filters leave, so it never comes and goes.
   const menus = useMemo(
-    () => d && { tags: d.pins.some((p) => p.tags.length), releases: new Set(d.pins.map((p) => p.release)).size > 1 },
-    [d]
+    () =>
+      d && {
+        tags: d.pins.some((p) => p.tags.length),
+        releases: new Set([...d.pins.map((p) => p.release), ...(stays ?? []).map((s) => s.release)]).size > 1
+      },
+    [d, stays]
   );
-  const filtering = Boolean(q || tag || release);
+  const narrowed = Boolean(q || tag || release),
+    filtering = narrowed || Boolean(show);
   // The map moves to what the filters keep once the words are found.
   const view = asked && (searched.isPending || searched.isPlaceholderData) ? null : [q, tag, release].join('\n');
 
   // A filter replaces the note a place link asked for.
   const filter = useCallback(
-    (next: Partial<Record<'q' | 'tag' | 'v', string>>) => {
+    (next: Partial<Record<'q' | 'tag' | 'v' | 'show', string>>) => {
       const hash = new URLSearchParams();
-      for (const [k, v] of Object.entries({ q, tag, v: release, ...next })) if (v) hash.set(k, v);
+      for (const [k, v] of Object.entries({ q, tag, v: release, show, ...next })) if (v) hash.set(k, v);
       navigate({ to: '/map/', hash: hash.toString(), replace: true });
     },
-    [navigate, q, tag, release]
+    [navigate, q, tag, release, show]
   );
   // The words go in a moment after the last key, not with every one. The
   // box follows the address when something else changes it (the Map tab,
@@ -156,13 +220,22 @@ export function MapPage() {
     if (focus) return shown!.filter((p) => p.lat === focus.lat && p.lon === focus.lon);
     return !id && ofDay.length ? ofDay : null;
   }, [shown, day, id]);
-  const link = linked || at ? `${day}#${id ?? ''}#${ll ?? ''}` : '',
-    here = [link, q, tag, release].join('\n');
-  const [chosen, setChosen] = useState<{ pins: Pin[]; under: string } | null>(null);
-  const pick = useCallback((pins: Pin[] | null) => setChosen(pins && { pins, under: here }), [here]);
-  const picked = chosen && chosen.under === here ? chosen.pins : linked;
+  // A check-in's page asks for it, with whatever else is at its spot.
+  const linkedStays = useMemo(() => {
+    const focus = stayId ? stayed.find((s) => s.id === stayId || s.ids.includes(stayId)) : null;
+    return focus ? stayed.filter((s) => s.lat === focus.lat && s.lon === focus.lon) : null;
+  }, [stayed, stayId]);
+  const linkedMarks = useMemo(
+    () => (linked || linkedStays ? { pins: linked ?? [], stays: linkedStays ?? [] } : null),
+    [linked, linkedStays]
+  );
+  const link = linked || linkedStays || at ? `${day}#${id ?? ''}#${ll ?? ''}#${stayId ?? ''}` : '',
+    here = [link, q, tag, release, show].join('\n');
+  const [chosen, setChosen] = useState<{ marks: Marks; under: string } | null>(null);
+  const pick = useCallback((marks: Marks | null) => setChosen(marks && { marks, under: here }), [here]);
+  const picked = chosen && chosen.under === here ? chosen.marks : linkedMarks;
   const total = d?.pins.length ?? 0,
-    own = (n: number) => `with a place of ${n === 1 ? 'its' : 'their'} own`;
+    stayTotal = stays?.length ?? 0;
   return (
     <>
       <Bar />
@@ -171,35 +244,58 @@ export function MapPage() {
       {found.isError && !d && <Failed />}
       {d && (
         <p className="lede" role="status">
-          {!total
-            ? 'No note has a place of its own yet. Add one with Where, or Here on a note.'
-            : !filtering || !shown
-              ? `${count(total, 'note', 'notes')} ${own(total)}.`
-              : shown.length
-                ? `${shown.length} of ${count(total, 'note', 'notes')} ${own(total)}.`
-                : `None of your ${count(total, 'note', 'notes')} ${own(total)} ${total === 1 ? 'matches' : 'match'}.`}
+          {mapLede(
+            show === 'check-ins' ? 0 : total,
+            narrowed ? shown?.length : undefined,
+            show === 'notes' ? 0 : stayTotal,
+            stayed.length,
+            narrowed
+          )}
         </p>
       )}
-      {sifted && (total > 0 || at) && (
+      {sifted && (total > 0 || stayTotal > 0 || at) && (
         <>
-          {total > 0 && (
+          {(total > 0 || stayTotal > 0) && (
             <>
               <div className="map-filters">
-                <label className="map-search">
-                  Words
-                  <input
-                    type="search"
-                    name="q"
-                    maxLength={MAX_QUERY}
-                    autoComplete="off"
-                    enterKeyHint="search"
-                    placeholder={'cabin, "first snow"'}
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && send(text.trim())}
-                  />
-                </label>
-                {(menus?.tags || tag) && (
+                {total > 0 && stayTotal > 0 && (
+                  <label>
+                    Show
+                    <select
+                      name="show"
+                      value={show}
+                      // A check-in has no words or tag, so they don't stay on.
+                      onChange={(e) =>
+                        filter(
+                          e.target.value === 'check-ins'
+                            ? { show: 'check-ins', q: '', tag: '' }
+                            : { show: e.target.value }
+                        )
+                      }
+                    >
+                      <option value="">Everything</option>
+                      <option value="notes">Notes</option>
+                      <option value="check-ins">Check-ins</option>
+                    </select>
+                  </label>
+                )}
+                {total > 0 && show !== 'check-ins' && (
+                  <label className="map-search">
+                    Words
+                    <input
+                      type="search"
+                      name="q"
+                      maxLength={MAX_QUERY}
+                      autoComplete="off"
+                      enterKeyHint="search"
+                      placeholder={'cabin, "first snow"'}
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && send(text.trim())}
+                    />
+                  </label>
+                )}
+                {show !== 'check-ins' && (menus?.tags || tag) && (
                   <label>
                     Tag
                     <select value={tag} onChange={(e) => filter({ tag: e.target.value })}>
@@ -232,7 +328,7 @@ export function MapPage() {
                     onClick={() => {
                       setText('');
                       setSent('');
-                      filter({ q: '', tag: '', v: '' });
+                      filter({ q: '', tag: '', v: '', show: '' });
                     }}
                   >
                     Clear filters
@@ -243,50 +339,95 @@ export function MapPage() {
               {asked && searched.isError && !refused && <Failed />}
             </>
           )}
-          <Basemap pins={sifted.shown} linked={linked} at={at} link={link} view={view} pick={pick} />
-          <Picked pins={picked} linked={picked === linked} />
+          <Basemap
+            pins={sifted.shown}
+            stays={stayed}
+            linked={linkedMarks}
+            at={at}
+            link={link}
+            view={view}
+            pick={pick}
+          />
+          <Picked marks={picked} linked={picked === linkedMarks} anyStays={stayTotal > 0} />
         </>
       )}
     </>
   );
 }
 
-const ORDER = (a: Pin, b: Pin) => b.date.localeCompare(a.date),
-  THIS_YEAR = new Date().getFullYear();
+const THIS_YEAR = new Date().getFullYear();
 
-function Picked({ pins, linked }: { pins: Pin[] | null; linked?: boolean }) {
+/** What a tap or a link lists: the notes and the check-ins there. */
+interface Marks {
+  pins: Pin[];
+  stays: Stay[];
+}
+/** The heading over a list, with a place's name when they share one. */
+export function pickedHead({ pins, stays }: Marks): string {
+  const places = [...new Set([...pins.map((p) => p.place), ...stays.map((s) => stopName(s.label))])],
+    what = [
+      pins.length ? count(pins.length, 'note', 'notes') : '',
+      stays.length ? count(stays.length, 'check-in', 'check-ins') : ''
+    ]
+      .filter(Boolean)
+      .join(' and ');
+  return `${what} ${pins.length ? 'in' : 'at'} ${places.length === 1 ? places[0] : count(places.length, 'place', 'places')}`;
+}
+
+function Picked({ marks, linked, anyStays }: { marks: Marks | null; linked?: boolean; anyStays: boolean }) {
   const head = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    if (pins && !linked) head.current?.focus();
-  }, [pins, linked]);
-  if (!pins)
+    if (marks && !linked) head.current?.focus();
+  }, [marks, linked]);
+  if (!marks)
     return (
       <p className="meta map-picked-hint">
-        Choose a pin or a group to list its notes here. Each version number opens its day.
+        {anyStays
+          ? 'Choose a mark or a group to list what’s there. A dot is a note, a ring a check-in.'
+          : 'Choose a pin or a group to list its notes here. Each version number opens its day.'}
       </p>
     );
-  const places = [...new Set(pins.map((p) => p.place))];
+  // Newest first, whichever kind.
+  const rows = [
+    ...marks.pins.map((p) => ({ day: p.date, key: p.date + p.id, pin: p as Pin | null, stay: null as Stay | null })),
+    ...marks.stays.map((s) => ({ day: s.day, key: s.id, pin: null as Pin | null, stay: s as Stay | null }))
+  ].sort((a, b) => b.day.localeCompare(a.day));
+  const both = marks.pins.length > 0 && marks.stays.length > 0;
   return (
     <section className="map-picked" aria-labelledby="map-picked">
       <h2 className="big" id="map-picked" tabIndex={-1} ref={head}>
-        {count(pins.length, 'note', 'notes')} in{' '}
-        {places.length === 1 ? places[0] : count(places.length, 'place', 'places')}
+        {pickedHead(marks)}
       </h2>
-      {/* Newest first, each as a note reads elsewhere: its day's version,
-          linked to the day, the words, and where. */}
+      {/* Each note as a note reads elsewhere: its day's version, linked to the
+          day, the words, and where. Each check-in opens its own page. */}
       <ul className="map-notes">
-        {[...pins].sort(ORDER).map((p) => (
-          <li key={p.date + p.id} className="tday">
-            <AppLink className="tday-head" href={dayHref(p.date, '')}>
-              <span className="vnum small">
-                <Digits v={p.version} named />
-              </span>
-              <span className="when">{dayName(p.date, THIS_YEAR)}</span>
-            </AppLink>
-            <NoteBody n={{ id: p.id, source: 'web', text: p.text, parts: p.parts }} />
-            <p className="meta">{p.place}</p>
-          </li>
-        ))}
+        {rows.map(({ key, pin: p, stay: s }) =>
+          p ? (
+            <li key={key} className="tday">
+              <AppLink className="tday-head" href={dayHref(p.date, '')}>
+                {both && <span className="map-mark note" role="img" aria-label="Note" />}
+                <span className="vnum small">
+                  <Digits v={p.version} named />
+                </span>
+                <span className="when">{dayName(p.date, THIS_YEAR)}</span>
+              </AppLink>
+              <NoteBody n={{ id: p.id, source: 'web', text: p.text, parts: p.parts }} />
+              <p className="meta">{p.place}</p>
+            </li>
+          ) : (
+            <li key={key} className="tday">
+              <AppLink className="tday-head" href={checkInHref(s!.id)}>
+                <span className="map-mark stay" role="img" aria-label="Check-in" />
+                <span className="vnum small">
+                  <Digits v={s!.version} named />
+                </span>
+                <span className="when">{dayName(s!.day, THIS_YEAR)}</span>
+              </AppLink>
+              <p>Checked in at {stopName(s!.label)}</p>
+              <p className="meta">{stayLine(s!, s!.time_zone)}</p>
+            </li>
+          )
+        )}
       </ul>
     </section>
   );
@@ -294,25 +435,35 @@ function Picked({ pins, linked }: { pins: Pin[] | null; linked?: boolean }) {
 
 // Colours from the page's own tokens, so the pins follow light and dark.
 const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-const points = (pins: readonly Pin[]): Parameters<GeoJSONSource['setData']>[0] => ({
+const points = (
+  marks: readonly { lat: number; lon: number; key: string }[]
+): Parameters<GeoJSONSource['setData']>[0] => ({
   type: 'FeatureCollection',
-  features: pins.map((p) => ({
+  features: marks.map((p) => ({
     type: 'Feature',
     geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-    properties: { key: keyOf(p) }
+    properties: { key: p.key }
   }))
 });
+const pinPoints = (pins: readonly Pin[]) => points(pins.map((p) => ({ lat: p.lat, lon: p.lon, key: keyOf(p) })));
+const stayPoints = (stays: readonly Stay[]) => points(stays.map((s) => ({ lat: s.lat, lon: s.lon, key: s.id })));
+/** A spot on the map: a note's, or a check-in's, which is always a real one. */
+interface Spot {
+  lat: number;
+  lon: number;
+  exact?: boolean;
+}
 type Lib = typeof import('maplibre-gl');
 type Frame = { center: [number, number]; zoom: number } | { bounds: LngLatBounds; padding: number; maxZoom: number };
 // Every pin, or what a place link asked for: close in on a spot, the city
 // for a chosen city or a day's own place.
-function frame(lib: Lib, pins: readonly Pin[], linked?: Pin[] | null, at?: [number, number] | null): Frame | null {
+function frame(lib: Lib, pins: readonly Spot[], linked?: Spot[] | null, at?: [number, number] | null): Frame | null {
   if (at) return { center: at, zoom: 11 };
   const shown = linked ?? pins,
     [first] = shown;
   if (!first) return null;
   if (linked && shown.every((p) => p.lat === first.lat && p.lon === first.lon))
-    return { center: [first.lon, first.lat], zoom: first.exact ? 15 : 11 };
+    return { center: [first.lon, first.lat], zoom: first.exact === false ? 11 : 15 };
   const bounds = new lib.LngLatBounds();
   for (const p of shown) bounds.extend([p.lon, p.lat]);
   return { bounds, padding: 48, maxZoom: linked ? 15 : 11 };
@@ -323,6 +474,7 @@ function frame(lib: Lib, pins: readonly Pin[], linked?: Pin[] | null, at?: [numb
  * link asks for (`link`, naming it) change it in place, so the tiles stay. */
 function Basemap({
   pins,
+  stays,
   linked,
   at,
   link,
@@ -330,16 +482,18 @@ function Basemap({
   pick
 }: {
   pins: Pin[];
-  linked: Pin[] | null;
+  stays: Stay[];
+  linked: Marks | null;
   at: [number, number] | null;
   link: string;
   view: string | null;
-  pick: (p: Pin[] | null) => void;
+  pick: (m: Marks | null) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [broken, setBroken] = useState(false);
   const live = useRef({
     pins,
+    stays,
     linked,
     at,
     link,
@@ -353,7 +507,7 @@ function Basemap({
   });
   // Read by the map's own handlers, so kept current after each render.
   useEffect(() => {
-    Object.assign(live.current, { pins, linked, at, link, view, pick });
+    Object.assign(live.current, { pins, stays, linked, at, link, view, pick });
   });
   // A tile that will not come leaves a gap; a style that will not, no map.
   useEffect(() => {
@@ -369,7 +523,7 @@ function Basemap({
       if (gone || !box.current) return;
       maplibre.setWorkerUrl(worker);
       const dark = matchMedia('(prefers-color-scheme: dark)').matches,
-        start = frame(maplibre, now.pins, now.linked, now.at);
+        start = frame(maplibre, spotsOf(now), linkedSpots(now.linked), now.at);
       let m: MapLibre;
       try {
         m = made = new maplibre.Map({
@@ -397,9 +551,9 @@ function Basemap({
       // would keep drawing one.
       m.on('style.load', () => m.setProjection({ type: 'mercator' }));
       m.addControl(new maplibre.NavigationControl({ showCompass: false }));
-      const pinsOf = (features: { properties?: Record<string, unknown> | null }[]) => {
-        const byKey = new Map(now.pins.map((p) => [keyOf(p), p]));
-        return features.map((f) => byKey.get(String(f.properties?.key))!).filter(Boolean);
+      const marksOf = (features: { properties?: Record<string, unknown> | null }[]): Marks => {
+        const keys = new Set(features.map((f) => String(f.properties?.key)));
+        return { pins: now.pins.filter((p) => keys.has(keyOf(p))), stays: now.stays.filter((s) => keys.has(s.id)) };
       };
       let drawn = false;
       m.on('error', () => !drawn && !gone && setBroken(true));
@@ -407,13 +561,60 @@ function Basemap({
         drawn = true;
         const orange = token('--orange') || '#ff5a1f',
           paper = token('--paper') || '#fffbf2',
-          ink = token('--on-orange') || '#14163a';
+          ink = token('--on-orange') || '#14163a',
+          ring = token('--ink') || '#14163a';
+        // Check-ins first, so a note's pin sits over them: their own source,
+        // so a group is only ever one kind. A ring, and groups in ink.
+        m.addSource('check-ins', {
+          type: 'geojson',
+          cluster: true,
+          clusterRadius: 36,
+          clusterMaxZoom: 16,
+          data: stayPoints(now.stays)
+        });
+        m.addLayer({
+          id: 'stay-groups',
+          type: 'circle',
+          source: 'check-ins',
+          filter: ['has', 'point_count'],
+          paint: {
+            'circle-color': ring,
+            'circle-radius': ['step', ['get', 'point_count'], 13, 10, 17, 100, 22],
+            'circle-stroke-color': paper,
+            'circle-stroke-width': 2
+          }
+        });
+        m.addLayer({
+          id: 'stay-group-counts',
+          type: 'symbol',
+          source: 'check-ins',
+          filter: ['has', 'point_count'],
+          layout: {
+            'text-field': ['get', 'point_count_abbreviated'],
+            'text-font': ['Amazon Ember Bold,Noto Sans Bold'],
+            'text-size': 12,
+            'text-allow-overlap': true
+          },
+          paint: { 'text-color': paper }
+        });
+        m.addLayer({
+          id: 'stays',
+          type: 'circle',
+          source: 'check-ins',
+          filter: ['!', ['has', 'point_count']],
+          paint: {
+            'circle-color': paper,
+            'circle-radius': 6,
+            'circle-stroke-color': ring,
+            'circle-stroke-width': 3
+          }
+        });
         m.addSource('notes', {
           type: 'geojson',
           cluster: true,
           clusterRadius: 36,
           clusterMaxZoom: 16,
-          data: points(now.pins)
+          data: pinPoints(now.pins)
         });
         m.addLayer({
           id: 'groups',
@@ -452,30 +653,36 @@ function Basemap({
             'circle-stroke-width': 2
           }
         });
-        // A finger is wider than a pin: a tap within 22px of one counts, a
-        // group first, and every pin under it comes, not just the top one.
-        // A group lists every note in it (Jamie, 2026-10-24: "it should
-        // work for groups of notes too"); + and − or a double tap zoom.
+        // A finger is wider than a pin: a tap within 22px of one counts, and
+        // everything under it comes, not just the top one. A group lists every
+        // note or check-in in it (Jamie, 2026-10-24: "it should work for groups
+        // of notes too"), both kinds when both are there; + and − or a double
+        // tap zoom.
+        const LAYERS = ['groups', 'pins', 'stay-groups', 'stays'];
         m.on('click', async (e) => {
           const { x, y } = e.point,
-            near = (layers: string[]) =>
-              m.queryRenderedFeatures(
-                [
-                  [x - 22, y - 22],
-                  [x + 22, y + 22]
-                ],
-                { layers }
-              ),
-            group = near(['groups'])[0];
-          if (!group) {
-            const here = near(['pins']);
-            if (here.length) now.pick(pinsOf(here));
-            return;
-          }
-          const source = m.getSource('notes') as GeoJSONSource;
-          now.pick(pinsOf(await source.getClusterLeaves(Number(group.properties?.cluster_id), Infinity, 0)));
+            under = m.queryRenderedFeatures(
+              [
+                [x - 22, y - 22],
+                [x + 22, y + 22]
+              ],
+              { layers: LAYERS }
+            );
+          if (!under.length) return;
+          const leaves = await Promise.all(
+            under.map((f) =>
+              f.properties?.cluster_id == null
+                ? [f]
+                : (m.getSource(f.source) as GeoJSONSource).getClusterLeaves(
+                    Number(f.properties.cluster_id),
+                    Infinity,
+                    0
+                  )
+            )
+          );
+          now.pick(marksOf(leaves.flat()));
         });
-        for (const layer of ['pins', 'groups']) {
+        for (const layer of LAYERS) {
           m.on('mouseenter', layer, () => (m.getCanvas().style.cursor = 'pointer'));
           m.on('mouseleave', layer, () => (m.getCanvas().style.cursor = ''));
         }
@@ -493,19 +700,30 @@ function Basemap({
   // The pins the filters keep, drawn in place.
   useEffect(() => {
     const m = live.current.map;
-    (m?.getSource('notes') as GeoJSONSource | undefined)?.setData(points(pins));
+    (m?.getSource('notes') as GeoJSONSource | undefined)?.setData(pinPoints(pins));
   }, [pins]);
+  useEffect(() => {
+    const m = live.current.map;
+    (m?.getSource('check-ins') as GeoJSONSource | undefined)?.setData(stayPoints(stays));
+  }, [stays]);
   // Then the map moves to them, or to the note a link asked for.
   useEffect(() => {
     moved(live.current);
   }, [view, link]);
   if (broken) return <p className="hint spaced">This browser can't draw the map.</p>;
-  return <div className="map" ref={box} role="region" aria-label="Map of your notes" />;
+  return <div className="map" ref={box} role="region" aria-label="Map of your notes and check-ins" />;
 }
+
+const spotsOf = (now: { pins: readonly Spot[]; stays?: readonly Spot[] }): Spot[] => [
+  ...now.pins,
+  ...(now.stays ?? [])
+];
+const linkedSpots = (marks: Marks | null): Spot[] | null => marks && [...marks.pins, ...marks.stays];
 
 export interface Live {
   pins: Pin[];
-  linked: Pin[] | null;
+  stays?: Stay[];
+  linked: Marks | null;
   at: [number, number] | null;
   link: string;
   view: string | null;
@@ -521,8 +739,8 @@ export function moved(now: Live) {
   const { map: m, lib } = now;
   if (!m || !lib) return;
   let to: Frame | null;
-  if (now.link && now.link !== now.centred) to = frame(lib, now.pins, now.linked, now.at);
-  else if (now.view !== null && (now.view !== now.framed || now.link !== now.centred)) to = frame(lib, now.pins);
+  if (now.link && now.link !== now.centred) to = frame(lib, spotsOf(now), linkedSpots(now.linked), now.at);
+  else if (now.view !== null && (now.view !== now.framed || now.link !== now.centred)) to = frame(lib, spotsOf(now));
   else return;
   if (to && 'center' in to) m.easeTo(to);
   else if (to) m.fitBounds(to.bounds, { padding: to.padding, maxZoom: to.maxZoom });

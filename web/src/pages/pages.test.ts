@@ -1,9 +1,9 @@
 // The timeline's quiet runs, the pages' polling, the Map's filters and the book's giving line.
 import { describe, expect, it, vi } from 'vitest';
-import type { Day, Pin } from '../lib/types.ts';
+import type { Day, Pin, Stay } from '../lib/types.ts';
 import { POLL, pollWhileWriting } from '../lib/queries.ts';
 import { groupQuiet } from './Timeline.tsx';
-import { moved, sift, type Live } from './Map.tsx';
+import { mapLede, moved, pickedHead, sift, siftStays, type Live } from './Map.tsx';
 import { givingTo } from './Book.tsx';
 
 const day = (date: string, more: Partial<Day> = {}): Day => ({ date, version: '1.2.3', notes: [], ...more });
@@ -189,7 +189,7 @@ describe('moved', () => {
   });
 
   it('closes in on a link it has not shown, then fits every pin once the link is gone', () => {
-    const { now, map } = live({ linked: [pins[0]!], link: '2026-10-06#a#' });
+    const { now, map } = live({ linked: { pins: [pins[0]!], stays: [] }, link: '2026-10-06#a#' });
     moved(now);
     expect(map.easeTo).toHaveBeenCalledWith({ center: [2.35, 48.85], zoom: 15 });
     Object.assign(now, { linked: null, link: '' });
@@ -218,5 +218,40 @@ describe('givingTo', () => {
     expect(givingTo(2026)).toBe('Signal this year');
     expect(givingTo(2025)).toBe('the Electronic Frontier Foundation this year');
     expect(givingTo(2099)).toBe('a nonprofit, a different one each year');
+  });
+});
+
+describe('check-ins on the map', () => {
+  const stay = (id: string, release: string, label = 'Home') => ({ id, release, label }) as unknown as Stay;
+  const stays = [stay('a', '5.4'), stay('b', '5.3')];
+  const keep = (more: Partial<Parameters<typeof siftStays>[1]>) =>
+    siftStays(stays, { show: '', tag: '', release: '', asked: false, ...more }).map((s) => s.id);
+  it('shows them unless the menu says notes, and a release narrows them', () => {
+    expect(keep({})).toEqual(['a', 'b']);
+    expect(keep({ show: 'check-ins' })).toEqual(['a', 'b']);
+    expect(keep({ show: 'notes' })).toEqual([]);
+    expect(keep({ release: '5.3' })).toEqual(['b']);
+  });
+  it('leaves them off for a tag or words, which only notes have', () => {
+    expect(keep({ tag: 'lake' })).toEqual([]);
+    expect(keep({ asked: true })).toEqual([]);
+  });
+  it('says what is on the map, of how many', () => {
+    expect(mapLede(0, undefined, 0, 0, false)).toBe(
+      'No note has a place of its own yet. Add one with Where, or Here on a note.'
+    );
+    expect(mapLede(3, undefined, 0, 0, false)).toBe('3 notes with a place of their own.');
+    expect(mapLede(1, undefined, 2, 2, false)).toBe('1 note with a place of its own, and 2 check-ins.');
+    expect(mapLede(0, undefined, 2, 2, false)).toBe('2 check-ins.');
+    expect(mapLede(3, 1, 2, 0, true)).toBe('1 of 3 notes with a place of their own, and 0 of 2 check-ins.');
+    expect(mapLede(3, 0, 2, 0, true)).toBe('None of your 3 notes with a place of their own or your 2 check-ins match.');
+    expect(mapLede(1, 0, 0, 0, true)).toBe('None of your 1 note with a place of its own matches.');
+  });
+  it('heads a list by what is in it', () => {
+    const pin = { place: 'Paris' } as unknown as Pin;
+    expect(pickedHead({ pins: [pin, pin], stays: [] })).toBe('2 notes in Paris');
+    expect(pickedHead({ pins: [], stays: [stay('a', '5.4')] })).toBe('1 check-in at Home');
+    expect(pickedHead({ pins: [pin], stays: [stay('a', '5.4')] })).toBe('1 note and 1 check-in in 2 places');
+    expect(pickedHead({ pins: [], stays: [stay('a', '5.4', 'Unnamed stop')] })).toBe('1 check-in at an unnamed stop');
   });
 });

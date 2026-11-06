@@ -7,6 +7,8 @@ description: What Release Notes keeps, who can see it, and how to take it with y
 
 Your email address, your birthday, your city and the time your email comes. Every note, photo, voice memo and PDF you send or add, with the original emails they came in. Release Notes keeps them on Amazon Web Services, and shows your files only to you, through links that expire.
 
+If an app sends [check-ins](/guide/check-ins/), the places you stop are kept too: each spot, when you got there and left, and any name you give it. That's a history of where you've been, kept until you delete it. Delete any one, or all of them, on the web. Changelog, the iPhone app, doesn't send them yet.
+
 ## Who can see it
 
 You can. So can Jamie Thingelstad, who runs Release Notes: as its operator, he can read what's stored. Nothing is sold or shared, and there are no ads.
@@ -17,7 +19,7 @@ Only what each job needs:
 
 - **Email** is sent and received through Amazon.
 - **Your city** goes to Open-Meteo for the weather. Never your notes.
-- **Places:** "Here" and "Add where I am" send the spot where you saved a note to Amazon Location, to name the neighbourhood and nearby places. A photo that carries its own location sends that spot the same way. Only the spot, never the note.
+- **Places:** "Here" and "Add where I am" send the spot where you saved a note to Amazon Location, to name the neighbourhood and nearby places. A photo that carries its own location sends that spot the same way, and so does a check-in, once as it arrives and again if you ask for the businesses nearby. Only the spot, never the note.
 - **Signing in** checks for bots with Cloudflare Turnstile.
 - **Signing up** checks your address against the Weekly Thing's list, and looks again now and then.
 
@@ -27,7 +29,7 @@ Nothing you write goes to a model unless you turn it on. "Write out what I say" 
 
 ## Agents, only with your consent
 
-You can connect an agent such as Claude or ChatGPT to your notes. It asks for each kind of access, you approve it, and you can disconnect it in Settings at any time. Its reads show in your Activity, one line for each connection each day.
+You can connect an agent such as Claude or ChatGPT to your notes. It asks for each kind of access, you approve it, and you can disconnect it in Settings at any time. Its reads show in your Activity, one line for each connection each day. An agent that can read your notes can read your check-ins too, spots and all, and so can an app whose [token](/guide/tokens/) may read the activity log.
 
 ## The iPhone app
 

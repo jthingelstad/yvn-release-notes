@@ -615,6 +615,12 @@ Where things are (each module's design comment has its contract):
   goes with it. The events left in the log (`checkin.named`, `checkin.deleted`,
   `checkin.place`) hold ids, days and counts.
 - Only the owner names a place. Nearby businesses are offered, never picked.
+- **The web reads and changes them through the owner's session**
+  (`server/app/check-in-routes.ts`), with the session and account proved in each
+  transaction like any web write, and any id in a stay names the stay. Its Map
+  marks them apart from notes and draws the real circle only on a check-in's own
+  page, whose id stays in the fragment. Nearby names are a paid lookup, asked for
+  only when wanted.
 - **The client wants all its stops from `GET /v1/check-ins`**, not `after` on
   the log, since a phone offline for a day files behind a cursor.
 

@@ -112,6 +112,7 @@ test('site/ has the pages phases 1, 3 and 4 promised, and the API’s, and site/
       '/guide/pause-and-stop/',
       '/guide/delete/',
       '/guide/tokens/',
+      '/guide/check-ins/',
       '/guide/api/',
       '/guide/api/basics/',
       '/guide/api/notes/',

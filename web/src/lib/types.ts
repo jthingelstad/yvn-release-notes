@@ -344,9 +344,25 @@ export interface EventActivity extends ActivityHead {
   notes?: number;
   // egg.found: which easter egg (packages/domain/eggs.ts)
   egg?: string;
+  // checkin: a check-in's row, joined when read (docs/CHECK-INS.md), and
+  // checkin.named, which names it too
+  checkin?: string;
+  label?: string;
+  arrived?: string | null;
+  left?: string | null;
+  source?: string;
+  time_zone?: string;
+  merged?: number;
+  // checkin.deleted: how many went, and whether that was all of them
+  count?: number;
+  all?: boolean;
+  // checkin.place: what became of a remembered place
+  change?: 'added' | 'spot' | 'renamed' | 'forgotten';
 }
 export type ActivityEntry = MailActivity | ReadsActivity | EventActivity;
 export interface Activity {
+  /** On a first page: whether there are any check-ins to filter by. */
+  check_ins?: boolean;
   email: string;
   tz: string;
   today: string;
@@ -381,6 +397,38 @@ export interface Pin {
 export interface MapNotes {
   pins: Pin[];
   notes: number;
+}
+// GET /api/check-ins (docs/CHECK-INS.md): stays newest first, spot and all.
+export interface Stay {
+  id: string;
+  ids: string[];
+  at: string;
+  arrived: string | null;
+  left: string | null;
+  lat: number;
+  lon: number;
+  accuracy_m: number | null;
+  /** The zone it reads in: the phone's there, or else the account's. */
+  time_zone: string;
+  day: string;
+  source: string;
+  label: string;
+  named_by: 'own' | 'place' | 'district' | 'none';
+  place: string | null;
+  name: string | null;
+  district: string | null;
+  via: string | null;
+  token: string | null;
+  client: string | null;
+  revision: number;
+  release: string;
+  version: string;
+}
+export interface NamedPlace {
+  id: string;
+  name: string;
+  spots: { lat: number; lon: number }[];
+  revision: number;
 }
 // POST /api/map/search: the pins with every word, by day and id.
 export interface MapSearch {

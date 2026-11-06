@@ -12,7 +12,7 @@
     "lastmod": "2026-10-30"
   },
   "/guide/": {
-    "said": "5e65d73b86f5659e9279f63fff563796641df164dd54580f196b22ffe6dad04c",
+    "said": "d7fd07520a9f56385b54c61ebac545d1597054451480a996cb6a66d9964e9962",
     "lastmod": "2026-11-06"
   },
   "/guide/start/": {
@@ -36,8 +36,8 @@
     "lastmod": "2026-11-05"
   },
   "/guide/places-and-map/": {
-    "said": "260b577ea8270a08d7fe70ec602c684640e0cdf1aa8daa76d352d606d605024d",
-    "lastmod": "2026-10-29"
+    "said": "cc18dde97b1abe925934f52e2eebec9bb72ff04ed52d4e07ba144f12943456b6",
+    "lastmod": "2026-11-06"
   },
   "/guide/tags-and-search/": {
     "said": "17aaede5f0feb0c7f5bc1af32cde628aa1d71008203debd410d13d2076f51218",
@@ -72,8 +72,12 @@
     "lastmod": "2026-10-29"
   },
   "/guide/tokens/": {
-    "said": "13186f8ea74aed074043a6ce45ac76f847fe76f054405cd6aac7e30ab42cb18c",
-    "lastmod": "2026-11-05"
+    "said": "171a85626e5e0f64166e058418eddfa65490ccad7ce8c0d55f38929fd40acaff",
+    "lastmod": "2026-11-06"
+  },
+  "/guide/check-ins/": {
+    "said": "55bb604cc25d0e2424fbdbbad8ad2a728e9ec4d1760a54f45c03fecbef0f4f5b",
+    "lastmod": "2026-11-06"
   },
   "/guide/api/": {
     "said": "61bbe0ef9f298c05bd8c3e22ee605623152803b3ae78b46ac47d861a7acabd23",
@@ -124,11 +128,11 @@
     "lastmod": "2026-11-01"
   },
   "/privacy/": {
-    "said": "69d9501c11c246b03631cf3897ef47eac721e856cd42ea58b0c219de629ea2ba",
-    "lastmod": "2026-11-05"
+    "said": "429eb8bcb723fd010e9d96f504d375f623c864fca58a711b3eff0ddcd5620b0d",
+    "lastmod": "2026-11-06"
   },
   "/changelog/": {
-    "said": "8e1a7ca07d32a0a75ba039374cb58a8ee82aa74fb61998db620a9b9eee69554a",
+    "said": "9cc2e0352408ef1c6a8876508c78677cf91d8562eb235a3c7fcdcc7c9b7001bc",
     "lastmod": "2026-11-06"
   }
 }

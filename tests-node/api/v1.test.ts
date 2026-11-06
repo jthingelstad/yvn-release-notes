@@ -260,7 +260,10 @@ test('routes, methods and scopes', async () => {
   for (const route of V1_ROUTES.filter((r) => r.scope)) {
     const path = route.template
         .replace('{date}', TODAY)
-        .replace('{id}', 't-x')
+        .replace(
+          '{id}',
+          route.name.startsWith('check-ins.places') ? 'p-a' : route.name.startsWith('check-ins') ? 'c1-a' : 't-x'
+        )
         .replace('{n}', '1')
         .replace('{v}', '1.0'),
       r = await call(app, route.method, path, {

@@ -30,7 +30,9 @@ import { remindersFor, UPCOMING_MAX, upcomingViews } from '../../packages/domain
 import { collectedOn, evaluateBadges } from '../../packages/domain/badges.ts';
 import { computeVersion, lifeCount, releaseAge, sameDayBefore } from '../../packages/domain/version.ts';
 import { searchTerms, searchedText } from '../../packages/domain/search.ts';
+import { namedPlaceView, stayView } from '../../packages/domain/check-ins.ts';
 import { badgeFacts } from '../../packages/backend/badges.ts';
+import { stayPage, type CheckInReads } from '../../packages/backend/check-ins.ts';
 import { segments, type Link } from '../../packages/backend/links.ts';
 import { pins } from '../../packages/backend/maps.ts';
 import { others } from '../../packages/backend/media.ts';
@@ -65,13 +67,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.17.2';
+export const API_VERSION = '1.18.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.18.0',
+    date: '2026-11-06',
+    summary:
+      'Check-ins, the places you stop. POST /v1/check-ins sends a stop as a phone is told of it, and a later report of the same stay fills it in. GET /v1/check-ins lists them newest first with their spots and the names they show, and back-to-back stops at one place read as one. PATCH and DELETE /v1/check-ins/{id} name or delete a whole stay, and DELETE /v1/check-ins?confirm=all deletes them all. GET, POST, PATCH and DELETE /v1/check-ins/places keep the names you remember. GET /v1/activity has a new kind, `checkin`, whose `label` is the one place a row holds your own words, and never a spot. It takes no new scope.'
+  },
   {
     version: '1.17.2',
     date: '2026-11-05',
@@ -228,7 +236,12 @@ const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
   NOTE_PLACE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})\/place$/,
   DAY = /^\/v1\/days\/([^/]{1,40})$/,
   DAY_PLACE = /^\/v1\/days\/([^/]{1,40})\/place$/,
-  RELEASE = /^\/v1\/releases\/([^/]{1,12})$/;
+  RELEASE = /^\/v1\/releases\/([^/]{1,12})$/,
+  CHECK_INS = /^\/v1\/check-ins$/,
+  CHECK_IN = /^\/v1\/check-ins\/(c-?\d{1,16}-[0-9a-f]{1,40})$/,
+  CHECK_IN_PLACES = /^\/v1\/check-ins\/places$/,
+  CHECK_IN_PLACE = /^\/v1\/check-ins\/places\/(p-[0-9a-f]{1,40})$/,
+  CHECK_IN_CURSOR = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z#c-?\d{1,16}-[0-9a-f]{1,40}$/;
 /** Reads that reach the whole archive (1.15.0). */
 const ARCHIVE = { scope: 'notes:read', also: ['notes:all'] } as const;
 
@@ -357,6 +370,39 @@ export const V1_ROUTES: readonly {
   { method: 'GET', path: /^\/v1\/map\/pins$/, template: '/v1/map/pins', name: 'map.pins', ...ARCHIVE },
   { method: 'GET', path: /^\/v1\/badges$/, template: '/v1/badges', name: 'badges', ...ARCHIVE },
   { method: 'GET', path: /^\/v1\/mail-log$/, template: '/v1/mail-log', name: 'mail-log', ...ARCHIVE },
+  { method: 'GET', path: CHECK_INS, template: '/v1/check-ins', name: 'check-ins', scope: 'activity' },
+  { method: 'POST', path: CHECK_INS, template: '/v1/check-ins', name: 'check-ins.add', scope: 'notes:write' },
+  { method: 'DELETE', path: CHECK_INS, template: '/v1/check-ins', name: 'check-ins.delete-all', scope: 'notes:all' },
+  { method: 'PATCH', path: CHECK_IN, template: '/v1/check-ins/{id}', name: 'check-ins.name', scope: 'notes:write' },
+  { method: 'DELETE', path: CHECK_IN, template: '/v1/check-ins/{id}', name: 'check-ins.delete', scope: 'notes:write' },
+  {
+    method: 'GET',
+    path: CHECK_IN_PLACES,
+    template: '/v1/check-ins/places',
+    name: 'check-ins.places',
+    scope: 'activity'
+  },
+  {
+    method: 'POST',
+    path: CHECK_IN_PLACES,
+    template: '/v1/check-ins/places',
+    name: 'check-ins.places.add',
+    scope: 'notes:all'
+  },
+  {
+    method: 'PATCH',
+    path: CHECK_IN_PLACE,
+    template: '/v1/check-ins/places/{id}',
+    name: 'check-ins.places.change',
+    scope: 'notes:all'
+  },
+  {
+    method: 'DELETE',
+    path: CHECK_IN_PLACE,
+    template: '/v1/check-ins/places/{id}',
+    name: 'check-ins.places.delete',
+    scope: 'notes:all'
+  },
   { method: 'DELETE', path: /^\/v1\/token$/, template: '/v1/token', name: 'token.revoke', scope: null }
 ];
 
@@ -397,7 +443,7 @@ const MESSAGES: Record<string, string> = {
   unavailable: 'Try again shortly with the same Idempotency-Key.'
 };
 
-type V1Store = ReaderStore & TagRowStore;
+type V1Store = ReaderStore & TagRowStore & CheckInReads;
 type Headers = Record<string, string>;
 
 /** Text when the Accept header prefers text/plain to JSON. Each takes the q
@@ -813,6 +859,8 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
           });
         args.revision = Number(revision);
       }
+      // Every check-in goes only when the address says so.
+      if (route.name === 'check-ins.delete-all') args.confirm = new URL(request.url).searchParams.get('confirm');
       // A dry run reads and writes nothing, so it counts as a read.
       const dry = route.name === 'upcoming.batch' && args.dry_run === true;
       if (dry && !(await readQuota(context, uid, tid)))
@@ -873,7 +921,15 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
           placeLine([place.district, place.name, place.region, place.country]) +
           '.' +
           (nearby.length ? ` Nearby: ${nearby.map((v) => String(v.name)).join(', ')}.` : '');
-      } else if (asText)
+      } else if (asText && route.name.startsWith('check-ins'))
+        line = object(body?.check_in)
+          ? `Checked in at ${String(body.check_in.label)}.`
+          : object(body?.place)
+            ? String(body.place.name)
+            : body && 'deleted' in body
+              ? `Deleted ${String(body.deleted)}.`
+              : '';
+      else if (asText)
         line =
           route.name === 'tags.pinned'
             ? ((body?.pinned as string[] | undefined) ?? []).map((t) => '#' + t).join(' ') || 'No pinned tags.'
@@ -1312,6 +1368,43 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
           status: 200,
           body: { places: found },
           line: found.map((c) => placeLine([c.name, c.region, c.country])).join('\n') || 'No city by that name.'
+        };
+      }
+      if (route.name === 'check-ins') {
+        // Stays newest first, by when they began. A day range is the account's
+        // days, as for the activity log.
+        const limit = limitFrom(q, 50, 100);
+        if (isRefusal(limit)) return limit;
+        const asked = q.get('before');
+        if (asked !== null && !CHECK_IN_CURSOR.test(asked))
+          return {
+            code: 'invalid_request',
+            message: 'before is the next from an earlier answer.',
+            extra: { field: 'before' }
+          };
+        const days = dayRange(q);
+        if (days && 'code' in days) return days;
+        const start = (day: string) => new Date(Date.parse(localMoment(day, '00:00', tz))).toISOString(),
+          ceiling = days ? start(addDays(days.last, 1)) : undefined,
+          before = asked ?? ceiling,
+          { stays, next, places } = await stayPage(store, uid, {
+            ...(before === undefined ? {} : { before: ceiling && before > ceiling ? ceiling : before }),
+            ...(days ? { floor: start(days.first) } : {}),
+            limit
+          }),
+          items = stays.map((members) => stayView(members, places));
+        return {
+          status: 200,
+          body: { items, next },
+          line: items.map((i) => `${String(i.at)} ${String(i.label)}`).join('\n') || 'No check-ins.'
+        };
+      }
+      if (route.name === 'check-ins.places') {
+        const places = await store.namedPlaces(uid);
+        return {
+          status: 200,
+          body: { places: places.map(namedPlaceView) },
+          line: places.map((p) => p.name).join('\n') || 'No remembered places.'
         };
       }
       if (route.name === 'upcoming.reminders') {

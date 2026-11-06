@@ -58,6 +58,15 @@ It answers with one line: `Filed in 5.2.113.`
 - `POST /v1/upcoming/batch`: add, change and remove dates together, up to 50 dates a request, as `{"add": […], "change": […], "remove": […]}`. It saves all or nothing: if one date isn't right, none is saved, and `field` names the one, like `add[1]`. With `"dry_run": true` it checks everything and finds each trip's city, and saves nothing. The answer lists what was `added`, in the order you sent it, then what was `changed` and `removed`.
 - `GET /v1/upcoming/reminders`: the reminders each morning's email carries, day by day, for the next 14 days, or up to 31 days ahead with `days`. Each day has `send_at`, the moment that morning's email is due, and each reminder the date's `id` as `upcoming`, the day it falls on as `date`, and its `when` and `line`, as the email says them. A date with its email reminders turned off isn't there; a paused email doesn't change the list.
 - `DELETE /v1/upcoming/{id}`: remove one date, with the revision you read as `?revision=`.
+- `POST /v1/check-ins`: say you stopped somewhere, as a phone reports it. See [Check-ins](#check-ins).
+- `GET /v1/check-ins`: where you stopped, newest first. `from`, `to`, `limit` and `before` choose a stretch, and `next` is the `before` for the next page.
+- `PATCH /v1/check-ins/{id}`: give it a name of its own, with `{"name": "…", "revision": 1}` and the revision you read, or `"name": null` to take it away.
+- `DELETE /v1/check-ins/{id}`: delete it, and every stop read as one with it.
+- `DELETE /v1/check-ins`: delete every check-in, with `?confirm=all`. It answers how many went, and your remembered places stay.
+- `GET /v1/check-ins/places`: the places you've told it to remember.
+- `POST /v1/check-ins/places`: remember a place, with `{"name": "…", "lat": 45.5, "lon": -93.2}`. A name you already use gets this spot too.
+- `PATCH /v1/check-ins/places/{id}`: rename it, with `{"name": "…"}`.
+- `DELETE /v1/check-ins/places/{id}`: forget it, all its spots with it. Your check-ins there go back to the names they had.
 - `GET /v1/activity`: your activity log, newest first, without any words: no note text, no email's subject or sender, no setting's value. A row a token wrote names it by `token` and, from version 1.4.0 of the API, by `token_id`, the `id` that `GET /v1/me` gives; older rows have no `token_id`. `after` gives only rows newer than one you've seen, and `before`, with the `next` from the answer, the page older. `kinds` keeps some kinds, like `note,mail`, `from` and `to` keep some days, as they do for notes, and `limit` sets how many rows a page holds.
 - `DELETE /v1/token`: this token revokes itself. Any token may ask.
 
@@ -117,7 +126,7 @@ On a bad connection you can't always tell whether a note arrived. Send an `Idemp
 
 ## Limits
 
-Each day, from midnight UTC, an account may add 100 notes, make 200 other changes (appends, edits, deletes, files added to a note and pinned tags), save Upcoming 50 times and name 100 spots with Here, across all its tokens, and each token may read 2,000 times. An Upcoming dry run and a city search count as reads. Uploads count with the web's: 200 files and 2 GB a day. Past a limit the answer is `rate_limited`, with `Retry-After`. Every write that counts says where it stands in `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`; a repeat answered from its `Idempotency-Key` counts nothing, and says nothing.
+Each day, from midnight UTC, an account may add 100 notes, make 200 other changes (appends, edits, deletes, files added to a note and pinned tags), save Upcoming 50 times, name 100 spots with Here and report 1,000 check-ins, across all its tokens, and each token may read 2,000 times. An Upcoming dry run and a city search count as reads. Reports look up 100 check-ins a day; a check-in past that is still saved, with no neighbourhood. Naming and deleting one count as other changes. Uploads count with the web's: 200 files and 2 GB a day. Past a limit the answer is `rate_limited`, with `Retry-After`. Every write that counts says where it stands in `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`; a repeat answered from its `Idempotency-Key` counts nothing, and says nothing.
 
 ## Photos, recordings and PDFs
 
@@ -163,6 +172,29 @@ Changing a saved note's place, with `PUT /v1/notes/{date}/{id}/place`, takes eit
 A token that may do that can also say where a whole day was: `PUT /v1/days/{date}/place` with `{"place": …}` and a city, and `DELETE /v1/days/{date}/place` to take it away. It's what every note that day with no place of its own shows. A day takes a city, not a device's spot.
 
 An earlier day's weather follows its place, as on the web. A new note with a place on an earlier day brings it along too. If the weather can't be had just then, your write still counts.
+
+## Check-ins
+
+A check-in says you were somewhere, from about one time to about another. It isn't a note and never turns into one, and it touches no streak, count or search. There are none unless an app you use sends them.
+
+Send each stop as the phone reports it, with `POST /v1/check-ins` and an `Idempotency-Key`. Send `source`, which is `visit` for a stop the phone noticed or `tap` for one you asked for, with `lat` and `lon`, and if you have them `accuracy_m`, `time_zone`, `arrived` and `left`. A `visit` needs one of those two times. A `tap` has no `left`: send the moment it was tapped as `arrived`, so one that waited in a queue keeps its time, or nothing, for now. Older times are fine, since a phone can be offline for days. Over a week ahead is refused.
+
+A later report with the same `source` and arrival, to the second, is the same stay. It fills in what was missing, so an arrival and then a departure, or the same report twice, land in one check-in and your app keeps no ids. A `tap` is never filled in.
+
+Each answer has its `check_in`: its `id`, `at`, `day`, `arrived` and `left` (either can be null), `lat`, `lon`, `accuracy_m`, `time_zone`, `source`, `revision`, and the name it shows as `label`. A name is worked out when it's read, the first of these that fits:
+
+1. Its own `name`, given once.
+2. A remembered place, the nearest within 100 m of its spot, whose id is `place`.
+3. Its `district`, the neighbourhood and city.
+4. "Unnamed stop".
+
+`named_by` says which: `own`, `place`, `district` or `none`. Names are up to 100 characters. An account remembers up to 200 names, each with up to 50 spots, and forgetting one or renaming it changes every stop there at once, past ones too.
+
+Stops next to each other read as one stay, with every stop's id in `ids`, when one begins within 30 minutes of the last one ending and they're the same place: within 100 m or at the same remembered place, without different names of their own. A short gap alone doesn't do it, since two shops can be a minute apart. Any id in a stay names the whole stay, so naming or deleting one acts on them all.
+
+Reading needs a token that may read the activity log. Adding, naming and deleting need one that may add notes, and reach only the check-ins that token sent, or any of them if it may also read all your notes. Changing remembered places and deleting every check-in take that too.
+
+The log has a row for each stay, of the kind `checkin`, with `checkin` (its id), `label`, `arrived`, `left`, `source`, `day`, `time_zone` and `merged`, how many stops it holds. It's the one row that shows words, since a stop with no name says nothing, and no row holds its spot. Only `GET /v1/check-ins` gives that. A phone that was offline files stops behind a cursor you already hold, so an app that wants every one reads `GET /v1/check-ins`, not `after`.
 
 ## Upcoming dates
 

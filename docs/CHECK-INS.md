@@ -1,9 +1,12 @@
 # Check-ins
 
 Designed 2026-11-06, with Jamie's calls from 2026-11-05 and 2026-11-06 at the
-end, under "Jamie's calls". Nothing here is built except the phone-only test
-that led to it (Changelog's "Record visits", build 84). Building needs Jamie's
-go, phase by phase.
+end, under "Jamie's calls". **Phase 1, the server and API 1.18.0, is built**
+(Jamie, 2026-11-06: "Approved: build Check-ins phase 1, the server and API
+1.18.0, from PR #317"), with what building it decided under "Built in phase 1".
+No client sends check-ins yet except the phone-only test that led to this
+(Changelog's "Record visits", build 84), and that keeps them on the phone. Every
+other phase needs Jamie's go.
 
 Jamie, 2026-11-05: Changelog should notice "when I am at a place (not
 traveling)" and add it to Activity, so "I can see where I've been on a map" and
@@ -119,11 +122,13 @@ Stored check-ins stay as iOS reported them. Lists merge two neighbouring ones
 **when read**, so the rule can change without touching data, when:
 
 - nothing else lies between them,
-- they begin within 30 minutes of the last one ending, and
-- they show the same remembered place, or are within 100 m of each other and
-  neither has its own name.
+- they begin within 30 minutes of the last one ending,
+- any names of their own are the same, and
+- they are within 100 m of each other, or neither has its own name and they show
+  the same remembered place.
 
-Deleting a merged row deletes every check-in in it.
+Deleting a merged row deletes every check-in in it, and a name given to one goes
+on every check-in in it.
 
 ## The API (1.18.0)
 
@@ -220,6 +225,32 @@ This replaces the visits test, and takes its rule out of the app's `AGENTS.md`.
 - **Signing out** stops recording and leaves the check-ins on the account.
 - **Android and others:** the API has no iOS in it. Quinn's app can send
   `visit` from any source that reports stays.
+
+## Built in phase 1
+
+What building it decided, past the design above. None of it changes what an owner
+was promised, and all of it can change with no data to rewrite except the first.
+
+- **A name on a merged stay goes on every check-in in it.** Otherwise naming one
+  would split the row it was given on. So the merge rule also takes the same own
+  name within 100 m.
+- **`PATCH` and `DELETE /v1/check-ins/{id}` act on the whole stay,** and any id in
+  it names the stay. The stay's `revision` is the sum of its check-ins', so a
+  stop joining it moves the revision a client read.
+- **Reports have a hard ceiling,** 1,000 a UTC day (`V1_LIMITS.checkin`), past the
+  100 lookups (`V1_LIMITS.lookups`), so a runaway client can't fill the table.
+- **A name holds up to 50 spots** (`NAMED_PLACE_SPOTS_MAX`), and renaming a place
+  to a name another uses is refused, since the second would never be found.
+- **Deleting all check-ins leaves the remembered places,** which are the owner's
+  words and work on the next stop.
+- **The log has two more kinds,** `checkin.named` and `checkin.place`, for what
+  changed. Neither holds a name or a spot. `checkin` rows also carry `day`,
+  `time_zone` and `merged`.
+- **A page of the log reads past the rows a stay folds away,** so `limit` means
+  rows shown, and a stay goes by when it began.
+- **Until phase 2 the web's Activity gives these rows no wording of their own.**
+  Only a client sending check-ins makes any, and none does yet. `site/privacy.md`
+  waits for phase 2, as listed below.
 
 ## What has to be rewritten
 

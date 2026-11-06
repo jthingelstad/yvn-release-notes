@@ -185,7 +185,7 @@ There is no new DNS record, certificate or function.
 | `media:write` | files on this token's notes; only beside `notes:write`                                          | MCP             |
 | `notes:all`   | every note: reading, editing, appending, deleting, files; only beside `notes:write` (1.10.0)    | new, `/v1` only |
 | `upcoming`    | Upcoming dates and their reminders                                                              | MCP             |
-| `activity`    | the activity log, trimmed of words                                                              | new, `/v1` only |
+| `activity`    | the activity log, trimmed of words, and reading check-ins (1.18.0)                              | new, `/v1` only |
 
 - **Every token can** read `/v1/me` and the owner's tags, and can revoke
   itself.
@@ -504,6 +504,9 @@ reads it, but trimmed of words:
   `outcome` and `reason`, but never `subject`, `text` or `sender`;
 - `settings.changed` keeps each change's `field`, never `from` or `to`;
 - Upcoming titles are joined only when the token also has `upcoming`;
+- a `checkin` row (1.18.0) carries the name its stop shows as `label`, the one
+  place the owner's own words come through, since a row with no name is no use.
+  It never carries the spot;
 - every other kind is already free of words (`packages/domain/activity.ts`).
 
 Token writes show `via: "token"`, with the token's name as `token`, and `client`.
@@ -949,6 +952,20 @@ stay. A place that came from the photo stays on the note too, and the owner
 can remove it. The stored `revision` doesn't move, as for the web's added
 files, but `updated_at` does, so the `revision` a client reads changes. MCP
 doesn't get this.
+
+### 1.18.0: check-ins
+
+`docs/CHECK-INS.md` has the design and the calls behind it. Nine requests under
+`/v1/check-ins`: add or fill in a stop, list them, name or delete a stay, delete
+all, and list, add, rename and forget remembered places. Reads take `activity`;
+adding, naming and deleting take `notes:write` for the token's own and
+`notes:all` beside it for any; remembered places and deleting all take
+`notes:all`.
+
+Reports count on their own, `V1_LIMITS.checkin` a UTC day, past which they are
+`rate_limited`, and `V1_LIMITS.lookups` of them are looked up with Amazon
+Location. Past that a report is saved with no `district`. Naming and deleting
+count as `change`.
 
 ### Jamie's calls
 

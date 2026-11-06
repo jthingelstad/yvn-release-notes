@@ -72,7 +72,24 @@ import {
   type UpcomingBatch,
   type UpcomingChange
 } from '../packages/backend/upcoming.ts';
-import { iso, localDay, validDay } from '../packages/domain/dates.ts';
+import { stayOf, type CheckInReads } from '../packages/backend/check-ins.ts';
+import {
+  CHECKIN_SOURCES,
+  checkInId,
+  checkInKey,
+  checkInKeyOf,
+  checkInName,
+  NAMED_PLACE_SPOTS_MAX,
+  NAMED_PLACES_MAX,
+  namedPlaceKey,
+  namedPlaceView,
+  sameName,
+  stayRevision,
+  stayView,
+  type CheckIn,
+  type NamedPlace
+} from '../packages/domain/check-ins.ts';
+import { iso, localDay, validDay, validTimezone } from '../packages/domain/dates.ts';
 import { MAX_NOTE, noteWords, type NoteRecord } from '../packages/domain/notes.ts';
 import { found } from '../packages/domain/tags.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
@@ -87,7 +104,14 @@ import type { CaptureContext } from './capture.ts';
 
 type Ops = NonNullable<TransactWriteCommandInput['TransactItems']>;
 
-export interface ApiStore extends TokenReads, TagRowStore {
+export interface ApiStore extends TokenReads, TagRowStore, CheckInReads {
+  checkInsAt(user: string, second: string): Promise<CheckIn[]>;
+  checkInWrites(
+    user: string,
+    changes: readonly { next?: OAuthRow; old?: OAuthRow }[],
+    proofs: Ops,
+    last: Ops
+  ): Promise<boolean>;
   note(uid: string, day: string, id: string, consistent?: boolean): Promise<OAuthRow | null>;
   tokenProof(token: OAuthRow, now: number, scope: string | readonly string[]): Ops;
   agentReceipts(receipt: OAuthRow, audit: OAuthRow, rate: OAuthRow, previous: OAuthRow | null, now: number): Ops;
@@ -167,6 +191,13 @@ export const API_WRITES: Record<string, readonly string[]> = {
   'tags.pinned': ['pinned'],
   'upcoming.batch': ['add', 'change', 'remove', 'dry_run'],
   'upcoming.delete': ['id', 'revision'],
+  'check-ins.add': ['arrived', 'left', 'lat', 'lon', 'accuracy_m', 'time_zone', 'source'],
+  'check-ins.name': ['id', 'name', 'revision'],
+  'check-ins.delete': ['id'],
+  'check-ins.delete-all': ['confirm'],
+  'check-ins.places.add': ['name', 'lat', 'lon'],
+  'check-ins.places.change': ['id', 'name'],
+  'check-ins.places.delete': ['id'],
   'token.revoke': []
 };
 
@@ -175,7 +206,7 @@ const scopeFor = (op: string) =>
     ? 'upcoming'
     : op === 'uploads.start' || op.startsWith('notes.media')
       ? 'media:write'
-      : op.startsWith('days.place')
+      : op.startsWith('days.place') || op.startsWith('check-ins.places.') || op === 'check-ins.delete-all'
         ? 'notes:all'
         : 'notes:write';
 
@@ -253,6 +284,8 @@ function shape(op: string, args: Arguments): void {
   }
   // The spot is checked whole, as the web's Here checks it.
   if (op === 'places.here') return;
+  // Each of these checks its own fields where it's made (checkInReport).
+  if (op.startsWith('check-ins.')) return;
   if (op === 'upcoming.delete') {
     if (typeof args.id !== 'string' || !args.id || codePointLength(args.id) > 80)
       throw new ApiRefusal('invalid_request', 'id is a string.', { field: 'id' });
@@ -328,6 +361,73 @@ function uploadRefusal(error: ApiError): ApiRefusal {
     { field: 'uploads' }
   );
 }
+
+/** How far ahead a phone's clock can be, for a stay's times. */
+const AHEAD_SECONDS = 7 * 86400;
+
+/** What a phone reported, checked: its times as the log keeps them. */
+interface CheckInReport {
+  arrived: string | null;
+  left: string | null;
+  at: string;
+  day: string;
+  source: string;
+  time_zone: string;
+  lat: number;
+  lon: number;
+  accuracy_m?: number;
+}
+function checkInReport(args: Arguments, now: number, birthday: string, tz: string): CheckInReport {
+  const spot = spotOf(args);
+  if (!spot)
+    throw new ApiRefusal('invalid_request', 'Send lat and lon in degrees, and accuracy_m in metres if you have it.', {
+      field: 'lat'
+    });
+  const source = args.source;
+  if (typeof source !== 'string' || !(CHECKIN_SOURCES as readonly string[]).includes(source))
+    throw new ApiRefusal('invalid_request', `source is ${CHECKIN_SOURCES.join(' or ')}.`, { field: 'source' });
+  const when = (field: 'arrived' | 'left'): string | null => {
+    const raw = args[field] ?? null;
+    if (raw === null) return null;
+    if (typeof raw !== 'string' || !realTime(raw) || !Number.isFinite(Date.parse(raw)))
+      throw new ApiRefusal('invalid_request', `${field} is an RFC 3339 time, or null.`, { field });
+    if (Date.parse(raw) / 1000 > now + AHEAD_SECONDS)
+      throw new ApiRefusal('invalid_request', `${field} is more than a week ahead.`, { field });
+    // A day and a half before the birthday began in UTC is before it in every
+    // zone, and a time near year 1 is past what a zone's calendar can name.
+    if (Date.parse(raw) / 1000 < Date.parse(`${birthday}T00:00:00Z`) / 1000 - 1.5 * 86400)
+      throw new ApiRefusal('date_out_of_range', 'Choose a time from your birthday on.', { field });
+    return new Date(Date.parse(raw)).toISOString();
+  };
+  const arrived = when('arrived'),
+    left = when('left');
+  if (source === 'tap' && left !== null)
+    throw new ApiRefusal('invalid_request', 'A tap is a moment: send arrived, and no left.', { field: 'left' });
+  if (source === 'visit' && arrived === null && left === null)
+    throw new ApiRefusal('invalid_request', 'A visit says when it began or ended.', { field: 'arrived' });
+  if (arrived !== null && left !== null && left < arrived)
+    throw new ApiRefusal('invalid_request', 'A stay can’t end before it began.', { field: 'left' });
+  const zone = args.time_zone ?? null;
+  if (zone !== null && !validTimezone(zone))
+    throw new ApiRefusal('invalid_request', 'time_zone is an IANA name, like America/Chicago.', {
+      field: 'time_zone'
+    });
+  const at = arrived ?? left ?? new Date(now * 1000).toISOString(),
+    day = localDay(Date.parse(at) / 1000, tz);
+  if (day < birthday)
+    throw new ApiRefusal('date_out_of_range', 'Choose a time from your birthday on.', {
+      field: arrived ? 'arrived' : 'left'
+    });
+  return { arrived, left, at, day, source, time_zone: zone ?? tz, ...spot };
+}
+/** A name sent for a stop or a place. */
+function nameFrom(raw: unknown): string {
+  const name = checkInName(raw);
+  if (!name) throw new ApiRefusal('invalid_request', 'name is up to 100 characters on one line.', { field: 'name' });
+  return name;
+}
+const NO_CHECK_IN = 'There is no check-in with that id. GET /v1/check-ins lists them.',
+  NO_PLACE = 'There is no remembered place with that id. GET /v1/check-ins/places lists them.';
 
 export async function writeApi(
   context: CaptureContext,
@@ -483,7 +583,14 @@ export async function writeApi(
     legacyKey = now < PER_TOKEN_RECEIPTS_UNTIL ? perTokenReceiptKey(tid, key) : null,
     legacyGuard = (): Ops => (legacyKey ? store.receiptAbsent(uid, legacyKey, now) : []),
     hash = fingerprint({ api: op, arguments: args }),
-    limitName = op === 'notes.create' ? 'create' : op.startsWith('upcoming.') ? 'upcoming' : 'change',
+    limitName =
+      op === 'notes.create'
+        ? 'create'
+        : op.startsWith('upcoming.')
+          ? 'upcoming'
+          : op === 'check-ins.add'
+            ? 'checkin'
+            : 'change',
     cap = V1_LIMITS[limitName],
     rateKey = `WRITERATE#v1-${limitName}#${Math.floor(now / 86400)}`,
     titles = new Map<string, PageMeta | null>();
@@ -592,6 +699,46 @@ export async function writeApi(
   if (op === 'upcoming.batch' && args.dry_run === true)
     return { status: 200, body: upcomingBody(await upcomingChanges(), true), replayed: false };
 
+  const by = () => ({ via: 'token', token: name, token_id: tid, ...(client ? { client } : {}) });
+  // The stay a check-in is part of, and whether this token may change it: all
+  // of it its own, or any with notes:all.
+  const checkInStay = async (places: readonly NamedPlace[]): Promise<CheckIn[]> => {
+    const sk = checkInKeyOf(String(args.id)),
+      item = sk ? ((await store.mcpGet('USER#' + uid, sk)) as CheckIn | null) : null;
+    if (!item) throw new ApiRefusal('not_found', NO_CHECK_IN);
+    const members = await stayOf(store, uid, item, places);
+    if (members.some((m) => m.connection !== tid) && !scopesOf(token).includes('notes:all'))
+      throw new ApiRefusal(
+        'not_yours',
+        'A token changes only the check-ins it sent, unless it may reach all your notes.'
+      );
+    return members;
+  };
+  const stayProof = (members: readonly CheckIn[]) =>
+    store.tokenProof(
+      token,
+      now,
+      members.every((m) => m.connection === tid) ? 'notes:write' : ['notes:write', 'notes:all']
+    );
+  // A stop's neighbourhood and city, asked once however often the write goes
+  // round, and never failing it: a stop with no name still happened.
+  let looked: { district: string | null } | undefined;
+  const lookUp = async (spot: { lat: number; lon: number }) => {
+    if (looked) return looked;
+    try {
+      const named = await (context.nameSpot ?? ((s) => nameSpot(s, (geo ??= new GeoPlacesClient({})))))({
+        lat: spot.lat,
+        lon: spot.lon
+      });
+      looked = { district: named ? [named.district, named.city].filter(Boolean).join(', ') || null : null };
+    } catch (error) {
+      (options.log ?? safeLog)({ event: 'check-in-name-error', user: uid, ...errorFields(error) });
+      looked = { district: null };
+    }
+    return looked;
+  };
+  let wiped: number | undefined;
+
   // Files a note takes, checked and copied once, on the first attempt that
   // gets past the receipt and the count. The pending files go once a note
   // has its copies; copies no note took go instead, unless the commit's
@@ -623,7 +770,9 @@ export async function writeApi(
             ? `That's today's ${cap} notes through tokens. Try again after midnight UTC.`
             : limitName === 'upcoming'
               ? `That's today's ${cap} Upcoming saves through tokens. Try again after midnight UTC.`
-              : `That's today's ${cap} changes through tokens. Try again after midnight UTC.`,
+              : limitName === 'checkin'
+                ? `That's today's ${cap} check-ins through tokens. Try again after midnight UTC.`
+                : `That's today's ${cap} changes through tokens. Try again after midnight UTC.`,
           { retry_after: reset }
         );
       const rate = {
@@ -654,7 +803,214 @@ export async function writeApi(
         });
 
       let landed: boolean, answer: ApiAnswer, after: () => Promise<void>;
-      if (op === 'tags.pinned') {
+      if (op === 'check-ins.add') {
+        const report = checkInReport(args, now, birthday, tz),
+          second = (at: string | null) => at?.slice(0, 19) ?? null,
+          // A later report of the same stay, to the second, fills it in. A tap
+          // is never continued.
+          same =
+            report.source === 'tap'
+              ? undefined
+              : (await store.checkInsAt(uid, second(report.at)!)).find(
+                  (c) =>
+                    c.source === report.source &&
+                    second(c.arrived) === second(report.arrived) &&
+                    (report.arrived !== null || second(c.left) === second(report.left))
+                ),
+          lookups = Number(previous?.lookups ?? 0),
+          paid = !same && (looked !== undefined || lookups < V1_LIMITS.lookups),
+          district = paid ? (await lookUp(report)).district : null,
+          random = randomUUID().replace(/-/g, ''),
+          id = same?.id ?? checkInId(report.at, random),
+          left = report.left ?? same?.left ?? null,
+          item: OAuthRow = same
+            ? { ...same, left, revision: Number(same.revision) + 1 }
+            : {
+                pk: 'USER#' + uid,
+                sk: checkInKey(report.at, id),
+                id,
+                ...report,
+                accuracy_m: report.accuracy_m ?? null,
+                district,
+                name: null,
+                ...by(),
+                connection: tid,
+                revision: 1
+              },
+          // Nothing new in a report sent again: only its receipt is written.
+          changed = !same || same.left !== left,
+          status = same ? 200 : 201,
+          places = await store.namedPlaces(uid),
+          body = { check_in: stayView([(changed ? item : same) as CheckIn], places) };
+        Object.assign(rate, { lookups: lookups + (paid ? 1 : 0) });
+        landed = await store.checkInWrites(
+          uid,
+          changed ? [{ next: item, ...(same ? { old: same } : {}) }] : [],
+          store.tokenProof(token, now, 'notes:write'),
+          [
+            ...store.agentReceipts(receiptFor(status, body), audit({ checkin: id }), rate, previous, now),
+            ...legacyGuard()
+          ]
+        );
+        answer = {
+          status,
+          body,
+          replayed: false,
+          limit: {
+            limit: V1_LIMITS.lookups,
+            remaining: Math.max(0, V1_LIMITS.lookups - lookups - (paid ? 1 : 0)),
+            reset
+          }
+        };
+        after = async () => undefined;
+      } else if (op === 'check-ins.name') {
+        if (!Object.hasOwn(args, 'name'))
+          throw new ApiRefusal('invalid_request', 'Send name, or null to take it away.', { field: 'name' });
+        if (!Number.isSafeInteger(args.revision) || Number(args.revision) < 1)
+          throw new ApiRefusal('invalid_request', 'Send the revision you read, a whole number.', { field: 'revision' });
+        const given = args.name === null ? null : nameFrom(args.name),
+          places = await store.namedPlaces(uid),
+          members = await checkInStay(places);
+        if (stayRevision(members) !== args.revision)
+          throw new ApiRefusal('revision_mismatch', 'That check-in changed since you read it. Read it again.', {
+            revision: stayRevision(members)
+          });
+        const named = members.map((m) => ({ ...m, name: given, revision: Number(m.revision) + 1 })),
+          body = { check_in: stayView(named, places) };
+        landed = await store.checkInWrites(
+          uid,
+          members.map((old, i) => ({ next: named[i]!, old })),
+          stayProof(members),
+          [
+            ...store.agentReceipts(receiptFor(200, body), audit({ checkin: members[0]!.id }), rate, previous, now),
+            ...legacyGuard()
+          ]
+        );
+        answer = { status: 200, body, replayed: false, limit };
+        after = async () => {
+          await record([
+            {
+              kind: 'checkin.named',
+              id: again(members[0]!.id),
+              fields: { ...by(), checkin: members[0]!.id, day: members[0]!.day }
+            }
+          ]);
+        };
+      } else if (op === 'check-ins.delete') {
+        const members = await checkInStay(await store.namedPlaces(uid));
+        landed = await store.checkInWrites(
+          uid,
+          members.map((old) => ({ old })),
+          stayProof(members),
+          [
+            ...store.agentReceipts(receiptFor(204, null), audit({ count: members.length }), rate, previous, now),
+            ...legacyGuard()
+          ]
+        );
+        answer = { status: 204, body: null, replayed: false, limit };
+        after = async () => {
+          await record([
+            {
+              kind: 'checkin.deleted',
+              id: again(members[0]!.id),
+              fields: { ...by(), day: members[0]!.day, count: members.length }
+            }
+          ]);
+        };
+      } else if (op === 'check-ins.delete-all') {
+        if (args.confirm !== 'all')
+          throw new ApiRefusal('invalid_request', 'Send ?confirm=all to delete every check-in.', { field: 'confirm' });
+        const every: CheckIn[] = [];
+        for (let before: string | undefined; ;) {
+          const page = await store.checkInsBelow(uid, before, 500);
+          every.push(...page.items);
+          if (!page.more) break;
+          before = String(every.at(-1)!.sk).slice('CHECKIN#'.length);
+        }
+        const count = (wiped ??= every.length),
+          body = { deleted: count };
+        landed = await store.checkInWrites(
+          uid,
+          every.map((old) => ({ old })),
+          store.tokenProof(token, now, 'notes:all'),
+          [...store.agentReceipts(receiptFor(200, body), audit({ count }), rate, previous, now), ...legacyGuard()]
+        );
+        answer = { status: 200, body, replayed: false, limit };
+        after = async () => {
+          if (count) await record([{ kind: 'checkin.deleted', id: again(tid), fields: { ...by(), count, all: true } }]);
+        };
+      } else if (op === 'check-ins.places.add') {
+        const given = nameFrom(args.name),
+          spot = spotOf({ lat: args.lat, lon: args.lon });
+        if (!spot) throw new ApiRefusal('invalid_request', 'Send lat and lon in degrees.', { field: 'lat' });
+        const places = await store.namedPlaces(uid),
+          old = places.find((p) => sameName(p.name, given));
+        if (!old && places.length >= NAMED_PLACES_MAX)
+          throw new ApiRefusal('invalid_request', `An account remembers up to ${NAMED_PLACES_MAX} names. Forget one.`, {
+            field: 'name'
+          });
+        const had = old?.spots.some((s) => s.lat === spot.lat && s.lon === spot.lon) ?? false;
+        if (old && !had && old.spots.length >= NAMED_PLACE_SPOTS_MAX)
+          throw new ApiRefusal('invalid_request', `A name holds up to ${NAMED_PLACE_SPOTS_MAX} spots.`, {
+            field: 'name'
+          });
+        const id = old?.id ?? `p-${randomUUID().replace(/-/g, '')}`,
+          next: OAuthRow = old
+            ? { ...old, spots: had ? old.spots : [...old.spots, spot], revision: Number(old.revision) + 1 }
+            : { pk: 'USER#' + uid, sk: namedPlaceKey(id), id, name: given, spots: [spot], revision: 1 },
+          status = old ? 200 : 201,
+          body = { place: namedPlaceView((had ? old : next) as NamedPlace) };
+        landed = await store.checkInWrites(
+          uid,
+          had ? [] : [{ next, ...(old ? { old } : {}) }],
+          store.tokenProof(token, now, 'notes:all'),
+          [
+            ...store.agentReceipts(receiptFor(status, body), audit({ place: id }), rate, previous, now),
+            ...legacyGuard()
+          ]
+        );
+        answer = { status, body, replayed: false, limit };
+        after = async () => {
+          if (!had)
+            await record([
+              { kind: 'checkin.place', id: again(id), fields: { ...by(), place: id, change: old ? 'spot' : 'added' } }
+            ]);
+        };
+      } else if (op === 'check-ins.places.change' || op === 'check-ins.places.delete') {
+        const places = await store.namedPlaces(uid),
+          id = String(args.id),
+          old = places.find((p) => p.id === id);
+        if (!old) throw new ApiRefusal('not_found', NO_PLACE);
+        const given = op === 'check-ins.places.change' ? nameFrom(args.name) : null;
+        if (given && places.some((p) => p.id !== id && sameName(p.name, given)))
+          throw new ApiRefusal(
+            'invalid_request',
+            'Another remembered place has that name. Forget it, or add this spot to it with POST /v1/check-ins/places.',
+            { field: 'name' }
+          );
+        const next: OAuthRow | null = given ? { ...old, name: given, revision: Number(old.revision) + 1 } : null,
+          status = next ? 200 : 204,
+          body = next ? { place: namedPlaceView(next as NamedPlace) } : null;
+        landed = await store.checkInWrites(
+          uid,
+          [{ ...(next ? { next } : {}), old }],
+          store.tokenProof(token, now, 'notes:all'),
+          [
+            ...store.agentReceipts(receiptFor(status, body), audit({ place: id }), rate, previous, now),
+            ...legacyGuard()
+          ]
+        );
+        answer = { status, body, replayed: false, limit };
+        after = async () => {
+          await record([
+            {
+              kind: 'checkin.place',
+              id: again(id),
+              fields: { ...by(), place: id, change: next ? 'renamed' : 'forgotten' }
+            }
+          ]);
+        };
+      } else if (op === 'tags.pinned') {
         const pins = pinnedTags(args.pinned);
         if (!pins) throw new ApiRefusal('invalid_request', 'pinned is a list of up to 12 tags.', { field: 'pinned' });
         const old = Array.isArray(profile.pinned_tags) ? pinsOf(profile) : null,

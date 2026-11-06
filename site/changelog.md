@@ -5,6 +5,10 @@ description: Everything Release Notes has learned to do, one release at a time.
 
 Release Notes numbers itself the way it numbers you. It shipped on October 7, 2026, so that day is 0.0.0. Newest first. Changelog, the iPhone app, keeps [its own](/guide/changelog/).
 
+## 0.0.30 · November 6
+
+- Apps on [the API](/guide/api/) can keep [check-ins](/guide/api/#check-ins) now: the places you stopped, with when you got there and left, and names for the ones you go back to. Changelog doesn't send them yet, and they'll have their own place on the web when it does.
+
 ## 0.0.29 · November 5
 
 - Apps on [the API](/guide/api/) can read a whole note now: its tags, its place, who wrote it, whether it has bold or lists, and the transcript of a voice memo or the description of a photo, if you turned those on. So an app can show a voice memo's words under its player.

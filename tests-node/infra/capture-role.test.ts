@@ -148,6 +148,17 @@ test('the capture role grants every DynamoDB and S3 request the write tools make
   });
   assert.equal(editedV1.status, 200, JSON.stringify(editedV1));
   assert.equal((await api('places.here', { lat: 48.856613, lon: 2.352222, accuracy_m: 12 })).status, 200);
+  // Check-ins (1.18.0): a report and the one that fills it in, a name, and
+  // deleting one. The remembered places and deleting all come further down.
+  const stop = { lat: 48.856613, lon: 2.352222, source: 'visit', arrived: '2026-10-12T14:00:00Z' },
+    stopped = await api('check-ins.add', stop);
+  assert.equal(stopped.status, 201, JSON.stringify(stopped));
+  const filled = await api('check-ins.add', { ...stop, left: '2026-10-12T15:00:00Z' });
+  assert.equal(filled.status, 200, JSON.stringify(filled));
+  const stay = (filled.body as OAuthRow).check_in as OAuthRow,
+    namedStay = await api('check-ins.name', { id: stay.id, name: 'Lunch', revision: stay.revision });
+  assert.equal(namedStay.status, 200, JSON.stringify(namedStay));
+  assert.equal((await api('check-ins.delete', { id: stay.id })).status, 204);
   assert.equal((await api('tags.pinned', { pinned: ['lake'] })).status, 200);
   const dates = await api('upcoming.batch', { add: [draft] });
   assert.equal(dates.status, 200, JSON.stringify(dates));
@@ -216,6 +227,13 @@ test('the capture role grants every DynamoDB and S3 request the write tools make
   assert.equal((await everything('days.place', { date: earlier, place: city })).status, 200);
   assert.equal(((await ctx.store.weatherBetween('u', earlier, earlier, true)) as OAuthRow)[earlier] != null, true);
   assert.equal((await everything('days.place.clear', { date: earlier })).status, 204);
+  const kept = await everything('check-ins.places.add', { name: 'Home', lat: 48.8, lon: 2.3 });
+  assert.equal(kept.status, 201, JSON.stringify(kept));
+  const placeId = ((kept.body as OAuthRow).place as OAuthRow).id;
+  assert.equal((await everything('check-ins.places.change', { id: placeId, name: 'Our home' })).status, 200);
+  assert.equal((await everything('check-ins.places.delete', { id: placeId })).status, 204);
+  assert.equal((await everything('check-ins.add', stop)).status, 201);
+  assert.equal((await everything('check-ins.delete-all', { confirm: 'all' })).status, 200);
   assert.equal((await api('token.revoke', {})).status, 204);
 
   const made = aws.granted();

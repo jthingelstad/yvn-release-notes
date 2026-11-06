@@ -16,6 +16,8 @@ import {
   familyOf,
   titled
 } from '../../packages/domain/activity.ts';
+import { stayView } from '../../packages/domain/check-ins.ts';
+import { stayPage, type CheckInReads } from '../../packages/backend/check-ins.ts';
 import { computeVersion, releaseAge, releaseName, releaseSpan, sameDayBefore } from '../../packages/domain/version.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { collectedOn, evaluateBadges, releaseBadges } from '../../packages/domain/badges.ts';
@@ -54,7 +56,7 @@ export function placeView(place: unknown): OAuthRow | null {
     lon: spot('lon')
   };
 }
-export interface ReaderStore extends OAuthStore {
+export interface ReaderStore extends OAuthStore, CheckInReads {
   upcomingEntries(uid: string): Promise<UpcomingEntry[]>;
   noteDays(uid: string): Promise<string[] | Set<string>>;
   sentDays(uid: string): Promise<string[] | Set<string>>;
@@ -604,6 +606,39 @@ export class Reader {
       tz
     };
   }
+  /** Stays newest first (docs/CHECK-INS.md), by the account's days. The
+   * cursor is the last one's key, bound to the filters. */
+  async checkIns(a: Arguments): Promise<OAuthRow> {
+    const tz = String(this.profile.tz),
+      from = a.from == null ? null : this.day(a.from),
+      through = a.through == null ? null : this.day(a.through);
+    if (from && through && from > through)
+      throw new ToolError('invalid_arguments', 'Choose from on or before through.');
+    const bound = createHash('sha256')
+      .update(asciiJson({ uid: this.uid, field: 'check-ins', from, through }))
+      .digest('hex');
+    let before = through ? activityTime(localStart(addDays(through, 1), tz)) : undefined;
+    if (a.cursor) {
+      try {
+        const cursor: unknown = JSON.parse(Buffer.from(String(a.cursor), 'base64url').toString('utf8'));
+        if (!object(cursor) || cursor.bound !== bound || typeof cursor.before !== 'string') throw new Error('cursor');
+        before = cursor.before;
+      } catch {
+        throw new ToolError('invalid_cursor', 'Restart this query with the same filters and no cursor.');
+      }
+    }
+    const { stays, next, places } = await stayPage(this.context.store, this.uid, {
+      ...(before === undefined ? {} : { before }),
+      ...(from ? { floor: activityTime(localStart(from, tz)) } : {}),
+      limit: Number(a.limit ?? 50)
+    });
+    return {
+      check_ins: stays.map((members) => stayView(members, places)),
+      next_cursor: next ? Buffer.from(asciiJson({ bound, before: next })).toString('base64url') : null,
+      today: this.today,
+      tz
+    };
+  }
   async media(a: Arguments, kind: string): Promise<OAuthRow> {
     const item = await this.note(a),
       m = ((item.media ?? []) as OAuthRow[]).find((m) => Number(m.n) === a.n && m.kind === kind);
@@ -902,6 +937,7 @@ export class Reader {
         content
       ];
     }
+    if (name === 'notes_check_ins') return [await this.checkIns(a), content];
     if (name === 'notes_map') {
       // As /v1's map.pins, without `parts`: an agent reads the preview's words.
       const notes = await this.context.store.allNotes(this.uid, true),

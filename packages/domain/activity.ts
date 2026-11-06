@@ -71,6 +71,13 @@
  *   answer set), `mail` (sent, failed or not-sent). Never the words.
  * - egg.found (via `web`): `egg`, the easter egg found (developer or rtfm,
  *   domain/eggs.ts), one row an egg ever, written by `POST /api/eggs`.
+ * - checkin (never stored): a check-in's row, joined when read with `checkin`
+ *   (its id), `label` (what it shows), `arrived`, `left`, `source`, `day`,
+ *   `time_zone`, `merged` (how many it stands for) and who sent it; never its
+ *   spot (domain/check-ins.ts). checkin.named: `checkin`, `day`.
+ *   checkin.deleted: `day` and `count`, or `all` and `count` for every one.
+ *   checkin.place: `place` (a remembered place's id), `change` (added, spot,
+ *   renamed or forgotten). Never a name or a spot, and these stay when it goes.
  * - account.created. */
 import { codePointSlice } from './unicode.ts';
 
@@ -103,6 +110,7 @@ export const ACTIVITY_FAMILIES = [
   'connection',
   'feedback',
   'egg',
+  'checkin',
   'account'
 ] as const;
 export const familyOf = (kind: string): string => kind.split('.')[0]!;
@@ -177,7 +185,9 @@ const MAIL_KEPT = ['message', 'received_at', 'via', 'day', 'version', 'outcome',
 
 /** What a token with the `activity` scope reads (docs/API.md): the owner's
  * view with every word taken out. A mail row keeps neither subject, words
- * nor sender; a settings change names only its fields. */
+ * nor sender; a settings change names only its fields. A check-in's `label` is
+ * the one place the owner's own words come through (Jamie's call 4,
+ * docs/CHECK-INS.md), since a row with no name is no use. */
 export function tokenActivityView(row: Row): Row {
   const view = activityView(row);
   if (view.kind === 'mail')

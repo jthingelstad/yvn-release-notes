@@ -602,6 +602,22 @@ Where things are (each module's design comment has its contract):
   never logged or exported. No alarms: reminders travel in the email and
   in apps the owner turns them on in, never the calendar.
 
+### Check-ins
+
+- **Check-ins** (Jamie, 2026-11-05 and 2026-11-06; `docs/CHECK-INS.md`) say
+  where the account stopped: `CHECKIN#`, as a phone reported them, and
+  `NAMEDPLACE#`, the names it remembers. A stay, and the name it shows, is
+  worked out when read, so a rule can change and a name applies to the past with
+  nothing to backfill. They are saved, not journal entries: no streak, count,
+  badge or note search. A note gets no link to one.
+- Coordinates and names are never logged to CloudWatch, and no `ACTIVITY#` row
+  holds either: a `checkin` row in the log is made when read, from the item, and
+  goes with it. The events left in the log (`checkin.named`, `checkin.deleted`,
+  `checkin.place`) hold ids, days and counts.
+- Only the owner names a place. Nearby businesses are offered, never picked.
+- **The client wants all its stops from `GET /v1/check-ins`**, not `after` on
+  the log, since a phone offline for a day files behind a cursor.
+
 ### The email
 
 - **Plain text plus HTML** (`packages/mail/compose.ts`). The HTML is type on

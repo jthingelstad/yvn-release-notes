@@ -5,6 +5,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import MarkdownIt from 'markdown-it';
+import { referenceMarkdown } from './api-reference.ts';
 import { FEATURES } from './lib/features.ts';
 
 export const ORIGIN = 'https://notes.yourversionnumber.com';
@@ -24,11 +25,11 @@ export interface Page {
 export const pathOf = (file: string) => '/' + file.replace(/\.md$/, '/').replace(/(^|\/)index\/$/, '$1');
 
 const markdown = new MarkdownIt({ html: false, linkify: false, typographer: true });
-// Each second-level heading gets an id from its words, so a question on the
-// FAQ can be linked to: "How much does it cost?" is #how-much-does-it-cost.
+// Each second- and third-level heading gets an id from its words, so a question
+// on the FAQ can be linked to: "How much does it cost?" is #how-much-does-it-cost.
 markdown.core.ruler.push('heading_ids', (state) => {
   state.tokens.forEach((token, i) => {
-    if (token.type !== 'heading_open' || token.tag !== 'h2') return;
+    if (token.type !== 'heading_open' || (token.tag !== 'h2' && token.tag !== 'h3')) return;
     const words = state.tokens[i + 1]!.content;
     token.attrSet('id', slug(words));
   });
@@ -71,7 +72,15 @@ export async function readPages(dir = SITE_DIR): Promise<Page[]> {
     if (path !== '/' && !pages.some((p) => p.path === path))
       throw new Error(`site/sitemap.json lists ${path}, which has no page`);
   pages.sort((a, b) => order.indexOf(a.path) - order.indexOf(b.path));
-  return pages.map((page) => ({ ...page, html: fillLists(page, pages) }));
+  const reference = markdown.render(
+    referenceMarkdown(
+      JSON.parse(await readFile(resolve('contracts/api-surface.json'), 'utf8')) as Record<string, unknown>
+    )
+  );
+  return pages.map((page) => ({
+    ...page,
+    html: fillLists(page, pages).replace('<p>{reference}</p>\n', () => reference)
+  }));
 }
 
 // Two lists drawn from lib/features.ts, the list the front page's tour
@@ -107,6 +116,20 @@ function fillLists(page: Page, pages: Page[]): string {
     }).join('');
   });
 }
+
+/** The API's pages, for the row of links on each: every page under /guide/api/. */
+export const API_PAGES: readonly (readonly [path: string, label: string])[] = [
+  ['/guide/api/', 'Start'],
+  ['/guide/api/basics/', 'Errors and limits'],
+  ['/guide/api/notes/', 'Notes'],
+  ['/guide/api/archive/', 'Archive'],
+  ['/guide/api/places/', 'Places'],
+  ['/guide/api/check-ins/', 'Check-ins'],
+  ['/guide/api/upcoming/', 'Upcoming'],
+  ['/guide/api/recipes/', 'Recipes'],
+  ['/guide/api/reference/', 'Reference'],
+  ['/guide/api/clients/', 'Building a client']
+];
 
 /** Each address's <lastmod>, and the hash of its words that the date holds for. */
 export async function sitemapDates(dir = SITE_DIR): Promise<Record<string, { said: string; lastmod: string }>> {

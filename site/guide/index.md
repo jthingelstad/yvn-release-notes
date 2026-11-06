@@ -18,6 +18,14 @@ description: How to get the most out of Release Notes, a page at a time.
 
 - [API tokens](/guide/tokens/): keys that let an app or a script add notes as you.
 - [The API](/guide/api/): add notes from a terminal, a script or an app.
+- [Requests, errors and limits](/guide/api/basics/): what every request has in common.
+- [Notes through the API](/guide/api/notes/): add, read, change and delete notes, with their files and tags.
+- [Reading your archive through the API](/guide/api/archive/): your account, days, search and the activity log.
+- [Places through the API](/guide/api/places/): say where a note or a day was.
+- [Check-ins through the API](/guide/api/check-ins/): the places you stop, and the names you give them.
+- [Upcoming dates through the API](/guide/api/upcoming/): birthdays, anniversaries, trips, events and their reminders.
+- [API recipes](/guide/api/recipes/): a terminal, a Shortcut, a schedule, Python and more, to copy.
+- [API reference](/guide/api/reference/): every request and answer, and the description tools can read.
 - [Building a client](/guide/api/clients/): how an app that adds notes should behave.
 
 ## Other pages

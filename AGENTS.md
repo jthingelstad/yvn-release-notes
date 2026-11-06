@@ -933,7 +933,7 @@ sign-in, which makes an API token) are built.
   docs"). `/v1` only gains things; a breaking change is `/v2`. The
   one exception is 1.8.0, which withdrew `moment` before any released app
   sent one (Jamie, 2026-10-30: "Approved: withdraw moments from Release
-  Notes as API 1.8.0"). The guide's API page names every request and
+  Notes as API 1.8.0"). The guide's API pages (`API_PAGES`) name every request and
   error (`tests-node/site.test.ts`), so it changes in the same PR.
 - **Tokens are every subscriber's** (Jamie, 2026-10-29: "Open up token
   generation and all of the needed features so we can continue with

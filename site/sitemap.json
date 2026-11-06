@@ -12,8 +12,8 @@
     "lastmod": "2026-10-30"
   },
   "/guide/": {
-    "said": "80a600c0da78d8931b7523e415cd2495f438f27f1aa8274c351f7cf741996d16",
-    "lastmod": "2026-10-30"
+    "said": "5e65d73b86f5659e9279f63fff563796641df164dd54580f196b22ffe6dad04c",
+    "lastmod": "2026-11-06"
   },
   "/guide/start/": {
     "said": "d5e0897b5cf718ac5ca9237b30d72501e3fdb817e6547e64887dfa219c2501b4",
@@ -76,12 +76,44 @@
     "lastmod": "2026-11-05"
   },
   "/guide/api/": {
-    "said": "d97e6418cd66d83e9a54710731ac804d89901615d4d6bc09117f78a30bfae962",
+    "said": "61bbe0ef9f298c05bd8c3e22ee605623152803b3ae78b46ac47d861a7acabd23",
+    "lastmod": "2026-11-06"
+  },
+  "/guide/api/basics/": {
+    "said": "9bc3af078df8b40f8ecf20cfb88f52222d14b00f1233551ba506a0365b80f53a",
+    "lastmod": "2026-11-06"
+  },
+  "/guide/api/notes/": {
+    "said": "0dc0f5560ac2465ce58e23e62fdc21481123dd3d06bb4cb5a445731c0e32d346",
+    "lastmod": "2026-11-06"
+  },
+  "/guide/api/archive/": {
+    "said": "e72c6233f0dfc6a26ba32f87000fbb9eacf371a6fd841b39b00742dc29de3ce5",
+    "lastmod": "2026-11-06"
+  },
+  "/guide/api/places/": {
+    "said": "c193c70922858b50595ac5865cf14213167af75693eb1ab3c2c77c076afee323",
+    "lastmod": "2026-11-06"
+  },
+  "/guide/api/check-ins/": {
+    "said": "511c5574dc1f12729d2b01a08c3ac1cc9db9b70ae2577f875e1a4708e182a068",
+    "lastmod": "2026-11-06"
+  },
+  "/guide/api/upcoming/": {
+    "said": "5b3f83ae19a5fe349e22640f97dc705c9791f199b399723edc393aa5501c761b",
+    "lastmod": "2026-11-06"
+  },
+  "/guide/api/recipes/": {
+    "said": "a378a97983863dc7ca38002067fdc13761b882e6e24604398ca602a814821cf8",
+    "lastmod": "2026-11-06"
+  },
+  "/guide/api/reference/": {
+    "said": "284d57574e43e0896bf1dc4f36eaff19371961ed85ec8c71861d49c647cc919a",
     "lastmod": "2026-11-06"
   },
   "/guide/api/clients/": {
-    "said": "557c5bcaebd63016e10fb1168ebf7846fd5b0f291de6a2114f807e6483bde264",
-    "lastmod": "2026-11-05"
+    "said": "ea6f758e317962060533d505fb801bf2a6d6931d8d607c6914614f4d3a1bd75d",
+    "lastmod": "2026-11-06"
   },
   "/guide/changelog/": {
     "said": "fa8d45895f298bf27a5c4c364ec4b94fbe9cb66c39ef8e75db68bde31157c135",
@@ -96,7 +128,7 @@
     "lastmod": "2026-11-05"
   },
   "/changelog/": {
-    "said": "9a0ba736ebca98f42da46ae5edc1b1fcaebee66d9034664079878dd27897bce7",
+    "said": "8e1a7ca07d32a0a75ba039374cb58a8ee82aa74fb61998db620a9b9eee69554a",
     "lastmod": "2026-11-06"
   }
 }

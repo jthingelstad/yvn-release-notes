@@ -67,13 +67,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.18.0';
+export const API_VERSION = '1.18.1';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.18.1',
+    date: '2026-11-06',
+    summary:
+      'The API description groups its requests with tags, links the guide, and can be fetched from a page in a browser, so tools that show it can load it. No request or answer changes.'
+  },
   {
     version: '1.18.0',
     date: '2026-11-06',

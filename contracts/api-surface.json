@@ -1,11 +1,54 @@
 {
   "openapi": "3.1.0",
+  "tags": [
+    {
+      "name": "Account",
+      "description": "Who this token is, what today is, what it may do, and the activity log."
+    },
+    {
+      "name": "Notes",
+      "description": "Add, read, change and delete notes."
+    },
+    {
+      "name": "Files",
+      "description": "Upload photos, recordings and PDFs, add them to notes, and fetch them."
+    },
+    {
+      "name": "Tags",
+      "description": "The tag row and every tag."
+    },
+    {
+      "name": "Location",
+      "description": "Find a city or the spot a device is at, and say where a note or a day was."
+    },
+    {
+      "name": "Archive",
+      "description": "Read the days, search, On this day, releases, the map, badges and the mail log."
+    },
+    {
+      "name": "Upcoming dates",
+      "description": "Birthdays, anniversaries, trips and events, and the reminders they make."
+    },
+    {
+      "name": "Check-ins",
+      "description": "The places the account stopped, and the names it remembers."
+    }
+  ],
+  "externalDocs": {
+    "description": "The guide",
+    "url": "https://notes.yourversionnumber.com/guide/api/"
+  },
   "info": {
     "title": "Release Notes API",
-    "version": "1.18.0",
-    "summary": "Add notes to Release Notes from anywhere: a terminal, a script or an app.",
+    "version": "1.18.1",
+    "summary": "Add notes to Release Notes and read them back, from a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. With `notes:read`, a token reads the whole archive and writes nothing (1.15.0). The guide is at /guide/api/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.18.1",
+        "date": "2026-11-06",
+        "summary": "The API description groups its requests with tags, links the guide, and can be fetched from a page in a browser, so tools that show it can load it. No request or answer changes."
+      },
       {
         "version": "1.18.0",
         "date": "2026-11-06",
@@ -132,6 +175,9 @@
     "/v1/openapi.json": {
       "get": {
         "operationId": "getOpenApi",
+        "tags": [
+          "Account"
+        ],
         "summary": "This document",
         "security": [],
         "responses": {
@@ -150,6 +196,9 @@
     },
     "/v1/me": {
       "get": {
+        "tags": [
+          "Account"
+        ],
         "operationId": "getMe",
         "summary": "Today's version, the next 14 days' versions, and this token",
         "description": "What a client needs to show the version and fire reminders offline, without ever working out a version itself. The birthday is never sent. Any token may read it.",
@@ -186,6 +235,9 @@
     },
     "/v1/notes": {
       "get": {
+        "tags": [
+          "Notes"
+        ],
         "operationId": "listNotes",
         "summary": "The notes this token wrote, or with notes:read or notes:all every note, on some days, oldest first",
         "description": "From `from` to `to`, days in the account’s time zone, both in, at most 31 days a request; a wider span is `range_too_wide`, so ask in pieces. Each note is as `getNote` reads it. A range with none is an empty list. Only this token’s notes, whatever else the days hold, unless it has `notes:all` (1.10.0) or `notes:read` (1.15.0): then every note on those days, or with `mine=true` its own alone. A page stops at about 1 MB (1.14.0), so it may hold fewer than `limit`: follow `next` until it is null.",
@@ -299,6 +351,9 @@
         ]
       },
       "post": {
+        "tags": [
+          "Notes"
+        ],
         "operationId": "createNote",
         "summary": "Add a note",
         "description": "A note in the owner's own voice, shown with “via <token name>” on the web. Hashtags in the text are its tags, in any script since 1.7.1. A `text/plain` body is the note’s text alone, and so is a form that is not a `NoteForm`; a multipart body is refused. With neither `date` nor `written_at`, it files to today. With `uploads` (and the `media:write` scope) it takes those files, and then needs no text. A `place` is a city from `GET /v1/places` or the `place` from `POST /v1/places/here`, sent back as it came, and kept as sent: its shape is checked, not the place.",
@@ -380,6 +435,9 @@
     },
     "/v1/notes/{date}/{id}": {
       "get": {
+        "tags": [
+          "Notes"
+        ],
         "operationId": "getNote",
         "summary": "Read a note this token wrote, or any note with notes:all",
         "description": "Its text and revision, so an app can pick up an edit made on the web. With `notes:all` (1.10.0), any note in the account, from any channel; `source` says where it was made and `mine` whether this token wrote it.",
@@ -462,6 +520,9 @@
         ]
       },
       "put": {
+        "tags": [
+          "Notes"
+        ],
         "operationId": "editNote",
         "summary": "Replace the text of a note this token wrote, or any note with notes:all",
         "description": "From the revision the client read: a note changed since is a 409 `revision_mismatch` with its current `revision`. No history is kept.",
@@ -549,6 +610,9 @@
         "x-scope": "notes:write"
       },
       "delete": {
+        "tags": [
+          "Notes"
+        ],
         "operationId": "deleteNote",
         "summary": "Delete a note this token wrote, or any note with notes:all",
         "description": "With `notes:all` (1.11.0), any note in the account. The note goes with everything behind it, as on the web: its files, and for an emailed note the email.",
@@ -615,6 +679,9 @@
     },
     "/v1/notes/{date}/{id}/append": {
       "post": {
+        "tags": [
+          "Notes"
+        ],
         "operationId": "appendNote",
         "summary": "Add a paragraph to a note this token wrote, or any note with notes:all",
         "requestBody": {
@@ -703,6 +770,9 @@
     },
     "/v1/notes/{date}/{id}/media": {
       "post": {
+        "tags": [
+          "Files"
+        ],
         "operationId": "addNoteFiles",
         "summary": "Add files to a note this token wrote, or any note with notes:all",
         "description": "With `notes:all` (1.11.0), any note in the account. Uploads from `POST /v1/uploads`, each checked against the bytes that arrived, up to 20 files on a note in all. It counts as a change. A note takes each upload once; a write refused or lost before it lands leaves the uploads for a retry with the same Idempotency-Key.",
@@ -792,6 +862,9 @@
     },
     "/v1/notes/{date}/{id}/media/{n}": {
       "get": {
+        "tags": [
+          "Files"
+        ],
         "operationId": "getNoteFile",
         "summary": "An address for one file on a note this token wrote, or any note with notes:all",
         "description": "A signed address for the file, good for 10 minutes; fetch it with no token. With `size=thumb`, the small JPEG copy a photo has, for a list; a file without one is `not_found`. `n` is the number in the note’s `media`.",
@@ -885,6 +958,9 @@
         ]
       },
       "delete": {
+        "tags": [
+          "Files"
+        ],
         "operationId": "removeNoteFile",
         "summary": "Take one file off a note this token wrote, or any note with notes:all",
         "description": "The file goes with its small copy, transcript and description, and the note’s `revision` changes. The other files keep their numbers, and no later file takes this one. A note with no words can’t lose its last file: `text_required`, so delete the note instead. An emailed file stays in the note’s email, which no client can read, until the note is deleted. Since 1.17.0.",
@@ -973,6 +1049,9 @@
     },
     "/v1/notes/{date}/{id}/place": {
       "put": {
+        "tags": [
+          "Location"
+        ],
         "operationId": "setNotePlace",
         "summary": "Say where a note this token wrote was, or any note with notes:all",
         "description": "A city from `GET /v1/places`, or the `place` from `POST /v1/places/here`, sent as it came. It replaces the one the note has, a photo’s too. The words and `revision` stay. The day’s weather follows, and never fails the write. Since 1.16.0.",
@@ -1060,6 +1139,9 @@
         "x-scope": "notes:write"
       },
       "delete": {
+        "tags": [
+          "Location"
+        ],
         "operationId": "removeNotePlace",
         "summary": "Take the place off a note this token wrote, or any note with notes:all",
         "description": "The note then says `no_place`, shows no place from its day, and a photo’s spot won’t fill it in again. The words and `revision` stay. The day’s weather follows, and never fails the write. Since 1.16.0.",
@@ -1139,6 +1221,9 @@
     },
     "/v1/days/{date}/place": {
       "put": {
+        "tags": [
+          "Location"
+        ],
         "operationId": "setDayPlace",
         "summary": "Say where a day was, for the notes that day without a place",
         "description": "A city from `GET /v1/places`, sent as it came; a day takes a city, not a device’s spot. It is what every note that day without a place shows, so it takes `notes:all`. The day’s weather follows, and never fails the write. Since 1.16.0.",
@@ -1217,6 +1302,9 @@
         "x-scope": "notes:all"
       },
       "delete": {
+        "tags": [
+          "Location"
+        ],
         "operationId": "removeDayPlace",
         "summary": "Take a day’s own place away",
         "description": "Its notes go back to what they showed without it. Removing a place the day doesn’t have is still a 204. The day’s weather follows, and never fails the write. Since 1.16.0.",
@@ -1274,6 +1362,9 @@
     },
     "/v1/uploads": {
       "post": {
+        "tags": [
+          "Files"
+        ],
         "operationId": "startUpload",
         "summary": "A signed form for one file",
         "description": "A photo, recording or PDF of up to 50 MB, its exact size given. Post the file to `url` as `multipart/form-data`, with every one of `fields` and then the file as `file`, within `expires_in` seconds, then name the upload in a note's `uploads`. An account takes 200 files and 2 GB a UTC day, with the web's. It has no receipt: a retry gets a new form, and an unused one expires.",
@@ -1325,6 +1416,9 @@
     },
     "/v1/places": {
       "get": {
+        "tags": [
+          "Location"
+        ],
         "operationId": "searchPlaces",
         "summary": "Find a city by name, for a note’s place",
         "description": "The web’s city search. Send one of the answers as a note’s `place`, as it came.",
@@ -1379,6 +1473,9 @@
     },
     "/v1/places/here": {
       "post": {
+        "tags": [
+          "Location"
+        ],
         "operationId": "nameHere",
         "summary": "Name the spot a device is at, for a note’s place",
         "description": "The city and neighbourhood, and the businesses Amazon Location finds within the accuracy (50 to 200 m), up to 6. Send `place` back as a note’s place, with `venue` set to one `nearby` name if the owner picks one; nothing is picked for them. An account names 100 spots a UTC day across its tokens. Nothing is kept until a note takes the place. It has no receipt: a retry asks again, and counts again.",
@@ -1441,6 +1538,9 @@
     },
     "/v1/tags": {
       "get": {
+        "tags": [
+          "Tags"
+        ],
         "operationId": "getTags",
         "summary": "The tag row: pinned tags, then the most used lately",
         "description": "The pinned tags, then the tags used most in the last 30 days that aren't pinned, ties broken by last use. Any token may read it.",
@@ -1477,6 +1577,9 @@
     },
     "/v1/tags/pinned": {
       "put": {
+        "tags": [
+          "Tags"
+        ],
         "operationId": "setPinnedTags",
         "summary": "Replace the pinned tags",
         "description": "Up to 12 tags, normalized as note hashtags are (\"#Running\" is running, and since 1.7.1 \"Москва\" is москва), each once. The same pins show on the web and through every token.",
@@ -1547,6 +1650,9 @@
     },
     "/v1/activity": {
       "get": {
+        "tags": [
+          "Account"
+        ],
         "operationId": "getActivity",
         "summary": "The activity log, newest first, without words",
         "description": "What came in, changed and went out. It never carries a mail subject, mail words, another sender or a settings value. An Upcoming row's title comes only with the `upcoming` scope.",
@@ -1643,6 +1749,9 @@
     },
     "/v1/upcoming": {
       "get": {
+        "tags": [
+          "Upcoming dates"
+        ],
         "operationId": "getUpcoming",
         "summary": "The Upcoming dates ahead",
         "description": "Every saved birthday, anniversary, trip and event, soonest first, with its next date and the line the email uses. A one-time date already over is left out and counted in `past_left_out`, since it still takes one of the account's 200.",
@@ -1684,6 +1793,9 @@
     },
     "/v1/upcoming/batch": {
       "post": {
+        "tags": [
+          "Upcoming dates"
+        ],
         "operationId": "saveUpcoming",
         "summary": "Add, change and remove up to 50 Upcoming dates at once",
         "description": "All or nothing: if any entry has a problem, nothing is saved and the error names it (`field` is like `change[2]`). A change replaces the saved date from the `revision` the client read; one changed since is a 409 `revision_mismatch`. A trip’s destination is text the city search knows, like \"Paris, Texas\". With `dry_run`, it checks everything and finds the cities but saves nothing, and counts as a read.",
@@ -1754,6 +1866,9 @@
     },
     "/v1/upcoming/reminders": {
       "get": {
+        "tags": [
+          "Upcoming dates"
+        ],
         "operationId": "getReminders",
         "summary": "The reminders each morning carries, for the days ahead",
         "description": "Each day with a reminder due, from today: the reminders the morning email carries for dates with `email` on (all of them, where the email shows three), each with the email’s own `when` and `line`, and `send_at`, when that morning’s email is due. An app schedules them as notifications and reads again when it opens.",
@@ -1808,6 +1923,9 @@
     },
     "/v1/upcoming/{id}": {
       "delete": {
+        "tags": [
+          "Upcoming dates"
+        ],
         "operationId": "deleteUpcoming",
         "summary": "Remove one Upcoming date",
         "description": "From the revision the client read: a date changed since is a 409 `revision_mismatch`.",
@@ -1874,6 +1992,9 @@
     },
     "/v1/days": {
       "get": {
+        "tags": [
+          "Archive"
+        ],
         "operationId": "listDays",
         "summary": "The timeline, newest first: days with notes, an email, a pause or a place",
         "description": "What a day says of itself, a page at a time, as the web’s timeline lists them, with today on the first page. Its notes come from `listNotes` or `getDay`, so a page stays small. Needs `notes:read` or `notes:all`.",
@@ -1949,6 +2070,9 @@
     },
     "/v1/days/{date}": {
       "get": {
+        "tags": [
+          "Archive"
+        ],
         "operationId": "getDay",
         "summary": "One day: its version, notes, places, weather, and whether it was paused",
         "description": "A day from the birthday through today; any other is `date_out_of_range`. Its notes come oldest first and stop at about 1 MB: `next` goes on with `listNotes` as its `after`, with `from` set to this day. `collected` names the special days it collected, while Show badges is on. Needs `notes:read` or `notes:all`.",
@@ -2024,6 +2148,9 @@
     },
     "/v1/search": {
       "get": {
+        "tags": [
+          "Archive"
+        ],
         "operationId": "searchNotes",
         "summary": "Find notes by words or a tag, newest first",
         "description": "Every word has to be in a note’s words, places, link names, transcripts or descriptions, as on the web. `q` or `tag` has to come. Reads the whole archive unless `from` and `to` narrow it, and counts as one read. Needs `notes:read` or `notes:all`.",
@@ -2141,6 +2268,9 @@
     },
     "/v1/on-this-day": {
       "get": {
+        "tags": [
+          "Archive"
+        ],
         "operationId": "onThisDay",
         "summary": "The same day of each earlier release, newest first",
         "description": "As the morning email’s On this day. A day shows its first 5 notes and says `notes_total`; `getDay` reads the rest. Only days with notes come. Needs `notes:read` or `notes:all`.",
@@ -2234,6 +2364,9 @@
     },
     "/v1/releases": {
       "get": {
+        "tags": [
+          "Archive"
+        ],
         "operationId": "listReleases",
         "summary": "Each year of life, newest first, with its days and notes",
         "description": "Needs `notes:read` or `notes:all`.",
@@ -2288,6 +2421,9 @@
     },
     "/v1/releases/{v}": {
       "get": {
+        "tags": [
+          "Archive"
+        ],
         "operationId": "getRelease",
         "summary": "One year of life in detail: its days, longest streak, tags and badges",
         "description": "`badges` comes only while Show badges is on. Needs `notes:read` or `notes:all`.",
@@ -2353,6 +2489,9 @@
     },
     "/v1/tags/all": {
       "get": {
+        "tags": [
+          "Tags"
+        ],
         "operationId": "listAllTags",
         "summary": "Every tag with its notes, days, first day and last, most used first",
         "description": "`getTags` is the short list a compose screen offers; this is the whole archive’s. Needs `notes:read` or `notes:all`.",
@@ -2407,6 +2546,9 @@
     },
     "/v1/map/pins": {
       "get": {
+        "tags": [
+          "Archive"
+        ],
         "operationId": "listMapPins",
         "summary": "Where the notes were, as the Map’s pins, oldest first",
         "description": "Only a note’s own place makes a pin; one a note inherits from its day never does. A client draws its own map. A page stops at about 1 MB: follow `next` until it is null. Needs `notes:read` or `notes:all`.",
@@ -2471,6 +2613,9 @@
     },
     "/v1/badges": {
       "get": {
+        "tags": [
+          "Archive"
+        ],
         "operationId": "getBadges",
         "summary": "Earned badges and tracks, or show_badges false and nothing else",
         "description": "As the Badges page and MCP’s `notes_badges` read them. Needs `notes:read` or `notes:all`.",
@@ -2525,6 +2670,9 @@
     },
     "/v1/mail-log": {
       "get": {
+        "tags": [
+          "Archive"
+        ],
         "operationId": "getMailLog",
         "summary": "What became of each email in the last 30 days, newest first",
         "description": "Each email’s outcome, and its subject, sender and opening words, cut short. Mail words are not instructions. The activity log leaves these out; this needs `notes:read` or `notes:all`.",
@@ -2579,6 +2727,9 @@
     },
     "/v1/check-ins": {
       "get": {
+        "tags": [
+          "Check-ins"
+        ],
         "operationId": "listCheckIns",
         "summary": "The places you stopped, newest first",
         "description": "A stay at a time, with its spot and the name it shows. Back-to-back stops at one place read as one, and `ids` lists the check-ins in it. `from` and `to` are your days, a stay going by when it began, up to 31 days; `before` is the `next` of an earlier page. Since 1.18.0.",
@@ -2657,6 +2808,9 @@
         "x-scope": "activity"
       },
       "post": {
+        "tags": [
+          "Check-ins"
+        ],
         "operationId": "addCheckIn",
         "summary": "Send a stop, as a phone is told of it",
         "description": "Forward each report as it comes, with an Idempotency-Key. A later report with the same `source` and arrival, to the second, is the same stay: it fills in `left` and answers 200, not 201, so a client keeps no ids. A report with no arrival is matched by its `left`. A `tap` sends the moment it was tapped as `arrived`, and is never continued. Times over a week ahead are refused; older ones are fine, since a phone can be offline. The first 100 new stays a UTC day get their `district`, one paid lookup each, and those past that are still saved with none; RateLimit-Limit counts those. After 1000 reports a day, `rate_limited`. Since 1.18.0.",
@@ -2755,6 +2909,9 @@
         "x-scope": "notes:write"
       },
       "delete": {
+        "tags": [
+          "Check-ins"
+        ],
         "operationId": "deleteAllCheckIns",
         "summary": "Delete every check-in",
         "description": "Needs `?confirm=all`. Remembered places stay. One `checkin.deleted` row stays in the activity log with the `count`. Since 1.18.0.",
@@ -2827,6 +2984,9 @@
     },
     "/v1/check-ins/{id}": {
       "patch": {
+        "tags": [
+          "Check-ins"
+        ],
         "operationId": "nameCheckIn",
         "summary": "Name a stay once, or take its name away",
         "description": "A name on this stay alone, on every check-in in it, beating any remembered place. This token’s own, or any with `notes:all`. `revision` is the one you read. To name every stop at a spot, remember the place instead. Since 1.18.0.",
@@ -2904,6 +3064,9 @@
         "x-scope": "notes:write"
       },
       "delete": {
+        "tags": [
+          "Check-ins"
+        ],
         "operationId": "deleteCheckIn",
         "summary": "Delete a stay",
         "description": "Every check-in in the stay goes, and its row in the activity log. `checkin.deleted` stays there with its `day` and `count`, and never the place. This token’s own, or any with `notes:all`. Since 1.18.0.",
@@ -2960,6 +3123,9 @@
     },
     "/v1/check-ins/places": {
       "get": {
+        "tags": [
+          "Check-ins"
+        ],
         "operationId": "listNamedPlaces",
         "summary": "The places you remember",
         "description": "Each name with its spots. The nearest within 100 m names a stop. Since 1.18.0.",
@@ -2999,6 +3165,9 @@
         "x-scope": "activity"
       },
       "post": {
+        "tags": [
+          "Check-ins"
+        ],
         "operationId": "rememberPlace",
         "summary": "Remember a place, or add a spot to a name",
         "description": "A name already in use, ignoring case, gains this spot and answers 200; a new one answers 201. It applies at once to every stop within 100 m, past and future. An account has up to 200 names, and a name up to 50 spots. Since 1.18.0.",
@@ -3099,6 +3268,9 @@
     },
     "/v1/check-ins/places/{id}": {
       "patch": {
+        "tags": [
+          "Check-ins"
+        ],
         "operationId": "renameNamedPlace",
         "summary": "Rename a remembered place",
         "description": "Every spot and stop follows. A name another place has is refused. Since 1.18.0.",
@@ -3176,6 +3348,9 @@
         "x-scope": "notes:all"
       },
       "delete": {
+        "tags": [
+          "Check-ins"
+        ],
         "operationId": "forgetNamedPlace",
         "summary": "Forget a remembered place",
         "description": "All its spots go, and stops there show their neighbourhood again. Since 1.18.0.",
@@ -3232,6 +3407,9 @@
     },
     "/v1/token": {
       "delete": {
+        "tags": [
+          "Account"
+        ],
         "operationId": "revokeToken",
         "summary": "Revoke this token",
         "description": "The token ends itself, as a sign-out does. Any token may.",
@@ -3600,7 +3778,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.18.0"
+            "example": "1.18.1"
           }
         }
       },

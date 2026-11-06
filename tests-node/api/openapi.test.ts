@@ -82,3 +82,18 @@ test('GET /v1/openapi.json answers anyone, reading nothing', async () => {
   // Any other method is the API's own refusal, and needs a context.
   assert.equal((await app.request('https://notes.example.com/v1/openapi.json', { method: 'POST' })).status, 503);
 });
+
+test('every request is in one group the description names, and a page in a browser can load it', async () => {
+  const groups = (doc.tags as Doc[]).map((tag) => tag.name as string);
+  assert.equal(new Set(groups).size, groups.length);
+  const used = new Set<string>();
+  for (const methods of Object.values(doc.paths as Doc))
+    for (const op of Object.values(methods as Doc)) {
+      assert.equal((op as Doc).tags.length, 1, (op as Doc).operationId);
+      assert.ok(groups.includes((op as Doc).tags[0]), (op as Doc).operationId);
+      used.add((op as Doc).tags[0]);
+    }
+  assert.deepEqual([...used].sort(), [...groups].sort());
+  const answer = await createMcpApp({} as never).request('https://notes.yourversionnumber.com/v1/openapi.json');
+  assert.equal(answer.headers.get('access-control-allow-origin'), '*');
+});

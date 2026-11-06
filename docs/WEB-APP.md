@@ -443,7 +443,10 @@ notes.yourversionnumber.com
   `/guide/tags-and-search/`, `/guide/upcoming/`, `/guide/badges/`,
   `/guide/agents/`, `/guide/book/`, `/guide/export/`,
   `/guide/pause-and-stop/`, `/guide/delete/`, and for apps and scripts
-  `/guide/tokens/`, `/guide/api/`, `/guide/api/clients/` and `/guide/changelog/`,
+  `/guide/tokens/`, `/guide/api/`, `/guide/api/basics/`, `/guide/api/notes/`,
+  `/guide/api/archive/`, `/guide/api/places/`, `/guide/api/check-ins/`,
+  `/guide/api/upcoming/`, `/guide/api/recipes/`, `/guide/api/reference/`,
+  `/guide/api/clients/` and `/guide/changelog/`,
   Release Notes for Changelog, the iPhone app's own changelog), `/faq/`, `/privacy/` and
   `/changelog/` (Release Notes for Release Notes, which the version at the
   foot of Settings links to). Each is a

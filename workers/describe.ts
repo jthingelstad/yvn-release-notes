@@ -245,6 +245,7 @@ function production(): Services {
       invocations: createInvocations(),
       self,
       maker: thumbs.make,
+      shrink: thumbs.shrink,
       geocode: (lat, lon) => places.namePhoto(lat, lon, geo),
       weatherFetch: places.fetchJson,
       log: safeLog,

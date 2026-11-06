@@ -79,6 +79,7 @@ test('the describe role grants every request a stream record, describe_all and t
       invocations: aws.invocations(invocations),
       self: aws.env.SELF!,
       clock: () => now,
+      shrink: async () => null,
       maker: async () => {
         // A note deleted while its thumbnail is made: the thumbnail goes too.
         if (gone.pending) await aws.aside(store, null, () => store.deleteNote('u', day, 'gone'));

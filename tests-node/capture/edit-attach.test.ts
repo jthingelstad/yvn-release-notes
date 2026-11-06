@@ -223,6 +223,7 @@ test('an MCP photo gets its thumbnail and, opted in, its description from the sa
       self: 'describe:live',
       clock: () => NOW,
       model: async () => async () => ({ content: [{ type: 'text', text: 'An orange sky.' }] }),
+      shrink: async () => null,
       maker: async () => ({ body: Buffer.from('synthetic thumb'), width: 64, height: 64 })
     };
   await worker.runEvent({ Records: [stream(row)] }, {}, services);

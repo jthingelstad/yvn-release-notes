@@ -84,6 +84,9 @@ function Stop({ stay }: { stay: Stay }) {
   const changed = async (next?: Stay) => {
     if (next) client.setQueryData(['check-in', stay.id], { check_in: next });
     await Promise.all([
+      // By kind, not by this stay's id: the page may be open on any id in the
+      // stay, whose query is the one on screen.
+      client.invalidateQueries({ queryKey: ['check-in'] }),
       client.invalidateQueries({ queryKey: ['check-ins'] }),
       client.invalidateQueries({ queryKey: ['activity'] }),
       client.invalidateQueries({ queryKey: ['named-places'] })
@@ -109,7 +112,7 @@ function Stop({ stay }: { stay: Stay }) {
       if (!window.confirm('Delete this check-in? It can’t be brought back.')) return;
       const r = await api('DELETE', '/api/check-ins/' + encodeURIComponent(stay.id));
       if (!r.ok) return problem.show(r.data);
-      client.removeQueries({ queryKey: ['check-in', stay.id] });
+      client.removeQueries({ queryKey: ['check-in'] });
       await changed();
       await navigate({ to: '/activity/', hash: 'only=check-ins' });
     });

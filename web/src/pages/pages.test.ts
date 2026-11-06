@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Day, Pin, Stay } from '../lib/types.ts';
 import { POLL, pollWhileWriting } from '../lib/queries.ts';
 import { groupQuiet } from './Timeline.tsx';
-import { mapLede, moved, pickedHead, sift, siftStays, type Live } from './Map.tsx';
+import { mapLede, moved, pickedHead, releaseMenu, sift, siftStays, type Live } from './Map.tsx';
 import { givingTo } from './Book.tsx';
 
 const day = (date: string, more: Partial<Day> = {}): Day => ({ date, version: '1.2.3', notes: [], ...more });
@@ -246,6 +246,14 @@ describe('check-ins on the map', () => {
     expect(mapLede(3, 1, 2, 0, true)).toBe('1 of 3 notes with a place of their own, and 0 of 2 check-ins.');
     expect(mapLede(3, 0, 2, 0, true)).toBe('None of your 3 notes with a place of their own or your 2 check-ins match.');
     expect(mapLede(1, 0, 0, 0, true)).toBe('None of your 1 note with a place of its own matches.');
+  });
+  it('keeps every release on the menu with one chosen, by age, counting what shows', () => {
+    const stays = [{ release: '9.9' }, { release: '10.0' }, { release: '10.0' }];
+    expect(releaseMenu([{ release: '9.9', notes: 2 }], stays, '9.9')).toEqual([
+      { release: '10.0', notes: 2 },
+      { release: '9.9', notes: 3 }
+    ]);
+    expect(releaseMenu([], [], '9.9')).toEqual([{ release: '9.9', notes: 0 }]);
   });
   it('heads a list by what is in it', () => {
     const pin = { place: 'Paris' } as unknown as Pin;

@@ -11,7 +11,9 @@ export { thumbKey } from './media.ts';
 export const LONGEST = 640,
   TARGET = 80 * 1024,
   SMALLEST = 240,
-  MAX_PIXELS = 100_000_000;
+  MAX_PIXELS = 100_000_000,
+  DESCRIBE_LONGEST = 1568,
+  DESCRIBE_QUALITY = 85;
 export const FORMATS = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 // Photos whose time and place are read (exif.ts): a JPEG, or an iPhone's HEIC.
 export const EXIF = new Set(['image/jpeg', 'image/heic', 'image/heif']);
@@ -71,6 +73,24 @@ export const make: Maker = async (data) => {
       if (longest * 0.8 < SMALLEST) return null;
       longest = rounded(longest * 0.8);
     }
+  } catch {
+    return null;
+  }
+};
+/** The copy of a too-big photo that goes to the model to be described. It stays
+ * in memory and is never stored; the original is untouched. */
+export const shrink = async (data: Buffer): Promise<Buffer | null> => {
+  try {
+    const source = sharp(data, { limitInputPixels: MAX_PIXELS, failOn: 'warning', pages: 1, sequentialRead: true }),
+      metadata = await source.metadata();
+    if (!metadata.width || !metadata.height || !['jpeg', 'png', 'gif', 'webp'].includes(metadata.format ?? ''))
+      return null;
+    return await source
+      .autoOrient()
+      .resize({ width: DESCRIBE_LONGEST, height: DESCRIBE_LONGEST, fit: 'inside', withoutEnlargement: true })
+      .flatten({ background: { r: 255, g: 251, b: 242 } })
+      .jpeg({ quality: DESCRIBE_QUALITY })
+      .toBuffer();
   } catch {
     return null;
   }

@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import type { NoteRecord } from '../domain/notes.ts';
 import type { Store, Item } from './store.ts';
-import { imageSize } from './media.ts';
+import { imageSize, MAX_UPLOAD } from './media.ts';
 import { missing, type Objects, type Log } from './services.ts';
 import { activityLog, again, recordActivity } from './activity.ts';
 export const MODEL = 'claude-haiku-5-5',
@@ -22,6 +22,10 @@ export const FORMATS = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/w
 export const PROMPT =
   'Describe this photo in one or two plain sentences, so it can be found by searching later: what is in it, where it seems to be, and any words you can read in it, such as signs. Answer with only those sentences: no preamble, no headings, no list of keywords or search terms.';
 export type Model = (body: Item) => Promise<Item>;
+/** A smaller JPEG of a photo too big to send as it is, or null if it can't be
+ * read. Injected so the workers that only need this file's key reader don't
+ * carry an image library (thumbs.ts has the real one). */
+export type Shrinker = (data: Buffer) => Promise<Buffer | null>;
 export class ApiError extends Error {
   status: number;
   kind: string | null;
@@ -133,13 +137,21 @@ export function waiting(note: NoteRecord) {
       m.kind === 'image' &&
       FORMATS.has(String(m.type)) &&
       !('description' in m) &&
-      Number(m.size ?? 0) <= MAX_BYTES &&
+      Number(m.size ?? 0) <= MAX_UPLOAD &&
       String(m.key ?? '').startsWith('media/')
   );
 }
-export async function wordsFor(data: Buffer, type: string, model: Model): Promise<string> {
+/** A photo over the model's limits goes as a smaller copy, held only here. */
+export async function wordsFor(data: Buffer, type: string, model: Model, shrink?: Shrinker): Promise<string> {
   const size = imageSize(data);
-  if (data.length > MAX_BYTES || (size && Math.max(...size) > MAX_SIDE)) return '';
+  let sent = data,
+    sentType = type;
+  if (data.length > MAX_BYTES || (size && Math.max(...size) > MAX_SIDE)) {
+    const small = shrink ? await shrink(data) : null;
+    if (!small || small.length > MAX_BYTES) return '';
+    sent = small;
+    sentType = 'image/jpeg';
+  }
   let answer: Item;
   try {
     answer = await model({
@@ -150,7 +162,7 @@ export async function wordsFor(data: Buffer, type: string, model: Model): Promis
         {
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: type, data: data.toString('base64') } },
+            { type: 'image', source: { type: 'base64', media_type: sentType, data: sent.toString('base64') } },
             { type: 'text', text: PROMPT }
           ]
         }
@@ -180,6 +192,7 @@ export interface Services {
   store: Store;
   objects: Objects;
   model: () => Promise<Model>;
+  shrink: Shrinker;
   clock?: () => number;
   log?: Log;
 }
@@ -223,12 +236,12 @@ export async function describe(note: NoteRecord, user: string, s: Services, chai
       try {
         let data: Buffer | null = null;
         try {
-          data = (await s.objects.get(key, { maxBytes: MAX_BYTES })).body;
+          data = (await s.objects.get(key, { maxBytes: MAX_UPLOAD })).body;
         } catch (error) {
           if (!missing(error) && !(error instanceof RangeError)) throw error;
         }
         if (!(await wanted(s.store, user))) continue;
-        const text = data ? await wordsFor(data, type, await s.model()) : '';
+        const text = data ? await wordsFor(data, type, await s.model(), s.shrink) : '';
         if (await s.store.finishProcessing('describe', user, day, id, n, key, type, text, owner)) done++;
       } finally {
         await s.store.releaseProcessing(user, 'describe', day, id, n, owner);

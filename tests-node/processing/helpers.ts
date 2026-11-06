@@ -49,6 +49,7 @@ export function setup(media: Item[] = [photo()], settings: Item = { describe: tr
     clock: () => now,
     model: async () => model,
     maker: async () => ({ body: Buffer.from('synthetic thumb'), width: 64, height: 64 }),
+    shrink: async () => testImage(),
     log: (fields) => logs.push(fields)
   };
   return { store, objects, invocations, calls, logs, services, note, profile };

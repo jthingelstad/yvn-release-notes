@@ -5,7 +5,9 @@ import * as d from '../../packages/backend/describe.ts';
 import * as worker from '../../workers/describe.ts';
 import { setup, photo, seedPhoto, day, id, now, stream } from './helpers.ts';
 import type { Item } from '../../packages/backend/store.ts';
-import { imageSize, thumbKey } from '../../packages/backend/media.ts';
+import { imageSize, MAX_UPLOAD, thumbKey } from '../../packages/backend/media.ts';
+import { DESCRIBE_LONGEST, shrink } from '../../packages/backend/thumbs.ts';
+import sharp from 'sharp';
 import type { NoteRecord } from '../../packages/domain/notes.ts';
 test('model request is exact fixed photo+prompt; text-only answer normalizes and truncates Unicode', async () => {
   const calls: Item[] = [],
@@ -75,19 +77,85 @@ test('oversized/wide image/refusal/per-image 400 empty answer; auth/rate/invalid
       error
     );
 });
-test('waiting excludes completed, unsupported, oversize and untrusted media', () => {
+test('waiting excludes completed, unsupported, past-upload-size and untrusted media', () => {
   assert.deepEqual(
     d.waiting({
       media: [
         photo(),
         { ...photo(1), description: '' },
         { ...photo(2), type: 'image/heic' },
-        { ...photo(3), size: d.MAX_BYTES + 1 },
-        { ...photo(4), key: 'remote' }
+        { ...photo(3), size: MAX_UPLOAD + 1 },
+        { ...photo(4), key: 'remote' },
+        { ...photo(5), size: d.MAX_BYTES + 1 }
       ]
     }),
-    [photo()]
+    [photo(), { ...photo(5), size: d.MAX_BYTES + 1 }]
   );
+});
+test('a photo over the limits goes to the model as the smaller copy, as a JPEG', async () => {
+  const calls: Item[] = [],
+    copy = d.testImage(8, 8),
+    wide = d.testImage();
+  wide.writeUInt32BE(8001, 16);
+  const model: d.Model = async (body) => {
+    calls.push(body);
+    return { content: [{ type: 'text', text: 'A big photo.' }] };
+  };
+  for (const big of [Buffer.alloc(d.MAX_BYTES + 1), wide])
+    assert.equal(await d.wordsFor(big, 'image/png', model, async () => copy), 'A big photo.');
+  for (const call of calls) {
+    const source = ((call.messages as Item[])[0]!.content as Item[])[0]!.source as Item;
+    assert.equal(source.media_type, 'image/jpeg');
+    assert.equal(source.data, copy.toString('base64'));
+  }
+  // One it can't shrink, or that stays too big, is said to have no words.
+  calls.length = 0;
+  assert.equal(await d.wordsFor(Buffer.alloc(d.MAX_BYTES + 1), 'image/png', model, async () => null), '');
+  assert.equal(
+    await d.wordsFor(Buffer.alloc(d.MAX_BYTES + 1), 'image/png', model, async () => Buffer.alloc(d.MAX_BYTES + 1)),
+    ''
+  );
+  assert.equal(calls.length, 0);
+});
+test('every photo on a note is described when some are over the limit, and the originals stay', async () => {
+  const big = (n: number) => ({ ...photo(n), size: d.MAX_BYTES + 1 });
+  const s = setup([photo(0), big(1), big(2)]);
+  await seedPhoto(s, 0);
+  const bytes = Buffer.alloc(d.MAX_BYTES + 1);
+  for (const n of [1, 2]) await s.objects.put(String(photo(n).key), bytes, { type: 'image/png' });
+  const note = (await s.services.store.note('u', day, id, true)) as NoteRecord;
+  assert.equal(await d.describe(note, 'u', s.services), 3);
+  const after = (await s.services.store.note('u', day, id, true)) as NoteRecord;
+  assert.deepEqual(
+    after.media?.map((m) => m.description),
+    ['A blue square.', 'A blue square.', 'A blue square.']
+  );
+  assert.deepEqual(s.calls.length, 3);
+  assert.equal((await s.objects.get(String(photo(1).key))).body.length, d.MAX_BYTES + 1);
+});
+test('the real shrink makes a too-big photo fit, turned upright, with no metadata', async () => {
+  const big = await sharp({
+    create: {
+      width: 4000,
+      height: 3000,
+      channels: 3,
+      background: '#888888',
+      noise: { type: 'gaussian', mean: 128, sigma: 70 }
+    }
+  })
+    .withExif({ IFD0: { Copyright: 'synthetic' } })
+    .withMetadata({ orientation: 6 })
+    .jpeg({ quality: 95 })
+    .toBuffer();
+  assert.ok(big.length > d.MAX_BYTES, `fixture is ${big.length} bytes`);
+  const small = await shrink(big);
+  assert.ok(small && small.length <= d.MAX_BYTES);
+  const seen = await sharp(small).metadata();
+  assert.equal(seen.format, 'jpeg');
+  assert.equal(seen.width, 3000 * (DESCRIBE_LONGEST / 4000));
+  assert.equal(seen.height, DESCRIBE_LONGEST);
+  assert.equal(seen.exif, undefined);
+  assert.equal(await shrink(Buffer.from('not a photo')), null);
 });
 test('HTTP model adapter uses bounded fixed origin/no redirects and scrubbed errors', async () => {
   let url = '',

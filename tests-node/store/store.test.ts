@@ -141,10 +141,21 @@ test('scan pagination projects private fields away including nested media', asyn
   });
   s.seed({ pk: 'OTHER#x', sk: 'PROFILE', email: 'private' });
   s.seed({ pk: 'USER#v', sk: 'PROFILE', status: 'stopped' });
+  s.seed({
+    pk: 'USER#u',
+    sk: 'CHECKIN#2026-10-09T12:00:00.000Z#c1791547200000-ab',
+    source: 'visit',
+    lat: 44.97,
+    lon: -93.26,
+    name: 'private',
+    district: 'private'
+  });
+  s.seed({ pk: 'USER#u', sk: 'NAMEDPLACE#p1', name: 'private', spots: [{ lat: 44.97, lon: -93.26 }] });
   assert.equal((await s.activeSubscribers()).length, 1);
   assert.deepEqual(await s.userIds(), ['u', 'v']);
   const rows = await s.censusItems();
-  assert.equal(rows.length, 3);
+  assert.equal(rows.length, 5);
+  assert.equal(JSON.stringify(rows).includes('44.97'), false);
   assert.equal(JSON.stringify(rows).includes('private'), false);
   assert.equal(JSON.stringify(rows).includes('ada@example'), false);
   assert.deepEqual(rows.find((i) => i.sk === note.sk)?.media, [{ kind: 'image' }]);

@@ -551,10 +551,19 @@ export class Store {
   async censusItems() {
     return this.rows(
       {
-        FilterExpression: 'begins_with(pk, :u) AND (sk = :p OR begins_with(sk, :d) OR begins_with(sk, :n))',
+        // Check-ins and remembered places come as their keys and source only: never a spot or a name.
+        FilterExpression:
+          'begins_with(pk, :u) AND (sk = :p OR begins_with(sk, :d) OR begins_with(sk, :n) OR begins_with(sk, :c) OR begins_with(sk, :np))',
         ProjectionExpression: 'pk, sk, #st, tz, send_time, last_sent_date, pause_from, pause_through, #src, #m[0].#k',
         ExpressionAttributeNames: { '#st': 'status', '#src': 'source', '#m': 'media', '#k': 'kind' },
-        ExpressionAttributeValues: { ':u': 'USER#', ':p': 'PROFILE', ':d': 'DAY#', ':n': 'NOTE#' }
+        ExpressionAttributeValues: {
+          ':u': 'USER#',
+          ':p': 'PROFILE',
+          ':d': 'DAY#',
+          ':n': 'NOTE#',
+          ':c': CHECKIN,
+          ':np': NAMED_PLACE
+        }
       },
       true
     );

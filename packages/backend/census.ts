@@ -4,6 +4,7 @@
  * copied to the output. Any scan/timezone failure is caught by the sender. */
 import type { Item, Store } from './store.ts';
 import { addDays, localDay } from '../domain/dates.ts';
+import { CHECKIN, NAMED_PLACE } from '../domain/check-ins.ts';
 
 export const NAMESPACE = 'ReleaseNotes';
 export const GRACE_SECONDS = 30 * 60;
@@ -21,11 +22,20 @@ const METRICS = [
   'ApiNotes',
   'NotesWithMedia',
   'Writers7',
-  'Writers30'
+  'Writers30',
+  'CheckIns',
+  'VisitCheckIns',
+  'TapCheckIns',
+  'CheckInAccounts',
+  'CheckInAccounts7',
+  'NamedPlaces'
 ];
 const noteDay = (row: Item): string => String(row.sk).split('#')[1]!;
 const between = (day: string, first: string, last: string) => first <= day && day <= last;
 const hasMedia = (row: Item) => Array.isArray(row.media) && row.media.length > 0;
+/** When a check-in began, from its key: CHECKIN#<at>#<id>. */
+const checkInAt = (row: Item): number => Date.parse(String(row.sk).slice(CHECKIN.length).split('#')[0]!);
+const WEEK_SECONDS = 7 * 86400;
 
 /** Python round(value, 1): nearest decimal tenth, ties to even. Using the
  * actual IEEE-754 value also preserves Python's binary-float edge cases. */
@@ -90,6 +100,15 @@ export function counts(items: Item[], now: number): Counts {
     totals.ApiNotes! += api;
     totals.EmailNotes! += notes.length - web - imported - agent - api;
     totals.NotesWithMedia! += notes.filter(hasMedia).length;
+    // Check-ins count as reports, as stored: a stay the app reported twice is two.
+    const checkIns = rows.filter((row) => String(row.sk).startsWith(CHECKIN)),
+      taps = checkIns.filter((row) => row.source === 'tap').length;
+    totals.CheckIns! += checkIns.length;
+    totals.TapCheckIns! += taps;
+    totals.VisitCheckIns! += checkIns.length - taps;
+    totals.NamedPlaces! += rows.filter((row) => String(row.sk).startsWith(NAMED_PLACE)).length;
+    if (checkIns.length) totals.CheckInAccounts!++;
+    if (checkIns.some((row) => checkInAt(row) >= (now - WEEK_SECONDS) * 1000)) totals.CheckInAccounts7!++;
     const profile = rows.find((row) => row.sk === 'PROFILE');
     if (!profile?.tz) continue;
     const timezone = String(profile.tz),

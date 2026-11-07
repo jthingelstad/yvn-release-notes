@@ -70,6 +70,35 @@ test('every channel and orphan note counts, media empty arrays do not', () => {
   );
 });
 
+test('check-ins count by source and account, with the last 7 days by when they began', () => {
+  const checkIn = (user: string, at: string, source = 'visit'): Item => ({
+    pk: `USER#${user}`,
+    sk: `CHECKIN#${at}#c${Date.parse(at)}-ab`,
+    source
+  });
+  const c = counts(
+    [
+      profile('a'),
+      checkIn('a', '2026-10-09T12:00:00.000Z'),
+      checkIn('a', '2026-10-09T13:00:00.000Z', 'tap'),
+      { pk: 'USER#a', sk: 'NAMEDPLACE#p1' },
+      { pk: 'USER#a', sk: 'NAMEDPLACE#p2' },
+      profile('b'),
+      checkIn('b', '2026-10-02T15:00:00.000Z'),
+      checkIn('b', '2026-10-01T15:00:00.000Z'),
+      profile('c'),
+      note('c', '2026-10-09')
+    ],
+    now
+  );
+  assert.deepEqual(
+    [c.CheckIns, c.VisitCheckIns, c.TapCheckIns, c.CheckInAccounts, c.CheckInAccounts7, c.NamedPlaces],
+    [4, 3, 1, 2, 2, 2]
+  );
+  assert.equal(counts([profile('b'), checkIn('b', '2026-10-02T14:59:59.000Z')], now).CheckInAccounts7, 0);
+  assert.deepEqual([c.Notes, c.Writers7], [1, 1]);
+});
+
 test('writer windows use local calendar days and count each subscriber once', () => {
   const c = counts(
     [

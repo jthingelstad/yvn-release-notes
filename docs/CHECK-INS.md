@@ -38,6 +38,10 @@ and it never becomes one by itself.
 - **Coordinates and place names are never logged** to CloudWatch, and the
   activity log stores neither. A row holds the check-in's id, and the name is
   joined when read, as Upcoming titles are.
+- **The census counts them and nothing more** (2026-11-07): check-ins stored,
+  by source (visit or tap), accounts with any and with one in the last 7 days,
+  and remembered places, for otto-ops' Release Notes product dashboard. It
+  reads each check-in's key and source, never a spot or a name.
 - **Asked only when it matters.** Always is asked for when someone turns
   check-ins on, never before. Apple allows one Always prompt an app.
 - **Amazon Location is told the coordinates alone**, as for a photo's spot.

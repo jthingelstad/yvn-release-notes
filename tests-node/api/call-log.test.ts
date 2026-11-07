@@ -84,3 +84,24 @@ test('agent families come from the registered name and say nothing else', () => 
   assert.equal(agentFamily('My own script'), 'other');
   assert.equal(agentFamily(undefined), 'other');
 });
+
+test('a tool that ran but could not be recorded logs the answer the agent got', async () => {
+  const { ctx, logs, app } = setup(),
+    a = await connected(ctx),
+    commit = ctx.store.mcpCommit.bind(ctx.store);
+  // The tool answers; recording its call in the connection's log then fails.
+  ctx.store.mcpCommit = async (changes, uid) => {
+    if (changes.some(([row]) => String(row.sk).startsWith('LOG#'))) throw new Error('storage down');
+    return commit(changes, uid);
+  };
+  const response = await app.request(ORIGIN + '/mcp', {
+    method: 'POST',
+    headers: { authorization: 'Bearer ' + a.token, 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'notes_context' } })
+  });
+  assert.ok(JSON.stringify(await response.json()).includes('temporarily_unavailable'));
+  assert.deepEqual(
+    logs.filter((l) => l.event === 'mcp-call'),
+    [{ event: 'mcp-call', tool: 'notes_context', outcome: 'unavailable', client: 'other' }]
+  );
+});

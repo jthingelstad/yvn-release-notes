@@ -203,6 +203,7 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
       } catch (error) {
         failure(context.now, String(family.user_id), options.log, error);
         answer = result(unavailable(), true);
+        called = 'unavailable';
       }
       // One line a call, counts only: the tool, what it came to and the agent's family.
       options.log?.({

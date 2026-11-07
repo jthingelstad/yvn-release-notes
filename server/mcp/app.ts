@@ -6,7 +6,9 @@ import { codePointLength } from '../../packages/domain/unicode.ts';
 import { FEEDBACK_TOOLS, TOOLS, PROTOCOLS, UPCOMING_TOOLS, VERSION, WRITE_TOOLS, scopesFor } from './contract.ts';
 import { Reader, quota, record, type ReaderContext } from './reader.ts';
 import { asciiJson, failure, object, validate, MAX_CHARS, ToolError, type SafeLog } from './common.ts';
-import { API_VERSION, handleV1 } from './v1.ts';
+import { API_VERSION, V1_ROUTES, handleV1 } from './v1.ts';
+import { clientProduct } from '../../packages/backend/tokens.ts';
+import { agentFamily } from '../../packages/domain/clients.ts';
 import { openApi } from './openapi.ts';
 export interface CaptureEvent {
   token: string;
@@ -134,7 +136,9 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
       const name = typeof params.name === 'string' ? params.name : '',
         args = Object.hasOwn(params, 'arguments') ? params.arguments : {},
         tool = TOOLS.find((t) => t.name === name);
-      let reader: Reader | undefined;
+      let reader: Reader | undefined,
+        // What the call came to, for its log line: a tool error's code, ok, or unavailable.
+        called = 'unavailable';
       try {
         let outcome: string;
         try {
@@ -184,6 +188,7 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
           answer = result({ server_version: VERSION, error: error.code, next_step: error.nextStep }, true);
           outcome = error.code;
         }
+        called = outcome;
         if (
           (!WRITE_TOOLS.has(name) || outcome !== 'ok') &&
           !(await record(
@@ -199,6 +204,13 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
         failure(context.now, String(family.user_id), options.log, error);
         answer = result(unavailable(), true);
       }
+      // One line a call, counts only: the tool, what it came to and the agent's family.
+      options.log?.({
+        event: 'mcp-call',
+        tool: tool ? name : 'unknown',
+        outcome: called,
+        client: agentFamily(family.client_name)
+      });
     } else rpcError = { code: -32601, message: 'Method not found' };
     return oauthResponse(200, { jsonrpc: '2.0', id: b.id, ...(rpcError ? { error: rpcError } : { result: answer }) });
   } catch (error) {
@@ -212,6 +224,23 @@ export async function handleMcp(request: Request, options: McpOptions): Promise<
     }
     return oauthResponse(503, { error: 'temporarily_unavailable' });
   }
+}
+/** /v1 with one line a call: the route's template and name, never its path,
+ * the status and the client's product (clientProduct: Changelog, okhttp). */
+export async function loggedV1(request: Request, options: McpOptions): Promise<Response> {
+  const path = new URL(request.url).pathname,
+    route = V1_ROUTES.find((r) => r.method === request.method && r.path.test(path)),
+    client = clientProduct(request.headers.get('user-agent')) ?? 'unknown';
+  const response = await handleV1(request, options);
+  options.log?.({
+    event: 'v1',
+    method: request.method,
+    route: route?.template ?? 'unmatched',
+    name: route?.name ?? 'unmatched',
+    status: response.status,
+    client
+  });
+  return response;
 }
 export function createMcpApp(options: McpOptions): Hono {
   const app = new Hono();
@@ -227,7 +256,7 @@ export function createMcpApp(options: McpOptions): Hono {
       }
     })
   );
-  app.all('/v1', (c) => handleV1(c.req.raw, options));
-  app.all('/v1/*', (c) => handleV1(c.req.raw, options));
+  app.all('/v1', (c) => loggedV1(c.req.raw, options));
+  app.all('/v1/*', (c) => loggedV1(c.req.raw, options));
   return app;
 }

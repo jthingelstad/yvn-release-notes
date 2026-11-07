@@ -378,7 +378,8 @@ test('hour/day quota under concurrency, live deletion and storage failures have 
   const outcomes = await Promise.allSettled(Array.from({ length: 16 }, () => quota(ctx, 'u')));
   assert.equal(outcomes.filter((o) => o.status === 'fulfilled').length, 1);
   assert.equal((await rpc(ctx, a.token, 'notes_context', {}, options(ctx, logs))).value.error, 'rate_limited');
-  assert.equal(logs.length, 0);
+  // A refused call is no failure: its one line is the call's own.
+  assert.deepEqual([...logs], [{ event: 'mcp-call', tool: 'notes_context', outcome: 'rate_limited', client: 'other' }]);
   ctx.store.mcpGet = async () => {
     throw new Error('Private ada@example.com');
   };

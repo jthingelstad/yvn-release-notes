@@ -552,17 +552,33 @@ export class Store {
     return this.rows(
       {
         // Check-ins and remembered places come as their keys and source only: never a spot or a name.
+        // A note's place comes as where it came from alone (place.from), API tokens and agent
+        // connections as whether they are live, and a connection's client_name only to be sorted
+        // into a family (domain/clients.ts).
         FilterExpression:
-          'begins_with(pk, :u) AND (sk = :p OR begins_with(sk, :d) OR begins_with(sk, :n) OR begins_with(sk, :c) OR begins_with(sk, :np))',
-        ProjectionExpression: 'pk, sk, #st, tz, send_time, last_sent_date, pause_from, pause_through, #src, #m[0].#k',
-        ExpressionAttributeNames: { '#st': 'status', '#src': 'source', '#m': 'media', '#k': 'kind' },
+          '(begins_with(pk, :u) AND (sk = :p OR begins_with(sk, :d) OR begins_with(sk, :n) OR begins_with(sk, :c)' +
+          ' OR begins_with(sk, :np) OR begins_with(sk, :t))) OR (begins_with(pk, :f) AND sk = :s)',
+        ProjectionExpression:
+          'pk, sk, #st, tz, send_time, last_sent_date, pause_from, pause_through, #src, #m[0].#k, #pl.#fr,' +
+          ' revoked, expires_at, client_id, client_name, user_id',
+        ExpressionAttributeNames: {
+          '#st': 'status',
+          '#src': 'source',
+          '#m': 'media',
+          '#k': 'kind',
+          '#pl': 'place',
+          '#fr': 'from'
+        },
         ExpressionAttributeValues: {
           ':u': 'USER#',
           ':p': 'PROFILE',
           ':d': 'DAY#',
           ':n': 'NOTE#',
           ':c': CHECKIN,
-          ':np': NAMED_PLACE
+          ':np': NAMED_PLACE,
+          ':t': 'APITOKEN#',
+          ':f': 'OAUTHFAMILY#',
+          ':s': 'STATE'
         }
       },
       true

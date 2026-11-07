@@ -35,6 +35,7 @@ const METRICS = [
   'ChosenPlaces',
   'DevicePlaces',
   'PhotoPlaces',
+  'ImportedPlaces',
   'ApiTokens',
   'AppSignIns',
   'TokenAccounts',
@@ -45,11 +46,16 @@ const METRICS = [
   'CodexConnections',
   'OtherAgentConnections'
 ];
-/** Where a note's place came from (backend/places.ts, workers/describe.ts). */
+/** Where a note's place came from (backend/places.ts, workers/describe.ts). A Day One import
+ * (backend/dayone.ts) keeps the entry's own place, borrows one from that day, or falls back to
+ * home; its photo places count with the rest. */
 const PLACE_FROM: Record<string, string> = {
   chosen: 'ChosenPlaces',
   device: 'DevicePlaces',
-  photo: 'PhotoPlaces'
+  photo: 'PhotoPlaces',
+  entry: 'ImportedPlaces',
+  day: 'ImportedPlaces',
+  home: 'ImportedPlaces'
 };
 const CONNECTIONS: Record<string, string> = {
   claude: 'ClaudeConnections',

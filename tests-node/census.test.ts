@@ -109,6 +109,8 @@ test('places by where they came from, live tokens and agent connections by famil
       note('a', '2026-10-09', 'w-1', { source: 'web', place: { from: 'chosen' } }),
       note('a', '2026-10-08', 'm2', { place: { from: 'photo' } }),
       note('a', '2026-10-07', 'm3', { place: {} }),
+      note('a', '2026-10-05', 'd1-x', { source: 'import', place: { from: 'entry' } }),
+      note('a', '2026-10-04', 'd1-y', { source: 'import', place: { from: 'home' } }),
       note('a', '2026-10-06', 'm4'),
       { pk: 'USER#a', sk: 'APITOKEN#t1', client_id: 'changelog' },
       { pk: 'USER#a', sk: 'APITOKEN#t2', expires_at: later },
@@ -124,8 +126,8 @@ test('places by where they came from, live tokens and agent connections by famil
     now
   );
   assert.deepEqual(
-    [c.Notes, c.NotesWithPlace, c.DevicePlaces, c.ChosenPlaces, c.PhotoPlaces, c.Subscribers],
-    [5, 4, 1, 1, 1, 2]
+    [c.Notes, c.NotesWithPlace, c.DevicePlaces, c.ChosenPlaces, c.PhotoPlaces, c.ImportedPlaces, c.Subscribers],
+    [7, 6, 1, 1, 1, 2, 2]
   );
   assert.deepEqual([c.ApiTokens, c.AppSignIns, c.TokenAccounts], [2, 1, 1]);
   assert.deepEqual(

@@ -151,11 +151,35 @@ test('scan pagination projects private fields away including nested media', asyn
     district: 'private'
   });
   s.seed({ pk: 'USER#u', sk: 'NAMEDPLACE#p1', name: 'private', spots: [{ lat: 44.97, lon: -93.26 }] });
+  s.seed({
+    pk: 'USER#w',
+    sk: 'NOTE#2026-10-08#m9',
+    text: 'private',
+    place: { city: 'private', lat: 44.97, lon: -93.26, from: 'device' }
+  });
+  s.seed({ pk: 'USER#u', sk: 'APITOKEN#t1', name: 'private', hash: 'private', scope: 'notes:write', client_id: 'c1' });
+  s.seed({ pk: 'OAUTHFAMILY#f1', sk: 'STATE', user_id: 'u', client_name: 'Claude', scope: 'private', expires_at: 1 });
+  s.seed({ pk: 'OAUTHACCESS#h', sk: 'STATE', user_id: 'u', kind: 'token' });
   assert.equal((await s.activeSubscribers()).length, 1);
   assert.deepEqual(await s.userIds(), ['u', 'v']);
   const rows = await s.censusItems();
-  assert.equal(rows.length, 5);
+  assert.equal(rows.length, 8);
   assert.equal(JSON.stringify(rows).includes('44.97'), false);
+  assert.deepEqual(rows.find((i) => i.sk === 'NOTE#2026-10-08#m9')?.place, { from: 'device' });
+  assert.deepEqual(
+    rows.find((i) => i.sk === 'APITOKEN#t1'),
+    { pk: 'USER#u', sk: 'APITOKEN#t1', client_id: 'c1' }
+  );
+  assert.deepEqual(
+    rows.find((i) => i.pk === 'OAUTHFAMILY#f1'),
+    {
+      pk: 'OAUTHFAMILY#f1',
+      sk: 'STATE',
+      user_id: 'u',
+      client_name: 'Claude',
+      expires_at: 1
+    }
+  );
   assert.equal(JSON.stringify(rows).includes('private'), false);
   assert.equal(JSON.stringify(rows).includes('ada@example'), false);
   assert.deepEqual(rows.find((i) => i.sk === note.sk)?.media, [{ kind: 'image' }]);

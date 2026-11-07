@@ -5,6 +5,8 @@
 import type { Item, Store } from './store.ts';
 import { addDays, localDay } from '../domain/dates.ts';
 import { CHECKIN, NAMED_PLACE } from '../domain/check-ins.ts';
+import { agentFamily } from '../domain/clients.ts';
+import { live } from './auth.ts';
 
 export const NAMESPACE = 'ReleaseNotes';
 export const GRACE_SECONDS = 30 * 60;
@@ -28,10 +30,39 @@ const METRICS = [
   'TapCheckIns',
   'CheckInAccounts',
   'CheckInAccounts7',
-  'NamedPlaces'
+  'NamedPlaces',
+  'NotesWithPlace',
+  'ChosenPlaces',
+  'DevicePlaces',
+  'PhotoPlaces',
+  'ApiTokens',
+  'AppSignIns',
+  'TokenAccounts',
+  'AgentConnections',
+  'AgentAccounts',
+  'ClaudeConnections',
+  'ChatGPTConnections',
+  'CodexConnections',
+  'OtherAgentConnections'
 ];
+/** Where a note's place came from (backend/places.ts, workers/describe.ts). */
+const PLACE_FROM: Record<string, string> = {
+  chosen: 'ChosenPlaces',
+  device: 'DevicePlaces',
+  photo: 'PhotoPlaces'
+};
+const CONNECTIONS: Record<string, string> = {
+  claude: 'ClaudeConnections',
+  chatgpt: 'ChatGPTConnections',
+  codex: 'CodexConnections',
+  other: 'OtherAgentConnections'
+};
 const noteDay = (row: Item): string => String(row.sk).split('#')[1]!;
 const between = (day: string, first: string, last: string) => first <= day && day <= last;
+const placeFrom = (row: Item): string | undefined => {
+  const place = row.place;
+  return place && typeof place === 'object' ? String((place as Item).from ?? '') : undefined;
+};
 const hasMedia = (row: Item) => Array.isArray(row.media) && row.media.length > 0;
 /** When a check-in began, from its key: CHECKIN#<at>#<id>. */
 const checkInAt = (row: Item): number => Date.parse(String(row.sk).slice(CHECKIN.length).split('#')[0]!);
@@ -79,7 +110,18 @@ function overdue(profile: Item, today: string, now: number, timezone: string): b
 export function counts(items: Item[], now: number): Counts {
   const byUser = new Map<string, Item[]>(),
     totals: Counts = Object.fromEntries(METRICS.map((name) => [name, 0]));
+  // Agent connections (OAUTHFAMILY#<id> / STATE) belong to user_id, not to their own key.
+  const agents = new Set<string>();
   for (const item of items) {
+    if (!String(item.pk).startsWith('OAUTHFAMILY#')) continue;
+    if (!live(item, now)) continue;
+    totals.AgentConnections!++;
+    totals[CONNECTIONS[agentFamily(item.client_name)]!]!++;
+    agents.add(String(item.user_id));
+  }
+  totals.AgentAccounts = agents.size;
+  for (const item of items) {
+    if (!String(item.pk).startsWith('USER#')) continue;
     const key = String(item.pk),
       rows = byUser.get(key) ?? [];
     rows.push(item);
@@ -100,6 +142,16 @@ export function counts(items: Item[], now: number): Counts {
     totals.ApiNotes! += api;
     totals.EmailNotes! += notes.length - web - imported - agent - api;
     totals.NotesWithMedia! += notes.filter(hasMedia).length;
+    for (const note of notes) {
+      const from = placeFrom(note);
+      if (from === undefined) continue;
+      totals.NotesWithPlace!++;
+      if (PLACE_FROM[from]) totals[PLACE_FROM[from]]!++;
+    }
+    const tokens = rows.filter((row) => String(row.sk).startsWith('APITOKEN#') && live(row, now));
+    totals.ApiTokens! += tokens.length;
+    totals.AppSignIns! += tokens.filter((row) => row.client_id).length;
+    if (tokens.length) totals.TokenAccounts!++;
     // Check-ins count as reports, as stored: a stay the app reported twice is two.
     const checkIns = rows.filter((row) => String(row.sk).startsWith(CHECKIN)),
       taps = checkIns.filter((row) => row.source === 'tap').length;

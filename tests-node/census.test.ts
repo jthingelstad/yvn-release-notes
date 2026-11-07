@@ -99,6 +99,48 @@ test('check-ins count by source and account, with the last 7 days by when they b
   assert.deepEqual([c.Notes, c.Writers7], [1, 1]);
 });
 
+test('places by where they came from, live tokens and agent connections by family', () => {
+  const later = now + 3600,
+    earlier = now - 3600;
+  const c = counts(
+    [
+      profile('a'),
+      note('a', '2026-10-09', 'm1', { place: { from: 'device' } }),
+      note('a', '2026-10-09', 'w-1', { source: 'web', place: { from: 'chosen' } }),
+      note('a', '2026-10-08', 'm2', { place: { from: 'photo' } }),
+      note('a', '2026-10-07', 'm3', { place: {} }),
+      note('a', '2026-10-06', 'm4'),
+      { pk: 'USER#a', sk: 'APITOKEN#t1', client_id: 'changelog' },
+      { pk: 'USER#a', sk: 'APITOKEN#t2', expires_at: later },
+      { pk: 'USER#a', sk: 'APITOKEN#t3', revoked: true },
+      profile('b'),
+      { pk: 'USER#b', sk: 'APITOKEN#t4', expires_at: earlier },
+      { pk: 'OAUTHFAMILY#f1', sk: 'STATE', user_id: 'a', client_name: 'Claude', expires_at: later },
+      { pk: 'OAUTHFAMILY#f2', sk: 'STATE', user_id: 'a', client_name: 'ChatGPT', expires_at: later },
+      { pk: 'OAUTHFAMILY#f3', sk: 'STATE', user_id: 'b', client_name: 'Codex', expires_at: later },
+      { pk: 'OAUTHFAMILY#f4', sk: 'STATE', user_id: 'b', client_name: 'Script', expires_at: later, revoked: true },
+      { pk: 'OAUTHFAMILY#f5', sk: 'STATE', user_id: 'c', client_name: 'Script', expires_at: earlier }
+    ],
+    now
+  );
+  assert.deepEqual(
+    [c.Notes, c.NotesWithPlace, c.DevicePlaces, c.ChosenPlaces, c.PhotoPlaces, c.Subscribers],
+    [5, 4, 1, 1, 1, 2]
+  );
+  assert.deepEqual([c.ApiTokens, c.AppSignIns, c.TokenAccounts], [2, 1, 1]);
+  assert.deepEqual(
+    [
+      c.AgentConnections,
+      c.AgentAccounts,
+      c.ClaudeConnections,
+      c.ChatGPTConnections,
+      c.CodexConnections,
+      c.OtherAgentConnections
+    ],
+    [3, 2, 1, 1, 1, 0]
+  );
+});
+
 test('writer windows use local calendar days and count each subscriber once', () => {
   const c = counts(
     [

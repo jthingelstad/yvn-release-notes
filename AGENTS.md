@@ -778,7 +778,13 @@ Where things are (each module's design comment has its contract):
   the stack owns no CloudWatch dashboard (Jamie, 2026-11-02:
   "Approved: delete the CloudWatch dashboards yvn-release-notes, elixir-mcp and elixir-drop-operations from their product stacks now that Grafana has their panels"). Counts only, no address, user id or note text; a new
   number goes in `packages/backend/census.ts`, and its panel in otto-ops
-  `scripts/build_grafana_dashboards.py`. Jamie's 2026-10-13 addition permits a
+  `scripts/build_grafana_dashboards.py`. The MCP function logs one line a call
+  for the API (`event: 'v1'`: method, route template, status, client product)
+  and for MCP tools (`event: 'mcp-call'`: tool, outcome, agent family), never a
+  token, account, note id, query or place (Jamie, 2026-11-07: "Approved: add
+  per-call logging for /v1 and MCP to Release Notes, census counts for notes
+  with a place and connected apps, and their Grafana panels"). Jamie's
+  2026-10-13 addition permits a
   metadata-only subscriber overview at `/admin-users/` for the configured
   administrator: addresses, delivery state, counts and activity dates,
   never journal contents.

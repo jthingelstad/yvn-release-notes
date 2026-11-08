@@ -912,7 +912,7 @@ everything made from them, and no write. `notes:all` opens all of this too.
 | `GET /v1/on-this-day?date=`                         | the same day of each earlier release, as the email's On this day                                |
 | `GET /v1/releases`, `.../{v}`                       | each year of life, and one in detail                                                            |
 | `GET /v1/tags/all`                                  | every tag with its notes, days, first and last                                                  |
-| `GET /v1/map/pins`                                  | where the notes were, as the Map's pins; a client draws its own map                             |
+| `GET /v1/map/pins?q=&tag=`                          | where the notes were, as the Map's pins; a client draws its own map; `q` and `tag` as search    |
 | `GET /v1/badges`                                    | earned and tracks, or `show_badges` false and nothing else                                      |
 | `GET /v1/mail-log`                                  | what became of each email in the last 30 days                                                   |
 
@@ -986,6 +986,17 @@ Reports count on their own, `V1_LIMITS.checkin` a UTC day, past which they are
 `rate_limited`, and `V1_LIMITS.lookups` of them are looked up with Amazon
 Location. Past that a report is saved with no `district`. Naming and deleting
 count as `change`.
+
+### 1.19.0: a search on the map
+
+`GET /v1/map/pins` takes `q` and `tag` as `GET /v1/search` does (the same
+words, the same refusals) and keeps the pins of the notes with every word and
+the tag. Changelog for iPhone's map narrows its notes by a search (Jamie,
+2026-11-08: "You should be able to filter by search, and that which could be
+keyword or tag"), as the web's Map does with its own `POST /api/map/search`.
+Paging every result of `GET /v1/search` would read whole notes to learn only
+which pins to keep. A year, and which notes or check-ins show, a client works
+out from the pins: each says its `date`.
 
 ### Jamie's calls
 

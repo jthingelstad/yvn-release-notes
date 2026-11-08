@@ -67,13 +67,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.18.2';
+export const API_VERSION = '1.19.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.19.0',
+    date: '2026-11-08',
+    summary:
+      'GET /v1/map/pins takes `q` and `tag` as GET /v1/search does, and keeps only the pins of the notes with every word and the tag, so an app can show what a search finds on its own map. Left out, every pin comes, as before.'
+  },
   {
     version: '1.18.2',
     date: '2026-11-06',
@@ -705,6 +711,23 @@ const later = (a: string[], b: string[]) => {
 };
 const oldestFirst = (x: { at: string[] }, y: { at: string[] }) => (later(x.at, y.at) ? 1 : later(y.at, x.at) ? -1 : 0);
 const cursorFor = (at: string[]) => Buffer.from(JSON.stringify(at), 'utf8').toString('base64url');
+
+/** `q` and `tag` as GET /v1/search and GET /v1/map/pins take them: at most
+ * ten words or quoted phrases, and a tag without its #. Either may be left out. */
+function soughtFrom(q: URLSearchParams): { terms: string[]; tag: string | null } | Refusal {
+  const words = q.get('q') ?? '',
+    tag = q.get('tag');
+  if ((words.match(RAW_TERMS) ?? []).length > 10)
+    return { code: 'invalid_request', message: 'q is at most ten words or quoted phrases.', extra: { field: 'q' } };
+  if (tag !== null && !isTag(tag))
+    return { code: 'invalid_request', message: 'tag is a tag, without its #.', extra: { field: 'tag' } };
+  return { terms: searchTerms(words), tag };
+}
+/** Whether a note has every word (in its words, places, link names,
+ * transcripts and descriptions, as the web finds them) and the tag. */
+const finds = (note: NoteRecord, sought: { terms: string[]; tag: string | null }) =>
+  sought.terms.every((t) => searchedText(note).includes(t)) &&
+  (sought.tag === null || tagsOf(note).includes(sought.tag));
 /** `after`: a place in a list's order, not a note, so a note deleted since
  * still lets the next page start where it was. */
 function afterFrom(q: URLSearchParams, parts: number): string[] | null | Refusal {
@@ -1180,17 +1203,9 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
       if (route.name === 'search') {
         // Every word, in the words, places, link names, transcripts and
         // descriptions, as the web and MCP search; newest first.
-        const words = q.get('q') ?? '',
-          tag = q.get('tag');
-        if ((words.match(RAW_TERMS) ?? []).length > 10)
-          return {
-            code: 'invalid_request',
-            message: 'q is at most ten words or quoted phrases.',
-            extra: { field: 'q' }
-          };
-        const terms = searchTerms(words);
-        if (tag !== null && !isTag(tag))
-          return { code: 'invalid_request', message: 'tag is a tag, without its #.', extra: { field: 'tag' } };
+        const sought = soughtFrom(q);
+        if (isRefusal(sought)) return sought;
+        const { terms, tag } = sought;
         if (!terms.length && tag === null)
           return { code: 'invalid_request', message: 'Send q, the words to find, or a tag.', extra: { field: 'q' } };
         const first = q.get('from') === null ? birthday : livedDay(q.get('from')!, 'from', birthday, today),
@@ -1206,11 +1221,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         const after = afterFrom(q, 3);
         if (isRefusal(after)) return after;
         const matched = (await store.notesBetween(uid, first, last, { ConsistentRead: true }))
-            .filter(
-              (i) =>
-                terms.every((t) => searchedText(i as NoteRecord).includes(t)) &&
-                (tag === null || tagsOf(i).includes(tag))
-            )
+            .filter((i) => finds(i as NoteRecord, sought))
             .map((item) => ({ item, at: noteAt(item) }))
             .sort((x, y) => oldestFirst(y, x)),
           rest = matched.filter((n) => !after || later(after, n.at)),
@@ -1301,8 +1312,14 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         // map: the base map stays the web's.
         const after = afterFrom(q, 2);
         if (isRefusal(after)) return after;
+        // Words and a tag narrow the pins as GET /v1/search finds notes (1.19.0).
+        const sought = soughtFrom(q);
+        if (isRefusal(sought)) return sought;
         const notes = await store.allNotes(uid, true),
-          all = pins(notes as NoteRecord[], birthday)
+          all = pins(
+            (notes as NoteRecord[]).filter((n) => finds(n, sought)),
+            birthday
+          )
             .map((pin) => ({ pin, at: [pin.date, pin.id] }))
             .sort(oldestFirst)
             .filter((n) => !after || later(n.at, after)),

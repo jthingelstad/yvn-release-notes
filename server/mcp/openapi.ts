@@ -237,9 +237,25 @@ const OPERATIONS: Record<string, Doc> = {
     summary: 'Where the notes were, as the Map’s pins, oldest first',
     description:
       'Only a note’s own place makes a pin; one a note inherits from its day never does. A client draws its own ' +
-      `map. A page stops at about ${NOTES_PAGE_BYTES / 1024 / 1024} MB: follow \`next\` until it is null. Needs ` +
+      'map. `q` and `tag` keep the pins of the notes a search finds (1.19.0). ' +
+      `A page stops at about ${NOTES_PAGE_BYTES / 1024 / 1024} MB: follow \`next\` until it is null. Needs ` +
       '`notes:read` or `notes:all`.',
-    parameters: [cursor('after', 'The next page: `next` from the answer before.')],
+    parameters: [
+      {
+        name: 'q',
+        in: 'query',
+        description:
+          'Only the notes with every word, as `searchNotes` finds them: at most ten words or quoted phrases.',
+        schema: { type: 'string' }
+      },
+      {
+        name: 'tag',
+        in: 'query',
+        description: 'Only the notes with this tag, without its #.',
+        schema: { type: 'string' }
+      },
+      cursor('after', 'The next page: `next` from the answer before.')
+    ],
     responses: { '200': answer('MapPins', 'One line a pin: its day and place.') }
   },
   badges: {

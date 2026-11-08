@@ -323,6 +323,36 @@ test('releases, tags, pins, badges and the mail log read as the web and MCP do',
   assert.deepEqual((await get(app, '/v1/mail-log', reader.token)).json!.entries, []);
 });
 
+test('GET /v1/map/pins keeps the pins of the notes a search finds (1.19.0)', async () => {
+  const { ctx, app } = setup(),
+    reader = await make(ctx, ['notes:read']),
+    at = (lat: number) => ({ city: 'Duluth', region: 'Minnesota', country: 'United States', lat, lon: -92.1 });
+  note(ctx, 'w-a', 'Lake walk #maine', '2026-10-10', { source: 'web', tags: ['maine'], place: at(46.7) });
+  note(ctx, 'w-b', 'Lake swim', '2026-10-11', { source: 'web', place: at(46.8) });
+  note(ctx, 'w-c', 'A memo', '2026-10-12', {
+    source: 'web',
+    place: at(46.9),
+    media: [{ n: 1, kind: 'audio', type: 'audio/mp4', size: 1, key: 'media/u/a.m4a', transcript: 'by the lake' }]
+  });
+  note(ctx, 'w-d', 'Lake with no place of its own', '2026-10-12', { source: 'web' });
+  const ids = async (query: string) =>
+    ((await get(app, '/v1/map/pins' + query, reader.token)).json!.pins as OAuthRow[]).map((p) => p.id);
+  assert.deepEqual(await ids(''), ['w-a', 'w-b', 'w-c']);
+  assert.deepEqual(await ids('?q=lake'), ['w-a', 'w-b', 'w-c']);
+  assert.deepEqual(await ids('?q=lake+swim'), ['w-b']);
+  assert.deepEqual(await ids('?tag=maine'), ['w-a']);
+  assert.deepEqual(await ids('?q=swim&tag=maine'), []);
+  // A pair of quotes holds no words, so every pin comes, as with none.
+  assert.deepEqual(await ids('?q=%22%22'), ['w-a', 'w-b', 'w-c']);
+  const map = (await get(app, '/v1/map/pins?q=lake', reader.token)).json!;
+  assert.equal(map.notes, 4);
+  for (const [path, field] of [
+    ['/v1/map/pins?q=a+b+c+d+e+f+g+h+i+j+k', 'q'],
+    ['/v1/map/pins?tag=%23%23', 'tag']
+  ] as const)
+    assert.equal((await get(app, path, reader.token)).error.field, field, path);
+});
+
 test('a read asked for as text is a line for each thing', async () => {
   const { ctx, app } = setup(),
     reader = await make(ctx, ['notes:read']);

@@ -23,16 +23,16 @@ import {
 } from '../../packages/domain/dates.ts';
 import { placeLabel, writtenAt, type NoteRecord, type PlaceRecord } from '../../packages/domain/notes.ts';
 import { isRich, RICH } from '../../packages/domain/rich.ts';
-import { found, isTag, split, tagTotals } from '../../packages/domain/tags.ts';
+import { TAG_REFUSALS, spelling, split, storedTags, tagTotals } from '../../packages/domain/tags.ts';
 import { codePointLength, pythonTrim, wellFormed } from '../../packages/domain/unicode.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { remindersFor, UPCOMING_MAX, upcomingViews } from '../../packages/domain/upcoming.ts';
 import { collectedOn, evaluateBadges } from '../../packages/domain/badges.ts';
 import { computeVersion, lifeCount, releaseAge, sameDayBefore } from '../../packages/domain/version.ts';
 import { searchTerms, searchedText } from '../../packages/domain/search.ts';
-import { namedPlaceView, stayView } from '../../packages/domain/check-ins.ts';
+import { namedPlaceView, stayTags, stayView, tagLists } from '../../packages/domain/check-ins.ts';
 import { badgeFacts } from '../../packages/backend/badges.ts';
-import { stayPage, staysAt, type CheckInReads } from '../../packages/backend/check-ins.ts';
+import { everyStay, stayPage, staysAt, type CheckInReads } from '../../packages/backend/check-ins.ts';
 import { segments, type Link } from '../../packages/backend/links.ts';
 import { pins } from '../../packages/backend/maps.ts';
 import { others } from '../../packages/backend/media.ts';
@@ -436,6 +436,13 @@ export const V1_ROUTES: readonly {
     scope: 'notes:all'
   },
   {
+    method: 'PATCH',
+    path: CHECK_IN_PLACE_CHECK_INS,
+    template: '/v1/check-ins/places/{id}/check-ins',
+    name: 'check-ins.places.tag-check-ins',
+    scope: 'notes:all'
+  },
+  {
     method: 'DELETE',
     path: CHECK_IN_PLACE,
     template: '/v1/check-ins/places/{id}',
@@ -616,8 +623,8 @@ const fileView = (m: OAuthRow, transcribing: boolean): OAuthRow => {
   };
 };
 
-const tagsOf = (item: OAuthRow): string[] =>
-  Array.isArray(item.tags) ? item.tags.map(String) : found(String(item.text ?? ''));
+/** A note's tags as stored (docs/TAGS.md): keys and names. */
+const tagsOf = (item: OAuthRow): string[] => storedTags(item).map((t) => t.key);
 
 /** What a day says of itself, on the timeline and alone (1.15.0): its version,
  * the place set on it, the place a note with none shows, as the web's day
@@ -670,6 +677,7 @@ function noteView(item: OAuthRow, profile: OAuthRow, tid: string): OAuthRow {
     source: String(item.source ?? 'email'),
     mine: item.source === 'api' && item.connection === tid,
     tags: tagsOf(item),
+    tag_names: storedTags(item).map((t) => t.name),
     markup: rich ? RICH : null,
     parts: split(segments(words, item.links as Link[] | undefined, rich)),
     place: item.place_cleared ? null : placeView(item.place),
@@ -733,15 +741,24 @@ const later = (a: string[], b: string[]) => {
 const oldestFirst = (x: { at: string[] }, y: { at: string[] }) => (later(x.at, y.at) ? 1 : later(y.at, x.at) ? -1 : 0);
 const cursorFor = (at: string[]) => Buffer.from(JSON.stringify(at), 'utf8').toString('base64url');
 
+/** A `tag` as each list takes it: any spelling of the tag (1.21.0; "Road
+ * Trip", "#road-trip" and "road_trip" are one), as its key; null for none. */
+function tagFrom(q: URLSearchParams): string | null | Refusal {
+  const raw = q.get('tag');
+  if (raw === null) return null;
+  const tag = spelling(raw);
+  return typeof tag === 'string'
+    ? { code: 'invalid_request', message: 'tag is a tag, by any spelling: ' + TAG_REFUSALS[tag], extra: { field: 'tag' } }
+    : tag.key;
+}
 /** `q` and `tag` as GET /v1/search and GET /v1/map/pins take them: at most
- * ten words or quoted phrases, and a tag without its #. Either may be left out. */
+ * ten words or quoted phrases, and a tag by any spelling. Either may be left out. */
 function soughtFrom(q: URLSearchParams): { terms: string[]; tag: string | null } | Refusal {
   const words = q.get('q') ?? '',
-    tag = q.get('tag');
+    tag = tagFrom(q);
   if ((words.match(RAW_TERMS) ?? []).length > 10)
     return { code: 'invalid_request', message: 'q is at most ten words or quoted phrases.', extra: { field: 'q' } };
-  if (tag !== null && !isTag(tag))
-    return { code: 'invalid_request', message: 'tag is a tag, without its #.', extra: { field: 'tag' } };
+  if (isRefusal(tag)) return tag;
   return { terms: searchTerms(words), tag };
 }
 /** Whether a note has every word (in its words, places, link names,
@@ -1088,7 +1105,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         return {
           status: 200,
           body: row,
-          line: [...row.pinned.map((t) => '#' + t), ...row.recent.map((r) => '#' + r.tag)].join(' ') || 'No tags yet.'
+          line: [...row.pinned_names, ...row.recent.map((r) => r.name)].join(', ') || 'No tags yet.'
         };
       }
       if (route.name === 'note') {
@@ -1334,11 +1351,33 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         };
       }
       if (route.name === 'tags.all') {
-        const tags = tagTotals(await store.noteTags(uid));
+        // Every tag, with its notes, Upcoming dates and check-ins (1.21.0),
+        // each check-in a stay as lists show it, hidden ones left out. A
+        // token without the scope to read those says null for them.
+        const dates = scopes.includes('upcoming'),
+          stops = scopes.includes('activity'),
+          [notes, upcoming, stays] = await Promise.all([
+            store.noteTags(uid),
+            dates ? store.upcomingEntries(uid) : [],
+            stops ? everyStay(store, uid).then((all) => all.stays) : []
+          ]),
+          tags = tagTotals(
+            notes,
+            upcoming,
+            stays.map((members) => ({ ...tagLists(stayTags(members)), day: members[0]!.day }))
+          ).map((t) => ({ ...t, upcoming: dates ? t.upcoming : null, check_ins: stops ? t.check_ins : null }));
         return {
           status: 200,
           body: { tags },
-          line: tags.map((t) => `#${t.tag} ${t.notes}`).join('\n') || 'No tags yet.'
+          line:
+            tags
+              .map(
+                (t) =>
+                  `${t.name}: ${t.notes} notes` +
+                  (t.upcoming === null ? '' : `, ${t.upcoming} upcoming`) +
+                  (t.check_ins === null ? '' : `, ${t.check_ins} check-ins`)
+              )
+              .join('\n') || 'No tags yet.'
         };
       }
       if (route.name === 'map.pins') {
@@ -1454,12 +1493,16 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
           };
         const days = dayRange(q);
         if (days && 'code' in days) return days;
+        // Only the stays with a tag (1.21.0), by any spelling.
+        const tag = tagFrom(q);
+        if (isRefusal(tag)) return tag;
         const start = (day: string) => new Date(Date.parse(localMoment(day, '00:00', tz))).toISOString(),
           ceiling = days ? start(addDays(days.last, 1)) : undefined,
           before = asked ?? ceiling,
           { stays, next, places } = await stayPage(store, uid, {
             ...(before === undefined ? {} : { before: ceiling && before > ceiling ? ceiling : before }),
             ...(days ? { floor: start(days.first) } : {}),
+            ...(tag === null ? {} : { tag }),
             limit
           }),
           items = stays.map((members) => stayView(members, places));

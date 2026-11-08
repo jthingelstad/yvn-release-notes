@@ -6,9 +6,11 @@ import {
   continues,
   hiddenStay,
   placeOfStay,
+  stayTags,
   type CheckIn,
   type NamedPlace
 } from '../domain/check-ins.ts';
+import { mergeTags, storedTags, tagFields, type Tag } from '../domain/tags.ts';
 
 export interface CheckInReads {
   namedPlaces(user: string): Promise<NamedPlace[]>;
@@ -41,16 +43,19 @@ export async function stayOf(
 /** A page of stays, newest first: below `before` (a cursor, or an ISO time),
  * each beginning at `floor` or later, with where the next page starts. A stay
  * goes by when it began, so one that began before `floor` is on an earlier day.
- * Stays at an ignored place are left out, unless `hidden` asks for them. */
+ * Stays at an ignored place are left out, unless `hidden` asks for them, and
+ * with `tag` (a key), so is each stay without that tag. */
 export async function stayPage(
   store: CheckInReads,
   user: string,
-  o: { before?: string; floor?: string; limit: number; hidden?: boolean }
+  o: { before?: string; floor?: string; limit: number; hidden?: boolean; tag?: string }
 ): Promise<{ stays: CheckIn[][]; next: string | null; places: NamedPlace[] }> {
   const places = await store.namedPlaces(user),
     stays: CheckIn[][] = [],
     under = (at: string) => o.floor !== undefined && at < o.floor,
-    shown = (members: CheckIn[]) => o.hidden === true || !hiddenStay(members, places);
+    shown = (members: CheckIn[]) =>
+      (o.hidden === true || !hiddenStay(members, places)) &&
+      (o.tag === undefined || stayTags(members).some((t) => t.key === o.tag));
   let cursor = o.before,
     current: CheckIn[] | null = null,
     next: string | null = null;
@@ -111,4 +116,44 @@ export async function staysAt(
 ): Promise<{ stays: CheckIn[][]; places: NamedPlace[] }> {
   const { stays, places } = await everyStay(store, user, true);
   return { stays: stays.filter((members) => placeOfStay(members, places)?.id === place), places };
+}
+
+/** How many stays are at a place as it will be once `next` is saved, hidden
+ * or not: what "Tag the check-ins already here" offers, before the place is
+ * written (Jamie's call 6, 2026-11-08). */
+export async function staysAtNext(store: CheckInReads, user: string, next: NamedPlace): Promise<CheckIn[][]> {
+  const { stays, places } = await everyStay(store, user, true),
+    all = [...places.filter((p) => p.id !== next.id), next];
+  return stays.filter((members) => placeOfStay(members, all)?.id === next.id);
+}
+
+/** A check-in or place with exactly these tags: both lists, or neither. */
+export function withTags<T extends Record<string, unknown>>(item: T, tags: readonly Tag[]): T {
+  const { tags: _keys, tag_names: _names, ...rest } = item;
+  return { ...rest, ...tagFields(tags) } as unknown as T;
+}
+
+const sameTags = (a: readonly Tag[], b: readonly Tag[]) =>
+  a.length === b.length && a.every((t, i) => t.key === b[i]!.key && t.name === b[i]!.name);
+
+/** A stay given a list of tags: each check-in whose own list differs gets the
+ * whole list, its revision on, so the stay reads as the list. */
+export function stayTagged(members: readonly CheckIn[], tags: readonly Tag[]): { next: CheckIn; old: CheckIn }[] {
+  return members
+    .filter((m) => !sameTags(storedTags(m), tags))
+    .map((old) => ({ old, next: { ...withTags(old, tags), revision: Number(old.revision) + 1 } }));
+}
+
+/** Tags added to every stay of a list, each keeping its own: the changes,
+ * and how many stays gained one. */
+export function staysTagged(stays: readonly CheckIn[][], added: readonly Tag[]) {
+  let count = 0;
+  const changes = stays.flatMap((members) => {
+    const had = stayTags(members),
+      now = mergeTags(had, added);
+    if (now.length === had.length) return [];
+    count++;
+    return stayTagged(members, now);
+  });
+  return { changes, count };
 }

@@ -4,7 +4,7 @@
  * in no log and no activity row. */
 import { randomUUID } from 'node:crypto';
 import { eventId, recordActivity } from '../../packages/backend/activity.ts';
-import { everyStay, stayOf, staysAt } from '../../packages/backend/check-ins.ts';
+import { everyStay, stayOf, staysAt, staysTagged, withTags } from '../../packages/backend/check-ins.ts';
 import { reject, type SessionService } from '../../packages/backend/sessions.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import {
@@ -27,7 +27,8 @@ import {
   type Spot
 } from '../../packages/domain/check-ins.ts';
 import { computeVersion, releaseName } from '../../packages/domain/version.ts';
-import { body, json } from './requests.ts';
+import { storedTags } from '../../packages/domain/tags.ts';
+import { body, json, tagsFrom } from './requests.ts';
 
 /** The spots a place needs to hold a whole stay, so remembering it can't split
  * the stay: its own, and each member's that none of them is near. */
@@ -101,6 +102,20 @@ export async function checkInRoutes(
     const places = await store.namedPlaces(uid),
       old = places.find((place) => place.id === args[0]);
     if (!old) reject(404, 'check-in-place-missing');
+    if (pattern === '/api/check-ins/places/{id}/check-ins' && method === 'PATCH') {
+      // Tag the check-ins already here (Jamie's call 6, 2026-11-08): the tags
+      // sent join each stay at the place, hidden or not, for the count the
+      // owner was shown.
+      const value = await body(service.request),
+        added = tagsFrom(value);
+      if (!added?.length) reject(400, 'tags', { reason: 'empty', at: -1 });
+      const { stays } = await staysAt(store, uid, old.id);
+      if (value.count !== stays.length) reject(409, 'check-in-count', { count: stays.length });
+      const { changes, count } = staysTagged(stays, added);
+      if (!(await store.checkInWrites(uid, changes, [], []))) reject(409, 'check-in-changed');
+      if (count) await note('checkin.tagged', { place: old.id, count });
+      return json({ tagged: count });
+    }
     if (pattern === '/api/check-ins/places/{id}/check-ins') {
       // Delete existing check-ins here: every stay at the place, hidden or
       // not, once the owner has seen how many (Jamie, 2026-11-08). The place
@@ -125,29 +140,48 @@ export async function checkInRoutes(
       const { stays } = await staysAt(store, uid, old.id);
       return json({ place: { ...namedPlaceView(old), check_ins: stays.length } });
     }
-    let next: Item | undefined;
+    let next: Item | undefined,
+      gained = false;
     if (method === 'PUT') {
       const value = await body(service.request),
         renaming = value.name !== undefined,
-        given = renaming ? checkInName(value.name) : old.name;
+        given = renaming ? checkInName(value.name) : old.name,
+        // The place's whole list of tags (2026-11-08), copied onto each new
+        // check-in here. Taking one off leaves the check-ins already here.
+        tagging = tagsFrom(value);
       if (!given) reject(400, 'check-in-name');
       if (value.ignored !== undefined && typeof value.ignored !== 'boolean') reject(400, 'check-in-ignored');
-      if (!renaming && value.ignored === undefined) reject(400, 'check-in-name');
+      if (!renaming && value.ignored === undefined && !tagging) reject(400, 'check-in-name');
       if (renaming && places.some((place) => place.id !== old.id && sameName(place.name, given)))
         reject(409, 'check-in-place-taken');
-      const ignored = typeof value.ignored === 'boolean' ? value.ignored : old.ignored === true;
-      if (given === old.name && ignored === (old.ignored === true)) return json({ place: namedPlaceView(old) });
-      next = { ...withIgnored(old, ignored), name: given, revision: Number(old.revision) + 1 };
+      const ignored = typeof value.ignored === 'boolean' ? value.ignored : old.ignored === true,
+        had = storedTags(old),
+        tags = tagging ?? had,
+        retagged = JSON.stringify(tags) !== JSON.stringify(had);
+      gained = tags.some((t) => !had.some((h) => h.key === t.key));
+      if (given === old.name && ignored === (old.ignored === true) && !retagged)
+        return json({ place: namedPlaceView(old) });
+      next = { ...withTags(withIgnored(old, ignored), tags), name: given, revision: Number(old.revision) + 1 };
     }
     if (!(await store.checkInWrites(uid, [{ ...(next ? { next } : {}), old }], [], [])))
       reject(409, 'check-in-changed');
     if (!next) await note('checkin.place', { place: old.id, change: 'forgotten' });
     else {
       if (next.name !== old.name) await note('checkin.place', { place: old.id, change: 'renamed' });
+      if (JSON.stringify(storedTags(next)) !== JSON.stringify(storedTags(old)))
+        await note('checkin.place', { place: old.id, change: 'tagged' });
       if ((next.ignored === true) !== (old.ignored === true))
         await note(next.ignored === true ? 'checkin.ignored' : 'checkin.unignored', { place: old.id });
     }
-    return next ? json({ place: namedPlaceView(next as NamedPlace) }) : new Response(null, { status: 204 });
+    if (!next) return new Response(null, { status: 204 });
+    // A place that gained a tag says how many check-ins are there, so the
+    // page can offer, once, to tag them too.
+    return json({
+      place: {
+        ...namedPlaceView(next as NamedPlace),
+        ...(gained ? { check_ins: (await staysAt(store, uid, old.id)).stays.length } : {})
+      }
+    });
   }
 
   // One check-in stands for its whole stay: any id in it names the stay.
@@ -174,11 +208,30 @@ export async function checkInRoutes(
   }
 
   const value = await body(service.request),
-    given = value.name === null ? null : checkInName(value.name);
-  if (value.name !== null && !given) reject(400, 'check-in-name');
+    // A stay's tags (2026-11-08): the whole list, set on each check-in in it.
+    tagging = tagsFrom(value),
+    naming = value.name !== undefined || !tagging,
+    given = !naming || value.name === null ? null : checkInName(value.name);
+  if (naming && value.name !== null && !given) reject(400, 'check-in-name');
   if (value.revision !== stayRevision(members)) reject(409, 'check-in-changed');
   const remember = value.remember === true;
   if (remember && !given) reject(400, 'check-in-name');
+  if (remember && tagging) reject(400, 'check-in-name');
+  if (!naming) {
+    if (members.length > STAY_WRITE_MAX) reject(400, 'check-in-stay-long');
+    const tagged = members.map((m) => ({ ...withTags(m, tagging!), revision: Number(m.revision) + 1 }));
+    if (
+      !(await store.checkInWrites(
+        uid,
+        members.map((old, i) => ({ next: tagged[i]!, old })),
+        [],
+        []
+      ))
+    )
+      reject(409, 'check-in-changed');
+    await note('checkin.tagged', { checkin: members[0]!.id, day: members[0]!.day });
+    return json({ check_in: shown(tagged, places) });
+  }
   const clear = (m: CheckIn, name: string | null) => ({ ...m, name, revision: Number(m.revision) + 1 });
   if (remember) {
     // The name goes on the place, so this stop's own name comes off, or it
@@ -221,7 +274,7 @@ export async function checkInRoutes(
   }
   // Naming lands whole, or the stay would split on the way.
   if (members.length > STAY_WRITE_MAX) reject(400, 'check-in-stay-long');
-  const named = members.map((m) => clear(m, given));
+  const named = members.map((m) => (tagging ? withTags(clear(m, given), tagging) : clear(m, given)));
   if (
     !(await store.checkInWrites(
       uid,
@@ -232,5 +285,6 @@ export async function checkInRoutes(
   )
     reject(409, 'check-in-changed');
   await note('checkin.named', { checkin: members[0]!.id, day: members[0]!.day });
+  if (tagging) await note('checkin.tagged', { checkin: members[0]!.id, day: members[0]!.day });
   return json({ check_in: shown(named, places) });
 }

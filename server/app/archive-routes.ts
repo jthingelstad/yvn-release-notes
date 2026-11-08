@@ -23,7 +23,10 @@ const given = (giving: string[]) => (giving.length ? { giving } : {});
 /** The most badge keys one welcome back marks seen: more than are earnable. */
 const MAX_TOLD = 500;
 import { json, body, dayFrom, dateOf, pageLimit, searchFrom } from './requests.ts';
-import { isTag, tagTotals } from '../../packages/domain/tags.ts';
+import { spelling, storedTags, tagTotals } from '../../packages/domain/tags.ts';
+import { upcomingViews } from '../../packages/domain/upcoming.ts';
+import { everyStay } from '../../packages/backend/check-ins.ts';
+import { stayTags, stayView, tagLists } from '../../packages/domain/check-ins.ts';
 export async function renderedDays(
   service: SessionService,
   uid: string,
@@ -176,9 +179,7 @@ export async function archiveRoutes(
     const [first, last] = releaseSpan(String(p.birthday), age),
       shownLast = last < today ? last : today,
       index = (await store.noteTags(uid)).filter((n) => dateOf(n) >= first && dateOf(n) <= shownLast),
-      have = [...new Set(index.map(dateOf))].sort(),
-      counts = new Map<string, number>();
-    for (const n of index) for (const tag of (n.tags as string[]) ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      have = [...new Set(index.map(dateOf))].sort();
     const after = query.has('after') ? dayFrom(p, query.get('after'), ctx.now) : null,
       picked = have.filter((d) => !after || d > after),
       page = picked.slice(0, pageLimit(query)),
@@ -195,9 +196,8 @@ export async function archiveRoutes(
       longest: computeStreak(new Set(have), addDays(shownLast, 1), paused).longest,
       ...(p.badges !== false ? { badges: releaseBadges(String(p.birthday), age, new Set(have)) } : {}),
       ...given(givenDuring(p.giving, first, shownLast)),
-      tags: [...counts]
-        .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
-        .map(([tag, notes]) => ({ tag, notes })),
+      // Each with its name as most recently used (docs/TAGS.md).
+      tags: tagTotals(index).map(({ tag, name, notes }) => ({ tag, name, notes })),
       days: await renderedDays(service, uid, p, page),
       after: picked.length > page.length ? page.at(-1) : null
     });
@@ -234,7 +234,26 @@ export async function archiveRoutes(
     if (keys.length && !(await store.addSeenBadges(uid, keys, iso(ctx.now)))) reject(401, 'signed-out');
     return json({ seen: keys.length });
   }
-  if (pattern === '/api/tags') return json({ tags: tagTotals(await store.noteTags(uid)) });
+  // Every tag, with its notes, Upcoming dates and check-ins (2026-11-08):
+  // all three, read whole, as a tag's page shows them.
+  const tagged = async () => {
+    const [notes, upcoming, { stays, places }] = await Promise.all([
+      store.noteTags(uid),
+      store.upcomingEntries(uid),
+      everyStay(store, uid)
+    ]);
+    return {
+      totals: tagTotals(
+        notes,
+        upcoming,
+        stays.map((members) => ({ ...tagLists(stayTags(members)), day: members[0]!.day }))
+      ),
+      upcoming,
+      stays,
+      places
+    };
+  };
+  if (pattern === '/api/tags') return json({ tags: (await tagged()).totals });
   const by: Record<string, Item[]> = {};
   let terms: string[] = [],
     every: Item[] | null = null;
@@ -254,23 +273,44 @@ export async function archiveRoutes(
   for (const n of every ?? []) if (by[dateOf(n)]) (whole[dateOf(n)] ??= []).push(n);
   const views = await renderedDays(service, uid, p, shown, by, every ? whole : undefined);
   for (const v of views) delete v.weather;
+  if (pattern === '/api/search')
+    return json({
+      terms,
+      notes: Object.values(by).reduce((n, v) => n + v.length, 0),
+      day_count: dates.length,
+      today,
+      tz: p.tz,
+      days: views
+    });
+  // A tag's page: its notes, its Upcoming dates and its check-ins (Jamie's
+  // call 5, 2026-11-08), named as it was most recently used.
+  const all = await tagged(),
+    total = all.totals.find((t) => t.tag === tag);
   return json({
-    ...(pattern === '/api/search'
-      ? { terms, notes: Object.values(by).reduce((n, v) => n + v.length, 0), day_count: dates.length }
-      : { tag }),
+    tag,
+    name: total?.name ?? tag,
     today,
     tz: p.tz,
-    days: views
+    days: views,
+    upcoming: upcomingViews(
+      all.upcoming.filter((u) => storedTags(u).some((t) => t.key === tag)),
+      today
+    ),
+    check_ins: all.stays
+      .filter((members) => stayTags(members).some((t) => t.key === tag))
+      .map((members) => ({ ...stayView(members, all.places), time_zone: members[0]!.time_zone ?? p.tz }))
   });
 }
 function pathTag(raw: string): string | null {
   // The address every tag before 2026-10-30 had, read as it always was.
   if (/^[a-z0-9]{1,50}(?:-[a-z0-9]{1,49})*$/.test(raw)) return raw;
-  let tag: string;
+  let typed: string;
   try {
-    tag = decodeURIComponent(raw);
+    typed = decodeURIComponent(raw);
   } catch {
     return null;
   }
-  return isTag(tag) ? tag : null;
+  // Any spelling of a tag is its address (2026-11-08): "Road Trip" is road-trip.
+  const tag = spelling(typed);
+  return typeof tag === 'string' ? null : tag.key;
 }

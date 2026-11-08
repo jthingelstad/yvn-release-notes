@@ -13,8 +13,14 @@
  *
  * Everything shown is worked out when read, so remembering a name applies at
  * once to every stop there, and the merge rule can change without touching
- * data. */
+ * data.
+ *
+ * Tags (docs/TAGS.md, 2026-11-08): a check-in and a remembered place carry
+ * `tags` (keys) and `tag_names`, as a note does. A new check-in at a place
+ * takes the place's tags when it is kept; a stay shows the tags of all its
+ * check-ins, and tagging a stay sets the same list on each of them. */
 import { codePointLength } from './unicode.ts';
+import { mergeTags, storedTags, type Tag } from './tags.ts';
 
 export const CHECKIN = 'CHECKIN#';
 /** Above every check-in key ('$' follows '#'). */
@@ -50,6 +56,9 @@ export interface NamedPlace extends Row {
   /** Ignored: no stop is kept here, and those kept already are hidden. */
   ignored?: boolean;
   revision?: number;
+  /** Its tags (keys) and their names, copied onto each new check-in here. */
+  tags?: string[];
+  tag_names?: string[];
 }
 /** A check-in's stored fields. */
 export interface CheckIn extends Row {
@@ -63,7 +72,16 @@ export interface CheckIn extends Row {
   source: string;
   name?: string | null;
   district?: string | null;
+  tags?: string[];
+  tag_names?: string[];
 }
+/** A stay's tags: every tag of its check-ins, each once, the first's first. */
+export const stayTags = (members: readonly CheckIn[]): Tag[] => mergeTags(...members.map((m) => storedTags(m)));
+/** Tags shown as an item's two lists, which are empty when it has none. */
+export const tagLists = (tags: readonly Tag[]) => ({
+  tags: tags.map((t) => t.key),
+  tag_names: tags.map((t) => t.name)
+});
 export interface ShownName {
   label: string;
   named_by: (typeof NAMED_BY)[number];
@@ -217,6 +235,7 @@ export function stayView(members: readonly CheckIn[], places: readonly NamedPlac
     token: head.token ?? null,
     token_id: head.token_id ?? null,
     client: head.client ?? null,
+    ...tagLists(stayTags(members)),
     revision: stayRevision(members)
   };
 }
@@ -225,6 +244,7 @@ export const namedPlaceView = (place: NamedPlace): Row => ({
   name: place.name,
   spots: place.spots,
   ignored: place.ignored === true,
+  ...tagLists(storedTags(place)),
   revision: Number(place.revision ?? 1)
 });
 

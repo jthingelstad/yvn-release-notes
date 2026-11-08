@@ -41,7 +41,7 @@ import {
 import { keepDay, placeOf, type WeatherStore } from '../packages/backend/weather.ts';
 import { errorFields, safeLog } from '../packages/backend/services.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
-import { pinnedTags, pinsOf, tagRow, type TagRowStore } from '../packages/backend/tag-row.ts';
+import { pinnedTags, storedPins, tagRow, type TagRowStore } from '../packages/backend/tag-row.ts';
 import {
   claimUploads,
   dropCopies,
@@ -72,7 +72,7 @@ import {
   type UpcomingBatch,
   type UpcomingChange
 } from '../packages/backend/upcoming.ts';
-import { stayOf, staysAt, type CheckInReads } from '../packages/backend/check-ins.ts';
+import { stayOf, staysAt, staysAtNext, staysTagged, stayTagged, withTags, type CheckInReads } from '../packages/backend/check-ins.ts';
 import {
   STAY_WRITE_MAX,
   CHECKIN_SOURCES,
@@ -89,13 +89,14 @@ import {
   stayView,
   hiddenStay,
   ignoredAt,
+  nearestPlace,
   withIgnored,
   type CheckIn,
   type NamedPlace
 } from '../packages/domain/check-ins.ts';
 import { iso, localDay, validDay, validTimezone } from '../packages/domain/dates.ts';
 import { MAX_NOTE, noteWords, type NoteRecord } from '../packages/domain/notes.ts';
-import { TAG_REFUSALS, fieldTags, isRefused, noteTags, type Tag } from '../packages/domain/tags.ts';
+import { TAG_REFUSALS, fieldTags, isRefused, mergeTags, noteTags, storedTags, tagFields, type Tag } from '../packages/domain/tags.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
 import { codePointLength } from '../packages/domain/unicode.ts';
 import { computeVersion } from '../packages/domain/version.ts';
@@ -196,13 +197,14 @@ export const API_WRITES: Record<string, readonly string[]> = {
   'upcoming.batch': ['add', 'change', 'remove', 'dry_run'],
   'upcoming.delete': ['id', 'revision'],
   'check-ins.add': ['arrived', 'left', 'lat', 'lon', 'accuracy_m', 'time_zone', 'source'],
-  'check-ins.name': ['id', 'name', 'revision'],
+  'check-ins.name': ['id', 'name', 'revision', 'tags'],
   'check-ins.delete': ['id'],
   'check-ins.delete-all': ['confirm'],
-  'check-ins.places.add': ['name', 'lat', 'lon', 'ignored'],
-  'check-ins.places.change': ['id', 'name', 'ignored'],
+  'check-ins.places.add': ['name', 'lat', 'lon', 'ignored', 'tags'],
+  'check-ins.places.change': ['id', 'name', 'ignored', 'tags'],
   'check-ins.places.delete': ['id'],
   'check-ins.places.delete-check-ins': ['id', 'count'],
+  'check-ins.places.tag-check-ins': ['id', 'tags', 'count'],
   'token.revoke': []
 };
 
@@ -869,6 +871,8 @@ export async function writeApi(
           random = randomUUID().replace(/-/g, ''),
           id = same?.id ?? checkInId(report.at, random),
           left = report.left ?? same?.left ?? null,
+          // A new stop takes the tags of the remembered place it is at.
+          at = same ? null : nearestPlace(report, places),
           item: OAuthRow = same
             ? { ...same, left, revision: Number(same.revision) + 1 }
             : {
@@ -879,6 +883,7 @@ export async function writeApi(
                 accuracy_m: report.accuracy_m ?? null,
                 district,
                 name: null,
+                ...(at ? tagFields(storedTags(at)) : {}),
                 ...by(),
                 connection: tid,
                 revision: 1
@@ -912,11 +917,14 @@ export async function writeApi(
         };
         after = async () => undefined;
       } else if (op === 'check-ins.name') {
-        if (!Object.hasOwn(args, 'name'))
-          throw new ApiRefusal('invalid_request', 'Send name, or null to take it away.', { field: 'name' });
+        // A name (null takes it away), tags (1.21.0), or both.
+        const tagging = tagsArg(args),
+          naming = Object.hasOwn(args, 'name');
+        if (!naming && !tagging)
+          throw new ApiRefusal('invalid_request', 'Send name (null takes it away), tags, or both.', { field: 'name' });
         if (!Number.isSafeInteger(args.revision) || Number(args.revision) < 1)
           throw new ApiRefusal('invalid_request', 'Send the revision you read, a whole number.', { field: 'revision' });
-        const given = args.name === null ? null : nameFrom(args.name),
+        const given = !naming || args.name === null ? null : nameFrom(args.name),
           places = await store.namedPlaces(uid),
           members = await checkInStay(places);
         if (stayRevision(members) !== args.revision)
@@ -931,7 +939,12 @@ export async function writeApi(
             `A stay of more than ${STAY_WRITE_MAX} check-ins can't take one name. Delete some of it first.`,
             { field: 'id' }
           );
-        const named = members.map((m) => ({ ...m, name: given, revision: Number(m.revision) + 1 })),
+        const named = members.map((m) => ({
+            ...(tagging ? withTags(m, tagging) : m),
+            name: naming ? given : (m.name ?? null),
+            revision: Number(m.revision) + 1
+          })),
+          retagged = tagging !== null && stayTagged(members, tagging).length > 0,
           body = { check_in: stayView(named, namesFor(places)) };
         landed = await store.checkInWrites(
           uid,
@@ -944,12 +957,10 @@ export async function writeApi(
         );
         answer = { status: 200, body, replayed: false, limit };
         after = async () => {
+          const fields = { ...by(), checkin: members[0]!.id, day: members[0]!.day };
           await record([
-            {
-              kind: 'checkin.named',
-              id: again(members[0]!.id),
-              fields: { ...by(), checkin: members[0]!.id, day: members[0]!.day }
-            }
+            ...(naming ? [{ kind: 'checkin.named', id: again(members[0]!.id), fields }] : []),
+            ...(retagged ? [{ kind: 'checkin.tagged', id: again(members[0]!.id), fields }] : [])
           ]);
         };
       } else if (op === 'check-ins.delete') {
@@ -998,7 +1009,8 @@ export async function writeApi(
       } else if (op === 'check-ins.places.add') {
         const given = nameFrom(args.name),
           spot = spotOf({ lat: args.lat, lon: args.lon }),
-          flag = ignoredFrom(args);
+          flag = ignoredFrom(args),
+          tagging = tagsArg(args);
         if (!spot) throw new ApiRefusal('invalid_request', 'Send lat and lon in degrees.', { field: 'lat' });
         const places = await store.namedPlaces(uid),
           old = places.find((p) => sameName(p.name, given));
@@ -1015,7 +1027,11 @@ export async function writeApi(
           was = old?.ignored === true,
           ignored = flag ?? was,
           flips = ignored !== was,
-          next = withIgnored(
+          // Tags sent join a remembered place's own (1.21.0).
+          hadTags = old ? storedTags(old) : [],
+          tags = tagging ? mergeTags(hadTags, tagging) : hadTags,
+          gained = tags.length > hadTags.length,
+          spotted = withIgnored(
             (old
               ? { ...old, spots: had ? old.spots : [...old.spots, spot], revision: Number(old.revision) + 1 }
               : {
@@ -1028,9 +1044,17 @@ export async function writeApi(
                 }) as NamedPlace,
             ignored
           ),
-          writes = !had || flips,
+          next = withTags(spotted, tags),
+          writes = !had || flips || gained,
           status = old ? 200 : 201,
-          body = { place: namedPlaceView(writes ? next : old!) };
+          // A place that gained tags says how many check-ins are there, to
+          // offer tagging them (PATCH /v1/check-ins/places/{id}/check-ins).
+          body = {
+            place: {
+              ...namedPlaceView(writes ? next : old!),
+              ...(gained ? { check_ins: (await staysAtNext(store, uid, next)).length } : {})
+            }
+          };
         landed = await store.checkInWrites(
           uid,
           writes ? [{ next, ...(old ? { old } : {}) }] : [],
@@ -1052,6 +1076,9 @@ export async function writeApi(
                     fields: { ...by(), place: id, change: old ? 'spot' : 'added' }
                   }
                 ]),
+            ...(gained && old
+              ? [{ kind: 'checkin.place', id: again(id), fields: { ...by(), place: id, change: 'tagged' } }]
+              : []),
             ...(flips ? [ignoreEvent(id, ignored)] : [])
           ]);
         };
@@ -1062,9 +1089,10 @@ export async function writeApi(
         if (!old) throw new ApiRefusal('not_found', NO_PLACE);
         const changing = op === 'check-ins.places.change',
           renaming = changing && Object.hasOwn(args, 'name'),
-          flag = changing ? ignoredFrom(args) : undefined;
-        if (changing && !renaming && flag === undefined)
-          throw new ApiRefusal('invalid_request', 'Send name, ignored, or both.', { field: 'name' });
+          flag = changing ? ignoredFrom(args) : undefined,
+          tagging = changing ? tagsArg(args) : null;
+        if (changing && !renaming && flag === undefined && !tagging)
+          throw new ApiRefusal('invalid_request', 'Send name, ignored, tags, or any of them.', { field: 'name' });
         const given = renaming ? nameFrom(args.name) : null;
         if (given && places.some((p) => p.id !== id && sameName(p.name, given)))
           throw new ApiRefusal(
@@ -1074,11 +1102,28 @@ export async function writeApi(
           );
         const was = old.ignored === true,
           ignored = flag ?? was,
+          // Tags sent are the place's whole list (1.21.0). Taking one off
+          // leaves the check-ins already there as they are (call 6).
+          hadTags = storedTags(old),
+          tags = tagging ?? hadTags,
+          gained = tags.some((t) => !hadTags.some((h) => h.key === t.key)),
+          retagged = tagging !== null && JSON.stringify(tags) !== JSON.stringify(hadTags),
           next: NamedPlace | null = changing
-            ? { ...withIgnored(old, ignored), name: given ?? old.name, revision: Number(old.revision) + 1 }
+            ? {
+                ...withTags(withIgnored(old, ignored), tags),
+                name: given ?? old.name,
+                revision: Number(old.revision) + 1
+              }
             : null,
           status = next ? 200 : 204,
-          body = next ? { place: namedPlaceView(next as NamedPlace) } : null;
+          body = next
+            ? {
+                place: {
+                  ...namedPlaceView(next as NamedPlace),
+                  ...(gained ? { check_ins: (await staysAtNext(store, uid, next as NamedPlace)).length } : {})
+                }
+              }
+            : null;
         landed = await store.checkInWrites(
           uid,
           [{ ...(next ? { next } : {}), old }],
@@ -1100,7 +1145,10 @@ export async function writeApi(
                   }
                 ]
               : []),
-            ...(ignored !== was ? [ignoreEvent(id, ignored)] : [])
+            ...(retagged
+              ? [{ kind: 'checkin.place', id: again(id), fields: { ...by(), place: id, change: 'tagged' } }]
+              : []),
+            ...(changing && ignored !== was ? [ignoreEvent(id, ignored)] : [])
           ]);
         };
       } else if (op === 'check-ins.places.delete-check-ins') {
@@ -1133,10 +1181,42 @@ export async function writeApi(
         after = async () => {
           if (count) await record([{ kind: 'checkin.deleted', id: again(id), fields: { ...by(), place: id, count } }]);
         };
+      } else if (op === 'check-ins.places.tag-check-ins') {
+        // Tag the check-ins already here (Jamie's call 6, 2026-11-08): the
+        // tags sent join each stay at the place, hidden or not, for the count
+        // the owner was shown. A retry finds the stays already tagged.
+        const id = String(args.id),
+          place = (await store.namedPlaces(uid)).find((p) => p.id === id);
+        if (!place) throw new ApiRefusal('not_found', NO_PLACE);
+        const added = tagsArg(args);
+        if (!added?.length) throw new ApiRefusal('invalid_request', 'Send the tags to add, by name.', { field: 'tags' });
+        if (!Number.isSafeInteger(args.count) || Number(args.count) < 0)
+          throw new ApiRefusal('invalid_request', 'Send count, how many check-ins GET /v1/check-ins/places/{id} said are there.', {
+            field: 'count'
+          });
+        const { stays } = await staysAt(store, uid, id);
+        if (stays.length !== args.count)
+          throw new ApiRefusal(
+            'revision_mismatch',
+            'The check-ins there changed since you counted them. GET /v1/check-ins/places/{id} again for the count.',
+            { count: stays.length }
+          );
+        const { changes, count } = staysTagged(stays, added),
+          tagged = (wiped ??= count),
+          body = { tagged };
+        landed = await store.checkInWrites(uid, changes, store.tokenProof(token, now, 'notes:all'), [
+          ...store.agentReceipts(receiptFor(200, body), audit({ place: id, count: tagged }), rate, previous, now),
+          ...legacyGuard()
+        ]);
+        answer = { status: 200, body, replayed: false, limit };
+        after = async () => {
+          if (tagged)
+            await record([{ kind: 'checkin.tagged', id: again(id), fields: { ...by(), place: id, count: tagged } }]);
+        };
       } else if (op === 'tags.pinned') {
         const pins = pinnedTags(args.pinned);
         if (!pins) throw new ApiRefusal('invalid_request', 'pinned is a list of up to 12 tags.', { field: 'pinned' });
-        const old = Array.isArray(profile.pinned_tags) ? pinsOf(profile) : null,
+        const old = Array.isArray(profile.pinned_tags) ? storedPins(profile) : null,
           row = await tagRow(store, uid, { ...profile, pinned_tags: pins }, today),
           body = { ...row };
         landed = await store.setPins(uid, pins, old, [

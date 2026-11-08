@@ -75,6 +75,7 @@ export const ROUTES: [string, string][] = [
   ['PUT', '/api/check-ins/places/{id}'],
   ['DELETE', '/api/check-ins/places/{id}'],
   ['DELETE', '/api/check-ins/places/{id}/check-ins'],
+  ['PATCH', '/api/check-ins/places/{id}/check-ins'],
   ['GET', '/api/check-ins/{id}'],
   ['PUT', '/api/check-ins/{id}'],
   ['DELETE', '/api/check-ins/{id}'],

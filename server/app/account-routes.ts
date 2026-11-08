@@ -11,7 +11,7 @@ import {
 import { profileView } from '../../packages/backend/views.ts';
 import { isAdmin } from '../../packages/backend/product-updates.ts';
 import { Tokens } from '../../packages/backend/tokens.ts';
-import { pinnedTags, pinsOf, tagRow } from '../../packages/backend/tag-row.ts';
+import { pinnedTags, storedPins, tagRow } from '../../packages/backend/tag-row.ts';
 import * as auth from '../../packages/backend/auth.ts';
 import { OAuthService } from '../../packages/backend/oauth.ts';
 import { iso, localDay, validDay, validTimezone, anniversary, parseDay } from '../../packages/domain/dates.ts';
@@ -310,7 +310,7 @@ export async function accountRoutes(
     if (method !== 'PUT') return json(await tagRow(ctx.store, uid, p, today));
     const pins = pinnedTags((await body(service.request))?.pinned);
     if (!pins) reject(400, 'pins');
-    const old = Array.isArray(p.pinned_tags) ? pinsOf(p) : null;
+    const old = Array.isArray(p.pinned_tags) ? storedPins(p) : null;
     if (!(await ctx.store.setPins(uid, pins, old))) reject(409, 'try-again');
     if (JSON.stringify(old ?? []) !== JSON.stringify(pins))
       await recordActivity(

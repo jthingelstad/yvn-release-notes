@@ -16,14 +16,14 @@ import {
   familyOf,
   titled
 } from '../../packages/domain/activity.ts';
-import { stayView } from '../../packages/domain/check-ins.ts';
-import { stayPage, type CheckInReads } from '../../packages/backend/check-ins.ts';
+import { stayTags, stayView, tagLists } from '../../packages/domain/check-ins.ts';
+import { everyStay, stayPage, type CheckInReads } from '../../packages/backend/check-ins.ts';
 import { computeVersion, releaseAge, releaseName, releaseSpan, sameDayBefore } from '../../packages/domain/version.ts';
 import { computeStreak, pauseDays } from '../../packages/domain/streak.ts';
 import { collectedOn, evaluateBadges, releaseBadges } from '../../packages/domain/badges.ts';
 import { badgeFacts } from '../../packages/backend/badges.ts';
 import { mapUrl, writtenAt, placeLabel, type NoteRecord, type PlaceRecord } from '../../packages/domain/notes.ts';
-import { found, isTag, split } from '../../packages/domain/tags.ts';
+import { TAG_REFUSALS, spelling, split, storedTags, tagTotals } from '../../packages/domain/tags.ts';
 import { searchTerms, searchedText } from '../../packages/domain/search.ts';
 import { codePointLength, codePointSlice, pythonTrim } from '../../packages/domain/unicode.ts';
 import { asciiJson, MAX_MEDIA, ToolError, object, type Arguments } from './common.ts';
@@ -248,11 +248,7 @@ export function releaseDetail(
     rows = index.filter((n) => dayOf(n) >= first && dayOf(n) <= shown),
     have = [...new Set(rows.map(dayOf))].sort(),
     paused = new Set([...pauseDays(pauses, today)].filter((d) => d >= first && d <= shown)),
-    counts = new Map<string, number>();
-  for (const n of rows) for (const tag of (n.tags as string[]) ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-  const tags = [...counts]
-    .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
-    .map(([tag, notes]) => ({ tag, notes }));
+    tags = tagTotals(rows).map(({ tag, name, notes }) => ({ tag, name, notes }));
   return {
     v: releaseName(age),
     current: age === computeVersion(birthday, today).age,
@@ -460,7 +456,8 @@ export class Reader {
       // `parts` and `text` keep the marks as typed; this says to read them.
       if (isRich(item)) shown.markup = RICH;
       if (item.connection) shown.connection = item.connection;
-      if (item.tags) shown.tags = item.tags;
+      // Tags by name (MCP 1.15.0): as typed, which any tag argument takes.
+      if (item.tags) shown.tags = storedTags(item).map((t) => t.name);
       if (item.place && placeLabel(item.place as PlaceRecord)) shown.place = placeLabel(item.place as PlaceRecord);
       if (item.origin) shown.from = (item.origin as OAuthRow).app === 'dayone' ? 'Day One' : 'an import';
       if (item.updated_at) shown.edited_at = item.updated_at;
@@ -615,7 +612,7 @@ export class Reader {
     if (from && through && from > through)
       throw new ToolError('invalid_arguments', 'Choose from on or before through.');
     const bound = createHash('sha256')
-      .update(asciiJson({ uid: this.uid, field: 'check-ins', from, through }))
+      .update(asciiJson({ uid: this.uid, field: 'check-ins', from, through, tag: a.tag ?? null }))
       .digest('hex');
     let before = through ? activityTime(localStart(addDays(through, 1), tz)) : undefined;
     if (a.cursor) {
@@ -627,11 +624,13 @@ export class Reader {
         throw new ToolError('invalid_cursor', 'Restart this query with the same filters and no cursor.');
       }
     }
-    const { stays, next, places } = await stayPage(this.context.store, this.uid, {
-      ...(before === undefined ? {} : { before }),
-      ...(from ? { floor: activityTime(localStart(from, tz)) } : {}),
-      limit: Number(a.limit ?? 50)
-    });
+    const tag = this.tagArg(a),
+      { stays, next, places } = await stayPage(this.context.store, this.uid, {
+        ...(before === undefined ? {} : { before }),
+        ...(from ? { floor: activityTime(localStart(from, tz)) } : {}),
+        ...(tag === null ? {} : { tag }),
+        limit: Number(a.limit ?? 50)
+      });
     return {
       check_ins: stays.map((members) => stayView(members, places)),
       // The remembered places, by name, and whether each is ignored: stops
@@ -643,6 +642,13 @@ export class Reader {
       today: this.today,
       tz
     };
+  }
+  /** A `tag` argument by any spelling (MCP 1.15.0), as its key; null for none. */
+  tagArg(a: Arguments): string | null {
+    if (!Object.hasOwn(a, 'tag')) return null;
+    const tag = spelling(a.tag);
+    if (typeof tag === 'string') throw new ToolError('invalid_arguments', 'tag: ' + TAG_REFUSALS[tag]);
+    return tag.key;
   }
   async media(a: Arguments, kind: string): Promise<OAuthRow> {
     const item = await this.note(a),
@@ -703,10 +709,8 @@ export class Reader {
       ];
     }
     if (name === 'notes_list' || name === 'notes_search') {
-      // The schema has no pattern for a tag in any script (1.11.0), so the
-      // check its pattern made is made here, before anything is read.
-      if (Object.hasOwn(a, 'tag') && !isTag(a.tag))
-        throw new ToolError('invalid_arguments', 'Check the format and length of your parameters.');
+      // A tag by any spelling (MCP 1.15.0), checked before anything is read.
+      const sought = this.tagArg(a);
       let first = this.day(a.from ?? this.birthday),
         last = this.day(a.through ?? this.today);
       if (a.release) {
@@ -728,11 +732,11 @@ export class Reader {
           raw = q.match(RAW_TERMS) ?? [];
         if (raw.length > 10) throw new ToolError('invalid_arguments', 'Use at most ten words or quoted phrases.');
         const terms = searchTerms(q);
-        if (!terms.length && !a.tag) throw new ToolError('invalid_arguments', 'Provide search words or a tag.');
+        if (!terms.length && sought === null) throw new ToolError('invalid_arguments', 'Provide search words or a tag.');
         rows = rows.filter(
           (i) =>
             terms.every((t) => searchedText(i as NoteRecord).includes(t)) &&
-            (!a.tag || found(String(i.text ?? '')).includes(String(a.tag)))
+            (sought === null || storedTags(i).some((t) => t.key === sought))
         );
       }
       rows.sort((a, b) => {
@@ -975,17 +979,29 @@ export class Reader {
       ];
     }
     if (name === 'notes_tags') {
-      const counts = new Map<string, number>();
-      for (const n of await this.context.store.allNotes(this.uid))
-        for (const tag of new Set(found(String(n.text ?? '')))) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-      return [
-        this.page(
-          [...counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([tag, notes]) => ({ tag, notes })),
-          a,
-          'tags'
-        ),
-        content
-      ];
+      // Each tag as stored (MCP 1.15.0): its name as most recently used, its
+      // key, and its notes, check-ins and, with the upcoming scope, Upcoming
+      // dates (null without it), alphabetically by key.
+      const dates = String(this.family.scope).split(/\s+/).includes('upcoming'),
+        [notes, upcoming, { stays }] = await Promise.all([
+          this.context.store.noteTags(this.uid),
+          dates ? this.context.store.upcomingEntries(this.uid) : [],
+          everyStay(this.context.store, this.uid)
+        ]),
+        tags = tagTotals(
+          notes,
+          upcoming,
+          stays.map((members) => ({ ...tagLists(stayTags(members)), day: members[0]!.day }))
+        )
+          .sort((x, y) => (x.tag < y.tag ? -1 : x.tag > y.tag ? 1 : 0))
+          .map(({ tag, name, notes: n, upcoming: u, check_ins }) => ({
+            name,
+            tag,
+            notes: n,
+            upcoming: dates ? u : null,
+            check_ins
+          }));
+      return [this.page(tags, a, 'tags'), content];
     }
     if (name === 'notes_view_photo') {
       const m = await this.media(a, 'image'),

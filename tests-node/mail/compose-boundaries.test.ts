@@ -43,8 +43,18 @@ test('yesterday falls back to whole words, excludes overlong URLs and places a c
 test('a tag in any script links to its page percent-encoded; one in a-z links as it always did', () => {
   assert.equal(c.tagLink('woods'), 'https://notes.yourversionnumber.com/tag/?t=woods');
   assert.equal(c.tagLink('東京'), 'https://notes.yourversionnumber.com/tag/?t=%E6%9D%B1%E4%BA%AC');
-  const html = c.tagsHtml(['東京', 'maine-2016']);
+  const tags = [
+    { key: '東京', name: '東京' },
+    { key: 'maine-2016', name: 'Maine-2016' },
+    { key: 'road-trip', name: 'Road <Trip>' }
+  ];
+  const html = c.tagsHtml(tags);
   assert.ok(html.includes('href="https://notes.yourversionnumber.com/tag/?t=%E6%9D%B1%E4%BA%AC"'));
-  assert.ok(html.includes('>#東京</a>'));
+  assert.ok(html.includes('>Tags: <a'));
+  assert.ok(html.includes('>東京</a>, <a'));
   assert.ok(html.includes('?t=maine-2016"'));
+  assert.ok(html.includes('?t=road-trip" style="color:#1a4fe0;text-decoration:none;">Road &lt;Trip&gt;</a></p>'));
+  // Plain text names them, without links or #s (call 7).
+  assert.equal(c.tagsLine(tags), 'Tags: 東京, Maine-2016, Road <Trip>');
+  assert.equal(c.tagsHtml([]), '');
 });

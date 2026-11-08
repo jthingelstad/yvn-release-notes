@@ -4,7 +4,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import * as links from '../backend/links.ts';
-import { withoutClosing } from '../domain/tags.ts';
+import { withoutClosing, type Tag } from '../domain/tags.ts';
 import * as rich from '../domain/rich.ts';
 import { computeVersion, lifeCount, livedText, releaseName, type Version } from '../domain/version.ts';
 import type { Streak } from '../domain/streak.ts';
@@ -64,7 +64,8 @@ export interface PastDay {
   links?: links.Link[];
   files?: Files;
   sky?: string | null;
-  tags: string[];
+  /** The day's tags, each once, as its notes name them. */
+  tags: Tag[];
   thumbs: Thumbnail[];
   photos: Inline[];
 }
@@ -330,7 +331,7 @@ export function pastBody(v: Version, birthday: string, past: OnThisDay): string 
         (p.sky ? `${p.sky}.\n` : '') +
         '\n' +
         (shown ? `${shown}${cut ? ' ...' : ''}\n\n` : '') +
-        (p.tags.length ? p.tags.map((t) => `#${t}`).join(' ') + '\n\n' : '') +
+        (p.tags.length ? tagsLine(p.tags) + '\n\n' : '') +
         `${pastMore(cut, p.files, String(then))}: ${pastLink(p.day)}\n\n`
     );
   }
@@ -356,7 +357,7 @@ export function yesterdayBody(birthday: string, y: Yesterday): string {
     `Yesterday you were ${then} (${longDate(y.day)}):\n\n` +
     (y.places.length ? `${whereLine(y.places)}\n\n` : '') +
     (shown ? `${shown}${cutMark(shown, cut, y.rich) ? ' ...' : ''}\n\n` : '') +
-    (y.tags.length ? y.tags.map((t) => `#${t}`).join(' ') + '\n\n' : '') +
+    (y.tags.length ? tagsLine(y.tags) + '\n\n' : '') +
     (files ? files + '\n' : '') +
     `${cut ? 'Read the rest' : `See ${then}`}: ${pastLink(y.day)}\n\n`
   );
@@ -538,15 +539,18 @@ export function photosHtml(photos: Inline[]): string {
     '</table>\n'
   );
 }
-export function tagsHtml(tags: string[]): string {
+/** A day's tags by name, as plain text: "Tags: Road Trip, lake". */
+export const tagsLine = (tags: readonly Tag[]) => 'Tags: ' + tags.map((t) => t.name).join(', ');
+/** The same line in HTML, each name linked to its tag page. */
+export function tagsHtml(tags: readonly Tag[]): string {
   return tags.length
-    ? `<p style="margin:0 0 10px;font-family:${FONT};font-size:14px;line-height:1.6;">` +
+    ? `<p style="margin:0 0 10px;font-family:${FONT};font-size:14px;line-height:1.6;">Tags: ` +
         tags
           .map(
             (t) =>
-              `<a class="link" href="${escape(tagLink(t))}" style="color:${BLUE};text-decoration:none;">#${escape(t)}</a>`
+              `<a class="link" href="${escape(tagLink(t.key))}" style="color:${BLUE};text-decoration:none;">${escape(t.name)}</a>`
           )
-          .join(' ') +
+          .join(', ') +
         '</p>\n'
     : '';
 }

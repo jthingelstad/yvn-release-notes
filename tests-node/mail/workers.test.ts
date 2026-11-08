@@ -300,7 +300,7 @@ test('history preserves assistant provenance, tags from words, written order and
   const sub = (await f.store.getSubscriber('u'))!,
     [, , y] = await sender.readHistory(f.services, sub, day);
   assert.match(y!.text, /Owner words[\s\S]*Added by helper #not-a-tag:\nAgent words/);
-  assert.deepEqual(y!.tags, ['mine']);
+  assert.deepEqual(y!.tags, [{ key: 'mine', name: 'mine' }]);
   // A note's spot links our map on that note; home's city is not mapped.
   assert.deepEqual(y!.places, [
     ['Example', 'https://notes.yourversionnumber.com/map/#d=2026-10-12&n=z'],

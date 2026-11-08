@@ -15,6 +15,7 @@ import { extension } from './media.ts';
 import { object } from './places.ts';
 import type { Item } from './store.ts';
 import { upcomingEntry, type UpcomingEntry } from '../domain/upcoming.ts';
+import { storedTags } from '../domain/tags.ts';
 import { CHECKIN, NAMED_PLACE, UNNAMED_STOP } from '../domain/check-ins.ts';
 import { badgesOf } from './badges.ts';
 import { ACTIVITY, activityView } from '../domain/activity.ts';
@@ -96,6 +97,12 @@ const CHECK_IN_FIELDS = [
   'token',
   'client'
 ] as const;
+/** An item's tags as the export keeps them (docs/TAGS.md): the keys, and the
+ * names beside them; empty lists for none. */
+function exportTags(item: Item) {
+  const tags = storedTags(item.tags instanceof Set ? { ...item, tags: [...item.tags] } : item);
+  return { tags: tags.map((t) => t.key), tag_names: tags.map((t) => t.name) };
+}
 /** The key filePaths files a feedback item's screenshots under. */
 export const feedbackFiles = (id: string) => `feedback:${id}`;
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -198,7 +205,7 @@ export function build(
         written_at: writtenAt(item as NoteRecord) || null,
         tz: item.tz ?? null,
         place: item.place ?? null,
-        tags: Array.isArray(item.tags) ? item.tags : item.tags instanceof Set ? [...item.tags] : [],
+        ...exportTags(item),
         origin: item.origin ?? null,
         updated_at: item.updated_at ?? null,
         subject: item.subject ?? null,
@@ -216,13 +223,17 @@ export function build(
     } else if (sk.startsWith('PAUSE#')) pauses.push({ from: sk.slice(6), through: item.through ?? null });
     else if (sk.startsWith('UPCOMING#')) upcoming.push(upcomingEntry(item));
     else if (sk.startsWith(CHECKIN))
-      checkIns.push(Object.fromEntries(CHECK_IN_FIELDS.filter((k) => item[k] != null).map((k) => [k, item[k]])));
+      checkIns.push({
+        ...Object.fromEntries(CHECK_IN_FIELDS.filter((k) => item[k] != null).map((k) => [k, item[k]])),
+        ...(Array.isArray(item.tags) && item.tags.length ? exportTags(item) : {})
+      });
     else if (sk.startsWith(NAMED_PLACE))
       namedPlaces.push({
         id: item.id,
         name: item.name,
         spots: item.spots,
-        ...(item.ignored === true ? { ignored: true } : {})
+        ...(item.ignored === true ? { ignored: true } : {}),
+        ...(Array.isArray(item.tags) && item.tags.length ? exportTags(item) : {})
       });
     else if (sk.startsWith(ACTIVITY)) activity.push(item);
     else if (sk.startsWith('FEEDBACK#')) {
@@ -279,6 +290,7 @@ export function build(
       'tz',
       'place',
       'tags',
+      'tag_names',
       'origin'
     ]) {
       const value = n[key];
@@ -341,7 +353,7 @@ export function markdown(data: ExportData): string {
         `### ${escapeText(entry.title)}`,
         '',
         `${entry.kind}: ${entry.date}${entry.year === null ? '' : ` (original year ${entry.year})`}${entry.end_date ? ` through ${entry.end_date}` : ''}.`,
-        ...(entry.tag ? [`Tag: ${escapeText('#' + entry.tag)}.`] : []),
+        ...(entry.tag_names?.length ? [`Tags: ${entry.tag_names.map(escapeText).join(', ')}.`] : []),
         ...(entry.place
           ? [`At ${escapeText(entry.place.name)}${entry.place.region ? ', ' + escapeText(entry.place.region) : ''}.`]
           : []),

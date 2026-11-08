@@ -6,6 +6,7 @@
  * the feed update their copies in place. Runs in Node and the browser. */
 import { addDays, anniversary, parseDay } from './dates.ts';
 import { annual, anniversaryYears, birthdayVersion, majorRelease, type UpcomingEntry } from './upcoming.ts';
+import { storedTags } from './tags.ts';
 
 /** Annual dates appear once a year, from last year through three years ahead. */
 export const CALENDAR_YEARS_BACK = 1,
@@ -36,7 +37,8 @@ function describe(entry: UpcomingEntry, date: string): { summary: string; notes:
     const years = anniversaryYears(entry, date);
     summary += years === null ? ' — anniversary' : ` — ${years} ${years === 1 ? 'year' : 'years'}`;
   } else if (entry.place) summary += ` — ${entry.place.name}`;
-  if (entry.tag) notes.push('#' + entry.tag);
+  const tags = storedTags(entry);
+  if (tags.length) notes.push('Tags: ' + tags.map((t) => t.name).join(', '));
   return { summary, notes };
 }
 function event(entry: UpcomingEntry, uid: string, start: string, last: string, fallback: string): CalendarEvent {

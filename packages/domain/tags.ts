@@ -264,6 +264,8 @@ export function mergeTags(...lists: readonly (readonly Tag[])[]): Tag[] {
  * hashtags, or else by its key; an Upcoming date of before 2026-11-08 has
  * one `tag`. */
 export function storedTags(item: { tags?: unknown; tag_names?: unknown; tag?: unknown; text?: unknown }): Tag[] {
+  // A note written before tags were stored has only its text's.
+  if (item.tags === undefined && item.tag === undefined && typeof item.text === 'string') return textTags(item.text);
   const keys = Array.isArray(item.tags)
       ? item.tags.map(String)
       : typeof item.tag === 'string' && item.tag

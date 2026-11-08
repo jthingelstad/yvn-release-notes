@@ -1130,7 +1130,7 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
           views = all
             .filter((v) => v.occurrence.status !== 'past')
             .toSorted((x, y) => x.occurrence.date.localeCompare(y.occurrence.date) || x.title.localeCompare(y.title))
-            .map(agentUpcomingView);
+            .map((v) => agentUpcomingView(v, true));
         return {
           status: 200,
           body: { today, entries: views, past_left_out: all.length - views.length, max_entries: UPCOMING_MAX },

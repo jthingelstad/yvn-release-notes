@@ -1367,6 +1367,53 @@ test('notes_check_ins reads where the account stopped, a page at a time, with re
   assert.ok(!('lat' in entries[0]!));
 });
 
+test('notes_check_ins hides the stays at an ignored place, and lists the places (Jamie, 2026-11-08)', async () => {
+  const ctx = fixture(),
+    a = await connected(ctx, false, false),
+    seed = (at: string, id: string, lat: number) =>
+      ctx.store.seed({
+        pk: 'USER#u',
+        sk: `CHECKIN#${at}#${id}`,
+        id,
+        at,
+        arrived: at,
+        left: null,
+        lat,
+        lon: -93.26,
+        source: 'visit',
+        day: at.slice(0, 10),
+        district: 'Uptown, Springfield',
+        revision: 1
+      });
+  seed('2026-10-10T15:00:00.000Z', 'c1-a', 45.5);
+  seed('2026-10-11T15:00:00.000Z', 'c2-a', 44.97);
+  for (const [id, name, lat, ignored] of [
+    ['p-b', 'Home', 45.5, true],
+    ['p-a', 'Bakery', 40, false]
+  ] as const)
+    ctx.store.seed({
+      pk: 'USER#u',
+      sk: `NAMEDPLACE#${id}`,
+      id,
+      name,
+      spots: [{ lat, lon: -93.26 }],
+      revision: 1,
+      ...(ignored ? { ignored } : {})
+    });
+  const read = (await rpc(ctx, a.token, 'notes_check_ins', {})).value;
+  assert.deepEqual(
+    (read.check_ins as OAuthRow[]).map((c) => c.id),
+    ['c2-a']
+  );
+  assert.deepEqual(read.places, [
+    { id: 'p-a', name: 'Bakery', ignored: false },
+    { id: 'p-b', name: 'Home', ignored: true }
+  ]);
+  const log = (await rpc(ctx, a.token, 'notes_activity', { kinds: ['checkin'] })).value;
+  assert.equal((log.entries as OAuthRow[]).length, 1);
+  assert.ok(!JSON.stringify(log).includes('Home'));
+});
+
 test('notes_map reads the pins oldest first, a page at a time, with reading alone', async () => {
   const ctx = fixture(),
     a = await connected(ctx, false, false),

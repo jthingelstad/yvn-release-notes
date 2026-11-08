@@ -421,7 +421,13 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
     case 'checkin.deleted':
       return e.all
         ? ['Deleted all your check-ins', `${count(e.count ?? 0, 'check-in', 'check-ins')} went.`]
-        : [`Deleted a check-in from ${e.day ? dayName(e.day, year) : 'a day'}`];
+        : e.place
+          ? ['Deleted the check-ins at a remembered place', `${count(e.count ?? 0, 'check-in', 'check-ins')} went.`]
+          : [`Deleted a check-in from ${e.day ? dayName(e.day, year) : 'a day'}`];
+    case 'checkin.ignored':
+      return ['Ignored a remembered place', 'Its check-ins are hidden, and no new ones are kept there.'];
+    case 'checkin.unignored':
+      return ['Stopped ignoring a remembered place', 'Its check-ins show again.'];
     case 'checkin.place':
       return [
         e.change === 'added'

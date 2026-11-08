@@ -76,8 +76,8 @@
     "lastmod": "2026-11-06"
   },
   "/guide/check-ins/": {
-    "said": "325825c0a750ac398f266659f113d22b2ea8743f67fb5f5cffc2c2ba8463e27e",
-    "lastmod": "2026-11-06"
+    "said": "0ae529b0a5aefbb86b8c967c83dca3e3a2cade4291d8e52e538da0ad752b818f",
+    "lastmod": "2026-11-08"
   },
   "/guide/api/": {
     "said": "19aa76b2414223e8fa3daea0d248fe4b155e376781589a3ee3803cd22d19ec30",
@@ -100,8 +100,8 @@
     "lastmod": "2026-11-06"
   },
   "/guide/api/check-ins/": {
-    "said": "d6ddd89d09fed27b65a2355e2211ac9fc9cb2c74bde45a78185133a65942e90f",
-    "lastmod": "2026-11-06"
+    "said": "4c308289226241268efc6635d649d99a205b44a9e94cba955eb4255e3dcdf0cb",
+    "lastmod": "2026-11-08"
   },
   "/guide/api/upcoming/": {
     "said": "ee261d20d23284bc215212b3861b3c4d9b335e87dd008e464f2dc2ab0e6dbc35",
@@ -112,7 +112,7 @@
     "lastmod": "2026-11-06"
   },
   "/guide/api/reference/": {
-    "said": "e1a6eeb2a21a125a8acdbd534c01ba92ba31cbce87e01612f2c23fd513de882b",
+    "said": "53c30bce38340c6f5425dca04f7a8e1e35e5f34c1e338fa9e6cf51023c8d7977",
     "lastmod": "2026-11-08"
   },
   "/guide/api/clients/": {
@@ -120,7 +120,7 @@
     "lastmod": "2026-11-06"
   },
   "/guide/api/changelog/": {
-    "said": "6b5b165e29712f2e3877d144628f186433e171489bde2658ad43157a18c59619",
+    "said": "9071f082fc70ae359cb0067ab0108c15d4a5654fc2ee5aa4c934e04238730dbc",
     "lastmod": "2026-11-08"
   },
   "/guide/changelog/": {
@@ -136,7 +136,7 @@
     "lastmod": "2026-11-06"
   },
   "/changelog/": {
-    "said": "005760216b69d7d54b98fcf36af06f3da5848091c2c03c62fc6de29fb28228bb",
+    "said": "0c3221a82f82250f79c1102f9b93f1b3d3eaed51ae3eeafb743050ab13431f31",
     "lastmod": "2026-11-08"
   }
 }

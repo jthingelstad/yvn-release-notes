@@ -217,7 +217,13 @@ export function build(
     else if (sk.startsWith('UPCOMING#')) upcoming.push(upcomingEntry(item));
     else if (sk.startsWith(CHECKIN))
       checkIns.push(Object.fromEntries(CHECK_IN_FIELDS.filter((k) => item[k] != null).map((k) => [k, item[k]])));
-    else if (sk.startsWith(NAMED_PLACE)) namedPlaces.push({ id: item.id, name: item.name, spots: item.spots });
+    else if (sk.startsWith(NAMED_PLACE))
+      namedPlaces.push({
+        id: item.id,
+        name: item.name,
+        spots: item.spots,
+        ...(item.ignored === true ? { ignored: true } : {})
+      });
     else if (sk.startsWith(ACTIVITY)) activity.push(item);
     else if (sk.startsWith('FEEDBACK#')) {
       const f = feedbackItem(item),

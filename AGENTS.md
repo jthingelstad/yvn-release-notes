@@ -616,7 +616,16 @@ Where things are (each module's design comment has its contract):
 - Coordinates and names are never logged to CloudWatch, and no `ACTIVITY#` row
   holds either: a `checkin` row in the log is made when read, from the item, and
   goes with it. The events left in the log (`checkin.named`, `checkin.deleted`,
-  `checkin.place`) hold ids, days and counts.
+  `checkin.place`, `checkin.ignored`, `checkin.unignored`) hold ids, days and
+  counts.
+- **An ignored place** (`ignored` on `NAMEDPLACE#`, Jamie, 2026-11-08) keeps no
+  new stop, and hides the stays whose first check-in is nearest it, wherever
+  stays are read (`hiddenStay`): lists, a read of one, the log, the Map, MCP.
+  Hidden is not deleted: the export and delete-all still reach them, and
+  "Delete existing check-ins here" deletes them for the count shown.
+  `staysAt` counts a place's stays, hidden or not. A `POST /v1/check-ins` that
+  keeps nothing answers 200 with `kept: false` and a `check_in`, so the apps
+  already out read it as done.
 - Only the owner names a place. Nearby businesses are offered, never picked.
 - **The web reads and changes them through the owner's session**
   (`server/app/check-in-routes.ts`), with the session and account proved in each

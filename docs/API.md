@@ -1000,6 +1000,29 @@ out from the pins: each says its `date`, and now its note's `written_at`. A
 day's pins come in the order of their random ids, so the map's trails (the
 notes joined in the order they were written) need the time.
 
+### 1.20.0: ignored places
+
+Jamie, 2026-11-08: "Add 'Ignore this location' to remembered check-in places",
+generalizing Android's "Not at home". A remembered place takes `ignored`, on
+`POST` and `PATCH /v1/check-ins/places`, and each place says it. While it is
+set, a new stop there is not kept: `POST /v1/check-ins` writes only its receipt,
+makes no lookup, and answers 200 with `kept: false` and the check-in it would
+have been, whose id names nothing. Every answer now says `kept`; one without it
+is from before 1.20.0 and was kept. An answer that keeps `check_in` reads as done
+to the iPhone and Android apps already out, which refuse a 2xx they can't read.
+A report filling in a stop kept before the place was ignored still lands.
+
+The stops already there are hidden, not deleted: a stay at the place nearest
+its first check-in is left out of `GET /v1/check-ins`, the log, and a read or
+write of it (`not_found`), until the place is unignored or forgotten.
+`GET /v1/check-ins/places/{id}` (`activity`) counts the stays there, hidden or
+not, as `check_ins`, and `DELETE /v1/check-ins/places/{id}/check-ins?count=`
+(`notes:all`) deletes them for that count; another count is
+`revision_mismatch` with the `count` now, so a client asks again with the new
+number. A retry with the same key answers the first count. The log gains
+`checkin.ignored` and `checkin.unignored`, with the place's id, and a
+`checkin.deleted` with `place` and `count`. `docs/CHECK-INS.md` has the rules.
+
 ### Jamie's calls
 
 1. **Read-only tokens:** yes, `notes:read` works on its own.

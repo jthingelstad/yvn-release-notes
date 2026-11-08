@@ -634,6 +634,11 @@ export class Reader {
     });
     return {
       check_ins: stays.map((members) => stayView(members, places)),
+      // The remembered places, by name, and whether each is ignored: stops
+      // at an ignored one are hidden from check_ins until it is unignored.
+      places: [...places]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((place) => ({ id: place.id, name: place.name, ignored: place.ignored === true })),
       next_cursor: next ? Buffer.from(asciiJson({ bound, before: next })).toString('base64url') : null,
       today: this.today,
       tz

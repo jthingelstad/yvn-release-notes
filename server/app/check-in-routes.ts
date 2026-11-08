@@ -4,7 +4,7 @@
  * in no log and no activity row. */
 import { randomUUID } from 'node:crypto';
 import { eventId, recordActivity } from '../../packages/backend/activity.ts';
-import { everyStay, stayOf } from '../../packages/backend/check-ins.ts';
+import { everyStay, stayOf, staysAt } from '../../packages/backend/check-ins.ts';
 import { reject, type SessionService } from '../../packages/backend/sessions.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import {
@@ -14,12 +14,14 @@ import {
   STAY_WRITE_MAX,
   checkInKeyOf,
   checkInName,
+  hiddenStay,
   metres,
   namedPlaceKey,
   namedPlaceView,
   sameName,
   stayRevision,
   stayView,
+  withIgnored,
   type CheckIn,
   type NamedPlace,
   type Spot
@@ -95,21 +97,56 @@ export async function checkInRoutes(
     return json({ places: [...places].sort((a, b) => a.name.localeCompare(b.name)).map(namedPlaceView) });
   }
 
-  if (pattern === '/api/check-ins/places/{id}') {
+  if (pattern === '/api/check-ins/places/{id}' || pattern === '/api/check-ins/places/{id}/check-ins') {
     const places = await store.namedPlaces(uid),
       old = places.find((place) => place.id === args[0]);
     if (!old) reject(404, 'check-in-place-missing');
+    if (pattern === '/api/check-ins/places/{id}/check-ins') {
+      // Delete existing check-ins here: every stay at the place, hidden or
+      // not, once the owner has seen how many (Jamie, 2026-11-08). The place
+      // stays, ignored or not.
+      const { stays } = await staysAt(store, uid, old.id),
+        members = stays.flat();
+      if ((await body(service.request)).count !== stays.length) reject(409, 'check-in-count', { count: stays.length });
+      if (
+        !(await store.checkInWrites(
+          uid,
+          members.map((m) => ({ old: m })),
+          [],
+          []
+        ))
+      )
+        reject(409, 'check-in-changed');
+      if (stays.length) await note('checkin.deleted', { place: old.id, count: stays.length });
+      return json({ deleted: stays.length });
+    }
+    if (method === 'GET') {
+      // The place and how many check-ins are there, hidden or not.
+      const { stays } = await staysAt(store, uid, old.id);
+      return json({ place: { ...namedPlaceView(old), check_ins: stays.length } });
+    }
     let next: Item | undefined;
     if (method === 'PUT') {
-      const given = checkInName((await body(service.request)).name);
+      const value = await body(service.request),
+        renaming = value.name !== undefined,
+        given = renaming ? checkInName(value.name) : old.name;
       if (!given) reject(400, 'check-in-name');
-      if (places.some((place) => place.id !== old.id && sameName(place.name, given)))
+      if (value.ignored !== undefined && typeof value.ignored !== 'boolean') reject(400, 'check-in-ignored');
+      if (!renaming && value.ignored === undefined) reject(400, 'check-in-name');
+      if (renaming && places.some((place) => place.id !== old.id && sameName(place.name, given)))
         reject(409, 'check-in-place-taken');
-      next = { ...old, name: given, revision: Number(old.revision) + 1 };
+      const ignored = typeof value.ignored === 'boolean' ? value.ignored : old.ignored === true;
+      if (given === old.name && ignored === (old.ignored === true)) return json({ place: namedPlaceView(old) });
+      next = { ...withIgnored(old, ignored), name: given, revision: Number(old.revision) + 1 };
     }
     if (!(await store.checkInWrites(uid, [{ ...(next ? { next } : {}), old }], [], [])))
       reject(409, 'check-in-changed');
-    await note('checkin.place', { place: old.id, change: next ? 'renamed' : 'forgotten' });
+    if (!next) await note('checkin.place', { place: old.id, change: 'forgotten' });
+    else {
+      if (next.name !== old.name) await note('checkin.place', { place: old.id, change: 'renamed' });
+      if ((next.ignored === true) !== (old.ignored === true))
+        await note(next.ignored === true ? 'checkin.ignored' : 'checkin.unignored', { place: old.id });
+    }
     return next ? json({ place: namedPlaceView(next as NamedPlace) }) : new Response(null, { status: 204 });
   }
 
@@ -119,6 +156,8 @@ export async function checkInRoutes(
   if (!item) reject(404, 'check-in-missing');
   const places = await store.namedPlaces(uid),
     members = await stayOf(store, uid, item, places);
+  // A stay at an ignored place is hidden: not there to read or change.
+  if (hiddenStay(members, places)) reject(404, 'check-in-missing');
   if (method === 'GET') return json({ check_in: shown(members, places) });
   if (method === 'DELETE') {
     if (

@@ -234,9 +234,18 @@ test('scopes: add needs notes:write, reading activity, and places and delete-all
     ['DELETE', '/v1/check-ins?confirm=all'],
     ['POST', '/v1/check-ins/places', { name: 'Home', ...HOME }],
     ['PATCH', '/v1/check-ins/places/p-a', { name: 'Home' }],
-    ['DELETE', '/v1/check-ins/places/p-a']
+    ['PATCH', '/v1/check-ins/places/p-a', { ignored: true }],
+    ['DELETE', '/v1/check-ins/places/p-a'],
+    ['DELETE', '/v1/check-ins/places/p-a/check-ins?count=0'],
+    ['GET', '/v1/check-ins/places/p-a']
   ] as const)
     assert.equal(failed(await call(s, writer.token, method, path, body)).code, 'scope_required', path);
+  // Counting what is at a place is a read of the log; deleting it is not.
+  assert.equal(failed(await call(s, reader.token, 'GET', '/v1/check-ins/places/p-a')).code, 'not_found');
+  assert.equal(
+    failed(await call(s, reader.token, 'DELETE', '/v1/check-ins/places/p-a/check-ins?count=0')).code,
+    'scope_required'
+  );
 });
 
 test('a token changes its own check-ins, and any with notes:all', async () => {
@@ -704,4 +713,135 @@ test('a stay too long for one transaction refuses a name and changes nothing, an
   assert.ok(checkIns(s).every((c) => c.name === null && c.revision === 1));
   assert.equal((await call(s, t.token, 'DELETE', `/v1/check-ins/${String(stay.id)}`)).status, 204);
   assert.equal(checkIns(s).length, 0);
+});
+
+// Ignore this location (Jamie, 2026-11-08): no new stop is kept at an ignored
+// place, those kept already are hidden and come back when it is unignored, and
+// the ones there can be deleted for the count the owner was shown.
+const placeOf = (r: { json: OAuthRow }) => r.json.place as OAuthRow;
+const kinds = async (s: Setup, token: string) =>
+  ((await call(s, token, 'GET', '/v1/activity?kinds=checkin')).json.items as OAuthRow[]).map((r) => r.kind);
+
+test('no new stop is kept at an ignored place, no lookup is paid for, and the answer says so', async () => {
+  const s = setup(),
+    t = await make(s),
+    made = await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'Home', ...HOME, ignored: true });
+  assert.equal(made.status, 201, JSON.stringify(made.json));
+  assert.equal(placeOf(made).ignored, true);
+  assert.deepEqual((await kinds(s, t.token)).sort(), ['checkin.ignored', 'checkin.place']);
+  const skipped = await call(s, t.token, 'POST', '/v1/check-ins', report({ ...NEAR }), 'ignored-1');
+  assert.equal(skipped.status, 200, JSON.stringify(skipped.json));
+  assert.equal(skipped.json.kept, false);
+  assert.equal(shown(skipped).arrived, '2026-10-12T14:00:00.000Z');
+  assert.equal(checkIns(s).length, 0);
+  assert.equal(s.asked.length, 0);
+  // Sent again it answers the same, and still keeps nothing.
+  const again = await call(s, t.token, 'POST', '/v1/check-ins', report({ ...NEAR }), 'ignored-1');
+  assert.deepEqual(again.json, skipped.json);
+  assert.equal((await call(s, t.token, 'POST', '/v1/check-ins', report({ ...NEAR, left: LEAVE }))).json.kept, false);
+  assert.equal(checkIns(s).length, 0);
+  // Anywhere else is kept as ever.
+  const shop = await call(s, t.token, 'POST', '/v1/check-ins', report({ ...SHOP }));
+  assert.equal(shop.status, 201);
+  assert.equal(shop.json.kept, true);
+  assert.equal(checkIns(s).length, 1);
+  // A place joined by name keeps its flag, and a new one starts unignored.
+  const joined = await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'home', lat: 1, lon: 1 });
+  assert.equal(placeOf(joined).ignored, true);
+  const work = await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'Work', lat: 2, lon: 2 });
+  assert.equal(placeOf(work).ignored, false);
+  assert.equal(
+    failed(await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'X', ...SHOP, ignored: 'yes' })).field,
+    'ignored'
+  );
+});
+
+test('the stops kept before are hidden while it is ignored, and come back unignored', async () => {
+  const s = setup(),
+    t = await make(s),
+    first = await call(s, t.token, 'POST', '/v1/check-ins', report());
+  await call(s, t.token, 'POST', '/v1/check-ins', report({ ...SHOP, arrived: '2026-10-12T18:00:00Z' }));
+  const place = placeOf(await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'Home', ...HOME })),
+    path = `/v1/check-ins/places/${String(place.id)}`,
+    id = String(shown(first).id),
+    list = async () => ((await call(s, t.token, 'GET', '/v1/check-ins')).json.items as OAuthRow[]).map((c) => c.label);
+  assert.equal(failed(await call(s, t.token, 'PATCH', path, {})).field, 'name');
+  assert.equal(failed(await call(s, t.token, 'PATCH', path, { ignored: 1 })).field, 'ignored');
+  const ignored = await call(s, t.token, 'PATCH', path, { ignored: true });
+  assert.equal(ignored.status, 200, JSON.stringify(ignored.json));
+  assert.equal(placeOf(ignored).ignored, true);
+  assert.equal(placeOf(ignored).name, 'Home');
+  assert.deepEqual(await list(), ['Uptown, Springfield']);
+  assert.equal(
+    failed(await call(s, t.token, 'PATCH', `/v1/check-ins/${id}`, { name: 'A', revision: 1 })).code,
+    'not_found'
+  );
+  assert.equal(failed(await call(s, t.token, 'DELETE', `/v1/check-ins/${id}`)).code, 'not_found');
+  // A report filling in the stop kept before still lands, hidden.
+  const late = await call(s, t.token, 'POST', '/v1/check-ins', report({ left: LEAVE }));
+  assert.equal(late.status, 200, JSON.stringify(late.json));
+  assert.equal(late.json.kept, true);
+  assert.equal(checkIns(s).find((c) => c.id === id)!.left, '2026-10-12T15:00:00.000Z');
+  // The log hides its row, and nothing is deleted.
+  const log = await kinds(s, t.token);
+  assert.equal(log.filter((k) => k === 'checkin').length, 1);
+  assert.ok(log.includes('checkin.ignored'));
+  assert.equal(checkIns(s).length, 2);
+  // Renaming keeps it ignored; unignoring brings the stop back.
+  assert.equal(placeOf(await call(s, t.token, 'PATCH', path, { name: 'Our home' })).ignored, true);
+  const back = await call(s, t.token, 'PATCH', path, { ignored: false, name: 'Home' });
+  assert.equal(placeOf(back).ignored, false);
+  assert.deepEqual(await list(), ['Uptown, Springfield', 'Home']);
+  const after = await kinds(s, t.token);
+  assert.equal(after.filter((k) => k === 'checkin').length, 2);
+  assert.ok(after.includes('checkin.unignored'));
+  assert.ok(!('ignored' in s.rows().find((r) => r.sk === `NAMEDPLACE#${String(place.id)}`)!));
+});
+
+test('the check-ins at a place are counted, hidden or not, and deleted for that count', async () => {
+  const s = setup(),
+    t = await make(s);
+  await call(s, t.token, 'POST', '/v1/check-ins', report({ left: LEAVE }));
+  await call(s, t.token, 'POST', '/v1/check-ins', report({ ...NEAR, arrived: '2026-10-12T18:00:00Z' }));
+  await call(s, t.token, 'POST', '/v1/check-ins', report({ ...SHOP, arrived: '2026-10-12T21:00:00Z' }));
+  const place = placeOf(await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'Home', ...HOME })),
+    path = `/v1/check-ins/places/${String(place.id)}`;
+  await call(s, t.token, 'PATCH', path, { ignored: true });
+  const counted = await call(s, t.token, 'GET', path);
+  assert.equal(counted.status, 200, JSON.stringify(counted.json));
+  assert.equal(placeOf(counted).check_ins, 2);
+  assert.equal(placeOf(counted).ignored, true);
+  assert.equal(failed(await call(s, t.token, 'GET', '/v1/check-ins/places/p-0')).code, 'not_found');
+  for (const query of ['', '?count=', '?count=two', '?count=-1', '?count=01'])
+    assert.equal(failed(await call(s, t.token, 'DELETE', `${path}/check-ins${query}`)).field, 'count', query);
+  const stale = await call(s, t.token, 'DELETE', `${path}/check-ins?count=1`);
+  assert.equal(failed(stale).code, 'revision_mismatch');
+  assert.equal(failed(stale).count, 2);
+  assert.equal(checkIns(s).length, 3);
+  const gone = await call(s, t.token, 'DELETE', `${path}/check-ins?count=2`, undefined, 'here-1');
+  assert.equal(gone.status, 200, JSON.stringify(gone.json));
+  assert.equal(gone.json.deleted, 2);
+  assert.deepEqual(
+    checkIns(s).map((c) => c.lat),
+    [SHOP.lat]
+  );
+  // The place stays, still ignored; the key answers its first result.
+  assert.equal(placeOf(await call(s, t.token, 'GET', path)).check_ins, 0);
+  assert.equal(placeOf(await call(s, t.token, 'GET', path)).ignored, true);
+  assert.deepEqual(
+    (await call(s, t.token, 'DELETE', `${path}/check-ins?count=2`, undefined, 'here-1')).json,
+    gone.json
+  );
+  const rows = (await call(s, t.token, 'GET', '/v1/activity?kinds=checkin')).json.items as OAuthRow[],
+    deleted = rows.filter((r) => r.kind === 'checkin.deleted');
+  assert.equal(deleted.length, 1);
+  assert.equal(deleted[0]!.place, place.id);
+  assert.equal(deleted[0]!.count, 2);
+  // Nothing there deletes nothing and adds no row.
+  assert.equal((await call(s, t.token, 'DELETE', `${path}/check-ins?count=0`)).json.deleted, 0);
+  assert.equal((await kinds(s, t.token)).filter((k) => k === 'checkin.deleted').length, 1);
+  assert.equal(
+    failed(await call(s, t.token, 'DELETE', '/v1/check-ins/places/p-0/check-ins?count=0')).code,
+    'not_found'
+  );
 });

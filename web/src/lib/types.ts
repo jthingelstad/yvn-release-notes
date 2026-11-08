@@ -311,8 +311,9 @@ export interface EventActivity extends ActivityHead {
   note?: string;
   version?: string;
   files?: number;
-  // note.edited: where the note was, set or cleared (never the place)
-  place?: 'set' | 'removed';
+  // note.edited: where the note was, set or cleared (never the place); a
+  // check-in row about a remembered place: its id
+  place?: 'set' | 'removed' | (string & {});
   added?: number;
   removed?: number;
   name?: string;
@@ -353,7 +354,8 @@ export interface EventActivity extends ActivityHead {
   source?: string;
   time_zone?: string;
   merged?: number;
-  // checkin.deleted: how many went, and whether that was all of them
+  // checkin.deleted: how many went, and whether that was all of them or
+  // those at one place
   count?: number;
   all?: boolean;
   // checkin.place: what became of a remembered place
@@ -431,6 +433,8 @@ export interface NamedPlace {
   id: string;
   name: string;
   spots: { lat: number; lon: number }[];
+  // No stop here is kept, and those kept already are hidden.
+  ignored: boolean;
   revision: number;
 }
 // POST /api/map/search: the pins with every word, by day and id.

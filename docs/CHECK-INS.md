@@ -125,8 +125,35 @@ Renaming changes all its spots, and forgetting removes them all. There is no
 size setting: 100 m everywhere until real data asks for one. At most 200 names
 an account, read whole on each join.
 
-A list of remembered places, to rename and forget, sits on the web and in the
-app's Settings.
+A list of remembered places, to rename, ignore and forget, sits on the web and
+in the app's Settings.
+
+### Ignored places
+
+`ignored: true` on a remembered place, set by the **Ignore this location**
+checkbox on any remembered place, on the web, the iPhone and Android (Jamie,
+2026-11-08). It generalizes Android's "Not at home", which kept one spot out on
+the phone alone; that app moves its spot to a remembered place, ignored.
+
+- **No new check-in is kept there.** A report whose spot is nearest an ignored
+  place, within the same 100 m, writes only its receipt: no check-in, no paid
+  lookup. `POST /v1/check-ins` answers 200 with `kept: false` and the check-in
+  it would have been, whose id names nothing, so an older client reads it as
+  done. A report filling in a stop kept before the place was ignored still
+  lands, hidden.
+- **The ones there already are hidden, not deleted.** A stay is at the place
+  nearest its first check-in, as its name is. While that place is ignored the
+  stay is left out of `GET /v1/check-ins`, a read of one (404), the web's Map and
+  lists, Activity, `notes_check_ins` and `notes_activity`. It still keeps its
+  neighbours apart, so stays read the same whatever is ignored. Unignoring brings
+  them all back; forgetting the place does too, by their own names.
+- **Delete existing check-ins here** is separate. It counts the stays at the
+  place, hidden or not (`GET /v1/check-ins/places/{id}`), asks with that count,
+  and deletes them for that count only
+  (`DELETE /v1/check-ins/places/{id}/check-ins?count=`). A different count is
+  `revision_mismatch` with the count now. The place stays, ignored or not.
+- The export keeps every check-in, hidden or not, and each place's `ignored`.
+  Delete all check-ins deletes hidden ones too.
 
 ### Back-to-back stops
 
@@ -141,18 +168,21 @@ Stored check-ins stay as iOS reported them. Lists merge two neighbouring ones
 Deleting a merged row deletes every check-in in it, and a name given to one goes
 on every check-in in it.
 
-## The API (1.18.0)
+## The API (1.18.0, ignoring 1.20.0)
 
-| Call                                        | Scope                              | Does                                                                 |
-| ------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
-| `POST /v1/check-ins`                        | `notes:write`                      | adds one, or fills in the one it continues                           |
-| `GET /v1/check-ins?from=&to=&before=`       | `activity`                         | newest first, with `lat`, `lon`, its shown name and how it was named |
-| `PATCH /v1/check-ins/{id}`                  | `notes:write` own, `notes:all` any | `name`, with the revision read                                       |
-| `DELETE /v1/check-ins/{id}`                 | `notes:write` own, `notes:all` any | deletes it                                                           |
-| `DELETE /v1/check-ins?confirm=all`          | `notes:all`                        | deletes every one, with one activity row and its count               |
-| `GET /v1/check-ins/places`                  | `activity`                         | the remembered places                                                |
-| `POST /v1/check-ins/places`                 | `notes:all`                        | `{name, lat, lon}`: remembers it, or adds the spot to that name      |
-| `PATCH`, `DELETE /v1/check-ins/places/{id}` | `notes:all`                        | renames or forgets it                                                |
+| Call                                                | Scope                              | Does                                                                         |
+| --------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------- |
+| `POST /v1/check-ins`                                | `notes:write`                      | adds one, or fills in the one it continues; `kept` false at an ignored place |
+| `GET /v1/check-ins?from=&to=&before=`               | `activity`                         | newest first, with `lat`, `lon`, its shown name and how it was named         |
+| `PATCH /v1/check-ins/{id}`                          | `notes:write` own, `notes:all` any | `name`, with the revision read                                               |
+| `DELETE /v1/check-ins/{id}`                         | `notes:write` own, `notes:all` any | deletes it                                                                   |
+| `DELETE /v1/check-ins?confirm=all`                  | `notes:all`                        | deletes every one, with one activity row and its count                       |
+| `GET /v1/check-ins/places`                          | `activity`                         | the remembered places                                                        |
+| `POST /v1/check-ins/places`                         | `notes:all`                        | `{name, lat, lon, ignored?}`: remembers it, or adds the spot to that name    |
+| `GET /v1/check-ins/places/{id}`                     | `activity`                         | the place and `check_ins`, how many stays are there, hidden or not           |
+| `PATCH /v1/check-ins/places/{id}`                   | `notes:all`                        | `name`, `ignored` or both                                                    |
+| `DELETE /v1/check-ins/places/{id}`                  | `notes:all`                        | forgets it                                                                   |
+| `DELETE /v1/check-ins/places/{id}/check-ins?count=` | `notes:all`                        | deletes the stays there, for the count read                                  |
 
 No new scope, on Jamie's call. Remembered places live on the account, so a new
 phone, the web map and any other client see the same names (Jamie, 2026-11-06:
@@ -182,13 +212,17 @@ owner's own words through, since a row with no name is no use, and that is Jamie
 call 4. `after` can miss one: a phone offline for a day files
 check-ins behind a client's cursor, so a client wanting all of them reads `GET
 /v1/check-ins`. `checkin.deleted` stays in the log with its `day` and a count,
-and never the place, as `note.deleted` does.
+and never the place's name or spot, as `note.deleted` does; one from "Delete
+existing check-ins here" has the place's id instead of a day. `checkin.ignored`
+and `checkin.unignored` carry the place's id alone. A stay at an ignored place
+has no row while it is ignored.
 
 **MCP (1.13.0).** `notes_check_ins`, read only, with `notes:read`, and the rows
-in `notes_activity`. Naming and deleting stay on the web and in apps. On Jamie's
-call this is the same protection as the rest of the account: a connected
-assistant that reads notes can read where its owner has been, once they have
-turned check-ins on.
+in `notes_activity`. Since 1.14.0 it lists the remembered places, each with
+`ignored`, and leaves out the stays at ignored ones. Naming and deleting stay on
+the web and in apps. On Jamie's call this is the same protection as the rest of
+the account: a connected assistant that reads notes can read where its owner has
+been, once they have turned check-ins on.
 
 ## The web
 
@@ -201,7 +235,8 @@ turned check-ins on.
   top of the release and tag filters. A group tapped lists both kinds, each with
   its mark. Check-ins use their real circle only when opened. Only the owner's
   session reads them, through `/api`, as pins are.
-- **Settings:** remembered places, and "Delete all check-ins".
+- **Settings:** remembered places, each with **Ignore this location** and
+  **Delete existing check-ins here**, and "Delete all check-ins".
 - **Not on a Day page or in any email.** Under "Still open".
 
 ## Changelog
@@ -393,8 +428,9 @@ iOS can't report a visit in a simulator, so the app's test feeds one in, as
    were added by hand, once. The app has no way to send it, and its copy goes when
    its owner clears it or signs out.
 
-Not in this design: badges, hiding home (Jamie's call 2 waits on real data), and
-a check-in setting a day's place or weather.
+Not in this design: badges, and a check-in setting a day's place or weather.
+Hiding home, which call 2 left to real data, is now ignoring a place (Jamie,
+2026-11-08).
 
 ## Jamie's calls
 
@@ -423,3 +459,12 @@ From the test, 2026-11-06:
    when done."
 10. The same place means about 100 m, one number with no setting, and a second
     spot can share a name.
+
+From the location design review, 2026-11-08:
+
+11. "Add 'Ignore this location' to remembered check-in places in Changelog /
+    Release Notes. Generalize Android's 'not at home' into this and migrate
+    it." A checkbox on any remembered place, on web, iPhone and Android. When
+    ignored, no future check-ins are recorded there, and the ones there are
+    hidden, not deleted; unignoring brings them back. "Delete existing
+    check-ins here" is separate, behind a confirmation that shows the count.

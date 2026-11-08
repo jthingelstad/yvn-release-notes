@@ -123,6 +123,7 @@ import {
   checkInKey,
   continues,
   NAMED_PLACE,
+  hiddenStay,
   stayRow,
   type CheckIn,
   type NamedPlace
@@ -1611,8 +1612,9 @@ export class Store {
    * row's id, or an ISO time) and from `from` (an ISO time) on, merged from
    * the account's rows, its assistants' daily reads and its check-ins. `more`
    * says older rows remain. A check-in has no row of its own (domain/check-ins.ts):
-   * one stay shows as one row, at its first check-in, never with its spot, so
-   * a page reads on past the rows a stay absorbs. */
+   * one stay shows as one row, at its first check-in, never with its spot, and
+   * a stay at an ignored place none, so a page reads on past the rows a stay
+   * absorbs or hides. */
   async activity(
     user: string,
     o: { before?: string; from?: string; limit: number }
@@ -1633,7 +1635,8 @@ export class Store {
           if (row.kind !== 'checkin') shown.push(row);
           else {
             const members = stays.get(String((row.stay as CheckIn).id));
-            if (members) shown.push(stayRow(members, places));
+            // A stay at an ignored place is hidden here too.
+            if (members && !hiddenStay(members, places)) shown.push(stayRow(members, places));
           }
         }
       }

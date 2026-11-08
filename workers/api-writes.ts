@@ -72,7 +72,7 @@ import {
   type UpcomingBatch,
   type UpcomingChange
 } from '../packages/backend/upcoming.ts';
-import { stayOf, type CheckInReads } from '../packages/backend/check-ins.ts';
+import { stayOf, staysAt, type CheckInReads } from '../packages/backend/check-ins.ts';
 import {
   STAY_WRITE_MAX,
   CHECKIN_SOURCES,
@@ -87,6 +87,9 @@ import {
   sameName,
   stayRevision,
   stayView,
+  hiddenStay,
+  ignoredAt,
+  withIgnored,
   type CheckIn,
   type NamedPlace
 } from '../packages/domain/check-ins.ts';
@@ -196,9 +199,10 @@ export const API_WRITES: Record<string, readonly string[]> = {
   'check-ins.name': ['id', 'name', 'revision'],
   'check-ins.delete': ['id'],
   'check-ins.delete-all': ['confirm'],
-  'check-ins.places.add': ['name', 'lat', 'lon'],
-  'check-ins.places.change': ['id', 'name'],
+  'check-ins.places.add': ['name', 'lat', 'lon', 'ignored'],
+  'check-ins.places.change': ['id', 'name', 'ignored'],
   'check-ins.places.delete': ['id'],
+  'check-ins.places.delete-check-ins': ['id', 'count'],
   'token.revoke': []
 };
 
@@ -420,6 +424,13 @@ function checkInReport(args: Arguments, now: number, birthday: string, tz: strin
       field: arrived ? 'arrived' : 'left'
     });
   return { arrived, left, at, day, source, time_zone: zone ?? tz, ...spot };
+}
+/** `ignored` as sent for a place: true or false, or undefined when left out. */
+function ignoredFrom(args: Arguments): boolean | undefined {
+  if (!Object.hasOwn(args, 'ignored')) return undefined;
+  if (typeof args.ignored !== 'boolean')
+    throw new ApiRefusal('invalid_request', 'ignored is true or false.', { field: 'ignored' });
+  return args.ignored;
 }
 /** A name sent for a stop or a place. */
 function nameFrom(raw: unknown): string {
@@ -701,6 +712,12 @@ export async function writeApi(
     return { status: 200, body: upcomingBody(await upcomingChanges(), true), replayed: false };
 
   const by = () => ({ via: 'token', token: name, token_id: tid, ...(client ? { client } : {}) });
+  // Ignoring or unignoring a remembered place, in the log by its id alone.
+  const ignoreEvent = (place: string, ignored: boolean): ActivityEvent => ({
+    kind: ignored ? 'checkin.ignored' : 'checkin.unignored',
+    id: again(place),
+    fields: { ...by(), place }
+  });
   // The stay a check-in is part of, and whether this token may change it: all
   // of it its own, or any with notes:all.
   const checkInStay = async (places: readonly NamedPlace[]): Promise<CheckIn[]> => {
@@ -708,6 +725,8 @@ export async function writeApi(
       item = sk ? ((await store.mcpGet('USER#' + uid, sk)) as CheckIn | null) : null;
     if (!item) throw new ApiRefusal('not_found', NO_CHECK_IN);
     const members = await stayOf(store, uid, item, places);
+    // A stay at an ignored place is hidden, as if it weren't there.
+    if (hiddenStay(members, places)) throw new ApiRefusal('not_found', NO_CHECK_IN);
     if (members.some((m) => m.connection !== tid) && !scopesOf(token).includes('notes:all'))
       throw new ApiRefusal(
         'not_yours',
@@ -827,8 +846,13 @@ export async function writeApi(
           same =
             matches.find((c) => c.connection === tid) ??
             (scopesOf(token).includes('notes:all') ? matches[0] : undefined),
+          places = await store.namedPlaces(uid),
+          // A new stop at an ignored place is not kept (Jamie, 2026-11-08):
+          // only the receipt is written, and the answer says so. A report
+          // filling in one kept before the place was ignored still lands.
+          kept = Boolean(same) || !ignoredAt(report, places),
           lookups = Number(previous?.lookups ?? 0),
-          paid = !same && (looked !== undefined || lookups < V1_LIMITS.lookups),
+          paid = kept && !same && (looked !== undefined || lookups < V1_LIMITS.lookups),
           district = paid ? (await lookUp(report)).district : null,
           random = randomUUID().replace(/-/g, ''),
           id = same?.id ?? checkInId(report.at, random),
@@ -848,10 +872,12 @@ export async function writeApi(
                 revision: 1
               },
           // Nothing new in a report sent again: only its receipt is written.
-          changed = !same || same.left !== left,
-          status = same ? 200 : 201,
-          places = await store.namedPlaces(uid),
-          body = { check_in: stayView([(changed ? item : same) as CheckIn], namesFor(places)) };
+          changed = kept && (!same || same.left !== left),
+          status = same || !kept ? 200 : 201,
+          body = {
+            check_in: stayView([(changed || !kept ? item : same) as CheckIn], namesFor(places)),
+            kept
+          };
         Object.assign(rate, { lookups: lookups + (paid ? 1 : 0) });
         landed = await store.checkInWrites(
           uid,
@@ -959,7 +985,8 @@ export async function writeApi(
         };
       } else if (op === 'check-ins.places.add') {
         const given = nameFrom(args.name),
-          spot = spotOf({ lat: args.lat, lon: args.lon });
+          spot = spotOf({ lat: args.lat, lon: args.lon }),
+          flag = ignoredFrom(args);
         if (!spot) throw new ApiRefusal('invalid_request', 'Send lat and lon in degrees.', { field: 'lat' });
         const places = await store.namedPlaces(uid),
           old = places.find((p) => sameName(p.name, given));
@@ -973,14 +1000,28 @@ export async function writeApi(
             field: 'name'
           });
         const id = old?.id ?? `p-${randomUUID().replace(/-/g, '')}`,
-          next: OAuthRow = old
-            ? { ...old, spots: had ? old.spots : [...old.spots, spot], revision: Number(old.revision) + 1 }
-            : { pk: 'USER#' + uid, sk: namedPlaceKey(id), id, name: given, spots: [spot], revision: 1 },
+          was = old?.ignored === true,
+          ignored = flag ?? was,
+          flips = ignored !== was,
+          next = withIgnored(
+            (old
+              ? { ...old, spots: had ? old.spots : [...old.spots, spot], revision: Number(old.revision) + 1 }
+              : {
+                  pk: 'USER#' + uid,
+                  sk: namedPlaceKey(id),
+                  id,
+                  name: given,
+                  spots: [spot],
+                  revision: 1
+                }) as NamedPlace,
+            ignored
+          ),
+          writes = !had || flips,
           status = old ? 200 : 201,
-          body = { place: namedPlaceView((had ? old : next) as NamedPlace) };
+          body = { place: namedPlaceView(writes ? next : old!) };
         landed = await store.checkInWrites(
           uid,
-          had ? [] : [{ next, ...(old ? { old } : {}) }],
+          writes ? [{ next, ...(old ? { old } : {}) }] : [],
           store.tokenProof(token, now, 'notes:all'),
           [
             ...store.agentReceipts(receiptFor(status, body), audit({ place: id }), rate, previous, now),
@@ -989,24 +1030,41 @@ export async function writeApi(
         );
         answer = { status, body, replayed: false, limit };
         after = async () => {
-          if (!had)
-            await record([
-              { kind: 'checkin.place', id: again(id), fields: { ...by(), place: id, change: old ? 'spot' : 'added' } }
-            ]);
+          await record([
+            ...(had
+              ? []
+              : [
+                  {
+                    kind: 'checkin.place',
+                    id: again(id),
+                    fields: { ...by(), place: id, change: old ? 'spot' : 'added' }
+                  }
+                ]),
+            ...(flips ? [ignoreEvent(id, ignored)] : [])
+          ]);
         };
       } else if (op === 'check-ins.places.change' || op === 'check-ins.places.delete') {
         const places = await store.namedPlaces(uid),
           id = String(args.id),
           old = places.find((p) => p.id === id);
         if (!old) throw new ApiRefusal('not_found', NO_PLACE);
-        const given = op === 'check-ins.places.change' ? nameFrom(args.name) : null;
+        const changing = op === 'check-ins.places.change',
+          renaming = changing && Object.hasOwn(args, 'name'),
+          flag = changing ? ignoredFrom(args) : undefined;
+        if (changing && !renaming && flag === undefined)
+          throw new ApiRefusal('invalid_request', 'Send name, ignored, or both.', { field: 'name' });
+        const given = renaming ? nameFrom(args.name) : null;
         if (given && places.some((p) => p.id !== id && sameName(p.name, given)))
           throw new ApiRefusal(
             'invalid_request',
             'Another remembered place has that name. Forget it, or add this spot to it with POST /v1/check-ins/places.',
             { field: 'name' }
           );
-        const next: OAuthRow | null = given ? { ...old, name: given, revision: Number(old.revision) + 1 } : null,
+        const was = old.ignored === true,
+          ignored = flag ?? was,
+          next: NamedPlace | null = changing
+            ? { ...withIgnored(old, ignored), name: given ?? old.name, revision: Number(old.revision) + 1 }
+            : null,
           status = next ? 200 : 204,
           body = next ? { place: namedPlaceView(next as NamedPlace) } : null;
         landed = await store.checkInWrites(
@@ -1021,12 +1079,47 @@ export async function writeApi(
         answer = { status, body, replayed: false, limit };
         after = async () => {
           await record([
-            {
-              kind: 'checkin.place',
-              id: again(id),
-              fields: { ...by(), place: id, change: next ? 'renamed' : 'forgotten' }
-            }
+            ...(!changing || renaming
+              ? [
+                  {
+                    kind: 'checkin.place',
+                    id: again(id),
+                    fields: { ...by(), place: id, change: changing ? 'renamed' : 'forgotten' }
+                  }
+                ]
+              : []),
+            ...(ignored !== was ? [ignoreEvent(id, ignored)] : [])
           ]);
+        };
+      } else if (op === 'check-ins.places.delete-check-ins') {
+        // Delete existing check-ins here (Jamie, 2026-11-08): every stay at
+        // the place, hidden or not, for the count the owner was shown. A
+        // retry after part of it landed deletes the rest and answers the
+        // first count. The place stays.
+        const id = String(args.id),
+          place = (await store.namedPlaces(uid)).find((p) => p.id === id);
+        if (!place) throw new ApiRefusal('not_found', NO_PLACE);
+        const { stays } = await staysAt(store, uid, id);
+        if (wiped === undefined && stays.length !== args.count)
+          throw new ApiRefusal(
+            'revision_mismatch',
+            'The check-ins there changed since you counted them. GET /v1/check-ins/places/{id} again for the count.',
+            { count: stays.length }
+          );
+        const count = (wiped ??= stays.length),
+          body = { deleted: count };
+        landed = await store.checkInWrites(
+          uid,
+          stays.flat().map((old) => ({ old })),
+          store.tokenProof(token, now, 'notes:all'),
+          [
+            ...store.agentReceipts(receiptFor(200, body), audit({ place: id, count }), rate, previous, now),
+            ...legacyGuard()
+          ]
+        );
+        answer = { status: 200, body, replayed: false, limit };
+        after = async () => {
+          if (count) await record([{ kind: 'checkin.deleted', id: again(id), fields: { ...by(), place: id, count } }]);
         };
       } else if (op === 'tags.pinned') {
         const pins = pinnedTags(args.pinned);

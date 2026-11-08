@@ -40,10 +40,15 @@
   },
   "info": {
     "title": "Release Notes API",
-    "version": "1.19.0",
+    "version": "1.20.0",
     "summary": "Add notes to Release Notes and read them back, from a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. With `notes:read`, a token reads the whole archive and writes nothing (1.15.0). The guide is at /guide/api/, all of it in one file for agents at /guide/api/llms.txt, and what each version added at /guide/api/changelog/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.20.0",
+        "date": "2026-11-08",
+        "summary": "A remembered place can be ignored: PATCH or POST /v1/check-ins/places takes `ignored`, and each place says it. No new stop at an ignored place is kept: POST /v1/check-ins answers 200 with `kept` false. The stops already there are hidden, not deleted, from GET /v1/check-ins, each read of one and the activity log, and come back when it is unignored. GET /v1/check-ins/places/{id} counts the check-ins at a place, hidden or not, and DELETE /v1/check-ins/places/{id}/check-ins?count= deletes them for that count. The activity log adds `checkin.ignored` and `checkin.unignored`, with the place’s id, and a `checkin.deleted` with a `place`."
+      },
       {
         "version": "1.19.0",
         "date": "2026-11-08",
@@ -2758,7 +2763,7 @@
         ],
         "operationId": "listCheckIns",
         "summary": "The places you stopped, newest first",
-        "description": "A stay at a time, with its spot and the name it shows. Back-to-back stops at one place read as one, and `ids` lists the check-ins in it. `from` and `to` are your days, a stay going by when it began, up to 31 days; `before` is the `next` of an earlier page. Since 1.18.0.",
+        "description": "A stay at a time, with its spot and the name it shows. Back-to-back stops at one place read as one, and `ids` lists the check-ins in it. `from` and `to` are your days, a stay going by when it began, up to 31 days; `before` is the `next` of an earlier page. A stay at an ignored place is hidden: left out here, in the activity log and from each read of one, until the place is unignored (1.20.0). Since 1.18.0.",
         "parameters": [
           {
             "name": "from",
@@ -2839,7 +2844,7 @@
         ],
         "operationId": "addCheckIn",
         "summary": "Send a stop, as a phone is told of it",
-        "description": "Forward each report as it comes, with an Idempotency-Key. A later report with the same `source` and arrival, to the second, is the same stay: it fills in `left` and answers 200, not 201, so a client keeps no ids. A report with no arrival is matched by its `left`. A `tap` sends the moment it was tapped as `arrived`, and is never continued. Times over a week ahead are refused; older ones are fine, since a phone can be offline. The first 100 new stays a UTC day get their `district`, one paid lookup each, and those past that are still saved with none; RateLimit-Limit counts those. After 1000 reports a day, `rate_limited`. Since 1.18.0.",
+        "description": "Forward each report as it comes, with an Idempotency-Key. A later report with the same `source` and arrival, to the second, is the same stay: it fills in `left` and answers 200, not 201, so a client keeps no ids. A report with no arrival is matched by its `left`. A `tap` sends the moment it was tapped as `arrived`, and is never continued. Times over a week ahead are refused; older ones are fine, since a phone can be offline. The first 100 new stays a UTC day get their `district`, one paid lookup each, and those past that are still saved with none; RateLimit-Limit counts those. After 1000 reports a day, `rate_limited`. A new stop at an ignored place is not kept (1.20.0): it answers 200 with `kept` false and `check_in` as it would have read, its `place` naming the ignored place, and its `id` naming no check-in. A report filling in a stop kept before the place was ignored still lands. Since 1.18.0.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2870,7 +2875,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CheckInWritten"
+                  "$ref": "#/components/schemas/CheckInReported"
                 }
               },
               "text/plain": {
@@ -2900,7 +2905,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CheckInWritten"
+                  "$ref": "#/components/schemas/CheckInReported"
                 }
               },
               "text/plain": {
@@ -3154,7 +3159,7 @@
         ],
         "operationId": "listNamedPlaces",
         "summary": "The places you remember",
-        "description": "Each name with its spots. The nearest within 100 m names a stop. Since 1.18.0.",
+        "description": "Each name with its spots, and whether it is `ignored` (1.20.0). The nearest within 100 m names a stop. Since 1.18.0.",
         "responses": {
           "200": {
             "description": "OK",
@@ -3196,7 +3201,7 @@
         ],
         "operationId": "rememberPlace",
         "summary": "Remember a place, or add a spot to a name",
-        "description": "A name already in use, ignoring case, gains this spot and answers 200; a new one answers 201. It applies at once to every stop within 100 m, past and future. An account has up to 200 names, and a name up to 50 spots. Since 1.18.0.",
+        "description": "A name already in use, ignoring case, gains this spot and answers 200; a new one answers 201. It applies at once to every stop within 100 m, past and future. An account has up to 200 names, and a name up to 50 spots. `ignored` true ignores it as it is remembered, and false unignores it (1.20.0). Since 1.18.0.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3293,13 +3298,66 @@
       }
     },
     "/v1/check-ins/places/{id}": {
+      "get": {
+        "tags": [
+          "Check-ins"
+        ],
+        "operationId": "getNamedPlace",
+        "summary": "One remembered place, and how many check-ins are there",
+        "description": "`check_ins` counts the stays at it, hidden or not: a stay is at the remembered place nearest where it began. Show it before deleting them with DELETE /v1/check-ins/places/{id}/check-ins. Since 1.20.0.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NamedPlaceCounted"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Its name and count."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,80}$"
+            }
+          }
+        ],
+        "security": [
+          {
+            "token": [
+              "activity"
+            ]
+          },
+          {
+            "signIn": [
+              "activity"
+            ]
+          }
+        ],
+        "x-scope": "activity"
+      },
       "patch": {
         "tags": [
           "Check-ins"
         ],
         "operationId": "renameNamedPlace",
-        "summary": "Rename a remembered place",
-        "description": "Every spot and stop follows. A name another place has is refused. Since 1.18.0.",
+        "summary": "Rename a remembered place, or ignore it",
+        "description": "Send `name`, `ignored`, or both. Every spot and stop follows a new name, and a name another place has is refused. Ignored (1.20.0, Jamie’s call): no new stop there is kept, and the stops already there are hidden, not deleted, from every list, the activity log and the Map. False brings them back. Since 1.18.0.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3379,7 +3437,7 @@
         ],
         "operationId": "forgetNamedPlace",
         "summary": "Forget a remembered place",
-        "description": "All its spots go, and stops there show their neighbourhood again. Since 1.18.0.",
+        "description": "All its spots go, and stops there show their neighbourhood again. Forgetting an ignored place brings its stops back. Since 1.18.0.",
         "responses": {
           "204": {
             "description": "Forgotten.",
@@ -3416,6 +3474,88 @@
             "$ref": "#/components/parameters/Idempotency-Key"
           }
         ],
+        "security": [
+          {
+            "token": [
+              "notes:all"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:all"
+            ]
+          }
+        ],
+        "x-scope": "notes:all"
+      }
+    },
+    "/v1/check-ins/places/{id}/check-ins": {
+      "delete": {
+        "tags": [
+          "Check-ins"
+        ],
+        "operationId": "deleteCheckInsAtPlace",
+        "summary": "Delete the check-ins at a remembered place",
+        "description": "Every stay at it, hidden or not, and their rows in the activity log; the place stays, ignored or not. `count` is the `check_ins` GET /v1/check-ins/places/{id} answered, and a different number now is `revision_mismatch` with the new `count`. One `checkin.deleted` row stays in the log with the place’s id and the count. Since 1.20.0.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          },
+          {
+            "name": "count",
+            "in": "query",
+            "required": true,
+            "description": "How many check-ins you were shown.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInsDeleted"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Deleted 12."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
         "security": [
           {
             "token": [
@@ -3632,6 +3772,11 @@
               "revision": {
                 "type": "string",
                 "description": "With revision_mismatch: the note’s current revision."
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "With revision_mismatch from DELETE /v1/check-ins/places/{id}/check-ins: how many check-ins are there now (1.20.0)."
               }
             }
           }
@@ -3804,7 +3949,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.19.0"
+            "example": "1.20.0"
           }
         }
       },
@@ -6213,6 +6358,21 @@
           }
         }
       },
+      "CheckInReported": {
+        "type": "object",
+        "required": [
+          "check_in"
+        ],
+        "properties": {
+          "check_in": {
+            "$ref": "#/components/schemas/CheckIn"
+          },
+          "kept": {
+            "type": "boolean",
+            "description": "False when the stop was at an ignored place and nothing was kept; its `check_in` names no check-in. Since 1.20.0: an answer replayed from before then leaves it out, which means true."
+          }
+        }
+      },
       "CheckInsDeleted": {
         "type": "object",
         "required": [
@@ -6357,8 +6517,39 @@
               }
             }
           },
+          "ignored": {
+            "type": "boolean",
+            "description": "No stop here is kept, and those kept already are hidden. Since 1.20.0."
+          },
           "revision": {
             "type": "integer"
+          }
+        }
+      },
+      "NamedPlaceCounted": {
+        "type": "object",
+        "required": [
+          "place"
+        ],
+        "properties": {
+          "place": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NamedPlace"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "check_ins"
+                ],
+                "properties": {
+                  "check_ins": {
+                    "type": "integer",
+                    "description": "Stays at it, hidden or not."
+                  }
+                }
+              }
+            ]
           }
         }
       },
@@ -6410,20 +6601,26 @@
             "type": "number",
             "minimum": -180,
             "maximum": 180
+          },
+          "ignored": {
+            "type": "boolean",
+            "description": "Ignore the place, or unignore it. Left out, as it was. Since 1.20.0."
           }
         }
       },
       "NamedPlaceName": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "minProperties": 1,
         "additionalProperties": false,
         "properties": {
           "name": {
             "type": "string",
             "minLength": 1,
             "maxLength": 100
+          },
+          "ignored": {
+            "type": "boolean",
+            "description": "Ignore the place, or unignore it. Since 1.20.0."
           }
         }
       },

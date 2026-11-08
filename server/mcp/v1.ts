@@ -32,7 +32,7 @@ import { computeVersion, lifeCount, releaseAge, sameDayBefore } from '../../pack
 import { searchTerms, searchedText } from '../../packages/domain/search.ts';
 import { namedPlaceView, stayView } from '../../packages/domain/check-ins.ts';
 import { badgeFacts } from '../../packages/backend/badges.ts';
-import { stayPage, type CheckInReads } from '../../packages/backend/check-ins.ts';
+import { stayPage, staysAt, type CheckInReads } from '../../packages/backend/check-ins.ts';
 import { segments, type Link } from '../../packages/backend/links.ts';
 import { pins } from '../../packages/backend/maps.ts';
 import { others } from '../../packages/backend/media.ts';
@@ -67,13 +67,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.19.0';
+export const API_VERSION = '1.20.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.20.0',
+    date: '2026-11-08',
+    summary:
+      'A remembered place can be ignored: PATCH or POST /v1/check-ins/places takes `ignored`, and each place says it. No new stop at an ignored place is kept: POST /v1/check-ins answers 200 with `kept` false. The stops already there are hidden, not deleted, from GET /v1/check-ins, each read of one and the activity log, and come back when it is unignored. GET /v1/check-ins/places/{id} counts the check-ins at a place, hidden or not, and DELETE /v1/check-ins/places/{id}/check-ins?count= deletes them for that count. The activity log adds `checkin.ignored` and `checkin.unignored`, with the place’s id, and a `checkin.deleted` with a `place`.'
+  },
   {
     version: '1.19.0',
     date: '2026-11-08',
@@ -259,6 +265,7 @@ const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
   CHECK_IN = /^\/v1\/check-ins\/(c-?\d{1,16}-[0-9a-f]{1,40})$/,
   CHECK_IN_PLACES = /^\/v1\/check-ins\/places$/,
   CHECK_IN_PLACE = /^\/v1\/check-ins\/places\/(p-[0-9a-f]{1,40})$/,
+  CHECK_IN_PLACE_CHECK_INS = /^\/v1\/check-ins\/places\/(p-[0-9a-f]{1,40})\/check-ins$/,
   CHECK_IN_CURSOR = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z#c-?\d{1,16}-[0-9a-f]{1,40}$/;
 /** Reads that reach the whole archive (1.15.0). */
 const ARCHIVE = { scope: 'notes:read', also: ['notes:all'] } as const;
@@ -408,10 +415,24 @@ export const V1_ROUTES: readonly {
     scope: 'notes:all'
   },
   {
+    method: 'GET',
+    path: CHECK_IN_PLACE,
+    template: '/v1/check-ins/places/{id}',
+    name: 'check-ins.places.get',
+    scope: 'activity'
+  },
+  {
     method: 'PATCH',
     path: CHECK_IN_PLACE,
     template: '/v1/check-ins/places/{id}',
     name: 'check-ins.places.change',
+    scope: 'notes:all'
+  },
+  {
+    method: 'DELETE',
+    path: CHECK_IN_PLACE_CHECK_INS,
+    template: '/v1/check-ins/places/{id}/check-ins',
+    name: 'check-ins.places.delete-check-ins',
     scope: 'notes:all'
   },
   {
@@ -504,7 +525,7 @@ function refuse(code: string, asText: boolean, headers: Headers = {}, detail = '
   if (status === 401) more['www-authenticate'] = 'Bearer realm="Release Notes"';
   if (typeof extra.retry_after === 'number') more['retry-after'] = String(extra.retry_after);
   const error: OAuthRow = { code, message };
-  for (const k of ['field', 'revision']) if (extra[k] != null) error[k] = extra[k];
+  for (const k of ['field', 'revision', 'count']) if (extra[k] != null) error[k] = extra[k];
   return respond(status, { error }, asText ? message : null, more);
 }
 
@@ -896,6 +917,19 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
       }
       // Every check-in goes only when the address says so.
       if (route.name === 'check-ins.delete-all') args.confirm = new URL(request.url).searchParams.get('confirm');
+      // The check-ins at a place go only for the count the owner was shown.
+      if (route.name === 'check-ins.places.delete-check-ins') {
+        const count = new URL(request.url).searchParams.get('count');
+        if (count === null || !/^(0|[1-9]\d{0,6})$/.test(count))
+          return refuse(
+            'invalid_request',
+            asText,
+            headers,
+            'Send ?count= with how many check-ins GET /v1/check-ins/places/{id} said are there.',
+            { field: 'count' }
+          );
+        args.count = Number(count);
+      }
       // A dry run reads and writes nothing, so it counts as a read.
       const dry = route.name === 'upcoming.batch' && args.dry_run === true;
       if (dry && !(await readQuota(context, uid, tid)))
@@ -1435,12 +1469,28 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
           line: items.map((i) => `${String(i.at)} ${String(i.label)}`).join('\n') || 'No check-ins.'
         };
       }
+      if (route.name === 'check-ins.places.get') {
+        // One place, and how many check-ins are there, hidden or not: what
+        // "Delete existing check-ins here" asks before it deletes.
+        const place = (await store.namedPlaces(uid)).find((p) => p.id === params[0]);
+        if (!place)
+          return {
+            code: 'not_found',
+            message: 'There is no remembered place with that id. GET /v1/check-ins/places lists them.'
+          };
+        const { stays } = await staysAt(store, uid, place.id);
+        return {
+          status: 200,
+          body: { place: { ...namedPlaceView(place), check_ins: stays.length } },
+          line: `${place.name}: ${stays.length} ${stays.length === 1 ? 'check-in' : 'check-ins'}${place.ignored ? ', ignored' : ''}.`
+        };
+      }
       if (route.name === 'check-ins.places') {
         const places = await store.namedPlaces(uid);
         return {
           status: 200,
           body: { places: places.map(namedPlaceView) },
-          line: places.map((p) => p.name).join('\n') || 'No remembered places.'
+          line: places.map((p) => (p.ignored ? `${p.name} (ignored)` : p.name)).join('\n') || 'No remembered places.'
         };
       }
       if (route.name === 'upcoming.reminders') {

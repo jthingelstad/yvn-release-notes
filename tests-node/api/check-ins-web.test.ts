@@ -359,3 +359,98 @@ test('Activity says whether there are check-ins, and filters to them', async () 
   const later = await f.call('GET', '/api/activity?before=' + encodeURIComponent('2026-10-13T00:00:00.000Z'));
   assert.equal(later.data.check_ins, undefined);
 });
+
+test('ignoring a place hides its stays everywhere, keeps them, and unignoring brings them back', async () => {
+  const here = stop('u', A, HOME),
+    away = stop('u', B, SHOP),
+    f = await fixture([here, away]);
+  await f.call('PUT', '/api/check-ins/' + here.id, { name: 'Home', remember: true, revision: 1 });
+  const [place] = (await f.call('GET', '/api/check-ins/places')).data.places,
+    path = '/api/check-ins/places/' + place.id,
+    labels = async () => (await f.call('GET', '/api/check-ins')).data.stays.map((s: Item) => s.label);
+  assert.equal(place.ignored, false);
+  assert.equal((await f.call('PUT', path, {})).status, 400);
+  assert.deepEqual(await f.call('PUT', path, { ignored: 'yes' }), { status: 400, data: { error: 'check-in-ignored' } });
+  const ignored = await f.call('PUT', path, { ignored: true });
+  assert.equal(ignored.status, 200);
+  assert.equal(ignored.data.place.ignored, true);
+  assert.equal(ignored.data.place.name, 'Home');
+  assert.deepEqual(await labels(), ['Uptown, Springfield']);
+  assert.equal((await f.call('GET', '/api/check-ins/' + here.id)).status, 404);
+  assert.equal((await f.call('PUT', '/api/check-ins/' + here.id, { name: 'X', revision: 1 })).status, 404);
+  assert.equal((await f.call('DELETE', '/api/check-ins/' + here.id)).status, 404);
+  assert.deepEqual(
+    (await f.call('GET', '/api/activity?family=checkin')).data.entries
+      .map((e: Item) => e.kind)
+      .filter((k: string) => k === 'checkin'),
+    ['checkin']
+  );
+  // Nothing is deleted, and the same flag again changes nothing.
+  assert.equal(f.rows().filter((r) => String(r.sk).startsWith('CHECKIN#')).length, 2);
+  assert.equal((await f.call('PUT', path, { ignored: true })).data.place.revision, ignored.data.place.revision);
+  assert.equal(f.activity().filter((r) => r.kind === 'checkin.ignored').length, 1);
+  // Unignoring brings it back, named.
+  const back = await f.call('PUT', path, { ignored: false });
+  assert.equal(back.data.place.ignored, false);
+  assert.deepEqual(await labels(), ['Uptown, Springfield', 'Home']);
+  assert.ok(!('ignored' in f.rows().find((r) => r.sk === 'NAMEDPLACE#' + place.id)!));
+  assert.deepEqual(
+    f
+      .activity()
+      .filter((r) => r.kind === 'checkin.ignored' || r.kind === 'checkin.unignored')
+      .map((r) => [r.kind, r.place])
+      .sort(),
+    [
+      ['checkin.ignored', place.id],
+      ['checkin.unignored', place.id]
+    ]
+  );
+  // A rename and the flag together write once, and log both.
+  const both = await f.call('PUT', path, { name: 'The House', ignored: true });
+  assert.equal(both.data.place.name, 'The House');
+  assert.equal(both.data.place.ignored, true);
+  assert.equal(f.activity().filter((r) => r.change === 'renamed').length, 1);
+  // Forgetting an ignored place shows its stays again, by their neighbourhood.
+  assert.equal((await f.call('DELETE', path)).status, 204);
+  assert.deepEqual(await labels(), ['Uptown, Springfield', 'Uptown, Springfield']);
+});
+
+test('the check-ins at a place are counted, hidden or not, and deleted only for that count', async () => {
+  const one = stop('u', A, HOME),
+    two = stop('u', C, NEAR),
+    away = stop('u', B, SHOP),
+    f = await fixture([one, two, away]);
+  await f.call('PUT', '/api/check-ins/' + one.id, { name: 'Home', remember: true, revision: 1 });
+  const [place] = (await f.call('GET', '/api/check-ins/places')).data.places,
+    path = '/api/check-ins/places/' + place.id;
+  await f.call('PUT', path, { ignored: true });
+  const counted = await f.call('GET', path);
+  assert.equal(counted.data.place.check_ins, 2);
+  assert.equal(counted.data.place.ignored, true);
+  assert.equal((await f.call('GET', '/api/check-ins/places/p-none')).status, 404);
+  assert.equal((await f.call('GET', path, undefined, 'b')).status, 404);
+  assert.deepEqual(await f.call('DELETE', path + '/check-ins', { count: 1 }), {
+    status: 409,
+    data: { error: 'check-in-count', count: 2 }
+  });
+  assert.equal((await f.call('DELETE', path + '/check-ins', {})).status, 409);
+  assert.equal((await f.call('DELETE', path + '/check-ins', { count: 2 }, 'u', 'https://else.example')).status, 403);
+  assert.deepEqual((await f.call('DELETE', path + '/check-ins', { count: 2 })).data, { deleted: 2 });
+  assert.deepEqual(
+    f
+      .rows()
+      .filter((r) => String(r.sk).startsWith('CHECKIN#'))
+      .map((r) => r.id),
+    [away.id]
+  );
+  assert.equal((await f.call('GET', path)).data.place.check_ins, 0);
+  assert.deepEqual(
+    f
+      .activity()
+      .filter((r) => r.kind === 'checkin.deleted')
+      .map((r) => [r.place, r.count]),
+    [[place.id, 2]]
+  );
+  assert.deepEqual((await f.call('DELETE', path + '/check-ins', { count: 0 })).data, { deleted: 0 });
+  assert.equal(f.activity().filter((r) => r.kind === 'checkin.deleted').length, 1);
+});

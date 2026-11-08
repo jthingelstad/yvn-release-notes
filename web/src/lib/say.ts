@@ -46,6 +46,8 @@ export const SAY: Record<string, Line> = {
   'check-in-spots-full': 'That name already covers as many spots as one can. Use another name.',
   'check-in-place-missing': 'That place isn’t remembered any more. Reload the page.',
   'check-in-place-taken': 'Another remembered place has that name. Forget it first, or use another.',
+  'check-in-ignored': 'That didn’t go through. Try again.',
+  'check-in-count': 'The check-ins there changed since they were counted. Try again to see how many there are now.',
   days: 'Pick how long to pause.',
   through: 'Pick a day within the next 60.',
   stopped: 'Your emails are stopped. Start them again in settings first.',

@@ -6,8 +6,10 @@
  * USER#<owner> / CHECKIN#<at>#<id> is one report, `at` being when it began: its
  * arrival, else its departure, else when the server heard it. The id carries
  * `at`, so an id alone finds the item.
- * USER#<owner> / NAMEDPLACE#<id> is a remembered place: a `name` and its
- * `spots`.
+ * USER#<owner> / NAMEDPLACE#<id> is a remembered place: a `name`, its
+ * `spots`, and `ignored` when its owner ignores it (Jamie, 2026-11-08): no
+ * stop there is kept from then on, and those kept already are hidden, not
+ * deleted, until it is unignored.
  *
  * Everything shown is worked out when read, so remembering a name applies at
  * once to every stop there, and the merge rule can change without touching
@@ -45,6 +47,8 @@ export interface NamedPlace extends Row {
   id: string;
   name: string;
   spots: Spot[];
+  /** Ignored: no stop is kept here, and those kept already are hidden. */
+  ignored?: boolean;
   revision?: number;
 }
 /** A check-in's stored fields. */
@@ -114,6 +118,32 @@ export function nearestPlace(spot: Spot, places: readonly NamedPlace[]): NamedPl
       }
     }
   return best;
+}
+
+/** The ignored place a spot is at, if it is at one: the remembered place
+ * nearest it within 100 m, as names a stop, when that one is ignored. */
+export function ignoredAt(spot: Spot, places: readonly NamedPlace[]): NamedPlace | null {
+  const place = nearestPlace(spot, places);
+  return place?.ignored === true ? place : null;
+}
+/** The remembered place a stay is at: the one nearest where it began, as its
+ * spot and its name go by its first check-in. */
+export const placeOfStay = (members: readonly CheckIn[], places: readonly NamedPlace[]): NamedPlace | null =>
+  nearestPlace(members[0]!, places);
+/** Whether a stay is hidden: it is at an ignored place. Hidden stays are
+ * left out of every list, the log, the Map and each read of one, and come
+ * back when the place is unignored. A stay keeps its neighbours apart all
+ * the same, so stays read the same whatever is ignored. */
+export const hiddenStay = (members: readonly CheckIn[], places: readonly NamedPlace[]): boolean =>
+  placeOfStay(members, places)?.ignored === true;
+
+/** A place with `ignored` set, or taken off when it is false, so an item that
+ * was never ignored keeps no flag. */
+export function withIgnored<T extends NamedPlace>(place: T, ignored: boolean): T {
+  const next = { ...place };
+  if (ignored) next.ignored = true;
+  else delete next.ignored;
+  return next;
 }
 
 /** The name a check-in shows, first match wins: its own, a remembered place's,
@@ -194,6 +224,7 @@ export const namedPlaceView = (place: NamedPlace): Row => ({
   id: place.id,
   name: place.name,
   spots: place.spots,
+  ignored: place.ignored === true,
   revision: Number(place.revision ?? 1)
 });
 

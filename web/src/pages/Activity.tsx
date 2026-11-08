@@ -424,6 +424,17 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
         : e.place
           ? ['Deleted the check-ins at a remembered place', `${count(e.count ?? 0, 'check-in', 'check-ins')} went.`]
           : [`Deleted a check-in from ${e.day ? dayName(e.day, year) : 'a day'}`];
+    // A stay's tags changed, or a remembered place's tags were put on the
+    // check-ins already there (2026-11-08).
+    case 'checkin.tagged':
+      return e.place
+        ? ['Tagged the check-ins at a remembered place', `${count(e.count ?? 0, 'check-in', 'check-ins')} tagged.`]
+        : [
+            <>
+              Changed the tags on <AppLink href={checkInHref(e.checkin!)}>a check-in</AppLink> from{' '}
+              {e.day ? dayName(e.day, year) : 'a day'}
+            </>
+          ];
     case 'checkin.ignored':
       return ['Ignored a remembered place', 'Its check-ins are hidden, and no new ones are kept there.'];
     case 'checkin.unignored':
@@ -436,7 +447,9 @@ function said(e: EventActivity, l: ActivityData): [React.ReactNode, string?] {
             ? 'Added a spot to a remembered place'
             : e.change === 'renamed'
               ? 'Renamed a remembered place'
-              : 'Forgot a remembered place'
+              : e.change === 'tagged'
+                ? 'Changed a remembered place’s tags'
+                : 'Forgot a remembered place'
       ];
     case 'account.created':
       return ['Joined Release Notes'];

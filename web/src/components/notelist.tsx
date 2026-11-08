@@ -1,5 +1,7 @@
 // A day's notes, each its words, its files, a meta line, then Edit, Where,
-// Add files and Delete. An edit shows its
+// Add files and Delete. An edit has the note's tags as chips (tag-field.tsx):
+// those its field gave it and its #words, whose chip takes the #word out of
+// the text too (Jamie's call 1). An edit shows its
 // new words at once and a deleted note goes at once; a write that fails
 // puts the note back as it was, saying why. After any of them the pages'
 // data is fetched again, so every list shows the change.
@@ -10,12 +12,15 @@ import { FILES, sendFiles } from '../lib/files.ts';
 import { NoteFiles } from './notefiles.tsx';
 import { isPending } from '../lib/notecache.ts';
 import { sayFor, type Line, type Problem } from '../lib/say.ts';
+import { fieldOnly, named, noteChips, removingNoteTag, type Tag } from '../lib/tags.ts';
 import type { Note } from '../lib/types.ts';
 import { ErrorLine, LineText, useFocusLater } from './common.tsx';
 import { NoteBody, NoteMedia, NoteMeta } from './notes.tsx';
 import { FormatBar, formatKey } from './format-bar.tsx';
 import { Icon } from './icon.tsx';
 import { SavedNoteWhere } from './where.tsx';
+import { TagField } from './tag-field.tsx';
+import { useTagNames } from './tag-row.tsx';
 
 export function useRefresh() {
   const client = useQueryClient();
@@ -41,9 +46,9 @@ export function NoteList({ day, notes, tz, version }: ListProps) {
 
 type Mode =
   | { is: 'view' }
-  | { is: 'edit'; draft?: string; problem?: Problem }
+  | { is: 'edit'; draft?: string; field?: Tag[]; problem?: Problem }
   | { is: 'where' }
-  | { is: 'saving'; text: string }
+  | { is: 'saving'; text: string; field: Tag[] }
   | { is: 'ask'; line?: Line }
   | { is: 'deleting' }
   | { is: 'files'; line: Line; done: boolean };
@@ -84,10 +89,12 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
 
   // The new words show while they save; a failure opens the edit again,
   // with them in it.
-  const save = async (text: string) => {
-    setMode({ is: 'saving', text });
-    const r = await api('PUT', path, { text });
-    if (!r.ok) return setMode({ is: 'edit', draft: text, problem: { ...r.data, draft: 'copy' } });
+  // The field's tags go up whole, so one taken off there leaves the note;
+  // the #words in the text are its tags as well, whatever is sent.
+  const save = async (text: string, field: Tag[]) => {
+    setMode({ is: 'saving', text, field });
+    const r = await api('PUT', path, { text, tags: field.map((t) => t.name) });
+    if (!r.ok) return setMode({ is: 'edit', draft: text, field, problem: { ...r.data, draft: 'copy' } });
     await refresh();
     setMode({ is: 'view' });
   };
@@ -105,13 +112,24 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
     setMode({ is: 'ask', line: sayFor(r.data, 'That didn’t work. Try again.') });
   };
 
-  const shown = mode.is === 'saving' ? { ...n, text: mode.text, parts: undefined } : n;
+  const saving = mode.is === 'saving' ? noteChips(mode.text, mode.field) : null;
+  const shown =
+    mode.is === 'saving'
+      ? {
+          ...n,
+          text: mode.text,
+          parts: undefined,
+          tags: saving!.map((t) => t.key),
+          tag_names: saving!.map((t) => t.name)
+        }
+      : n;
   return (
     <article className="note" ref={article} hidden={mode.is === 'deleting'}>
       {mode.is === 'edit' ? (
         <EditForm
           n={n}
           draft={mode.draft}
+          field={mode.field}
           problem={mode.problem}
           onSave={save}
           onCancel={() => setMode({ is: 'view' })}
@@ -213,21 +231,27 @@ function NoteItem({ day, n, tz, version }: { day: string; n: Note; tz: string; v
 function EditForm({
   n,
   draft,
+  field: kept,
   problem: failed,
   onSave,
   onCancel
 }: {
   n: Note;
   draft?: string;
+  field?: Tag[];
   problem?: Problem;
-  onSave: (text: string) => void;
+  onSave: (text: string, field: Tag[]) => void;
   onCancel: () => void;
 }) {
   const [text, setText] = useState(draft ?? n.text);
+  // The tags its words don't carry: the field's, to keep or take off.
+  const [field, setField] = useState<Tag[]>(() => kept ?? fieldOnly(n.text || '', named(n.tags, n.tag_names)));
+  const offer = useTagNames();
   const area = useRef<HTMLTextAreaElement>(null);
+  const chips = noteChips(text, field);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    onSave(text);
+    onSave(text, field);
   };
   return (
     <form className="edit" noValidate onSubmit={submit}>
@@ -244,6 +268,16 @@ function EditForm({
       />
       {/* A note keeps the way it was written: plain text stays plain. */}
       {n.markup === 'rich' && <FormatBar area={area} text={text} onText={setText} />}
+      <TagField
+        tags={chips}
+        offer={offer}
+        onAdd={(t) => setField([...field, t])}
+        onRemove={(t) => {
+          const next = removingNoteTag(text, field, t.key);
+          setText(next.text);
+          setField(next.field);
+        }}
+      />
       <div className="row">
         <button className="go small" type="submit">
           Save

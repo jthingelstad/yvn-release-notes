@@ -1,5 +1,6 @@
 // One check-in (docs/CHECK-INS.md): where and when, a name for it once or for
-// good, its real circle on a map, a note about it, and Delete. Its id travels
+// good, its tags (saved as each is added or taken off, on every check-in in
+// the stay), its real circle on a map, a note about it, and Delete. Its id travels
 // in the fragment, so no address in any log says when someone stopped.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -17,12 +18,15 @@ import {
 } from '../components/common.tsx';
 import { carryPlace } from '../components/noteform.tsx';
 import { SpotMap } from '../components/spot-map.tsx';
+import { TagField } from '../components/tag-field.tsx';
+import { useTagNames } from '../components/tag-row.tsx';
 import { CHECKIN_NAME_MAX, UNNAMED_STOP } from '../../../packages/domain/check-ins.ts';
 import { ApiError, api, load } from '../lib/api.ts';
 import { stayLine } from '../lib/check-ins.ts';
 import { dayName } from '../lib/format.ts';
 import { kept } from '../lib/here.ts';
 import { useHashParam } from '../lib/nav.ts';
+import { named as tagsOf, type Tag } from '../lib/tags.ts';
 import { checkInQuery } from '../lib/queries.ts';
 import type { Place, Stay } from '../lib/types.ts';
 
@@ -144,6 +148,7 @@ function Stop({ stay }: { stay: Stay }) {
         </button>
       </p>
       <ErrorLine line={problem.line} />
+      <StayTags stay={stay} changed={changed} />
       {naming && (
         <NameForm
           stay={stay}
@@ -153,6 +158,41 @@ function Stop({ stay }: { stay: Stay }) {
         />
       )}
     </>
+  );
+}
+
+// A stay's tags: the whole list goes up with each change, on every check-in
+// in it. A remembered place's tags are in Settings, for its check-ins to come.
+function StayTags({ stay, changed }: { stay: Stay; changed: (next: Stay) => Promise<void> }) {
+  const [busy, run] = useBusy();
+  const problem = useProblem();
+  const offer = useTagNames();
+  const tags = tagsOf(stay.tags, stay.tag_names);
+  const send = (next: Tag[]) =>
+    run(async () => {
+      problem.clear();
+      const r = await api<{ check_in: Stay }>('PUT', '/api/check-ins/' + encodeURIComponent(stay.id), {
+        tags: next.map((t) => t.name),
+        revision: stay.revision
+      });
+      if (!r.ok)
+        return problem.show(
+          r.data.error === 'check-in-stay-long' ? 'This stay has too many check-ins to tag at once.' : r.data
+        );
+      await changed(r.data.check_in);
+    });
+  return (
+    <div className="checkin-tags">
+      <TagField
+        tags={tags}
+        offer={offer}
+        busy={busy}
+        onAdd={(t) => send([...tags, t])}
+        onRemove={(t) => send(tags.filter((x) => x.key !== t.key))}
+        hint="Saved as you add or take one off."
+      />
+      <ErrorLine line={problem.line} />
+    </div>
   );
 }
 

@@ -93,8 +93,8 @@ export function Release() {
               <ul className="tags" id="release-tags" aria-labelledby="release-tags-k">
                 {head.tags.map((t) => (
                   <li key={t.tag}>
-                    <AppLink className="tag" href={`/tag/?t=${encodeURIComponent(t.tag)}`}>
-                      #{t.tag}
+                    <AppLink className="tag" href={`/tag/?t=${encodeURIComponent(t.tag)}`} dir="auto">
+                      {t.name || t.tag}
                     </AppLink>
                     <span className="hint"> {count(t.notes, 'note', 'notes')}</span>
                   </li>

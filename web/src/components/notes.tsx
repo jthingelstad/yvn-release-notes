@@ -3,6 +3,7 @@
 import { Fragment, useState, type ReactNode } from 'react';
 import { absolute, LINK_MS, mediaPath } from '../lib/files.ts';
 import { zoneName, zoneShortDate, zoneTime } from '../lib/format.ts';
+import { fieldOnly, named } from '../lib/tags.ts';
 import type { Media, Note, Part } from '../lib/types.ts';
 import { blocks, webParts, type Block, type Line } from '../../../packages/domain/rich.ts';
 import { AppLink } from './common.tsx';
@@ -107,7 +108,12 @@ export function NoteBody({ n, cls = 'text', mark }: { n: Note; cls?: string; mar
             ? p
             : { url: p.url, label: p.url.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '') }
         );
-    return <div className={`${cls} rich`}>{blockNodes(blocks(parts), mark)}</div>;
+    return (
+      <>
+        <div className={`${cls} rich`}>{blockNodes(blocks(parts), mark)}</div>
+        <NoteTags n={n} />
+      </>
+    );
   }
   let body: ReactNode[];
   if (n.text && Array.isArray(n.parts)) {
@@ -131,8 +137,32 @@ export function NoteBody({ n, cls = 'text', mark }: { n: Note; cls?: string; mar
   }
   // dir="auto": a note in Hebrew or Arabic reads right to left.
   return (
-    <p className={cls} hidden={!text} dir="auto">
-      {body}
+    <>
+      <p className={cls} hidden={!text} dir="auto">
+        {body}
+      </p>
+      <NoteTags n={n} />
+    </>
+  );
+}
+
+// The tags a note has that its words don't (its tags field gave them), under
+// it, each to its tag's page: "Tags: Road Trip, lake". A #word in the text
+// already links where it stands.
+export function NoteTags({ n }: { n: Note }) {
+  const extra = fieldOnly(n.text || '', named(n.tags, n.tag_names));
+  if (!extra.length) return null;
+  return (
+    <p className="note-tags">
+      Tags:{' '}
+      {extra.map((t, i) => (
+        <Fragment key={t.key}>
+          {i > 0 && ', '}
+          <AppLink className="tag" href={`/tag/?t=${encodeURIComponent(t.key)}`} dir="auto">
+            {t.name}
+          </AppLink>
+        </Fragment>
+      ))}
     </p>
   );
 }

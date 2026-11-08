@@ -16,7 +16,8 @@ import {
   useTitle
 } from '../components/common.tsx';
 import { useHashParam } from '../lib/nav.ts';
-import { MAX_TAG } from '../../../packages/domain/tags.ts';
+import { TagField } from '../components/tag-field.tsx';
+import { named, nameBook, tagLine, type Tag } from '../lib/tags.ts';
 import { api } from '../lib/api.ts';
 import { subscribeHref } from '../lib/calendar.ts';
 import { upcomingQuery } from '../lib/queries.ts';
@@ -39,6 +40,10 @@ const PlacePicker = lazy(() => import('../components/placepicker.tsx').then((m) 
 const MONTHS = Array.from({ length: 12 }, (_, i) =>
   new Date(2000, i, 1).toLocaleDateString('en-US', { month: 'long' })
 );
+
+// Today's note, started with a date's tags (in the #, which no server sees).
+const writeHref = (entry: UpcomingView) =>
+  '/today/#' + new URLSearchParams(named(entry.tags, entry.tag_names).map((t) => ['tag', t.name])).toString();
 
 export function Upcoming() {
   useTitle('Upcoming');
@@ -63,11 +68,14 @@ export function Upcoming() {
   const entries = (query.data?.entries ?? []).toSorted(
       (a, b) => a.occurrence.date.localeCompare(b.occurrence.date) || a.title.localeCompare(b.title)
     ),
-    tags = [...new Set(entries.flatMap((e) => (e.tag ? [e.tag] : [])))].toSorted(),
+    // Every tag the dates have, by name (the latest date's spelling).
+    tags: Tag[] = [...nameBook(...entries.map((e) => named(e.tags, e.tag_names)))]
+      .map(([key, name]) => ({ key, name }))
+      .toSorted((a, b) => a.name.localeCompare(b.name)),
     filtered = entries.filter(
       (e) =>
         (!kindFilter || e.kind === kindFilter) &&
-        (!tagFilter || (tagFilter === '-' ? !e.tag : e.tag === tagFilter)) &&
+        (!tagFilter || (tagFilter === '-' ? !e.tags.length : e.tags.includes(tagFilter))) &&
         (!terms.length || upcomingMatches(upcomingSearchText(e, NAMES[e.kind]), terms))
     ),
     future = filtered.filter((e) => e.occurrence.status !== 'past'),
@@ -94,7 +102,7 @@ export function Upcoming() {
       setWon([]);
       const answer = await api('DELETE', '/api/upcoming/' + entry.id, { revision: entry.revision });
       await client.invalidateQueries({ queryKey: upcomingQuery.queryKey });
-      if (!answer.ok) return setProblem(problemFor(answer.data.error));
+      if (!answer.ok) return setProblem(problemFor(answer.data.error, answer.data.reason));
       if (selected?.id === entry.id) setSelected(undefined);
       setNotice('Date deleted.');
     });
@@ -142,7 +150,7 @@ export function Upcoming() {
                 <span className="meta">
                   {[
                     NAMES[entry.kind] + (annual(entry.kind) ? ', every year' : ''),
-                    entry.tag && '#' + entry.tag,
+                    tagLine(named(entry.tags, entry.tag_names)),
                     entry.email ? 'daily email' : 'web only'
                   ]
                     .filter(Boolean)
@@ -151,12 +159,12 @@ export function Upcoming() {
               </th>
               <td role="cell">
                 <div className="upcoming-actions">
-                  {entry.tag && (
+                  {entry.tags.length > 0 && (
                     <AppLink
                       className="quiet icon-button"
-                      href={`/today/#tag=${encodeURIComponent(entry.tag)}`}
-                      aria-label={`Write a note tagged #${entry.tag} for ${entry.title}`}
-                      title={`Write a note tagged #${entry.tag}`}
+                      href={writeHref(entry)}
+                      aria-label={`Write a note tagged ${tagLine(named(entry.tags, entry.tag_names))} for ${entry.title}`}
+                      title={`Write a note tagged ${tagLine(named(entry.tags, entry.tag_names))}`}
                     >
                       <Icon name="write" />
                     </AppLink>
@@ -271,12 +279,12 @@ export function Upcoming() {
                       <option value="">All tags</option>
                       <option value="-">No tag</option>
                       {tags.map((tag) => (
-                        <option key={tag} value={tag}>
-                          #{tag}
+                        <option key={tag.key} value={tag.key}>
+                          {tag.name}
                         </option>
                       ))}
-                      {tagFilter && tagFilter !== '-' && !tags.includes(tagFilter) && (
-                        <option value={tagFilter}>#{tagFilter}</option>
+                      {tagFilter && tagFilter !== '-' && !tags.some((t) => t.key === tagFilter) && (
+                        <option value={tagFilter}>{tagFilter}</option>
                       )}
                     </select>
                   </label>
@@ -451,7 +459,7 @@ function UpcomingForm({
   entry: UpcomingView | null;
   initialKind: UpcomingKind;
   initialTag: string;
-  tags: string[];
+  tags: Tag[];
   today: string;
   headingRef: React.Ref<HTMLHeadingElement>;
   busy: boolean;
@@ -464,7 +472,10 @@ function UpcomingForm({
 }) {
   const [kind, setKind] = useState<UpcomingKind>(entry?.kind ?? initialKind),
     [title, setTitle] = useState(entry?.title ?? ''),
-    [tag, setTag] = useState(entry ? (entry.tag ?? '') : initialTag),
+    // The date's tags; a new one starts with the tag the list is filtered by.
+    [chosen, setChosen] = useState<Tag[]>(() =>
+      entry ? named(entry.tags, entry.tag_names) : tags.filter((t) => t.key === initialTag)
+    ),
     [date, setDate] = useState(entry?.date ?? (annual(initialKind) ? today.slice(5) : today)),
     [year, setYear] = useState(entry?.year?.toString() ?? ''),
     [end, setEnd] = useState(entry?.end_date ?? today),
@@ -492,7 +503,7 @@ function UpcomingForm({
       const answer = await api(entry ? 'PUT' : 'POST', '/api/upcoming' + (entry ? '/' + entry.id : ''), {
         kind,
         title,
-        tag,
+        tags: chosen.map((t) => t.name),
         date,
         year: annual(kind) && year ? Number(year) : null,
         end_date: kind === 'trip' ? end : null,
@@ -501,7 +512,7 @@ function UpcomingForm({
         reminders: email ? tokens.map(Number) : (entry?.reminders ?? defaultReminders(kind)),
         ...(entry ? { revision: entry.revision } : {})
       });
-      if (!answer.ok) return setProblem(problemFor(answer.data.error));
+      if (!answer.ok) return setProblem(problemFor(answer.data.error, answer.data.reason));
       await onSaved((answer.data as { unlocked?: Unlocked[] }).unlocked ?? []);
     });
   }
@@ -529,27 +540,14 @@ function UpcomingForm({
         <p className="hint">
           {Array.from(title).length} / {UPCOMING_TITLE_MAX} characters
         </p>
-        <label>
-          Tag (optional)
-          <input
-            name="tag"
-            value={tag}
-            maxLength={MAX_TAG + 1}
-            list="upcoming-tags"
-            aria-describedby="upcoming-tag-help"
-            placeholder="#family"
-            onChange={(e) => setTag(e.target.value)}
-          />
-        </label>
-        <datalist id="upcoming-tags">
-          {tags.map((tag) => (
-            <option key={tag} value={'#' + tag} />
-          ))}
-        </datalist>
-        <p className="hint" id="upcoming-tag-help">
-          One tag to group related dates, like #family. Write a note from a tagged date to start today’s draft with that
-          hashtag.
-        </p>
+        <TagField
+          label="Tags (optional)"
+          tags={chosen}
+          offer={tags.map((t) => t.name)}
+          onAdd={(t) => setChosen([...chosen, t])}
+          onRemove={(t) => setChosen(chosen.filter((c) => c.key !== t.key))}
+          hint="Tags group related dates, like family or Road Trip. Write a note from a tagged date to start today’s note with its tags."
+        />
         {annual(kind) ? (
           <>
             <div className="upcoming-date-fields">

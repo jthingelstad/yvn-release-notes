@@ -12,6 +12,7 @@ import {
   sift,
   siftStays,
   stayTrail,
+  tagMenu,
   trailLines,
   trailsSaid,
   type Live
@@ -97,6 +98,7 @@ describe('sift', () => {
     place: 'Minneapolis',
     exact: true,
     tags,
+    tag_names: tags,
     release,
     version: release + '.1',
     written_at: null,
@@ -166,6 +168,7 @@ describe('moved', () => {
     place: 'Paris',
     exact: true,
     tags: [],
+    tag_names: [],
     release: '5.4',
     version: '5.4.114',
     written_at: null,
@@ -236,8 +239,9 @@ describe('givingTo', () => {
 });
 
 describe('check-ins on the map', () => {
-  const stay = (id: string, release: string, label = 'Home') => ({ id, release, label }) as unknown as Stay;
-  const stays = [stay('a', '5.4'), stay('b', '5.3')];
+  const stay = (id: string, release: string, label = 'Home', tags: string[] = []) =>
+    ({ id, release, label, tags, tag_names: tags }) as unknown as Stay;
+  const stays = [stay('a', '5.4', 'Home', ['lake']), stay('b', '5.3')];
   const keep = (more: Partial<Parameters<typeof siftStays>[1]>) =>
     siftStays(stays, { show: '', tag: '', release: '', asked: false, ...more }).map((s) => s.id);
   it('shows them unless the menu says notes, and a release narrows them', () => {
@@ -246,9 +250,23 @@ describe('check-ins on the map', () => {
     expect(keep({ show: 'notes' })).toEqual([]);
     expect(keep({ release: '5.3' })).toEqual(['b']);
   });
-  it('leaves them off for a tag or words, which only notes have', () => {
-    expect(keep({ tag: 'lake' })).toEqual([]);
+  it('keeps those with a tag, as it keeps the notes with it (call 8)', () => {
+    expect(keep({ tag: 'lake' })).toEqual(['a']);
+    expect(keep({ tag: 'cabin' })).toEqual([]);
+    expect(keep({ tag: 'lake', release: '5.3' })).toEqual([]);
+    expect(keep({ tag: 'lake', show: 'notes' })).toEqual([]);
+  });
+  it('leaves them off for words, which only notes have', () => {
     expect(keep({ asked: true })).toEqual([]);
+  });
+  it('counts the notes and the check-ins with each tag, keeping one chosen', () => {
+    const tagged = [{ tags: ['lake'] }, { tags: ['lake', 'road-trip'] }, { tags: [] }];
+    expect(tagMenu([{ tag: 'cabin', notes: 2 }], tagged, '')).toEqual([
+      { tag: 'cabin', notes: 2 },
+      { tag: 'lake', notes: 2 },
+      { tag: 'road-trip', notes: 1 }
+    ]);
+    expect(tagMenu([], [], 'lake')).toEqual([{ tag: 'lake', notes: 0 }]);
   });
   it('says what is on the map, of how many', () => {
     expect(mapLede(0, undefined, 0, 0, false)).toBe(

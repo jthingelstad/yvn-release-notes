@@ -83,6 +83,7 @@ import {
   TrendingUp,
   Webhook,
   Wrench,
+  X,
   type LucideIcon
 } from 'lucide-react';
 
@@ -128,7 +129,8 @@ const icons = {
   italic: Italic,
   bullets: List,
   numbers: ListOrdered,
-  quote: TextQuote
+  quote: TextQuote,
+  remove: X
 };
 export type IconName = keyof typeof icons;
 

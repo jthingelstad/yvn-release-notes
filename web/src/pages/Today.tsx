@@ -10,7 +10,7 @@ import { OnThisDay } from '../components/onthisday.tsx';
 import { DayWhere } from '../components/where.tsx';
 import { count, dayName } from '../lib/format.ts';
 import { livedText } from '../../../packages/domain/version.ts';
-import { useHashParam, useMe } from '../lib/nav.ts';
+import { useHashParams, useMe } from '../lib/nav.ts';
 import { badgesQuery, todayQuery } from '../lib/queries.ts';
 import type { Me, Today as TodayData } from '../lib/types.ts';
 
@@ -32,7 +32,7 @@ export function Today() {
 }
 
 function Day({ t, me }: { t: TodayData; me?: Me }) {
-  const initialTag = useHashParam('tag');
+  const initialTags = useHashParams('tag');
   const [, nm, nd] = t.next.date.split('-').map(Number);
   const on = new Date(2000, nm - 1, nd).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
   return (
@@ -67,8 +67,8 @@ function Day({ t, me }: { t: TodayData; me?: Me }) {
           What changed today?
         </h2>
         <NoteForm
-          key={t.date + ':' + initialTag}
-          initialTag={initialTag}
+          key={t.date + ':' + initialTags.join('\n')}
+          initialTags={initialTags}
           day={t.date}
           label="Add to today"
           placeholder="A few words, a photo, a voice memo…"

@@ -7,6 +7,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 
 ## 0.0.32 · November 8
 
+- The Map has **Trails**: tick it, and a line joins your check-ins in the order you stopped, and a dotted one your notes in the order you wrote them, through whatever the filters keep. [Places and the map](/guide/places-and-map/) has more.
 - Apps on [the API](/guide/api/archive/) can put a search on their own map: the pins of the notes with the words or the tag you're looking for. Each pin says when its note was written, so an app can join your notes in the order you wrote them.
 
 ## 0.0.30 · November 6

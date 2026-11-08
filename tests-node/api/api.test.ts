@@ -1248,6 +1248,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       tags: ['paris'],
       release: '4.5',
       version: '4.5.114',
+      written_at: '2026-10-13T12:00:00Z',
       text: 'Croissants and a long walk along the river The river walk #paris',
       parts: [
         'Croissants and a long walk along the river ',
@@ -1266,6 +1267,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       tags: [],
       release: '4.5',
       version: '4.5.114',
+      written_at: '2026-10-13T12:00:00Z',
       text: 'On the bench',
       parts: ['On the bench']
     },
@@ -1279,6 +1281,7 @@ test('the map pins notes with a place of their own and passes the base map throu
       tags: [],
       release: '4.5',
       version: '4.5.114',
+      written_at: '2026-10-13T12:00:00Z',
       text: ('Then ' + 'more and '.repeat(30)).slice(0, 139) + '…',
       parts: [('Then ' + 'more and '.repeat(30)).slice(0, 139), '…']
     }
@@ -1354,6 +1357,28 @@ test('the map pins notes with a place of their own and passes the base map throu
   ])
     assert.equal((await s.call('GET', path)).r.status, 404, path);
   assert.equal(asked.length, 5);
+});
+test("each map pin says when its note was written, for the Map's Trails, or null when nothing says", async () => {
+  const s = await setup(),
+    place = { city: 'Duluth', region: 'Minnesota', country: 'United States', lat: 46.79, lon: -92.1 };
+  s.store.seed({ pk: 'USER#u', sk: 'NOTE#2026-10-05#m-1', text: 'Written', written_at: '2026-10-05T14:00:00Z', place });
+  s.store.seed({
+    pk: 'USER#u',
+    sk: 'NOTE#2026-10-05#m-2',
+    text: 'Received',
+    received_at: '2026-10-05T15:00:00Z',
+    place
+  });
+  s.store.seed({ pk: 'USER#u', sk: 'NOTE#2026-10-05#m-3', text: 'Neither', place });
+  const pins = ((await s.call('GET', '/api/map/notes')).b as Item).pins as Item[];
+  assert.deepEqual(
+    pins.map((p) => [p.id, p.written_at]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    [
+      ['m-1', '2026-10-05T14:00:00Z'],
+      ['m-2', '2026-10-05T15:00:00Z'],
+      ['m-3', null]
+    ]
+  );
 });
 test('"Add where I am" is a setting, on until turned off, and recorded as a change', async () => {
   const s = await setup();

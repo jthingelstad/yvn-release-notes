@@ -2,7 +2,7 @@
  * passed through from Amazon Location (packages/backend/maps.ts). */
 import { SessionService, reject } from '../../packages/backend/sessions.ts';
 import { ownStyle, pins, type MapFile, type Scheme } from '../../packages/backend/maps.ts';
-import type { NoteRecord } from '../../packages/domain/notes.ts';
+import { writtenAt, type NoteRecord } from '../../packages/domain/notes.ts';
 import { searchedText } from '../../packages/domain/search.ts';
 import { body, json, searchFrom } from './requests.ts';
 
@@ -25,9 +25,16 @@ export async function mapRoutes(service: SessionService, pattern: string, args: 
   const { uid, profile } = await service.account(),
     ctx = service.context,
     born = String(profile.birthday);
+  // Each pin says when its note was written, as /v1's do (1.19.0): ids are
+  // random, so a day's pins come in no order of their own, and the Map's
+  // Trails join the notes in the order they were written.
   if (pattern === '/api/map/notes') {
     const notes = (await ctx.store.allNotes(uid)) as NoteRecord[],
-      found = pins(notes, born);
+      written = new Map(notes.map((n) => [String(n.sk), writtenAt(n) || null])),
+      found = pins(notes, born).map((pin) => ({
+        ...pin,
+        written_at: written.get(`NOTE#${pin.date}#${pin.id}`) ?? null
+      }));
     return json({ pins: found, notes: notes.length });
   }
   // The Map's search: which pins have every word, as the Search page finds

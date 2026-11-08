@@ -3027,6 +3027,10 @@ fieldset.book-fields {
 .map-filters .map-search {
   flex: 2 1 240px;
 }
+/* Trails is a box to tick, as wide as its word. */
+.map-filters .map-trails {
+  flex: none;
+}
 .map {
   height: min(68vh, 560px);
   margin: 28px 0 0;

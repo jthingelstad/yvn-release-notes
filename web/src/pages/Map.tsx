@@ -19,8 +19,18 @@
 // notes. A tag or words keep notes alone, since a check-in has neither. Only
 // marks here: a check-in's real circle shows when it is opened. A check-in's
 // page links here as #c=<id>.
+//
+// Trails (Jamie, 2026-11-08: "If you click show trails, it should show the
+// sequence of check-ins or the sequence of notes with kind of a line
+// connecting them in order"), off at first and kept as #trails=1, join what
+// the filters keep, one line a kind, as the iPhone app's Map does: check-ins
+// in the order each stop began, solid, and notes by day and then when each
+// was written, dotted, both in cobalt and under the marks. A spot that
+// repeats the one before adds nothing, and a kind with fewer than two spots
+// draws no line. Trails is no filter: it keeps a place link, and Clear
+// filters leaves it as it is.
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GeoJSONSource, LngLatBounds, Map as MapLibre } from 'maplibre-gl';
 import { AppLink, Bar, Digits, ErrorLine, Failed, Loading, useTitle } from '../components/common.tsx';
@@ -125,6 +135,71 @@ export function releaseMenu(
     .map(([release, notes]) => ({ release, notes }));
 }
 
+/** A spot on a trail. */
+export interface Step {
+  lat: number;
+  lon: number;
+}
+const instant = (stamp: string | null | undefined) => {
+  const at = stamp ? Date.parse(stamp) : NaN;
+  return Number.isNaN(at) ? null : at;
+};
+const order = <T extends string | number>(a: T, b: T) => (a < b ? -1 : a > b ? 1 : 0);
+/** The spots in turn, less any that repeats the one just before: a return
+ * to the same spot adds nothing to the line. */
+function joined(spots: readonly Step[]): Step[] {
+  const line: Step[] = [];
+  for (const { lat, lon } of spots) {
+    const last = line.at(-1);
+    if (!last || last.lat !== lat || last.lon !== lon) line.push({ lat, lon });
+  }
+  return line;
+}
+/** The check-ins' trail: oldest first, by when each stop began (`at`, its
+ * arrival, or else when it was heard of), read as instants, since stamps can
+ * carry different offsets. They come newest first (GET /api/check-ins), so
+ * turned round, a tie keeps the older one first. */
+export function stayTrail(stays: readonly Pick<Stay, 'at' | 'lat' | 'lon'>[]): Step[] {
+  const began = (s: Pick<Stay, 'at'>) => instant(s.at) ?? -Infinity;
+  return joined([...stays].reverse().sort((a, b) => order(began(a), began(b))));
+}
+/** The notes' trail: oldest first, by day and then by when each was written,
+ * read as an instant. A note without a time goes after its day's others, in
+ * the order it came. */
+export function noteTrail(pins: readonly Pick<Pin, 'date' | 'written_at' | 'lat' | 'lon'>[]): Step[] {
+  return joined(
+    pins
+      .map((pin, i) => ({ pin, i, at: instant(pin.written_at) ?? Infinity }))
+      .sort((a, b) => order(a.pin.date, b.pin.date) || order(a.at, b.at) || a.i - b.i)
+      .map((p) => p.pin)
+  );
+}
+export type TrailKind = 'check-ins' | 'notes';
+/** What Trails draws: a line for each kind with two spots or more, as
+ * [lon, lat] the way the map takes them. */
+export function trailLines(
+  pins: readonly Pick<Pin, 'date' | 'written_at' | 'lat' | 'lon'>[],
+  stays: readonly Pick<Stay, 'at' | 'lat' | 'lon'>[]
+): { kind: TrailKind; line: [number, number][] }[] {
+  return (
+    [
+      ['check-ins', stayTrail(stays)],
+      ['notes', noteTrail(pins)]
+    ] as const
+  )
+    .filter(([, steps]) => steps.length > 1)
+    .map(([kind, steps]) => ({ kind, line: steps.map((s): [number, number] => [s.lon, s.lat]) }));
+}
+/** What the lines Trails drew mean, for the line under the map. */
+export function trailsSaid(kinds: readonly TrailKind[]): string {
+  const stays = kinds.includes('check-ins'),
+    notes = kinds.includes('notes');
+  if (stays && notes)
+    return 'A solid line joins the check-ins in the order you stopped, and a dotted one the notes in the order you wrote them.';
+  if (stays) return 'A solid line joins the check-ins in the order you stopped.';
+  return notes ? 'A dotted line joins the notes in the order you wrote them.' : '';
+}
+
 export function MapPage() {
   useTitle('Map');
   const navigate = useNavigate();
@@ -137,7 +212,9 @@ export function MapPage() {
     tag = useHashParam('tag') || '',
     release = useHashParam('v') || '',
     show = useHashParam('show') || '',
-    stayId = useHashParam('c');
+    stayId = useHashParam('c'),
+    trails = useHashParam('trails') === '1',
+    hash = useLocation({ select: (l) => l.hash });
   const stays = useQuery({ ...checkInsQuery, meta: { bounce: false } }).data?.stays;
   // Words with no terms in them (a pair of quotes) are no search.
   const asked = searchTerms(q).length > 0;
@@ -191,10 +268,21 @@ export function MapPage() {
   const filter = useCallback(
     (next: Partial<Record<'q' | 'tag' | 'v' | 'show', string>>) => {
       const hash = new URLSearchParams();
-      for (const [k, v] of Object.entries({ q, tag, v: release, show, ...next })) if (v) hash.set(k, v);
+      for (const [k, v] of Object.entries({ q, tag, v: release, show, ...next, trails: trails ? '1' : '' }))
+        if (v) hash.set(k, v);
       navigate({ to: '/map/', hash: hash.toString(), replace: true });
     },
-    [navigate, q, tag, release, show]
+    [navigate, q, tag, release, show, trails]
+  );
+  // Trails changes nothing else in the address, a place link included.
+  const trailsTo = useCallback(
+    (on: boolean) => {
+      const next = new URLSearchParams(hash);
+      if (on) next.set('trails', '1');
+      else next.delete('trails');
+      navigate({ to: '/map/', hash: next.toString(), replace: true });
+    },
+    [navigate, hash]
   );
   // The words go in a moment after the last key, not with every one. The
   // box follows the address when something else changes it (the Map tab,
@@ -220,6 +308,8 @@ export function MapPage() {
   }, [text, q, send]);
 
   const shown = sifted?.shown;
+  // Trails join what the filters keep, of each kind that shows.
+  const lines = useMemo(() => (trails ? trailLines(shown ?? [], stayed) : []), [trails, shown, stayed]);
   // A day's own place (the email's link for it), which no pin need mark.
   const at = useMemo(() => {
     const [lat, lon] = (ll ?? '').split(',').map(Number);
@@ -335,6 +425,10 @@ export function MapPage() {
                     </select>
                   </label>
                 )}
+                <label className="check map-trails">
+                  <input type="checkbox" name="trails" checked={trails} onChange={(e) => trailsTo(e.target.checked)} />
+                  Trails
+                </label>
                 {filtering && (
                   <button
                     className="quiet"
@@ -356,13 +450,19 @@ export function MapPage() {
           <Basemap
             pins={sifted.shown}
             stays={stayed}
+            trails={lines}
             linked={linkedMarks}
             at={at}
             link={link}
             view={view}
             pick={pick}
           />
-          <Picked marks={picked} linked={picked === linkedMarks} anyStays={stayTotal > 0} />
+          <Picked
+            marks={picked}
+            linked={picked === linkedMarks}
+            anyStays={stayTotal > 0}
+            trails={trailsSaid(lines.map((l) => l.kind))}
+          />
         </>
       )}
     </>
@@ -388,7 +488,18 @@ export function pickedHead({ pins, stays }: Marks): string {
   return `${what} ${pins.length ? 'in' : 'at'} ${places.length === 1 ? places[0] : count(places.length, 'place', 'places')}`;
 }
 
-function Picked({ marks, linked, anyStays }: { marks: Marks | null; linked?: boolean; anyStays: boolean }) {
+function Picked({
+  marks,
+  linked,
+  anyStays,
+  trails
+}: {
+  marks: Marks | null;
+  linked?: boolean;
+  anyStays: boolean;
+  /** What the lines Trails drew mean, or nothing. */
+  trails: string;
+}) {
   const head = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (marks && !linked) head.current?.focus();
@@ -399,6 +510,7 @@ function Picked({ marks, linked, anyStays }: { marks: Marks | null; linked?: boo
         {anyStays
           ? 'Choose a mark or a group to list what’s there. A dot is a note, a ring a check-in.'
           : 'Choose a pin or a group to list its notes here. Each version number opens its day.'}
+        {trails && ' ' + trails}
       </p>
     );
   // Newest first, whichever kind.
@@ -461,6 +573,15 @@ const points = (
 });
 const pinPoints = (pins: readonly Pin[]) => points(pins.map((p) => ({ lat: p.lat, lon: p.lon, key: keyOf(p) })));
 const stayPoints = (stays: readonly Stay[]) => points(stays.map((s) => ({ lat: s.lat, lon: s.lon, key: s.id })));
+type Trails = ReturnType<typeof trailLines>;
+const trailData = (trails: Trails): Parameters<GeoJSONSource['setData']>[0] => ({
+  type: 'FeatureCollection',
+  features: trails.map((t) => ({
+    type: 'Feature',
+    geometry: { type: 'LineString', coordinates: t.line },
+    properties: { kind: t.kind }
+  }))
+});
 /** A spot on the map: a note's, or a check-in's, which is always a real one. */
 interface Spot {
   lat: number;
@@ -489,6 +610,7 @@ function frame(lib: Lib, pins: readonly Spot[], linked?: Spot[] | null, at?: [nu
 function Basemap({
   pins,
   stays,
+  trails,
   linked,
   at,
   link,
@@ -497,6 +619,7 @@ function Basemap({
 }: {
   pins: Pin[];
   stays: Stay[];
+  trails: Trails;
   linked: Marks | null;
   at: [number, number] | null;
   link: string;
@@ -508,6 +631,7 @@ function Basemap({
   const live = useRef({
     pins,
     stays,
+    trails,
     linked,
     at,
     link,
@@ -521,7 +645,7 @@ function Basemap({
   });
   // Read by the map's own handlers, so kept current after each render.
   useEffect(() => {
-    Object.assign(live.current, { pins, stays, linked, at, link, view, pick });
+    Object.assign(live.current, { pins, stays, trails, linked, at, link, view, pick });
   });
   // A tile that will not come leaves a gap; a style that will not, no map.
   useEffect(() => {
@@ -576,8 +700,28 @@ function Basemap({
         const orange = token('--orange') || '#ff5a1f',
           paper = token('--paper') || '#fffbf2',
           ink = token('--on-orange') || '#14163a',
-          ring = token('--ink') || '#14163a';
-        // Check-ins first, so a note's pin sits over them: their own source,
+          ring = token('--ink') || '#14163a',
+          cobalt = token('--blue') || '#1a4fe0';
+        // Trails first, so every mark sits over them: the check-ins' line
+        // solid, the notes' dotted (a round dot each two widths).
+        m.addSource('trails', { type: 'geojson', data: trailData(now.trails) });
+        m.addLayer({
+          id: 'stay-trail',
+          type: 'line',
+          source: 'trails',
+          filter: ['==', ['get', 'kind'], 'check-ins'],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': cobalt, 'line-width': 3 }
+        });
+        m.addLayer({
+          id: 'note-trail',
+          type: 'line',
+          source: 'trails',
+          filter: ['==', ['get', 'kind'], 'notes'],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': cobalt, 'line-width': 3, 'line-dasharray': [0, 2] }
+        });
+        // Check-ins next, so a note's pin sits over them: their own source,
         // so a group is only ever one kind. A ring, and groups in ink.
         m.addSource('check-ins', {
           type: 'geojson',
@@ -720,6 +864,10 @@ function Basemap({
     const m = live.current.map;
     (m?.getSource('check-ins') as GeoJSONSource | undefined)?.setData(stayPoints(stays));
   }, [stays]);
+  useEffect(() => {
+    const m = live.current.map;
+    (m?.getSource('trails') as GeoJSONSource | undefined)?.setData(trailData(trails));
+  }, [trails]);
   // Then the map moves to them, or to the note a link asked for.
   useEffect(() => {
     moved(live.current);

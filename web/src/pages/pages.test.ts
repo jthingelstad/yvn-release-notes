@@ -1,9 +1,21 @@
-// The timeline's quiet runs, the pages' polling, the Map's filters and the book's giving line.
+// The timeline's quiet runs, the pages' polling, the Map's filters and trails and the book's giving line.
 import { describe, expect, it, vi } from 'vitest';
 import type { Day, Pin, Stay } from '../lib/types.ts';
 import { POLL, pollWhileWriting } from '../lib/queries.ts';
 import { groupQuiet } from './Timeline.tsx';
-import { mapLede, moved, pickedHead, releaseMenu, sift, siftStays, type Live } from './Map.tsx';
+import {
+  mapLede,
+  moved,
+  noteTrail,
+  pickedHead,
+  releaseMenu,
+  sift,
+  siftStays,
+  stayTrail,
+  trailLines,
+  trailsSaid,
+  type Live
+} from './Map.tsx';
 import { givingTo } from './Book.tsx';
 
 const day = (date: string, more: Partial<Day> = {}): Day => ({ date, version: '1.2.3', notes: [], ...more });
@@ -87,6 +99,7 @@ describe('sift', () => {
     tags,
     release,
     version: release + '.1',
+    written_at: null,
     text: '',
     parts: []
   });
@@ -155,6 +168,7 @@ describe('moved', () => {
     tags: [],
     release: '5.4',
     version: '5.4.114',
+    written_at: null,
     text: '',
     parts: []
   });
@@ -261,5 +275,107 @@ describe('check-ins on the map', () => {
     expect(pickedHead({ pins: [], stays: [stay('a', '5.4')] })).toBe('1 check-in at Home');
     expect(pickedHead({ pins: [pin], stays: [stay('a', '5.4')] })).toBe('1 note and 1 check-in in 2 places');
     expect(pickedHead({ pins: [], stays: [stay('a', '5.4', 'Unnamed stop')] })).toBe('1 check-in at an unnamed stop');
+  });
+});
+
+describe('trails', () => {
+  // A spot by its latitude alone, so a trail reads as a list of numbers.
+  const at = (stamp: string, lat: number) => ({ at: stamp, lat, lon: 0 });
+  const written = (date: string, stamp: string | null, lat: number) => ({ date, written_at: stamp, lat, lon: 0 });
+  const lats = (steps: { lat: number }[]) => steps.map((s) => s.lat);
+
+  it('joins check-ins in the order each stop began, comparing instants whatever the offset', () => {
+    // Newest first, as GET /api/check-ins lists them. By the stamps' spelling
+    // 09:00-06:00 would come first; as instants it is the last to begin.
+    const stays = [
+      at('2026-11-08T09:00:00-06:00', 1),
+      at('2026-11-08T14:00:00Z', 2),
+      at('2026-11-08T10:00:00+01:00', 3)
+    ];
+    expect(lats(stayTrail(stays))).toEqual([3, 2, 1]);
+  });
+
+  it('keeps the older of two check-ins that began at the same instant first', () => {
+    // One instant spelled two ways: the one listed later is the older.
+    expect(lats(stayTrail([at('2026-11-08T12:00:00Z', 1), at('2026-11-08T06:00:00-06:00', 2)]))).toEqual([2, 1]);
+  });
+
+  it('joins notes by day, then by when each was written, as instants', () => {
+    const pins = [
+      written('2026-11-08', '2026-11-08T08:00:00-06:00', 1),
+      written('2026-11-07', '2026-11-07T23:00:00Z', 2),
+      written('2026-11-08', '2026-11-08T13:30:00Z', 3),
+      written('2026-11-07', '2026-11-07T09:00:00+02:00', 4)
+    ];
+    // 08:00-06:00 is 14:00 UTC, so it was written after 13:30 UTC.
+    expect(lats(noteTrail(pins))).toEqual([4, 2, 3, 1]);
+  });
+
+  it('puts a note without a time after its day’s others, in the order it came', () => {
+    const pins = [
+      written('2026-11-08', null, 1),
+      written('2026-11-08', '2026-11-08T20:00:00Z', 2),
+      written('2026-11-07', null, 3),
+      written('2026-11-08', 'not a time', 4),
+      written('2026-11-08', '2026-11-08T07:00:00Z', 5)
+    ];
+    expect(lats(noteTrail(pins))).toEqual([3, 5, 2, 1, 4]);
+  });
+
+  it('drops a spot that repeats the one just before, never a return later on', () => {
+    const stays = [
+      at('2026-11-08T15:00:00Z', 1),
+      at('2026-11-08T14:00:00Z', 2),
+      at('2026-11-08T13:00:00Z', 2),
+      at('2026-11-08T12:00:00Z', 1),
+      at('2026-11-08T11:00:00Z', 1)
+    ];
+    expect(lats(stayTrail(stays))).toEqual([1, 2, 1]);
+    const pins = [
+      written('2026-11-08', '2026-11-08T07:00:00Z', 5),
+      written('2026-11-08', '2026-11-08T08:00:00Z', 5),
+      written('2026-11-08', '2026-11-08T09:00:00Z', 6)
+    ];
+    expect(lats(noteTrail(pins))).toEqual([5, 6]);
+  });
+
+  it('draws a line for each kind with two spots or more, as [lon, lat]', () => {
+    const stays = [
+        { at: '2026-11-08T15:00:00Z', lat: 44.98, lon: -93.27 },
+        { at: '2026-11-08T12:00:00Z', lat: 44.95, lon: -93.1 }
+      ],
+      pins = [
+        { date: '2026-11-08', written_at: '2026-11-08T13:00:00Z', lat: 46.79, lon: -92.1 },
+        { date: '2026-11-08', written_at: '2026-11-08T14:00:00Z', lat: 46.79, lon: -92.1 }
+      ];
+    expect(trailLines(pins, stays)).toEqual([
+      {
+        kind: 'check-ins',
+        line: [
+          [-93.1, 44.95],
+          [-93.27, 44.98]
+        ]
+      }
+    ]);
+    expect(trailLines([...pins, { ...pins[0]!, date: '2026-11-09', lat: 47 }], [])).toEqual([
+      {
+        kind: 'notes',
+        line: [
+          [-92.1, 46.79],
+          [-92.1, 47]
+        ]
+      }
+    ]);
+    expect(trailLines([pins[0]!], [stays[0]!])).toEqual([]);
+    expect(trailLines([], [])).toEqual([]);
+  });
+
+  it('says what each line means, for the lines it drew', () => {
+    expect(trailsSaid(['check-ins', 'notes'])).toBe(
+      'A solid line joins the check-ins in the order you stopped, and a dotted one the notes in the order you wrote them.'
+    );
+    expect(trailsSaid(['check-ins'])).toBe('A solid line joins the check-ins in the order you stopped.');
+    expect(trailsSaid(['notes'])).toBe('A dotted line joins the notes in the order you wrote them.');
+    expect(trailsSaid([])).toBe('');
   });
 });

@@ -20,7 +20,9 @@ const fixture = JSON.parse(readFileSync(new URL('./fixtures/python-readers.json'
 // api.test.ts) and its "Add where I am". A path ending in / covers the paths under it.
 const ADDED: [string, string[]][] = [
   ['/api/releases/', ['badges']],
-  ['/api/me', ['badges', 'here']]
+  ['/api/me', ['badges', 'here']],
+  // A tag's page names it and has its Upcoming dates and check-ins (2026-11-08).
+  ['/api/tags/', ['name', 'upcoming', 'check_ins']]
 ];
 for (const sample of fixture.cases)
   test('Python HTTP wire parity: ' + sample.method + ' ' + sample.path, async () => {
@@ -77,8 +79,8 @@ for (const sample of fixture.cases)
     };
     inherited(body);
     // First-class tags (2026-11-08, docs/TAGS.md): a note's tag_names sit
-    // beside its tags, one each, and a tag's row has its name and its
-    // upcoming and check-in counts. Tested in tags.test.ts and api.test.ts.
+    // beside its tags, one each, and a tag's row has its name (and on the
+    // Tags page its upcoming and check-in counts). Tested in tags.test.ts and api.test.ts.
     const named = (v: unknown): void => {
       if (Array.isArray(v)) return v.forEach(named);
       if (!v || typeof v !== 'object') return;
@@ -87,11 +89,13 @@ for (const sample of fixture.cases)
         assert.equal((row.tag_names as unknown[]).length, (row.tags as unknown[]).length);
         delete row.tag_names;
       }
-      if ('tag' in row && 'check_ins' in row) {
-        assert.ok(typeof row.name === 'string' && typeof row.upcoming === 'number' && typeof row.check_ins === 'number');
+      if ('tag' in row && typeof row.name === 'string') {
         delete row.name;
-        delete row.upcoming;
-        delete row.check_ins;
+        if ('check_ins' in row) {
+          assert.ok(typeof row.upcoming === 'number' && typeof row.check_ins === 'number');
+          delete row.upcoming;
+          delete row.check_ins;
+        }
       }
       Object.values(row).forEach(named);
     };

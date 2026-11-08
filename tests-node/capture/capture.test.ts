@@ -20,7 +20,7 @@ test('create/append and exact retries preserve original safe result and content-
   assert.equal(first.replayed, false);
   assert.equal(shown.late, true);
   assert.equal(shown.author, 'assistant');
-  assert.deepEqual(shown.tags, ['cabin']);
+  assert.deepEqual(shown.tags, ['Cabin']);
   const append = {
     token: a.token,
     tool: 'notes_append',

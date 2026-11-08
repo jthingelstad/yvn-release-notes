@@ -98,6 +98,7 @@ test('GET /v1/notes lists only this token’s notes on the days asked, oldest fi
     'place',
     'revision',
     'source',
+    'tag_names',
     'tags',
     'text',
     'token',

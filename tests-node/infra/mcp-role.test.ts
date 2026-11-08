@@ -257,6 +257,8 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
   await v1('PATCH', `/v1/check-ins/places/${ignored}`, { ignored: true });
   await v1('POST', '/v1/check-ins', { lat: 48.85, lon: 2.35, source: 'visit', arrived: '2026-10-12T20:00:00Z' });
   const counted = (await v1('GET', `/v1/check-ins/places/${ignored}`)).place as OAuthRow;
+  // Tagging the stops already there (1.21.0), for the count read.
+  await v1('PATCH', `/v1/check-ins/places/${ignored}/check-ins`, { tags: ['Away'], count: counted.check_ins });
   await v1('DELETE', `/v1/check-ins/places/${ignored}/check-ins?count=${String(counted.check_ins)}`);
   await v1('DELETE', '/v1/check-ins?confirm=all');
   await v1('GET', '/v1/activity');

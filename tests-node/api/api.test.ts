@@ -71,7 +71,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 100);
+  assert.equal(ROUTES.length, 101);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -1399,33 +1399,36 @@ test('the tag row: pinned tags first, then the last 30 days', async () => {
   note('NOTE#2026-09-01#w-3', ['ancient']);
   assert.deepEqual((await s.call('GET', '/api/tag-row')).b, {
     pinned: [],
+    pinned_names: [],
     recent: [
-      { tag: 'running', count: 2, last_used: '2026-10-12' },
-      { tag: 'trip', count: 1, last_used: '2026-10-12' }
+      { tag: 'running', name: 'running', count: 2, last_used: '2026-10-12' },
+      { tag: 'trip', name: 'trip', count: 1, last_used: '2026-10-12' }
     ],
     window_days: 30
   });
-  const set = await s.call('PUT', '/api/tag-row', { pinned: ['#Trip', 'cabin', 'trip'] });
+  // Pins keep the names they were given, each tag once.
+  const set = await s.call('PUT', '/api/tag-row', { pinned: ['#Road Trip', 'cabin', 'road-trip', 'trip'] });
   assert.equal(set.r.status, 200);
   assert.deepEqual(set.b, {
-    pinned: ['trip', 'cabin'],
-    recent: [{ tag: 'running', count: 2, last_used: '2026-10-12' }],
+    pinned: ['road-trip', 'cabin', 'trip'],
+    pinned_names: ['Road Trip', 'cabin', 'trip'],
+    recent: [{ tag: 'running', name: 'running', count: 2, last_used: '2026-10-12' }],
     window_days: 30
   });
-  assert.deepEqual(s.store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!.pinned_tags, ['trip', 'cabin']);
+  assert.deepEqual(s.store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!.pinned_tags, ['Road Trip', 'cabin', 'trip']);
   const rows = () => s.store.memory.all().filter((i) => i.kind === 'settings.changed');
   assert.equal(rows().length, 1);
   assert.equal(rows()[0]!.via, 'web');
-  assert.deepEqual(rows()[0]!.changes, [{ field: 'pinned_tags', from: [], to: ['trip', 'cabin'] }]);
+  assert.deepEqual(rows()[0]!.changes, [{ field: 'pinned_tags', from: [], to: ['Road Trip', 'cabin', 'trip'] }]);
   // The same pins again change nothing and log nothing.
-  assert.equal((await s.call('PUT', '/api/tag-row', { pinned: ['trip', 'cabin'] })).r.status, 200);
+  assert.equal((await s.call('PUT', '/api/tag-row', { pinned: ['Road Trip', 'cabin', 'trip'] })).r.status, 200);
   assert.equal(rows().length, 1);
   for (const pinned of [Array.from({ length: 13 }, (_, i) => 't' + i), 'trip', ['#'], [3], undefined]) {
     const r = await s.call('PUT', '/api/tag-row', { pinned });
     assert.equal(r.r.status, 400, JSON.stringify(pinned));
     assert.equal((r.b as Item).error, 'pins');
   }
-  assert.deepEqual(s.store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!.pinned_tags, ['trip', 'cabin']);
+  assert.deepEqual(s.store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!.pinned_tags, ['Road Trip', 'cabin', 'trip']);
   assert.equal((await s.call('GET', '/api/tag-row', undefined, '')).r.status, 401);
   assert.equal((await s.call('PUT', '/api/tag-row', { pinned: [] }, s.token, false)).r.status, 403);
 });
@@ -1453,9 +1456,22 @@ test('a hashtag in any script is a tag: kept on its note, listed, opened by its 
     [id]
   );
   assert.equal((await s.call('GET', '/api/tags/walks')).r.status, 200);
-  // An address no hashtag gives is not found, as before: capitals, broken
-  // escapes and a capital spelled as an escape alike.
-  for (const path of ['Running', '%E6%9D', '%52unning', encodeURIComponent('Москва'), '-walks'])
+  // Any spelling opens its tag's page (2026-11-08): capitals, a capital
+  // spelled as an escape, a leading # and spaces alike.
+  for (const [path, tag] of [
+    ['Running', 'running'],
+    ['%52unning', 'running'],
+    [encodeURIComponent('Москва'), 'москва'],
+    [encodeURIComponent(' #Walks '), 'walks']
+  ]) {
+    const r = await s.call('GET', `/api/tags/${path}`);
+    assert.equal(r.r.status, 200, path);
+    assert.equal((r.b as Item).tag, tag, path);
+  }
+  assert.equal(((await s.call('GET', `/api/tags/${encodeURIComponent('Москва')}`)).b as Item).name, 'Москва');
+  // What no tags field takes is not found: broken escapes, commas, a name
+  // too long, or no letter at all.
+  for (const path of ['%E6%9D', encodeURIComponent('a,b'), 'x'.repeat(51), encodeURIComponent('#')])
     assert.equal((await s.call('GET', `/api/tags/${path}`)).r.status, 404, path);
   const pins = await s.call('PUT', '/api/tag-row', { pinned: ['#Москва', '東京', 'москва'] });
   assert.equal(pins.r.status, 200);

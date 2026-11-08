@@ -195,9 +195,10 @@ test('list/search/day/note/context/tags share writing order, Unicode folding, pr
   assert.deepEqual([plain.text, 'parts' in plain], ['Today', false]);
   assert.ok(!JSON.stringify(full).includes('media/u/secret'));
   assert.ok(!JSON.stringify(full).includes('Voice words'));
+  // Each by its name as most recently written; Upcoming is null without its scope.
   assert.deepEqual((await rpc(ctx, a.token, 'notes_tags')).value.tags, [
-    { tag: 'cabin', notes: 1 },
-    { tag: 'maine-2016', notes: 2 }
+    { name: 'Cabin', tag: 'cabin', notes: 1, upcoming: null, check_ins: 0 },
+    { name: 'Maine-2016', tag: 'maine-2016', notes: 2, upcoming: null, check_ins: 0 }
   ]);
   const reads = ctx.store.memory.calls
     .filter((c) => c.name === 'GetCommand' || c.name === 'QueryCommand')
@@ -230,7 +231,7 @@ test('cursor binds account, field and filters, tolerates changed page size; rele
   for (const args of [{ q: '' }, { q: 'one '.repeat(11) }, { q: '"" '.repeat(11) }])
     assert.equal((await rpc(ctx, a.token, 'notes_search', args)).value.error, 'invalid_arguments');
 });
-test('notes_search takes a tag in any script, as notes_tags lists it, and refuses one no hashtag gives', async () => {
+test('notes_search takes a tag in any script and spelling, as notes_tags lists it, and refuses one no tag could be', async () => {
   const ctx = fixture(),
     a = await connected(ctx);
   note(ctx, 'tokyo', 'Ramen #東京 and #Москва', '2026-10-07');
@@ -238,14 +239,19 @@ test('notes_search takes a tag in any script, as notes_tags lists it, and refuse
   for (const [tag, ids] of [
     ['東京', ['tokyo']],
     ['москва', ['tokyo']],
-    ['walks', ['walk']]
+    ['Москва', ['tokyo']],
+    ['walks', ['walk']],
+    ['#Walks', ['walk']],
+    ['-walks', ['walk']],
+    ['Running', []],
+    ['١٢٣', []]
   ] as const)
     assert.deepEqual(
       ((await rpc(ctx, a.token, 'notes_search', { tag })).value.notes as OAuthRow[]).map((n) => n.id),
       ids,
       tag
     );
-  for (const tag of ['Москва', 'Running', '東'.repeat(51), '-walks', '١٢٣', 7])
+  for (const tag of ['東'.repeat(51), 'walks, runs', '#', 'two\nlines', 7])
     assert.equal((await rpc(ctx, a.token, 'notes_search', { tag })).value.error, 'invalid_arguments', String(tag));
 });
 test('all huge Unicode/import notes and audio finish continuation without raw keys or descriptions', async () => {
@@ -900,7 +906,7 @@ test('the whole account reads under notes:read alone: on this day, releases, bad
   assert.equal(release.through, '2027-06-13');
   assert.equal(release.days_with_notes, 2);
   assert.equal(release.paused_days, 13);
-  assert.deepEqual(release.tags, [{ tag: 'cabin', notes: 1 }]);
+  assert.deepEqual(release.tags, [{ tag: 'cabin', name: 'cabin', notes: 1 }]);
   assert.deepEqual((release.badges as OAuthRow).collected, [{ id: 'release-day', name: 'Release day', count: 1 }]);
   for (const args of [{ release: '4.6' }, { release: '999.9' }, { release: '4.5', cursor: 'x' }])
     assert.ok((await rpc(ctx, a.token, 'notes_releases', args)).value.error);

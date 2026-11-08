@@ -303,6 +303,8 @@ test('the web role grants every request each route and the OAuth endpoints make'
   const counted = Number(
     ((await call('GET', '/api/check-ins/places/' + place)).b.place as { check_ins: number }).check_ins
   );
+  // Tagged first, for the count read (2026-11-08).
+  await call('PATCH', '/api/check-ins/places/' + place + '/check-ins', { tags: ['Bakery'], count: counted });
   await call('DELETE', '/api/check-ins/places/' + place + '/check-ins', { count: counted });
   await call('DELETE', '/api/check-ins/places/' + place, undefined, 204);
   await call('DELETE', '/api/check-ins', { confirm: 'all' });

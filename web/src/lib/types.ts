@@ -391,6 +391,9 @@ export interface Pin {
   release: string;
   /** Its day's version, as "5.4.113". */
   version: string;
+  /** When its note was written (ISO), or null when nothing says: the order
+   * Trails joins a day's notes in. */
+  written_at: string | null;
   text: string;
   parts: Part[];
 }

@@ -36,3 +36,5 @@ A note with no place of its own, like most email replies, shows the day's city, 
 [Check-ins](/guide/check-ins/), if an app sends them, show there too, as rings where notes are dots, and **Show** picks either or both.
 
 Narrow it down with **Words**, **Tag** and **Release**, and **Clear filters** to see everything again. A place on a note, on the web or in the morning email's Yesterday, opens the map right on that note.
+
+Tick **Trails** to join what's on the map in the order it happened: a dotted line through your notes, day by day and in the order you wrote them, and a solid one through your check-ins, in the order you stopped. The lines follow whatever **Show**, **Words**, **Tag** and **Release** keep.

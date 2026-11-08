@@ -7,6 +7,11 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 
 ## 0.0.32 · November 8
 
+- Tags are their own field now. Under the box where you write a note, type a tag in **Tags** and press Enter: it can have spaces and emoji, like Road Trip or 🚗 Lake, with or without a #. A #word in a note is still a tag, and taking off its chip takes it out of the words. Road Trip, road trip and road-trip are one tag. [Tags and search](/guide/tags-and-search/) has more.
+- Upcoming dates take several tags, your calendar shows them, and a tag's page lists its Upcoming dates and check-ins beside its notes.
+- Check-ins have tags, and so do remembered places: every new check-in at a place gets its tags, and adding one offers once to tag the check-ins already there, saying how many. On the Map, a tag keeps the check-ins with it as well as the notes. [Check-ins](/guide/check-ins/) has more.
+- The morning email names a day's tags on a line of their own, and search finds a note by a tag that isn't in its words.
+- Apps on [the API](/guide/api/notes/) and agents you've connected can set tags by name, on notes, dates, check-ins and places, and find them by any spelling. If an agent can't see the new abilities yet, refresh or reconnect it.
 - A remembered place can be ignored: tick **Ignore this location** under Check-ins in Settings, and no stop there is kept from then on. The check-ins already there are hidden, not deleted, and come back when you untick it. **Delete existing check-ins here** deletes them instead, once it has told you how many. [Check-ins](/guide/check-ins/) has more, and [the API](/guide/api/check-ins/) can do the same.
 - The Map has **Trails**: tick it, and a line joins your check-ins in the order you stopped, and a dotted one your notes in the order you wrote them, through whatever the filters keep. [Places and the map](/guide/places-and-map/) has more.
 - Apps on [the API](/guide/api/archive/) can put a search on their own map: the pins of the notes with the words or the tag you're looking for. Each pin says when its note was written, so an app can join your notes in the order you wrote them.

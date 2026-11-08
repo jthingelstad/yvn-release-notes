@@ -12,16 +12,16 @@
     "lastmod": "2026-10-30"
   },
   "/guide/": {
-    "said": "edbc1dde841b7c6fae4076361fe5326e61bc1d242d3024be2a15fd047a84d865",
-    "lastmod": "2026-11-06"
+    "said": "7f9bf088f1ebf90d7097652866fc2da15483dfc04be89ea57ffea7220179b856",
+    "lastmod": "2026-11-08"
   },
   "/guide/start/": {
     "said": "d5e0897b5cf718ac5ca9237b30d72501e3fdb817e6547e64887dfa219c2501b4",
     "lastmod": "2026-10-30"
   },
   "/guide/the-email/": {
-    "said": "c207b7cf72121330ba903a07bd70dcb8b748d690992963eb04adb7024233d3b2",
-    "lastmod": "2026-11-05"
+    "said": "716e175be596764280694b87948a38659a64da60b86f3c7874f9492e5a478fef",
+    "lastmod": "2026-11-08"
   },
   "/guide/replying/": {
     "said": "c2f924c813b60e1d62fa9574671252ba0ceb186b04bc715758078905b5c2f654",
@@ -36,16 +36,16 @@
     "lastmod": "2026-11-06"
   },
   "/guide/places-and-map/": {
-    "said": "c3367b2b5974109eeeabba858f5744dd5d9503700a1f4c33ffceafc5f9a9393c",
+    "said": "52ab1aaa92a049dce201ee2be1b07eb3865220cda5914d3a411f9b319e316be5",
     "lastmod": "2026-11-08"
   },
   "/guide/tags-and-search/": {
-    "said": "17aaede5f0feb0c7f5bc1af32cde628aa1d71008203debd410d13d2076f51218",
-    "lastmod": "2026-10-30"
+    "said": "63549eea91b1db38bea979801295e3f2036c8253f4354a66d93393334ee2c991",
+    "lastmod": "2026-11-08"
   },
   "/guide/upcoming/": {
-    "said": "c518759d2e25c798985956bbfef5f51a57ee51f6c00203f833294410e88a27e7",
-    "lastmod": "2026-10-29"
+    "said": "9125aba160cc91e22ce00a8b36bb1130c9f6f1bb0d72dd4dc9697f7dfed15e79",
+    "lastmod": "2026-11-08"
   },
   "/guide/badges/": {
     "said": "8c678949535fbd800b70fc94aef3dc5648628b7c66b9b0a5820e7986f5d67c7d",
@@ -76,7 +76,7 @@
     "lastmod": "2026-11-06"
   },
   "/guide/check-ins/": {
-    "said": "0ae529b0a5aefbb86b8c967c83dca3e3a2cade4291d8e52e538da0ad752b818f",
+    "said": "8c28e79e1d43c1dd83ae0b36cb71d835d3e0a6d5def67f2fc3207c2a37ffefd5",
     "lastmod": "2026-11-08"
   },
   "/guide/api/": {
@@ -88,11 +88,11 @@
     "lastmod": "2026-11-06"
   },
   "/guide/api/notes/": {
-    "said": "d51b187be63ba221507b125cb1f7b565270cac14f94777249d67efbaab81cce8",
-    "lastmod": "2026-11-06"
+    "said": "b611d7ca96359ff11c1565fae915e97c6f208ac2888e364f9a260a5deb149b4a",
+    "lastmod": "2026-11-08"
   },
   "/guide/api/archive/": {
-    "said": "57813a4e3e303d67215a5d15af6c0f8d9e19c6517707f8dff4d606bc4d58f3d7",
+    "said": "c93c01824bd3b429a4f9c760e3ef477434cb4507171876b245117e9999c76b0c",
     "lastmod": "2026-11-08"
   },
   "/guide/api/places/": {
@@ -100,19 +100,19 @@
     "lastmod": "2026-11-06"
   },
   "/guide/api/check-ins/": {
-    "said": "4c308289226241268efc6635d649d99a205b44a9e94cba955eb4255e3dcdf0cb",
+    "said": "117f88cb260305f2c8e7cf16aef6c8a88ff6bef2f24a5a0cf5211953f8d2a44e",
     "lastmod": "2026-11-08"
   },
   "/guide/api/upcoming/": {
-    "said": "ee261d20d23284bc215212b3861b3c4d9b335e87dd008e464f2dc2ab0e6dbc35",
-    "lastmod": "2026-11-06"
+    "said": "49c57e2bff4e953395c4c919d0e1b1db81b6d72ecc1c46e3312c1de755ad9e4d",
+    "lastmod": "2026-11-08"
   },
   "/guide/api/recipes/": {
     "said": "a847328ec4dfde6f4bd871b48aee32171f5a86db480b72b014f09e395b3cf516",
     "lastmod": "2026-11-06"
   },
   "/guide/api/reference/": {
-    "said": "53c30bce38340c6f5425dca04f7a8e1e35e5f34c1e338fa9e6cf51023c8d7977",
+    "said": "bbb5bc064f683378dc2f58a3fc049bd27f82347957c8810a9df0b9535234932d",
     "lastmod": "2026-11-08"
   },
   "/guide/api/clients/": {
@@ -120,7 +120,7 @@
     "lastmod": "2026-11-06"
   },
   "/guide/api/changelog/": {
-    "said": "9071f082fc70ae359cb0067ab0108c15d4a5654fc2ee5aa4c934e04238730dbc",
+    "said": "a5b707944d37d9b07f8fbf76e98a1f46a3536f4f82664349b869ddb66cc45490",
     "lastmod": "2026-11-08"
   },
   "/guide/changelog/": {
@@ -136,7 +136,7 @@
     "lastmod": "2026-11-06"
   },
   "/changelog/": {
-    "said": "0c3221a82f82250f79c1102f9b93f1b3d3eaed51ae3eeafb743050ab13431f31",
+    "said": "9a261200628711896b7fed3a6a7f35c918093b5606ec606be80b30abaf7f94a1",
     "lastmod": "2026-11-08"
   }
 }

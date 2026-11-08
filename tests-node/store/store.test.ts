@@ -286,9 +286,15 @@ test('notes order by writing time across pages, range includes last day, duplica
 test('edits remove stale links and tags, missing note is not recreated', async () => {
   const s = setup();
   s.seed(note);
-  const edited = await s.updateNote('u', day, 'a-note', 'New', 'at', [{ url: 'https://example.com' }], [
-    { key: 'road-trip', name: 'Road Trip' }
-  ]);
+  const edited = await s.updateNote(
+    'u',
+    day,
+    'a-note',
+    'New',
+    'at',
+    [{ url: 'https://example.com' }],
+    [{ key: 'road-trip', name: 'Road Trip' }]
+  );
   assert.equal(edited?.text, 'New');
   assert.deepEqual([edited?.tags, edited?.tag_names], [['road-trip'], ['Road Trip']]);
   const cleared = await s.updateNote('u', day, 'a-note', 'Clear', 'at2');

@@ -754,7 +754,11 @@ function tagFrom(q: URLSearchParams): string | null | Refusal {
   if (raw === null) return null;
   const tag = spelling(raw);
   return typeof tag === 'string'
-    ? { code: 'invalid_request', message: 'tag is a tag, by any spelling: ' + TAG_REFUSALS[tag], extra: { field: 'tag' } }
+    ? {
+        code: 'invalid_request',
+        message: 'tag is a tag, by any spelling: ' + TAG_REFUSALS[tag],
+        extra: { field: 'tag' }
+      }
     : tag.key;
 }
 /** `q` and `tag` as GET /v1/search and GET /v1/map/pins take them: at most

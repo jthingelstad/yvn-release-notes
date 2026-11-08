@@ -187,7 +187,10 @@ export async function writeCapture(
   if ((name === 'notes_create' || name === 'notes_edit') && args.tags != null) {
     const tags = fieldTags(args.tags);
     if (isRefused(tags))
-      throw new ToolError('invalid_arguments', TAG_REFUSALS[tags.refused] + (tags.at >= 0 ? ` (tags[${tags.at}])` : ''));
+      throw new ToolError(
+        'invalid_arguments',
+        TAG_REFUSALS[tags.refused] + (tags.at >= 0 ? ` (tags[${tags.at}])` : '')
+      );
     given = tags;
   }
   const uid = String(family.user_id),

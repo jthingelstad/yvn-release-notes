@@ -15,7 +15,7 @@ description: Birthdays, anniversaries, trips and events you're looking forward t
 - **Trip** has a first and last day, and a destination if you like.
 - **One-time event** has a day, and a location if you like.
 
-Each date can have one tag, like #family, to group it with others. You can keep up to 200 dates, past ones included.
+Each date can have tags, like family or Road Trip, to group it with others: type each in **Tags** and press Enter. A tag's page shows its dates beside its notes and check-ins, and [Tags and search](/guide/tags-and-search/) says how tags match. You can keep up to 200 dates, past ones included.
 
 ## Reminders
 
@@ -25,19 +25,19 @@ Release Notes itself sends nothing else, and nothing is sent to catch up on a re
 
 ## Finding a date
 
-Filter the list by **Kind** and **Tag**, or type in **Words**: a date's title, its tag, its kind and its destination are all searched, so "paris" finds the trip. Past one-time dates fold away under "Past dates".
+Filter the list by **Kind** and **Tag**, or type in **Words**: a date's title, its tags, its kind and its destination are all searched, so "paris" finds the trip. Past one-time dates fold away under "Past dates".
 
-A tagged date has a button to write a note with its hashtag: it opens Today with the tag already in the draft. Nothing is saved until you save the note.
+A tagged date has a button to write a note with its tags: it opens Today with them already on the draft. Nothing is saved until you save the note.
 
 ## Edit as text
 
-**Edit as text** shows every date as one line of text, so changing many at once is one edit rather than many clicks. Each line starts with the kind and the date, then the name, with a #tag, a destination, `email:off` or a list of reminder days anywhere after it. Delete a line to remove that date.
+**Edit as text** shows every date as one line of text, so changing many at once is one edit rather than many clicks. Each line starts with the kind and the date, then the name, with tags like #family or #Road Trip, a destination, `email:off` or a list of reminder days anywhere after it. Delete a line to remove that date.
 
 **Preview changes** shows what would be added, changed and removed before anything is saved. Apply it, and it all saves at once, or none of it does.
 
 ## In your calendar
 
-Under **In your calendar**, **Make a calendar link** gives you a private address to subscribe to from your calendar app. It keeps your dates current there, with each birthday's version number. It sets no alarms: reminders come in the morning email, and in an app if you turn them on there.
+Under **In your calendar**, **Make a calendar link** gives you a private address to subscribe to from your calendar app. It keeps your dates current there, with each birthday's version number and each date's tags. It sets no alarms: reminders come in the morning email, and in an app if you turn them on there.
 
 Anyone with the link can read your dates, so keep it to yourself. **New link** replaces it, and calendars using the old one stop updating; **Remove link** stops it altogether.
 

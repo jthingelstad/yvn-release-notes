@@ -107,7 +107,9 @@ test('the shared vectors are what the rules say (node --import tsx tools/export-
 });
 
 test('one tag, however it is typed: case, spaces, hyphens and underscores, accents', () => {
-  const keys = ['Road Trip', 'road trip', 'road-trip', 'Road_Trip', '#ROAD  TRIP'].map((n) => (spelling(n) as { key: string }).key);
+  const keys = ['Road Trip', 'road trip', 'road-trip', 'Road_Trip', '#ROAD  TRIP'].map(
+    (n) => (spelling(n) as { key: string }).key
+  );
   assert.deepEqual([...new Set(keys)], ['road-trip']);
   assert.equal(tagKey('Café'), tagKey('cafe'));
   // Every key from before stays: Latin letters alone are the legacy slug.
@@ -151,15 +153,28 @@ test('a note keeps its field tags through edits that change only its words', () 
 });
 
 test('stored tags are named by tag_names, then by the hashtags typed, then by their keys', () => {
-  assert.deepEqual(storedTags({ tags: ['road-trip'], tag_names: ['Road Trip'] }), [{ key: 'road-trip', name: 'Road Trip' }]);
-  assert.deepEqual(storedTags({ tags: ['maine-2016'], text: 'Out #Maine-2016' }), [{ key: 'maine-2016', name: 'Maine-2016' }]);
+  assert.deepEqual(storedTags({ tags: ['road-trip'], tag_names: ['Road Trip'] }), [
+    { key: 'road-trip', name: 'Road Trip' }
+  ]);
+  assert.deepEqual(storedTags({ tags: ['maine-2016'], text: 'Out #Maine-2016' }), [
+    { key: 'maine-2016', name: 'Maine-2016' }
+  ]);
   assert.deepEqual(storedTags({ tags: ['lake'] }), [{ key: 'lake', name: 'lake' }]);
   // An Upcoming date of before 2026-11-08 has one tag.
   assert.deepEqual(storedTags({ tag: 'maine-2016' }), [{ key: 'maine-2016', name: 'maine-2016' }]);
-  assert.deepEqual(mergeTags([{ key: 'a', name: 'A' }], [{ key: 'a', name: 'a' }, { key: 'b', name: 'b' }]), [
-    { key: 'a', name: 'A' },
-    { key: 'b', name: 'b' }
-  ]);
+  assert.deepEqual(
+    mergeTags(
+      [{ key: 'a', name: 'A' }],
+      [
+        { key: 'a', name: 'a' },
+        { key: 'b', name: 'b' }
+      ]
+    ),
+    [
+      { key: 'a', name: 'A' },
+      { key: 'b', name: 'b' }
+    ]
+  );
 });
 
 test('the tag list counts notes, check-ins and Upcoming dates, named as last used', () => {
@@ -172,8 +187,26 @@ test('the tag list counts notes, check-ins and Upcoming dates, named as last use
     [{ day: '2026-10-15', tags: ['lake'], tag_names: ['Lake'] }]
   );
   assert.deepEqual(totals, [
-    { tag: 'road-trip', name: 'Road Trip', notes: 2, days: 2, first: '2026-10-01', last: '2026-11-01', upcoming: 1, check_ins: 0 },
-    { tag: 'lake', name: 'lake', notes: 1, days: 1, first: '2026-10-15', last: '2026-11-01', upcoming: 0, check_ins: 1 },
+    {
+      tag: 'road-trip',
+      name: 'Road Trip',
+      notes: 2,
+      days: 2,
+      first: '2026-10-01',
+      last: '2026-11-01',
+      upcoming: 1,
+      check_ins: 0
+    },
+    {
+      tag: 'lake',
+      name: 'lake',
+      notes: 1,
+      days: 1,
+      first: '2026-10-15',
+      last: '2026-11-01',
+      upcoming: 0,
+      check_ins: 1
+    },
     { tag: 'maine-2016', name: 'maine-2016', notes: 0, days: 0, first: null, last: null, upcoming: 1, check_ins: 0 }
   ]);
 });

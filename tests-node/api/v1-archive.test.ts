@@ -293,7 +293,16 @@ test('releases, tags, pins, badges and the mail log read as the web and MCP do',
 
   // Upcoming and check-in counts need their own scopes; without them, null.
   assert.deepEqual((await get(app, '/v1/tags/all', reader.token)).json!.tags, [
-    { tag: 'maine', name: 'maine', notes: 2, days: 2, first: '2026-10-10', last: '2026-10-11', upcoming: null, check_ins: null }
+    {
+      tag: 'maine',
+      name: 'maine',
+      notes: 2,
+      days: 2,
+      first: '2026-10-10',
+      last: '2026-10-11',
+      upcoming: null,
+      check_ins: null
+    }
   ]);
   ctx.store.seed({
     pk: 'USER#u',
@@ -313,7 +322,13 @@ test('releases, tags, pins, badges and the mail log read as the web and MCP do',
   });
   const wide = await make(ctx, ['notes:read', 'upcoming', 'activity'], 'Wide');
   assert.deepEqual(
-    ((await get(app, '/v1/tags/all', wide.token)).json!.tags as OAuthRow[]).map((t) => [t.tag, t.name, t.notes, t.upcoming, t.check_ins]),
+    ((await get(app, '/v1/tags/all', wide.token)).json!.tags as OAuthRow[]).map((t) => [
+      t.tag,
+      t.name,
+      t.notes,
+      t.upcoming,
+      t.check_ins
+    ]),
     [
       ['maine', 'maine', 2, 1, 0],
       ['road-trip', 'Road Trip', 0, 1, 0]

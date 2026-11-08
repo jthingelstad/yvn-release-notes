@@ -35,7 +35,7 @@ On your birthday the release closes, and the email sums up the year just ended: 
 
 ## Yesterday
 
-What you sent the day before, so you know it all arrived, with its photos and a link to the day. A long day is cut at a sentence, with a link to read the rest. A day with no notes has no Yesterday.
+What you sent the day before, so you know it all arrived, with its photos, its tags and a link to the day. A long day is cut at a sentence, with a link to read the rest. A day with no notes has no Yesterday.
 
 ## On this day
 

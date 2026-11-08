@@ -220,7 +220,11 @@ export function spelling(raw: unknown): Tag | TagRefusal {
   if (/[\n\r\u2028\u2029\u0085]/u.test(text)) return 'break';
   if (/[,\uff0c]/u.test(text)) return 'comma';
   if (/\p{Cc}/u.test(text.replace(/\t/g, ' '))) return 'break';
-  const name = text.replace(SPACES, ' ').trim().replace(/^#+\s*/, '').trim();
+  const name = text
+    .replace(SPACES, ' ')
+    .trim()
+    .replace(/^#+\s*/, '')
+    .trim();
   if (codePointLength(name) > MAX_TAG) return 'long';
   const key = tagKey(name);
   return key ? { key, name } : 'empty';
@@ -238,8 +242,9 @@ export function fieldTags(value: unknown): Tag[] | { refused: TagRefusal; at: nu
   }
   return out.length > MAX_TAGS ? { refused: 'many', at: MAX_TAGS } : out;
 }
-export const isRefused = (tags: Tag[] | { refused: TagRefusal; at: number }): tags is { refused: TagRefusal; at: number } =>
-  !Array.isArray(tags);
+export const isRefused = (
+  tags: Tag[] | { refused: TagRefusal; at: number }
+): tags is { refused: TagRefusal; at: number } => !Array.isArray(tags);
 
 /** The hashtags in a note's text as tags, each named as typed, without its #. */
 export function textTags(text: string): Tag[] {
@@ -273,9 +278,7 @@ export function storedTags(item: { tags?: unknown; tag_names?: unknown; tag?: un
         : [],
     names = Array.isArray(item.tag_names) ? item.tag_names.map(String) : [],
     typed = keys.length && names.length < keys.length && typeof item.text === 'string' ? textTags(item.text) : [];
-  return mergeTags(
-    keys.map((key, i) => ({ key, name: names[i] || typed.find((t) => t.key === key)?.name || key }))
-  );
+  return mergeTags(keys.map((key, i) => ({ key, name: names[i] || typed.find((t) => t.key === key)?.name || key })));
 }
 
 /** Tags as stored on an item: both lists, or neither when there are none. */
@@ -387,7 +390,18 @@ export function tagTotals(
     entry = (tag: Tag) => {
       let e = counts.get(tag.key);
       if (!e) {
-        e = { tag: tag.key, name: tag.name, notes: 0, days: 0, first: null, last: null, upcoming: 0, check_ins: 0, on: new Set(), named: '' };
+        e = {
+          tag: tag.key,
+          name: tag.name,
+          notes: 0,
+          days: 0,
+          first: null,
+          last: null,
+          upcoming: 0,
+          check_ins: 0,
+          on: new Set(),
+          named: ''
+        };
         counts.set(tag.key, e);
       }
       return e;

@@ -301,6 +301,8 @@ async function checkedPhrases() {
     `${MAX_UPLOAD / 1024 / 1024} MB a file`,
     `up to ${MAX_A_DAY} recordings a day`,
     `up to ${MAX_TAG} characters`,
+    `at most ${MAX_TAG} characters`,
+    `has up to ${MAX_TAGS}. `,
     `Up to ${MAX_TAGS}, each`,
     `up to ${MAX_TAGS} of them`,
     `last ${RECENT_DAYS} days`,

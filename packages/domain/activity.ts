@@ -78,8 +78,10 @@
  *   checkin.deleted: `day` and `count`, or `all` and `count` for every one,
  *   or `place` and `count` for those at a remembered place.
  *   checkin.place: `place` (a remembered place's id), `change` (added, spot,
- *   renamed or forgotten). checkin.ignored and checkin.unignored: `place`.
- *   Never a name or a spot, and these stay when it goes.
+ *   renamed, tagged or forgotten). checkin.ignored and checkin.unignored:
+ *   `place`. checkin.tagged (2026-11-08, docs/TAGS.md): `checkin` and `day`
+ *   for one stay's tags, or `place` and `count` for the stays at a remembered
+ *   place. Never a name, a tag or a spot, and these stay when it goes.
  * - account.created. */
 import { codePointSlice } from './unicode.ts';
 

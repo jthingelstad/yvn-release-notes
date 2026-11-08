@@ -72,7 +72,20 @@ Privacy and the changelog (Public pages, below).
 
 2. **Today**: the version number with the streak and what ships next under
    its dots, the day's place, a box to write a note, and today's notes from
-   email and the web together.
+   email and the web together. Under the box, the tags field
+   (`components/tag-field.tsx`, 2026-11-08, `docs/TAGS.md`): the note's tags
+   as chips, the field's and its text's #words together. Enter, Tab or
+   leaving the box adds one, a leading # dropped and spaces and emoji kept;
+   one already there by any spelling stays as it is; it refuses one over 50
+   characters, a 21st, a comma or a line break with the reason, and offers
+   pinned, recent and known names as it is typed. Each chip's remove button
+   is 44px and named "Remove tag X"; removing a #word's chip takes the #word
+   out of the text (call 1). The field's tags are kept with the draft in the
+   tab, and saving sends them as `tags`. The tag row under it ("Your tags")
+   adds or takes off a chip. Editing a note shows the same chips and sends
+   the field's whole list. A note's field tags its words don't hold show
+   under it as "Tags: Road Trip, lake", each linked to its page. Tags show
+   by name everywhere, without a #; a #word in the words stays as typed.
 3. **Archive** (`/timeline/`): days by version, newest first, with their
    notes. Days in a row with nothing in them read as one quiet line (their
    versions, their dates, "Add some"), paused days apart from the rest
@@ -82,8 +95,12 @@ Privacy and the changelog (Public pages, below).
    oldest first, under a head with its dates, three figures (days with
    notes, notes, longest streak) and its tags by how many notes have them
    (Jamie, 2026-10-12), and links to the releases either side. A tag's page
-   (`/tag/?t=`) takes the same head: how many notes on how many days, and
-   when. Search puts its box and button on one line and counts what it
+   (`/tag/?t=`, any spelling; titled by the tag's name) takes the same head:
+   how many notes on how many days, and when, then its Upcoming dates and
+   check-ins (2026-11-08, call 5), each in a section of its own above the
+   notes, which gain a Notes heading when either shows; with nothing tagged
+   it says "Nothing has this tag now." Search lists tags by name with what
+   has them ("3 days, 1 date, 2 check-ins"). Search puts its box and button on one line and counts what it
    found, newest first.
 4. **Any past day**: the days either side and a calendar to pick another,
    the day's notes first, then a box to add one (backfill). Any day from
@@ -236,6 +253,15 @@ Privacy and the changelog (Public pages, below).
     check-ins and never stored, each opening the check-in's page at
     `/check-in/#c=<id>`. A **Check-ins** button appears once there are any and
     keeps to them (`#only=check-ins`, `family=checkin` to `/api/activity`).
+    A check-in's page has a tags field that saves each change onto every
+    check-in in its stay. Settings › Check-ins gives each remembered place a
+    tags field, whose tags every new check-in there gets; a tag added asks
+    once, "Tag its N check-ins with X too?" (**Tag them**, **Not now**), and
+    asks again with the new count when it changed ("The check-ins here
+    changed: there are N now."); taking one off leaves the check-ins alone
+    (call 6). The log says "Changed the tags on a check-in from <day>",
+    "Tagged the check-ins at a remembered place" ("N check-ins tagged.") and
+    "Changed a remembered place's tags".
 12. **Map** (`/map/`, a tab since 2026-10-24; Jamie: "a Map
     view for my notes"): every note with a place of its own and
     coordinates, as pins that gather into numbered groups as the map zooms
@@ -263,8 +289,10 @@ Privacy and the changelog (Public pages, below).
     Check-ins are a ring where a note is a filled dot, in a source and groups of
     their own, so a group is only ever one kind (Jamie: "Web map and breakpoints
     should show as a different visual than a note"). `#show=` picks notes,
-    check-ins or both, a release narrows both, and a tag or words keep notes
-    alone, since a check-in has neither. A tap lists everything under it, each
+    check-ins or both, a release narrows both, a tag keeps the notes and the
+    check-ins with it (2026-11-08, call 8; the menu names each tag and counts
+    both, and stays with `#show=` on check-ins), and words keep notes alone,
+    since a check-in has none; choosing check-ins clears only the words. A tap lists everything under it, each
     with its mark. `/map/#c=<id>` opens on a check-in. Only marks here: its real
     circle draws on its own page.
     **Trails** (Jamie, 2026-11-08: "If you click show trails, it should show
@@ -800,7 +828,7 @@ or new CSP exception.
 | `POST /api/badges/seen`                                                                 | mark `keys` (at most 500, each an earned badge's key; anything else is left out) as told, so the email doesn't tell them again: `seen`, how many (400 `badges-seen`; nothing while "Show badges" is off)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `POST /api/eggs` `{egg}`                                                                | an easter egg found (`developer` or `rtfm`, docs/BADGES.md): one `egg.found` activity row the first time, nothing after; `unlocked` when it earned a badge and "Show badges" is on, and nothing about any other egg (400 `egg` for any other name)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `GET /api/map/notes`                                                                    | the Map page's pins: each note with a place of its own and coordinates, as `date`, `id`, `lat`, `lon`, `place` (its label), `exact` (a device or photo spot, not a chosen city), `tags` (its tags' keys) and `tag_names` (their names), `release` (the release its day falls in, as `4.5`), `version` (its day's, as `4.5.113`), `written_at` (when its note was written, or null; Trails' order within a day) and `text` (its first 140 characters); `notes`, how many notes there are in all |
-| `GET /api/check-ins` | every stay, newest first (`docs/CHECK-INS.md`): as `GET /v1/check-ins` has them, spot and all, with `tags` and `tag_names` (those of every check-in in it) when it has any, `release` and `version`, and `time_zone` always set, the account's when the stop has none |
+| `GET /api/check-ins` | every stay, newest first (`docs/CHECK-INS.md`): as `GET /v1/check-ins` has them, spot and all, with `tags` and `tag_names` (those of every check-in in it, empty when it has none), `release` and `version`, and `time_zone` always set, the account's when the stop has none |
 | `DELETE /api/check-ins` `{confirm: 'all'}` | deletes every check-in and leaves the remembered places; answers `{deleted}` |
 | `GET /api/check-ins/{id}` | one stay as `check_in`, by any id in it |
 | `PUT /api/check-ins/{id}` `{name?, tags?, remember?, revision}` | names or tags the stay from the revision read: on every check-in in it, or with `remember` on a remembered place, which takes any spots the stay needs and its own name off. `name: null` takes a name off. `tags` is the stay's whole list, set on each check-in in it (400 `tags` for a refused one) |
@@ -935,7 +963,7 @@ stopped accounts and the daily-send claim retain their existing behavior.
 The page shows annual dates' next occurrence, active trips and future events;
 completed trips/events remain under **Past dates**, editable or deletable.
 Each date is one row (a table read as rows: when, then what it is with its
-kind, tag and "daily email" or "web only" beneath, then Edit), ordered by
+kind, tags and "daily email" or "web only" beneath, then Edit), ordered by
 occurrence date ascending (including past dates). Delete is at the foot of
 Edit, so a row carries one action, or two with a tag. On a phone the date
 sits over the title.
@@ -944,17 +972,18 @@ account's saved home, time zone, forecast or default note location. Automatic
 travel switching remains future work. Kind and Tag filters combine across both
 future and past entries; Tag also offers **No tag**. **Words** (2026-10-17)
 filters as you type: every word or "quoted phrase" must appear, without case or
-accents, in the title, tag, kind, destination or the occurrence line (so "5.0.0"
+accents, in the title, tags, kind, destination or the occurrence line (so "5.0.0"
 or "major" finds a birthday), through the note search's term rules
 (`upcomingSearchText` in `packages/domain/upcoming.ts`). It reads the list already
 loaded; no request carries the words. Filters are kept in the page fragment
 across reloads (`kind`, `tag`, `q`), with matching counts and a clear action. New dates start
-with the selected kind/tag. Existing tags are suggested in the editor.
-**Write a note** on a tagged entry opens today's editable draft with its hashtag,
-preserving existing draft text and avoiding a duplicate hashtag. The tag travels
+with the selected kind/tag. The editor has a tags field (2026-11-08, call 5),
+as a note's, offering the tags used before. **Write a note** on a tagged entry
+opens today's editable draft with its tags as chips (`/#tag=Name&tag=Other`),
+keeping the draft's text and any tag it has by another spelling. The tags travel
 in a fragment, never a server-visible query. Nothing is saved until the owner
 submits the note; there is no separate event-note relationship, and changing an
-event's tag does not change saved notes. Notes remain the owner's account of what
+event's tags do not change saved notes. Notes remain the owner's account of what
 actually happened.
 
 **In your calendar** (2026-10-17): the page offers a private iCalendar link,

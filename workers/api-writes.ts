@@ -72,7 +72,15 @@ import {
   type UpcomingBatch,
   type UpcomingChange
 } from '../packages/backend/upcoming.ts';
-import { stayOf, staysAt, staysAtNext, staysTagged, stayTagged, withTags, type CheckInReads } from '../packages/backend/check-ins.ts';
+import {
+  stayOf,
+  staysAt,
+  staysAtNext,
+  staysTagged,
+  stayTagged,
+  withTags,
+  type CheckInReads
+} from '../packages/backend/check-ins.ts';
 import {
   STAY_WRITE_MAX,
   CHECKIN_SOURCES,
@@ -96,7 +104,16 @@ import {
 } from '../packages/domain/check-ins.ts';
 import { iso, localDay, validDay, validTimezone } from '../packages/domain/dates.ts';
 import { MAX_NOTE, noteWords, type NoteRecord } from '../packages/domain/notes.ts';
-import { TAG_REFUSALS, fieldTags, isRefused, mergeTags, noteTags, storedTags, tagFields, type Tag } from '../packages/domain/tags.ts';
+import {
+  TAG_REFUSALS,
+  fieldTags,
+  isRefused,
+  mergeTags,
+  noteTags,
+  storedTags,
+  tagFields,
+  type Tag
+} from '../packages/domain/tags.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
 import { codePointLength } from '../packages/domain/unicode.ts';
 import { computeVersion } from '../packages/domain/version.ts';
@@ -267,9 +284,13 @@ export function tagsArg(args: Arguments, field = 'tags'): Tag[] | null {
   if (!Object.hasOwn(args, field) || args[field] === undefined || args[field] === null) return null;
   const tags = fieldTags(args[field]);
   if (isRefused(tags))
-    throw new ApiRefusal('invalid_request', TAG_REFUSALS[tags.refused] + (tags.at >= 0 ? ` (${field}[${tags.at}])` : ''), {
-      field
-    });
+    throw new ApiRefusal(
+      'invalid_request',
+      TAG_REFUSALS[tags.refused] + (tags.at >= 0 ? ` (${field}[${tags.at}])` : ''),
+      {
+        field
+      }
+    );
   return tags;
 }
 
@@ -1189,11 +1210,16 @@ export async function writeApi(
           place = (await store.namedPlaces(uid)).find((p) => p.id === id);
         if (!place) throw new ApiRefusal('not_found', NO_PLACE);
         const added = tagsArg(args);
-        if (!added?.length) throw new ApiRefusal('invalid_request', 'Send the tags to add, by name.', { field: 'tags' });
+        if (!added?.length)
+          throw new ApiRefusal('invalid_request', 'Send the tags to add, by name.', { field: 'tags' });
         if (!Number.isSafeInteger(args.count) || Number(args.count) < 0)
-          throw new ApiRefusal('invalid_request', 'Send count, how many check-ins GET /v1/check-ins/places/{id} said are there.', {
-            field: 'count'
-          });
+          throw new ApiRefusal(
+            'invalid_request',
+            'Send count, how many check-ins GET /v1/check-ins/places/{id} said are there.',
+            {
+              field: 'count'
+            }
+          );
         const { stays } = await staysAt(store, uid, id);
         if (stays.length !== args.count)
           throw new ApiRefusal(

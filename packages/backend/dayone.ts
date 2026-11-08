@@ -351,7 +351,10 @@ export function plan(
     if (place) item.place = { ...place, from: source };
     // Day One's own tags keep their names ("Road Trip"); the line above
     // carries them as hashtags too, for the text (docs/TAGS.md).
-    const theirs = [...(Array.isArray(e.tags) ? e.tags.map(String) : []), ...(journal === MAIN_JOURNAL ? [] : [journal])]
+    const theirs = [
+      ...(Array.isArray(e.tags) ? e.tags.map(String) : []),
+      ...(journal === MAIN_JOURNAL ? [] : [journal])
+    ]
       .map(tags.spelling)
       .filter((t): t is tags.Tag => typeof t !== 'string');
     const typed = tags.textTags(text).map((t) => theirs.find((d) => d.key === t.key) ?? t);

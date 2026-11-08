@@ -1,6 +1,7 @@
 /** Shared web/MCP search: AND terms, quoted phrases, names and already
  * available descriptions/transcripts. Search never triggers processing. A
- * rich note is searched by its words, not its markup (domain/rich.ts). */
+ * rich note is searched by its words, not its markup (domain/rich.ts), and
+ * by its tags' names. */
 import { placeLabel, type NoteRecord } from './notes.ts';
 import { isRich, plainWords } from './rich.ts';
 import { fold, pythonTrim } from './unicode.ts';
@@ -26,5 +27,9 @@ export function searchedText(note: NoteRecord): string {
     for (const key of ['transcript', 'description']) words.push(String(media[key] || ''));
   if (note.place) words.push(placeLabel(note.place));
   for (const link of note.links || []) words.push(String(link.title || ''));
+  // Its tags by name, so a tag from a tags field, not in the words, is found
+  // too ("Road Trip"; docs/TAGS.md, 2026-11-08).
+  const names = (note as { tag_names?: unknown }).tag_names;
+  if (Array.isArray(names)) words.push(names.map(String).join('\n'));
   return fold(words.join('\n'));
 }

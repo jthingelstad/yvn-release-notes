@@ -206,7 +206,8 @@ test('a token’s change goes only to its own note, from the words and revision 
               Update: {
                 TableName: 'T',
                 Key: { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n' },
-                UpdateExpression: 'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next',
+                UpdateExpression:
+                  'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next',
                 ConditionExpression:
                   '#src = :api AND #c = :token AND #t = :old AND #r = :revision AND ' +
                   (edited ? 'updated_at = :edited' : 'attribute_not_exists(updated_at)'),
@@ -262,7 +263,8 @@ test('with notes:all, a change to another channel’s note proves that scope, an
               Update: {
                 TableName: 'T',
                 Key: { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n' },
-                UpdateExpression: 'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next',
+                UpdateExpression:
+                  'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next',
                 ConditionExpression:
                   'attribute_exists(pk) AND ' +
                   (old.text === undefined ? 'attribute_not_exists(#t)' : '#t = :old') +

@@ -129,7 +129,9 @@ export async function staysAtNext(store: CheckInReads, user: string, next: Named
 
 /** A check-in or place with exactly these tags: both lists, or neither. */
 export function withTags<T extends Record<string, unknown>>(item: T, tags: readonly Tag[]): T {
-  const { tags: _keys, tag_names: _names, ...rest } = item;
+  const rest: Record<string, unknown> = { ...item };
+  delete rest.tags;
+  delete rest.tag_names;
   return { ...rest, ...tagFields(tags) } as unknown as T;
 }
 

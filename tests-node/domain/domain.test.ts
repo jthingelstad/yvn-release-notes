@@ -227,9 +227,10 @@ test('search covers text, place, titles and existing processing results', () => 
     text: 'Dinner',
     place: { label: 'Café' },
     links: [{ url: 'https://example.com', title: 'Pier' }],
-    media: [{ transcript: 'A WALK', description: 'Straße' }]
-  });
-  for (const word of ['dinner', 'cafe', 'pier', 'a walk', 'strasse']) assert.ok(text.includes(word));
+    media: [{ transcript: 'A WALK', description: 'Straße' }],
+    tag_names: ['Road Trip']
+  } as Parameters<typeof searchedText>[0]);
+  for (const word of ['dinner', 'cafe', 'pier', 'a walk', 'strasse', 'road trip']) assert.ok(text.includes(word));
   assert.deepEqual(searchTerms('Café "a walk"'), ['cafe', 'a walk']);
   assert.equal(searchTerms(Array.from({ length: 20 }, (_, n) => `t${n}`).join(' ')).length, 10);
 });

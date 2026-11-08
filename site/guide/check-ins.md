@@ -11,7 +11,7 @@ A check-in says you were somewhere, from about one time to about another. It isn
 
 In [Activity](/activity/), each one is a row like "Checked in at Home", with when you got there and left, and how long that was. The **Check-ins** button there shows them alone. Times read as they did where you were, and a stop you haven't left yet says when it began.
 
-On [the Map](/map/), a check-in is a ring and a note is a dot, each kind with its own numbered groups, and the **Show** menu picks notes, check-ins or both. A release narrows both. A tag or words keep notes alone, since a check-in has neither. Choose a mark or a group to list what's there.
+On [the Map](/map/), a check-in is a ring and a note is a dot, each kind with its own numbered groups, and the **Show** menu picks notes, check-ins or both. A release narrows both, and a tag keeps the notes and check-ins that have it. Words keep notes alone, since a check-in has none. Choose a mark or a group to list what's there.
 
 In Changelog, **Map of check-ins** in Activity has one pin for each place. Choose a pin to list your stops there.
 
@@ -23,6 +23,7 @@ A row opens its own page: when it was, and a small map with a circle around the 
 
 - **Write about this** starts an ordinary note on that day, at that spot, with the check-in's name if you gave it one. The note has no link back: delete the check-in and the note stays.
 - **Name it** offers a box and the businesses nearby to fill it in, for you to pick from. Nothing is named for you.
+- **Tags** puts tags on it, like Road Trip, saved as you add or take off each one. A merged stop takes them on every part.
 - **Delete** deletes it, and a merged stop goes whole.
 
 ## Naming a place
@@ -34,7 +35,13 @@ A check-in with no name shows its neighbourhood. Name it, and you choose how far
 
 Use a name again at another spot and that spot joins it, so a big place or two ends of one can share a name. A name you gave one stop beats a remembered one, so a wrong match is mended by naming that stop.
 
-Under **Check-ins** in [Settings](/settings/), rename or forget a remembered place. Forgetting one puts its stops back to the names they had. **Delete all check-ins** is there too, and leaves the places you remember.
+Under **Check-ins** in [Settings](/settings/), rename, tag or forget a remembered place. Forgetting one puts its stops back to the names they had. **Delete all check-ins** is there too, and leaves the places you remember.
+
+## Tagging a place
+
+Give a remembered place tags, under **Check-ins** in [Settings](/settings/), and every new check-in there gets them as it arrives. A tag's page lists those check-ins with its notes and dates, and on the Map the tag keeps them.
+
+Adding a tag asks once whether to tag the check-ins already there too, and says how many there are. **Tag them** does it, and **Not now** leaves them. If more stops arrived in the meantime, it asks again with the new count. Taking a tag off a place leaves the check-ins that have it alone.
 
 ## Ignoring a place
 

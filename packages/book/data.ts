@@ -275,12 +275,7 @@ function indexOf(found: Map<string, { name: string; versions: string[] }>, short
           : versions.map((v) => (short ? v.slice(short.length + 1) : v)).join(' · ')
     }));
 }
-function enter(
-  found: Map<string, { name: string; versions: string[] }>,
-  name: string,
-  version: string,
-  tag?: string
-) {
+function enter(found: Map<string, { name: string; versions: string[] }>, name: string, version: string, tag?: string) {
   const key = tag ?? name.toLowerCase(),
     entry = found.get(key) ?? { name, versions: [] };
   if (tag) entry.name = name;

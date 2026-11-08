@@ -56,8 +56,7 @@ const TAGS: JsonSchema = {
 /** A date's, check-in's or place's tags: the whole list each time. */
 const TAGS_FIELD = (what: string): JsonSchema => ({
   ...TAGS,
-  description:
-    `${what}'s tags by name, the whole list: "Road Trip", "lake", "東京". A leading # is dropped, and "Road Trip", "road trip" and "road-trip" are one tag. [] for none. At most 20 tags, each up to 50 characters, with no commas or line breaks.`
+  description: `${what}'s tags by name, the whole list: "Road Trip", "lake", "東京". A leading # is dropped, and "Road Trip", "road trip" and "road-trip" are one tag. [] for none. At most 20 tags, each up to 50 characters, with no commas or line breaks.`
 });
 const FILES: JsonSchema = {
   type: 'array',
@@ -115,7 +114,7 @@ export const MCP_CONTRACT: McpContract = {
       version: '1.15.0',
       date: '2026-11-08',
       summary:
-        'Tags are their own field. A tag has a name as typed, with spaces or emoji ("Road Trip", "🚗 Lake"), and is one tag however it is spelled: "road trip", "#Road Trip" and "road-trip" match. notes_create and notes_edit take tags, by name, beside the hashtags in the text; notes show their tags by name. upcoming_save takes tags, the whole list for a date, and upcoming_list shows them; tag, the first one, still works for this release. notes_search and notes_check_ins take a tag by any spelling, and check-ins and remembered places show their tags. notes_tags gives each tag its name and counts its Upcoming dates (with the upcoming scope) and check-ins.'
+        'Tags are their own field. A tag has a name as typed, with spaces or emoji ("Road Trip", "🚗 Lake"), and is one tag however it is spelled: "road trip", "#Road Trip" and "road-trip" match. notes_create and notes_edit take tags, by name, beside the hashtags in the text; notes show their tags by name. upcoming_save takes tags, the whole list for a date, and upcoming_list shows them; tag, the first one, still works for this release. notes_search and notes_check_ins take a tag by any spelling, and check-ins, remembered places and the pins of notes_map show their tags by name. notes_tags gives each tag its name and counts its Upcoming dates (with the upcoming scope) and check-ins.'
     },
     {
       version: '1.14.0',
@@ -890,7 +889,8 @@ export const MCP_CONTRACT: McpContract = {
           },
           tag: {
             type: 'string',
-            description: 'Only the stays with this tag, by any spelling: "Road Trip", road-trip and #road-trip are one tag',
+            description:
+              'Only the stays with this tag, by any spelling: "Road Trip", road-trip and #road-trip are one tag',
             maxLength: 200
           }
         },

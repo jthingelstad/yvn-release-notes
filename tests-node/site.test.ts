@@ -39,7 +39,7 @@ import { BADGES } from '../packages/domain/badges.ts';
 import { SCREENSHOTS_MAX } from '../packages/domain/feedback.ts';
 import { MAX_NOTE } from '../packages/domain/notes.ts';
 import { SEARCH_DAYS } from '../packages/domain/search.ts';
-import { MAX_TAG } from '../packages/domain/tags.ts';
+import { MAX_TAG, MAX_TAGS } from '../packages/domain/tags.ts';
 import { PINS_MAX, RECENT_DAYS, RECENT_MAX } from '../packages/backend/tag-row.ts';
 import { UPCOMING_MAX, UPCOMING_SHOWN } from '../packages/domain/upcoming.ts';
 import { DOTS, PHOTOS_AN_EMAIL, PHOTOS_A_DAY } from '../packages/mail/compose.ts';
@@ -301,6 +301,8 @@ async function checkedPhrases() {
     `${MAX_UPLOAD / 1024 / 1024} MB a file`,
     `up to ${MAX_A_DAY} recordings a day`,
     `up to ${MAX_TAG} characters`,
+    `Up to ${MAX_TAGS}, each`,
+    `up to ${MAX_TAGS} of them`,
     `last ${RECENT_DAYS} days`,
     `up to ${PINS_MAX} tags`,
     `next ${ME_DAYS} days`,

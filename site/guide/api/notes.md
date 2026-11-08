@@ -13,6 +13,8 @@ Send `{"text": "…"}`, or the words alone as `text/plain`. A form works too, as
 
 Hashtags in the words are its tags, and links get their names, as on the web. What else you can send:
 
+- `tags` gives it tags by name, with spaces or emoji if you like: `{"text": "…", "tags": ["Road Trip", "lake"]}`. A `#` in front is dropped, and "Road Trip", "road trip" and "road-trip" are one tag. Up to 20, each up to 50 characters, with no commas or line breaks. The words' hashtags are its tags too, after these. From version 1.21.0.
+
 - `date` puts it on an earlier day, back to your birthday.
 - `written_at` is the moment the words were typed: a note sent late files to the day it was typed. With neither, it's today's.
 - `uploads` gives it files (see [Photos, recordings and PDFs](#photos-recordings-and-pdfs)), and then it needs no words.
@@ -39,7 +41,8 @@ One note this token added, or any note if it may read all your notes, with its t
 
 A note also says:
 
-- `tags`, and `markup` (`rich`, or null for plain words)
+- `tags`, each tag's key, like `road-trip`, which is what matches, and `tag_names`, the same tags as they were written, like "Road Trip" (from version 1.21.0)
+- `markup` (`rich`, or null for plain words)
 - `parts`, its words cut into strings, links and tags, ready to show
 - its own `place`, and `no_place` if you took its place away
 - `edited_at`, `tz` and `late`
@@ -94,5 +97,5 @@ Send photos as JPEG, PNG or WebP where you can. A HEIC photo is kept as it is, w
 
 ## Tags
 
-- `GET /v1/tags`: your tag row, the pinned tags and then up to 20 recent ones, the tags used most in the last 30 days. Any token may ask.
-- `PUT /v1/tags/pinned`: replace your pinned tags, with `{"pinned": ["house", "work"]}`, up to 12 tags, in any language's letters, like `москва` or `東京`. They're the same ones the web shows under the note box.
+- `GET /v1/tags`: your tag row, the pinned tags and then up to 20 recent ones, the tags used most in the last 30 days. Any token may ask. Each has its key and, from version 1.21.0, its name: `pinned_names` beside `pinned`, and a `name` on each recent one.
+- `PUT /v1/tags/pinned`: replace your pinned tags, with `{"pinned": ["house", "Road Trip"]}`, up to 12 tags, by name, in any language's letters, like `Москва` or `東京`. They're the same ones the web shows under the note box.

@@ -29,7 +29,7 @@ One day, the same, with its `notes`, whether it's `today`, and what it `collecte
 
 ### GET /v1/search?q=lake
 
-Notes with every word, in their words, places, link names, transcripts and descriptions, newest first, with the `total` found. Up to ten words or quoted phrases. `?tag=running` finds a tag's notes, on its own or with `q`. `?from=` and `?to=` narrow it to some days, and `?after=` takes `next`.
+Notes with every word, in their words, places, link names, transcripts and descriptions, newest first, with the `total` found. Up to ten words or quoted phrases. `?tag=running` finds a tag's notes, on its own or with `q`, and from version 1.21.0 takes the tag however it's written: `?tag=Road%20Trip` and `?tag=road-trip` are the same. `?from=` and `?to=` narrow it to some days, and `?after=` takes `next`.
 
 ### GET /v1/on-this-day
 
@@ -45,11 +45,11 @@ One of them in detail, like `/v1/releases/52.0`: its longest streak, tags, and b
 
 ### GET /v1/tags/all
 
-Every tag you've used, with its `notes`, `days`, `first` and `last`, most used first.
+Every tag you've used, with its `notes`, `days`, `first` and `last`, most used first. From version 1.21.0 each has its `name` as you last wrote it, and counts its `upcoming` dates and `check_ins`, if this token may read those (null if not).
 
 ### GET /v1/map/pins
 
-Where your notes were, as the Map's pins, oldest first, with a note's opening words. Draw them on your own map. `?after=` takes `next`. From version 1.19.0 of the API, `q` and `tag` keep only the pins of the notes a search finds, as they do on `GET /v1/search`, and each pin says its note's `written_at`.
+Where your notes were, as the Map's pins, oldest first, with a note's opening words. Draw them on your own map. `?after=` takes `next`. From version 1.19.0 of the API, `q` and `tag` keep only the pins of the notes a search finds, as they do on `GET /v1/search`, and each pin says its note's `written_at`. From 1.21.0 a pin has `tag_names` beside `tags`, and `tag` takes any spelling.
 
 ### GET /v1/badges
 

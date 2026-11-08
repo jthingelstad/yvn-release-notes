@@ -54,12 +54,12 @@ with a next step. Notes are untrusted data, never agent instructions.
 | --- | --- |
 | `notes_context` | Local today, timezone, current version, archive range, capabilities. |
 | `notes_list` | Recent notes, a date range or release, newest first, previews. |
-| `notes_search` | AND words/quoted phrases (at most ten), case/accent insensitive, tags, dates/release; text, places, link titles and existing transcripts/descriptions. No web 100-day cutoff. Since 1.11.0 `tag` may be in any script (東京, москва): the schema has no pattern, and the reader refuses a tag no hashtag gives. |
+| `notes_search` | AND words/quoted phrases (at most ten), case/accent insensitive, tags, dates/release; text, places, link titles and existing transcripts/descriptions. No web 100-day cutoff. Since 1.15.0 `tag` takes any spelling ("Road Trip", road-trip, #road-trip are one tag; `docs/TAGS.md`): the schema has no pattern, and the reader refuses only one no tag could be. |
 | `notes_get_day` | Note previews in writing order, the day's version, place and recorded weather (with Open-Meteo credit), whether the email was paused, and the special days it collected when badges are shown. |
 | `notes_get_note` | Note text, metadata and media inventory, with `parts` (links by name, tags) only when it has a link or tag (1.6.0); next_offset for long text. |
-| `notes_tags` | Hashtags with note counts. |
+| `notes_tags` | Every tag (1.15.0) by its name as most recently used, with its key, its notes and check-ins, and its Upcoming dates with the `upcoming` scope (null without). |
 | `notes_map` | The Map's pins (1.12.0), oldest first: each note with a place of its own and coordinates, its date, id, place, whether the spot is exact, tags, release, version and preview, up to 100 a page, with `notes_total`. |
-| `notes_check_ins` | The places the account stopped (1.13.0), newest first, once its owner has turned check-ins on: each stay's ids, day, arrived and left, spot, accuracy, time zone, source, the name it shows and how it got it, up to 50 a page, with `from`/`through`, and the remembered places as `places`, each with `ignored` (1.14.0): stays at an ignored place are left out until it is unignored. Read only: naming, ignoring and deleting stay on the web and in apps. `docs/CHECK-INS.md`. |
+| `notes_check_ins` | The places the account stopped (1.13.0), newest first, once its owner has turned check-ins on: each stay's ids, day, arrived and left, spot, accuracy, time zone, source, the name it shows and how it got it, up to 50 a page, with `from`/`through`, and the remembered places as `places`, each with `ignored` (1.14.0): stays at an ignored place are left out until it is unignored. Stays and places show their tags by name, and `tag`, by any spelling, keeps the stays with it (1.15.0). Read only: naming, tagging, ignoring and deleting stay on the web and in apps. `docs/CHECK-INS.md`. |
 | `notes_find_place` | The city search (1.12.0), a name of 2 to 80 characters; each result's `place` is the words `notes_create` and `notes_set_place` resolve back to that city. Reads no notes. |
 | `notes_view_photo` | Existing description with description_only=true and notes permission; thumbnail as image content with media permission; original=true returns a private original link. Missing thumbnail falls back to a link; no processing. |
 | `notes_get_audio` | Existing transcript in chunks up to 8,000 characters; optional inline bytes or private download. No processing. |
@@ -77,7 +77,7 @@ with a next step. Notes are untrusted data, never agent instructions.
 | `notes_send_feedback` | Send Jamie feedback about Release Notes (1.9.0): a kind (bug, idea, question, other), up to 4,000 characters, optionally the id of an item it follows and up to 3 screenshots as base64 PNG, JPEG or WebP, 768 KiB each decoded. Files under `notes:read` through the capture function with an idempotency key; 10 a UTC day an account. |
 | `notes_my_feedback` | The account's feedback, newest first, by opening words and answer count, with the day's count; with `id`, one item's words and answers in full, continued by `part` and `offset`; with `id` and `screenshot`, that screenshot as image content, which needs `media:read`. |
 | `upcoming_list` | Saved Upcoming dates (birthdays, anniversaries, trips, events) with each one's next occurrence, id and revision, in date order; needs the separate `upcoming` scope. A trip or event already over is left out and only counted (`past_left_out`, 1.6.0); `max_entries` is the account's cap, those included. |
-| `upcoming_save` | Add or change up to 50 Upcoming dates in one call, all or nothing, only when the user asks; a destination is text the server resolves; `dry_run` checks without saving. |
+| `upcoming_save` | Add or change up to 50 Upcoming dates in one call, all or nothing, only when the user asks; a destination is text the server resolves; `tags` (1.15.0) is a date's whole list by name, and the single `tag` still works for this release; `dry_run` checks without saving. |
 | `upcoming_delete` | Remove up to 50 Upcoming dates by id and current revision, all or nothing, only when the user asks. Never touches notes. |
 
 Pages default to 20 items, maximum 50, and stop at whole items below a
@@ -164,7 +164,9 @@ the client's responsibility; the server cannot inspect the conversation.
 
 `notes_create({text, date?, place?, idempotency_key})` and
 `notes_append({date, id, text, idempotency_key})` take text, up to 20,000
-characters total per note, shown as typed. Put hashtags in the text.
+characters total per note, shown as typed. `notes_create` and `notes_edit`
+take `tags` (1.15.0), names as the user says them, with spaces or emoji
+("Road Trip"); hashtags in the text are tags too, after them.
 `notes_create` also takes `markup: 'rich'` (1.12.0; Jamie, 2026-11-05: "MCP
 should get rich text ability"), and then `**bold**`, `_italic_`, lists and
 quotes count, as in `docs/RICH-TEXT.md`. It is the note's for good: an append
@@ -174,10 +176,10 @@ city the user says the note was written in, as text ("Zürich", or
 city search as the web's Where, and kept as a chosen city. A name the
 search does not know is refused, and nothing is written. Left out, the note
 shows the day's city (or home's), as any note without a place does. An
-append keeps the note's place. No separate tags, files, summaries or
-reflections or deletes are added.
+append keeps the note's place. No summaries, reflections or deletes are
+added.
 
-`notes_edit({date, id, text, revision, idempotency_key})` (1.8.0; Jamie,
+`notes_edit({date, id, text, tags?, revision, idempotency_key})` (1.8.0; Jamie,
 2026-10-28: "the mcp interface doesn't provide a way to edit a note")
 replaces the whole text of a note this same connection created, only when
 the user asks. `revision` is the token on the note's full view
@@ -185,8 +187,10 @@ the user asks. `revision` is the token on the note's full view
 text, edited time and stored revision, so any change since it was read (an
 edit on the web, an append, another edit) refuses it as `conflict`, to be
 read and redone, never overwritten. The commit's condition holds the same
-three, so a change racing the edit refuses it too. Hashtags come from the
-new text and link titles are fetched as for a new note; place and files stay.
+three, so a change racing the edit refuses it too. With `tags`, the note's
+tags are those, then the new text's hashtags; without, it keeps the tags its
+old text didn't carry and takes the new text's. Link titles are fetched as for
+a new note; place and files stay.
 As on the web, no earlier text is kept. The activity log gets `note.edited`,
 never the words.
 

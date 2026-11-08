@@ -1331,6 +1331,10 @@ const SCHEMAS: Record<string, Doc> = {
             release: { type: 'string' },
             version: { type: 'string' },
             text: { type: 'string', description: 'The note’s opening words.' },
+            written_at: {
+              anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+              description: 'When the note was written (1.19.0): a day’s pins come in no order of their own.'
+            },
             parts: { type: 'array', items: {} }
           }
         }

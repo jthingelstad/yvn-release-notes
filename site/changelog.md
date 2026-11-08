@@ -5,6 +5,10 @@ description: Everything Release Notes has learned to do, one release at a time.
 
 Release Notes numbers itself the way it numbers you. It shipped on October 7, 2026, so that day is 0.0.0. Newest first. Changelog, the iPhone app, keeps [its own](/guide/changelog/).
 
+## 0.0.32 · November 8
+
+- Apps on [the API](/guide/api/archive/) can put a search on their own map: the pins of the notes with the words or the tag you're looking for. Each pin says when its note was written, so an app can join your notes in the order you wrote them.
+
 ## 0.0.30 · November 6
 
 - [Check-ins](/guide/check-ins/) have their own place on the web: the stops an app sends, with when you got there and left. They have a filter in Activity, a page each to name or delete them or write about them, their own marks on the Map, and a section in Settings for the places you remember. [The API](/guide/api/check-ins/) can send them, and so can [Changelog](/guide/changelog/), the iPhone app, once you turn on **Notice where I stop** in its Settings.

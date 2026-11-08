@@ -47,7 +47,7 @@
       {
         "version": "1.19.0",
         "date": "2026-11-08",
-        "summary": "GET /v1/map/pins takes `q` and `tag` as GET /v1/search does, and keeps only the pins of the notes with every word and the tag, so an app can show what a search finds on its own map. Left out, every pin comes, as before."
+        "summary": "GET /v1/map/pins takes `q` and `tag` as GET /v1/search does, and keeps only the pins of the notes with every word and the tag, so an app can show what a search finds on its own map. Left out, every pin comes, as before. Each pin says its note’s `written_at`, so the notes of a day can be put in the order they were written."
       },
       {
         "version": "1.18.2",
@@ -5383,6 +5383,18 @@
                 "text": {
                   "type": "string",
                   "description": "The note’s opening words."
+                },
+                "written_at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "When the note was written (1.19.0): a day’s pins come in no order of their own."
                 },
                 "parts": {
                   "type": "array",

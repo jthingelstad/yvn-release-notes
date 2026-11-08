@@ -78,7 +78,7 @@ export const API_CHANGES: readonly { version: string; date: string; summary: str
     version: '1.19.0',
     date: '2026-11-08',
     summary:
-      'GET /v1/map/pins takes `q` and `tag` as GET /v1/search does, and keeps only the pins of the notes with every word and the tag, so an app can show what a search finds on its own map. Left out, every pin comes, as before.'
+      'GET /v1/map/pins takes `q` and `tag` as GET /v1/search does, and keeps only the pins of the notes with every word and the tag, so an app can show what a search finds on its own map. Left out, every pin comes, as before. Each pin says its note’s `written_at`, so the notes of a day can be put in the order they were written.'
   },
   {
     version: '1.18.2',
@@ -1315,12 +1315,19 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
         // Words and a tag narrow the pins as GET /v1/search finds notes (1.19.0).
         const sought = soughtFrom(q);
         if (isRefusal(sought)) return sought;
-        const notes = await store.allNotes(uid, true),
+        // Each says when it was written (1.19.0): ids are random, so a day's
+        // pins come in no order of their own, and a client drawing the notes
+        // in turn needs the time.
+        const notes = (await store.allNotes(uid, true)) as NoteRecord[],
+          written = new Map(notes.map((n) => [String(n.sk), writtenAt(n) || null])),
           all = pins(
-            (notes as NoteRecord[]).filter((n) => finds(n, sought)),
+            notes.filter((n) => finds(n, sought)),
             birthday
           )
-            .map((pin) => ({ pin, at: [pin.date, pin.id] }))
+            .map((pin) => ({
+              pin: { ...pin, written_at: written.get(`NOTE#${pin.date}#${pin.id}`) ?? null },
+              at: [pin.date, pin.id]
+            }))
             .sort(oldestFirst)
             .filter((n) => !after || later(n.at, after)),
           shown: (typeof all)[number]['pin'][] = [];

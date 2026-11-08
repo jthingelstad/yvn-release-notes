@@ -996,7 +996,9 @@ the tag. Changelog for iPhone's map narrows its notes by a search (Jamie,
 keyword or tag"), as the web's Map does with its own `POST /api/map/search`.
 Paging every result of `GET /v1/search` would read whole notes to learn only
 which pins to keep. A year, and which notes or check-ins show, a client works
-out from the pins: each says its `date`.
+out from the pins: each says its `date`, and now its note's `written_at`. A
+day's pins come in the order of their random ids, so the map's trails (the
+notes joined in the order they were written) need the time.
 
 ### Jamie's calls
 

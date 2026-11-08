@@ -346,6 +346,10 @@ test('GET /v1/map/pins keeps the pins of the notes a search finds (1.19.0)', asy
   assert.deepEqual(await ids('?q=%22%22'), ['w-a', 'w-b', 'w-c']);
   const map = (await get(app, '/v1/map/pins?q=lake', reader.token)).json!;
   assert.equal(map.notes, 4);
+  assert.deepEqual(
+    (map.pins as OAuthRow[]).map((p) => p.written_at),
+    ['2026-10-10T12:00:00Z', '2026-10-11T12:00:00Z', '2026-10-12T12:00:00Z']
+  );
   for (const [path, field] of [
     ['/v1/map/pins?q=a+b+c+d+e+f+g+h+i+j+k', 'q'],
     ['/v1/map/pins?tag=%23%23', 'tag']

@@ -49,7 +49,7 @@ Every tag you've used, with its `notes`, `days`, `first` and `last`, most used f
 
 ### GET /v1/map/pins
 
-Where your notes were, as the Map's pins, oldest first, with a note's opening words. Draw them on your own map. `?after=` takes `next`. From version 1.19.0 of the API, `q` and `tag` keep only the pins of the notes a search finds, as they do on `GET /v1/search`.
+Where your notes were, as the Map's pins, oldest first, with a note's opening words. Draw them on your own map. `?after=` takes `next`. From version 1.19.0 of the API, `q` and `tag` keep only the pins of the notes a search finds, as they do on `GET /v1/search`, and each pin says its note's `written_at`.
 
 ### GET /v1/badges
 

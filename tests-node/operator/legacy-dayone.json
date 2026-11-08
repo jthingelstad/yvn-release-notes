@@ -186,7 +186,7 @@
       "longitude": -68.2043,
       "region": {
        "center": {},
-       "radius": 75.0
+       "radius": 75
       }
      }
     }
@@ -224,6 +224,10 @@
        "tags": [
         "maine-2016",
         "vacation"
+       ],
+       "tag_names": [
+        "Maine 2016",
+        "vacation"
        ]
       },
       "named": {},
@@ -249,7 +253,7 @@
         "longitude": -68.2043,
         "region": {
          "center": {},
-         "radius": 75.0
+         "radius": 75
         }
        }
       },
@@ -334,7 +338,7 @@
      "named_by_writer": 0,
      "need_titles": 0
     },
-    "largest_item_kb": 0.5,
+    "largest_item_kb": 0.6,
     "largest_item_fits": true
    }
   },
@@ -356,7 +360,7 @@
       "longitude": -68.2043,
       "region": {
        "center": {},
-       "radius": 75.0
+       "radius": 75
       }
      }
     },
@@ -456,7 +460,7 @@
         "longitude": -68.2043,
         "region": {
          "center": {},
-         "radius": 75.0
+         "radius": 75
         }
        }
       },
@@ -592,8 +596,8 @@
        "tz": "America/Chicago",
        "raw_key": "raw/dayone/u1/DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD.json",
        "place": {
-        "lat": 10.0,
-        "lon": 10.0,
+        "lat": 10,
+        "lon": 10,
         "from": "photo"
        },
        "media": [
@@ -602,8 +606,8 @@
          "kind": "image",
          "type": "image/jpeg",
          "place": {
-          "lat": 10.0,
-          "lon": 10.0
+          "lat": 10,
+          "lon": 10
          },
          "size": 10,
          "key": "media/u1/2016-07-06/d1-DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD/1.jpg"
@@ -711,8 +715,8 @@
       "tz": "America/Chicago"
      },
      "2016-07-06": {
-      "lat": 10.0,
-      "lon": 10.0,
+      "lat": 10,
+      "lon": 10,
       "tz": "America/Chicago"
      },
      "2016-07-08": {
@@ -748,7 +752,7 @@
      "image": 2
     },
     "file_mb": {
-     "image": 0.0
+     "image": 0
     },
     "missing_files": 0,
     "tags": {
@@ -1007,9 +1011,9 @@
      "file": 1
     },
     "file_mb": {
-     "image": 0.0,
-     "audio": 0.0,
-     "file": 0.0
+     "image": 0,
+     "audio": 0,
+     "file": 0
     },
     "missing_files": 1,
     "tags": {
@@ -1037,7 +1041,7 @@
      "named_by_writer": 0,
      "need_titles": 0
     },
-    "largest_item_kb": 1.0,
+    "largest_item_kb": 1,
     "largest_item_fits": true
    }
   },
@@ -1088,7 +1092,15 @@
         "own",
         "long-one",
         "ete",
-        "gratitude"
+        "gratitude",
+        "©"
+       ],
+       "tag_names": [
+        "own",
+        "Long one",
+        "été",
+        "Gratitude",
+        "©"
        ]
       },
       "named": {},
@@ -1164,7 +1176,7 @@
     "missing_files": 0,
     "tags": {
      "notes_tagged": 1,
-     "distinct": 4,
+     "distinct": 5,
      "notes_with_hashtags_in_text": 1
     },
     "place_from": {
@@ -1187,7 +1199,7 @@
      "named_by_writer": 0,
      "need_titles": 0
     },
-    "largest_item_kb": 0.5,
+    "largest_item_kb": 0.6,
     "largest_item_fits": true
    }
   },
@@ -1235,6 +1247,10 @@
        "tags": [
         "long-one",
         "travel"
+       ],
+       "tag_names": [
+        "Long one",
+        "Travel"
        ]
       },
       "named": {},
@@ -1333,7 +1349,7 @@
      "named_by_writer": 0,
      "need_titles": 0
     },
-    "largest_item_kb": 20.0,
+    "largest_item_kb": 20,
     "largest_item_fits": true
    }
   },
@@ -1475,7 +1491,7 @@
      "named_by_writer": 0,
      "need_titles": 0
     },
-    "largest_item_kb": 0.0,
+    "largest_item_kb": 0,
     "largest_item_fits": true
    }
   },
@@ -1827,7 +1843,7 @@
       "longitude": -68.2043,
       "region": {
        "center": {},
-       "radius": 75.0
+       "radius": 75
       }
      }
     }
@@ -1883,7 +1899,7 @@
         "longitude": -68.2043,
         "region": {
          "center": {},
-         "radius": 75.0
+         "radius": 75
         }
        }
       },

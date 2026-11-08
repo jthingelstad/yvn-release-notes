@@ -12,7 +12,7 @@ import type { Store, Subscriber, Item } from '../packages/backend/store.ts';
 import * as media from '../packages/backend/media.ts';
 import type { Objects, Mail, Log } from '../packages/backend/services.ts';
 import { collect, type TitleFetcher } from '../packages/backend/links.ts';
-import { found as tags } from '../packages/domain/tags.ts';
+import { tagFields, textTags } from '../packages/domain/tags.ts';
 import { MAX_NOTE, noteWords } from '../packages/domain/notes.ts';
 import { localDay, addDays } from '../packages/domain/dates.ts';
 import { computeVersion } from '../packages/domain/version.ts';
@@ -314,7 +314,7 @@ export async function file(
       mail.messageId,
       photos
     ),
-    tagged = tags(text),
+    tagged = textTags(text),
     note: Item = {
       version,
       text,
@@ -326,7 +326,7 @@ export async function file(
       raw_key: `raw/${mail.messageId}`,
       parser_version: PARSER_VERSION,
       ...(found.length ? { links: found } : {}),
-      ...(tagged.length ? { tags: tagged } : {}),
+      ...tagFields(tagged),
       ...(kept.length ? { media: kept } : {})
     };
   const stored = await s.store.putInboundNote(sub.user_id, day, mail.messageId, note, standing ? token : null);

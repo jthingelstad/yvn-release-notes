@@ -349,8 +349,13 @@ export function plan(
         raw_key: `raw/${APP}/${user}/${e.uuid}.json`
       };
     if (place) item.place = { ...place, from: source };
-    const found = tags.found(text);
-    if (found.length) item.tags = found;
+    // Day One's own tags keep their names ("Road Trip"); the line above
+    // carries them as hashtags too, for the text (docs/TAGS.md).
+    const theirs = [...(Array.isArray(e.tags) ? e.tags.map(String) : []), ...(journal === MAIN_JOURNAL ? [] : [journal])]
+      .map(tags.spelling)
+      .filter((t): t is tags.Tag => typeof t !== 'string');
+    const typed = tags.textTags(text).map((t) => theirs.find((d) => d.key === t.key) ?? t);
+    Object.assign(item, tags.tagFields(tags.mergeTags(typed, theirs)));
     const media: Item[] = [],
       copies: PlannedNote['files'] = [];
     for (const [i, f] of files.entries()) {

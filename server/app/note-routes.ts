@@ -11,12 +11,12 @@ import * as media from '../../packages/backend/media.ts';
 import { keepDay, placeOf } from '../../packages/backend/weather.ts';
 import { localDay, iso, validTimezone } from '../../packages/domain/dates.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
-import { found } from '../../packages/domain/tags.ts';
+import { noteTags, tagFields } from '../../packages/domain/tags.ts';
 import { isRich, RICH } from '../../packages/domain/rich.ts';
 import { noteWords, type NoteRecord } from '../../packages/domain/notes.ts';
 import { again, badgeEvents, recordActivity } from '../../packages/backend/activity.ts';
 import type { ActivityEvent } from '../../packages/domain/activity.ts';
-import { json, body, dayFrom, textFrom } from './requests.ts';
+import { json, body, dayFrom, tagsFrom, textFrom } from './requests.ts';
 /** What an edit or new files earned, for the activity log only: nothing is
  * marked seen, so the email still tells of it. Nothing with badges off. */
 async function earned(service: SessionService, uid: string, p: Item, saved: Item, old: Item): Promise<Unlocked[]> {
@@ -78,6 +78,8 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
   if (pattern === '/api/days/{date}/notes') {
     const b = await body(service.request),
       text = textFrom(b, Boolean(b.uploads)),
+      // Checked before any file is claimed.
+      given = tagsFrom(b),
       place = b.place != null ? notePlace(b.place) : null,
       files = b.uploads ? await attachUploads(service, uid, b.uploads) : [],
       noteId = 'w-' + randomUUID().replace(/-/g, '').slice(0, 20),
@@ -92,9 +94,10 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
         ...(b.markup === RICH ? { markup: RICH } : {})
       },
       named = await collect(text, { fetch: ctx.fetchTitle, rich: b.markup === RICH }),
-      tagged = found(text);
+      // The tags field, then the text's hashtags (docs/TAGS.md).
+      tagged = noteTags(text, given);
     if (named.length) item.links = named;
-    if (tagged.length) item.tags = tagged;
+    Object.assign(item, tagFields(tagged));
     if (files.length) item.media = files.map((f, i) => ({ n: i + 1, ...f }));
     if (place) item.place = place;
     try {
@@ -214,7 +217,8 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
     }
   }
   if (method === 'PUT') {
-    const text = textFrom(await body(service.request), Boolean((old.media as Item[] | undefined)?.length)),
+    const b = await body(service.request),
+      text = textFrom(b, Boolean((old.media as Item[] | undefined)?.length)),
       // An edit keeps the note's markup, plain or rich, as it was written.
       named = await collect(text, { keep: old.links as Link[] | undefined, fetch: ctx.fetchTitle, rich: isRich(old) }),
       item = await store.updateNote(
@@ -224,7 +228,8 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
         text,
         iso(ctx.now),
         named.map((l) => ({ ...l })),
-        found(text)
+        // Without a tags field the note keeps the tags its words didn't give it.
+        noteTags(text, tagsFrom(b), old)
       );
     if (!item) reject(404, 'note');
     await record([

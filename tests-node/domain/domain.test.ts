@@ -102,20 +102,37 @@ test('all Unicode codepoints match the independent Python Unicode16 search oracl
 
 test('synthetic legacy goldens cover Unicode tags, offsets, trimming and quoted search', () => {
   const fixture = JSON.parse(readFileSync(new URL('./legacy-golden.json', import.meta.url), 'utf8'));
-  // Letters in any script (2026-10-30) only add tags: every legacy tag and
-  // span is still there, in order, and each added one has no a-z letter in
-  // its slug, so a tag from before never moves. The golden is unchanged.
+  // Letters in any script (2026-10-30) only add tags: every legacy span is
+  // still there, in order, with the same cut, and each added one has no a-z
+  // letter in its slug. One kind of key moved on 2026-11-08 (docs/TAGS.md):
+  // a hashtag that mixes a Latin letter with another script's keeps all its
+  // letters ("#Tokyo東京" is tokyo東京, not tokyo). The golden is unchanged.
   const legacy = (tag: string) => /^[a-z0-9-]+$/.test(tag);
+  const other = /[^\p{Script=Latin}\P{L}]/u;
   const added: string[] = [];
+  let moved = 0;
   for (const value of fixture.texts) {
     assert.equal(fold(value.text), value.fold);
-    assert.deepEqual(tags.found(value.text).filter(legacy), value.tags);
-    assert.deepEqual(
-      tags.spans(value.text).filter(([, , tag]) => legacy(tag)),
-      value.spans
+    const now = tags.spans(value.text);
+    for (const [start, end, tag] of value.spans as Array<[number, number, string]>) {
+      const typed = codePointSlice(value.text, start + 1, end),
+        same = now.find(([s, e]) => s === start && e === end);
+      assert.ok(same, typed);
+      if (other.test(typed)) {
+        assert.equal(same[2], tags.tagKey(typed));
+        assert.equal(tags.slug(same[2]), tag, 'its Latin letters are the old key');
+        moved++;
+      } else assert.equal(same[2], tag);
+    }
+    const kept = (value.spans as Array<[number, number, string]>).filter(
+      ([s, e]) => !other.test(codePointSlice(value.text, s + 1, e))
     );
-    for (const [, , tag] of tags.spans(value.text))
-      if (!legacy(tag)) {
+    assert.deepEqual(
+      now.filter(([, , tag]) => legacy(tag)),
+      kept
+    );
+    for (const [s, e, tag] of now)
+      if (!legacy(tag) && !value.spans.some(([vs, ve]: [number, number]) => vs === s && ve === e)) {
         assert.ok(!/[a-z]/.test(tags.slug(tag)), tag);
         added.push(tag);
       }
@@ -125,6 +142,7 @@ test('synthetic legacy goldens cover Unicode tags, offsets, trimming and quoted 
   }
   // #한국 was no tag before; the rest are the random texts' #Σ, #ς and #한.
   assert.equal(added.length, 9);
+  assert.ok(moved > 0);
   assert.equal(added[0], '한국');
   assert.equal(codePointLength('💡'.repeat(20000)), 20000);
   assert.equal(codePointSlice('💡A💡B', 1, 3), 'A💡');

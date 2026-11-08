@@ -8,15 +8,17 @@
 // own place as #d=<day>&ll=<lat>,<lon>: the map opens on that day's notes,
 // or on the place alone when none of them has a spot.
 //
-// Words, a tag and a release narrow the pins (#q=, #tag=, #v=, the
-// release's name as on /release/?v=). The words are found as the Search
-// page finds them, by POST, so they stay in the #; the tag and the release
-// are read from the pins. Each menu offers what the other filters leave.
+// Words, a tag and a release narrow the pins (#q=, #tag=, the tag's key,
+// #v=, the release's name as on /release/?v=). The words are found as the
+// Search page finds them, by POST, so they stay in the #; the tag and the
+// release are read from the pins. Each menu offers what the other filters
+// leave, the tags by name.
 //
 // Check-ins (docs/CHECK-INS.md) are on the map too, with their own mark and
 // their own groups, so they never read as notes (Jamie's call 6), and a menu
 // (#show=) shows notes, check-ins or both. A release narrows them as it does
-// notes. A tag or words keep notes alone, since a check-in has neither. Only
+// notes, and so does a tag: the notes and the check-ins with it (Jamie's
+// call 8, 2026-11-08). Words keep notes alone, since a check-in has none. Only
 // marks here: a check-in's real circle shows when it is opened. A check-in's
 // page links here as #c=<id>.
 //
@@ -44,6 +46,7 @@ import { count, dayName } from '../lib/format.ts';
 import { useHashParam } from '../lib/nav.ts';
 import { checkInsQuery, mapQuery } from '../lib/queries.ts';
 import { sayFor } from '../lib/say.ts';
+import { named, nameBook } from '../lib/tags.ts';
 import type { MapSearch, Pin, Stay } from '../lib/types.ts';
 
 const keyOf = (p: { date: string; id: string }) => p.date + '#' + p.id;
@@ -95,8 +98,25 @@ export function siftStays(
   stays: readonly Stay[],
   sieve: { show: string; tag: string; release: string; asked: boolean }
 ) {
-  if (sieve.show === 'notes' || sieve.tag || sieve.asked) return [];
-  return stays.filter((s) => !sieve.release || s.release === sieve.release);
+  if (sieve.show === 'notes' || sieve.asked) return [];
+  return stays.filter(
+    (s) => (!sieve.release || s.release === sieve.release) && (!sieve.tag || s.tags.includes(sieve.tag))
+  );
+}
+/** The tag menu: the notes' tags and the check-ins', most used first, each
+ * with how many. `stays` come by the other filters only, as sift's list does,
+ * or choosing a tag would take the rest off the menu. */
+export function tagMenu(
+  notes: readonly { tag: string; notes: number }[],
+  stays: readonly Pick<Stay, 'tags'>[],
+  chosen: string
+) {
+  const tally = new Map(notes.map((t) => [t.tag, t.notes]));
+  if (chosen) tally.set(chosen, tally.get(chosen) ?? 0);
+  for (const s of stays) for (const t of new Set(s.tags)) tally.set(t, (tally.get(t) ?? 0) + 1);
+  return [...tally]
+    .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
+    .map(([tag, notes]) => ({ tag, notes }));
 }
 /** The line over the map: what is on it, of how many. */
 export function mapLede(notes: number, shown: number | undefined, stays: number, stayed: number, filtering: boolean) {
@@ -241,6 +261,12 @@ export function MapPage() {
     return {
       ...noted,
       shown: show === 'check-ins' ? [] : noted.shown,
+      // The tag menu, as the release menu, offers what shows.
+      tags: tagMenu(
+        show === 'check-ins' ? [] : noted.tags,
+        siftStays(stays ?? [], { show, tag: '', release, asked }),
+        tag
+      ),
       // The release menu offers what shows: the notes, the check-ins or both.
       releases: releaseMenu(
         show === 'check-ins' ? [] : noted.releases,
@@ -249,12 +275,21 @@ export function MapPage() {
       )
     };
   }, [noted, stays, show, tag, release, asked]);
+  // Each tag by its name, from the notes and the check-ins that carry it.
+  const tagNames = useMemo(
+    () =>
+      nameBook(
+        ...(d?.pins ?? []).map((p) => named(p.tags, p.tag_names)),
+        ...(stays ?? []).map((s) => named(s.tags, s.tag_names))
+      ),
+    [d, stays]
+  );
   // A menu shows when there is something to choose at all, whatever the
   // other filters leave, so it never comes and goes.
   const menus = useMemo(
     () =>
       d && {
-        tags: d.pins.some((p) => p.tags.length),
+        tags: d.pins.some((p) => p.tags.length) || (stays ?? []).some((s) => s.tags.length),
         releases: new Set([...d.pins.map((p) => p.release), ...(stays ?? []).map((s) => s.release)]).size > 1
       },
     [d, stays]
@@ -368,13 +403,9 @@ export function MapPage() {
                     <select
                       name="show"
                       value={show}
-                      // A check-in has no words or tag, so they don't stay on.
+                      // A check-in has no words, so they don't stay on; a tag does.
                       onChange={(e) =>
-                        filter(
-                          e.target.value === 'check-ins'
-                            ? { show: 'check-ins', q: '', tag: '' }
-                            : { show: e.target.value }
-                        )
+                        filter(e.target.value === 'check-ins' ? { show: 'check-ins', q: '' } : { show: e.target.value })
                       }
                     >
                       <option value="">Everything</option>
@@ -399,14 +430,14 @@ export function MapPage() {
                     />
                   </label>
                 )}
-                {show !== 'check-ins' && (menus?.tags || tag) && (
+                {(menus?.tags || tag) && (
                   <label>
                     Tag
                     <select value={tag} onChange={(e) => filter({ tag: e.target.value })}>
                       <option value="">All tags</option>
                       {sifted.tags.map((t) => (
                         <option key={t.tag} value={t.tag}>
-                          #{t.tag} ({t.notes})
+                          {tagNames.get(t.tag) ?? t.tag} ({t.notes})
                         </option>
                       ))}
                     </select>

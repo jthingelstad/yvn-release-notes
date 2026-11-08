@@ -3459,3 +3459,89 @@ fieldset.book-fields {
 .on-this-day .hint {
   margin-top: 2px;
 }
+
+/* The tags field (tag-field.tsx): a note's, a date's, a check-in's or a
+   remembered place's tags as chips, each with its own 44px remove button,
+   then the box for one more. A chip can be 50 characters (MAX_TAG), wider
+   than a phone: it breaks inside itself rather than push the page sideways. */
+.tag-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tag-field > label {
+  display: block;
+}
+.tag-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 44px;
+  padding-left: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 22px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.tag-chip > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tag-chip .quiet.icon-button {
+  border-radius: 22px;
+}
+.tag-chip .quiet.icon-button .icon {
+  width: 16px;
+  height: 16px;
+}
+.tag-field input {
+  font-size: 17px;
+}
+.tag-field .error {
+  margin: 0;
+}
+/* Under a note, the tags its words don't carry. */
+.note-tags {
+  margin: 6px 0 0;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.note-tags a.tag {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* A check-in's tags, and a remembered place's in Settings. */
+.checkin-tags,
+.place-tags {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.place-tags {
+  margin-top: 12px;
+}
+/* A tag's page: its Upcoming dates and check-ins, a line each. */
+.tag-things {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 17px;
+}
+#tag-upcoming,
+#tag-check-ins,
+#tag-notes-h {
+  margin-top: 36px;
+}

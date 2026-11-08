@@ -1,6 +1,7 @@
 // What the pages say for each error the API (or the page) gives.
 import { COMMENTARY_PER_RELEASE, MAX_PHOTOS, MAX_TITLE } from '../../../packages/book/limits.ts';
 import { MEMBERS_URL } from './weekly-thing.ts';
+import { isRefusal, TAG_SAY } from './tags.ts';
 
 // A line: text, or strings and links. A link with `back` comes back to this
 // page after signing in again.
@@ -66,6 +67,7 @@ export const SAY: Record<string, Line> = {
   photo: 'There’s no profile photo yet.',
   'try-again': 'That didn’t save. Try again.',
   pins: 'Pin up to 12 tags.',
+  tags: 'A tag is one line of at most 50 characters, without commas, and one thing has at most 20.',
   'token-fields': 'Name the token and tick what it may do.',
   'token-name': 'Name the token in up to 40 characters.',
   'token-name-taken': 'You already have a token with that name. Pick another.',
@@ -125,12 +127,15 @@ export interface Problem {
   file?: string;
   draft?: 'kept' | 'copy';
   tries_left?: number;
+  // A tags field refused: why (domain/tags.ts TagRefusal).
+  reason?: string;
 }
 
 // What to say for a problem. An error about one file starts with its name,
 // and a wrong code says how many tries are left.
 export function sayFor(p: Problem, fallback: Line = FALLBACK): Line {
   if (p.error === 'signed-out') return signedOutLine(p.draft);
+  if (p.error === 'tags' && isRefusal(p.reason)) return TAG_SAY[p.reason];
   const said = (p.error && SAY[p.error]) || fallback;
   if (typeof said !== 'string') return said;
   let text = p.file && /^[a-z]/.test(said) ? `${p.file} ${said}` : said;

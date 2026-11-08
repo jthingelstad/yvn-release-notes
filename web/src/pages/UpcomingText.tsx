@@ -79,7 +79,9 @@ export function UpcomingText() {
         { ...batch, dry_run: true }
       );
       if (!answer.ok)
-        return setProblems([{ line: 0, problem: problemFor(answer.data.error) + lineOf(plan, answer.data) }]);
+        return setProblems([
+          { line: 0, problem: problemFor(answer.data.error, answer.data.reason) + lineOf(plan, answer.data) }
+        ]);
       setProblems([]);
       setPreview({
         batch,
@@ -102,7 +104,7 @@ export function UpcomingText() {
       await client.invalidateQueries({ queryKey: upcomingQuery.queryKey });
       if (!answer.ok) {
         setPreview(null);
-        return setProblems([{ line: 0, problem: problemFor(answer.data.error) }]);
+        return setProblems([{ line: 0, problem: problemFor(answer.data.error, answer.data.reason) }]);
       }
       setPreview(null);
       setText(null);
@@ -117,9 +119,10 @@ export function UpcomingText() {
       <h1>Edit Upcoming as text</h1>
       <p className="lede">One date per line. Change, add or delete lines, then preview.</p>
       <p className="hint">
-        Start a line with the kind and the date, then the name. Add <code>#tag</code>,{' '}
-        <code>@City, Region, Country</code> for a trip, <code>email:off</code> or <code>remind:30,7,0</code> anywhere
-        after the name. Deleting a line removes that date. <AppLink href="/upcoming/">Back to Upcoming</AppLink>.
+        Start a line with the kind and the date, then the name. Add tags like <code>#family</code> or{' '}
+        <code>#Road Trip</code>, <code>@City, Region, Country</code> for a trip, <code>email:off</code> or{' '}
+        <code>remind:30,7,0</code> anywhere after the name. Deleting a line removes that date.{' '}
+        <AppLink href="/upcoming/">Back to Upcoming</AppLink>.
       </p>
       {query.isPending ? (
         <Loading />

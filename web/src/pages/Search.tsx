@@ -1,4 +1,5 @@
-// Every tag, most used first, with the pins for the note box's tag row
+// Every tag, most used first, by name, with what carries it (notes' days,
+// Upcoming dates and check-ins), the pins for the note box's tag row
 // (components/tag-row.tsx), and the notes with some words. The words
 // live in the address's # (#q=), so back and reload work and no server,
 // CloudFront's logs included, ever sees them.
@@ -14,7 +15,7 @@ import { count } from '../lib/format.ts';
 import { useHashParam } from '../lib/nav.ts';
 import { tagsQuery } from '../lib/queries.ts';
 import { sayFor, type Problem } from '../lib/say.ts';
-import type { SearchResult } from '../lib/types.ts';
+import type { SearchResult, TagTotal } from '../lib/types.ts';
 
 export function Search() {
   const navigate = useNavigate();
@@ -77,8 +78,8 @@ export function Search() {
         <p className="hint" id="tags-lede">
           {tags.data &&
             (tags.data.tags.length
-              ? 'Every hashtag in your notes. Write one, like #cabin, in an email or here, and the note has that tag.'
-              : 'No tags yet. Write a hashtag, like #cabin, in a note or a reply, and it shows here.')}
+              ? 'Every tag on your notes, Upcoming dates and check-ins. Write one, like #cabin, in an email or here, or add one under the note box.'
+              : 'No tags yet. Write a hashtag, like #cabin, in a note or a reply, or add a tag under the note box, and it shows here.')}
         </p>
         {tags.isError && <Failed />}
         {!!tags.data?.tags.length && pins.ready && (
@@ -97,7 +98,7 @@ export function Search() {
               {pinning
                 ? ' Pinned tags come first under the note box, at most 12.'
                 : pins.pinned.length
-                  ? ` ${pins.pinned.map((t) => '#' + t).join(' ')} first under the note box.`
+                  ? ` ${pins.pinned.map((t) => t.name).join(', ')} first under the note box.`
                   : ' Pinned tags come first under the note box.'}
             </span>
           </p>
@@ -108,13 +109,13 @@ export function Search() {
             {tags.data.tags.map((t) => (
               <li key={t.tag}>
                 {pinning ? (
-                  <PinButton tag={t.tag} pins={pins} />
+                  <PinButton tag={{ key: t.tag, name: t.name || t.tag }} pins={pins} />
                 ) : (
-                  <AppLink className="tag" href={`/tag/?t=${encodeURIComponent(t.tag)}`}>
-                    #{t.tag}
+                  <AppLink className="tag" href={`/tag/?t=${encodeURIComponent(t.tag)}`} dir="auto">
+                    {t.name || t.tag}
                   </AppLink>
                 )}
-                <span className="hint"> {count(t.days, 'day', 'days')}</span>
+                <span className="hint"> {tagCounts(t)}</span>
               </li>
             ))}
           </ul>
@@ -122,6 +123,17 @@ export function Search() {
       </section>
     </>
   );
+}
+
+// "3 days, 1 date, 2 check-ins": what carries a tag, each only when it does.
+function tagCounts(t: TagTotal): string {
+  return [
+    t.days ? count(t.days, 'day', 'days') : '',
+    t.upcoming ? count(t.upcoming, 'date', 'dates') : '',
+    t.check_ins ? count(t.check_ins, 'check-in', 'check-ins') : ''
+  ]
+    .filter(Boolean)
+    .join(', ');
 }
 
 function SearchForm({

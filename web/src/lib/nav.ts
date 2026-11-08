@@ -1,7 +1,7 @@
 // Moving between pages, and the profile most pages start from.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { ApiError } from './api.ts';
 import { meQuery } from './queries.ts';
 import { home, store } from './storage.ts';
@@ -51,6 +51,13 @@ export function useQueryParam(name: string): string | null {
 
 export function useHashParam(name: string): string | null {
   return useLocation({ select: (l) => new URLSearchParams(l.hash).get(name) });
+}
+
+// Every value of one name in the fragment (#tag=a&tag=b), in order. Read as
+// one string, so the page draws again only when they change.
+export function useHashParams(name: string): string[] {
+  const all = useLocation({ select: (l) => new URLSearchParams(l.hash).getAll(name).join('\n') });
+  return useMemo(() => (all ? all.split('\n') : []), [all]);
 }
 
 // Whether the address is still this page's (a path such as '/release/').

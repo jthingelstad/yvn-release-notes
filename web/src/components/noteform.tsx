@@ -4,9 +4,11 @@
 // Once any files are sent, the note shows in the list at once ("Saving…")
 // and the form empties; a write that fails puts it all back. "Where" is
 // optional (where.tsx), and with "Add where I am" on, Today's form adds
-// where the device is as a note is saved. Under the box, the tag row
-// (tag-row.tsx) types a hashtag in or takes it out. What a saved note earned
-// shows under the form (unlock.tsx).
+// where the device is as a note is saved. Under the box, its tags as chips
+// (tag-field.tsx): the ones added there, kept with the draft, and the #words
+// typed in the text, whose chip takes the #word out too (Jamie's call 1). The
+// tag row (tag-row.tsx) adds a pinned or recent tag or takes it off. What a
+// saved note earned shows under the form (unlock.tsx).
 import { useQueryClient } from '@tanstack/react-query';
 import { useBlocker } from '@tanstack/react-router';
 import { useCallback, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -22,17 +24,20 @@ import { canRecord, recordClock, useRecorder } from './recorder.ts';
 import { Icon } from './icon.tsx';
 import { UnlockLine } from './unlock.tsx';
 import { NoteWhere } from './where.tsx';
-import { TagRow } from './tag-row.tsx';
+import { TagRow, useTagNames } from './tag-row.tsx';
+import { TagField } from './tag-field.tsx';
 import { FormatBar, formatKey } from './format-bar.tsx';
 import { canLocate, kept, whereAmI } from '../lib/here.ts';
-import { isTag, spans } from '../../../packages/domain/tags.ts';
+import { noteChips, removingNoteTag, TAG_SAY, type Tag } from '../lib/tags.ts';
+import { MAX_TAGS, mergeTags, spelling } from '../../../packages/domain/tags.ts';
 
 interface Props {
   day: string;
   label: ReactNode;
   placeholder: string;
   submit: ReactNode;
-  initialTag?: string | null;
+  // Tags to start the note with, by any spelling: an Upcoming date's.
+  initialTags?: readonly string[];
   // "Add where I am" (Settings): a note saved with no place gets Here's
   here?: boolean;
 }
@@ -48,16 +53,36 @@ function carriedPlace(day: string): Place | null {
   }
 }
 
+// The tags added to a day's draft in its field, kept in this tab as its words are.
+const fieldKey = (day: string) => `rn-draft-tags-${day}`;
+function keptField(day: string): Tag[] {
+  try {
+    const names: unknown = JSON.parse(store.get(fieldKey(day)) ?? '[]');
+    return Array.isArray(names) ? mergeTags(names.map(spelling).filter((t): t is Tag => typeof t !== 'string')) : [];
+  } catch {
+    return [];
+  }
+}
+const keepField = (day: string, field: readonly Tag[]) =>
+  field.length ? store.set(fieldKey(day), JSON.stringify(field.map((t) => t.name))) : store.drop(fieldKey(day));
+
 // Give it a `key` of the day, so another day starts with that day's draft.
-export function NoteForm({ day, label, placeholder, submit, initialTag, here = false }: Props) {
+export function NoteForm({ day, label, placeholder, submit, initialTags = [], here = false }: Props) {
   const key = `rn-draft-${day}`;
-  const [text, setText] = useState(() => {
-    const draft = store.get(key) || '';
-    // Tags travel in the fragment, never a server-visible query or request.
-    // Keep an existing draft and never duplicate a hashtag already in its text.
-    if (!isTag(initialTag) || spans(draft).some(([, , tag]) => tag === initialTag)) return draft;
-    return draft + (draft ? '\n\n' : '') + '#' + initialTag;
+  const [text, setText] = useState(() => store.get(key) || '');
+  // Tags travel in the fragment, never a server-visible query or request.
+  // They join the draft's, and one it has already, by any spelling, stays.
+  const [field, setField] = useState<Tag[]>(() => {
+    const draft = store.get(key) || '',
+      had = keptField(day),
+      given = initialTags.map(spelling).filter((t): t is Tag => typeof t !== 'string'),
+      chips = noteChips(draft, had);
+    return mergeTags(
+      had,
+      given.filter((t) => !chips.some((c) => c.key === t.key))
+    );
   });
+  const names = useTagNames();
   const [chosen, setChosen] = useState<string>('');
   // A place brought along, as "Write about this" on a check-in brings its own.
   const [place, setPlace] = useState<Place | null>(() => carriedPlace(day));
@@ -88,12 +113,25 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
     enableBeforeUnload: false
   });
 
-  // Typed, or a tag tapped in the row: the draft is kept as it changes.
+  // Typed, or a #word's chip taken off: the draft is kept as it changes.
   const write = (next: string) => {
     problem.clear();
     setText(next);
     if (next.trim()) store.set(key, next);
     else store.drop(key);
+  };
+  const setTags = (next: Tag[]) => {
+    problem.clear();
+    setField(next);
+    keepField(day, next);
+  };
+  const chips = noteChips(text, field);
+  // The field refuses a 21st tag itself; the tag row's taps are told here.
+  const addTag = (t: Tag) => (chips.length >= MAX_TAGS ? problem.show(TAG_SAY.many) : setTags([...field, t]));
+  const removeTag = (t: Tag) => {
+    const next = removingNoteTag(text, field, t.key);
+    if (next.text !== text) write(next.text);
+    setTags(next.field);
   };
 
   const showChosen = () => {
@@ -129,11 +167,14 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
     }
     // The zone it is being written in, so its time reads as it did here.
     // Written here, it is rich text (docs/RICH-TEXT.md).
-    const body: { text: string; tz: string; markup: 'rich'; uploads?: unknown; place?: Place } = {
+    const body: { text: string; tz: string; markup: 'rich'; uploads?: unknown; place?: Place; tags?: string[] } = {
       text,
       tz: browserZone(),
       markup: 'rich'
     };
+    // The field's tags; the #words in the text come after them.
+    const tags = field;
+    if (tags.length) body.tags = tags.map((t) => t.name);
     if (at) body.place = kept(at);
     if (files.length) {
       const out = await sendFiles(files, setChosen);
@@ -146,8 +187,10 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
     }
     const pending = await addPending(client, day, text);
     store.drop(key);
+    keepField(day, []);
     carryPlace(day, null);
     setText('');
+    setField([]);
     if (pick.current) pick.current.value = '';
     showChosen();
     rec.clear();
@@ -161,6 +204,8 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
       await dropNote(client, day, pending);
       setText(text);
       store.set(key, text);
+      setField(tags);
+      keepField(day, tags);
       putBack(pick.current, files);
       showChosen();
       setPlace(at);
@@ -189,7 +234,19 @@ export function NoteForm({ day, label, placeholder, submit, initialTag, here = f
           />
         </label>
         <FormatBar area={area} text={text} onText={write} disabled={held} />
-        <TagRow text={text} onText={write} disabled={held} />
+        <TagField
+          tags={chips}
+          offer={names}
+          onAdd={addTag}
+          onRemove={removeTag}
+          disabled={held}
+          hint="Tags can have spaces and emoji, like Road Trip. A #word in the note is a tag too."
+        />
+        <TagRow
+          chips={chips}
+          onToggle={(t) => (chips.some((c) => c.key === t.key) ? removeTag(t) : addTag(t))}
+          disabled={held}
+        />
         <p className="hint chosen" role="status" hidden={!chosen}>
           {chosen}
         </p>

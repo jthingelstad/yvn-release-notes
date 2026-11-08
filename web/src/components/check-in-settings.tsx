@@ -1,15 +1,19 @@
 // Settings for check-ins (docs/CHECK-INS.md): the places remembered, to rename,
-// ignore and forget, with their check-ins to delete, and deleting every
+// tag, ignore and forget, with their check-ins to delete, and deleting every
 // check-in. Shown once there is either.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { api } from '../lib/api.ts';
 import { count } from '../lib/format.ts';
 import { checkInsQuery, namedPlacesQuery } from '../lib/queries.ts';
+import { named, tagLine, type Tag } from '../lib/tags.ts';
 import type { NamedPlace } from '../lib/types.ts';
 import { CHECKIN_NAME_MAX } from '../../../packages/domain/check-ins.ts';
+import { mergeTags } from '../../../packages/domain/tags.ts';
 import { ErrorLine, useBusy, useProblem } from './common.tsx';
 import { SettingsGroup } from './settings-group.tsx';
+import { TagField } from './tag-field.tsx';
+import { useTagNames } from './tag-row.tsx';
 
 export function CheckInSettings() {
   const client = useQueryClient();
@@ -99,6 +103,7 @@ export function CheckInSettings() {
               />{' '}
               Ignore this location
             </label>
+            <PlaceTags place={place} changed={changed} />
             <p className="hint">
               {place.ignored
                 ? 'No new check-ins are kept here, and the ones already here are hidden. Uncheck it to bring them back.'
@@ -128,6 +133,99 @@ export function CheckInSettings() {
       )}
       <ErrorLine line={problem.line} />
     </SettingsGroup>
+  );
+}
+
+// A remembered place's tags (Jamie's call 6, 2026-11-08), saved as each is
+// added or taken off: each new check-in there gets them. A tag added offers,
+// once, to tag the check-ins already there too, for the count it shows; one
+// taken off leaves them as they are.
+function PlaceTags({ place, changed }: { place: NamedPlace; changed: () => Promise<unknown> }) {
+  const client = useQueryClient();
+  const [busy, run] = useBusy();
+  const problem = useProblem();
+  const offer = useTagNames();
+  // The tags gained and not yet put on the check-ins already there, and how
+  // many those are.
+  const [ask, setAsk] = useState<{ tags: Tag[]; count: number; again?: boolean } | null>(null);
+  const [said, setSaid] = useState('');
+  const tags = named(place.tags, place.tag_names);
+  const at = '/api/check-ins/places/' + encodeURIComponent(place.id);
+  const send = (next: Tag[]) =>
+    run(async () => {
+      problem.clear();
+      setSaid('');
+      const r = await api<{ place: NamedPlace & { check_ins?: number } }>('PUT', at, {
+        tags: next.map((t) => t.name)
+      });
+      if (!r.ok) return problem.show(r.data);
+      const { check_ins: there, ...saved } = r.data.place;
+      client.setQueryData(namedPlacesQuery.queryKey, (old) =>
+        old ? { places: old.places.map((p) => (p.id === saved.id ? saved : p)) } : old
+      );
+      const gained = next.filter((t) => !tags.some((h) => h.key === t.key)),
+        still = (ask?.tags ?? []).filter((t) => next.some((n) => n.key === t.key)),
+        asking = mergeTags(still, gained);
+      setAsk(asking.length && (there ?? ask?.count) ? { tags: asking, count: there ?? ask!.count } : null);
+      await changed();
+    });
+  const tagThem = () =>
+    run(async () => {
+      if (!ask) return;
+      problem.clear();
+      const r = await api<{ tagged?: number; count?: number }>('PATCH', at + '/check-ins', {
+        tags: ask.tags.map((t) => t.name),
+        count: ask.count
+      });
+      // More or fewer there than were counted: ask again, with how many now.
+      if (!r.ok && r.data.error === 'check-in-count' && typeof r.data.count === 'number') {
+        if (!r.data.count) {
+          setAsk(null);
+          return setSaid(`There are no check-ins at ${place.name} now.`);
+        }
+        return setAsk({ ...ask, count: r.data.count, again: true });
+      }
+      if (!r.ok) return problem.show(r.data);
+      const n = r.data.tagged ?? 0;
+      setAsk(null);
+      setSaid(
+        n
+          ? `Tagged ${count(n, 'check-in', 'check-ins')} at ${place.name}.`
+          : `The check-ins at ${place.name} had ${ask.tags.length === 1 ? 'that tag' : 'those tags'} already.`
+      );
+      await changed();
+    });
+  const question = !ask
+    ? ''
+    : ask.again
+      ? `The check-ins here changed: there ${ask.count === 1 ? 'is 1' : `are ${ask.count}`} now. Tag ${ask.count === 1 ? 'it' : 'them'} with ${tagLine(ask.tags)} too?`
+      : `Tag ${ask.count === 1 ? 'its check-in' : `its ${ask.count} check-ins`} with ${tagLine(ask.tags)} too?`;
+  return (
+    <div className="place-tags">
+      <TagField
+        label={`Tags for ${place.name}`}
+        tags={tags}
+        offer={offer}
+        busy={busy}
+        onAdd={(t) => send([...tags, t])}
+        onRemove={(t) => send(tags.filter((x) => x.key !== t.key))}
+        hint="Each new check-in here gets these. Taking one off leaves the check-ins already here as they are."
+      />
+      <p className="hint" role="status">
+        {ask ? question : said}
+      </p>
+      {ask && (
+        <p className="row">
+          <button className="go small" type="button" disabled={busy} onClick={tagThem}>
+            Tag them
+          </button>
+          <button className="quiet" type="button" disabled={busy} onClick={() => setAsk(null)}>
+            Not now
+          </button>
+        </p>
+      )}
+      <ErrorLine line={problem.line} />
+    </div>
   );
 }
 

@@ -19,6 +19,7 @@ import type {
   Releases,
   Stay,
   TagRow,
+  TagTotal,
   TaggedDays,
   Today,
   OnThisDay
@@ -126,7 +127,7 @@ export const tagQuery = (tag: string | null) =>
 
 export const tagsQuery = queryOptions({
   queryKey: ['tags'],
-  queryFn: () => get<{ tags: { tag: string; days: number }[] }>('/api/tags')
+  queryFn: () => get<{ tags: TagTotal[] }>('/api/tags')
 });
 
 export const tagRowQuery = queryOptions({

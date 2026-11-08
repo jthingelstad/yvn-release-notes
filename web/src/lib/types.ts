@@ -1,5 +1,6 @@
 // What the API answers (server/app/), as the pages read it.
 import type { Badges as Shelf, Unlocked } from '../../../packages/domain/badges.ts';
+import type { UpcomingView } from '../../../packages/domain/upcoming.ts';
 
 // A note's text as shown: plain strings, links by name (links.segments) and
 // hashtags (tags.split).
@@ -36,7 +37,10 @@ export interface Note {
   markup?: 'rich';
   at?: string;
   tz?: string;
+  // Its tags' keys, and their names beside them (docs/TAGS.md): those its
+  // words don't carry came from its tags field and show under it.
   tags?: string[];
+  tag_names?: string[];
   place?: string;
   // Set when the note has no place of its own and shows the day's city or
   // home's instead; never mapped.
@@ -190,23 +194,42 @@ export interface ReleasePage {
   badges?: { coverage: string | null; collected: { id: string; name: string; count: number }[] };
   // the nonprofits given to as a Supporting Member while it ran
   giving?: string[];
-  tags: { tag: string; notes: number }[];
+  tags: { tag: string; name: string; notes: number }[];
   days: Day[];
   after?: string | null;
 }
 
+// A tag's page (GET /api/tags/{tag}, any spelling): its notes by day, its
+// Upcoming dates and its check-ins, named as it was last written.
 export interface TaggedDays {
   today: string;
   tz: string;
   tag: string;
+  name: string;
   days: Day[];
+  upcoming: UpcomingView[];
+  check_ins: Stay[];
+}
+
+// GET /api/tags: every tag, with its name as last written, its notes (on how
+// many days) and its Upcoming dates and check-ins.
+export interface TagTotal {
+  tag: string;
+  name: string;
+  notes: number;
+  days: number;
+  first: string | null;
+  last: string | null;
+  upcoming: number;
+  check_ins: number;
 }
 
 // GET /api/tag-row: the pinned tags, then the most used in the last 30
-// days (packages/backend/tag-row.ts).
+// days (packages/backend/tag-row.ts), each by key and name.
 export interface TagRow {
   pinned: string[];
-  recent: { tag: string; count: number; last_used: string }[];
+  pinned_names: string[];
+  recent: { tag: string; name: string; count: number; last_used: string }[];
   window_days: number;
 }
 
@@ -359,7 +382,7 @@ export interface EventActivity extends ActivityHead {
   count?: number;
   all?: boolean;
   // checkin.place: what became of a remembered place
-  change?: 'added' | 'spot' | 'renamed' | 'forgotten';
+  change?: 'added' | 'spot' | 'renamed' | 'tagged' | 'forgotten';
 }
 export type ActivityEntry = MailActivity | ReadsActivity | EventActivity;
 export interface Activity {
@@ -388,7 +411,9 @@ export interface Pin {
   lon: number;
   place: string;
   exact: boolean;
+  /** Its tags' keys, and their names beside them. */
   tags: string[];
+  tag_names: string[];
   /** The release its day falls in, as "5.4". */
   release: string;
   /** Its day's version, as "5.4.113". */
@@ -425,6 +450,9 @@ export interface Stay {
   via: string | null;
   token: string | null;
   client: string | null;
+  // The tags of every check-in in it, keys and names.
+  tags: string[];
+  tag_names: string[];
   revision: number;
   release: string;
   version: string;
@@ -435,6 +463,9 @@ export interface NamedPlace {
   spots: { lat: number; lon: number }[];
   // No stop here is kept, and those kept already are hidden.
   ignored: boolean;
+  // Copied onto each new check-in here.
+  tags: string[];
+  tag_names: string[];
   revision: number;
 }
 // POST /api/map/search: the pins with every word, by day and id.

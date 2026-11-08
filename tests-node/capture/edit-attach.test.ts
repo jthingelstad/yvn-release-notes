@@ -52,7 +52,7 @@ test('notes_edit rewrites its own note from the revision it read, names links ag
   assert.equal(edited.replayed, false);
   const shown = edited.note as OAuthRow;
   assert.equal(shown.text, edit.text);
-  assert.deepEqual(shown.tags, ['lake']);
+  assert.deepEqual(shown.tags, ['Lake']);
   assert.notEqual(shown.revision, revision);
   assert.equal(fetched, 1);
   const stored = (await ctx.store.note('u', '2026-10-12', String(made.id)))!;

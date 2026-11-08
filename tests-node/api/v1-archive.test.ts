@@ -286,14 +286,39 @@ test('releases, tags, pins, badges and the mail log read as the web and MCP do',
   const release = (await get(app, `/v1/releases/${name}`, reader.token)).json!.release as OAuthRow;
   assert.deepEqual(
     [release.v, release.days_with_notes, release.notes, release.first_note_day, release.tags],
-    [name, 2, 2, '2026-10-10', [{ tag: 'maine', notes: 2 }]]
+    [name, 2, 2, '2026-10-10', [{ tag: 'maine', name: 'maine', notes: 2 }]]
   );
   assert.equal((await get(app, '/v1/releases/99.0', reader.token)).error.code, 'not_found');
   assert.equal((await get(app, '/v1/releases/soon', reader.token)).error.code, 'not_found');
 
+  // Upcoming and check-in counts need their own scopes; without them, null.
   assert.deepEqual((await get(app, '/v1/tags/all', reader.token)).json!.tags, [
-    { tag: 'maine', notes: 2, days: 2, first: '2026-10-10', last: '2026-10-11' }
+    { tag: 'maine', name: 'maine', notes: 2, days: 2, first: '2026-10-10', last: '2026-10-11', upcoming: null, check_ins: null }
   ]);
+  ctx.store.seed({
+    pk: 'USER#u',
+    sk: 'UPCOMING#trip',
+    id: 'trip',
+    kind: 'event',
+    title: 'Ferry',
+    tags: ['maine', 'road-trip'],
+    tag_names: ['Maine', 'Road Trip'],
+    date: '2026-12-01',
+    year: null,
+    end_date: null,
+    place: null,
+    email: true,
+    reminders: [0],
+    revision: 1
+  });
+  const wide = await make(ctx, ['notes:read', 'upcoming', 'activity'], 'Wide');
+  assert.deepEqual(
+    ((await get(app, '/v1/tags/all', wide.token)).json!.tags as OAuthRow[]).map((t) => [t.tag, t.name, t.notes, t.upcoming, t.check_ins]),
+    [
+      ['maine', 'maine', 2, 1, 0],
+      ['road-trip', 'Road Trip', 0, 1, 0]
+    ]
+  );
 
   const map = (await get(app, '/v1/map/pins', reader.token)).json!,
     pins = map.pins as OAuthRow[];

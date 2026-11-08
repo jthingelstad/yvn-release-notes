@@ -614,9 +614,10 @@ export class Reader {
       through = a.through == null ? null : this.day(a.through);
     if (from && through && from > through)
       throw new ToolError('invalid_arguments', 'Choose from on or before through.');
-    const bound = createHash('sha256')
-      .update(asciiJson({ uid: this.uid, field: 'check-ins', from, through, tag: a.tag ?? null }))
-      .digest('hex');
+    const tag = this.tagArg(a),
+      bound = createHash('sha256')
+        .update(asciiJson({ uid: this.uid, field: 'check-ins', from, through, tag }))
+        .digest('hex');
     let before = through ? activityTime(localStart(addDays(through, 1), tz)) : undefined;
     if (a.cursor) {
       try {
@@ -627,20 +628,27 @@ export class Reader {
         throw new ToolError('invalid_cursor', 'Restart this query with the same filters and no cursor.');
       }
     }
-    const tag = this.tagArg(a),
-      { stays, next, places } = await stayPage(this.context.store, this.uid, {
+    const { stays, next, places } = await stayPage(this.context.store, this.uid, {
         ...(before === undefined ? {} : { before }),
         ...(from ? { floor: activityTime(localStart(from, tz)) } : {}),
         ...(tag === null ? {} : { tag }),
         limit: Number(a.limit ?? 50)
       });
+    // Tags by name, as a note's are here (MCP 1.15.0).
+    const named = <T extends { tags?: string[]; tag_names?: string[] }>({ tags, tag_names, ...rest }: T) =>
+      tags?.length ? { ...rest, tags: tag_names ?? tags } : rest;
     return {
-      check_ins: stays.map((members) => stayView(members, places)),
+      check_ins: stays.map((members) => named(stayView(members, places))),
       // The remembered places, by name, and whether each is ignored: stops
       // at an ignored one are hidden from check_ins until it is unignored.
       places: [...places]
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map((place) => ({ id: place.id, name: place.name, ignored: place.ignored === true })),
+        .map((place) => ({
+          id: place.id,
+          name: place.name,
+          ignored: place.ignored === true,
+          ...(storedTags(place).length ? { tags: storedTags(place).map((t) => t.name) } : {})
+        })),
       next_cursor: next ? Buffer.from(asciiJson({ bound, before: next })).toString('base64url') : null,
       today: this.today,
       tz

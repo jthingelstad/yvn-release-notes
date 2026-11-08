@@ -101,7 +101,8 @@ const GROUPS: readonly { name: string; description: string; routes: readonly str
       'check-ins.places.add',
       'check-ins.places.change',
       'check-ins.places.delete',
-      'check-ins.places.delete-check-ins'
+      'check-ins.places.delete-check-ins',
+      'check-ins.places.tag-check-ins'
     ]
   }
 ];
@@ -192,7 +193,12 @@ const OPERATIONS: Record<string, Doc> = {
     parameters: [
       includeUrlsParameter,
       { name: 'q', in: 'query', description: 'At most ten words or quoted phrases.', schema: { type: 'string' } },
-      { name: 'tag', in: 'query', description: 'A tag, without its #.', schema: { type: 'string' } },
+      {
+        name: 'tag',
+        in: 'query',
+        description: 'A tag by any spelling: "Road Trip", road-trip and #road-trip are one tag (1.21.0).',
+        schema: { type: 'string' }
+      },
       { name: 'from', in: 'query', description: 'The first day; left out, the birthday.', schema: dayParam },
       { name: 'to', in: 'query', description: 'The last day; left out, today.', schema: dayParam },
       cursor('after', 'The next page: `next` from the answer before.'),
@@ -228,7 +234,7 @@ const OPERATIONS: Record<string, Doc> = {
   },
   'tags.all': {
     operationId: 'listAllTags',
-    summary: 'Every tag with its notes, days, first day and last, most used first',
+    summary: 'Every tag with its name, notes, days, first day and last, Upcoming dates and check-ins, most used first',
     description:
       '`getTags` is the short list a compose screen offers; this is the whole archive’s. Needs `notes:read` or ' +
       '`notes:all`.',
@@ -410,7 +416,7 @@ const OPERATIONS: Record<string, Doc> = {
       'lists the check-ins in it. `from` and `to` are your days, a stay going by when it began, up to ' +
       `${RANGE_DAYS_MAX} days; \`before\` is the \`next\` of an earlier page. A stay at an ignored place is ` +
       'hidden: left out here, in the activity log and from each read of one, until the place is unignored (1.20.0). ' +
-      'Since 1.18.0.',
+      'A stay has the tags of every check-in in it (1.21.0). Since 1.18.0.',
     parameters: [
       { name: 'from', in: 'query', description: 'First day, YYYY-MM-DD.', schema: { type: 'string', format: 'date' } },
       {
@@ -420,6 +426,12 @@ const OPERATIONS: Record<string, Doc> = {
         schema: { type: 'string', format: 'date' }
       },
       { name: 'before', in: 'query', description: 'The `next` of an earlier page.', schema: { type: 'string' } },
+      {
+        name: 'tag',
+        in: 'query',
+        description: 'Only the stays with this tag, by any spelling (1.21.0).',
+        schema: { type: 'string' }
+      },
       {
         name: 'limit',
         in: 'query',
@@ -441,7 +453,8 @@ const OPERATIONS: Record<string, Doc> = {
       `are still saved with none; RateLimit-Limit counts those. After ${V1_LIMITS.checkin} reports a day, \`rate_limited\`. ` +
       'A new stop at an ignored place is not kept (1.20.0): it answers 200 with `kept` false and `check_in` as it ' +
       'would have read, its `place` naming the ignored place, and its `id` naming no check-in. A report filling in ' +
-      'a stop kept before the place was ignored still lands. Since 1.18.0.',
+      'a stop kept before the place was ignored still lands. A new stop at a remembered place has that place’s tags ' +
+      '(1.21.0). Since 1.18.0.',
     requestBody: { required: true, content: { 'application/json': { schema: ref('CheckInReport') } } },
     responses: {
       '200': answer('CheckInReported', 'Checked in at Home.', true),
@@ -450,10 +463,11 @@ const OPERATIONS: Record<string, Doc> = {
   },
   'check-ins.name': {
     operationId: 'nameCheckIn',
-    summary: 'Name a stay once, or take its name away',
+    summary: 'Name or tag a stay, or take its name away',
     description:
       'A name on this stay alone, on every check-in in it, beating any remembered place. This token’s own, or any ' +
       'with `notes:all`. `revision` is the one you read. To name every stop at a spot, remember the place instead. ' +
+      'Send `name`, `tags` or both (1.21.0): `tags` is the whole list, by name, set on every check-in in the stay. ' +
       'Since 1.18.0.',
     requestBody: { required: true, content: { 'application/json': { schema: ref('CheckInName') } } },
     responses: { '200': answer('CheckInWritten', 'Checked in at Home.', true) }
@@ -505,7 +519,8 @@ const OPERATIONS: Record<string, Doc> = {
       'A name already in use, ignoring case, gains this spot and answers 200; a new one answers 201. It applies at ' +
       `once to every stop within 100 m, past and future. An account has up to ${NAMED_PLACES_MAX} names, and a name up ` +
       `to ${NAMED_PLACE_SPOTS_MAX} spots. \`ignored\` true ignores it as it is remembered, and false unignores it ` +
-      '(1.20.0). Since 1.18.0.',
+      '(1.20.0). `tags` join the place’s, and every new stop there gets them; when the place gains one, the answer ' +
+      'counts its `check_ins`, to offer tagging them (1.21.0). Since 1.18.0.',
     requestBody: { required: true, content: { 'application/json': { schema: ref('NamedPlaceWrite') } } },
     responses: {
       '200': answer('NamedPlaceWritten', 'Its name.', true),
@@ -518,7 +533,9 @@ const OPERATIONS: Record<string, Doc> = {
     description:
       'Send `name`, `ignored`, or both. Every spot and stop follows a new name, and a name another place has is ' +
       'refused. Ignored (1.20.0, Jamie’s call): no new stop there is kept, and the stops already there are hidden, ' +
-      'not deleted, from every list, the activity log and the Map. False brings them back. Since 1.18.0.',
+      'not deleted, from every list, the activity log and the Map. False brings them back. `tags` is the place’s ' +
+      'whole list, by name, for the stops to come; the stops already there keep theirs. When it gains a tag, the ' +
+      'answer counts its `check_ins` (1.21.0, Jamie’s call). Since 1.18.0.',
     requestBody: { required: true, content: { 'application/json': { schema: ref('NamedPlaceName') } } },
     responses: { '200': answer('NamedPlaceWritten', 'Its name.', true) }
   },
@@ -548,6 +565,18 @@ const OPERATIONS: Record<string, Doc> = {
       }
     ],
     responses: { '200': answer('CheckInsDeleted', 'Deleted 12.', true) }
+  },
+  'check-ins.places.tag-check-ins': {
+    operationId: 'tagCheckInsAtPlace',
+    summary: 'Tag the check-ins already at a remembered place',
+    description:
+      'The tags sent join every stay at it, hidden or not; nothing else changes. Offer it once, with the count, ' +
+      'when a place gains a tag (Jamie’s call). `count` is the `check_ins` the place’s answer or GET ' +
+      '/v1/check-ins/places/{id} gave, and a different number now is `revision_mismatch` with the new `count`. ' +
+      'Answers how many stays were `tagged`; one `checkin.tagged` row goes in the log with the place’s id and that ' +
+      'count. Since 1.21.0.',
+    requestBody: { required: true, content: { 'application/json': { schema: ref('PlaceCheckInsTag') } } },
+    responses: { '200': answer('CheckInsTagged', 'Tagged 12.', true) }
   },
   'uploads.start': {
     operationId: 'startUpload',
@@ -839,6 +868,12 @@ const SCHEMAS: Record<string, Doc> = {
         description:
           '`rich` when `text` holds rich-text marks; left out or null, the words are plain. An edit keeps it. ' +
           'Since 1.16.0.'
+      },
+      tags: {
+        type: 'array',
+        maxItems: MAX_TAGS,
+        items: { type: 'string', maxLength: MAX_TAG },
+        description: 'Tags by name, with spaces or emoji: "Road Trip", "🚗 Lake". A leading # is dropped. The hashtags in `text` are tags too, after these (1.21.0).'
       }
     }
   },
@@ -990,7 +1025,16 @@ const SCHEMAS: Record<string, Doc> = {
     type: 'object',
     required: ['text', 'revision'],
     additionalProperties: false,
-    properties: { text, revision: { type: 'string', description: 'The revision last read, unchanged.' } }
+    properties: {
+      text,
+      revision: { type: 'string', description: 'The revision last read, unchanged.' },
+      tags: {
+        type: 'array',
+        maxItems: MAX_TAGS,
+        items: { type: 'string', maxLength: MAX_TAG },
+        description: 'The note’s whole list of tags by name, with the hashtags in `text` after them. Left out, it keeps the tags its old text didn’t carry (1.21.0).'
+      }
+    }
   },
   NoteAppend: { type: 'object', required: ['text'], additionalProperties: false, properties: { text } },
   NoteWritten: {
@@ -1034,7 +1078,16 @@ const SCHEMAS: Record<string, Doc> = {
         description: 'Where the note was made: email, web, api and the rest (1.10.0).'
       },
       mine: { type: 'boolean', description: 'Whether this token wrote it (1.10.0).' },
-      tags: { type: 'array', items: { type: 'string' }, description: 'Its hashtags, normalized (1.14.0).' },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Its tags’ keys: "Road Trip" is road-trip (1.14.0; from the tags field too since 1.21.0).'
+      },
+      tag_names: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Its tags’ names as written, one for each of `tags` (1.21.0).'
+      },
       markup: {
         anyOf: [{ type: 'string', const: 'rich' }, { type: 'null' }],
         description: '`rich` when `text` holds rich-text marks, null when it is plain (1.14.0).'
@@ -1324,8 +1377,8 @@ const SCHEMAS: Record<string, Doc> = {
             maxItems: 100,
             items: {
               type: 'object',
-              required: ['tag', 'notes'],
-              properties: { tag: { type: 'string' }, notes: { type: 'integer' } }
+              required: ['tag', 'name', 'notes'],
+              properties: { tag: { type: 'string' }, name: { type: 'string' }, notes: { type: 'integer' } }
             }
           },
           tags_total: { type: 'integer' }
@@ -1341,13 +1394,22 @@ const SCHEMAS: Record<string, Doc> = {
         type: 'array',
         items: {
           type: 'object',
-          required: ['tag', 'notes', 'days', 'first', 'last'],
+          required: ['tag', 'name', 'notes', 'days', 'first', 'last', 'upcoming', 'check_ins'],
           properties: {
-            tag: { type: 'string' },
+            tag: { type: 'string', description: 'Its key.' },
+            name: { type: 'string', description: 'As most recently written (1.21.0).' },
             notes: { type: 'integer' },
             days: { type: 'integer' },
-            first: day,
-            last: day
+            first: { anyOf: [day, { type: 'null' }], description: 'Null for a tag no note or check-in has.' },
+            last: { anyOf: [day, { type: 'null' }] },
+            upcoming: {
+              anyOf: [{ type: 'integer' }, { type: 'null' }],
+              description: 'Upcoming dates with it; null without the `upcoming` scope (1.21.0).'
+            },
+            check_ins: {
+              anyOf: [{ type: 'integer' }, { type: 'null' }],
+              description: 'Check-ins with it; null without the `activity` scope (1.21.0).'
+            }
           }
         }
       }
@@ -1436,16 +1498,27 @@ const SCHEMAS: Record<string, Doc> = {
   },
   TagRow: {
     type: 'object',
-    required: ['pinned', 'recent', 'window_days'],
+    required: ['pinned', 'pinned_names', 'recent', 'window_days'],
     properties: {
-      pinned: { type: 'array', maxItems: PINS_MAX, items: { type: 'string' } },
+      pinned: { type: 'array', maxItems: PINS_MAX, items: { type: 'string' }, description: 'Their keys.' },
+      pinned_names: {
+        type: 'array',
+        maxItems: PINS_MAX,
+        items: { type: 'string' },
+        description: 'Their names, as pinned (1.21.0).'
+      },
       recent: {
         type: 'array',
         maxItems: RECENT_MAX,
         items: {
           type: 'object',
-          required: ['tag', 'count', 'last_used'],
-          properties: { tag: { type: 'string' }, count: { type: 'integer' }, last_used: day }
+          required: ['tag', 'name', 'count', 'last_used'],
+          properties: {
+            tag: { type: 'string' },
+            name: { type: 'string', description: 'As most recently written (1.21.0).' },
+            count: { type: 'integer' },
+            last_used: day
+          }
         }
       },
       window_days: { type: 'integer', const: RECENT_DAYS }
@@ -1644,6 +1717,12 @@ const SCHEMAS: Record<string, Doc> = {
       token: { anyOf: [{ type: 'string' }, { type: 'null' }] },
       token_id: { anyOf: [{ type: 'string' }, { type: 'null' }] },
       client: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'The keys of the tags of every check-in in it; left out for none (1.21.0).'
+      },
+      tag_names: { type: 'array', items: { type: 'string' }, description: 'Their names (1.21.0).' },
       revision: { type: 'integer', description: 'Send it back to name this stay.' }
     }
   },
@@ -1670,6 +1749,22 @@ const SCHEMAS: Record<string, Doc> = {
     }
   },
   CheckInsDeleted: { type: 'object', required: ['deleted'], properties: { deleted: { type: 'integer' } } },
+  CheckInsTagged: { type: 'object', required: ['tagged'], properties: { tagged: { type: 'integer' } } },
+  PlaceCheckInsTag: {
+    type: 'object',
+    required: ['tags', 'count'],
+    additionalProperties: false,
+    properties: {
+      tags: {
+        type: 'array',
+        minItems: 1,
+        maxItems: MAX_TAGS,
+        items: { type: 'string', maxLength: MAX_TAG },
+        description: 'The tags to add, by name.'
+      },
+      count: { type: 'integer', minimum: 0, description: 'How many check-ins you were shown.' }
+    }
+  },
   CheckInReport: {
     type: 'object',
     required: ['lat', 'lon', 'source'],
@@ -1692,10 +1787,17 @@ const SCHEMAS: Record<string, Doc> = {
   },
   CheckInName: {
     type: 'object',
-    required: ['name', 'revision'],
+    required: ['revision'],
+    anyOf: [{ required: ['name'] }, { required: ['tags'] }],
     additionalProperties: false,
     properties: {
       name: { anyOf: [{ type: 'string', minLength: 1, maxLength: CHECKIN_NAME_MAX }, { type: 'null' }] },
+      tags: {
+        type: 'array',
+        maxItems: MAX_TAGS,
+        items: { type: 'string', maxLength: MAX_TAG },
+        description: 'The stay’s whole list of tags by name; [] for none (1.21.0).'
+      },
       revision: { type: 'integer', minimum: 1 }
     }
   },
@@ -1717,6 +1819,12 @@ const SCHEMAS: Record<string, Doc> = {
         type: 'boolean',
         description: 'No stop here is kept, and those kept already are hidden. Since 1.20.0.'
       },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'The keys of the tags each new stop here gets; left out for none (1.21.0).'
+      },
+      tag_names: { type: 'array', items: { type: 'string' }, description: 'Their names (1.21.0).' },
       revision: { type: 'integer' }
     }
   },
@@ -1741,7 +1849,28 @@ const SCHEMAS: Record<string, Doc> = {
     required: ['places'],
     properties: { places: { type: 'array', items: ref('NamedPlace') } }
   },
-  NamedPlaceWritten: { type: 'object', required: ['place'], properties: { place: ref('NamedPlace') } },
+  NamedPlaceWritten: {
+    type: 'object',
+    required: ['place'],
+    properties: {
+      place: {
+        allOf: [
+          ref('NamedPlace'),
+          {
+            type: 'object',
+            properties: {
+              check_ins: {
+                type: 'integer',
+                description:
+                  'When the place gained a tag: the stays already there, to offer tagging them with ' +
+                  'PATCH /v1/check-ins/places/{id}/check-ins (1.21.0).'
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
   NamedPlaceWrite: {
     type: 'object',
     required: ['name', 'lat', 'lon'],
@@ -1750,7 +1879,13 @@ const SCHEMAS: Record<string, Doc> = {
       name: { type: 'string', minLength: 1, maxLength: CHECKIN_NAME_MAX },
       lat: { type: 'number', minimum: -90, maximum: 90 },
       lon: { type: 'number', minimum: -180, maximum: 180 },
-      ignored: { type: 'boolean', description: 'Ignore the place, or unignore it. Left out, as it was. Since 1.20.0.' }
+      ignored: { type: 'boolean', description: 'Ignore the place, or unignore it. Left out, as it was. Since 1.20.0.' },
+      tags: {
+        type: 'array',
+        maxItems: MAX_TAGS,
+        items: { type: 'string', maxLength: MAX_TAG },
+        description: 'Tags to join the place’s, by name (1.21.0).'
+      }
     }
   },
   NamedPlaceName: {
@@ -1759,7 +1894,13 @@ const SCHEMAS: Record<string, Doc> = {
     additionalProperties: false,
     properties: {
       name: { type: 'string', minLength: 1, maxLength: CHECKIN_NAME_MAX },
-      ignored: { type: 'boolean', description: 'Ignore the place, or unignore it. Since 1.20.0.' }
+      ignored: { type: 'boolean', description: 'Ignore the place, or unignore it. Since 1.20.0.' },
+      tags: {
+        type: 'array',
+        maxItems: MAX_TAGS,
+        items: { type: 'string', maxLength: MAX_TAG },
+        description: 'The place’s whole list of tags by name; [] for none (1.21.0).'
+      }
     }
   },
   Activity: {

@@ -878,10 +878,11 @@ test('pinned tags and the recent tags row, the same on every token', async () =>
   const empty = await call(app, 'GET', '/v1/tags', { token: b.token });
   assert.deepEqual(empty.json, {
     pinned: [],
+    pinned_names: [],
     recent: [
-      { tag: 'running', count: 2, last_used: '2026-10-12' },
-      { tag: 'baking', count: 1, last_used: '2026-10-12' },
-      { tag: 'trip', count: 1, last_used: '2026-10-12' }
+      { tag: 'running', name: 'running', count: 2, last_used: '2026-10-12' },
+      { tag: 'baking', name: 'baking', count: 1, last_used: '2026-10-12' },
+      { tag: 'trip', name: 'trip', count: 1, last_used: '2026-10-12' }
     ],
     window_days: 30
   });
@@ -892,12 +893,14 @@ test('pinned tags and the recent tags row, the same on every token', async () =>
   });
   assert.equal(set.status, 200, set.text);
   assert.deepEqual(set.json!.pinned, ['trip', 'gratitude']);
+  // Pins keep the name they were given (1.21.0).
+  assert.deepEqual(set.json!.pinned_names, ['Trip', 'gratitude']);
   // Pinned tags leave the recent row.
   assert.deepEqual(
     (set.json!.recent as OAuthRow[]).map((r) => r.tag),
     ['running', 'baking']
   );
-  assert.deepEqual(ctx.store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!.pinned_tags, ['trip', 'gratitude']);
+  assert.deepEqual(ctx.store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })!.pinned_tags, ['Trip', 'gratitude']);
   assert.deepEqual((await call(app, 'GET', '/v1/tags', { token: b.token })).json!.pinned, ['trip', 'gratitude']);
   const changed = ctx.store.memory.all().find((r) => r.kind === 'settings.changed')!;
   assert.equal(changed.via, 'token');

@@ -40,10 +40,15 @@
   },
   "info": {
     "title": "Release Notes API",
-    "version": "1.20.0",
+    "version": "1.21.0",
     "summary": "Add notes to Release Notes and read them back, from a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. With `notes:read`, a token reads the whole archive and writes nothing (1.15.0). The guide is at /guide/api/, all of it in one file for agents at /guide/api/llms.txt, and what each version added at /guide/api/changelog/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.21.0",
+        "date": "2026-11-08",
+        "summary": "Tags are first-class. A tag has a name, as written, with spaces or emoji (\"Road Trip\", \"🚗 Lake\"), and a key (\"road-trip\") that matches every spelling; `tags` still lists keys and the new `tag_names` lists the names beside them. POST and PATCH /v1/notes take `tags`, by name, besides the hashtags in the text. Upcoming dates take `tags`, several of them; the single `tag` keeps working and is deprecated, and its removal will be announced here with a date. Check-ins and remembered places carry tags: a new stop at a place gets the place’s, PATCH /v1/check-ins/{id} and the places routes take `tags`, a place that gains a tag answers how many `check_ins` it has, and PATCH /v1/check-ins/places/{id}/check-ins tags them for that count. GET /v1/check-ins takes `tag`. Every `tag` filter takes any spelling. GET /v1/tags/all says each tag’s `name` and counts its Upcoming dates and check-ins, and GET /v1/tags adds `pinned_names` and a `name` on each recent tag. The activity log adds `checkin.tagged`."
+      },
       {
         "version": "1.20.0",
         "date": "2026-11-08",
@@ -2190,7 +2195,7 @@
           {
             "name": "tag",
             "in": "query",
-            "description": "A tag, without its #.",
+            "description": "A tag by any spelling: \"Road Trip\", road-trip and #road-trip are one tag (1.21.0).",
             "schema": {
               "type": "string"
             }
@@ -2508,7 +2513,7 @@
           "Tags"
         ],
         "operationId": "listAllTags",
-        "summary": "Every tag with its notes, days, first day and last, most used first",
+        "summary": "Every tag with its name, notes, days, first day and last, Upcoming dates and check-ins, most used first",
         "description": "`getTags` is the short list a compose screen offers; this is the whole archive’s. Needs `notes:read` or `notes:all`.",
         "responses": {
           "200": {
@@ -2763,7 +2768,7 @@
         ],
         "operationId": "listCheckIns",
         "summary": "The places you stopped, newest first",
-        "description": "A stay at a time, with its spot and the name it shows. Back-to-back stops at one place read as one, and `ids` lists the check-ins in it. `from` and `to` are your days, a stay going by when it began, up to 31 days; `before` is the `next` of an earlier page. A stay at an ignored place is hidden: left out here, in the activity log and from each read of one, until the place is unignored (1.20.0). Since 1.18.0.",
+        "description": "A stay at a time, with its spot and the name it shows. Back-to-back stops at one place read as one, and `ids` lists the check-ins in it. `from` and `to` are your days, a stay going by when it began, up to 31 days; `before` is the `next` of an earlier page. A stay at an ignored place is hidden: left out here, in the activity log and from each read of one, until the place is unignored (1.20.0). A stay has the tags of every check-in in it (1.21.0). Since 1.18.0.",
         "parameters": [
           {
             "name": "from",
@@ -2787,6 +2792,14 @@
             "name": "before",
             "in": "query",
             "description": "The `next` of an earlier page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "description": "Only the stays with this tag, by any spelling (1.21.0).",
             "schema": {
               "type": "string"
             }
@@ -2844,7 +2857,7 @@
         ],
         "operationId": "addCheckIn",
         "summary": "Send a stop, as a phone is told of it",
-        "description": "Forward each report as it comes, with an Idempotency-Key. A later report with the same `source` and arrival, to the second, is the same stay: it fills in `left` and answers 200, not 201, so a client keeps no ids. A report with no arrival is matched by its `left`. A `tap` sends the moment it was tapped as `arrived`, and is never continued. Times over a week ahead are refused; older ones are fine, since a phone can be offline. The first 100 new stays a UTC day get their `district`, one paid lookup each, and those past that are still saved with none; RateLimit-Limit counts those. After 1000 reports a day, `rate_limited`. A new stop at an ignored place is not kept (1.20.0): it answers 200 with `kept` false and `check_in` as it would have read, its `place` naming the ignored place, and its `id` naming no check-in. A report filling in a stop kept before the place was ignored still lands. Since 1.18.0.",
+        "description": "Forward each report as it comes, with an Idempotency-Key. A later report with the same `source` and arrival, to the second, is the same stay: it fills in `left` and answers 200, not 201, so a client keeps no ids. A report with no arrival is matched by its `left`. A `tap` sends the moment it was tapped as `arrived`, and is never continued. Times over a week ahead are refused; older ones are fine, since a phone can be offline. The first 100 new stays a UTC day get their `district`, one paid lookup each, and those past that are still saved with none; RateLimit-Limit counts those. After 1000 reports a day, `rate_limited`. A new stop at an ignored place is not kept (1.20.0): it answers 200 with `kept` false and `check_in` as it would have read, its `place` naming the ignored place, and its `id` naming no check-in. A report filling in a stop kept before the place was ignored still lands. A new stop at a remembered place has that place’s tags (1.21.0). Since 1.18.0.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3019,8 +3032,8 @@
           "Check-ins"
         ],
         "operationId": "nameCheckIn",
-        "summary": "Name a stay once, or take its name away",
-        "description": "A name on this stay alone, on every check-in in it, beating any remembered place. This token’s own, or any with `notes:all`. `revision` is the one you read. To name every stop at a spot, remember the place instead. Since 1.18.0.",
+        "summary": "Name or tag a stay, or take its name away",
+        "description": "A name on this stay alone, on every check-in in it, beating any remembered place. This token’s own, or any with `notes:all`. `revision` is the one you read. To name every stop at a spot, remember the place instead. Send `name`, `tags` or both (1.21.0): `tags` is the whole list, by name, set on every check-in in the stay. Since 1.18.0.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3201,7 +3214,7 @@
         ],
         "operationId": "rememberPlace",
         "summary": "Remember a place, or add a spot to a name",
-        "description": "A name already in use, ignoring case, gains this spot and answers 200; a new one answers 201. It applies at once to every stop within 100 m, past and future. An account has up to 200 names, and a name up to 50 spots. `ignored` true ignores it as it is remembered, and false unignores it (1.20.0). Since 1.18.0.",
+        "description": "A name already in use, ignoring case, gains this spot and answers 200; a new one answers 201. It applies at once to every stop within 100 m, past and future. An account has up to 200 names, and a name up to 50 spots. `ignored` true ignores it as it is remembered, and false unignores it (1.20.0). `tags` join the place’s, and every new stop there gets them; when the place gains one, the answer counts its `check_ins`, to offer tagging them (1.21.0). Since 1.18.0.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3357,7 +3370,7 @@
         ],
         "operationId": "renameNamedPlace",
         "summary": "Rename a remembered place, or ignore it",
-        "description": "Send `name`, `ignored`, or both. Every spot and stop follows a new name, and a name another place has is refused. Ignored (1.20.0, Jamie’s call): no new stop there is kept, and the stops already there are hidden, not deleted, from every list, the activity log and the Map. False brings them back. Since 1.18.0.",
+        "description": "Send `name`, `ignored`, or both. Every spot and stop follows a new name, and a name another place has is refused. Ignored (1.20.0, Jamie’s call): no new stop there is kept, and the stops already there are hidden, not deleted, from every list, the activity log and the Map. False brings them back. `tags` is the place’s whole list, by name, for the stops to come; the stops already there keep theirs. When it gains a tag, the answer counts its `check_ins` (1.21.0, Jamie’s call). Since 1.18.0.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3556,6 +3569,86 @@
             "$ref": "#/components/responses/Error"
           }
         },
+        "security": [
+          {
+            "token": [
+              "notes:all"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:all"
+            ]
+          }
+        ],
+        "x-scope": "notes:all"
+      },
+      "patch": {
+        "tags": [
+          "Check-ins"
+        ],
+        "operationId": "tagCheckInsAtPlace",
+        "summary": "Tag the check-ins already at a remembered place",
+        "description": "The tags sent join every stay at it, hidden or not; nothing else changes. Offer it once, with the count, when a place gains a tag (Jamie’s call). `count` is the `check_ins` the place’s answer or GET /v1/check-ins/places/{id} gave, and a different number now is `revision_mismatch` with the new `count`. Answers how many stays were `tagged`; one `checkin.tagged` row goes in the log with the place’s id and that count. Since 1.21.0.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceCheckInsTag"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Idempotent-Replayed": {
+                "$ref": "#/components/headers/Idempotent-Replayed"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimit-Limit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimit-Remaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInsTagged"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "With Accept: text/plain: Tagged 12."
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,80}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Idempotency-Key"
+          }
+        ],
         "security": [
           {
             "token": [
@@ -3949,7 +4042,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.20.0"
+            "example": "1.21.0"
           }
         }
       },
@@ -4003,6 +4096,15 @@
               }
             ],
             "description": "`rich` when `text` holds rich-text marks; left out or null, the words are plain. An edit keeps it. Since 1.16.0."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "Tags by name, with spaces or emoji: \"Road Trip\", \"🚗 Lake\". A leading # is dropped. The hashtags in `text` are tags too, after these (1.21.0)."
           }
         }
       },
@@ -4362,6 +4464,15 @@
           "revision": {
             "type": "string",
             "description": "The revision last read, unchanged."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "The note’s whole list of tags by name, with the hashtags in `text` after them. Left out, it keeps the tags its old text didn’t carry (1.21.0)."
           }
         }
       },
@@ -4515,7 +4626,14 @@
             "items": {
               "type": "string"
             },
-            "description": "Its hashtags, normalized (1.14.0)."
+            "description": "Its tags’ keys: \"Road Trip\" is road-trip (1.14.0; from the tags field too since 1.21.0)."
+          },
+          "tag_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Its tags’ names as written, one for each of `tags` (1.21.0)."
           },
           "markup": {
             "anyOf": [
@@ -5401,10 +5519,14 @@
                   "type": "object",
                   "required": [
                     "tag",
+                    "name",
                     "notes"
                   ],
                   "properties": {
                     "tag": {
+                      "type": "string"
+                    },
+                    "name": {
                       "type": "string"
                     },
                     "notes": {
@@ -5432,14 +5554,22 @@
               "type": "object",
               "required": [
                 "tag",
+                "name",
                 "notes",
                 "days",
                 "first",
-                "last"
+                "last",
+                "upcoming",
+                "check_ins"
               ],
               "properties": {
                 "tag": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Its key."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "As most recently written (1.21.0)."
                 },
                 "notes": {
                   "type": "integer"
@@ -5448,14 +5578,51 @@
                   "type": "integer"
                 },
                 "first": {
-                  "type": "string",
-                  "format": "date",
-                  "description": "A day in the account’s own time zone."
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date",
+                      "description": "A day in the account’s own time zone."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Null for a tag no note or check-in has."
                 },
                 "last": {
-                  "type": "string",
-                  "format": "date",
-                  "description": "A day in the account’s own time zone."
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date",
+                      "description": "A day in the account’s own time zone."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "upcoming": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Upcoming dates with it; null without the `upcoming` scope (1.21.0)."
+                },
+                "check_ins": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Check-ins with it; null without the `activity` scope (1.21.0)."
                 }
               }
             }
@@ -5713,6 +5880,7 @@
         "type": "object",
         "required": [
           "pinned",
+          "pinned_names",
           "recent",
           "window_days"
         ],
@@ -5722,7 +5890,16 @@
             "maxItems": 12,
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Their keys."
+          },
+          "pinned_names": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string"
+            },
+            "description": "Their names, as pinned (1.21.0)."
           },
           "recent": {
             "type": "array",
@@ -5731,12 +5908,17 @@
               "type": "object",
               "required": [
                 "tag",
+                "name",
                 "count",
                 "last_used"
               ],
               "properties": {
                 "tag": {
                   "type": "string"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "As most recently written (1.21.0)."
                 },
                 "count": {
                   "type": "integer"
@@ -5795,6 +5977,23 @@
             "maxLength": 120,
             "description": "One line."
           },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "Its tags by name, the whole list, like [\"Family\", \"Road Trip\"] (1.21.0). A leading # is dropped; \"Road Trip\" and \"road trip\" are one tag."
+          },
+          "tag_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "description": "The names of its tags, as `tags` lists their keys (1.21.0)."
+          },
           "tag": {
             "anyOf": [
               {
@@ -5805,7 +6004,8 @@
                 "type": "null"
               }
             ],
-            "description": "One word, like family."
+            "deprecated": true,
+            "description": "Its first tag’s key. Deprecated in 1.21.0, gone in the next release: send `tags`. Sent alone, it names the first tag and keeps the others."
           },
           "date": {
             "type": "string",
@@ -6315,6 +6515,20 @@
               }
             ]
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The keys of the tags of every check-in in it; left out for none (1.21.0)."
+          },
+          "tag_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Their names (1.21.0)."
+          },
           "revision": {
             "type": "integer",
             "description": "Send it back to name this stay."
@@ -6381,6 +6595,42 @@
         "properties": {
           "deleted": {
             "type": "integer"
+          }
+        }
+      },
+      "CheckInsTagged": {
+        "type": "object",
+        "required": [
+          "tagged"
+        ],
+        "properties": {
+          "tagged": {
+            "type": "integer"
+          }
+        }
+      },
+      "PlaceCheckInsTag": {
+        "type": "object",
+        "required": [
+          "tags",
+          "count"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "tags": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "The tags to add, by name."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many check-ins you were shown."
           }
         }
       },
@@ -6461,8 +6711,19 @@
       "CheckInName": {
         "type": "object",
         "required": [
-          "name",
           "revision"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "name"
+            ]
+          },
+          {
+            "required": [
+              "tags"
+            ]
+          }
         ],
         "additionalProperties": false,
         "properties": {
@@ -6477,6 +6738,15 @@
                 "type": "null"
               }
             ]
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "The stay’s whole list of tags by name; [] for none (1.21.0)."
           },
           "revision": {
             "type": "integer",
@@ -6520,6 +6790,20 @@
           "ignored": {
             "type": "boolean",
             "description": "No stop here is kept, and those kept already are hidden. Since 1.20.0."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The keys of the tags each new stop here gets; left out for none (1.21.0)."
+          },
+          "tag_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Their names (1.21.0)."
           },
           "revision": {
             "type": "integer"
@@ -6574,7 +6858,20 @@
         ],
         "properties": {
           "place": {
-            "$ref": "#/components/schemas/NamedPlace"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NamedPlace"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "check_ins": {
+                    "type": "integer",
+                    "description": "When the place gained a tag: the stays already there, to offer tagging them with PATCH /v1/check-ins/places/{id}/check-ins (1.21.0)."
+                  }
+                }
+              }
+            ]
           }
         }
       },
@@ -6605,6 +6902,15 @@
           "ignored": {
             "type": "boolean",
             "description": "Ignore the place, or unignore it. Left out, as it was. Since 1.20.0."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "Tags to join the place’s, by name (1.21.0)."
           }
         }
       },
@@ -6621,6 +6927,15 @@
           "ignored": {
             "type": "boolean",
             "description": "Ignore the place, or unignore it. Since 1.20.0."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "The place’s whole list of tags by name; [] for none (1.21.0)."
           }
         }
       },

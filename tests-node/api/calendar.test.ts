@@ -85,7 +85,7 @@ test('the link is made on demand, reads the owner’s dates as a calendar, and i
   assert.equal(read.response.headers.get('cache-control'), 'no-store');
   assert.equal(read.response.headers.get('set-cookie'), null);
   assert.ok(read.text.startsWith('BEGIN:VCALENDAR\r\n'));
-  assert.ok(read.text.includes('SUMMARY:Alex turns 5.0.0\r\nDESCRIPTION:A major release.\\n#family\r\n'));
+  assert.ok(read.text.includes('SUMMARY:Alex turns 5.0.0\r\nDESCRIPTION:A major release.\\nTags: family\r\n'));
   assert.ok(read.text.includes('UID:'));
   assert.ok(
     read.text.includes('DTSTART;VALUE=DATE:20261020\r\nDTEND;VALUE=DATE:20261028\r\nSUMMARY:Holiday — Paris\r\n')

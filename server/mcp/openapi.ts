@@ -873,7 +873,8 @@ const SCHEMAS: Record<string, Doc> = {
         type: 'array',
         maxItems: MAX_TAGS,
         items: { type: 'string', maxLength: MAX_TAG },
-        description: 'Tags by name, with spaces or emoji: "Road Trip", "🚗 Lake". A leading # is dropped. The hashtags in `text` are tags too, after these (1.21.0).'
+        description:
+          'Tags by name, with spaces or emoji: "Road Trip", "🚗 Lake". A leading # is dropped. The hashtags in `text` are tags too, after these (1.21.0).'
       }
     }
   },
@@ -1032,7 +1033,8 @@ const SCHEMAS: Record<string, Doc> = {
         type: 'array',
         maxItems: MAX_TAGS,
         items: { type: 'string', maxLength: MAX_TAG },
-        description: 'The note’s whole list of tags by name, with the hashtags in `text` after them. Left out, it keeps the tags its old text didn’t carry (1.21.0).'
+        description:
+          'The note’s whole list of tags by name, with the hashtags in `text` after them. Left out, it keeps the tags its old text didn’t carry (1.21.0).'
       }
     }
   },
@@ -1424,7 +1426,20 @@ const SCHEMAS: Record<string, Doc> = {
         type: 'array',
         items: {
           type: 'object',
-          required: ['date', 'id', 'lat', 'lon', 'place', 'exact', 'tags', 'release', 'version', 'text', 'parts'],
+          required: [
+            'date',
+            'id',
+            'lat',
+            'lon',
+            'place',
+            'exact',
+            'tags',
+            'tag_names',
+            'release',
+            'version',
+            'text',
+            'parts'
+          ],
           properties: {
             date: day,
             id: { type: 'string' },
@@ -1436,6 +1451,11 @@ const SCHEMAS: Record<string, Doc> = {
               description: 'False when a city was chosen: it stands for the city, not a spot.'
             },
             tags: { type: 'array', items: { type: 'string' } },
+            tag_names: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Its tags’ names, one for each of `tags` (1.21.0).'
+            },
             release: { type: 'string' },
             version: { type: 'string' },
             text: { type: 'string', description: 'The note’s opening words.' },

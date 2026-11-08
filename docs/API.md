@@ -374,8 +374,9 @@ never sent.
 ```
 
 - `text` or `uploads` is required: a note may be only its files.
-  Hashtags in the text are its tags, and links get their titles fetched
-  once, as on the web.
+  Hashtags in the text are tags, after any in `tags` (names, since 1.21.0:
+  "Road Trip", "🚗 Lake"), and links get their titles fetched once, as on
+  the web.
 - `date` is optional, any day from the birthday through today.
 - `written_at` is optional: the moment the words were typed, a real time
   (no February 30, no 24:00) from the birthday on. It must not be
@@ -479,8 +480,9 @@ A token with `notes:all`, which comes only beside `notes:write`:
 
 ```json
 {
-  "pinned": ["house", "work"],
-  "recent": [{ "tag": "running", "count": 6, "last_used": "2026-10-28" }],
+  "pinned": ["house", "road-trip"],
+  "pinned_names": ["house", "Road Trip"],
+  "recent": [{ "tag": "running", "name": "Running", "count": 6, "last_used": "2026-10-28" }],
   "window_days": 30
 }
 ```
@@ -489,8 +491,8 @@ A token with `notes:all`, which comes only beside `notes:write`:
 ties broken by last use. It has at most 20.
 
 **`PUT /v1/tags/pinned`** `{"pinned": [...]}`, `notes:write`. Up to 12 tags,
-normalized as note hashtags are, in any script since API 1.7.1 (2026-10-30)
-(`"Москва"` is `москва`, `"東京"` stays `東京`; `packages/domain/tags.ts`).
+kept by name since 1.21.0 and each once by key, as a tags field takes them
+(`"Road Trip"` is `road-trip`, `"東京"` stays `東京`; `docs/TAGS.md`).
 Pins live on the account, so the web's
 Today form and every phone show the same ones. A `settings.changed` row
 names the field.
@@ -590,7 +592,7 @@ subject, mail words, another sender or a settings value.
   - at most 50 entries a call and 50 writes a day;
   - past one-time trips and events left out of the list and only counted.
     Each entry has its own fields: kind, title, date, year, end, destination,
-    tag, reminder days and `email`. Each also has the server's own line
+    tags (one `tag` before 1.21.0), reminder days and `email`. Each also has the server's own line
     ("Mom turns 7.0.0. A major release.").
 - **`GET /v1/upcoming/reminders?days=14`**, `upcoming`. Each day's due
   reminders, from `remindersFor`, with the line and the `when` the email
@@ -1022,6 +1024,35 @@ not, as `check_ins`, and `DELETE /v1/check-ins/places/{id}/check-ins?count=`
 number. A retry with the same key answers the first count. The log gains
 `checkin.ignored` and `checkin.unignored`, with the place's id, and a
 `checkin.deleted` with `place` and `count`. `docs/CHECK-INS.md` has the rules.
+
+### 1.21.0: first-class tags
+
+Jamie, 2026-11-08: "Make tags first-class in Changelog / Release Notes", with
+spaces and emoji, so "tags get their own field/chip input, not inline parsing
+of note text" (`docs/TAGS.md` has the rules and Jamie's eight calls). A tag has
+a name, as written, and a key that matches every spelling: "Road Trip",
+"road trip" and "#road-trip" are `road-trip`. Every `tags` still lists keys,
+so no client of before breaks, and `tag_names` beside it lists the names, one
+each: on notes, map pins, Upcoming dates, stays and remembered places.
+
+`POST /v1/notes` and `PUT /v1/notes/{date}/{id}` take `tags`, names, which go
+before the text's hashtags; an edit without them keeps the tags its old text
+didn't carry. Upcoming dates take `tags`, the whole list, and the single `tag`
+keeps working, deprecated, with its removal to be announced in `x-changes` with
+a date. A stay (`PATCH /v1/check-ins/{id}`, `name`, `tags` or both) and a
+remembered place take `tags`; a new stop at a place gets the place's. When a
+place gains a tag, its answer counts the stays already there as `check_ins`, and
+`PATCH /v1/check-ins/places/{id}/check-ins` `{tags, count}` (`notes:all`) adds
+the tags to each for that count; another count is `revision_mismatch` with the
+`count` now. It answers `{tagged}` and logs one `checkin.tagged` with the place's
+id and the count. `GET /v1/check-ins` takes `tag`.
+
+Every `tag` filter takes any spelling, and refuses only one no tag could be.
+`GET /v1/tags/all` gives each tag's `name`, as most recently written, and counts
+its `upcoming` dates (with `upcoming`) and `check_ins` (with `activity`), null
+without the scope. `GET /v1/tags` adds `pinned_names` and a `name` on each recent
+tag, and pins are kept by name. The tag rules, with examples, are
+`contracts/tag-vectors.json`, for a client to test itself against.
 
 ### Jamie's calls
 

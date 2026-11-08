@@ -30,16 +30,21 @@ The log has a row for each stay, of the kind `checkin`, with `checkin` (its id),
 
 ## The requests
 
-- `GET /v1/check-ins`: where you stopped, newest first. `from`, `to`, `limit` and `before` choose a stretch, and `next` is the `before` for the next page.
-- `PATCH /v1/check-ins/{id}`: give it a name of its own, with `{"name": "…", "revision": 1}` and the revision you read, or `"name": null` to take it away.
+- `GET /v1/check-ins`: where you stopped, newest first. `from`, `to`, `limit` and `before` choose a stretch, and `next` is the `before` for the next page. `tag`, written any way, keeps the stays with that tag.
+- `PATCH /v1/check-ins/{id}`: give it a name of its own, with `{"name": "…", "revision": 1}` and the revision you read, or `"name": null` to take it away. `{"tags": ["Road Trip"], "revision": 1}` sets its tags, the whole list, on every stop in it, with or without a name.
 - `DELETE /v1/check-ins/{id}`: delete it, and every stop read as one with it.
 - `DELETE /v1/check-ins`: delete every check-in, with `?confirm=all`. It answers how many went, and your remembered places stay.
 - `GET /v1/check-ins/places`: the places you've told it to remember, each saying whether it's `ignored`.
-- `POST /v1/check-ins/places`: remember a place, with `{"name": "…", "lat": 45.5, "lon": -93.2}`, and `"ignored": true` to ignore it from the start. A name you already use gets this spot too.
+- `POST /v1/check-ins/places`: remember a place, with `{"name": "…", "lat": 45.5, "lon": -93.2}`, and `"ignored": true` to ignore it from the start, or `tags` for every stop there. A name you already use gets this spot too.
 - `GET /v1/check-ins/places/{id}`: one place, with `check_ins`, how many stays are there, hidden ones too.
-- `PATCH /v1/check-ins/places/{id}`: rename it with `{"name": "…"}`, ignore it with `{"ignored": true}`, or both.
+- `PATCH /v1/check-ins/places/{id}`: rename it with `{"name": "…"}`, ignore it with `{"ignored": true}`, set its tags with `{"tags": ["Cabin"]}`, or any of them.
 - `DELETE /v1/check-ins/places/{id}`: forget it, all its spots with it. Your check-ins there go back to the names they had, and any it hid show again.
 - `DELETE /v1/check-ins/places/{id}/check-ins?count=`: delete every check-in there, hidden ones too, with the count `GET /v1/check-ins/places/{id}` gave you. The place stays.
+- `PATCH /v1/check-ins/places/{id}/check-ins`: tag every check-in already there, hidden ones too, with `{"tags": ["Cabin"], "count": 12}` and the count you were given. It needs a token that may change all your notes. From version 1.21.0.
+
+## Tags
+
+A stop at a remembered place gets the place's tags as it arrives, and a stay has the tags of every stop in it, as `tags` (keys) and `tag_names` (names). Give a place a tag and the answer's `place` has `check_ins`, how many stays are already there: offer once to tag them too, with that number, through `PATCH /v1/check-ins/places/{id}/check-ins`. If it changed in between, the answer is `revision_mismatch` with the `count` now. Taking a tag off a place leaves the check-ins that have it alone. From version 1.21.0.
 
 ## Ignored places
 

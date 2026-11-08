@@ -129,7 +129,9 @@ Where things are (each module's design comment has its contract):
   are operator tools (shared setup in `tools/operator.ts`);
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current,
   and `tools/export-api-contract.ts` the `/v1` OpenAPI file,
-  `contracts/api-surface.json`, with its version ledger.
+  `contracts/api-surface.json`, with its version ledger;
+  `tools/export-tag-vectors.ts` writes `contracts/tag-vectors.json`, the tag
+  rules as examples for the apps.
 - `tools/{build-server,package-native,native-artifacts,web-platform,release-probe,indexnow}.ts`
   build and upload the code zips, keep the endpoint grants, tell IndexNow
   which public pages a release changed and probe a finished release;
@@ -273,16 +275,21 @@ Where things are (each module's design comment has its contract):
   control characters other than tab and newline dropped, and everything
   visible kept, with the joiners, variation selectors and direction marks
   text needs. `/v1` and MCP refuse a lone surrogate escape.
-- **Tags are hashtags** in the text (Jamie, 2026-10-09: "hashtags",
-  lowercase with hyphens, "maine-2016"), the one place a tag lives. No
-  index: one person's notes are read whole. Letters in any script make a
-  tag (Jamie, 2026-10-30: "Approved: build the five API edge cases as
-  recommended: 1, 3 and 4 as API 1.7.0, 2 as its own PR"): a hashtag with
-  no a-z letter even read in full (#東京, #שלום, #Москва) is its own
-  letters, lowercased, marks kept; one with them keeps the legacy slug
-  exactly, so no tag from before moves (`packages/domain/tags.ts`). A
-  note's `tags` are kept when it is written, so older notes gain such tags
-  only from `tools/fill-tags.ts --write`, a live run that needs Jamie's go.
+- **Tags are first-class** (`docs/TAGS.md`; Jamie, 2026-11-08: "Approved:
+  build first-class tags in Release Notes as proposed, with calls 1 to 8 as
+  recommended"). A tag has a name, as typed, with spaces or emoji ("Road
+  Trip"), and a key that matches every spelling (`road-trip`). Notes,
+  Upcoming dates, check-ins and remembered places keep `tags` (keys) and
+  `tag_names` side by side; a place's tags go on each new check-in there. A
+  tags field (chips on the web) takes names; hashtags in a note's text still
+  make tags (Jamie, 2026-10-09: "hashtags"), and removing a chip removes its
+  #word. Keys from before never move: Latin letters alone keep the legacy
+  slug ("maine-2016"), other scripts alone their own letters (Jamie,
+  2026-10-30: "Approved: build the five API edge cases as recommended: 1, 3
+  and 4 as API 1.7.0, 2 as its own PR"); a mix or emoji keeps every part.
+  No index: one person's items are read whole. Older items gain names and
+  moved keys only from `tools/fill-tags.ts --write`, a live run that needs
+  Jamie's go. `contracts/tag-vectors.json` is the rules for the apps.
 - **Search** (Jamie, 2026-10-09: "pull posts by tag, showing all tags that
   have been used, as well as search by string across notes") matches every
   word or "quoted phrase" in text, place, link names, transcripts and photo
@@ -592,12 +599,12 @@ Where things are (each module's design comment has its contract):
   upcoming") lists, saves and deletes dates, at most 50 per call, 50 calls
   a day. Its list leaves out a trip or event already over, counting it only
   (Jamie, 2026-10-21: "One time trips in the past should be left out").
-- **Grouping dates** (2026-10-14): one optional tag per entry, normalized
-  like note hashtags, with a text search (Jamie, 2026-10-17: "a general
-  string search") whose words stay in the page's fragment, never a request.
-  A tagged entry can start today's note draft with its hashtag; it never
-  creates a note, and Upcoming tags stay apart from journal tags until
-  written in a saved note.
+- **Grouping dates** (2026-10-14): tags on each entry, several since
+  2026-11-08 (`docs/TAGS.md`, call 5), matched like note tags, with a text
+  search (Jamie, 2026-10-17: "a general string search") whose words stay in
+  the page's fragment, never a request. A tagged entry can start today's
+  note draft with its tags; it never creates a note. A tag's page lists its
+  notes, Upcoming dates and check-ins together.
 - **A private calendar link** (Jamie, 2026-10-17: an iCal feed of Upcoming
   "the user can add in their calendar"): `/api/calendar/<token>.ics`, with
   the standing address's checks (120 random bits, `CALENDAR#`, "New link",
@@ -844,13 +851,13 @@ Where things are (each module's design comment has its contract):
   product's own transcription or description.
 - **`notes:write`** is a separate approval, off by default, and existing
   grants stay read-only. It allows creates, appends and edits at the
-  user's explicit request, hashtags in the text. An append or edit goes
-  only to a note the same connection created (that connection, never a
-  name a client supplies). Edits (Jamie, 2026-10-28: "the mcp interface
-  doesn't provide a way to edit a note") replace the text from the
-  revision the agent read, refuse a note changed since, and keep no
-  history, as web edits keep none. No MCP delete of notes. "Turn off
-  adding" in Settings keeps reading.
+  user's explicit request, with tags by name or as hashtags in the text.
+  An append or edit goes only to a note the same connection created (that
+  connection, never a name a client supplies). Edits (Jamie, 2026-10-28:
+  "the mcp interface doesn't provide a way to edit a note") replace the
+  text from the revision the agent read, refuse a note changed since, and
+  keep no history, as web edits keep none. No MCP delete of notes. "Turn
+  off adding" in Settings keeps reading.
 - **`media:write`** (2026-10-28; Jamie: "the mcp interface doesn't allow an
   agent to add an image or attachment") is its own approval, only beside
   `notes:write`, for files on those same notes: base64 photos, recordings

@@ -127,37 +127,78 @@ test('link fill dry run fetches only injected titles; changed words and deleting
   assert.equal((await fillLinks(store, 'u', true, fetcher)).changed, 1);
   assert.equal((await store.note('u', '2026-10-10', 'n'))?.links, undefined);
 });
-test('tag fill adds tags in any script to older notes, never takes one away, and stops on changed words', async () => {
-  const tagged = (id: string, text: string, tags?: string[]) => ({ ...note(id), text, ...(tags ? { tags } : {}) }),
+test('tag migration names older tags, moves mixed keys, lists Upcoming tags, and stops on changed words', async () => {
+  const tagged = (id: string, text: string, tags?: string[], extra = {}) => ({
+      ...note(id),
+      text,
+      ...(tags ? { tags } : {}),
+      ...extra
+    }),
+    upcoming = (id: string, extra = {}) => ({ pk: p.pk, sk: 'UPCOMING#' + id, id, title: 'A date', ...extra }),
     store = new FakeStore([
       p,
-      tagged('tokyo', 'Ramen #東京 and #walks', ['walks']),
-      tagged('walk', 'A walk #walks', ['walks']),
+      tagged('road', 'Off on a #Road-Trip and #walks', ['road-trip', 'walks']),
+      tagged('mixed', 'Lunch #café-東京', ['cafe']),
       tagged('moscow', 'Snow in #Москва'),
-      tagged('moved', 'Now #東京', ['old'])
+      tagged('kept', 'From a journal', ['travel']),
+      tagged('done', 'Named', ['road-trip'], { tag_names: ['Road Trip'] }),
+      tagged('plain', 'No tags at all'),
+      upcoming('one', { tag: 'cabin' }),
+      upcoming('two', { tags: ['lake'], tag_names: ['Lake'], tag: 'lake' }),
+      upcoming('none')
     ]),
-    tags = async (id: string) => (await store.note('u', '2026-10-10', id))?.tags;
+    row = async (sk: string) => store.memory.read({ pk: p.pk, sk }),
+    named = async (id: string) => {
+      const n = await row('NOTE#2026-10-10#' + id);
+      return [n?.tags, n?.tag_names];
+    };
   const dry = await fillTags(store, 'u');
-  assert.deepEqual(dry, { dry_run: true, notes: 4, to_tag: 2, tags_added: 2, left: 1, tagged: 0, changed: 0 });
+  assert.deepEqual(dry, {
+    dry_run: true,
+    notes: 6,
+    named: 1,
+    to_write: 4,
+    to_name: 2,
+    rekeyed: 1,
+    tags_added: 1,
+    kept_by_key: 1,
+    upcoming: 3,
+    upcoming_to_list: 1,
+    written: 0,
+    changed: 0
+  });
   assert.equal(hasWrites(store), false);
   store.memory.beforeSend = (command) => {
-    if (command instanceof TransactWriteCommand) store.seed(tagged('moscow', 'Changed #Москва'));
+    if (command instanceof TransactWriteCommand && JSON.stringify(command.input).includes('moscow'))
+      store.seed(tagged('moscow', 'Changed #Москва'));
   };
   const first = await fillTags(store, 'u', true);
-  assert.deepEqual([first.tagged, first.changed], [1, 1]);
+  assert.deepEqual([first.written, first.changed], [4, 1]);
   store.memory.beforeSend = undefined;
-  assert.deepEqual(await tags('tokyo'), ['東京', 'walks']);
-  assert.equal(await tags('moscow'), undefined);
-  assert.deepEqual(await tags('walk'), ['walks']);
-  assert.deepEqual(await tags('moved'), ['old']);
+  assert.deepEqual(await named('road'), [
+    ['road-trip', 'walks'],
+    ['Road-Trip', 'walks']
+  ]);
+  assert.deepEqual(await named('mixed'), [['cafe-東京'], ['café-東京']]);
+  assert.deepEqual(await named('kept'), [['travel'], ['travel']]);
+  assert.deepEqual(await named('done'), [['road-trip'], ['Road Trip']]);
+  assert.deepEqual(await named('moscow'), [undefined, undefined]);
+  assert.deepEqual(await named('plain'), [undefined, undefined]);
+  const one = await row('UPCOMING#one');
+  assert.deepEqual([one?.tags, one?.tag_names, one?.tag], [['cabin'], ['cabin'], 'cabin']);
+  assert.deepEqual((await row('UPCOMING#two'))?.tag_names, ['Lake']);
   const again = await fillAllTags(store, true);
-  assert.deepEqual([again.subscribers, again.to_tag, again.tagged, again.changed, again.left], [1, 1, 1, 0, 1]);
-  assert.deepEqual(await tags('moscow'), ['москва']);
+  assert.deepEqual(
+    [again.subscribers, again.to_write, again.written, again.changed, again.upcoming_to_list],
+    [1, 1, 1, 0, 0]
+  );
+  assert.deepEqual(await named('moscow'), [['москва'], ['Москва']]);
   assert.ok(!JSON.stringify(again).includes('ada'));
-  store.seed(tagged('tokyo', 'Ramen #東京 and #walks', ['walks']));
+  assert.ok(!/cabin|москва|road/i.test(JSON.stringify(again)));
+  store.seed(tagged('road', 'Off on a #Road-Trip', ['road-trip']));
   store.seed({ ...p, mcp_deleting: true });
   assert.equal((await fillTags(store, 'u', true)).changed, 1);
-  assert.deepEqual(await tags('tokyo'), ['walks']);
+  assert.deepEqual(await named('road'), [['road-trip'], undefined]);
   assert.equal((await fillAllTags(store)).skipped, 1);
 });
 test('weather fill skips current/future/existing days and proves account before keeping results', async () => {

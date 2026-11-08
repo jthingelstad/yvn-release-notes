@@ -629,11 +629,11 @@ export class Reader {
       }
     }
     const { stays, next, places } = await stayPage(this.context.store, this.uid, {
-        ...(before === undefined ? {} : { before }),
-        ...(from ? { floor: activityTime(localStart(from, tz)) } : {}),
-        ...(tag === null ? {} : { tag }),
-        limit: Number(a.limit ?? 50)
-      });
+      ...(before === undefined ? {} : { before }),
+      ...(from ? { floor: activityTime(localStart(from, tz)) } : {}),
+      ...(tag === null ? {} : { tag }),
+      limit: Number(a.limit ?? 50)
+    });
     // Tags by name, as a note's are here (MCP 1.15.0).
     const named = <T extends { tags?: string[]; tag_names?: string[] }>({ tags, tag_names, ...rest }: T) =>
       tags?.length ? { ...rest, tags: tag_names ?? tags } : rest;
@@ -743,7 +743,8 @@ export class Reader {
           raw = q.match(RAW_TERMS) ?? [];
         if (raw.length > 10) throw new ToolError('invalid_arguments', 'Use at most ten words or quoted phrases.');
         const terms = searchTerms(q);
-        if (!terms.length && sought === null) throw new ToolError('invalid_arguments', 'Provide search words or a tag.');
+        if (!terms.length && sought === null)
+          throw new ToolError('invalid_arguments', 'Provide search words or a tag.');
         rows = rows.filter(
           (i) =>
             terms.every((t) => searchedText(i as NoteRecord).includes(t)) &&
@@ -963,7 +964,8 @@ export class Reader {
       const notes = await this.context.store.allNotes(this.uid, true),
         all = pins(notes as NoteRecord[], this.birthday)
           .sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
-          .map(({ parts: _parts, ...pin }) => pin as OAuthRow);
+          // Its tags by name, as every MCP answer shows them (1.15.0).
+          .map(({ parts: _parts, tag_names, ...pin }) => ({ ...pin, tags: tag_names }) as OAuthRow);
       return [{ ...this.page(all, { ...a, limit: a.limit ?? 50 }, 'pins'), notes_total: notes.length }, content];
     }
     if (name === 'notes_find_place') {

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { FakeStore } from '../../packages/testing/store.ts';
-import { noteTags, tagFields } from '../../packages/domain/tags.ts';
+import { tagFields, textTags } from '../../packages/domain/tags.ts';
 import { OAuthService, publicOAuth, type OAuthContext, type OAuthRow } from '../../packages/backend/oauth.ts';
 export const ORIGIN = 'https://notes.example.com',
   NOW = Date.parse('2026-10-13T12:00:00Z') / 1000,
@@ -95,7 +95,7 @@ export function note(
   extra: OAuthRow = {}
 ) {
   // Its tags as every note writer stores them, unless the test gives its own.
-  const tagged = 'tags' in extra ? {} : tagFields(noteTags(text));
+  const tagged = 'tags' in extra ? {} : tagFields(textTags(text));
   const row = { pk: 'USER#u', sk: `NOTE#${day}#${id}`, text, written_at: day + 'T12:00:00Z', ...tagged, ...extra };
   context.store.seed(row);
   return row;

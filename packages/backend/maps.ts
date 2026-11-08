@@ -12,7 +12,7 @@ import {
 import type { Day } from '../domain/dates.ts';
 import type { NoteRecord } from '../domain/notes.ts';
 import { placeLabel } from '../domain/notes.ts';
-import { split, type TagPart } from '../domain/tags.ts';
+import { split, storedTags, type TagPart } from '../domain/tags.ts';
 import { codePointSlice, pythonTrim } from '../domain/unicode.ts';
 import { computeVersion, releaseName } from '../domain/version.ts';
 import { segments, type Link, type LinkPart } from './links.ts';
@@ -105,8 +105,10 @@ export interface Pin {
   lon: number;
   place: string;
   exact: boolean;
-  /** Its hashtags, every one, as stored with it: the Map's tag filter. */
+  /** Its tags' keys, every one, as stored with it: the Map's tag filter. */
   tags: string[];
+  /** Their names, one each (2026-11-08). */
+  tag_names: string[];
   /** The release its day falls in ("5.4", a year of life): the Map's
    * release filter. */
   release: string;
@@ -120,6 +122,10 @@ export interface Pin {
 type Part = string | LinkPart | TagPart;
 const PREVIEW = 140;
 const shown = (part: Part) => (typeof part === 'string' ? part : 'tag' in part ? part.text : part.label);
+const pinTags = (note: NoteRecord) => {
+  const tags = storedTags(note);
+  return { tags: tags.map((t) => t.key), tag_names: tags.map((t) => t.name) };
+};
 /** The first PREVIEW characters as read, so a link counts by its name and
  * a long address cannot fill the preview. A link or tag is kept whole or
  * left for the ellipsis. */
@@ -164,7 +170,8 @@ export function pins(notes: readonly NoteRecord[], birthday: Day): Pin[] {
       place: placeLabel(place),
       // A city chosen from the search stands for the city, not a spot in it.
       exact: place.from !== 'chosen',
-      tags: Array.isArray(note.tags) ? note.tags.map(String) : [],
+      // Its tags' keys and, beside them, their names (2026-11-08).
+      ...pinTags(note),
       release: releaseName(version.age),
       version: version.toString(),
       ...preview(note)

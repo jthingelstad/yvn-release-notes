@@ -321,8 +321,9 @@ What building it decided, past the design above.
 - **Remember always shows the name chosen.** Where another place is as near or
   nearer, the chosen place takes the stop's own spot. On a spot another place
   already has, a tie, the stay keeps the name as its own too, which outranks both.
-- **A tag or words hide check-ins on the Map,** since a check-in has neither, and
-  choosing Check-ins clears them. A release narrows both, by the check-in's day.
+- **Words hide check-ins on the Map,** since a check-in has none, and choosing
+  Check-ins clears them. A release narrows both, by the check-in's day. A tag
+  keeps the check-ins with it since 2026-11-08 (`docs/TAGS.md`, call 8).
 - **Activity's Check-ins button shows once there are any,** so nobody without them
   sees it. Rows read in the check-in's own zone, under the account's days.
 - **Settings shows its Check-ins group once there are stops or names.**
@@ -431,6 +432,17 @@ iOS can't report a visit in a simulator, so the app's test feeds one in, as
 Not in this design: badges, and a check-in setting a day's place or weather.
 Hiding home, which call 2 left to real data, is now ignoring a place (Jamie,
 2026-11-08).
+
+## Tags (2026-11-08)
+
+Check-ins and remembered places have tags (`docs/TAGS.md`; Jamie, 2026-11-08:
+"A remembered place can carry tags that are copied onto every check-in recorded
+there"). A new stop at a place gets the place's tags as it arrives; a stay shows
+the tags of every check-in in it, and tagging a stay sets the list on each. When
+a place gains a tag, the web offers once to tag the stays already there, with
+their count, and taking a tag off a place leaves them alone (call 6). One
+`checkin.tagged` row goes in the log with the place's id and the count, never a
+tag's name.
 
 ## Jamie's calls
 

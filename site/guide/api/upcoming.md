@@ -3,7 +3,7 @@ title: Upcoming dates through the API
 description: Read and change your birthdays, anniversaries, trips and events, and the reminders each morning's email carries.
 ---
 
-Each date has a `kind` (birthday, anniversary, trip or event), a `title` on one line, and a `date`: month and day, `MM-DD`, for a birthday or anniversary, and the full `YYYY-MM-DD` for an event or a trip's first day. A birthday or anniversary may have its first `year`, so the line can say which one it is. A trip has an `end_date` and a `place`, its destination, like "Zürich" or "Paris, Texas". `tag` groups dates, `reminders` are the days before to remind, and `"email": false` keeps a date's reminders out of the morning email, and so out of `GET /v1/upcoming/reminders`. [Upcoming](/guide/upcoming/) says how each works, and `/v1/openapi.json` has every field.
+Each date has a `kind` (birthday, anniversary, trip or event), a `title` on one line, and a `date`: month and day, `MM-DD`, for a birthday or anniversary, and the full `YYYY-MM-DD` for an event or a trip's first day. A birthday or anniversary may have its first `year`, so the line can say which one it is. A trip has an `end_date` and a `place`, its destination, like "Zürich" or "Paris, Texas". `tags` group dates, by name, up to 20 of them, as a note's do (the single `tag` of before version 1.21.0 still works), `reminders` are the days before to remind, and `"email": false` keeps a date's reminders out of the morning email, and so out of `GET /v1/upcoming/reminders`. [Upcoming](/guide/upcoming/) says how each works, and `/v1/openapi.json` has every field.
 
 ```sh
 curl https://notes.yourversionnumber.com/v1/upcoming/batch \

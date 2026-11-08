@@ -21,7 +21,7 @@ import {
   NAMED_PLACE_SPOTS_MAX,
   NAMED_PLACES_MAX
 } from '../../packages/domain/check-ins.ts';
-import { MAX_TAG } from '../../packages/domain/tags.ts';
+import { MAX_TAG, MAX_TAGS } from '../../packages/domain/tags.ts';
 import { UPCOMING_KINDS, UPCOMING_MAX, UPCOMING_TITLE_MAX } from '../../packages/domain/upcoming.ts';
 import {
   API_CHANGES,
@@ -1464,7 +1464,25 @@ const SCHEMAS: Record<string, Doc> = {
     properties: {
       kind: { type: 'string', enum: [...UPCOMING_KINDS] },
       title: { type: 'string', minLength: 1, maxLength: UPCOMING_TITLE_MAX, description: 'One line.' },
-      tag: { anyOf: [{ type: 'string', maxLength: MAX_TAG }, { type: 'null' }], description: 'One word, like family.' },
+      tags: {
+        type: 'array',
+        maxItems: MAX_TAGS,
+        items: { type: 'string', maxLength: MAX_TAG },
+        description:
+          'Its tags by name, the whole list, like ["Family", "Road Trip"] (1.21.0). A leading # is dropped; "Road Trip" and "road trip" are one tag.'
+      },
+      tag_names: {
+        type: 'array',
+        items: { type: 'string' },
+        readOnly: true,
+        description: 'The names of its tags, as `tags` lists their keys (1.21.0).'
+      },
+      tag: {
+        anyOf: [{ type: 'string', maxLength: MAX_TAG }, { type: 'null' }],
+        deprecated: true,
+        description:
+          'Its first tag’s key. Deprecated in 1.21.0, gone in the next release: send `tags`. Sent alone, it names the first tag and keeps the others.'
+      },
       date: {
         type: 'string',
         pattern: '^(?:\\d{4}-)?\\d{2}-\\d{2}$',

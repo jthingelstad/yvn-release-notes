@@ -57,7 +57,7 @@ import {
   resolvePlace,
   type UpcomingBatch,
   type UpcomingChange,
-  UPCOMING_HINTS
+  upcomingHint
 } from '../packages/backend/upcoming.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
 import { activityLog, again, badgeEvents, recordActivity, upcomingEvents } from '../packages/backend/activity.ts';
@@ -668,7 +668,7 @@ export async function writeUpcoming(
         throw new ToolError('conflict', `That date changed since you listed it${where}; read upcoming_list again.`);
       if (error.error === 'upcoming-missing')
         throw new ToolError('not_found', `No saved date has that id${where}; read upcoming_list for current ids.`);
-      throw new ToolError('invalid_arguments', (UPCOMING_HINTS[error.error] ?? error.error) + where);
+      throw new ToolError('invalid_arguments', (upcomingHint(error) ?? error.error) + where);
     }
     const shown: OAuthRow =
       name === 'upcoming_save'

@@ -68,7 +68,7 @@ import {
 import {
   batchShape,
   prepareUpcomingBatch,
-  UPCOMING_HINTS,
+  upcomingHint,
   type UpcomingBatch,
   type UpcomingChange
 } from '../packages/backend/upcoming.ts';
@@ -351,7 +351,7 @@ function upcomingRefusal(error: ApiError, one = false): ApiRefusal {
       `That date changed since you read it${where}. Read GET /v1/upcoming again and redo the change.`,
       extra
     );
-  return new ApiRefusal('invalid_request', (UPCOMING_HINTS[error.error] ?? "That date isn't right.") + where, extra);
+  return new ApiRefusal('invalid_request', (upcomingHint(error) ?? "That date isn't right.") + where, extra);
 }
 
 /** A note's place, from the search or Here. */
@@ -712,7 +712,7 @@ export async function writeApi(
   };
   const upcomingBody = (changes: readonly UpcomingChange[], dry: boolean): OAuthRow => {
     const view = (c: UpcomingChange) =>
-      agentUpcomingView({ ...(c.next as UpcomingEntry), occurrence: occurrence(c.next!, today) });
+      agentUpcomingView({ ...(c.next as UpcomingEntry), occurrence: occurrence(c.next!, today) }, true);
     return {
       dry_run: dry,
       added: changes.filter((c) => !c.previous).map(view),

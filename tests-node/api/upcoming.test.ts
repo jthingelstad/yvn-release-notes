@@ -85,31 +85,64 @@ test('all kinds create, read, update and delete privately without touching notes
   assert.equal((await f.store.profile('u'))?.upcoming_count, 3);
   assert.doesNotMatch(JSON.stringify(f.logs), /Alex|Paris|Concert|@example/);
 });
-test('optional tags normalize, persist, clear and export without entering journal tags or logs', async () => {
+test('tags keep their names, each once, persist, clear and export without entering journal notes or logs', async () => {
   const f = await fixture();
-  const saved = (await f.call('POST', undefined, { ...birthday, tag: ' #SPS ' })).data;
-  assert.equal(saved.tag, 'sps');
-  assert.equal((await f.call('GET')).data.entries[0].tag, 'sps');
+  const saved = (await f.call('POST', undefined, { ...birthday, tags: [' #Road Trip ', 'SPS', 'road trip'] })).data;
+  assert.deepEqual([saved.tags, saved.tag_names, saved.tag], [['road-trip', 'sps'], ['Road Trip', 'SPS'], 'road-trip']);
+  assert.deepEqual((await f.call('GET')).data.entries[0].tag_names, ['Road Trip', 'SPS']);
   const exported = (await f.call('GET', '/api/export')).data;
-  assert.equal(exported.upcoming[0].tag, 'sps');
-  assert.ok(markdown(exported).includes('Tag: \\#sps.'));
-  assert.deepEqual((await f.call('GET', '/api/tags')).data.tags, []);
-  for (const [revision, tag] of [
-    [1, 'Équipe-2016'],
-    [2, ''],
-    [3, null],
-    [4, undefined]
+  assert.deepEqual(exported.upcoming[0].tags, ['road-trip', 'sps']);
+  assert.ok(markdown(exported).includes('Tags: Road Trip, SPS.'));
+  // Tags only a date has are on the Tags page, counted apart from notes.
+  assert.deepEqual(
+    (await f.call('GET', '/api/tags')).data.tags.map((t: Item) => [t.tag, t.name, t.notes, t.upcoming]),
+    [
+      ['road-trip', 'Road Trip', 0, 1],
+      ['sps', 'SPS', 0, 1]
+    ]
+  );
+  // The whole list each time: a new list replaces it, and [] or null clears it.
+  for (const [revision, tags, keys] of [
+    [1, ['Équipe-2016', '🚗 Lake'], ['equipe-2016', '🚗-lake']],
+    [2, [], []],
+    [3, ['x'], ['x']],
+    [4, null, []]
   ] as const) {
-    const result = await f.call('PUT', '/api/upcoming/' + saved.id, { ...birthday, tag, revision });
+    const result = await f.call('PUT', '/api/upcoming/' + saved.id, { ...birthday, tags, revision });
     assert.equal(result.status, 200);
-    assert.equal(result.data.tag, revision === 1 ? 'equipe-2016' : null);
+    assert.deepEqual(result.data.tags, keys);
   }
-  // Older saved rows have no tag field and require no migration.
-  f.store.seed({ pk: 'USER#u', sk: 'UPCOMING#legacy', ...birthday, id: 'legacy', revision: 1 });
-  assert.equal((await f.call('GET')).data.entries.find((e: Item) => e.id === 'legacy').tag, null);
-  assert.doesNotMatch(JSON.stringify(f.logs), /sps|SPS|quipe/);
+  assert.doesNotMatch(JSON.stringify(f.logs), /sps|SPS|quipe|Road|Lake/);
 });
-test('a tag in any script is its letters, lowercased with their marks, as the hashtag would be', async () => {
+test('a client written for one tag sends tag: it names the first tag and keeps the rest', async () => {
+  const f = await fixture();
+  const one = (await f.call('POST', undefined, { ...birthday, tag: ' #SPS ' })).data;
+  assert.deepEqual([one.tags, one.tag_names, one.tag], [['sps'], ['SPS'], 'sps']);
+  // Such a client shows the key, so sending it back keeps the name it had.
+  const saved = (await f.call('POST', undefined, { ...birthday, tags: ['Family', 'Road Trip', 'Lake'] })).data,
+    put = (revision: number, value: Item) =>
+      f.call('PUT', '/api/upcoming/' + saved.id, { ...birthday, ...value, revision }).then((r) => r.data.tag_names);
+  assert.deepEqual(await put(1, { tag: 'family' }), ['Family', 'Road Trip', 'Lake']);
+  assert.deepEqual(await put(2, { tag: 'Cabin' }), ['Cabin', 'Road Trip', 'Lake']);
+  assert.deepEqual(await put(3, { tag: 'lake' }), ['Lake', 'Road Trip']);
+  assert.deepEqual(await put(4, { tag: null }), ['Road Trip']);
+  assert.deepEqual(await put(5, { tag: '' }), []);
+  // tags wins when both are sent; neither is no tags, as an omitted tag was.
+  assert.deepEqual(await put(6, { tags: ['A', 'B'], tag: 'c' }), ['A', 'B']);
+  assert.deepEqual(await put(7, {}), []);
+  // Older saved rows have one tag field, or none, and read without a migration.
+  f.store.seed({ pk: 'USER#u', sk: 'UPCOMING#legacy', ...birthday, id: 'legacy', revision: 1, tag: 'family' });
+  f.store.seed({ pk: 'USER#u', sk: 'UPCOMING#older', ...birthday, id: 'older', revision: 1 });
+  const entries = (await f.call('GET')).data.entries as Item[];
+  assert.deepEqual(
+    ['legacy', 'older'].map((id) => entries.find((e) => e.id === id)).map((e) => [e!.tags, e!.tag_names, e!.tag]),
+    [
+      [['family'], ['family'], 'family'],
+      [[], [], null]
+    ]
+  );
+});
+test('a tag in any script keeps its letters, lowercased with their marks, as the hashtag would be', async () => {
   const f = await fixture();
   for (const [given, tag] of [
     ['#Москва', 'москва'],
@@ -117,14 +150,16 @@ test('a tag in any script is its letters, lowercased with their marks, as the ha
     ['שָׁלוֹם', 'שָׁלוֹם'],
     ['नमस्ते-2026', 'नमस्ते-2026'],
     ['ΑΘΗΝΑ', 'αθηνα'],
-    ['Tokyo東京', 'tokyo']
+    ['Tokyo東京', 'tokyo東京'],
+    ['Москва Сити', 'москва-сити'],
+    ['١٢٣', '١٢٣']
   ]) {
-    const saved = await f.call('POST', undefined, { ...birthday, tag: given });
+    const saved = await f.call('POST', undefined, { ...birthday, tags: [given] });
     assert.equal(saved.status, 201, given);
-    assert.equal(saved.data.tag, tag, given);
+    assert.deepEqual([saved.data.tags, saved.data.tag_names], [[tag], [given.replace(/^#/, '')]], given);
   }
-  for (const tag of ['١٢٣', '東'.repeat(51), 'Москва Сити', '\u0301ab'])
-    assert.equal((await f.call('POST', undefined, { ...birthday, tag })).status, 400, tag);
+  for (const tag of ['東'.repeat(51), 'a,b', 'a\nb', '#'])
+    assert.equal((await f.call('POST', undefined, { ...birthday, tags: [tag] })).status, 400, tag);
 });
 test('signed-out, wrong Origin, no-account and deleting-account requests cannot write', async () => {
   const f = await fixture();
@@ -161,19 +196,16 @@ test('invalid dates, years, ranges, destinations, reminder bounds and unapproved
     { ...birthday, reminders: ['1'] },
     { ...birthday, reminders: [0, 1, 2, 3, 4, 5, 6] },
     { ...birthday, email: 'yes' },
+    ...['#', 'a'.repeat(51), 'a\nb', 'a,b', true, []].map((tag) => ({ ...birthday, tag })),
     ...[
-      '#',
-      '#sps #family',
-      'sps family',
-      'sps/family',
-      'two--hyphens',
-      '123',
-      'a'.repeat(51),
-      'a\nb',
-      '😀',
-      true,
-      []
-    ].map((tag) => ({ ...birthday, tag })),
+      'family',
+      ['#'],
+      ['a'.repeat(51)],
+      ['a\nb'],
+      ['a, b'],
+      [true],
+      Array.from({ length: 21 }, (_, i) => 't' + i)
+    ].map((tags) => ({ ...birthday, tags })),
     { ...birthday, user_id: 'b' },
     { ...birthday, auto_timezone: true },
     { ...birthday, place },

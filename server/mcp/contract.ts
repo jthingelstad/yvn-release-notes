@@ -53,6 +53,12 @@ const TAGS: JsonSchema = {
   items: { type: 'string', minLength: 1, maxLength: 200 },
   maxItems: 40
 };
+/** A date's, check-in's or place's tags: the whole list each time. */
+const TAGS_FIELD = (what: string): JsonSchema => ({
+  ...TAGS,
+  description:
+    `${what}'s tags by name, the whole list: "Road Trip", "lake", "東京". A leading # is dropped, and "Road Trip", "road trip" and "road-trip" are one tag. [] for none. At most 20 tags, each up to 50 characters, with no commas or line breaks.`
+});
 const FILES: JsonSchema = {
   type: 'array',
   description:
@@ -1995,10 +2001,12 @@ export const MCP_CONTRACT: McpContract = {
                   minLength: 1,
                   maxLength: 120
                 },
+                tags: TAGS_FIELD('A date'),
                 tag: {
                   type: ['string', 'null'],
-                  description: 'One word, like family; null for none',
-                  maxLength: 50
+                  description:
+                    'Deprecated in 1.15.0, gone in the next release: use tags. Names the first tag and keeps the others; ignored when tags is sent',
+                  maxLength: 200
                 },
                 date: {
                   type: 'string',

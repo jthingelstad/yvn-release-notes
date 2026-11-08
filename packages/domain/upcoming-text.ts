@@ -11,7 +11,7 @@
  * Rendering and parsing round-trip; a plan pairs lines with saved entries by
  * kind and folded title so an edited line is a change, not a remove and add. */
 import { validDay } from './dates.ts';
-import { tagName } from './tags.ts';
+import { MAX_TAGS, TAG_REFUSALS, spelling, storedTags, type Tag } from './tags.ts';
 import { fold } from './unicode.ts';
 import { annual, defaultReminders, UPCOMING_KINDS, type UpcomingEntry, type UpcomingKind } from './upcoming.ts';
 
@@ -19,7 +19,8 @@ export interface TextLine {
   line: number;
   kind: UpcomingKind;
   title: string;
-  tag: string | null;
+  /** Each tag once, named as written. */
+  tags: Tag[];
   date: string;
   year: number | null;
   end_date: string | null;
@@ -34,7 +35,7 @@ export interface TextProblem {
   problem: string;
 }
 export const TEXT_HEADER = [
-  '# One date per line: kind, date, title, then any of #tag @destination email:off remind:30,7,0',
+  '# One date per line: kind, date, title, then any of #tag #two words @destination email:off remind:30,7,0',
   '# Kinds: birthday, anniversary (dates MM-DD or YYYY-MM-DD), trip (YYYY-MM-DD..YYYY-MM-DD), event (YYYY-MM-DD).',
   '# Delete a line to remove that date. Lines starting with # are notes to yourself.'
 ];
@@ -48,6 +49,9 @@ export const placeText = (place: UpcomingEntry['place']) =>
 const sameReminders = (a: readonly number[], b: readonly number[]) =>
   a.length === b.length && a.every((n, i) => n === b[i]);
 const quoted = (title: string) => (/^"|[#@]\S|\b(?:email|remind):/i.test(title) ? `"${title}"` : title);
+/** A tag runs to the next marker, so one with a space is written as is; one
+ * whose name would read as a marker, or start a quote, is quoted. */
+const tagText = (name: string) => '#' + (/^"|\s(?:[#@]\S|email:|remind:)/i.test(name) ? `"${name}"` : name);
 
 /** One line per entry, the kinds in order then by date and title. */
 export function upcomingLine(entry: UpcomingEntry): string {
@@ -57,7 +61,7 @@ export function upcomingLine(entry: UpcomingEntry): string {
       ? entry.date + '..' + entry.end_date
       : entry.date;
   const parts = [entry.kind, date, quoted(entry.title)];
-  if (entry.tag) parts.push('#' + entry.tag);
+  for (const tag of storedTags(entry)) parts.push(tagText(tag.name));
   if (entry.place) parts.push('@' + placeText(entry.place));
   if (!entry.email) parts.push('email:off');
   if (!sameReminders(entry.reminders, defaultReminders(entry.kind))) parts.push('remind:' + entry.reminders.join(','));
@@ -91,11 +95,16 @@ function parseDate(kind: UpcomingKind, spec: string): Pick<TextLine, 'date' | 'y
 }
 function parseOptions(rest: string, out: TextLine): string | null {
   const parts = rest.split(OPTION).filter(Boolean);
-  for (const part of parts) {
+  for (let i = 0; i < parts.length; i++) {
+    let part = parts[i]!;
+    // A quoted tag may hold what reads as a marker: join it back up.
+    if (part.startsWith('#"')) while (!/^#".*"\s*$/su.test(part) && i + 1 < parts.length) part += ' ' + parts[++i];
     if (part.startsWith('#')) {
-      if (out.tag !== null) return 'One tag per date.';
-      if (/\s/.test(part)) return `A tag is one word: ${part}.`;
-      out.tag = part.slice(1);
+      const raw = part.slice(1).trim(),
+        tag = spelling(/^".*"$/.test(raw) ? raw.slice(1, -1) : raw);
+      if (typeof tag === 'string') return `${TAG_REFUSALS[tag]} (${part.trim()})`;
+      if (!out.tags.some((t) => t.key === tag.key)) out.tags.push(tag);
+      if (out.tags.length > MAX_TAGS) return TAG_REFUSALS.many;
     } else if (part.startsWith('@')) {
       if (out.place !== null) return 'One destination per trip.';
       out.place = part.slice(1).trim();
@@ -144,7 +153,7 @@ export function parseUpcomingText(text: string): { lines: TextLine[]; problems: 
       line,
       kind,
       title,
-      tag: null,
+      tags: [],
       ...when,
       place: null,
       email: null,
@@ -172,7 +181,7 @@ const sameDate = (entry: UpcomingEntry, line: TextLine) =>
 export function lineChanges(entry: UpcomingEntry, line: TextLine): boolean {
   return (
     entry.title !== line.title ||
-    (entry.tag ?? null) !== (line.tag === null ? null : tagName(line.tag)) ||
+    JSON.stringify(storedTags(entry)) !== JSON.stringify(line.tags) ||
     !sameDate(entry, line) ||
     placeText(entry.place) !== line.place ||
     (line.email !== null && entry.email !== line.email) ||
@@ -227,7 +236,7 @@ export function batchFor(plan: TextPlan) {
   const fields = (line: TextLine, entry?: UpcomingEntry) => ({
     kind: line.kind,
     title: line.title,
-    tag: line.tag,
+    tags: line.tags.map((t) => t.name),
     date: line.date,
     year: line.year,
     end_date: line.end_date,

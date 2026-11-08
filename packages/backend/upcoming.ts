@@ -5,7 +5,7 @@ import { reject, ApiError } from './sessions.ts';
 import { clean, type City } from './places.ts';
 import { validDay, parseDay, formatDay } from '../domain/dates.ts';
 import { pythonTrim, codePointLength, fold } from '../domain/unicode.ts';
-import { MAX_TAG, isTag, tagName } from '../domain/tags.ts';
+import { TAG_REFUSALS, fieldTags, isRefused, mergeTags, spelling, storedTags, type Tag } from '../domain/tags.ts';
 import {
   annual,
   defaultReminders,
@@ -17,11 +17,26 @@ import {
 } from '../domain/upcoming.ts';
 import type { Item } from './store-types.ts';
 
-export function upcomingContent(value: Item, today: string) {
+/** A date's fields from a request. `tags` is the whole list (the tags
+ * field's rules, docs/TAGS.md); a client written for one tag a date sends
+ * `tag` instead, which names the first tag and keeps the rest it had. */
+export function upcomingContent(value: Item, today: string, previous: UpcomingEntry | null = null) {
   if (
     Object.keys(value).some(
       (field) =>
-        !['kind', 'title', 'tag', 'date', 'year', 'end_date', 'place', 'email', 'reminders', 'revision'].includes(field)
+        ![
+          'kind',
+          'title',
+          'tags',
+          'tag',
+          'date',
+          'year',
+          'end_date',
+          'place',
+          'email',
+          'reminders',
+          'revision'
+        ].includes(field)
     )
   )
     reject(400, 'upcoming-fields');
@@ -31,21 +46,21 @@ export function upcomingContent(value: Item, today: string) {
   const title = pythonTrim(value.title);
   if (!title || codePointLength(title) > UPCOMING_TITLE_MAX || /[\p{Cc}\u2028\u2029]/u.test(title))
     reject(400, 'upcoming-title');
-  let tag: string | null = null;
-  if (value.tag != null) {
-    if (typeof value.tag !== 'string') reject(400, 'upcoming-tag');
-    const raw = pythonTrim(value.tag).replace(/^#/, '');
-    if (raw) {
-      tag = tagName(raw);
-      // One word, as a hashtag is: letters, numbers and their marks in any
-      // script, hyphens between words.
-      if (
-        codePointLength(raw) > MAX_TAG ||
-        !/^[\p{L}\p{N}][\p{L}\p{M}\p{N}\u200c\u200d]*(?:-[\p{L}\p{N}][\p{L}\p{M}\p{N}\u200c\u200d]*)*$/u.test(raw) ||
-        !isTag(tag)
-      )
-        reject(400, 'upcoming-tag');
-    } else if (pythonTrim(value.tag)) reject(400, 'upcoming-tag');
+  let tags: Tag[] = [];
+  if (value.tags != null) {
+    const given = fieldTags(value.tags);
+    if (isRefused(given)) reject(400, 'upcoming-tag', { reason: given.refused, at: given.at });
+    tags = given;
+  } else if (Object.hasOwn(value, 'tag')) {
+    let first: Tag | null = null;
+    if (value.tag != null && !(typeof value.tag === 'string' && !pythonTrim(value.tag))) {
+      const tag = spelling(value.tag);
+      if (typeof tag === 'string') reject(400, 'upcoming-tag', { reason: tag });
+      first = tag;
+    }
+    // Such a client shows a key, so the name it had is kept for that key.
+    const had = previous ? storedTags(previous) : [];
+    tags = mergeTags(first ? [had.find((t) => t.key === first.key) ?? first] : [], had.slice(1));
   }
   const date = value.date;
   if (
@@ -85,7 +100,9 @@ export function upcomingContent(value: Item, today: string) {
   return {
     kind,
     title,
-    tag,
+    tags: tags.map((t) => t.key),
+    tag_names: tags.map((t) => t.name),
+    tag: tags[0]?.key ?? null,
     date,
     year: year as number | null,
     end_date: end_date as string | null,
@@ -101,7 +118,7 @@ export const UPCOMING_HINTS: Record<string, string> = {
   'upcoming-fields': 'Use only the fields in the schema; an id needs its revision, and a new entry has neither.',
   'upcoming-kind': 'kind is birthday, anniversary, trip or event.',
   'upcoming-title': `Give a title of up to ${UPCOMING_TITLE_MAX} characters on one line.`,
-  'upcoming-tag': `A tag is one word of letters, numbers and hyphens, up to ${MAX_TAG} characters.`,
+  'upcoming-tag': `tags is a list of up to 20 names, each up to 50 characters on one line, without commas.`,
   'upcoming-date': 'A birthday or anniversary date is MM-DD; a trip or event date is YYYY-MM-DD.',
   'upcoming-year': 'A year goes with a birthday or anniversary and is not after today.',
   'upcoming-end': 'A trip has an end_date on or after its date; other kinds have none.',
@@ -112,6 +129,14 @@ export const UPCOMING_HINTS: Record<string, string> = {
   'upcoming-limit': `The account can hold ${UPCOMING_MAX} saved dates.`,
   'upcoming-batch': 'Send at most 50 entries per call.'
 };
+
+/** A refusal's hint, the tags field's own reason first. */
+export function upcomingHint(error: ApiError): string | undefined {
+  const reason = error.extra.reason;
+  return error.error === 'upcoming-tag' && typeof reason === 'string' && Object.hasOwn(TAG_REFUSALS, reason)
+    ? TAG_REFUSALS[reason as keyof typeof TAG_REFUSALS]
+    : UPCOMING_HINTS[error.error];
+}
 
 /** A batch of adds, changes and removes (the text editor, and agents through
  * `workers/capture.ts`) validated as a whole before anything is written. A
@@ -209,7 +234,7 @@ export async function prepareUpcomingBatch(
       at_(list, index, () => ({
         next: {
           id: previous?.id ?? randomUUID(),
-          ...upcomingContent(fields, today),
+          ...upcomingContent(fields, today, previous),
           revision: (previous?.revision ?? 0) + 1,
           created_at: previous?.created_at ?? at,
           updated_at: at

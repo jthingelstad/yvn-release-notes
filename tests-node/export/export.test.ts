@@ -299,6 +299,8 @@ test('ZIP carries Upcoming separately in both exports without adding journal not
   const context = await setup();
   const entry = {
     id: 'concert',
+    tags: ['sps'],
+    tag_names: ['sps'],
     tag: 'sps',
     kind: 'event' as const,
     title: 'A concert',
@@ -325,7 +327,7 @@ test('ZIP carries Upcoming separately in both exports without adding journal not
     zip
       .get(prefix + 'release-notes.md')!
       .toString()
-      .includes('Tag: \\#sps.')
+      .includes('Tags: sps.')
   );
 });
 test('replaced or deleting builds cannot publish an export', async () => {

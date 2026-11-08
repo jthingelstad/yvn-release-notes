@@ -171,12 +171,15 @@ export function agentFeedbackPage(item: FeedbackItem, part = 0, offset = 0): OAu
   return { ...feedbackHead(item), text, text_offset, answers, answer_count: item.answers.length, next };
 }
 /** An Upcoming date for an agent: the saved fields, the destination as text,
- * and the next occurrence as the email will say it. Never table keys. */
-export function agentUpcomingView(view: UpcomingView): OAuthRow {
+ * and the next occurrence as the email will say it. Never table keys. Its
+ * tags by name, as an agent says them; `/v1` keeps keys in `tags` and the
+ * names beside them, as its notes do. */
+export function agentUpcomingView(view: UpcomingView, keys = false): OAuthRow {
   return {
     id: view.id,
     kind: view.kind,
     title: view.title,
+    ...(keys ? { tags: view.tags, tag_names: view.tag_names } : { tags: view.tag_names }),
     tag: view.tag,
     date: view.date,
     year: view.year,
@@ -934,7 +937,7 @@ export class Reader {
         views = all
           .filter((v) => v.occurrence.status !== 'past')
           .toSorted((x, y) => x.occurrence.date.localeCompare(y.occurrence.date) || x.title.localeCompare(y.title))
-          .map(agentUpcomingView);
+          .map((v) => agentUpcomingView(v));
       return [
         {
           ...this.page(views, { ...a, limit: a.limit ?? 50 }, 'entries'),

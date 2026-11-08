@@ -79,7 +79,7 @@ export async function upcomingRoutes(
       ? null
       : {
           id: previous?.id ?? randomUUID(),
-          ...upcomingContent(value, today),
+          ...upcomingContent(value, today, previous),
           revision: (previous?.revision ?? 0) + 1,
           created_at: previous?.created_at ?? at,
           updated_at: at

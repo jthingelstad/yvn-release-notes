@@ -683,6 +683,8 @@ test('Upcoming tools need the upcoming scope; list pages saved dates with occurr
   const dated = (id: string, kind: 'trip' | 'event', date: string, end_date: string | null): UpcomingEntry => ({
       id,
       kind,
+      tags: [],
+      tag_names: [],
       tag: null,
       title: id,
       date,

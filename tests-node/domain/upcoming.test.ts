@@ -12,6 +12,8 @@ import { fold } from '../../packages/domain/unicode.ts';
 const entry: UpcomingEntry = {
   id: 'alex',
   kind: 'birthday',
+  tags: [],
+  tag_names: [],
   tag: null,
   title: 'Alex',
   date: '10-20',
@@ -86,6 +88,8 @@ test('page search reads title, tag, kind, destination and the line, folded, ever
     ...entry,
     kind: 'trip' as const,
     title: 'Été à Zürich',
+    tags: ['sps'],
+    tag_names: ['sps'],
     tag: 'sps',
     date: '2026-10-20',
     year: null,

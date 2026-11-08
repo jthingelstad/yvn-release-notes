@@ -7,6 +7,8 @@ import type { UpcomingEntry } from '../../packages/domain/upcoming.ts';
 const entry: UpcomingEntry = {
   id: 'alex',
   kind: 'birthday',
+  tags: [],
+  tag_names: [],
   tag: null,
   title: 'Alex',
   date: '10-20',
@@ -45,8 +47,8 @@ test('annual dates appear once a year with that year’s version or count, never
     sequence: 3
   });
   assert.deepEqual(
-    calendarEvents([{ ...entry, year: null, tag: 'family' }], '2026-10-13', 'h').map((e) => [e.summary, e.description]),
-    Array(5).fill(['Alex — birthday', '#family'])
+    calendarEvents([{ ...entry, year: null, tags: ['family', 'road-trip'], tag_names: ['Family', 'Road Trip'] }], '2026-10-13', 'h').map((e) => [e.summary, e.description]),
+    Array(5).fill(['Alex — birthday', 'Tags: Family, Road Trip'])
   );
   const leap = calendarEvents([{ ...entry, date: '02-29', year: 2000 }], '2027-06-01', 'h');
   assert.deepEqual(
@@ -124,6 +126,8 @@ test('iCalendar text: CRLF, escaped values, stamps without separators, 75-octet 
           title: 'Dinner; with Sam, Alex \\ co',
           date: '2026-10-20',
           year: null,
+          tags: ['sps'],
+          tag_names: ['sps'],
           tag: 'sps',
           place: paris
         }
@@ -150,7 +154,7 @@ test('iCalendar text: CRLF, escaped values, stamps without separators, 75-octet 
       'DTSTART;VALUE=DATE:20261020',
       'DTEND;VALUE=DATE:20261021',
       'SUMMARY:Dinner\\; with Sam\\, Alex \\\\ co — Paris',
-      'DESCRIPTION:#sps',
+      'DESCRIPTION:Tags: sps',
       'LOCATION:Paris\\, Ile-de-France\\, France',
       'CATEGORIES:Event',
       'URL:https://notes.example.com/upcoming/',

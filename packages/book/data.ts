@@ -12,6 +12,7 @@ import { daysBetween, parseDay } from '../domain/dates.ts';
 import type { PlaceRecord } from '../domain/notes.ts';
 import { computeVersion, releaseName, releaseSpan } from '../domain/version.ts';
 import * as rich from '../domain/rich.ts';
+import { storedTags, type Tag } from '../domain/tags.ts';
 import { MAX_PHOTOS, type PageSize } from './limits.ts';
 
 export { MAX_PHOTOS, MAX_TITLE } from './limits.ts';
@@ -274,9 +275,15 @@ function indexOf(found: Map<string, { name: string; versions: string[] }>, short
           : versions.map((v) => (short ? v.slice(short.length + 1) : v)).join(' · ')
     }));
 }
-function enter(found: Map<string, { name: string; versions: string[] }>, name: string, version: string) {
-  const key = name.toLowerCase(),
+function enter(
+  found: Map<string, { name: string; versions: string[] }>,
+  name: string,
+  version: string,
+  tag?: string
+) {
+  const key = tag ?? name.toLowerCase(),
     entry = found.get(key) ?? { name, versions: [] };
+  if (tag) entry.name = name;
   if (entry.versions.at(-1) !== version) entry.versions.push(version);
   found.set(key, entry);
 }
@@ -463,7 +470,8 @@ export async function bookPlan(
     const raw = byDay.get(day)!,
       view = await dayView(p, day, raw, sky[day], undefined, own[day]),
       shown = view.notes as Item[],
-      kept: BookNote[] = [];
+      kept: BookNote[] = [],
+      keptTags: Tag[] = [];
     let city = typeof view.where === 'string' ? view.where : '';
     shown.forEach((n, i) => {
       const item = raw[i]!,
@@ -502,7 +510,10 @@ export async function bookPlan(
         } else note.files.push(typeof m.name === 'string' && m.name ? m.name : 'A PDF');
       }
       if (n.attachments) note.files.push(plural(Number(n.attachments), 'other file'));
-      if (note.blocks.length || note.images.length || note.audio.length || note.files.length) kept.push(note);
+      if (note.blocks.length || note.images.length || note.audio.length || note.files.length) {
+        kept.push(note);
+        keptTags.push(...storedTags(item));
+      }
     });
     if (!kept.length) continue;
     const reading = view.weather ? (sky[day] as Reading) : null,
@@ -517,11 +528,10 @@ export async function bookPlan(
     if (view.weather) weather = true;
     noted.push(day);
     if (where) enter(places, where, version);
-    for (const n of kept) {
-      if (n.place) enter(places, n.place, version);
-      for (const b of n.blocks)
-        for (const line of b.lines) for (const s of line) if (s.tag) enter(tags, s.text, version);
-    }
+    for (const n of kept) if (n.place) enter(places, n.place, version);
+    // Every tag a note has, from the field too, by key, named as most
+    // recently written (docs/TAGS.md).
+    for (const t of keptTags) enter(tags, '#' + t.name, version, t.key);
     const dateline = [longDate(day), view.weather ? String(view.weather) : city].filter(Boolean).join(' · '),
       name = monthName(day);
     if (chapters.at(-1)?.name !== name) chapters.push({ name, days: [], versions: '', counts: '' });

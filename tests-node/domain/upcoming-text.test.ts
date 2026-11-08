@@ -9,6 +9,8 @@ import {
 } from '../../packages/domain/upcoming-text.ts';
 import type { UpcomingEntry } from '../../packages/domain/upcoming.ts';
 const base = {
+  tags: [],
+  tag_names: [],
   tag: null,
   year: null,
   end_date: null,
@@ -33,6 +35,8 @@ const alex: UpcomingEntry = {
     kind: 'anniversary',
     title: 'Our first hike',
     date: '06-14',
+    tags: ['sps'],
+    tag_names: ['sps'],
     tag: 'sps',
     reminders: [30, 7, 0]
   },
@@ -90,7 +94,7 @@ test('parsing is forgiving about case and spacing, strict about dates, kinds and
       'anniversary 06-14',
       'event 2026-10-01 "Unclosed',
       'event 2026-10-01 "Quoted" trailing words #tag',
-      'event 2026-10-01 Two tags #a #b',
+      'event 2026-10-01 A long tag #' + 'x'.repeat(51),
       'event 2026-10-01 Bad reminders remind:1,x'
     ].join('\n')
   );
@@ -99,7 +103,7 @@ test('parsing is forgiving about case and spacing, strict about dates, kinds and
       line: 3,
       kind: 'birthday',
       title: 'Grandma June',
-      tag: null,
+      tags: [],
       date: '06-14',
       year: null,
       end_date: null,
@@ -111,7 +115,7 @@ test('parsing is forgiving about case and spacing, strict about dates, kinds and
       line: 4,
       kind: 'trip',
       title: 'Day trip',
-      tag: null,
+      tags: [],
       date: '2026-12-05',
       year: null,
       end_date: '2026-12-05',
@@ -127,6 +131,33 @@ test('parsing is forgiving about case and spacing, strict about dates, kinds and
   assert.match(problems[1]!.problem, /lunch/);
   assert.match(problems[8]!.problem, /quoted title/);
   assert.match(problems[9]!.problem, /Unexpected text/);
+  assert.match(problems[10]!.problem, /at most 50 characters/);
+});
+
+test('a date takes several tags, with spaces and emoji, each once, and they round-trip', () => {
+  const road = {
+    ...hike,
+    id: 'r',
+    tags: ['road-trip', '🚗-lake', 'a-b'],
+    tag_names: ['Road Trip', '🚗 Lake', 'a #b'],
+    tag: 'road-trip'
+  };
+  const line = upcomingLine(road);
+  assert.equal(line, 'anniversary 06-14 Our first hike #Road Trip #🚗 Lake #"a #b" remind:30,7,0');
+  const parsed = parseUpcomingText(line);
+  assert.deepEqual(parsed.problems, []);
+  assert.deepEqual(parsed.lines[0]!.tags, [
+    { key: 'road-trip', name: 'Road Trip' },
+    { key: '🚗-lake', name: '🚗 Lake' },
+    { key: 'a-b', name: 'a #b' }
+  ]);
+  assert.equal(planUpcomingText(parsed.lines, [road]).unchanged, 1);
+  // The same tag twice is one tag; a new spelling is a change.
+  const twice = parseUpcomingText('event 2026-10-01 Lunch #Road Trip #road-trip #ROAD TRIP').lines[0]!;
+  assert.deepEqual(twice.tags, [{ key: 'road-trip', name: 'Road Trip' }]);
+  const respelled = parseUpcomingText(line.replace('#Road Trip', '#road trip')).lines;
+  assert.equal(planUpcomingText(respelled, [road]).change.length, 1);
+  assert.match(parseUpcomingText('event 2026-10-01 Lunch #a, b').problems[0]!.problem, /no commas/);
 });
 
 test('a plan pairs by kind and folded title, exact dates first, and turns the rest into adds and removes', () => {
@@ -165,7 +196,7 @@ test('a plan pairs by kind and folded title, exact dates first, and turns the re
     revision: 1,
     kind: 'birthday',
     title: 'alex',
-    tag: 'family',
+    tags: ['family'],
     date: '10-21',
     year: 1976,
     end_date: null,

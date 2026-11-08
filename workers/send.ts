@@ -23,7 +23,7 @@ import {
   type NoteRecord,
   type PlaceRecord
 } from '../packages/domain/notes.ts';
-import { found as tags } from '../packages/domain/tags.ts';
+import { mergeTags, storedTags } from '../packages/domain/tags.ts';
 import { addDays } from '../packages/domain/dates.ts';
 import type { ProductUpdate } from '../packages/domain/product-updates.ts';
 import { remindersFor, type UpcomingDue } from '../packages/domain/upcoming.ts';
@@ -196,7 +196,7 @@ export async function readYesterday(
         ...combined(notes as NoteRecord[]),
         links: dayLinks(notes as NoteRecord[]),
         files: media.counts(notes),
-        tags: tags(notes.map((n) => n.text ?? '').join('\n\n')),
+        tags: mergeTags(...notes.map(storedTags)),
         others: notes.reduce((n, note) => n + media.others(note), 0),
         places: placesOf(notes, own, then),
         thumbs: thumbsOf(sub, notes),
@@ -293,7 +293,7 @@ export async function readOnThisDay(
         links: dayLinks(notes as NoteRecord[]),
         files,
         sky,
-        tags: tags(notes.map((n) => n.text ?? '').join('\n\n')),
+        tags: mergeTags(...notes.map(storedTags)),
         thumbs: thumbsOf(sub, notes),
         photos: []
       });

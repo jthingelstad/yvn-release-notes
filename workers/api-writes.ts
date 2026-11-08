@@ -95,7 +95,7 @@ import {
 } from '../packages/domain/check-ins.ts';
 import { iso, localDay, validDay, validTimezone } from '../packages/domain/dates.ts';
 import { MAX_NOTE, noteWords, type NoteRecord } from '../packages/domain/notes.ts';
-import { found } from '../packages/domain/tags.ts';
+import { TAG_REFUSALS, fieldTags, isRefused, noteTags, type Tag } from '../packages/domain/tags.ts';
 import { occurrence, type UpcomingEntry } from '../packages/domain/upcoming.ts';
 import { codePointLength } from '../packages/domain/unicode.ts';
 import { computeVersion } from '../packages/domain/version.ts';
@@ -180,8 +180,8 @@ export interface ApiStore extends TokenReads, TagRowStore, CheckInReads {
 
 /** The operations the router hands on, each with its body's fields. */
 export const API_WRITES: Record<string, readonly string[]> = {
-  'notes.create': ['text', 'date', 'written_at', 'place', 'uploads', 'markup'],
-  'notes.edit': ['date', 'id', 'text', 'revision'],
+  'notes.create': ['text', 'date', 'written_at', 'place', 'uploads', 'markup', 'tags'],
+  'notes.edit': ['date', 'id', 'text', 'revision', 'tags'],
   'notes.append': ['date', 'id', 'text'],
   'notes.media': ['date', 'id', 'uploads'],
   'notes.media.remove': ['date', 'id', 'n'],
@@ -259,6 +259,18 @@ function realTime(at: string): boolean {
 export const untilUtcMidnight = (now: number): number => (Math.floor(now / 86400) + 1) * 86400 - now;
 
 /** The note's words; a note with files may have none. */
+/** A tags field (1.21.0; docs/TAGS.md): null when none was sent, else its
+ * tags, each once, or invalid_request saying which and why. */
+export function tagsArg(args: Arguments, field = 'tags'): Tag[] | null {
+  if (!Object.hasOwn(args, field) || args[field] === undefined || args[field] === null) return null;
+  const tags = fieldTags(args[field]);
+  if (isRefused(tags))
+    throw new ApiRefusal('invalid_request', TAG_REFUSALS[tags.refused] + (tags.at >= 0 ? ` (${field}[${tags.at}])` : ''), {
+      field
+    });
+  return tags;
+}
+
 function text(args: Arguments, optional = false): string {
   if (optional && !Object.hasOwn(args, 'text')) return '';
   if (typeof args.text !== 'string') throw new ApiRefusal('text_required', 'Send the note as text.', { field: 'text' });
@@ -1343,6 +1355,8 @@ export async function writeApi(
           typed = now,
           d: string,
           place: OAuthRow | null = null;
+        // The tags field (1.21.0), checked before any file is claimed.
+        const given = tagsArg(args);
         if (op === 'notes.create') {
           if (Object.hasOwn(args, 'written_at')) {
             const at = String(args.written_at),
@@ -1423,7 +1437,12 @@ export async function writeApi(
             };
         Object.assign(note, {
           text: words,
-          tags: found(words),
+          // The tags field, then the text's hashtags; without the field an
+          // edit or append keeps the tags the old words didn't give it.
+          ...(() => {
+            const tags = noteTags(words, given, old);
+            return { tags: tags.map((t) => t.key), tag_names: tags.map((t) => t.name) };
+          })(),
           // New files change no words, so the links keep the titles they have.
           links:
             op === 'notes.media'

@@ -20,7 +20,7 @@ import { FakeObjects, FakeMail, FakeInvocations } from '../packages/testing/serv
 import type { ApiContext } from '../packages/backend/sessions.ts';
 import type { Item } from '../packages/backend/store-types.ts';
 import { localDay, addDays, iso } from '../packages/domain/dates.ts';
-import { found } from '../packages/domain/tags.ts';
+import { tagFields, textTags } from '../packages/domain/tags.ts';
 import { runEvent as runExport } from '../workers/export.ts';
 import { fakeWriter } from '../packages/testing/commentary.ts';
 import * as dayone from '../packages/backend/dayone.ts';
@@ -144,7 +144,7 @@ export async function main(args = process.argv.slice(2)) {
       source: id.startsWith('w-') ? 'web' : 'email',
       written_at: addDays(day, late) + 'T17:00:00Z',
       tz: 'America/Chicago',
-      tags: found(text),
+      ...tagFields(textTags(text)),
       // Replies, so they keep their email's subject, as inbound does.
       ...(id.startsWith('w-') ? {} : { raw_key: 'raw/' + id, subject: 'Re: Release notes' })
     });

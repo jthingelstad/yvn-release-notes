@@ -4,7 +4,7 @@ import type { Item } from './store-types.ts';
 import type { Objects } from './services.ts';
 import { segments, type Link } from './links.ts';
 import { others, MAX_UPLOAD } from './media.ts';
-import { split } from '../domain/tags.ts';
+import { split, storedTags } from '../domain/tags.ts';
 import { isRich, RICH } from '../domain/rich.ts';
 import { writtenAt, placeLabel, mapUrl, type NoteRecord, type PlaceRecord } from '../domain/notes.ts';
 import { localDay, addDays, validTimezone } from '../domain/dates.ts';
@@ -76,7 +76,13 @@ export async function noteView(item: Item, tz: string, writingOut = false, link?
   if (item.connection) Object.assign(view, { connection: item.connection, on_behalf_of: item.on_behalf_of });
   // A token's note is the owner's own words, "via" the token's name.
   if (item.source === 'api' && item.token) view.token = item.token;
-  if (item.tags) view.tags = item.tags;
+  // Its tags as keys, and as named (docs/TAGS.md): a tag from the tags field
+  // shows under the note, a hashtag where it was typed.
+  if (item.tags) {
+    const tags = storedTags(item);
+    view.tags = tags.map((t) => t.key);
+    view.tag_names = tags.map((t) => t.name);
+  }
   if (item.place) {
     const label = placeLabel(item.place as PlaceRecord);
     if (label) view.place = label;

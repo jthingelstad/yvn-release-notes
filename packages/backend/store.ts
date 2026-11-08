@@ -150,6 +150,7 @@ const key = (user: string, sk: string): Key => ({ pk: `USER#${user}`, sk });
 export const TOKEN_TOMBSTONE_SECONDS = 30 * 86400;
 import { writtenAt as written } from '../domain/notes.ts';
 import { givingYears, type GivingYear } from '../domain/giving.ts';
+import type { Tag } from '../domain/tags.ts';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export type ExportSlot = 'EXPORT' | 'BOOK';
 type Ops = NonNullable<TransactWriteCommandInput['TransactItems']>;
@@ -830,7 +831,7 @@ export class Store {
   }
   async noteTags(user: string) {
     return this.notesBetween(user, '0000-00-00', '9999-99-99', {
-      ProjectionExpression: 'sk, #g',
+      ProjectionExpression: 'sk, #g, tag_names',
       ExpressionAttributeNames: { '#g': 'tags' }
     });
   }
@@ -907,14 +908,15 @@ export class Store {
     text: string,
     at: string,
     links: Item[] | null = null,
-    tags: string[] | null = null
+    tags: readonly Tag[] | null = null
   ) {
     const sets = ['#t = :t', 'updated_at = :at'];
     const removes: string[] = [];
     const values: Item = { ':t': text, ':at': at };
     for (const [name, ref, value] of [
       ['links', ':l', links],
-      ['tags', ':g', tags]
+      ['tags', ':g', tags?.map((t) => t.key)],
+      ['tag_names', ':gn', tags?.map((t) => t.name)]
     ] as const) {
       if (value?.length) {
         sets.push(`${name} = ${ref}`);
@@ -2654,6 +2656,7 @@ export class Store {
         ':revision': old.revision,
         ':text': note.text,
         ':tags': note.tags,
+        ':names': note.tag_names ?? [],
         ':links': note.links,
         ':updated_at': note.updated_at,
         ':next': note.revision
@@ -2672,7 +2675,7 @@ export class Store {
           TableName: this.tableName,
           Key: { pk: String(note.pk), sk: String(note.sk) },
           UpdateExpression:
-            'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next' +
+            'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next' +
             (added?.length ? ', media = list_append(if_not_exists(media, :none), :m)' : ''),
           ConditionExpression:
             'author = :author AND #c = :connection AND #t = :old AND #r = :revision AND ' +
@@ -2897,6 +2900,7 @@ export class Store {
         ...(old.revision === undefined ? {} : { ':revision': old.revision }),
         ':text': note.text,
         ':tags': note.tags,
+        ':names': note.tag_names ?? [],
         ':links': note.links,
         ':updated_at': note.updated_at,
         ':next': note.revision
@@ -2913,7 +2917,7 @@ export class Store {
           TableName: this.tableName,
           Key: { pk: String(note.pk), sk: String(note.sk) },
           UpdateExpression:
-            'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next' +
+            'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next' +
             (added?.length ? ', media = list_append(if_not_exists(media, :none), :m)' : ''),
           ConditionExpression:
             (mine ? '#src = :api AND #c = :token AND ' : 'attribute_exists(pk) AND ') +
@@ -3185,7 +3189,7 @@ export class Store {
    * first: the recent tags' row. */
   async tagsBetween(user: string, first: string, last: string) {
     return this.notesBetween(user, first, last, {
-      ProjectionExpression: 'sk, #g, written_at, received_at',
+      ProjectionExpression: 'sk, #g, tag_names, written_at, received_at',
       ExpressionAttributeNames: { '#g': 'tags' }
     });
   }

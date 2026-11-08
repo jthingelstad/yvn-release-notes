@@ -26,7 +26,7 @@ import { Store } from '../packages/backend/store.ts';
 import { iso } from '../packages/domain/dates.ts';
 import { isRich, RICH } from '../packages/domain/rich.ts';
 import { MAX_NOTE, noteWords } from '../packages/domain/notes.ts';
-import { found } from '../packages/domain/tags.ts';
+import { TAG_REFUSALS, fieldTags, isRefused, noteTags, type Tag } from '../packages/domain/tags.ts';
 import { computeVersion } from '../packages/domain/version.ts';
 import { codePointLength, wellFormed } from '../packages/domain/unicode.ts';
 import {
@@ -182,6 +182,14 @@ export async function writeCapture(
   const files: InlineFile[] = Object.hasOwn(args, 'files') ? inlineFiles(args.files) : [];
   if (Object.hasOwn(args, 'markup') && args.markup !== RICH)
     throw new ToolError('invalid_arguments', 'markup is rich, or left out for words shown as typed.');
+  // The tags field (MCP 1.15.0; docs/TAGS.md): null when none was sent.
+  let given: Tag[] | null = null;
+  if ((name === 'notes_create' || name === 'notes_edit') && args.tags != null) {
+    const tags = fieldTags(args.tags);
+    if (isRefused(tags))
+      throw new ToolError('invalid_arguments', TAG_REFUSALS[tags.refused] + (tags.at >= 0 ? ` (tags[${tags.at}])` : ''));
+    given = tags;
+  }
   const uid = String(family.user_id),
     fid = String(family.id),
     key = 'CAPTURE#' + fid + '#' + digest(String(args.idempotency_key)),
@@ -266,9 +274,13 @@ export async function writeCapture(
             ...(place ? { place } : {}),
             ...(args.markup === RICH ? { markup: RICH } : {})
           };
+      const tagged = noteTags(text, given, old);
       Object.assign(note, {
         text,
-        tags: found(text),
+        // The tags field, then the text's hashtags; without the field an edit
+        // or append keeps the tags the old words didn't give it.
+        tags: tagged.map((t) => t.key),
+        tag_names: tagged.map((t) => t.name),
         // New files change no words, so the links keep the titles they have.
         links:
           name === 'notes_attach'

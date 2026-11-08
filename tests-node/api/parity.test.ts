@@ -76,5 +76,25 @@ for (const sample of fixture.cases)
       Object.values(row).forEach(inherited);
     };
     inherited(body);
+    // First-class tags (2026-11-08, docs/TAGS.md): a note's tag_names sit
+    // beside its tags, one each, and a tag's row has its name and its
+    // upcoming and check-in counts. Tested in tags.test.ts and api.test.ts.
+    const named = (v: unknown): void => {
+      if (Array.isArray(v)) return v.forEach(named);
+      if (!v || typeof v !== 'object') return;
+      const row = v as Record<string, unknown>;
+      if ('tag_names' in row) {
+        assert.equal((row.tag_names as unknown[]).length, (row.tags as unknown[]).length);
+        delete row.tag_names;
+      }
+      if ('tag' in row && 'check_ins' in row) {
+        assert.ok(typeof row.name === 'string' && typeof row.upcoming === 'number' && typeof row.check_ins === 'number');
+        delete row.name;
+        delete row.upcoming;
+        delete row.check_ins;
+      }
+      Object.values(row).forEach(named);
+    };
+    named(body);
     assert.deepEqual(body, sample.response);
   });

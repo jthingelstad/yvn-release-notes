@@ -286,10 +286,14 @@ test('notes order by writing time across pages, range includes last day, duplica
 test('edits remove stale links and tags, missing note is not recreated', async () => {
   const s = setup();
   s.seed(note);
-  const edited = await s.updateNote('u', day, 'a-note', 'New', 'at', [{ url: 'https://example.com' }], ['tag']);
+  const edited = await s.updateNote('u', day, 'a-note', 'New', 'at', [{ url: 'https://example.com' }], [
+    { key: 'road-trip', name: 'Road Trip' }
+  ]);
   assert.equal(edited?.text, 'New');
+  assert.deepEqual([edited?.tags, edited?.tag_names], [['road-trip'], ['Road Trip']]);
   const cleared = await s.updateNote('u', day, 'a-note', 'Clear', 'at2');
   assert.equal(Object.hasOwn(cleared!, 'tags'), false);
+  assert.equal(Object.hasOwn(cleared!, 'tag_names'), false);
   assert.equal(Object.hasOwn(cleared!, 'links'), false);
   assert.equal(await s.updateNote('u', day, 'missing', 'words', 'at'), null);
   assert.equal((await s.deleteNote('u', day, 'a-note'))?.text, 'Clear');
@@ -810,7 +814,7 @@ test('capture append keeps owner files and unknown fields; owner edits and conne
   const request = s.memory.calls[0]!.input.TransactItems![2]!.Update!;
   assert.equal(
     request.UpdateExpression,
-    'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next'
+    'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next'
   );
   assert.equal(request.ExpressionAttributeValues?.[':old'], 'First');
   assert.ok(request.ConditionExpression?.includes('#c = :connection'));
@@ -905,7 +909,7 @@ test('capture with files proves media:write in the one family check and appends 
     TableName: 'T',
     Key: { pk: 'USER#u', sk: note.sk },
     UpdateExpression:
-      'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next, media = list_append(if_not_exists(media, :none), :m)',
+      'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next, media = list_append(if_not_exists(media, :none), :m)',
     ConditionExpression:
       'author = :author AND #c = :connection AND #t = :old AND #r = :revision AND attribute_not_exists(updated_at) AND size(media) = :had AND attribute_not_exists(media_gone)',
     ExpressionAttributeNames: { '#t': 'text', '#r': 'revision', '#c': 'connection' },
@@ -916,6 +920,7 @@ test('capture with files proves media:write in the one family check and appends 
       ':revision': 1,
       ':text': 'First',
       ':tags': old.tags,
+      ':names': [],
       ':links': old.links,
       ':updated_at': 'now',
       ':next': 2,

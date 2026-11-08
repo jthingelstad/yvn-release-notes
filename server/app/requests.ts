@@ -5,6 +5,7 @@ import { validDay, localDay } from '../../packages/domain/dates.ts';
 import { codePointLength, pythonTrim } from '../../packages/domain/unicode.ts';
 import { MAX_NOTE, noteWords } from '../../packages/domain/notes.ts';
 import { MAX_QUERY, searchTerms } from '../../packages/domain/search.ts';
+import { fieldTags, isRefused, type Tag } from '../../packages/domain/tags.ts';
 export const json = (value: unknown, status = 200, headers: HeadersInit = {}) => oauthResponse(status, value, headers);
 /** Largest JSON body a valid request can need. Note text is limited to MAX_NOTE code points after
  * trimming, and JSON.stringify spends at most 6 bytes on one code point (a \u00XX control escape;
@@ -78,3 +79,12 @@ export const pageLimit = (params: URLSearchParams): number => {
   return Math.max(1, Math.min(Number(raw), 100));
 };
 export const dateOf = (n: Item): string => String(n.sk).split('#')[1]!;
+
+/** A body's tags field (docs/TAGS.md): null when it sent none, else its tags,
+ * or 400 `tags` with why (`reason`, from domain/tags.ts) and which (`at`). */
+export function tagsFrom(b: Item, field = 'tags'): Tag[] | null {
+  if (!Object.hasOwn(b, field) || b[field] === undefined) return null;
+  const tags = fieldTags(b[field]);
+  if (isRefused(tags)) reject(400, 'tags', { reason: tags.refused, at: tags.at });
+  return tags;
+}

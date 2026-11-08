@@ -206,7 +206,7 @@ test('a token’s change goes only to its own note, from the words and revision 
               Update: {
                 TableName: 'T',
                 Key: { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n' },
-                UpdateExpression: 'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next',
+                UpdateExpression: 'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next',
                 ConditionExpression:
                   '#src = :api AND #c = :token AND #t = :old AND #r = :revision AND ' +
                   (edited ? 'updated_at = :edited' : 'attribute_not_exists(updated_at)'),
@@ -218,6 +218,7 @@ test('a token’s change goes only to its own note, from the words and revision 
                   ':revision': 'r2',
                   ':text': 'Coffee #walks, then more',
                   ':tags': ['walks'],
+                  ':names': [],
                   ':links': [],
                   ':updated_at': 200,
                   ':next': 'r3',
@@ -261,7 +262,7 @@ test('with notes:all, a change to another channel’s note proves that scope, an
               Update: {
                 TableName: 'T',
                 Key: { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n' },
-                UpdateExpression: 'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next',
+                UpdateExpression: 'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next',
                 ConditionExpression:
                   'attribute_exists(pk) AND ' +
                   (old.text === undefined ? 'attribute_not_exists(#t)' : '#t = :old') +
@@ -272,6 +273,7 @@ test('with notes:all, a change to another channel’s note proves that scope, an
                   ...(old.text === undefined ? {} : { ':old': 'Coffee #walks' }),
                   ':text': 'Written in the app',
                   ':tags': [],
+                  ':names': [],
                   ':links': [],
                   ':updated_at': 200,
                   ':next': 'r1',
@@ -347,7 +349,7 @@ test('a token’s files prove media:write too, and new ones go after those the n
                 TableName: 'T',
                 Key: { pk: 'USER#u', sk: 'NOTE#2026-10-29#t-n' },
                 UpdateExpression:
-                  'SET #t = :text, tags = :tags, links = :links, updated_at = :updated_at, #r = :next, ' +
+                  'SET #t = :text, tags = :tags, tag_names = :names, links = :links, updated_at = :updated_at, #r = :next, ' +
                   'media = list_append(if_not_exists(media, :none), :m)',
                 ConditionExpression:
                   '#src = :api AND #c = :token AND #t = :old AND #r = :revision AND ' +
@@ -362,6 +364,7 @@ test('a token’s files prove media:write too, and new ones go after those the n
                   ':revision': 'r1',
                   ':text': 'Coffee #walks',
                   ':tags': ['walks'],
+                  ':names': [],
                   ':links': [],
                   ':updated_at': 200,
                   ':next': 'r2',
@@ -711,7 +714,7 @@ test('the recent tags read only the tags and times of the window’s notes', asy
       'QueryCommand',
       {
         TableName: 'T',
-        ProjectionExpression: 'sk, #g, written_at, received_at',
+        ProjectionExpression: 'sk, #g, tag_names, written_at, received_at',
         ExpressionAttributeNames: { '#g': 'tags' },
         KeyConditionExpression: 'pk = :u AND sk BETWEEN :a AND :b',
         ExpressionAttributeValues: { ':u': 'USER#u', ':a': 'NOTE#2026-09-30#', ':b': 'NOTE#2026-10-29$' }

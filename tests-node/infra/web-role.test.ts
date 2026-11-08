@@ -281,8 +281,30 @@ test('the web role grants every request each route and the OAuth endpoints make'
   await call('PUT', '/api/check-ins/' + stop, { name: 'Corner Bakery', remember: true, revision: 2 });
   const place = String(((await call('GET', '/api/check-ins/places')).b.places as { id: string }[])[0]!.id);
   await call('PUT', '/api/check-ins/places/' + place, { name: 'The Bakery' });
-  await call('DELETE', '/api/check-ins/places/' + place, undefined, 204);
+  // Ignored and back (2026-11-08), counted, and its check-ins deleted.
+  await call('PUT', '/api/check-ins/places/' + place, { ignored: true });
+  await call('PUT', '/api/check-ins/places/' + place, { ignored: false });
   await call('DELETE', '/api/check-ins/' + stop, undefined, 204);
+  const later = '2026-10-14T09:00:00.000Z',
+    again = checkInId(later, 'cd34');
+  store.seed({
+    pk: 'USER#' + currentUser,
+    sk: checkInKey(later, again),
+    id: again,
+    at: later,
+    arrived: later,
+    left: null,
+    lat: 48.85,
+    lon: 2.35,
+    source: 'visit',
+    day: later.slice(0, 10),
+    revision: 1
+  });
+  const counted = Number(
+    ((await call('GET', '/api/check-ins/places/' + place)).b.place as { check_ins: number }).check_ins
+  );
+  await call('DELETE', '/api/check-ins/places/' + place + '/check-ins', { count: counted });
+  await call('DELETE', '/api/check-ins/places/' + place, undefined, 204);
   await call('DELETE', '/api/check-ins', { confirm: 'all' });
 
   // Upcoming and its calendar feed.

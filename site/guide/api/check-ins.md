@@ -13,7 +13,7 @@ Send each stop as the phone reports it, with `POST /v1/check-ins` and an `Idempo
 
 A later report from the same token with the same `source` and arrival, to the second, is the same stay. It fills in what was missing, so an arrival and then a departure, or the same report twice, land in one check-in and your app keeps no ids. A `tap` is never filled in.
 
-Each answer has its `check_in`: its `id`, `at`, `day`, `arrived` and `left` (either can be null), `lat`, `lon`, `accuracy_m`, `time_zone`, `source`, `revision`, and the name it shows as `label`. A token that can't read the log or all your notes isn't told a remembered place's name. A name is worked out when it's read, the first of these that fits:
+Each answer has its `check_in` and `kept`, which is false when the stop is at a place you ignore: nothing is kept, and the `check_in` shows what it would have been, with an `id` that names nothing. Each answer's `check_in` has its `id`, `at`, `day`, `arrived` and `left` (either can be null), `lat`, `lon`, `accuracy_m`, `time_zone`, `source`, `revision`, and the name it shows as `label`. A token that can't read the log or all your notes isn't told a remembered place's name. A name is worked out when it's read, the first of these that fits:
 
 1. Its own `name`, given once.
 2. A remembered place, the nearest within 100 m of its spot, whose id is `place`.
@@ -34,7 +34,17 @@ The log has a row for each stay, of the kind `checkin`, with `checkin` (its id),
 - `PATCH /v1/check-ins/{id}`: give it a name of its own, with `{"name": "…", "revision": 1}` and the revision you read, or `"name": null` to take it away.
 - `DELETE /v1/check-ins/{id}`: delete it, and every stop read as one with it.
 - `DELETE /v1/check-ins`: delete every check-in, with `?confirm=all`. It answers how many went, and your remembered places stay.
-- `GET /v1/check-ins/places`: the places you've told it to remember.
-- `POST /v1/check-ins/places`: remember a place, with `{"name": "…", "lat": 45.5, "lon": -93.2}`. A name you already use gets this spot too.
-- `PATCH /v1/check-ins/places/{id}`: rename it, with `{"name": "…"}`.
-- `DELETE /v1/check-ins/places/{id}`: forget it, all its spots with it. Your check-ins there go back to the names they had.
+- `GET /v1/check-ins/places`: the places you've told it to remember, each saying whether it's `ignored`.
+- `POST /v1/check-ins/places`: remember a place, with `{"name": "…", "lat": 45.5, "lon": -93.2}`, and `"ignored": true` to ignore it from the start. A name you already use gets this spot too.
+- `GET /v1/check-ins/places/{id}`: one place, with `check_ins`, how many stays are there, hidden ones too.
+- `PATCH /v1/check-ins/places/{id}`: rename it with `{"name": "…"}`, ignore it with `{"ignored": true}`, or both.
+- `DELETE /v1/check-ins/places/{id}`: forget it, all its spots with it. Your check-ins there go back to the names they had, and any it hid show again.
+- `DELETE /v1/check-ins/places/{id}/check-ins?count=`: delete every check-in there, hidden ones too, with the count `GET /v1/check-ins/places/{id}` gave you. The place stays.
+
+## Ignored places
+
+Ignore a place you don't want logged, such as home. From then on a stop there isn't kept: your app is told `kept: false`, and nothing is saved or looked up. The check-ins already there are hidden, not deleted. They're left out of `GET /v1/check-ins`, the log and every read of one, which answers `not_found`, until you unignore the place or forget it. A stop already kept there before you ignored it can still be filled in.
+
+To delete them instead, read the place for its `check_ins`, show that number, and send it as `count`. If it changed in between, the answer is `revision_mismatch` with the `count` now, and nothing is deleted.
+
+The log says when a place was ignored (`checkin.ignored`) or unignored (`checkin.unignored`), with the place's id, and a deletion at one place is a `checkin.deleted` with `place` and `count`.

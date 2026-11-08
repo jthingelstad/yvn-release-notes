@@ -249,6 +249,15 @@ test('the MCP and capture roles grant every request /v1 makes', async () => {
   await v1('PATCH', `/v1/check-ins/${String(reportedStay.id)}`, { name: 'Lunch', revision: reportedStay.revision });
   await v1('DELETE', `/v1/check-ins/${String(reportedStay.id)}`, undefined, 204);
   await v1('POST', '/v1/check-ins', { lat: 48.85, lon: 2.35, source: 'tap' }, 201);
+  // An ignored place (1.20.0): a stop there kept before, one not kept, the
+  // count and the deletion.
+  const ignored = (
+    (await v1('POST', '/v1/check-ins/places', { name: 'Away', lat: 48.85, lon: 2.35 }, 201)).place as OAuthRow
+  ).id as string;
+  await v1('PATCH', `/v1/check-ins/places/${ignored}`, { ignored: true });
+  await v1('POST', '/v1/check-ins', { lat: 48.85, lon: 2.35, source: 'visit', arrived: '2026-10-12T20:00:00Z' });
+  const counted = (await v1('GET', `/v1/check-ins/places/${ignored}`)).place as OAuthRow;
+  await v1('DELETE', `/v1/check-ins/places/${ignored}/check-ins?count=${String(counted.check_ins)}`);
   await v1('DELETE', '/v1/check-ins?confirm=all');
   await v1('GET', '/v1/activity');
   // The archive (1.15.0), all reads under the MCP role.

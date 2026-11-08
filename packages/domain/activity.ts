@@ -75,9 +75,11 @@
  *   (its id), `label` (what it shows), `arrived`, `left`, `source`, `day`,
  *   `time_zone`, `merged` (how many it stands for) and who sent it; never its
  *   spot (domain/check-ins.ts). checkin.named: `checkin`, `day`.
- *   checkin.deleted: `day` and `count`, or `all` and `count` for every one.
+ *   checkin.deleted: `day` and `count`, or `all` and `count` for every one,
+ *   or `place` and `count` for those at a remembered place.
  *   checkin.place: `place` (a remembered place's id), `change` (added, spot,
- *   renamed or forgotten). Never a name or a spot, and these stay when it goes.
+ *   renamed or forgotten). checkin.ignored and checkin.unignored: `place`.
+ *   Never a name or a spot, and these stay when it goes.
  * - account.created. */
 import { codePointSlice } from './unicode.ts';
 

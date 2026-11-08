@@ -1,5 +1,6 @@
-// Settings for check-ins (docs/CHECK-INS.md): the places remembered, to rename
-// and forget, and deleting every check-in. Shown once there is either.
+// Settings for check-ins (docs/CHECK-INS.md): the places remembered, to rename,
+// ignore and forget, with their check-ins to delete, and deleting every
+// check-in. Shown once there is either.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { api } from '../lib/api.ts';
@@ -25,16 +26,47 @@ export function CheckInSettings() {
   const forget = (place: NamedPlace) =>
     run(async () => {
       problem.clear();
-      if (!window.confirm(`Forget ${place.name}? Its stops go back to the names they had.`)) return;
+      const back = place.ignored ? ' The check-ins hidden there show again.' : '';
+      if (!window.confirm(`Forget ${place.name}? Its stops go back to the names they had.${back}`)) return;
       const r = await api('DELETE', '/api/check-ins/places/' + encodeURIComponent(place.id));
+      if (!r.ok) return problem.show(r.data);
+      await changed();
+    });
+  // Ignore this location (Jamie, 2026-11-08): no new stop there is kept, and
+  // those already there are hidden until it's unchecked.
+  const ignore = (place: NamedPlace, ignored: boolean) =>
+    run(async () => {
+      problem.clear();
+      const r = await api('PUT', '/api/check-ins/places/' + encodeURIComponent(place.id), { ignored });
+      if (!r.ok) return problem.show(r.data);
+      await changed();
+    });
+  // Delete existing check-ins here: counted first, hidden ones too, and gone
+  // only for the count shown.
+  const removeHere = (place: NamedPlace) =>
+    run(async () => {
+      problem.clear();
+      const at = '/api/check-ins/places/' + encodeURIComponent(place.id),
+        read = await api<{ place: NamedPlace & { check_ins: number } }>('GET', at);
+      if (!read.ok) return problem.show(read.data);
+      const n = read.data.place.check_ins;
+      if (!n) return window.alert(`There are no check-ins at ${place.name}.`);
+      const those = count(n, 'check-in', 'check-ins');
+      if (
+        !window.confirm(`Delete ${those} at ${place.name}? They can’t be brought back. ${place.name} stays remembered.`)
+      )
+        return;
+      const r = await api('DELETE', at + '/check-ins', { count: n });
       if (!r.ok) return problem.show(r.data);
       await changed();
     });
   const removeAll = () =>
     run(async () => {
       problem.clear();
-      const those = count(stays.length, 'check-in', 'check-ins');
-      if (!window.confirm(`Delete ${those}? They can’t be brought back. The places you remember stay.`)) return;
+      const those = count(stays.length, 'check-in', 'check-ins'),
+        hidden = places.some((place) => place.ignored) ? ' Those hidden at places you ignore go too.' : '';
+      if (!window.confirm(`Delete ${those}? They can’t be brought back.${hidden} The places you remember stay.`))
+        return;
       const r = await api('DELETE', '/api/check-ins', { confirm: 'all' });
       if (!r.ok) return problem.show(r.data);
       await changed();
@@ -54,13 +86,33 @@ export function CheckInSettings() {
         ) : (
           <div className="section" key={place.id}>
             <h3>{place.name}</h3>
-            <p className="hint">{count(place.spots.length, 'spot', 'spots')}</p>
+            <p className="hint">
+              {count(place.spots.length, 'spot', 'spots')}
+              {place.ignored ? ', ignored' : ''}
+            </p>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={place.ignored}
+                disabled={busy}
+                onChange={(e) => ignore(place, e.target.checked)}
+              />{' '}
+              Ignore this location
+            </label>
+            <p className="hint">
+              {place.ignored
+                ? 'No new check-ins are kept here, and the ones already here are hidden. Uncheck it to bring them back.'
+                : 'Stop keeping check-ins here, and hide the ones already here. Nothing is deleted.'}
+            </p>
             <p className="row">
               <button className="quiet" type="button" disabled={busy} onClick={() => setRenaming(place.id)}>
                 Rename {place.name}
               </button>
               <button className="quiet" type="button" disabled={busy} onClick={() => forget(place)}>
                 Forget {place.name}
+              </button>
+              <button className="quiet danger" type="button" disabled={busy} onClick={() => removeHere(place)}>
+                Delete existing check-ins here
               </button>
             </p>
           </div>

@@ -97,9 +97,11 @@ const GROUPS: readonly { name: string; description: string; routes: readonly str
       'check-ins.delete',
       'check-ins.delete-all',
       'check-ins.places',
+      'check-ins.places.get',
       'check-ins.places.add',
       'check-ins.places.change',
-      'check-ins.places.delete'
+      'check-ins.places.delete',
+      'check-ins.places.delete-check-ins'
     ]
   }
 ];
@@ -406,7 +408,9 @@ const OPERATIONS: Record<string, Doc> = {
     description:
       'A stay at a time, with its spot and the name it shows. Back-to-back stops at one place read as one, and `ids` ' +
       'lists the check-ins in it. `from` and `to` are your days, a stay going by when it began, up to ' +
-      `${RANGE_DAYS_MAX} days; \`before\` is the \`next\` of an earlier page. Since 1.18.0.`,
+      `${RANGE_DAYS_MAX} days; \`before\` is the \`next\` of an earlier page. A stay at an ignored place is ` +
+      'hidden: left out here, in the activity log and from each read of one, until the place is unignored (1.20.0). ' +
+      'Since 1.18.0.',
     parameters: [
       { name: 'from', in: 'query', description: 'First day, YYYY-MM-DD.', schema: { type: 'string', format: 'date' } },
       {
@@ -435,11 +439,13 @@ const OPERATIONS: Record<string, Doc> = {
       `never continued. Times over a week ahead are refused; older ones are fine, since a phone can be offline. The ` +
       `first ${V1_LIMITS.lookups} new stays a UTC day get their \`district\`, one paid lookup each, and those past that ` +
       `are still saved with none; RateLimit-Limit counts those. After ${V1_LIMITS.checkin} reports a day, \`rate_limited\`. ` +
-      'Since 1.18.0.',
+      'A new stop at an ignored place is not kept (1.20.0): it answers 200 with `kept` false and `check_in` as it ' +
+      'would have read, its `place` naming the ignored place, and its `id` naming no check-in. A report filling in ' +
+      'a stop kept before the place was ignored still lands. Since 1.18.0.',
     requestBody: { required: true, content: { 'application/json': { schema: ref('CheckInReport') } } },
     responses: {
-      '200': answer('CheckInWritten', 'Checked in at Home.', true),
-      '201': answer('CheckInWritten', 'Checked in at Home.', true)
+      '200': answer('CheckInReported', 'Checked in at Home.', true),
+      '201': answer('CheckInReported', 'Checked in at Home.', true)
     }
   },
   'check-ins.name': {
@@ -480,8 +486,17 @@ const OPERATIONS: Record<string, Doc> = {
   'check-ins.places': {
     operationId: 'listNamedPlaces',
     summary: 'The places you remember',
-    description: 'Each name with its spots. The nearest within 100 m names a stop. Since 1.18.0.',
+    description:
+      'Each name with its spots, and whether it is `ignored` (1.20.0). The nearest within 100 m names a stop. Since 1.18.0.',
     responses: { '200': answer('NamedPlaces', 'Their names, a line each.') }
+  },
+  'check-ins.places.get': {
+    operationId: 'getNamedPlace',
+    summary: 'One remembered place, and how many check-ins are there',
+    description:
+      '`check_ins` counts the stays at it, hidden or not: a stay is at the remembered place nearest where it began. ' +
+      'Show it before deleting them with DELETE /v1/check-ins/places/{id}/check-ins. Since 1.20.0.',
+    responses: { '200': answer('NamedPlaceCounted', 'Its name and count.') }
   },
   'check-ins.places.add': {
     operationId: 'rememberPlace',
@@ -489,7 +504,8 @@ const OPERATIONS: Record<string, Doc> = {
     description:
       'A name already in use, ignoring case, gains this spot and answers 200; a new one answers 201. It applies at ' +
       `once to every stop within 100 m, past and future. An account has up to ${NAMED_PLACES_MAX} names, and a name up ` +
-      `to ${NAMED_PLACE_SPOTS_MAX} spots. Since 1.18.0.`,
+      `to ${NAMED_PLACE_SPOTS_MAX} spots. \`ignored\` true ignores it as it is remembered, and false unignores it ` +
+      '(1.20.0). Since 1.18.0.',
     requestBody: { required: true, content: { 'application/json': { schema: ref('NamedPlaceWrite') } } },
     responses: {
       '200': answer('NamedPlaceWritten', 'Its name.', true),
@@ -498,16 +514,40 @@ const OPERATIONS: Record<string, Doc> = {
   },
   'check-ins.places.change': {
     operationId: 'renameNamedPlace',
-    summary: 'Rename a remembered place',
-    description: 'Every spot and stop follows. A name another place has is refused. Since 1.18.0.',
+    summary: 'Rename a remembered place, or ignore it',
+    description:
+      'Send `name`, `ignored`, or both. Every spot and stop follows a new name, and a name another place has is ' +
+      'refused. Ignored (1.20.0, Jamie’s call): no new stop there is kept, and the stops already there are hidden, ' +
+      'not deleted, from every list, the activity log and the Map. False brings them back. Since 1.18.0.',
     requestBody: { required: true, content: { 'application/json': { schema: ref('NamedPlaceName') } } },
     responses: { '200': answer('NamedPlaceWritten', 'Its name.', true) }
   },
   'check-ins.places.delete': {
     operationId: 'forgetNamedPlace',
     summary: 'Forget a remembered place',
-    description: 'All its spots go, and stops there show their neighbourhood again. Since 1.18.0.',
+    description:
+      'All its spots go, and stops there show their neighbourhood again. Forgetting an ignored place brings its ' +
+      'stops back. Since 1.18.0.',
     responses: { '204': { description: 'Forgotten.', headers: writeHeaders() } }
+  },
+  'check-ins.places.delete-check-ins': {
+    operationId: 'deleteCheckInsAtPlace',
+    summary: 'Delete the check-ins at a remembered place',
+    description:
+      'Every stay at it, hidden or not, and their rows in the activity log; the place stays, ignored or not. ' +
+      '`count` is the `check_ins` GET /v1/check-ins/places/{id} answered, and a different number now is ' +
+      '`revision_mismatch` with the new `count`. One `checkin.deleted` row stays in the log with the place’s id and ' +
+      'the count. Since 1.20.0.',
+    parameters: [
+      {
+        name: 'count',
+        in: 'query',
+        required: true,
+        description: 'How many check-ins you were shown.',
+        schema: { type: 'integer', minimum: 0 }
+      }
+    ],
+    responses: { '200': answer('CheckInsDeleted', 'Deleted 12.', true) }
   },
   'uploads.start': {
     operationId: 'startUpload',
@@ -720,7 +760,13 @@ const SCHEMAS: Record<string, Doc> = {
           code: { type: 'string', enum: Object.keys(V1_ERRORS) },
           message: { type: 'string', description: 'A sentence that says what to do next.' },
           field: { type: 'string', description: 'The field or header at fault.' },
-          revision: { type: 'string', description: 'With revision_mismatch: the note’s current revision.' }
+          revision: { type: 'string', description: 'With revision_mismatch: the note’s current revision.' },
+          count: {
+            type: 'integer',
+            minimum: 0,
+            description:
+              'With revision_mismatch from DELETE /v1/check-ins/places/{id}/check-ins: how many check-ins are there now (1.20.0).'
+          }
         }
       }
     }
@@ -1592,6 +1638,19 @@ const SCHEMAS: Record<string, Doc> = {
     }
   },
   CheckInWritten: { type: 'object', required: ['check_in'], properties: { check_in: ref('CheckIn') } },
+  CheckInReported: {
+    type: 'object',
+    required: ['check_in'],
+    properties: {
+      check_in: ref('CheckIn'),
+      kept: {
+        type: 'boolean',
+        description:
+          'False when the stop was at an ignored place and nothing was kept; its `check_in` names no check-in. ' +
+          'Since 1.20.0: an answer replayed from before then leaves it out, which means true.'
+      }
+    }
+  },
   CheckInsDeleted: { type: 'object', required: ['deleted'], properties: { deleted: { type: 'integer' } } },
   CheckInReport: {
     type: 'object',
@@ -1636,7 +1695,27 @@ const SCHEMAS: Record<string, Doc> = {
           properties: { lat: { type: 'number' }, lon: { type: 'number' } }
         }
       },
+      ignored: {
+        type: 'boolean',
+        description: 'No stop here is kept, and those kept already are hidden. Since 1.20.0.'
+      },
       revision: { type: 'integer' }
+    }
+  },
+  NamedPlaceCounted: {
+    type: 'object',
+    required: ['place'],
+    properties: {
+      place: {
+        allOf: [
+          ref('NamedPlace'),
+          {
+            type: 'object',
+            required: ['check_ins'],
+            properties: { check_ins: { type: 'integer', description: 'Stays at it, hidden or not.' } }
+          }
+        ]
+      }
     }
   },
   NamedPlaces: {
@@ -1652,14 +1731,18 @@ const SCHEMAS: Record<string, Doc> = {
     properties: {
       name: { type: 'string', minLength: 1, maxLength: CHECKIN_NAME_MAX },
       lat: { type: 'number', minimum: -90, maximum: 90 },
-      lon: { type: 'number', minimum: -180, maximum: 180 }
+      lon: { type: 'number', minimum: -180, maximum: 180 },
+      ignored: { type: 'boolean', description: 'Ignore the place, or unignore it. Left out, as it was. Since 1.20.0.' }
     }
   },
   NamedPlaceName: {
     type: 'object',
-    required: ['name'],
+    minProperties: 1,
     additionalProperties: false,
-    properties: { name: { type: 'string', minLength: 1, maxLength: CHECKIN_NAME_MAX } }
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: CHECKIN_NAME_MAX },
+      ignored: { type: 'boolean', description: 'Ignore the place, or unignore it. Since 1.20.0.' }
+    }
   },
   Activity: {
     type: 'object',

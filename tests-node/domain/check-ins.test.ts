@@ -9,7 +9,10 @@ import {
   checkInKeyOf,
   checkInName,
   continues,
+  hiddenStay,
+  ignoredAt,
   metres,
+  namedPlaceView,
   nearestPlace,
   sameName,
   shownName,
@@ -18,6 +21,7 @@ import {
   stayTimes,
   stayView,
   UNNAMED_STOP,
+  withIgnored,
   type CheckIn,
   type NamedPlace
 } from '../../packages/domain/check-ins.ts';
@@ -181,4 +185,32 @@ test('a name is one line of up to 100 characters, matched ignoring case', () => 
   for (const wrong of ['', '   ', 'two\nlines', 'x'.repeat(101), 7, null]) assert.equal(checkInName(wrong), null);
   assert.ok(sameName('Corner Bakery', 'corner bakery'));
   assert.ok(!sameName('Corner Bakery', 'Bakery'));
+});
+
+test('an ignored place hides a stay that begins there, and only that one (Jamie, 2026-11-08)', () => {
+  const home = withIgnored(place('p-1', 'Home', HOME), true),
+    far = place('p-2', 'Far', FAR);
+  assert.equal(ignoredAt(NEAR, [home, far])?.id, 'p-1');
+  assert.equal(ignoredAt(FAR, [home, far]), null);
+  assert.equal(ignoredAt({ lat: 46, lon: -93 }, [home]), null);
+  // A stay goes by where it began.
+  const starts = [stop('2026-10-12T14:00:00Z', null, NEAR), stop('2026-10-12T14:20:00Z', null, FAR)];
+  assert.ok(hiddenStay(starts, [home, far]));
+  assert.ok(!hiddenStay([...starts].reverse(), [home, far]));
+  // The nearer place decides: an ignored one farther off hides nothing.
+  const across = withIgnored(place('p-3', 'Across the street', { lat: 45.0008, lon: -93 }), true),
+    porch = place('p-4', 'Porch', { lat: 45.0003, lon: -93 });
+  assert.ok(!hiddenStay([stop('2026-10-12T14:00:00Z', null, { lat: 45.0004, lon: -93 })], [across, porch]));
+  assert.ok(!hiddenStay(starts, [place('p-1', 'Home', HOME)]));
+});
+
+test('the flag is kept only while it is true, and every place says it', () => {
+  const home = place('p-1', 'Home', HOME),
+    on = withIgnored(home, true);
+  assert.equal(on.ignored, true);
+  assert.equal(home.ignored, undefined, 'the place read is untouched');
+  const off = withIgnored(on, false);
+  assert.ok(!('ignored' in off));
+  assert.equal(namedPlaceView(on).ignored, true);
+  assert.equal(namedPlaceView(home).ignored, false);
 });

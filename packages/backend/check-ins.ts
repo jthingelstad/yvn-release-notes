@@ -1,6 +1,14 @@
 /** Reading stays (domain/check-ins.ts): check-ins grouped as lists show them,
  * for `GET /v1/check-ins`, MCP and the writes that change a whole stay. */
-import { checkInCursor, checkInKey, continues, type CheckIn, type NamedPlace } from '../domain/check-ins.ts';
+import {
+  checkInCursor,
+  checkInKey,
+  continues,
+  hiddenStay,
+  placeOfStay,
+  type CheckIn,
+  type NamedPlace
+} from '../domain/check-ins.ts';
 
 export interface CheckInReads {
   namedPlaces(user: string): Promise<NamedPlace[]>;
@@ -32,15 +40,17 @@ export async function stayOf(
 
 /** A page of stays, newest first: below `before` (a cursor, or an ISO time),
  * each beginning at `floor` or later, with where the next page starts. A stay
- * goes by when it began, so one that began before `floor` is on an earlier day. */
+ * goes by when it began, so one that began before `floor` is on an earlier day.
+ * Stays at an ignored place are left out, unless `hidden` asks for them. */
 export async function stayPage(
   store: CheckInReads,
   user: string,
-  o: { before?: string; floor?: string; limit: number }
+  o: { before?: string; floor?: string; limit: number; hidden?: boolean }
 ): Promise<{ stays: CheckIn[][]; next: string | null; places: NamedPlace[] }> {
   const places = await store.namedPlaces(user),
     stays: CheckIn[][] = [],
-    under = (at: string) => o.floor !== undefined && at < o.floor;
+    under = (at: string) => o.floor !== undefined && at < o.floor,
+    shown = (members: CheckIn[]) => o.hidden === true || !hiddenStay(members, places);
   let cursor = o.before,
     current: CheckIn[] | null = null,
     next: string | null = null;
@@ -56,7 +66,7 @@ export async function stayPage(
           current = null;
           break scan;
         }
-        stays.push(current);
+        if (shown(current)) stays.push(current);
         current = null;
         if (stays.length === o.limit) {
           if (!under(item.at)) next = cursorOf(stays.at(-1)![0]!);
@@ -68,24 +78,37 @@ export async function stayPage(
     if (!page.more) break;
     cursor = cursorOf(page.items.at(-1)!);
   }
-  if (current && !under(current[0]!.at)) stays.push(current);
+  if (current && !under(current[0]!.at) && shown(current)) stays.push(current);
   // The newest stay can run on above where this page began.
   const top = stays[0];
   if (top && o.before !== undefined) top.push(...(await store.laterInStay(user, top.at(-1)!, places)));
   return { stays, next, places };
 }
 
-/** Every stay, newest first, for the web's Map. Read whole, as its pins are. */
+/** Every stay, newest first, for the web's Map. Read whole, as its pins are.
+ * `hidden` keeps the stays at ignored places too. */
 export async function everyStay(
   store: CheckInReads,
-  user: string
+  user: string,
+  hidden = false
 ): Promise<{ stays: CheckIn[][]; places: NamedPlace[] }> {
   const stays: CheckIn[][] = [];
   let before: string | undefined;
   for (;;) {
-    const page = await stayPage(store, user, { ...(before === undefined ? {} : { before }), limit: 500 });
+    const page = await stayPage(store, user, { ...(before === undefined ? {} : { before }), limit: 500, hidden });
     stays.push(...page.stays);
     if (!page.next) return { stays, places: page.places };
     before = page.next;
   }
+}
+
+/** Every stay at one remembered place, hidden or not, newest first: what
+ * "Delete existing check-ins here" counts and deletes. */
+export async function staysAt(
+  store: CheckInReads,
+  user: string,
+  place: string
+): Promise<{ stays: CheckIn[][]; places: NamedPlace[] }> {
+  const { stays, places } = await everyStay(store, user, true);
+  return { stays: stays.filter((members) => placeOfStay(members, places)?.id === place), places };
 }

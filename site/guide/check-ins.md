@@ -36,6 +36,12 @@ Use a name again at another spot and that spot joins it, so a big place or two e
 
 Under **Check-ins** in [Settings](/settings/), rename or forget a remembered place. Forgetting one puts its stops back to the names they had. **Delete all check-ins** is there too, and leaves the places you remember.
 
+## Ignoring a place
+
+Some places you'd rather not log, like home. Tick **Ignore this location** on a remembered place, on the web or in Changelog's Settings, and from then on no stop there is kept. The check-ins already there are hidden, not deleted: they leave Activity, the Map and every app until you untick it, and then they're back. Forgetting the place brings them back too.
+
+To get rid of them for good, use **Delete existing check-ins here** on the place. It says how many there are, hidden ones included, and asks first. The place stays remembered, still ignored if it was. Your [export](/guide/export/) keeps every check-in you haven't deleted, hidden ones too.
+
 ## Who can see them
 
 You, and Jamie as its operator, as with everything you keep here. They are a history of where you've been, kept until you delete them, and they count as part of your account.

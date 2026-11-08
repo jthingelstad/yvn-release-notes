@@ -173,7 +173,7 @@ test('event tables order occurrence dates ascending even when the response is un
   await expect(page.getByLabel('Date', { exact: true })).toHaveValue(offset(7));
 });
 
-test('kind and tag filters combine, survive reloads and carry a tag into an existing note draft', async ({page, context}) => {
+test('kind and tag filters combine, survive reloads, take several tags and carry them into an existing note draft', async ({page, context}) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
@@ -206,20 +206,26 @@ test('kind and tag filters combine, survive reloads and carry a tag into an exis
   }
   await page.getByRole('button',{name:'Add a date',exact:true}).click();
   await expect(page.getByRole('combobox',{name:'Kind',exact:true})).toHaveValue('anniversary');
-  await expect(page.getByLabel('Tag (optional)',{exact:true})).toHaveValue('sps');
+  // A new date starts with the filter's tag, and takes more, each a chip.
+  const field = page.locator('.tag-field'), chips = field.locator('.tag-chip'), tagBox = field.locator('input');
+  await expect(chips).toHaveText([/^sps$/i]);
   await page.getByLabel('Title',{exact:true}).fill('Second team milestone');
-  await page.getByLabel('Tag (optional)',{exact:true}).fill('#sps #family');
+  await tagBox.fill('family, work');
+  await tagBox.press('Enter');
+  await expect(field.locator('.error')).toHaveText('A tag has no commas. Add each tag on its own.');
+  await tagBox.fill('#Road Trip');
+  await tagBox.press('Enter');
+  await expect(chips).toHaveText([/^sps$/i, 'Road Trip']);
   await page.getByRole('button',{name:'Save date',exact:true}).click();
-  await expect(page.getByRole('alert').filter({hasText:'Use one tag'})).toBeVisible();
-  await page.getByLabel('Tag (optional)',{exact:true}).fill('#SPS');
-  await page.getByRole('button',{name:'Save date',exact:true}).click();
-  await expect(page.getByRole('rowheader',{name:'Second team milestone',exact:false})).toContainText('#sps');
+  await expect(page.getByRole('rowheader',{name:'Second team milestone',exact:false})).toContainText(/sps, Road Trip/i);
   const edit = page.getByRole('button',{name:'Edit Second team milestone',exact:true});
   await edit.focus();
   await expect(edit).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page.getByLabel('Tag (optional)',{exact:true})).toHaveValue('sps');
-  await page.getByLabel('Tag (optional)',{exact:true}).fill('');
+  await expect(chips).toHaveText([/^sps$/i, 'Road Trip']);
+  for (const name of await chips.locator('span').allTextContents())
+    await field.getByRole('button',{name:`Remove tag ${name}`,exact:true}).click();
+  await expect(chips).toHaveCount(0);
   await page.getByRole('button',{name:'Save date',exact:true}).click();
   await expect(page.getByRole('rowheader',{name:'Second team milestone',exact:false})).toHaveCount(0);
   await page.getByRole('combobox',{name:'Filter by kind',exact:true}).selectOption('trip');
@@ -244,20 +250,25 @@ test('kind and tag filters combine, survive reloads and carry a tag into an exis
   await page.locator('.upcoming-past summary').click();
   await expect(page.getByRole('table',{name:'Past dates',exact:true})).toContainText('Past team event');
   await page.evaluate(day => sessionStorage.setItem(`rn-draft-${day}`,'Already writing about today.'),today);
-  const write = () => page.getByRole('link',{name:'Write a note tagged #sps for Team milestone',exact:true});
+  const write = () => page.getByRole('link',{name:/^Write a note tagged sps for Team milestone$/i});
   await write().click();
-  await expect(page).toHaveURL(/\/today\/#tag=sps$/);
-  await expect(page.getByRole('textbox',{name:'Add to today',exact:true})).toHaveValue('Already writing about today.\n\n#sps');
+  await expect(page).toHaveURL(/\/today\/#tag=sps$/i);
+  // The draft's words stay as they were, and the date's tag is a chip.
+  const noteChips = page.locator('#note-form .tag-chip');
+  await expect(page.getByRole('textbox',{name:'Add to today',exact:true})).toHaveValue('Already writing about today.');
+  await expect(noteChips).toHaveText([/^sps$/i]);
   await page.getByRole('textbox',{name:'Add to today',exact:true}).fill('Celebrated a milestone. #sps');
+  await expect(noteChips).toHaveCount(1);
   await page.goto('/upcoming/');
   await write().click();
   await expect(page.getByRole('textbox',{name:'Add to today',exact:true})).toHaveValue('Celebrated a milestone. #sps');
+  await expect(noteChips).toHaveCount(1);
   await page.getByRole('button',{name:'Save note',exact:true}).click();
   await expect(page.locator('#notes')).toContainText('Celebrated a milestone.');
   const tagged = await (await context.request.get('/api/tags/sps')).json();
   expect(JSON.stringify(tagged)).toContain('Celebrated a milestone.');
-  // The intentional invalid-tag request above is the only console error.
-  expect(errors).toEqual(['Failed to load resource: the server responded with a status of 400 (Bad Request)']);
+  // The refused tag never left the page, so nothing failed.
+  expect(errors).toEqual([]);
 });
 
 test('Upcoming can be edited as text: preview shows adds, changes and removals, and apply commits them together', async ({page,context}) => {

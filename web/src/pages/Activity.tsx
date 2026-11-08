@@ -216,7 +216,8 @@ const setting = (field: string, value: unknown) =>
       : value == null || value === '' || (Array.isArray(value) && !value.length)
         ? 'none'
         : Array.isArray(value)
-          ? value.map((t) => '#' + String(t)).join(' ')
+          ? // Pinned tags, by name as everywhere else: "Road Trip, lake".
+            value.map(String).join(', ')
           : field === 'send_time'
             ? clock(String(value))
             : String(value);

@@ -50,8 +50,12 @@ const sameReminders = (a: readonly number[], b: readonly number[]) =>
   a.length === b.length && a.every((n, i) => n === b[i]);
 const quoted = (title: string) => (/^"|[#@]\S|\b(?:email|remind):/i.test(title) ? `"${title}"` : title);
 /** A tag runs to the next marker, so one with a space is written as is; one
- * whose name would read as a marker, or start a quote, is quoted. */
-const tagText = (name: string) => '#' + (/^"|\s(?:[#@]\S|email:|remind:)/i.test(name) ? `"${name}"` : name);
+ * whose name would read as a marker, or start a quote, is quoted, with each
+ * " in it doubled, so every name a tags field takes reads back the same. */
+const tagText = (name: string) =>
+  '#' + (/^"|\s(?:[#@]\S|email:|remind:)/i.test(name) ? `"${name.replaceAll('"', '""')}"` : name);
+/** A quoted tag that is closed: its last " is not one of a doubled pair. */
+const closedTag = (part: string) => /^#"(?:[^"]|"")*"\s*$/su.test(part);
 
 /** One line per entry, the kinds in order then by date and title. */
 export function upcomingLine(entry: UpcomingEntry): string {
@@ -98,10 +102,10 @@ function parseOptions(rest: string, out: TextLine): string | null {
   for (let i = 0; i < parts.length; i++) {
     let part = parts[i]!;
     // A quoted tag may hold what reads as a marker: join it back up.
-    if (part.startsWith('#"')) while (!/^#".*"\s*$/su.test(part) && i + 1 < parts.length) part += ' ' + parts[++i];
+    if (part.startsWith('#"')) while (!closedTag(part) && i + 1 < parts.length) part += ' ' + parts[++i];
     if (part.startsWith('#')) {
       const raw = part.slice(1).trim(),
-        tag = spelling(/^".*"$/.test(raw) ? raw.slice(1, -1) : raw);
+        tag = spelling(closedTag(part) ? raw.slice(1, -1).replaceAll('""', '"') : raw);
       if (typeof tag === 'string') return `${TAG_REFUSALS[tag]} (${part.trim()})`;
       if (!out.tags.some((t) => t.key === tag.key)) out.tags.push(tag);
       if (out.tags.length > MAX_TAGS) return TAG_REFUSALS.many;

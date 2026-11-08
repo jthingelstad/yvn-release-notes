@@ -146,7 +146,7 @@ test('a file that is not a photo, recording or PDF is refused by name, and nothi
     .locator('input[type=file]')
     .setInputFiles({ name: 'page.html', mimeType: 'text/html', buffer: Buffer.from('<p>hi</p>') });
   await form.getByRole('button', { name: /Add note|Save note/ }).click();
-  await expect(form.locator('.error')).toHaveText('page.html isn’t a photo, recording or PDF, so it can’t be added.');
+  await expect(form.locator('.error:visible')).toHaveText('page.html isn’t a photo, recording or PDF, so it can’t be added.');
   await expect(page.locator('article.note', { hasText: words })).toHaveCount(0);
   await expect(form.locator('textarea')).toHaveValue(words);
 });
@@ -189,34 +189,67 @@ test('search lists every tag, finds words, marks them, and the box clears back t
   await expect(page.locator('#tag-title')).toHaveText(name);
 });
 
-test('the tag row types a hashtag in and out, and a pin puts its tag first', async ({ page }) => {
+test('tags are chips: typed with spaces, tapped from the row, a #word too, and a pin puts its tag first', async ({
+  page
+}) => {
   await page.goto('/today/');
   const form = page.locator('#note-form'),
     row = form.locator('.tag-picks'),
-    box = form.locator('textarea');
-  await box.fill('Coffee on the porch');
-  const walks = row.getByRole('button', { name: '#walks', exact: true });
+    field = form.locator('.tag-field'),
+    chips = field.locator('.tag-chip'),
+    box = form.locator('textarea'),
+    tagBox = field.locator('input'),
+    words = `Tea on the porch ${Date.now()}`;
+  await box.fill(words);
+  // The row adds a chip and takes it off again; the words stay as typed.
+  const walks = row.getByRole('button', { name: 'walks', exact: true });
   await walks.click();
-  await expect(box).toHaveValue('Coffee on the porch #walks');
+  await expect(chips).toHaveText(['walks']);
   await expect(walks).toHaveAttribute('aria-pressed', 'true');
+  await expect(box).toHaveValue(words);
   await walks.click();
-  await expect(box).toHaveValue('Coffee on the porch');
+  await expect(chips).toHaveCount(0);
   await expect(walks).toHaveAttribute('aria-pressed', 'false');
+
+  // Typed: a leading # goes, spaces and emoji stay, another spelling is the same tag.
+  await tagBox.fill('#Road Trip');
+  await tagBox.press('Enter');
+  await tagBox.fill('🚗 Lake');
+  await tagBox.press('Enter');
+  await tagBox.fill('road-trip');
+  await tagBox.press('Enter');
+  await expect(chips).toHaveText(['Road Trip', '🚗 Lake']);
+  await tagBox.fill('one, two');
+  await tagBox.press('Enter');
+  await expect(field.locator('.error')).toHaveText('A tag has no commas. Add each tag on its own.');
+  await expect(tagBox).toHaveValue('one, two');
+  await tagBox.fill('');
+  // A #word in the words is a chip, and taking its chip off takes it out.
+  await box.fill(`${words} #sunrise`);
+  await expect(chips).toHaveText(['Road Trip', '🚗 Lake', 'sunrise']);
+  await field.getByRole('button', { name: 'Remove tag sunrise', exact: true }).click();
+  await expect(box).toHaveValue(words);
+  await field.getByRole('button', { name: 'Remove tag 🚗 Lake', exact: true }).click();
+  await form.getByRole('button', { name: /Add note|Save note/ }).click();
+  const saved = page.locator('article.note', { hasText: words });
+  await expect(saved.locator('.note-tags')).toHaveText('Tags: Road Trip');
+  await saved.getByRole('link', { name: 'Road Trip', exact: true }).click();
+  await expect(page.locator('#tag-title')).toHaveText('Road Trip');
 
   // Pinned from Search, first under the box; unpinned again after.
   await page.goto('/search/');
   const tags = page.locator('#every-tag-list');
   await tags.getByRole('button', { name: 'Pin tags' }).click();
-  const vacation = tags.getByRole('button', { name: '#vacation', exact: true });
+  const vacation = tags.getByRole('button', { name: 'vacation', exact: true });
   await vacation.click();
   await expect(vacation).toHaveAttribute('aria-pressed', 'true');
   await page.goto('/today/');
-  await expect(row.locator('.tags li').first()).toHaveText('#vacation');
+  await expect(row.locator('.tags li').first()).toHaveText('vacation');
   await row.getByRole('button', { name: 'Pin tags' }).click();
-  await row.getByRole('button', { name: '#vacation', exact: true }).click();
-  await expect(row.getByRole('button', { name: '#vacation', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await row.getByRole('button', { name: 'vacation', exact: true }).click();
+  await expect(row.getByRole('button', { name: 'vacation', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await page.goto('/activity/');
-  await expect(page.getByText('Pinned tags: none to #vacation.')).toBeVisible();
+  await expect(page.getByText('Pinned tags: none to vacation.')).toBeVisible();
 });
 
 test('a recording made on the page plays back, then goes with the note', async ({ page }) => {
@@ -485,7 +518,7 @@ test('the timeline lists the releases, and a release shows its days oldest first
 
   await page.goto('/release/?v=4.5');
   await expect(page.locator('#release-head')).toContainText('and still going');
-  await expect(page.locator('#release-tags')).toContainText('#walks');
+  await expect(page.locator('#release-tags')).toContainText('walks');
   const heads = page.locator('#release-days a.tday-head');
   await expect(heads.last()).toHaveAttribute('href', '/today/');
   await expect(heads.first()).not.toHaveAttribute('href', '/today/');
@@ -959,13 +992,13 @@ test('the map narrows by words, tag and release, and a group lists every note in
     map = page.getByRole('region', { name: 'Map of your notes' });
   await expect(lede).toHaveText('3 notes with a place of their own.');
   await expect(releases.locator('option')).toHaveText(['All releases', '4.5 (2)', '4.3 (1)']);
-  await expect(tags.locator('option')).toHaveText(['All tags', '#bakery (1)', '#lake (1)']);
+  await expect(tags.locator('option')).toHaveText(['All tags', 'bakery (1)', 'lake (1)']);
 
   // A release keeps its pins, and the tags menu offers what that release has.
   await releases.selectOption('4.5');
   await expect(page).toHaveURL(/\/map\/#v=4\.5$/);
   await expect(lede).toHaveText('2 of 3 notes with a place of their own.');
-  await expect(tags.locator('option')).toHaveText(['All tags', '#bakery (1)']);
+  await expect(tags.locator('option')).toHaveText(['All tags', 'bakery (1)']);
 
   // The map fits the two, which stay one group at its middle: choosing it
   // lists both, newest first. (Opened on the release, so no move is under way:

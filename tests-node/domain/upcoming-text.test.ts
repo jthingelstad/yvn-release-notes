@@ -158,6 +158,21 @@ test('a date takes several tags, with spaces and emoji, each once, and they roun
   const respelled = parseUpcomingText(line.replace('#Road Trip', '#road trip')).lines;
   assert.equal(planUpcomingText(respelled, [road]).change.length, 1);
   assert.match(parseUpcomingText('event 2026-10-01 Lunch #a, b').problems[0]!.problem, /no commas/);
+  // A quote in a quoted name is doubled, and every name reads back the same.
+  for (const name of ['Book " #1', '"hi" there', '5" ruler', 'x "" @y', '"x"']) {
+    const entry = { ...hike, id: 'q', tags: ['q'], tag_names: [name], tag: 'q' },
+      back = parseUpcomingText(upcomingLine(entry));
+    assert.deepEqual(back.problems, [], name);
+    assert.deepEqual(
+      back.lines[0]!.tags.map((t) => t.name),
+      [name],
+      upcomingLine(entry)
+    );
+  }
+  assert.equal(
+    upcomingLine({ ...hike, tags: ['b'], tag_names: ['Book " #1'], tag: 'b' }),
+    'anniversary 06-14 Our first hike #"Book "" #1" remind:30,7,0'
+  );
 });
 
 test('a plan pairs by kind and folded title, exact dates first, and turns the rest into adds and removes', () => {

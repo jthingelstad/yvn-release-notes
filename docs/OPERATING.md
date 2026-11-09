@@ -86,32 +86,16 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
 - Send someone today's email now, outside their window: invoke the sender
   with `{"send_now": "<user id>"}` (add `"dry_run": true` first to see it).
   Still once per local day; never fake the clock with `now` to do it.
-- `node --import tsx tools/read-notes.ts EMAIL [YYYY-MM-DD]` prints someone's
-  release notes, from before the web app had a reader. It prints note text:
-  only for the subscriber's own notes, never to check something.
-- The fill-in scripts for notes from before a feature
-  (`tools/extract-media.ts`, `tools/fill-link-titles.ts`,
-  `tools/fill-weather.ts`, `tools/fill-tags.ts`) take `EMAIL [--dry-run]`
-  and default to planning only. Run the dry run first; `--write` is the
-  live run. `tools/fill-tags.ts` keeps the tags a hashtag in any script
-  gives (2026-10-30) on notes written before, adding and never removing;
-  `--all` runs every subscriber, as extract-media's does.
-  `tools/extract-media.ts --all` runs every subscriber and prints the sums
-  only. It also gives a note that already has media the PDFs its email
-  carried and it lacks (emailed PDFs were raw-only before October 29,
-  2026), appended after its files; one added on the web never counts.
+- The one-off fill-ins for notes from before a feature (media, link
+  titles, weather, tags) and the badges baseline ran and were removed on
+  2026-11-09, as was `tools/read-notes.ts` (the web app reads notes). A
+  later badge that should stay quiet for what was earned before it ships
+  can bring the baseline back from git
+  (`git log --diff-filter=D -- tools/badges-baseline.ts`), dry run first.
 - Thumbnails for photos kept before they existed: invoke the describe
   function with `{"thumbs_all": "*", "dry_run": true}` (or one user id) to
   count them; the real run drops `dry_run`. It hands itself on near its
   time limit and skips any photo that has one.
-- The badges baseline (once, at the Badges launch):
-  `node --import tsx tools/badges-baseline.ts [--only id,id]` counts what every subscriber
-  has already earned and is not yet `seen`; `--write` adds it, so nobody's
-  first email with the badge line lists everything at once. `--only`
-  limits it to the named badges (a track's id covers its tiers), for a
-  later badge that should stay quiet for what was earned before it
-  shipped, as Status code, Found and I'm a teapot were on 2026-10-29.
-  Counts only, never a name or address.
 - Feedback (docs/WEB-APP.md, Feedback): `node --import tsx tools/feedback.ts list [--all]`
   prints the waiting items (every item with `--all`), newest first, by
   account id, never address; `show OWNER ID [--screenshots DIR]` prints one

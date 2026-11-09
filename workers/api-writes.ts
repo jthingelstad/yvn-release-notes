@@ -1709,9 +1709,15 @@ export async function writeApi(
   }
 }
 
-/** Whether a commit whose answer was lost wrote this request's receipt. A
- * failed read counts as landed, as for an agent (workers/capture.ts). */
-async function mayHaveLanded(store: ApiStore, uid: string, key: string, hash: string): Promise<boolean> {
+/** Whether a commit whose answer was lost wrote this request's receipt, for
+ * the API and for agents (workers/capture.ts). A failed read counts as
+ * landed: an orphan file beats a note without its file. */
+export async function mayHaveLanded(
+  store: Pick<ApiStore, 'mcpGet'>,
+  uid: string,
+  key: string,
+  hash: string
+): Promise<boolean> {
   try {
     const receipt = await store.mcpGet('USER#' + uid, key);
     return Boolean(receipt && receipt.request_hash === hash);

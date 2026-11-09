@@ -104,6 +104,8 @@ async function subscriber(extra: Item = {}) {
   });
   await store.putNote('u1', '2026-10-12', 'w-a', {
     text: 'Lake day.\n\nA loon, close. #lake',
+    tags: ['lake'],
+    tag_names: ['lake'],
     source: 'web',
     written_at: '2026-10-12T20:00:00Z',
     media: [

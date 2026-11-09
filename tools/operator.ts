@@ -4,8 +4,8 @@
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { QueryCommand, ScanCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
-import type { QueryCommandInput, ScanCommandInput, TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import type { QueryCommandInput, ScanCommandInput } from '@aws-sdk/lib-dynamodb';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { createStore, createObjects } from '../packages/backend/aws.ts';
 import type { Store, Item, Key } from '../packages/backend/store.ts';
@@ -93,38 +93,6 @@ export async function query(
     cursor = result.LastEvaluatedKey;
   } while (cursor);
   return rows;
-}
-export async function guardedWrite(
-  store: Store,
-  user: string,
-  operation: NonNullable<TransactWriteCommandInput['TransactItems']>[number]
-): Promise<boolean> {
-  try {
-    await store.client.send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            ConditionCheck: {
-              TableName: store.tableName,
-              Key: { pk: `USER#${user}`, sk: 'PROFILE' },
-              ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(mcp_deleting)'
-            }
-          },
-          operation
-        ]
-      })
-    );
-    return true;
-  } catch (error) {
-    if (
-      (error as Error).name === 'TransactionCanceledException' &&
-      ((error as { CancellationReasons?: { Code?: string }[] }).CancellationReasons ?? []).some(
-        (r) => r.Code === 'ConditionalCheckFailed'
-      )
-    )
-      return false;
-    throw error;
-  }
 }
 export function invoked(url: string): boolean {
   return Boolean(process.argv[1]) && url === pathToFileURL(resolve(process.argv[1]!)).href;

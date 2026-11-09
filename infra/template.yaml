@@ -117,15 +117,28 @@ Conditions:
   HasWebCertificate: !Not [!Equals [!Ref WebCertificateArn, ""]]
 
 Resources:
-  # The code zips, named by content and never overwritten. No lifecycle
-  # expiration: deleting a source version permanently fails a revision built
-  # from it, and a revert releases old code from the keys it had.
+  # The code zips, named by content and never overwritten. The Web Function
+  # zips (native/app/, native/mcp/) never expire: deleting one permanently
+  # fails the revision built from it. An Event Function keeps its own copy
+  # of its code, so a worker zip (native/workers/) expires 180 days after
+  # its upload; a release re-uploads a missing one (infra/NATIVE-WEB.md, The
+  # source bucket, has what a rollback then needs).
   NativeSourceBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
       VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-worker-code
+            Status: Enabled
+            Prefix: native/workers/
+            ExpirationInDays: 180
+            NoncurrentVersionExpiration: { NoncurrentDays: 7 }
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true

@@ -66,7 +66,7 @@ import { safeLog } from '../packages/backend/services.ts';
 import { activityKey, activityTime } from '../packages/domain/activity.ts';
 import type { Unlocked } from '../packages/domain/badges.ts';
 import type { TransactWriteCommandInput } from '@aws-sdk/lib-dynamodb';
-import { ApiRefusal, writeApi, type ApiStore } from './api-writes.ts';
+import { ApiRefusal, mayHaveLanded, writeApi, type ApiStore } from './api-writes.ts';
 import {
   failure,
   fingerprint,
@@ -390,7 +390,7 @@ export async function writeCapture(
     // A file no note took; one already numbered into a committed note stays.
     // After a commit that threw, only this write's receipt, read strongly,
     // says whether the note took them; if that cannot be read, they stay.
-    if (kept && !committed && !(unsure && (await mayHaveLanded(context, uid, key, hash))))
+    if (kept && !committed && !(unsure && (await mayHaveLanded(context.store, uid, key, hash))))
       await dropFiles(context.objects!, kept);
   }
 }
@@ -521,16 +521,6 @@ async function writePlace(
       throw new ToolError('scope_required', 'This connection changed or was disconnected; reconnect before writing.');
   }
   throw new ToolError('busy', 'Try again shortly with exactly the same idempotency_key and arguments.');
-}
-/** Whether a commit whose answer was lost wrote this request's receipt. A
- * failed read counts as landed: an orphan file beats a note without its file. */
-async function mayHaveLanded(context: CaptureContext, uid: string, key: string, hash: string): Promise<boolean> {
-  try {
-    const receipt = await context.store.mcpGet('USER#' + uid, key);
-    return Boolean(receipt && receipt.request_hash === hash);
-  } catch {
-    return true;
-  }
 }
 /** A note's place from a city written as text, kept as one chosen on the
  * web is. */

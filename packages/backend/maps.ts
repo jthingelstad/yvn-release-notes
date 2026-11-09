@@ -127,7 +127,7 @@ type Part = string | LinkPart | TagPart;
 const PREVIEW = 140;
 const shown = (part: Part) => (typeof part === 'string' ? part : 'tag' in part ? part.text : part.label);
 const pinTags = (note: NoteRecord) => {
-  const tags = storedTags(note);
+  const tags = storedTags({ tags: note.tags, tag_names: note.tag_names });
   return { tags: tags.map((t) => t.key), tag_names: tags.map((t) => t.name) };
 };
 /** The first PREVIEW characters as read, so a link counts by its name and

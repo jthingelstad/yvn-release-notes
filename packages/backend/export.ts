@@ -100,7 +100,7 @@ const CHECK_IN_FIELDS = [
 /** An item's tags as the export keeps them (docs/TAGS.md): the keys, and the
  * names beside them; empty lists for none. */
 function exportTags(item: Item) {
-  const tags = storedTags(item.tags instanceof Set ? { ...item, tags: [...item.tags] } : item);
+  const tags = storedTags(item);
   return { tags: tags.map((t) => t.key), tag_names: tags.map((t) => t.name) };
 }
 /** The key filePaths files a feedback item's screenshots under. */

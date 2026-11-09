@@ -99,11 +99,30 @@ through them.
 
 ## The source bucket
 
-The source bucket has no expiration rules, and objects under `native/` are
-never deleted: deleting a zip permanently fails the revision built from it
-(restoring it does not bring that revision back), and a revert needs the old
-zips. The template copies in the code bucket's `code/templates/` are separate
-and expire after 90 days.
+The Web Function zips (`native/app/`, `native/mcp/`) are never deleted and
+never expire: deleting one permanently fails the revision built from it
+(restoring it does not bring that revision back).
+
+The worker zips (`native/workers/`, most of the bucket's size: the export
+worker's alone is about 20 MB a build) expire 180 days after their upload,
+and a version left behind 7 days after that (2026-11-09, for cost). An Event
+Function keeps its own copy of the code it was given, so a running worker
+never needs its zip again. What does:
+
+- **A release or a revert** uploads every zip its build makes that is
+  missing, under the same key (a delete marker does not stop the
+  conditional write), so expired code comes back when it is released again.
+- **A rollback** of a stack update gives a changed worker the zip it had
+  before. That zip is missing only if the worker went unchanged for 180
+  days and the update that changed it then failed. The rollback stops at
+  that function (`UPDATE_ROLLBACK_FAILED`); continue it skipping that one
+  function (`aws cloudformation continue-update-rollback
+  --resources-to-skip <Logical id>`), which keeps the new code there, and
+  release main again. Every build so far has changed every worker zip.
+
+An unfinished multipart upload is dropped after a day (releases upload in
+one request). The template copies in the code bucket's `code/templates/` are
+separate and expire after 90 days.
 
 ## Verification, telemetry and capacity
 

@@ -108,8 +108,8 @@ function parse(ls: Line[], at: number, indent: number): [Node, number] {
   return [map, at];
 }
 /** One entry of a top-level section (Parameters, Resources), parsed. */
-function entry(section: string, name: string): Record<string, Node> {
-  const body = TEMPLATE.slice(TEMPLATE.indexOf(`\n${section}:\n`) + 1),
+function entry(section: string, name: string, template = TEMPLATE): Record<string, Node> {
+  const body = template.slice(template.indexOf(`\n${section}:\n`) + 1),
     text = body.slice(0, body.slice(1).search(/\n\S/) + 1),
     start = text.indexOf(`\n  ${name}:\n`);
   assert.ok(start >= 0, `${section} has no ${name}`);
@@ -120,6 +120,10 @@ function entry(section: string, name: string): Record<string, Node> {
 }
 export const resource = (name: string) =>
   entry('Resources', name) as { Type: string; Properties: Record<string, Node> };
+/** A resource of another template (infra/github-deploy-role.yaml), parsed but
+ * not resolved: its intrinsics name that template's parameters. */
+export const resourceIn = (template: string, name: string) =>
+  entry('Resources', name, template) as { Type: string; Properties: Record<string, Node> };
 const RESOURCES = [
   ...TEMPLATE.slice(TEMPLATE.indexOf('\nResources:\n')).matchAll(/\n {2}(\w+):\n {4}Type: (\S+)/g)
 ].map((m) => [m[1]!, m[2]!] as const);
@@ -212,7 +216,7 @@ export function statements(role: string): Statement[] {
       };
     });
 }
-const glob = (pattern: string, flags = '') =>
+export const glob = (pattern: string, flags = '') =>
   new RegExp(
     `^${pattern
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')

@@ -25,10 +25,32 @@ test('only the production environment of this repository assumes the deploy role
   assert.match(trust, /token\.actions\.githubusercontent\.com:aud: sts\.amazonaws\.com/);
   assert.doesNotMatch(trust, /StringLike|\*/);
   const subjects = [...trust.matchAll(/^\s+- (repo:\S+)$/gm)].map((m) => m[1]);
-  assert.deepEqual(subjects, [
-    'repo:jthingelstad/yvn-release-notes:environment:production',
-    'repo:jthingelstad@5351/yvn-release-notes@1408586441:environment:production'
-  ]);
+  // The immutable-id form only (SUPPLY-7, 2026-11-08): the name form would
+  // also admit a re-created repository of the same name.
+  assert.deepEqual(subjects, ['repo:jthingelstad@5351/yvn-release-notes@1408586441:environment:production']);
+  assert.doesNotMatch(template, /repo:jthingelstad\/yvn-release-notes/);
+});
+
+test('the service role makes a role only with the function boundary (AWS-1)', () => {
+  const pattern = 'role/${ApplicationStackName}-*Role-*"',
+    service = template.slice(template.indexOf('  CloudFormationRole:'), template.indexOf('  DeployRole:'));
+  assert.doesNotMatch(
+    statement('Roles'),
+    /iam:CreateRole|iam:PutRolePermissionsBoundary|iam:DeleteRolePermissionsBoundary/
+  );
+  const boundary = statement('RolesTakeTheBoundary');
+  assert.match(boundary, /Action: \[iam:CreateRole, iam:PutRolePermissionsBoundary\]/);
+  assert.ok(boundary.includes(pattern));
+  assert.match(boundary, /StringEquals: \{ "iam:PermissionsBoundary": !Ref FunctionBoundary \}/);
+  assert.equal(template.match(/iam:CreateRole/g)?.length, 1);
+  assert.equal(template.match(/iam:PutRolePermissionsBoundary/g)?.length, 1);
+  // Until main's roles carry the boundary, a failed deploy may take it off again.
+  const rollback = statement('BoundaryRollback');
+  assert.match(rollback, /Effect: Allow\n\s+Action: iam:DeleteRolePermissionsBoundary\n/);
+  assert.ok(rollback.includes(pattern));
+  // It never touches a managed policy, the boundary included, or attaches one.
+  assert.doesNotMatch(service, /iam:(\*|\w*Polic(y|ies)Version|CreatePolicy|DeletePolicy\b|Attach|Detach|SetDefault)/);
+  assert.match(template, /ManagedPolicyName: ReleaseNotesFunctionBoundary\n/);
 });
 
 test('the application stack changes only through change sets that name the service role', () => {

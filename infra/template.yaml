@@ -685,6 +685,9 @@ Resources:
   SenderRole:
     Type: AWS::IAM::Role
     Properties:
+      # Every role here carries the deploy stack's function boundary
+      # (infra/github-deploy-role.yaml); the service role makes no role without it.
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ReleaseNotesFunctionBoundary"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -744,6 +747,7 @@ Resources:
   InboundRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ReleaseNotesFunctionBoundary"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1316,6 +1320,7 @@ Resources:
   WebRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ReleaseNotesFunctionBoundary"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1475,6 +1480,7 @@ Resources:
   McpRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ReleaseNotesFunctionBoundary"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1520,6 +1526,7 @@ Resources:
   CaptureRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ReleaseNotesFunctionBoundary"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1653,6 +1660,7 @@ Resources:
   ExportRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ReleaseNotesFunctionBoundary"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1744,6 +1752,7 @@ Resources:
   EventsRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ReleaseNotesFunctionBoundary"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1852,6 +1861,7 @@ Resources:
   TranscribeRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ReleaseNotesFunctionBoundary"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1989,6 +1999,7 @@ Resources:
   DescribeRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ReleaseNotesFunctionBoundary"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:

@@ -1,5 +1,6 @@
 import { Store } from '../../packages/backend/store.ts';
 import { test } from 'node:test';
+import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { createApp, ROUTES } from '../../server/app/app.ts';
@@ -462,6 +463,14 @@ test('an export starts only from this site, or typed in; another site’s link l
   assert.ok(!(await s.store.activityAll('u')).some((a) => String(a.sk).includes('#export.')));
   for (const site of ['same-origin', 'none', undefined]) assert.equal((await get('/api/export', site)).status, 200);
   assert.equal((await s.store.activityAll('u')).filter((a) => String(a.sk).includes('#export.')).length, 3);
+  // CloudFront passes the header on to /api/*, or the check never sees it.
+  const template = await readFile(new URL('../../infra/template.yaml', import.meta.url), 'utf8'),
+    policy = /  NativeHttpRequestPolicy:[\s\S]*?Headers: \[([^\]]+)\]/.exec(template)![1]!;
+  assert.ok(policy.split(', ').includes('Sec-Fetch-Site'), policy);
+  assert.match(
+    template,
+    /PathPattern: \/api\/\*\n(?:\s+\w+:.*\n)*?\s+OriginRequestPolicyId: !Ref NativeHttpRequestPolicy/
+  );
 });
 test('an account writes WEB_NOTES_A_DAY notes a UTC day on the web; past that nothing is kept', async () => {
   const s = await setup(),

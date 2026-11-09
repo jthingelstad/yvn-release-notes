@@ -217,6 +217,8 @@ Resources:
           CookiesConfig: { CookieBehavior: none }
           QueryStringsConfig: { QueryStringBehavior: none }
 
+  # Sec-Fetch-Site lets an export start only from this site or typed in
+  # (packages/backend/exports.ts); without it the check never sees the header.
   NativeHttpRequestPolicy:
     Type: AWS::CloudFront::OriginRequestPolicy
     Properties:
@@ -224,7 +226,7 @@ Resources:
         Name: !Sub "${AWS::StackName}-native-http"
         HeadersConfig:
           HeaderBehavior: whitelist
-          Headers: [Origin, Content-Type, Accept, CloudFront-Viewer-Address, MCP-Protocol-Version, Mcp-Session-Id, Last-Event-ID]
+          Headers: [Origin, Content-Type, Accept, CloudFront-Viewer-Address, MCP-Protocol-Version, Mcp-Session-Id, Last-Event-ID, Sec-Fetch-Site]
         CookiesConfig:
           CookieBehavior: whitelist
           Cookies: [__Host-rn]

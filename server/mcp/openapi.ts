@@ -521,7 +521,8 @@ const OPERATIONS: Record<string, Doc> = {
       `once to every stop within 100 m, past and future. An account has up to ${NAMED_PLACES_MAX} names, and a name up ` +
       `to ${NAMED_PLACE_SPOTS_MAX} spots. \`ignored\` true ignores it as it is remembered, and false unignores it ` +
       '(1.20.0). `tags` join the place’s, and every new stop there gets them; when the place gains one, the answer ' +
-      'counts its `check_ins`, to offer tagging them (1.21.0). Since 1.18.0.',
+      'counts its `check_ins`, to offer tagging them (1.21.0). Tags that would take the place past 20 are refused ' +
+      'with `invalid_request` on `tags`, never cut (1.22.2). Since 1.18.0.',
     requestBody: { required: true, content: { 'application/json': { schema: ref('NamedPlaceWrite') } } },
     responses: {
       '200': answer('NamedPlaceWritten', 'Its name.', true),
@@ -571,7 +572,8 @@ const OPERATIONS: Record<string, Doc> = {
     operationId: 'tagCheckInsAtPlace',
     summary: 'Tag the check-ins already at a remembered place',
     description:
-      'The tags sent join every stay at it, hidden or not; nothing else changes. Offer it once, with the count, ' +
+      'The tags sent join every stay at it, hidden or not; nothing else changes. If they would take any stay past ' +
+      '20 tags, nothing is written and the answer is `invalid_request` on `tags` (1.22.2). Offer it once, with the count, ' +
       'when a place gains a tag (Jamie’s call). `count` is the `check_ins` the place’s answer or GET ' +
       '/v1/check-ins/places/{id} gave, and a different number now is `revision_mismatch` with the new `count`. ' +
       'Answers how many stays were `tagged`; one `checkin.tagged` row goes in the log with the place’s id and that ' +

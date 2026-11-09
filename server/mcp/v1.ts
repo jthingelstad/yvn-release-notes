@@ -67,7 +67,7 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.22.1';
+export const API_VERSION = '1.22.2';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The exceptions are 1.8.0, which withdrew 1.6.0's
@@ -76,6 +76,12 @@ export const API_VERSION = '1.22.1';
  * 2026-11-08, product call 9 of the security audit). A new version starts
  * with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.22.2',
+    date: '2026-11-09',
+    summary:
+      'POST /v1/check-ins/places, on a name already remembered, and PATCH /v1/check-ins/places/{id}/check-ins refuse tags that would take the place, or any stay there, past 20, with `invalid_request` on `tags` and nothing written, as a tags field refuses a 21st tag. Before, the tags past 20 were silently left off. No other request changed.'
+  },
   {
     version: '1.22.1',
     date: '2026-11-09',

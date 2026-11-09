@@ -109,7 +109,7 @@ export function checkInName(raw: unknown): string | null {
   if (!name || codePointLength(name) > CHECKIN_NAME_MAX || /[\p{Cc}\u2028\u2029]/u.test(name)) return null;
   return name;
 }
-/** Two names the same, ignoring case, as tags are. */
+/** Two names the same, ignoring case alone (a tag's key ignores more). */
 export const sameName = (a: string, b: string): boolean =>
   a.normalize('NFC').toLocaleLowerCase('en-US') === b.normalize('NFC').toLocaleLowerCase('en-US');
 

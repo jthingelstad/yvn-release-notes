@@ -450,7 +450,7 @@ notes.yourversionnumber.com
   | Item                    | Key                                             | Lifetime                                                     |
   | ----------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
   | Sign-in link and code   | `LOGIN#<hash>`                                  | 15 minutes                                                   |
-  | Session                 | `SESSION#<hash>`                                | 14 days from last use, renewed by each visit, no outer limit |
+  | Session                 | `SESSION#<hash>`                                | 14 days from last use, renewed each visit, 90 days at most   |
   | Rate-limit counter      | `RATE#<bucket>#<hour>`                          | about an hour                                                |
   | Pause                   | `USER#<id>` / `PAUSE#<start>`                   | kept                                                         |
   | Note written on the web | `USER#<id>` / `NOTE#<day>#w-<id>`, `source=web` | kept                                                         |

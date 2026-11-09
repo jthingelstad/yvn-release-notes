@@ -8,6 +8,9 @@
  * tell the user to refresh or reconnect. contracts/mcp-versions.json records
  * the tools each version shipped, so a change without a new version fails. */
 import { createHash } from 'node:crypto';
+import { ANSWERS_MAX, FEEDBACK_TEXT_MAX, SCREENSHOTS_MAX } from '../../packages/domain/feedback.ts';
+import { MAX_NOTE } from '../../packages/domain/notes.ts';
+import { MAX_QUERY } from '../../packages/domain/search.ts';
 export interface JsonSchema {
   type?: string | string[];
   properties?: Record<string, JsonSchema>;
@@ -436,7 +439,7 @@ export const MCP_CONTRACT: McpContract = {
           q: {
             type: 'string',
             description: 'Words or quoted phrases',
-            maxLength: 200
+            maxLength: MAX_QUERY
           },
           tag: {
             type: 'string',
@@ -1548,7 +1551,7 @@ export const MCP_CONTRACT: McpContract = {
             description:
               "Note text, shown as typed unless markup says rich; put hashtags in the text. Only write at the user's explicit request.",
             minLength: 1,
-            maxLength: 20000
+            maxLength: MAX_NOTE
           },
           markup: {
             type: 'string',
@@ -1629,7 +1632,7 @@ export const MCP_CONTRACT: McpContract = {
             description:
               "Text to add, with marks if the note reads markup: rich, otherwise shown as typed; put hashtags in the text. Only write at the user's explicit request.",
             minLength: 1,
-            maxLength: 20000
+            maxLength: MAX_NOTE
           },
           idempotency_key: {
             type: 'string',
@@ -1686,7 +1689,7 @@ export const MCP_CONTRACT: McpContract = {
             description:
               "The note's whole new text, with marks if the note reads markup: rich, otherwise shown as typed; put hashtags in the text. Only write at the user's explicit request.",
             minLength: 1,
-            maxLength: 20000
+            maxLength: MAX_NOTE
           },
           revision: {
             type: 'string',
@@ -1764,7 +1767,7 @@ export const MCP_CONTRACT: McpContract = {
             type: 'string',
             description: 'What to tell Jamie, in plain text',
             minLength: 1,
-            maxLength: 4000
+            maxLength: FEEDBACK_TEXT_MAX
           },
           follows: {
             type: 'string',
@@ -1776,7 +1779,7 @@ export const MCP_CONTRACT: McpContract = {
             type: 'array',
             description: 'Up to 3 images, each {type, data}: type image/png, image/jpeg or image/webp; data base64',
             minItems: 1,
-            maxItems: 3,
+            maxItems: SCREENSHOTS_MAX,
             items: {
               type: 'object',
               properties: {
@@ -1850,13 +1853,13 @@ export const MCP_CONTRACT: McpContract = {
             type: 'integer',
             description: "With id: return that screenshot's image (needs media:read)",
             minimum: 1,
-            maximum: 3
+            maximum: SCREENSHOTS_MAX
           },
           part: {
             type: 'integer',
             description: "With id: where to start reading, 0 for the filing's text or n for answer n; follow next",
             minimum: 0,
-            maximum: 20
+            maximum: ANSWERS_MAX
           },
           offset: {
             type: 'integer',

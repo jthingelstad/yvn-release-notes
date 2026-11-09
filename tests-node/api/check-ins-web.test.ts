@@ -454,3 +454,47 @@ test('the check-ins at a place are counted, hidden or not, and deleted only for 
   assert.deepEqual((await f.call('DELETE', path + '/check-ins', { count: 0 })).data, { deleted: 0 });
   assert.equal(f.activity().filter((r) => r.kind === 'checkin.deleted').length, 1);
 });
+
+test('a stay is logged as tagged only when its tags change, tags: null is a field not sent, and a 21st tag at a place is refused', async () => {
+  const here = stop('u', A, HOME),
+    f = await fixture([here]),
+    tagged = () => f.activity().filter((r) => r.kind === 'checkin.tagged').length,
+    revision = async () => (await f.call('GET', '/api/check-ins/' + here.id)).data.check_in.revision;
+  // null is no tags field, as /v1 and MCP read it, so this sends nothing to change.
+  const none = await f.call('PUT', '/api/check-ins/' + here.id, { tags: null, revision: 1 });
+  assert.deepEqual([none.status, none.data.error], [400, 'check-in-name']);
+  assert.equal((await f.call('PUT', '/api/check-ins/' + here.id, { tags: ['Lake'], revision: 1 })).status, 200);
+  assert.equal(tagged(), 1);
+  // The same list again, or a name beside it, changes no tag and logs none.
+  assert.equal(
+    (await f.call('PUT', '/api/check-ins/' + here.id, { tags: ['Lake'], revision: await revision() })).status,
+    200
+  );
+  assert.equal(
+    (await f.call('PUT', '/api/check-ins/' + here.id, { name: 'Cabin', tags: ['Lake'], revision: await revision() }))
+      .status,
+    200
+  );
+  assert.equal(tagged(), 1);
+  // Twenty tags on the stay, and a place here: a new tag for its stays would
+  // make a 21st, so nothing is written; one it has adds nothing.
+  const twenty = ['Lake', ...Array.from({ length: 19 }, (_, i) => `tag ${i}`)];
+  assert.equal(
+    (await f.call('PUT', '/api/check-ins/' + here.id, { tags: twenty, revision: await revision() })).status,
+    200
+  );
+  assert.equal(tagged(), 2);
+  assert.equal(
+    (await f.call('PUT', '/api/check-ins/' + here.id, { name: 'Home', remember: true, revision: await revision() }))
+      .status,
+    200
+  );
+  const [place] = (await f.call('GET', '/api/check-ins/places')).data.places,
+    path = `/api/check-ins/places/${place.id}/check-ins`,
+    before = await revision(),
+    refused = await f.call('PATCH', path, { tags: ['Dock'], count: 1 });
+  assert.deepEqual([refused.status, refused.data.error, refused.data.reason], [400, 'tags', 'many']);
+  assert.equal(await revision(), before);
+  assert.deepEqual((await f.call('PATCH', path, { tags: ['LAKE'], count: 1 })).data, { tagged: 0 });
+  assert.equal(tagged(), 2);
+});

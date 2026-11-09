@@ -80,10 +80,11 @@ export const pageLimit = (params: URLSearchParams): number => {
 };
 export const dateOf = (n: Item): string => String(n.sk).split('#')[1]!;
 
-/** A body's tags field (docs/TAGS.md): null when it sent none, else its tags,
- * or 400 `tags` with why (`reason`, from domain/tags.ts) and which (`at`). */
+/** A body's tags field (docs/TAGS.md): null when it sent none (or sent
+ * null, as /v1 and MCP read it), else its tags, or 400 `tags` with why
+ * (`reason`, from domain/tags.ts) and which (`at`). */
 export function tagsFrom(b: Item, field = 'tags'): Tag[] | null {
-  if (!Object.hasOwn(b, field) || b[field] === undefined) return null;
+  if (!Object.hasOwn(b, field) || b[field] === undefined || b[field] === null) return null;
   const tags = fieldTags(b[field]);
   if (isRefused(tags)) reject(400, 'tags', { reason: tags.refused, at: tags.at });
   return tags;

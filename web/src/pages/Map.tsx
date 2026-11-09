@@ -118,6 +118,19 @@ export function tagMenu(
     .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
     .map(([tag, notes]) => ({ tag, notes }));
 }
+/** Each tag by its most recent spelling (tag call 3), from the notes and the
+ * check-ins that carry it. Pins come oldest first and stays newest first, so
+ * both go in by when each was written or began. */
+export function mapTagNames(
+  pins: readonly Pick<Pin, 'date' | 'written_at' | 'tags' | 'tag_names'>[],
+  stays: readonly Pick<Stay, 'at' | 'tags' | 'tag_names'>[]
+): Map<string, string> {
+  const dated = [
+    ...pins.map((p) => ({ at: p.written_at ?? p.date, tags: named(p.tags, p.tag_names) })),
+    ...stays.map((s) => ({ at: s.at, tags: named(s.tags, s.tag_names) }))
+  ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  return nameBook(...dated.map((d) => d.tags));
+}
 /** The line over the map: what is on it, of how many. */
 export function mapLede(notes: number, shown: number | undefined, stays: number, stayed: number, filtering: boolean) {
   const own = (n: number) => `with a place of ${n === 1 ? 'its' : 'their'} own`,
@@ -276,14 +289,7 @@ export function MapPage() {
     };
   }, [noted, stays, show, tag, release, asked]);
   // Each tag by its name, from the notes and the check-ins that carry it.
-  const tagNames = useMemo(
-    () =>
-      nameBook(
-        ...(d?.pins ?? []).map((p) => named(p.tags, p.tag_names)),
-        ...(stays ?? []).map((s) => named(s.tags, s.tag_names))
-      ),
-    [d, stays]
-  );
+  const tagNames = useMemo(() => mapTagNames(d?.pins ?? [], stays ?? []), [d, stays]);
   // A menu shows when there is something to choose at all, whatever the
   // other filters leave, so it never comes and goes.
   const menus = useMemo(

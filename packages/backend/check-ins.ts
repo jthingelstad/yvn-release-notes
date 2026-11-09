@@ -10,7 +10,7 @@ import {
   type CheckIn,
   type NamedPlace
 } from '../domain/check-ins.ts';
-import { mergeTags, storedTags, tagFields, type Tag } from '../domain/tags.ts';
+import { joinedTags, storedTags, tagFields, type Tag } from '../domain/tags.ts';
 
 export interface CheckInReads {
   namedPlaces(user: string): Promise<NamedPlace[]>;
@@ -147,15 +147,21 @@ export function stayTagged(members: readonly CheckIn[], tags: readonly Tag[]): {
 }
 
 /** Tags added to every stay of a list, each keeping its own: the changes,
- * and how many stays gained one. */
+ * and how many stays gained one. `over` when a stay would pass 20 tags, which
+ * its caller refuses, as a tags field refuses a 21st (call 4). */
 export function staysTagged(stays: readonly CheckIn[][], added: readonly Tag[]) {
-  let count = 0;
+  let count = 0,
+    over = false;
   const changes = stays.flatMap((members) => {
     const had = stayTags(members),
-      now = mergeTags(had, added);
+      now = joinedTags(had, added);
+    if (!now) {
+      over = true;
+      return [];
+    }
     if (now.length === had.length) return [];
     count++;
     return stayTagged(members, now);
   });
-  return { changes, count };
+  return { changes, count, over };
 }

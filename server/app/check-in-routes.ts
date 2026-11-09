@@ -4,7 +4,7 @@
  * in no log and no activity row. */
 import { randomUUID } from 'node:crypto';
 import { eventId, recordActivity } from '../../packages/backend/activity.ts';
-import { everyStay, stayOf, staysAt, staysTagged, withTags } from '../../packages/backend/check-ins.ts';
+import { everyStay, stayOf, staysAt, stayTagged, staysTagged, withTags } from '../../packages/backend/check-ins.ts';
 import { reject, type SessionService } from '../../packages/backend/sessions.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import {
@@ -111,7 +111,9 @@ export async function checkInRoutes(
       if (!added?.length) reject(400, 'tags', { reason: 'empty', at: -1 });
       const { stays } = await staysAt(store, uid, old.id);
       if (value.count !== stays.length) reject(409, 'check-in-count', { count: stays.length });
-      const { changes, count } = staysTagged(stays, added);
+      const { changes, count, over } = staysTagged(stays, added);
+      // A stay those tags would take past 20 refuses the lot, as the field does.
+      if (over) reject(400, 'tags', { reason: 'many', at: -1 });
       if (!(await store.checkInWrites(uid, changes, [], []))) reject(409, 'check-in-changed');
       if (count) await note('checkin.tagged', { place: old.id, count });
       return json({ tagged: count });
@@ -217,6 +219,8 @@ export async function checkInRoutes(
   const remember = value.remember === true;
   if (remember && !given) reject(400, 'check-in-name');
   if (remember && tagging) reject(400, 'check-in-name');
+  // Logged only when the tags change, as /v1 logs them.
+  const retagged = tagging !== null && stayTagged(members, tagging).length > 0;
   if (!naming) {
     if (members.length > STAY_WRITE_MAX) reject(400, 'check-in-stay-long');
     const tagged = members.map((m) => ({ ...withTags(m, tagging!), revision: Number(m.revision) + 1 }));
@@ -229,7 +233,7 @@ export async function checkInRoutes(
       ))
     )
       reject(409, 'check-in-changed');
-    await note('checkin.tagged', { checkin: members[0]!.id, day: members[0]!.day });
+    if (retagged) await note('checkin.tagged', { checkin: members[0]!.id, day: members[0]!.day });
     return json({ check_in: shown(tagged, places) });
   }
   const clear = (m: CheckIn, name: string | null) => ({ ...m, name, revision: Number(m.revision) + 1 });
@@ -285,6 +289,6 @@ export async function checkInRoutes(
   )
     reject(409, 'check-in-changed');
   await note('checkin.named', { checkin: members[0]!.id, day: members[0]!.day });
-  if (tagging) await note('checkin.tagged', { checkin: members[0]!.id, day: members[0]!.day });
+  if (retagged) await note('checkin.tagged', { checkin: members[0]!.id, day: members[0]!.day });
   return json({ check_in: shown(named, places) });
 }

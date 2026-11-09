@@ -109,7 +109,7 @@ import {
   TAG_REFUSALS,
   fieldTags,
   isRefused,
-  mergeTags,
+  joinedTags,
   noteTags,
   storedTags,
   tagFields,
@@ -1084,10 +1084,12 @@ export async function writeApi(
           was = old?.ignored === true,
           ignored = flag ?? was,
           flips = ignored !== was,
-          // Tags sent join a remembered place's own (1.21.0).
+          // Tags sent join a remembered place's own (1.21.0), and a 21st
+          // between them is refused, never cut (1.22.2).
           hadTags = old ? storedTags(old) : [],
-          tags = tagging ? mergeTags(hadTags, tagging) : hadTags,
-          gained = tags.length > hadTags.length,
+          tags = tagging ? joinedTags(hadTags, tagging) : hadTags;
+        if (!tags) throw new ApiRefusal('invalid_request', TAG_REFUSALS.many, { field: 'tags' });
+        const gained = tags.length > hadTags.length,
           spotted = withIgnored(
             (old
               ? { ...old, spots: had ? old.spots : [...old.spots, spot], revision: Number(old.revision) + 1 }
@@ -1263,8 +1265,11 @@ export async function writeApi(
             'The check-ins there changed since you counted them. GET /v1/check-ins/places/{id} again for the count.',
             { count: stays.length }
           );
-        const { changes, count } = staysTagged(stays, added),
-          tagged = (wiped ??= count),
+        const { changes, count, over } = staysTagged(stays, added);
+        // A stay those tags would take past 20 refuses the lot, as a tags
+        // field refuses a 21st (1.22.2).
+        if (over) throw new ApiRefusal('invalid_request', TAG_REFUSALS.many, { field: 'tags' });
+        const tagged = (wiped ??= count),
           body = { tagged };
         landed = await store.checkInWrites(uid, changes, store.tokenProof(token, now, 'notes:all'), [
           ...store.agentReceipts(receiptFor(200, body), audit({ place: id, count: tagged }), rate, previous, now),

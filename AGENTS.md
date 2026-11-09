@@ -27,7 +27,7 @@ layout in `packages/backend/store.ts`, the web app in `docs/WEB-APP.md`,
 agent connections in `docs/MCP.md`, badges in `docs/BADGES.md`, and
 tokens, the public `/v1` API and the Changelog app in `docs/API.md`
 (designed 2026-10-29, built in phases), and check-ins in `docs/CHECK-INS.md`
-(designed 2026-11-06, not built). Read those before changing a
+(designed 2026-11-06, built in phases since). Read those before changing a
 module.
 
 ## Who can write
@@ -294,9 +294,11 @@ Where things are (each module's design comment has its contract):
   slug ("maine-2016"), other scripts alone their own letters (Jamie,
   2026-10-30: "Approved: build the five API edge cases as recommended: 1, 3
   and 4 as API 1.7.0, 2 as its own PR"); a mix or emoji keeps every part.
-  No index: one person's items are read whole. Older items gain names and
-  moved keys only from `tools/fill-tags.ts --write`, a live run that needs
-  Jamie's go. `contracts/tag-vectors.json` is the rules for the apps.
+  No index: one person's items are read whole. Older items gained names and
+  moved keys in the migration of 2026-11-08, run on Jamie's go (739 written:
+  636 notes, 103 Upcoming dates). `contracts/tag-vectors.json` is the rules
+  for the apps, and Changelog for iPhone (build 95) and Quinn's Android app
+  have tags.
 - **Search** (Jamie, 2026-10-09: "pull posts by tag, showing all tags that
   have been used, as well as search by string across notes") matches every
   word or "quoted phrase" in text, place, link names, transcripts and photo
@@ -492,8 +494,10 @@ Where things are (each module's design comment has its contract):
 - **The first email goes at sign-up** (Jamie, 2026-10-08): today's, at once,
   through the sender's `send_now`, with one welcome line; the schedule
   starts the next day.
-- **Sessions last 14 days from the last visit**, renewed by every visit,
-  with no outer limit (Jamie, 2026-10-08).
+- **Sessions last 14 days from the last visit**, renewed by every visit
+  (Jamie, 2026-10-08), and never past 90 days from the sign-in (`SESSION_MAX`;
+  Jamie, 2026-11-08, product call 2 of the security audit). Apps and API
+  tokens keep their own expiry.
 - **A subscriber is `active` or `stopped`.** Stopped means no email, for
   `unsubscribed` (the one-click `List-Unsubscribe` or its page), `bounce`
   (hard) or `complaint`. Nothing is deleted; restarting in settings also

@@ -5,6 +5,7 @@ import { POLL, pollWhileWriting } from '../lib/queries.ts';
 import { groupQuiet } from './Timeline.tsx';
 import {
   mapLede,
+  mapTagNames,
   moved,
   noteTrail,
   pickedHead,
@@ -267,6 +268,21 @@ describe('check-ins on the map', () => {
       { tag: 'road-trip', notes: 1 }
     ]);
     expect(tagMenu([], [], 'lake')).toEqual([{ tag: 'lake', notes: 0 }]);
+  });
+  it('names each tag by its most recent spelling, notes and check-ins together (tag call 3)', () => {
+    const pin = (date: string, name: string) => ({ date, written_at: null, tags: ['road-trip'], tag_names: [name] }),
+      at = (when: string, name: string) => ({ at: when, tags: ['road-trip'], tag_names: [name] });
+    // Pins arrive oldest first, stays newest first: the newest wins either way.
+    const pins = [pin('2026-10-01', 'road trip'), pin('2026-10-05', 'Road trip')];
+    expect(mapTagNames(pins, []).get('road-trip')).toBe('Road trip');
+    expect(
+      mapTagNames(pins, [at('2026-10-09T12:00:00Z', 'Road Trip'), at('2026-10-03T12:00:00Z', 'ROAD TRIP')]).get(
+        'road-trip'
+      )
+    ).toBe('Road Trip');
+    expect(
+      mapTagNames([...pins, pin('2026-10-20', 'Road-Trip')], [at('2026-10-09T12:00:00Z', 'Road Trip')]).get('road-trip')
+    ).toBe('Road-Trip');
   });
   it('says what is on the map, of how many', () => {
     expect(mapLede(0, undefined, 0, 0, false)).toBe(

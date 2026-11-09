@@ -8,10 +8,11 @@ input, not inline parsing of note text", and they attach to notes, Upcoming
 dates and check-ins, with a remembered place's tags "copied onto every check-in
 recorded there". Jamie's calls are at the end, under "Jamie's calls".
 
-Phase 1, the server, the web, API 1.21.0 and MCP 1.15.0, is this change. Then
-the migration (a dry run first, the live run only on Jamie's go), then
-Changelog for iPhone, then a pull request to Quinn's Android app. Renaming or
-merging tags is out of scope.
+Phase 1, the server, the web, API 1.21.0 and MCP 1.15.0, went live on
+2026-11-08 (#336). The migration ran the same day on Jamie's go (below), and
+Changelog for iPhone (changelog-ios #57, TestFlight build 95) and Quinn's
+Android app (changelog-android #8) have shipped tags. Renaming or merging tags
+is out of scope.
 
 ## A tag is a name and a key
 
@@ -69,9 +70,11 @@ is stored and there is no index: one person's items are read whole, as before.
   arrives. When a place gains a tag, its answer counts the stays already
   there, and the web offers once, with that count, to tag them too (call 6);
   `PATCH /v1/check-ins/places/{id}/check-ins` does it for the count shown, and
-  a different count now is refused with the new one. Taking a tag off a place
-  leaves the check-ins that have it alone. One `checkin.tagged` row goes in the
-  activity log with the place's id and the count.
+  a different count now is refused with the new one. Tags that would take the
+  place, or any stay there, past 20 are refused, as a field refuses a 21st.
+  Taking a tag off a place leaves the check-ins that have it alone. One
+  `checkin.tagged` row goes in the activity log with the place's id and the
+  count.
 
 ## Where tags show
 
@@ -107,9 +110,9 @@ its check-ins, and its Upcoming dates with the `upcoming` scope (null without).
 
 ## The migration
 
-`tools/fill-tags.ts` brings what was stored before 2026-11-08 up to this. Counts
-only, never a tag or a person; a dry run by default, and `--write`, a live run,
-only on Jamie's go. `--all` runs every subscriber.
+`tools/fill-tags.ts` brought what was stored before 2026-11-08 up to this. It
+ran on 2026-11-08 on Jamie's go, a dry run first, and wrote 739 items: 636 notes
+and 103 Upcoming dates. It printed counts only, never a tag or a person.
 
 - A note stored before names gains `tag_names`, each named as its text types
   it. A note already named is left alone.
@@ -121,8 +124,8 @@ only on Jamie's go. `--all` runs every subscriber.
   `tag` stays, since every writer still keeps it for this release.
 
 Each write is conditional on the words and tags read, with the account proof,
-so anything changed since is counted and left. Until it runs, every reader
-names an unnamed tag from its note's hashtags, or by its key.
+so anything changed since is counted and left. Every reader still names an
+unnamed tag from its note's hashtags, or by its key.
 
 ## Jamie's calls
 

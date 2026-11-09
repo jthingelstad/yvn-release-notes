@@ -1057,8 +1057,10 @@ remembered place take `tags`; a new stop at a place gets the place's. When a
 place gains a tag, its answer counts the stays already there as `check_ins`, and
 `PATCH /v1/check-ins/places/{id}/check-ins` `{tags, count}` (`notes:all`) adds
 the tags to each for that count; another count is `revision_mismatch` with the
-`count` now. It answers `{tagged}` and logs one `checkin.tagged` with the place's
-id and the count. `GET /v1/check-ins` takes `tag`.
+`count` now. Tags that would take a place, or a stay there, past 20 are refused
+with `invalid_request` on `tags` and nothing written (1.22.2). It answers
+`{tagged}` and logs one `checkin.tagged` with the place's id and the count.
+`GET /v1/check-ins` takes `tag`.
 
 Every `tag` filter takes any spelling, and refuses only one no tag could be.
 `GET /v1/tags/all` gives each tag's `name`, as most recently written, and counts

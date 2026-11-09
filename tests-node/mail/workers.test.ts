@@ -281,10 +281,12 @@ test('weather sharing/cache and first failure budget prevent one timeout per rec
   await budget('a');
   await assert.rejects(() => budget('b'));
 });
-test('history preserves assistant provenance, tags from words, written order and place distinction', async () => {
+test('history preserves assistant provenance, kept tags, written order and place distinction', async () => {
   const f = setup();
   f.store.seed(
     note('2026-10-12', 'z', 'Owner words #mine', {
+      tags: ['mine'],
+      tag_names: ['mine'],
       written_at: '2026-10-12T01:00:00Z',
       place: { city: 'Example', lat: 1, lon: 2 }
     })

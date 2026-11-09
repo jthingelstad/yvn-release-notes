@@ -152,14 +152,13 @@ test('a note keeps its field tags through edits that change only its words', () 
   assert.deepEqual(tagFields([]), {});
 });
 
-test('stored tags are named by tag_names, then by the hashtags typed, then by their keys', () => {
+test('stored tags are named by tag_names, else by their keys', () => {
   assert.deepEqual(storedTags({ tags: ['road-trip'], tag_names: ['Road Trip'] }), [
     { key: 'road-trip', name: 'Road Trip' }
   ]);
-  assert.deepEqual(storedTags({ tags: ['maine-2016'], text: 'Out #Maine-2016' }), [
-    { key: 'maine-2016', name: 'Maine-2016' }
-  ]);
   assert.deepEqual(storedTags({ tags: ['lake'] }), [{ key: 'lake', name: 'lake' }]);
+  // Every note was named by the 2026-11-08 migration: no tags stored is none.
+  assert.deepEqual(storedTags({}), []);
   // An Upcoming date of before 2026-11-08 has one tag.
   assert.deepEqual(storedTags({ tag: 'maine-2016' }), [{ key: 'maine-2016', name: 'maine-2016' }]);
   assert.deepEqual(

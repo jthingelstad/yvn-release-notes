@@ -34,12 +34,4 @@ test('retired alarms retain final-failure destinations and the two delivery alar
     [...source.matchAll(/^  ([A-Za-z0-9]+):\n    Type: AWS::CloudWatch::Alarm$/gm)].map((match) => match[1]),
     ['FailedQueueAlarm', 'OverdueAlarm']
   );
-  for (const name of [
-    'EventsErrorsAlarm',
-    'ExportErrorsAlarm',
-    'TranscribeErrorsAlarm',
-    'DescribeErrorsAlarm',
-    'InboundErrorsAlarm'
-  ])
-    assert.ok(!source.includes(`  ${name}:`));
 });

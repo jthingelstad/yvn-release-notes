@@ -125,7 +125,7 @@ Where things are (each module's design comment has its contract):
   (2026-10-14): named imports only, icon-only actions named for assistive
   technology, with hover titles, visible focus and 44px targets. Brand marks
   stay their own artwork.
-- `tools/{subscribers,tally,read-notes,import-dayone,extract-media,fill-link-titles,fill-weather,fill-tags,badges-baseline,feedback}.ts`
+- `tools/{subscribers,tally,import-dayone,feedback}.ts`
   are operator tools (shared setup in `tools/operator.ts`);
   `tools/export-mcp-contract.ts` keeps `contracts/mcp-surface.json` current,
   and `tools/export-api-contract.ts` the `/v1` OpenAPI file,
@@ -1037,19 +1037,19 @@ us-east-1, and Node 24 (`/opt/homebrew/opt/node@24/bin` first on PATH here).
   red check.
 - **No release step removes an endpoint grant**, and a grant that differs
   from the live-endpoint grant stops the release for a person to look at.
-  Never delete a code zip under `native/` in the source bucket: its revision
-  fails for good, and a revert needs it.
+  Never delete a code zip under `native/` in the source bucket: a Web
+  Function revision fails for good without its zip. Only the lifecycle
+  expires worker zips (`native/workers/`, 180 days; infra/NATIVE-WEB.md).
 - **Never commit or print a release's cloud identifiers** (the account,
   bucket and distribution names, ARNs); the workflow masks them.
 - **Send someone today's email now** only through the sender's `send_now`,
   still once per local day; never fake the clock with `now` to do it.
-- **Every live write by an operator tool needs Jamie's go**: an import, a
-  fill-in script's `--write`, the real `thumbs_all` run, the badges
-  baseline's `--write`. Run the dry run first. The one standing go is
-  `tools/feedback.ts answer --write` (Feedback).
-- `tools/read-notes.ts` prints note text: run it only for the subscriber's
-  own notes; agents do not run it to check things. `tools/subscribers.ts`
-  prints addresses, so its output stays on this Mac.
+- **Every live write by an operator tool needs Jamie's go**: an import,
+  the real `thumbs_all` run. Run the dry run first. The one standing go is
+  `tools/feedback.ts answer --write` (Feedback). The one-off fill-ins and
+  the badges baseline were retired on 2026-11-09 once they had run; a new
+  one is written for its feature and follows the same rule.
+- `tools/subscribers.ts` prints addresses, so its output stays on this Mac.
 - **The runtime secret** `yvn-release-notes-runtime` is Jamie's, kept by
   hand in the console; the stack does not own it, no deploy writes it, and
   agents never read its value. A new credential is a new key in it, not a

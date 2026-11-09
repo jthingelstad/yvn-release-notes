@@ -264,21 +264,17 @@ export function mergeTags(...lists: readonly (readonly Tag[])[]): Tag[] {
   return out;
 }
 
-/** An item's tags as stored: `tags` and `tag_names` side by side. One stored
- * before names, or written by a client that sent none, is named by its own
- * hashtags, or else by its key; an Upcoming date of before 2026-11-08 has
- * one `tag`. */
-export function storedTags(item: { tags?: unknown; tag_names?: unknown; tag?: unknown; text?: unknown }): Tag[] {
-  // A note written before tags were stored has only its text's.
-  if (item.tags === undefined && item.tag === undefined && typeof item.text === 'string') return textTags(item.text);
+/** An item's tags as stored: `tags` and `tag_names` side by side, a key
+ * with no name named by itself; an Upcoming date of before 2026-11-08 has
+ * one `tag`. Every note was named by the 2026-11-08 migration. */
+export function storedTags(item: { tags?: unknown; tag_names?: unknown; tag?: unknown }): Tag[] {
   const keys = Array.isArray(item.tags)
       ? item.tags.map(String)
       : typeof item.tag === 'string' && item.tag
         ? [item.tag]
         : [],
-    names = Array.isArray(item.tag_names) ? item.tag_names.map(String) : [],
-    typed = keys.length && names.length < keys.length && typeof item.text === 'string' ? textTags(item.text) : [];
-  return mergeTags(keys.map((key, i) => ({ key, name: names[i] || typed.find((t) => t.key === key)?.name || key })));
+    names = Array.isArray(item.tag_names) ? item.tag_names.map(String) : [];
+  return mergeTags(keys.map((key, i) => ({ key, name: names[i] || key })));
 }
 
 /** Tags as stored on an item: both lists, or neither when there are none. */

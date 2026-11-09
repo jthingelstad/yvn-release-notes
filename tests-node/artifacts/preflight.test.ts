@@ -63,6 +63,25 @@ test('each zip is a template parameter and a key named by its hash', async () =>
   });
 });
 
+test('only worker zips expire: a Web Function revision fails for good without its zip', async () => {
+  const template = await readFile(new URL('../../infra/template.yaml', import.meta.url), 'utf8'),
+    bucket = /^  NativeSourceBucket:\n[\s\S]*?(?=^  [A-Za-z0-9]+:)/m.exec(template)?.[0];
+  assert.ok(bucket);
+  const rules = bucket.split(/\n {10}- Id: /).slice(1);
+  assert.deepEqual(
+    rules.map((rule) => rule.split('\n', 1)[0]),
+    ['expire-old-worker-code', 'abort-incomplete-uploads']
+  );
+  // Every rule that removes an object is scoped to the workers' prefix.
+  for (const rule of rules)
+    if (/ExpirationInDays|NoncurrentVersionExpiration/.test(rule)) assert.match(rule, /Prefix: native\/workers\/\n/);
+  assert.match(rules[0]!, /ExpirationInDays: 180\n/);
+  await built(async (_out, manifest) => {
+    for (const artifact of manifest.artifacts)
+      assert.equal(keyFor(artifact).startsWith('native/workers/'), artifact.kind === 'workers', artifact.name);
+  });
+});
+
 test('upload refuses a changed bundle, a bad manifest or a bad commit before touching AWS', async (t) => {
   let attempts = 0;
   t.mock.method(STSClient.prototype, 'send', () => {

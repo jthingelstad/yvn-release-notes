@@ -1,7 +1,8 @@
 /** Upload the code zips the build packaged (tools/package-native.ts) to the
  * stack's source bucket, each named by its SHA-256, and return the template
  * parameters that name them (AppCode, SenderCode, ...). A key is written once
- * (If-None-Match) and never changed, so a revert finds its code still there.
+ * (If-None-Match) and never changed, so a revert finds its code still there;
+ * a worker zip the lifecycle expired (infra/NATIVE-WEB.md) is uploaded again.
  * Each zip is hashed again first, so a bundle changed after the build is
  * refused. Reads metadata only; never secret values. */
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';

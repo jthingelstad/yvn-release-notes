@@ -429,9 +429,10 @@ they are found by writing on those days or not at all.
   drops both lines and marks nothing. All use `ADD` with the account proof, so a
   repeat is harmless and a deleted account gains no row. It goes with the
   account. It is not exported, since it is only bookkeeping.
-- **Launch:** `tools/badges-baseline.ts` seeds `seen` with what each
-  subscriber has already earned, so nobody's first email lists thirty
-  badges. It is a live write, so it runs on Jamie's go. The launch is
+- **Launch:** a one-off baseline (`tools/badges-baseline.ts`, run at the
+  launch and on 2026-10-29, removed 2026-11-09; docs/OPERATING.md) seeded
+  `seen` with what each subscriber had already earned, so nobody's first
+  email listed thirty badges. It was a live write, run on Jamie's go. The launch is
   announced through a product update at `/admin/`, in Jamie's words.
 - **API:** `GET /api/badges` for the page; a note create answers with
   `unlocked`, what it just earned, worked out from the person's notes read

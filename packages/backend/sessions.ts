@@ -99,7 +99,18 @@ export class SessionService {
     this.context.store = withWebProof(this.rawStore, uid, String(s.hash), this.context.now, { allowDeleting });
     return { uid, profile, session: s };
   }
-  async reserveMail(email: string, viewer?: string): Promise<void> {
+  /** Spends a sign-in or deletion email from the hour's limits, or refuses
+   * with 429. A member's mail (the address has an account) never counts
+   * toward the total and never stops for its domain's bounces, so made-up
+   * addresses can't keep a member from signing in. */
+  async reserveMail(email: string, viewer: string | undefined, member: boolean): Promise<void> {
+    if (!member) {
+      const day = Math.floor(this.context.now / 86400);
+      if ((await this.context.store.peek(auth.bounceKey(email), day)) >= auth.DOMAIN_BOUNCES_A_DAY) {
+        this.log({ event: 'mail-limited', limit: 'domain-bounces' });
+        reject(429, 'limited');
+      }
+    }
     const hour = Math.floor(this.context.now / 3600),
       checks = [
         { name: 'address', key: 'email:' + auth.digest(auth.limitAddress(email)), limit: auth.LIMIT_PER_ADDRESS }
@@ -111,7 +122,7 @@ export class SessionService {
       if (wide !== net)
         checks.push({ name: 'network48', key: 'net48:' + auth.digest(wide), limit: auth.LIMIT_PER_NETWORK48 });
     }
-    checks.push({ name: 'total', key: 'all', limit: auth.LIMIT_TOTAL });
+    if (!member) checks.push({ name: 'total', key: 'all', limit: auth.LIMIT_TOTAL });
     const result = await this.context.store.reserveMail(
       checks.map((c) => ({ key: c.key, limit: c.limit, period: hour }))
     );

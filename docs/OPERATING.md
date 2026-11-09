@@ -225,10 +225,13 @@ names the `release-notes form`.
   late for two quarter hours (census `Overdue`); a send time moved past
   today's window also trips it, for that day.
 - Metric `ReleaseNotes/SignInTotalLimited` counts each time the hour's
-  sign-in emails for everyone (200, `LIMIT_TOTAL` in
+  sign-in emails to addresses with no account (200, `LIMIT_TOTAL` in
   `packages/backend/auth.ts`) are used up, from the web function's
   `{"event":"mail-limited","limit":"total"}` log line (renaming it silently
-  breaks the metric): nobody can sign in until the hour turns. No alarm
+  breaks the metric): nobody new can sign in until the hour turns, though
+  members still can (2026-11-08). A `"limit":"domain-bounces"` line means
+  5 sign-in emails to one domain bounced today and new addresses there
+  wait for the next UTC day. No alarm
   watches it since 2026-11-03. The narrower
   limits are checked first and a refused request counts against none, so
   reaching the total takes many networks.

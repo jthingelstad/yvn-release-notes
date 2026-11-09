@@ -259,6 +259,33 @@ test('sign-in limits compose address/IPv4/IPv6/total budgets; refusal consumes n
   assert.ok(template.includes(`FilterPattern: '{ $.message.event = "mail-limited" && $.message.limit = "total" }'`));
   assert.ok(!JSON.stringify([...s.logs, ...ipv6.logs]).includes('@'));
 });
+test('members sign in past the hour’s total and their domain’s bounces; five sign-in bounces stop new addresses there for the day', async () => {
+  const s = await setup(),
+    hour = Math.floor(initial / 3600),
+    day = Math.floor(initial / 86400);
+  assert.equal((await s.call('POST', '/api/auth/start', { email: 'junk,victim@example.com' })).data.error, 'email');
+  assert.equal((await s.call('POST', '/api/auth/start', { email: '1<victim@example.com>' })).data.error, 'email');
+  s.store.seed({ pk: `RATE#all#${hour}`, sk: 'RATE', n: auth.LIMIT_TOTAL, expires_at: initial + 7200 });
+  assert.equal((await s.call('POST', '/api/auth/start', { email: 'new@example.org' })).response.status, 429);
+  assert.equal((await s.call('POST', '/api/auth/start', { email: 'Ada@Example.com' })).response.status, 202);
+  assert.equal(await s.store.peek('all', hour), auth.LIMIT_TOTAL);
+  s.setNow(initial + 3600);
+  s.store.seed({
+    pk: `RATE#${auth.bounceKey('x@example.com')}#${day}`,
+    sk: 'RATE',
+    n: auth.DOMAIN_BOUNCES_A_DAY,
+    expires_at: (day + 2) * 86400
+  });
+  const before = s.store.memory.all();
+  assert.equal((await s.call('POST', '/api/auth/start', { email: 'new@example.com' })).response.status, 429);
+  assert.deepEqual(s.store.memory.all(), before);
+  assert.ok(s.logs.some((row) => row.event === 'mail-limited' && row.limit === 'domain-bounces'));
+  assert.equal((await s.call('POST', '/api/auth/start', { email: 'ada@example.com' })).response.status, 202);
+  assert.equal((await s.call('POST', '/api/auth/start', { email: 'new@example.org' })).response.status, 202);
+  s.setNow((day + 1) * 86400 + 60);
+  assert.equal((await s.call('POST', '/api/auth/start', { email: 'new@example.com' })).response.status, 202);
+  assert.ok(!JSON.stringify(s.logs).includes('@'));
+});
 test('sessions renew at daily boundary with USER index, expire idle, replace on sign-in and revoke on signout', async () => {
   const s = await setup(),
     old = await s.session();

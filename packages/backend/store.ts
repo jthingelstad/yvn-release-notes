@@ -2657,8 +2657,9 @@ export class Store {
   }
   /** Ends every web session of the account but `keep`, each with its row in
    * the account's session list in one write (the web's store adds the proof
-   * that `keep` and the account are live). Says how many were still in force;
-   * rows past their expiry are cleared without counting. */
+   * that `keep` and the account are live). Says how many were still in force:
+   * a list row whose session has expired, or has gone already (signed out in
+   * its own browser, which leaves the row), is cleared without counting. */
   async endOtherSessions(user: string, keep: string, now: number): Promise<number> {
     const listed = await this.rows({
       KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
@@ -2669,6 +2670,8 @@ export class Store {
     for (const row of listed) {
       const hash = String(row.sk).slice('SESSION#'.length);
       if (hash === keep) continue;
+      const session = await this.getSession(hash, true),
+        live = session?.user_id === user && Number(session.expires_at ?? 0) > now;
       await this.client.send(
         new TransactWriteCommand({
           TransactItems: [
@@ -2684,7 +2687,7 @@ export class Store {
           ]
         })
       );
-      if (Number(row.expires_at ?? 0) > now) ended++;
+      if (live) ended++;
     }
     return ended;
   }

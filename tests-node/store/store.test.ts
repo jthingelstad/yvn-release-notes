@@ -567,6 +567,8 @@ test('ending other sessions deletes each with its list row in one write, and cou
     s.seed({ pk: 'USER#u', sk: `SESSION#${hash}`, expires_at: expires });
     s.seed({ pk: `SESSION#${hash}`, sk: 'SESSION', user_id: 'u', expires_at: expires });
   }
+  // Signed out in its own browser: the session is gone and its list row stays.
+  s.seed({ pk: 'USER#u', sk: 'SESSION#gone', expires_at: 200 });
   s.memory.calls.length = 0;
   assert.equal(await s.endOtherSessions('u', 'keep', 100), 1);
   const query = s.memory.calls[0]!;
@@ -589,10 +591,18 @@ test('ending other sessions deletes each with its list row in one write, and cou
       { Delete: { TableName: 'T', Key: { pk: 'USER#u', sk: 'SESSION#live' } } }
     ]
   );
-  assert.equal(writes.length, 2);
+  assert.equal(writes.length, 3);
+  assert.ok(
+    s.memory.calls.some(
+      (c) =>
+        c.name === 'GetCommand' &&
+        JSON.stringify(c.input) ===
+          JSON.stringify({ TableName: 'T', Key: { pk: 'SESSION#live', sk: 'SESSION' }, ConsistentRead: true })
+    )
+  );
   assert.ok(s.memory.read({ pk: 'SESSION#keep', sk: 'SESSION' }));
   assert.ok(s.memory.read({ pk: 'USER#u', sk: 'SESSION#keep' }));
-  for (const hash of ['old', 'live']) {
+  for (const hash of ['old', 'live', 'gone']) {
     assert.equal(s.memory.read({ pk: `SESSION#${hash}`, sk: 'SESSION' }), null);
     assert.equal(s.memory.read({ pk: 'USER#u', sk: `SESSION#${hash}` }), null);
   }

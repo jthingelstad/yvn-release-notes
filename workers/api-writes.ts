@@ -1409,8 +1409,8 @@ export async function writeApi(
           files = [
             ...new Set([
               ...(String(old.raw_key ?? '').startsWith('raw/') ? [String(old.raw_key)] : []),
-              ...mediaKeys(old as NoteRecord),
-              ...thumbKeys(old as NoteRecord)
+              ...mediaKeys(old as NoteRecord, uid),
+              ...thumbKeys(old as NoteRecord, uid)
             ])
           ];
         landed = await store.apiNoteDelete(

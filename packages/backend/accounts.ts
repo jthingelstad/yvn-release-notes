@@ -324,7 +324,7 @@ export async function deleteAccount(service: SessionService, b: Item): Promise<s
     files = (rows: Item[]) =>
       rows.flatMap((i) => [
         ...(String(i.raw_key ?? '').startsWith('raw/') ? [String(i.raw_key)] : []),
-        ...keys(i),
+        ...keys(i, uid),
         // The profile photo (profile-photo.ts), on PROFILE.
         ...(photoOf(i, uid) ? [photoOf(i, uid)!] : []),
         ...(String(i.export_key ?? '').startsWith(`exports/${uid}/`) ? [String(i.export_key)] : [])
@@ -360,7 +360,7 @@ export async function deleteAccount(service: SessionService, b: Item): Promise<s
     ...sessionsOf(late),
     ...late.map((i) => ({ pk: String(i.pk), sk: String(i.sk) }))
   ]);
-  for (const key of [...items, ...late].flatMap((i) => thumbKeys(i))) await ctx.objects.remove(key);
+  for (const key of [...items, ...late].flatMap((i) => thumbKeys(i, uid))) await ctx.objects.remove(key);
   // A file may have been staged while its last table proof was in flight.
   for (const prefix of [`media/${uid}/`, `exports/${uid}/`])
     for (const key of await ctx.objects.list(prefix)) await ctx.objects.remove(key);

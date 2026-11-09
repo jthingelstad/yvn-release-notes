@@ -196,8 +196,11 @@ Privacy and the changelog (Public pages, below).
       never for an address that names no one. Filed (with a link to its
       day), not filed and why, or failed (still being retried, or given
       up on after three tries). A row keeps the sender only when it
-      differs from the subscriber's address, and the words only once the
-      sender is proven (a late reply, a final failure): inbound opens no
+      differs from the subscriber's address, and then by its From line's
+      addresses alone, never a display name; the subject and words only
+      once the sender is proven (a late reply, a final failure; from 2026-11-08,
+      CONTENT-3 of that day's security audit, anyone can write a subject or
+      a display name): inbound opens no
       MIME before that proof, and the web role reads nothing under `raw/`.
       "Add to <day>" appends those words to that day's draft in this tab
       and opens it; nothing is saved until the note is. A notice goes to

@@ -9,15 +9,30 @@ export interface Pixels {
   /** RGBA, four channels. */
   data: Buffer;
 }
-export async function decodeHeif(bytes: Buffer, maxPixels: number): Promise<Pixels | null> {
-  const decode = (await import('heic-decode')).default,
-    image = await decode({ buffer: bytes });
-  if (!image.width || !image.height || image.width * image.height > maxPixels) return null;
-  return {
-    width: image.width,
-    height: image.height,
-    data: Buffer.from(image.data.buffer, image.data.byteOffset, image.data.byteLength)
-  };
+interface HeifImage {
+  width: number;
+  height: number;
+  decode(): Promise<{ width: number; height: number; data: Uint8ClampedArray }>;
+}
+type Load = () => Promise<(input: { buffer: Buffer }) => Promise<HeifImage[] & { dispose(): void }>>;
+const heicImages: Load = async () => (await import('heic-decode')).default.all;
+/** The first image's pixels, or null past `maxPixels`. Its size is read from
+ * the file before anything is decoded, so a small file that claims to be huge
+ * costs nothing (a 128 KB HEIC can say 16384 by 16384, about 1 GB of pixels). */
+export async function decodeHeif(bytes: Buffer, maxPixels: number, load: Load = heicImages): Promise<Pixels | null> {
+  const images = await (await load())({ buffer: bytes });
+  try {
+    const first = images[0];
+    if (!first?.width || !first.height || first.width * first.height > maxPixels) return null;
+    const image = await first.decode();
+    return {
+      width: image.width,
+      height: image.height,
+      data: Buffer.from(image.data.buffer, image.data.byteOffset, image.data.byteLength)
+    };
+  } finally {
+    images.dispose();
+  }
 }
 /** A 16 by 16 pixel HEIC (a synthetic gradient, made with macOS sips), so
  * the deploy probes prove libheif decodes on Lambda. */

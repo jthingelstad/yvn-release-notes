@@ -238,12 +238,16 @@ export async function storeFiles(
   }
   return entries;
 }
-export function keys(note: NoteRecord): string[] {
-  const out: string[] = [];
+/** Every object behind a note's files. Given its owner, only that owner's
+ * (`media/<owner>/`): a delete passes it, so a note that somehow lists
+ * another account's key never removes it (2026-11-08, AUTHZ-1). */
+export function keys(note: NoteRecord, owner?: string): string[] {
+  const out: string[] = [],
+    prefix = owner ? `media/${owner}/` : 'media/';
   for (const media of note.media ?? []) {
     const found = [media.key, object(media.thumb)?.key];
     if (media.kind === 'image' && String(media.key ?? '').startsWith('media/')) found.push(thumbKey(String(media.key)));
-    for (const key of new Set(found.filter(Boolean).map(String))) if (key.startsWith('media/')) out.push(key);
+    for (const key of new Set(found.filter(Boolean).map(String))) if (key.startsWith(prefix)) out.push(key);
   }
   return out;
 }
@@ -262,9 +266,9 @@ export function withoutFile<T extends { media?: unknown }>(note: T, n: number, a
     left = ((media ?? []) as { n?: unknown }[]).filter((m) => Number(m.n) !== n);
   return { ...rest, ...(left.length ? { media: left } : {}), updated_at: at } as unknown as T;
 }
-export const thumbKeys = (note: NoteRecord): string[] =>
+export const thumbKeys = (note: NoteRecord, owner?: string): string[] =>
   (note.media ?? [])
-    .filter((m) => m.kind === 'image' && String(m.key ?? '').startsWith('media/'))
+    .filter((m) => m.kind === 'image' && String(m.key ?? '').startsWith(owner ? `media/${owner}/` : 'media/'))
     .map((m) => thumbKey(String(m.key)));
 export function counts(notes: readonly NoteRecord[]): Record<string, number> {
   const out: Record<string, number> = { image: 0, audio: 0 };

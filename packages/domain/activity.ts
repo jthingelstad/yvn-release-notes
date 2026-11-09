@@ -4,8 +4,8 @@
  * and in the export. A row says when, through what (the channel, or the
  * assistant by its client's name), what happened, and the day, note or date
  * it touched; it never copies the words of a note or an Upcoming entry. A
- * mail row keeps what the mail log kept: its subject, a sender that was not
- * the owner, and the words only once that sender was proven.
+ * mail row keeps what the mail log kept: a sender that was not the owner, by
+ * address alone, and the subject and words only once the sender was proven.
  *
  * Rows live at USER#<owner> / ACTIVITY#<ISO time>#<kind>#<id>. An
  * assistant's reads are summed into one row a connection a local day, which

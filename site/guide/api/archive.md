@@ -57,7 +57,7 @@ What you've earned and the tracks, or `show_badges` false and nothing else if yo
 
 ### GET /v1/mail-log
 
-What became of each email in the last 30 days: its `outcome`, and its subject, sender and opening words, cut short.
+What became of each email in the last 30 days: its `outcome`, its subject and opening words, cut short, when it came from you, and another sender's address.
 
 `GET /v1/days/{date}`, `GET /v1/search` and `GET /v1/on-this-day` take `?include=urls` too. Wherever weather shows, show `weather_credit` with it.
 

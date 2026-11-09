@@ -20,6 +20,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 - An account writes up to 200 notes a day on the web, makes up to 10 books and zips a day, and draws up to 5,000 pieces of the map a day. If a book's commentary fails 3 times in a day, it waits until the next day. [Make a book](/guide/book/) has more.
 - Members can always get a sign-in email, even while Release Notes is turning away a flood of them for addresses with no account. Signing up takes a plain email address, and if sign-in emails to new addresses at one email provider keep bouncing, sign-ups there wait until the next day.
 - **Sign out other devices**, under Your account in Settings, signs out every other phone and computer signed in to your account, and keeps you signed in where you are. Apps and API tokens keep their access until you remove them.
+- Activity shows an email’s subject only when it came from you. An email from anyone else, or one that failed its checks, shows the address it came from and what became of it.
 
 ## 0.0.30 · November 6
 

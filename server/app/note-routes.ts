@@ -242,7 +242,7 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
   }
   for (const key of [
     ...(String(old.raw_key ?? '').startsWith('raw/') ? [String(old.raw_key)] : []),
-    ...media.keys(old)
+    ...media.keys(old, uid)
   ])
     await ctx.objects.remove(key);
   await store.deleteNote(uid, day, id!);
@@ -254,6 +254,6 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
     }
   ]);
   if (old.place) await keepWeather(service, uid, p, day, true);
-  for (const key of media.thumbKeys(old)) await ctx.objects.remove(key);
+  for (const key of media.thumbKeys(old, uid)) await ctx.objects.remove(key);
   return json({ ok: true });
 }

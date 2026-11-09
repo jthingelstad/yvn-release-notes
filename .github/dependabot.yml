@@ -1,12 +1,18 @@
 # Keep the pinned actions and the complete application's npm dependencies
 # current: React, Hono, AWS adapters, Event workers, processing and build/test
 # tools share package.json. Monthly, one grouped PR for each ecosystem.
+# A merge deploys, so a version waits 7 days after it is published before a
+# PR offers it, time for a poisoned release to be caught and pulled. Security
+# updates don't wait (the cooldown is for version updates only). 2026-11-08,
+# SUPPLY-2.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
@@ -16,6 +22,8 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       web:
         patterns: ["*"]

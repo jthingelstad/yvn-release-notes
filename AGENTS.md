@@ -1002,7 +1002,11 @@ sign-in, which makes an API token) are built.
 - Dependabot's two grouped PRs a month (action pins, npm packages) are
   reviewed like any other and never auto-merge: a merged action runs with
   the repository's token and a package runs in the build. It skips
-  `@types/node` majors, which move with Node. Dependabot cannot see the
+  `@types/node` majors, which move with Node. A version waits 7 days after
+  it is published (`cooldown`), so a poisoned release has time to be pulled
+  before a PR offers it. Security updates are on (2026-11-08, SUPPLY-2 and
+  SUPPLY-8): they come as their own PRs, don't wait out the cooldown, and
+  are reviewed and merged by hand like the rest. Dependabot cannot see the
   cfn-lint pin: bump it by hand to PyPI's latest, after a local run, when
   the template needs it.
 - `tests-node/docs/inventory.test.ts` checks the documented API routes,

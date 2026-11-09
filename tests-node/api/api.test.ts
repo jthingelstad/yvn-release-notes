@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { createApp, ROUTES } from '../../server/app/app.ts';
-import { MAX_BODY } from '../../server/app/requests.ts';
+import { MAX_BODY, tagsFrom } from '../../server/app/requests.ts';
 import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects, FakeMail, FakeInvocations } from '../../packages/testing/services.ts';
 import type { ApiContext } from '../../packages/backend/sessions.ts';
@@ -2019,4 +2019,14 @@ test('On this day on the web: the email’s picks, the newest four with their no
   assert.equal(days[3]!.years, 4);
   assert.equal((days[0]!.notes as Item[])[0]!.text, 'Then 0');
   assert.deepEqual(b.more, dates.slice(4));
+});
+
+test('a web tags field sent as null is not sent, as /v1, MCP and Upcoming read it', () => {
+  assert.equal(tagsFrom({ tags: null }), null);
+  assert.equal(tagsFrom({}), null);
+  assert.deepEqual(tagsFrom({ tags: [] }), []);
+  assert.throws(
+    () => tagsFrom({ tags: 'lake' }),
+    (e: { status?: number; extra?: Item }) => e.status === 400 && e.extra?.reason === 'list'
+  );
 });

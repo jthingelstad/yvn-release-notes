@@ -110,7 +110,9 @@ by naming that one check-in once.
 
 ### Remembered places
 
-`USER#<owner> / NAMEDPLACE#<id>`: `name` and `spots`, a list of `{lat, lon}`.
+`USER#<owner> / NAMEDPLACE#<id>`: `name` and `spots`, a list of `{lat, lon}`,
+with `tags` and `tag_names` when it has tags (Tags, below) and `ignored` when it
+is ignored (Ignored places).
 
 Naming a check-in offers a name box, the nearby businesses as one-tap fills, and
 one checkbox, **Remember this place**:
@@ -119,8 +121,8 @@ one checkbox, **Remember this place**:
   so naming one stop never relabels history unasked.
 - **On**: the name becomes a remembered place at this spot.
 
-A second spot with a name already in use (matched as tags are, ignoring case)
-joins that place, which is how a big place, or two ends of one, stays one name.
+A second spot with a name already in use (the same name ignoring case alone:
+unlike a tag, "Road Trip" and "road-trip" are two names) joins that place, which is how a big place, or two ends of one, stays one name.
 Renaming changes all its spots, and forgetting removes them all. There is no
 size setting: 100 m everywhere until real data asks for one. At most 200 names
 an account, read whole on each join.
@@ -182,15 +184,16 @@ on every check-in in it.
 | --------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------- |
 | `POST /v1/check-ins`                                | `notes:write`                      | adds one, or fills in the one it continues; `kept` false at an ignored place |
 | `GET /v1/check-ins?from=&to=&before=`               | `activity`                         | newest first, with `lat`, `lon`, its shown name and how it was named         |
-| `PATCH /v1/check-ins/{id}`                          | `notes:write` own, `notes:all` any | `name`, with the revision read                                               |
+| `PATCH /v1/check-ins/{id}`                          | `notes:write` own, `notes:all` any | `name`, `tags` or both, with the revision read                               |
 | `DELETE /v1/check-ins/{id}`                         | `notes:write` own, `notes:all` any | deletes it                                                                   |
 | `DELETE /v1/check-ins?confirm=all`                  | `notes:all`                        | deletes every one, with one activity row and its count                       |
 | `GET /v1/check-ins/places`                          | `activity`                         | the remembered places                                                        |
-| `POST /v1/check-ins/places`                         | `notes:all`                        | `{name, lat, lon, ignored?}`: remembers it, or adds the spot to that name    |
+| `POST /v1/check-ins/places`                         | `notes:all`                        | `{name, lat, lon, ignored?, tags?}`: remembers it, or adds the spot to it    |
 | `GET /v1/check-ins/places/{id}`                     | `activity`                         | the place and `check_ins`, how many stays are there, hidden or not           |
-| `PATCH /v1/check-ins/places/{id}`                   | `notes:all`                        | `name`, `ignored` or both                                                    |
+| `PATCH /v1/check-ins/places/{id}`                   | `notes:all`                        | `name`, `ignored`, `tags`, or any of them                                    |
 | `DELETE /v1/check-ins/places/{id}`                  | `notes:all`                        | forgets it                                                                   |
 | `DELETE /v1/check-ins/places/{id}/check-ins?count=` | `notes:all`                        | deletes the stays there, for the count read                                  |
+| `PATCH /v1/check-ins/places/{id}/check-ins`         | `notes:all`                        | `{tags, count}`: tags the stays there, for the count read                    |
 
 No new scope, on Jamie's call. Remembered places live on the account, so a new
 phone, the web map and any other client see the same names (Jamie, 2026-11-06:

@@ -246,6 +246,13 @@ export const isRefused = (
   tags: Tag[] | { refused: TagRefusal; at: number }
 ): tags is { refused: TagRefusal; at: number } => !Array.isArray(tags);
 
+/** Tags from a field joined to the ones an item has, or null when together
+ * they pass 20: a field's 21st tag is refused, never cut (call 4). */
+export function joinedTags(had: readonly Tag[], added: readonly Tag[]): Tag[] | null {
+  const keys = new Set([...had, ...added].map((t) => t.key));
+  return keys.size > MAX_TAGS ? null : mergeTags(had, added);
+}
+
 /** The hashtags in a note's text as tags, each named as typed, without its #. */
 export function textTags(text: string): Tag[] {
   const out: Tag[] = [];

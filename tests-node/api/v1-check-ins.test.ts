@@ -909,3 +909,29 @@ test('a check-in receipt keeps no spot or time its request sent, and a replay pu
   assert.equal(receipt('moved').body.check_in.lat, SHOP.lat);
   await again(moved, 'moved', closed);
 });
+
+test('tags that would take a place or its stays past 20 are refused, never cut (1.22.2)', async () => {
+  const s = setup(),
+    t = await make(s),
+    twenty = Array.from({ length: 20 }, (_, i) => `tag ${i}`);
+  const made = await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'Home', ...HOME, tags: twenty });
+  assert.equal(made.status, 201, JSON.stringify(made.json));
+  const place = made.json.place as OAuthRow,
+    tagsNow = async () =>
+      ((await call(s, t.token, 'GET', `/v1/check-ins/places/${String(place.id)}`)).json.place as OAuthRow).tags;
+  // The same name again joins its tags to the place's: a 21st is refused.
+  const more = await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'home', ...NEAR, tags: ['Dock'] });
+  assert.deepEqual([more.status, failed(more).code, failed(more).field], [400, 'invalid_request', 'tags']);
+  assert.equal(((await tagsNow()) as string[]).length, 20);
+  assert.equal(
+    (await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'Home', ...HOME, tags: ['TAG 0'] })).status,
+    200
+  );
+  // A stop there takes the place's twenty; tagging the stays there with a new one is refused too.
+  assert.equal((await call(s, t.token, 'POST', '/v1/check-ins', report())).status, 201);
+  const path = `/v1/check-ins/places/${String(place.id)}/check-ins`,
+    refused = await call(s, t.token, 'PATCH', path, { tags: ['Dock'], count: 1 });
+  assert.deepEqual([refused.status, failed(refused).code, failed(refused).field], [400, 'invalid_request', 'tags']);
+  assert.equal((checkIns(s)[0]!.tags as string[]).length, 20);
+  assert.deepEqual((await call(s, t.token, 'PATCH', path, { tags: ['Tag 1'], count: 1 })).json, { tagged: 0 });
+});

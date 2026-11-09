@@ -6,6 +6,7 @@ import {
   fieldTags,
   found,
   isTag,
+  joinedTags,
   line,
   mergeTags,
   noteTags,
@@ -131,6 +132,17 @@ test('a tags field takes names, each once, and refuses what it would have to cha
   assert.deepEqual(fieldTags(Array.from({ length: 21 }, (_, i) => `tag ${i}`)), { refused: 'many', at: 20 });
   // Twenty-one names that are twenty tags are twenty.
   assert.equal((fieldTags([...Array.from({ length: 20 }, (_, i) => `tag ${i}`), 'TAG 0']) as unknown[]).length, 20);
+});
+
+test('tags joined to an item’s own refuse a 21st, and a typed #word past 20 keeps today’s cut (call 4)', () => {
+  const twenty = fieldTags(Array.from({ length: 20 }, (_, i) => `tag ${i}`)) as { key: string; name: string }[],
+    lake = { key: 'lake', name: 'lake' };
+  assert.equal(joinedTags(twenty, [lake]), null);
+  assert.equal(joinedTags(twenty.slice(1), [lake])!.length, 20);
+  // One it has already, by any spelling, adds nothing and keeps its spelling.
+  assert.deepEqual(joinedTags(twenty, [{ key: 'tag-0', name: 'TAG 0' }]), twenty);
+  // Twenty from the field and a new #word in the text: the #word is cut.
+  assert.deepEqual(noteTags('A day at the #lake', twenty), twenty);
 });
 
 test('a note keeps its field tags through edits that change only its words', () => {

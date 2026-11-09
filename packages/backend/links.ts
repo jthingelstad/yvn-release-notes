@@ -165,6 +165,9 @@ export function publicIp(addresses: string[]): string | null {
   for (const value of addresses) {
     try {
       const ip = ipaddr.parse(value.split('%')[0]!);
+      // ::/96 (IPv4-compatible, like ::a9fe:a9fe for 169.254.169.254) routes
+      // nowhere public, and ipaddr calls it unicast (2026-11-08, CONTENT-4).
+      if (ip.kind() === 'ipv6' && (ip as ipaddr.IPv6).parts.slice(0, 6).every((p) => p === 0)) return null;
       if (ip.kind() === 'ipv6' && (ip as ipaddr.IPv6).isIPv4MappedAddress()) {
         if ((ip as ipaddr.IPv6).toIPv4Address().range() !== 'unicast') return null;
       } else if (ip.range() !== 'unicast') return null;

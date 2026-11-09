@@ -26,6 +26,12 @@ test('only ordinary http ports and public DNS answers can be contacted', () => {
     ['fd00::1'],
     ['::ffff:127.0.0.1'],
     ['::ffff:10.0.0.1'],
+    ['::a9fe:a9fe'],
+    ['::169.254.169.254'],
+    ['::7f00:1'],
+    ['::'],
+    ['64:ff9b::a9fe:a9fe'],
+    ['2002:a9fe:a9fe::1'],
     ['224.0.0.1'],
     ['ff02::1'],
     ['93.184.216.34', '10.0.0.1']

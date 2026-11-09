@@ -70,7 +70,8 @@ test('the inbound role grants every request filing a reply makes', async () => {
       forward: async () => aws.add('forward', 'sqs:SendMessage', queueArn(aws.env.FAILED_QUEUE!))
     };
   await store.setInbox('u', standing, 'now');
-  for (const id of ['reply', 'late', 'address', 'refused'])
+  // A give-up reads its message again, to prove the sender (CONTENT-3).
+  for (const id of ['reply', 'late', 'address', 'refused', 'timeout'])
     await files.put(`raw/${id}`, raw(`A synthetic ${id} #made`), { type: 'message/rfc822' });
   aws.watch(store);
 

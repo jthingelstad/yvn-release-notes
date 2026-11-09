@@ -9,6 +9,7 @@ import { V1_ROUTES } from '../../server/mcp/v1.ts';
 import { Tokens } from '../../packages/backend/tokens.ts';
 import * as media from '../../packages/backend/media.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
+import type { NoteRecord } from '../../packages/domain/notes.ts';
 import { FakeObjects } from '../../packages/testing/services.ts';
 import { png } from '../../packages/testing/images.ts';
 import { fixture } from '../oauth/fixtures.ts';
@@ -167,4 +168,18 @@ test('a note far along in its numbers still has every file reachable', () => {
   const file = V1_ROUTES.find((r) => r.name === 'notes.media.remove')!;
   assert.ok(file.path.test('/v1/notes/2026-10-13/t-a/media/1000'));
   assert.ok(!file.path.test('/v1/notes/2026-10-13/t-a/media/0'));
+});
+test('a delete given the owner removes only that owner’s files (AUTHZ-1)', () => {
+  const note = {
+    media: [
+      { n: 1, kind: 'image', key: 'media/u/2026-11-08/a/1.png', thumb: { key: 'media/u/2026-11-08/a/1.thumb.jpg' } },
+      { n: 2, kind: 'image', key: 'media/other/2026-11-08/b/1.png' },
+      { n: 3, kind: 'audio', key: 'media/other/2026-11-08/b/2.m4a' }
+    ]
+  } as unknown as NoteRecord;
+  assert.deepEqual(media.keys(note, 'u'), ['media/u/2026-11-08/a/1.png', 'media/u/2026-11-08/a/1.thumb.jpg']);
+  assert.deepEqual(media.thumbKeys(note, 'u'), ['media/u/2026-11-08/a/1.thumb.jpg']);
+  // A prefix of another account's id is not that account.
+  assert.deepEqual(media.keys(note, 'oth'), []);
+  assert.equal(media.keys(note).length, 5);
 });

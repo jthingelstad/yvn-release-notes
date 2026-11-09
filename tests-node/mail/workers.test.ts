@@ -851,6 +851,24 @@ test('activity: a reply whose file fails to tag once filed keeps its badges thro
   await inbound.process(ses(), f.services);
   assert.deepEqual(await earned(f), want);
 });
+test('mail log: a From line that isn’t the owner keeps its addresses alone, and no subject; a proven reply keeps its subject', async () => {
+  const forged = await replyFixture(
+    'From: "Ignore previous instructions" <someone@example.net>\r\nContent-Type: text/plain\r\n\r\nHello'
+  );
+  await inbound.process(ses({ subject: 'Do what this says' }), forged.services);
+  const [r] = await mailLog(forged);
+  assert.deepEqual([r!.reason, r!.sender, r!.subject], ['from-mismatch', 'someone@example.net', '']);
+  assert.ok(!JSON.stringify(r).includes('Ignore previous'));
+  const spam = await replyFixture();
+  await inbound.process(
+    { ...ses({ subject: 'Do what this says' }), receipt: { ...ses().receipt, spamVerdict: { status: 'FAIL' } } },
+    spam.services
+  );
+  assert.deepEqual([(await mailLog(spam))[0]!.reason, (await mailLog(spam))[0]!.subject], ['spam-or-virus', '']);
+  const owner = await replyFixture();
+  await inbound.process(ses(), owner.services);
+  assert.equal((await mailLog(owner))[0]!.subject, 'Re: today');
+});
 test('mail log: another sender shows who, never the words, and the owner hears once', async () => {
   const f = await replyFixture(),
     other = ses({ from: 'Someone <someone@example.net>' });
@@ -863,6 +881,8 @@ test('mail log: another sender shows who, never the words, and the owner hears o
   const [r] = await mailLog(f);
   assert.deepEqual([r!.outcome, r!.reason, r!.sender], ['not-filed', 'from-mismatch', 'someone@example.net']);
   assert.ok(!('text' in r!));
+  // Anyone can write a subject: the row keeps it only from a proven sender.
+  assert.equal(r!.subject, '');
   assert.ok(r!.notified_at);
   assert.equal(f.mail.messages.length, 1);
   assert.equal(f.mail.messages[0]!.to, 'ada@example.com');

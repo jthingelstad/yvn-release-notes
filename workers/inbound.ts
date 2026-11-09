@@ -3,7 +3,8 @@
  * received local day. Raw objects are tagged note/ignored, never rewritten.
  * Files use stable keys before the conditional note write, so retries converge.
  * Every message that reaches a subscriber goes in their activity log (filed,
- * not filed and why, or failed), with its words only once the sender is proven;
+ * not filed and why, or failed), with its subject and words only once the
+ * sender is proven;
  * a few reasons, and a final failure, email the subscriber a notice. A note
  * filed for the first time adds a row for each badge it earned, as soon as it
  * is stored. A message given up on after a timeout or crash comes back through
@@ -49,6 +50,9 @@ export interface Seen {
   version?: string;
   sender?: string;
   text?: string;
+  /** The sender is the owner, authenticated: only then does the row keep the
+   * subject, as it keeps the words. Anyone can write either. */
+  proven?: boolean;
 }
 export interface SesMail {
   messageId: string;
@@ -243,22 +247,24 @@ async function addressee(mail: SesMail, receipt: SesReceipt, s: InboundServices,
   seen.version = standing ? String(computeVersion(sub.birthday, seen.day!)) : String(tok.version);
   return { token, standing, tok, sub, from };
 }
-export async function file(
+type Addressed = Exclude<Awaited<ReturnType<typeof addressee>>, { reason: string }>;
+/** The checks before anything is kept: whose address it is, and whether the
+ * sender is its owner, authenticated (seen.proven), or why not. */
+async function prove(
   mail: SesMail,
   receipt: SesReceipt,
   s: InboundServices,
-  seen: Seen = {}
-): Promise<[string, Item]> {
+  seen: Seen
+): Promise<{ refused: [string, Item] } | { to: Addressed; raw: Buffer; head: MailHeaders }> {
   const spam =
     receipt.spamVerdict?.status === 'FAIL' ||
     ['FAIL', 'PROCESSING_FAILED'].includes(receipt.virusVerdict?.status ?? '');
   const to = await addressee(mail, receipt, s, seen, spam);
-  if ('reason' in to) return ['ignored', to];
-  const { token, standing, tok, sub, from } = to;
-  const ignored = (reason: string, extra: Item = {}): [string, Item] => [
-    'ignored',
-    { reason, user: sub.user_id, ...extra }
-  ];
+  if ('reason' in to) return { refused: ['ignored', to] };
+  const { token, standing, sub, from } = to;
+  const ignored = (reason: string, extra: Item = {}) => ({
+    refused: ['ignored', { reason, user: sub.user_id, ...extra }] as [string, Item]
+  });
   if (spam) return ignored('spam-or-virus');
   if (standing && sub.inbox !== token) return ignored('replaced');
   if (standing && sub.status !== 'active') return ignored('stopped');
@@ -271,10 +277,31 @@ export async function file(
     return ignored('unparseable', { error: errorName(e) });
   }
   if (soleFrom(head) !== from) {
-    seen.sender = codePointSlice(head.all('From').join(', ') || '(no sender)', 0, 300);
+    // The addresses alone: a display name is anyone's words.
+    seen.sender = codePointSlice((await addresses(head.all('From'))).join(', ') || '(no sender)', 0, 300);
     return ignored('from-mismatch');
   }
   if (!authenticated(receipt, head, from)) return ignored('unauthenticated');
+  seen.proven = true;
+  return { to, raw, head };
+}
+export async function file(
+  mail: SesMail,
+  receipt: SesReceipt,
+  s: InboundServices,
+  seen: Seen = {}
+): Promise<[string, Item]> {
+  const proved = await prove(mail, receipt, s, seen);
+  if ('refused' in proved) return proved.refused;
+  const {
+    to: { token, standing, tok, sub },
+    raw,
+    head
+  } = proved;
+  const ignored = (reason: string, extra: Item = {}): [string, Item] => [
+    'ignored',
+    { reason, user: sub.user_id, ...extra }
+  ];
   if (automatic(head)) return ignored('auto-reply');
   if (!standing && received(mail) > deadline(tok)) {
     await lateNotice(s, sub, token, tok, head, received(mail));
@@ -437,7 +464,7 @@ function logRow(mail: SesMail, seen: Seen): [string, Item] {
       via: seen.standing ? 'address' : 'reply',
       day: seen.day,
       version: seen.version,
-      subject: codePointSlice(mail.commonHeaders?.subject ?? '', 0, 300),
+      subject: seen.proven ? codePointSlice(mail.commonHeaders?.subject ?? '', 0, 300) : '',
       ...(seen.sender ? { sender: seen.sender } : {})
     }
   ];
@@ -524,7 +551,13 @@ export async function gaveUp(body: string, s: InboundServices): Promise<void> {
   for (const r of payload.Records ?? [])
     if ('ses' in r && r.ses?.mail?.messageId) {
       const seen: Seen = {};
-      await addressee(r.ses.mail, r.ses.receipt, s, seen, false);
+      // The same checks again, for whose it is and whether its subject may be
+      // kept; one that fails leaves the row without the subject.
+      try {
+        await prove(r.ses.mail, r.ses.receipt, s, seen);
+      } catch {
+        seen.proven = false;
+      }
       await failure(s, r.ses.mail, seen, tries);
     }
   await s.forward(body);

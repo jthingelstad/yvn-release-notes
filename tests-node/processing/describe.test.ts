@@ -7,7 +7,7 @@ import { setup, photo, seedPhoto, day, id, now, stream } from './helpers.ts';
 import type { Item } from '../../packages/backend/store.ts';
 import { imageSize, MAX_UPLOAD, thumbKey } from '../../packages/backend/media.ts';
 import { DESCRIBE_LONGEST, make, shrink } from '../../packages/backend/thumbs.ts';
-import { TINY_HEIC } from '../../packages/backend/heif.ts';
+import { TINY_HEIC, decodeHeif } from '../../packages/backend/heif.ts';
 import sharp from 'sharp';
 import type { NoteRecord } from '../../packages/domain/notes.ts';
 test('model request is exact fixed photo+prompt; text-only answer normalizes and truncates Unicode', async () => {
@@ -154,6 +154,31 @@ test('a real HEIC gets a thumbnail and a description from JPEG copies, and stays
   const source = ((s.calls[0]!.messages as Item[])[0]!.content as Item[])[0]!.source as Item;
   assert.equal(source.media_type, 'image/jpeg');
   assert.equal((await sharp(Buffer.from(String(source.data), 'base64')).metadata()).format, 'jpeg');
+});
+test('a HEIC is measured before it is decoded: one too big is never decoded', async () => {
+  const heic = Buffer.from(TINY_HEIC, 'base64');
+  assert.equal(await decodeHeif(heic, 16 * 16 - 1), null);
+  const pixels = (await decodeHeif(heic, 16 * 16))!;
+  assert.deepEqual([pixels.width, pixels.height, pixels.data.length], [16, 16, 16 * 16 * 4]);
+  // A small file that says it is 16384 by 16384.
+  let decoded = 0,
+    disposed = 0;
+  const huge = async () => async () =>
+    Object.assign(
+      [
+        {
+          width: 16384,
+          height: 16384,
+          decode: async () => {
+            decoded++;
+            return { width: 16384, height: 16384, data: new Uint8ClampedArray(4) };
+          }
+        }
+      ],
+      { dispose: () => disposed++ }
+    );
+  assert.equal(await decodeHeif(heic, 40_000_000, huge), null);
+  assert.deepEqual([decoded, disposed], [0, 1]);
 });
 test('a HEIC that cannot be decoded gets no thumbnail and no words, and no error', async () => {
   const bad = Buffer.from('not a heic');

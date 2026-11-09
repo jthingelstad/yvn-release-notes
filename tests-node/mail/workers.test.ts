@@ -5,6 +5,7 @@ import { simpleParser } from 'mailparser';
 import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects, FakeMail } from '../../packages/testing/services.ts';
 import * as media from '../../packages/backend/media.ts';
+import { UPLOADS_A_DAY } from '../../packages/backend/uploads.ts';
 import { Subscriber, type Item } from '../../packages/backend/store.ts';
 import * as sender from '../../workers/send.ts';
 import * as inbound from '../../workers/inbound.ts';
@@ -666,6 +667,37 @@ test('a PDF attached to a reply is kept on its note, with its name, like a web u
     }
   ]);
   assert.equal(media.others(n as never), 0);
+});
+// The 2026-11-08 security audit: emailed files had no daily count. They
+// share the account's uploads a UTC day with the web and every token.
+test("emailed files count against the day's uploads; past it the note is filed and they stay in the email", async () => {
+  const pdf = (name: string) =>
+      `--b\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=${name}\r\n\r\n%PDF-test\r\n`,
+    raw =
+      'From: ada@example.com\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nTwo menus\r\n' +
+      pdf('a.pdf') +
+      pdf('b.pdf') +
+      '--b--',
+    f = await replyFixture(raw),
+    rate = `RATE#upload:u#${Math.floor(Date.parse('2026-10-13T12:00:00Z') / 1000 / 86400)}`;
+  f.store.seed({ pk: rate, sk: 'RATE', n: UPLOADS_A_DAY - 1, bytes: 0 });
+  await inbound.process(ses(), f.services);
+  const n = (await f.store.dayNotes('u', '2026-10-11'))[0]!;
+  assert.equal(n.text, 'Two menus');
+  assert.deepEqual(
+    (n.media as Item[]).map((m) => m.name),
+    ['a.pdf']
+  );
+  assert.deepEqual(
+    (n.attachments as Item[]).map((a) => a.refused === true),
+    [false, true]
+  );
+  assert.equal(media.others(n as never), 1);
+  assert.equal(f.store.memory.all().find((i) => i.pk === rate)?.n, UPLOADS_A_DAY);
+  assert.deepEqual(
+    f.objects.calls.filter((c) => c.operation === 'put' && c.key.startsWith('media/')).map((c) => c.key),
+    ['media/u/2026-10-11/synthetic-id/1.pdf']
+  );
 });
 test('media storage failure retries before note commit, stable copies produce one kept note', async () => {
   const audio = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(1200)]).toString('base64'),

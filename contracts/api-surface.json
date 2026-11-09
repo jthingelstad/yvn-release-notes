@@ -40,10 +40,15 @@
   },
   "info": {
     "title": "Release Notes API",
-    "version": "1.21.2",
+    "version": "1.21.3",
     "summary": "Add notes to Release Notes and read them back, from a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. With `notes:read`, a token reads the whole archive and writes nothing (1.15.0). The guide is at /guide/api/, all of it in one file for agents at /guide/api/llms.txt, and what each version added at /guide/api/changelog/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.21.3",
+        "date": "2026-11-08",
+        "summary": "POST /v1/uploads's 200 files and 2 GB a UTC day are the account's across the web, its tokens and, now, files attached to notes sent by email, since each photo is described and may be placed. No request or answer changed otherwise."
+      },
       {
         "version": "1.21.2",
         "date": "2026-11-08",
@@ -4052,7 +4057,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.21.2"
+            "example": "1.21.3"
           }
         }
       },

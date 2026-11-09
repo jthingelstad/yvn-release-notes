@@ -193,9 +193,15 @@ export function worthKeeping(type: string, data: Buffer): boolean {
   const size = imageSize(data);
   return size ? Math.max(...size) >= MIN_SIDE : data.length >= MIN_UNREAD;
 }
-/** Parts use the parser's attachment order, including unsupported raw-only
- * files. A PDF carries its cleaned file name, as a web upload's does. */
-export function found(parts: readonly MediaPart[], refused: number[] = []): Array<[string, Buffer, string?]> {
+/** The parts worth keeping, at most MAX_FILES. Parts use the parser's
+ * attachment order, including unsupported raw-only files. A PDF carries its
+ * cleaned file name, as a web upload's does. `refused` gets the index of each
+ * part past MAX_FILES, and `from` the index each kept one came from. */
+export function found(
+  parts: readonly MediaPart[],
+  refused: number[] = [],
+  from: number[] = []
+): Array<[string, Buffer, string?]> {
   const out: Array<[string, Buffer, string?]> = [];
   for (const [n, part] of parts.entries()) {
     const type = mediaType(part.type, part.filename);
@@ -206,8 +212,10 @@ export function found(parts: readonly MediaPart[], refused: number[] = []): Arra
     }
     if (!worthKeeping(type, part.data)) continue;
     const name = kind(type) === 'file' ? fileName(part.filename) : '';
-    if (out.length < MAX_FILES) out.push(name ? [type, part.data, name] : [type, part.data]);
-    else refused.push(n);
+    if (out.length < MAX_FILES) {
+      out.push(name ? [type, part.data, name] : [type, part.data]);
+      from.push(n);
+    } else refused.push(n);
   }
   return out;
 }

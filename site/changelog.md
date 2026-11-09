@@ -16,6 +16,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 - The Map has **Trails**: tick it, and a line joins your check-ins in the order you stopped, and a dotted one your notes in the order you wrote them, through whatever the filters keep. [Places and the map](/guide/places-and-map/) has more.
 - Apps on [the API](/guide/api/archive/) can put a search on their own map: the pins of the notes with the words or the tag you're looking for. Each pin says when its note was written, so an app can join your notes in the order you wrote them.
 - When an app or agent asks to connect, the page says where Allow sends you, under the name the app gave itself. Only the real Changelog, Claude and ChatGPT can use those names now, and Cancel no longer sends you on to the website that asked.
+- Files you email count toward an account's 200 files and 2 GB a day, as files added on the web and through apps do. Past that, an email's files stay in the email, and its note is still kept. [Photos, voice memos and PDFs](/guide/photos-and-voice/) has more.
 
 ## 0.0.30 · November 6
 

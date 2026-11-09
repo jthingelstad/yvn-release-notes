@@ -327,6 +327,7 @@ async function checkedPhrases() {
     `up to ${NAMED_PLACE_SPOTS_MAX} spots`,
     `within ${FORM_SECONDS / 60} minutes`,
     `${UPLOADS_A_DAY} files and ${UPLOAD_BYTES_A_DAY / 1024 ** 3} GB a day`,
+    `past the day’s ${UPLOADS_A_DAY}`,
     `up to ${NEARBY_MAX} businesses`,
     `up to ${V1_UPCOMING_MAX} dates a request`,
     `up to ${REMINDER_DAYS_MAX} days ahead`,

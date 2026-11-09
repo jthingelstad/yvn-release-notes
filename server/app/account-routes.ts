@@ -167,6 +167,15 @@ export async function accountRoutes(
     if (service.token) await store.deleteSession(auth.digest(service.token));
     return json({ ok: true }, 200, { 'set-cookie': auth.clearCookie() });
   }
+  if (pattern === '/api/auth/signout-others') {
+    // Every other browser signed in to the account is signed out; this one
+    // stays. Apps and API tokens keep their access: Connections and API
+    // tokens in Settings end those.
+    const { uid, session } = await service.account(),
+      ended = await ctx.store.endOtherSessions(uid, String(session.hash), ctx.now);
+    service.log({ event: 'signout-others', user: uid, ended });
+    return json({ ended });
+  }
   if (pattern === '/api/unsubscribe') {
     const token = query.get('t') ?? '';
     if (!/^[a-z2-7]{24}$/.test(token)) reject(400, 'token');

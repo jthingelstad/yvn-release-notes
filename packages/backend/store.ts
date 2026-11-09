@@ -2655,6 +2655,39 @@ export class Store {
   async deleteSession(hash: string) {
     await this.del({ pk: `SESSION#${hash}`, sk: 'SESSION' });
   }
+  /** Ends every web session of the account but `keep`, each with its row in
+   * the account's session list in one write (the web's store adds the proof
+   * that `keep` and the account are live). Says how many were still in force;
+   * rows past their expiry are cleared without counting. */
+  async endOtherSessions(user: string, keep: string, now: number): Promise<number> {
+    const listed = await this.rows({
+      KeyConditionExpression: 'pk = :p AND begins_with(sk, :s)',
+      ExpressionAttributeValues: { ':p': `USER#${user}`, ':s': 'SESSION#' },
+      ConsistentRead: true
+    });
+    let ended = 0;
+    for (const row of listed) {
+      const hash = String(row.sk).slice('SESSION#'.length);
+      if (hash === keep) continue;
+      await this.client.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              Delete: {
+                TableName: this.tableName,
+                Key: { pk: `SESSION#${hash}`, sk: 'SESSION' },
+                ConditionExpression: 'attribute_not_exists(pk) OR user_id = :u',
+                ExpressionAttributeValues: { ':u': user }
+              }
+            },
+            { Delete: { TableName: this.tableName, Key: key(user, `SESSION#${hash}`) } }
+          ]
+        })
+      );
+      if (Number(row.expires_at ?? 0) > now) ended++;
+    }
+    return ended;
+  }
   async mcpGet(pk: string, sk = 'STATE') {
     return this.get({ pk, sk }, { ConsistentRead: true });
   }

@@ -92,6 +92,37 @@ function SignOut() {
   );
 }
 
+// Signs out every other browser signed in to the account; this one stays.
+function SignOutOthers() {
+  const problem = useProblem();
+  const [busy, run] = useBusy();
+  const [ended, setEnded] = useState<number | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const go = () =>
+    run(async () => {
+      problem.clear();
+      setEnded(null);
+      const r = await api<{ ended: number }>('POST', '/api/auth/signout-others');
+      if (!r.ok) return problem.show(r.data, button.current);
+      setEnded(r.data.ended);
+    });
+  return (
+    <>
+      <div className="row">
+        <button ref={button} className="quiet" type="button" id="signout-others" disabled={busy} onClick={go}>
+          Sign out other devices
+        </button>
+      </div>
+      <p className="aside saved" id="signout-others-done" role="status" hidden={ended === null}>
+        {ended === 0
+          ? 'You weren’t signed in anywhere else.'
+          : `Signed out of ${ended === 1 ? 'one other device' : `${ended} other devices`}.`}
+      </p>
+      <ErrorLine line={problem.line} />
+    </>
+  );
+}
+
 // Each change saves at once; a failure shows in that section's error line,
 // with focus back on the field.
 function useSave() {
@@ -532,6 +563,14 @@ function Account({ p }: { p: Me }) {
           <p className="hint" id="book-link">
             Or any days you pick as a book, with their photos: <AppLink href="/book/">Make a book</AppLink>.
           </p>
+        </section>
+        <section className="section" id="other-devices">
+          <h3>Other devices</h3>
+          <p className="hint">
+            Signed in on a phone or computer you’ve lost or shared? Sign it out from here. Apps you’ve connected keep
+            their access until you remove them under Connected agents or API tokens.
+          </p>
+          <SignOutOthers />
         </section>
         <section className="section settings-account-actions">
           <SignOut />

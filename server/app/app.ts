@@ -24,6 +24,7 @@ export const ROUTES: [string, string][] = [
   ['POST', '/api/auth/start'],
   ['POST', '/api/auth/verify'],
   ['POST', '/api/auth/signout'],
+  ['POST', '/api/auth/signout-others'],
   ['GET', '/api/me'],
   ['PUT', '/api/me'],
   ['DELETE', '/api/me'],

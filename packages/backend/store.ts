@@ -979,7 +979,8 @@ export class Store {
     return this.get(key(user, `NOTE#${day}#${id}`), { ConsistentRead: consistent });
   }
   /** USER-owned leases suppress concurrent stream/backfill work. Consent, the
-   * immutable source and optional UTC-day quota are proved together. */
+   * immutable source and optional UTC-day quota are proved together: for a
+   * transcription, its starts and the seconds of its recordings. */
   async claimProcessing(
     kind: 'transcribe' | 'describe',
     user: string,
@@ -989,7 +990,12 @@ export class Store {
     source: string,
     type: string,
     owner: string,
-    now: number
+    now: number,
+    quota: { seconds: number; secondsADay: number; startsADay: number } = {
+      seconds: 0,
+      secondsADay: 7200,
+      startsADay: 30
+    }
   ): Promise<boolean> {
     const note = await this.note(user, day, id, true);
     const at = media(note).findIndex((m) => Number(m.n) === n);
@@ -1027,9 +1033,16 @@ export class Store {
               Update: {
                 TableName: this.tableName,
                 Key: { pk: `RATE#transcribe:${user}#${period}`, sk: 'RATE' },
-                UpdateExpression: 'ADD n :one SET expires_at = :exp',
-                ConditionExpression: 'attribute_not_exists(n) OR n < :max',
-                ExpressionAttributeValues: { ':one': 1, ':exp': (period + 2) * 86400, ':max': 30 }
+                UpdateExpression: 'ADD n :one, secs :secs SET expires_at = :exp',
+                ConditionExpression:
+                  '(attribute_not_exists(n) OR n < :max) AND (attribute_not_exists(secs) OR secs <= :room)',
+                ExpressionAttributeValues: {
+                  ':one': 1,
+                  ':secs': quota.seconds,
+                  ':exp': (period + 2) * 86400,
+                  ':max': quota.startsADay,
+                  ':room': quota.secondsADay - quota.seconds
+                }
               }
             }
           ]

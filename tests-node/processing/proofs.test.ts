@@ -51,9 +51,16 @@ test('processing exact document transaction proves consent, media source, lease 
         Update: {
           TableName: 'T',
           Key: { pk: `RATE#transcribe:u#${Math.floor(now / 86400)}`, sk: 'RATE' },
-          UpdateExpression: 'ADD n :one SET expires_at = :exp',
-          ConditionExpression: 'attribute_not_exists(n) OR n < :max',
-          ExpressionAttributeValues: { ':one': 1, ':exp': (Math.floor(now / 86400) + 2) * 86400, ':max': 30 }
+          UpdateExpression: 'ADD n :one, secs :secs SET expires_at = :exp',
+          ConditionExpression:
+            '(attribute_not_exists(n) OR n < :max) AND (attribute_not_exists(secs) OR secs <= :room)',
+          ExpressionAttributeValues: {
+            ':one': 1,
+            ':secs': 0,
+            ':exp': (Math.floor(now / 86400) + 2) * 86400,
+            ':max': 30,
+            ':room': 7200
+          }
         }
       }
     ]

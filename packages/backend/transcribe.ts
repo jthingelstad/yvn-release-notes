@@ -1,5 +1,6 @@
 /** Opt-in audio transcription. Fixed job names, USER-owned atomic leases and a
- * capped UTC-day counter bound repeated stream deliveries to 30 starts/day.
+ * capped UTC-day counter bound repeated stream deliveries to 30 starts and
+ * 120 minutes of recordings a day (`audio-length.ts` says how long each runs).
  * Results require live consent and the same media; provider jobs/results are
  * cleaned even when consent was withdrawn or the note/account was removed.
  * A kept transcript gets an activity row, without its words. */
@@ -8,10 +9,14 @@ import type { NoteRecord } from '../domain/notes.ts';
 import { missing, type Objects, type Log } from './services.ts';
 import type { Store, Item } from './store.ts';
 import { activityLog, again, recordActivity } from './activity.ts';
+import { audioSeconds } from './audio-length.ts';
 export const PREFIX = 'release-notes',
   LANGUAGE = 'en-US',
   MAX_TRANSCRIPT = 50_000,
   MAX_A_DAY = 30,
+  /** Jamie, 2026-11-08 (product call 7): everyone together used 12 minutes
+   * in the 30 days before. A recording longer than this is never written out. */
+  MINUTES_A_DAY = 120,
   MAX_BYTES = 50 * 1024 * 1024,
   ONE_DAY = 86400;
 export const FORMATS: Record<string, string> = {
@@ -76,8 +81,31 @@ export async function start(note: NoteRecord, user: string, s: Services): Promis
       type = String(m.type),
       owner = randomUUID();
     if (!name || !key.startsWith(`media/${user}/`)) continue;
+    // A size unknown and unreadable counts as the largest a recording may be.
+    const size =
+        Number(m.size ?? 0) ||
+        (await s.objects.head(key).then(
+          (h) => h.size,
+          () => MAX_BYTES
+        )),
+      length = await audioSeconds(type, size, async (from, to) => {
+        return (await s.objects.get(key, { range: `bytes=${from}-${to - 1}`, maxBytes: to - from })).body;
+      });
+    if (length.seconds > MINUTES_A_DAY * 60) {
+      s.log?.({ event: 'transcribe-too-long', user, seconds: length.seconds, from: length.from });
+      continue;
+    }
     const now = Math.floor((s.clock ?? (() => Date.now() / 1000))());
-    if (!(await s.store.claimProcessing('transcribe', user, day, id, n, key, type, owner, now))) continue;
+    if (
+      !(await s.store.claimProcessing('transcribe', user, day, id, n, key, type, owner, now, {
+        seconds: length.seconds,
+        secondsADay: MINUTES_A_DAY * 60,
+        startsADay: MAX_A_DAY
+      }))
+    ) {
+      s.log?.({ event: 'transcribe-not-claimed', user, seconds: length.seconds, from: length.from });
+      continue;
+    }
     // The transaction authorizes this work; a fresh read also catches a stop
     // already committed between the reservation and the external service call.
     if (!(await wanted(s.store, user))) {

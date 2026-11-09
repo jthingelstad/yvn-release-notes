@@ -23,7 +23,7 @@ import { MAX_PAUSE_DAYS } from '../packages/backend/accounts.ts';
 import { MAX_FILES, MAX_UPLOAD } from '../packages/backend/media.ts';
 import { NEARBY_MAX } from '../packages/backend/places.ts';
 import { TILES_A_DAY } from '../packages/backend/maps.ts';
-import { MAX_A_DAY } from '../packages/backend/transcribe.ts';
+import { MAX_A_DAY, MINUTES_A_DAY } from '../packages/backend/transcribe.ts';
 import { FORM_SECONDS, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY } from '../packages/backend/uploads.ts';
 import {
   TOKEN_EXPIRY,
@@ -307,7 +307,8 @@ async function checkedPhrases() {
     `at most ${MAX_INLINE_FILES} files and ${MAX_INLINE_BYTES / 1024 / 1024} MB a call`,
     `up to ${MAX_FILES} files`,
     `${MAX_UPLOAD / 1024 / 1024} MB a file`,
-    `up to ${MAX_A_DAY} recordings a day`,
+    `up to ${MAX_A_DAY} recordings a day and ${MINUTES_A_DAY} minutes of them`,
+    `up to ${MINUTES_A_DAY} minutes of recordings a day, beside the ${MAX_A_DAY} recordings`,
     `up to ${MAX_TAG} characters`,
     `at most ${MAX_TAG} characters`,
     `has up to ${MAX_TAGS}. `,

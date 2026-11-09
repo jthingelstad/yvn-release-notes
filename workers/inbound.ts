@@ -552,10 +552,12 @@ export async function gaveUp(body: string, s: InboundServices): Promise<void> {
     if ('ses' in r && r.ses?.mail?.messageId) {
       const seen: Seen = {};
       // The same checks again, for whose it is and whether its subject may be
-      // kept; one that fails leaves the row without the subject.
+      // kept. Not knowing whose it is throws, so the failed queue tries again;
+      // a sender check that fails once it is known leaves out the subject.
       try {
         await prove(r.ses.mail, r.ses.receipt, s, seen);
-      } catch {
+      } catch (e) {
+        if (!seen.sub) throw e;
         seen.proven = false;
       }
       await failure(s, r.ses.mail, seen, tries);

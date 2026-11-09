@@ -21,6 +21,12 @@ Changelog is the fast way in, with your notes along. Your account and its settin
 
 It numbers itself the way Release Notes numbers you. It started on October 29, 2026, so that day is 0.0.0, and the foot of its Settings names the version and the build. Newest first.
 
+## 0.0.11 · November 9
+
+- **A check-in link asks first:** a link that opens Changelog to check in now asks **Check in here?** before it sends where you are. The Check In control and Siri still check in with one tap.
+- **A voice memo keeps its place** when a call or leaving the app stops it, and starts over only once it has played to the end.
+- **The Map's warning clears** once your notes or check-ins read again, instead of staying up after you're back online.
+
 ## 0.0.10 · November 8
 
 - **Search your notes:** a box at the top of Notes searches every note as the web does: all the words, a "quoted phrase", or one #tag on its own.

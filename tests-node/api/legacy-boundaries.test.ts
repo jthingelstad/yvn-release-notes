@@ -144,7 +144,7 @@ test('restart unsuppresses bounce/complaint only; SES failure retains stopped st
   assert.ok(s.logs.some((l) => l.event === 'first-email-failed'));
   assert.ok(!JSON.stringify(s.logs).includes('private-provider-error'));
 });
-test('a session with no account lasts the sign-in window, and sign-up makes it whole (SIGNIN-4)', async () => {
+test('a session with no account lasts an hour to sign up in, and sign-up makes it whole (SIGNIN-4)', async () => {
   const s = await setup(),
     signUp = (cookie: string) =>
       s.call(
@@ -166,18 +166,21 @@ test('a session with no account lasts the sign-in window, and sign-up makes it w
     };
   // Left past the window: signed out, and it can't sign up or claim anything.
   const left = await verify('cleo@example.com');
-  assert.equal((await s.store.getSession(left.hash))!.expires_at, initial + auth.LOGIN_TTL);
+  assert.equal((await s.store.getSession(left.hash))!.expires_at, initial + auth.SIGNUP_TTL);
+  // Past the link's 15 minutes it is still signed in, with no account yet.
   s.setNow(initial + auth.LOGIN_TTL);
+  assert.equal((await s.call('GET', '/api/me', undefined, left.cookie)).response.status, 200);
+  s.setNow(initial + auth.SIGNUP_TTL);
   assert.equal((await s.call('GET', '/api/me', undefined, left.cookie)).response.status, 401);
   assert.equal((await signUp(left.cookie)).response.status, 401);
   assert.equal(await s.store.userForEmail('cleo@example.com'), null);
   // Signed up inside it: a whole session from then, in the new account's list.
   const kept = await verify('bea@example.com');
-  s.setNow(initial + auth.LOGIN_TTL + 600);
+  s.setNow(initial + auth.SIGNUP_TTL + 600);
   assert.equal((await signUp(kept.cookie)).response.status, 200);
   const uid = (await s.store.userForEmail('bea@example.com'))!,
     session = (await s.store.getSession(kept.hash))!;
-  assert.deepEqual([session.user_id, session.expires_at], [uid, auth.sessionExpiry(initial + auth.LOGIN_TTL + 600)]);
+  assert.deepEqual([session.user_id, session.expires_at], [uid, auth.sessionExpiry(initial + auth.SIGNUP_TTL + 600)]);
   assert.ok(s.store.memory.read({ pk: `USER#${uid}`, sk: `SESSION#${kept.hash}` }));
 });
 test('HTTP admission rejects bad bodies, empty or out-of-calendar notes and unsafe upload forms before media moves', async () => {
@@ -295,31 +298,15 @@ test('sign-in limits compose address/IPv4/IPv6/total budgets; refusal consumes n
   assert.ok(template.includes(`FilterPattern: '{ $.message.event = "mail-limited" && $.message.limit = "total" }'`));
   assert.ok(!JSON.stringify([...s.logs, ...ipv6.logs]).includes('@'));
 });
-test('members sign in past the hour’s total and their domain’s bounces; five sign-in bounces stop new addresses there for the day', async () => {
+test('members sign in past the hour’s total, and only plain addresses get a sign-in email', async () => {
   const s = await setup(),
-    hour = Math.floor(initial / 3600),
-    day = Math.floor(initial / 86400);
+    hour = Math.floor(initial / 3600);
   assert.equal((await s.call('POST', '/api/auth/start', { email: 'junk,victim@example.com' })).data.error, 'email');
   assert.equal((await s.call('POST', '/api/auth/start', { email: '1<victim@example.com>' })).data.error, 'email');
   s.store.seed({ pk: `RATE#all#${hour}`, sk: 'RATE', n: auth.LIMIT_TOTAL, expires_at: initial + 7200 });
   assert.equal((await s.call('POST', '/api/auth/start', { email: 'new@example.org' })).response.status, 429);
   assert.equal((await s.call('POST', '/api/auth/start', { email: 'Ada@Example.com' })).response.status, 202);
   assert.equal(await s.store.peek('all', hour), auth.LIMIT_TOTAL);
-  s.setNow(initial + 3600);
-  s.store.seed({
-    pk: `RATE#${auth.bounceKey('x@example.com')}#${day}`,
-    sk: 'RATE',
-    n: auth.DOMAIN_BOUNCES_A_DAY,
-    expires_at: (day + 2) * 86400
-  });
-  const before = s.store.memory.all();
-  assert.equal((await s.call('POST', '/api/auth/start', { email: 'new@example.com' })).response.status, 429);
-  assert.deepEqual(s.store.memory.all(), before);
-  assert.ok(s.logs.some((row) => row.event === 'mail-limited' && row.limit === 'domain-bounces'));
-  assert.equal((await s.call('POST', '/api/auth/start', { email: 'ada@example.com' })).response.status, 202);
-  assert.equal((await s.call('POST', '/api/auth/start', { email: 'new@example.org' })).response.status, 202);
-  s.setNow((day + 1) * 86400 + 60);
-  assert.equal((await s.call('POST', '/api/auth/start', { email: 'new@example.com' })).response.status, 202);
   assert.ok(!JSON.stringify(s.logs).includes('@'));
 });
 test('Sign out other devices ends every other session of the account and keeps this one', async () => {

@@ -229,12 +229,9 @@ names the `release-notes form`.
   `packages/backend/auth.ts`) are used up, from the web function's
   `{"event":"mail-limited","limit":"total"}` log line (renaming it silently
   breaks the metric): nobody new can sign in until the hour turns, though
-  members still can (2026-11-08). A `"limit":"domain-bounces"` line means
-  5 sign-in emails to one domain bounced today and new addresses there
-  wait for the next UTC day. No alarm
-  watches it since 2026-11-03. The narrower
-  limits are checked first and a refused request counts against none, so
-  reaching the total takes many networks.
+  members still can (2026-11-08). No alarm watches it since 2026-11-03.
+  The narrower limits are checked first and a refused request counts
+  against none, so reaching the total takes many networks.
 - The distribution's access log is the log group
   `/yvn-release-notes/web-access`, kept 731 days: one JSON line per request
   with the method, status, bytes, timing, edge result and user agent, never

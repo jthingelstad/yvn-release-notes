@@ -32,6 +32,21 @@ const origin = 'https://notes.example.com',
     lon: -93.26
   },
   city = { name: 'Paris', region: 'Ile-de-France', country: 'France', tz: 'Europe/Paris', lat: 48.85, lon: 2.35 };
+/** The kinds of request that wrote a RATE# counter whose key starts so. */
+function rateWrites(s: { store: FakeStore }, prefix: string): string[] {
+  const touches = (key: unknown) => String((key as Item | undefined)?.pk ?? '').startsWith(`RATE#${prefix}`);
+  return [
+    ...new Set(
+      s.store.memory.calls
+        .filter(({ name, input }) =>
+          name === 'TransactWriteCommand'
+            ? (input.TransactItems ?? []).some((op) => Object.values(op).some((r) => touches((r as Item).Key)))
+            : name !== 'GetCommand' && touches(input.Key)
+        )
+        .map(({ name }) => name)
+    )
+  ];
+}
 async function setup() {
   const store = new FakeStore([profile, { pk: 'EMAIL#ada@example.com', sk: 'EMAIL', user_id: 'u' }], 'T', 2),
     objects = new FakeObjects(),
@@ -500,6 +515,7 @@ test('an account writes WEB_NOTES_A_DAY notes a UTC day on the web; past that no
     day = Math.floor(s.ctx.now / 86400);
   s.store.seed({ pk: `RATE#webnotes:u#${day}`, sk: 'RATE', n: WEB_NOTES_A_DAY - 1, expires_at: (day + 2) * 86400 });
   assert.equal((await s.call('POST', '/api/days/2026-10-13/notes', { text: 'The last today' })).r.status, 201);
+  assert.deepEqual(rateWrites(s, 'webnotes:'), ['UpdateCommand']);
   const over = await s.call('POST', '/api/days/2026-10-13/notes', { text: 'One too many' });
   assert.deepEqual([over.r.status, (over.b as Item).error], [429, 'note-limit']);
   assert.deepEqual(
@@ -1486,6 +1502,9 @@ test('the map pins notes with a place of their own and passes the base map throu
   const day = Math.floor(s.ctx.now / 86400);
   s.store.seed({ pk: `RATE#tiles:u#${day}`, sk: 'RATE', n: TILES_A_DAY - 1, expires_at: (day + 2) * 86400 });
   assert.equal((await s.call('GET', '/api/map/tiles/3/2/2')).r.status, 200);
+  // Each tile is one plain UpdateItem, never a proved transaction: the Map
+  // asks for many at once, and transactions on one row conflict (2026-11-09).
+  assert.deepEqual(rateWrites(s, 'tiles:'), ['UpdateCommand']);
   const over = await s.call('GET', '/api/map/tiles/3/2/2');
   assert.deepEqual([over.r.status, (over.b as Item).error], [429, 'map-limit']);
   assert.equal(asked.length, 6);

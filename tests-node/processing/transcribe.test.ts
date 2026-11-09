@@ -278,28 +278,19 @@ test('a job for a removed recording finishes on nothing, not on the recording ad
   assert.equal(file!.transcript, undefined);
   assert.equal(await s.store.processing('u', 'transcribe', day, id, n), null);
 });
-test('120 minutes of recordings a UTC day; a longer recording is never sent', async () => {
-  // WAV headers that say how long each runs: 1,000 bytes a second.
-  const wav = (seconds: number) => {
-    const b = Buffer.alloc(44);
-    b.write('RIFF', 0, 'latin1');
-    b.write('WAVE', 8, 'latin1');
-    b.write('fmt ', 12, 'latin1');
-    b.writeUInt32LE(16, 16);
-    b.writeUInt32LE(1000, 28);
-    b.write('data', 36, 'latin1');
-    b.writeUInt32LE(1000 * seconds, 40);
-    return b;
-  };
-  const recording = (n: number, seconds: number) => ({
-    ...audio(n),
-    key: `media/u/${day}/${id}/${n}.wav`,
-    type: 'audio/wav',
-    size: 44 + 1000 * seconds
-  });
+test('120 minutes of recordings a UTC day, each counted from its size; a longer recording is never sent', async () => {
+  // 16,000 bytes a second at 128 kbit/s.
+  assert.deepEqual([t.seconds(0), t.seconds(1), t.seconds(16_000), t.seconds(16_001)], [1, 1, 1, 2]);
+  const recording = (n: number, seconds: number) => ({ ...audio(n), size: 16_000 * seconds });
   const s = configured(),
-    media = [recording(0, 50 * 60), recording(1, 50 * 60), recording(2, 50 * 60), recording(3, 3 * 3600)];
-  for (const m of media) await s.objects.put(m.key, wav((m.size - 44) / 1000), { type: 'audio/wav' });
+    media = [
+      recording(0, 50 * 60),
+      recording(1, 50 * 60),
+      recording(2, 50 * 60),
+      { ...recording(3, 0), size: undefined }
+    ];
+  // The fourth's size is unknown, and its object is too big to fit a day.
+  s.objects.head = async () => ({ size: 16_000 * 3 * 3600, type: 'audio/mpeg', version: '1', metadata: {} });
   s.store.seed({ ...s.note, media });
   assert.equal(await t.start((await s.store.note('u', day, id))!, 'u', s.services), 2);
   assert.deepEqual(

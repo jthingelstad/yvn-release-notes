@@ -60,7 +60,10 @@ export async function mapRoutes(service: SessionService, pattern: string, args: 
   if (pattern === '/api/map/tiles/{z}/{x}/{y}') {
     const [z, x, y] = args.map(Number) as [number, number, number];
     if (z > 22 || x >= 2 ** z || y >= 2 ** z) reject(404, 'not-found');
-    if ((await ctx.store.count(`tiles:${uid}`, Math.floor(ctx.now / 86400), 86400)) > TILES_A_DAY)
+    // Counted on the plain table, one UpdateItem a tile: account() has just
+    // proved the session, and the Map asks for many tiles at once, which a
+    // proved transaction each would refuse as conflicting (2026-11-09 audit).
+    if ((await service.rawStore.count(`tiles:${uid}`, Math.floor(ctx.now / 86400), 86400)) > TILES_A_DAY)
       reject(429, 'map-limit');
     return served(await maps.tile(z, x, y));
   }

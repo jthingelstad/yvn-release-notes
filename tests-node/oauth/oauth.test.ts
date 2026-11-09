@@ -434,7 +434,7 @@ test("a known client's name registers only with its own callbacks; consent says 
     to_kind: 'web'
   });
 });
-test('registration counts each /64 and its /48, and the Changelog app apart from the total (SIGNIN-7)', async () => {
+test('registration counts each /64 and its /48, and every client against one total (SIGNIN-7)', async () => {
   const ctx = fixture(),
     hour = Math.floor(NOW / 3600),
     register = async (viewer: string, uri = 'https://client.example/cb', name = 'Agent') =>
@@ -455,10 +455,9 @@ test('registration counts each /64 and its /48, and the Changelog app apart from
   // An IPv4 address is its own network, with no wider step.
   for (let n = 0; n < 20; n++) assert.equal(await register('198.51.100.7'), 201);
   assert.equal(await register('198.51.100.7'), 429);
-  // The total for everyone is full: others wait, the Changelog app does not.
+  // The total for everyone is full: every client waits, the Changelog app too
+  // (its redirect URIs are ones any client can claim; 2026-11-09).
   ctx.store.seed({ pk: `RATE#oauth:register:total#${hour}`, sk: 'RATE', n: 200, expires_at: (hour + 2) * 3600 });
   assert.equal(await register('2001:db8:3::1'), 429);
-  assert.equal(await register('2001:db8:3::2', 'com.yourversionnumber.changelog:/oauth', 'Changelog'), 201);
-  ctx.store.seed({ pk: `RATE#oauth:register:changelog#${hour}`, sk: 'RATE', n: 200, expires_at: (hour + 2) * 3600 });
-  assert.equal(await register('2001:db8:3::3', 'com.yourversionnumber.changelog:/oauth', 'Changelog'), 429);
+  assert.equal(await register('2001:db8:3::2', 'com.yourversionnumber.changelog:/oauth', 'Changelog'), 429);
 });

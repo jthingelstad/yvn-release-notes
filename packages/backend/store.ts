@@ -52,10 +52,6 @@
  * (outcome, reason, sender, subject, and the text only for a sender already
  * proven); notified_at marks its one problem notice, and
  * RATE#mailnotice:<owner>#<UTC day> caps those at three a day.
- * RATE#bounces:<domain digest>#<UTC day> counts sign-in emails to addresses
- * with no account that bounced from a domain, each once: BOUNCE#<digest of the
- * SNS message id and the recipient's place in it> is its receipt, written in
- * the same transaction and kept two days.
  * MCPMETA#<owner> / ACTIVITY#<local day's first instant>#reads#<connection>
  * sums one assistant's reads that day, written by the MCP reader with the
  * account proof and a revision, deleted with the account's MCP rows.
@@ -2484,32 +2480,6 @@ export class Store {
         }
       )
     );
-  }
-  /** Counts a sign-in bounce against its domain's UTC day once, however often
-   * SNS delivers the notification: the receipt and the counter in one write.
-   * False when the receipt was already there. */
-  async countBounce(counter: string, receipt: string, now: number): Promise<boolean> {
-    const day = Math.floor(now / 86400),
-      expires = (day + 2) * 86400;
-    return this.provedTransaction([
-      {
-        Update: {
-          TableName: this.tableName,
-          Key: { pk: `BOUNCE#${receipt}`, sk: 'BOUNCE' },
-          UpdateExpression: 'SET expires_at = :exp',
-          ConditionExpression: 'attribute_not_exists(pk)',
-          ExpressionAttributeValues: { ':exp': expires }
-        }
-      },
-      {
-        Update: {
-          TableName: this.tableName,
-          Key: { pk: `RATE#${counter}#${day}`, sk: 'RATE' },
-          UpdateExpression: 'ADD n :one SET expires_at = :exp',
-          ExpressionAttributeValues: { ':one': 1, ':exp': expires }
-        }
-      }
-    ]);
   }
   async peek(k: string, period: number) {
     return Number((await this.get({ pk: `RATE#${k}#${period}`, sk: 'RATE' }))?.n ?? 0);

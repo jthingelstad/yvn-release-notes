@@ -39,6 +39,4 @@ test('only plain addresses pass, and Gmail’s dots and googlemail.com count as 
   assert.equal(auth.limitAddress('a.d.a+news@googlemail.com'), 'ada@gmail.com');
   assert.equal(auth.limitAddress('A.da@gmail.com'.toLowerCase()), 'ada@gmail.com');
   assert.equal(auth.limitAddress('a.da+x@example.com'), 'a.da@example.com');
-  assert.equal(auth.bounceKey('x@googlemail.com'), auth.bounceKey('y@gmail.com'));
-  assert.equal(auth.bounceKey('x@example.com'), 'bounces:' + auth.digest('example.com'));
 });

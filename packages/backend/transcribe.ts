@@ -1,6 +1,6 @@
 /** Opt-in audio transcription. Fixed job names, USER-owned atomic leases and a
  * capped UTC-day counter bound repeated stream deliveries to 30 starts and
- * 120 minutes of recordings a day (`audio-length.ts` says how long each runs).
+ * 120 minutes of recordings a day, each reckoned from its size (`seconds`).
  * Results require live consent and the same media; provider jobs/results are
  * cleaned even when consent was withdrawn or the note/account was removed.
  * A kept transcript gets an activity row, without its words. */
@@ -9,7 +9,6 @@ import type { NoteRecord } from '../domain/notes.ts';
 import { missing, type Objects, type Log } from './services.ts';
 import type { Store, Item } from './store.ts';
 import { activityLog, again, recordActivity } from './activity.ts';
-import { audioSeconds } from './audio-length.ts';
 export const PREFIX = 'release-notes',
   LANGUAGE = 'en-US',
   MAX_TRANSCRIPT = 50_000,
@@ -18,7 +17,14 @@ export const PREFIX = 'release-notes',
    * in the 30 days before. A recording longer than this is never written out. */
   MINUTES_A_DAY = 120,
   MAX_BYTES = 50 * 1024 * 1024,
+  /** Bits a second a recording is counted at (2026-11-09 audit): a voice
+   * memo runs well under it, so most count for less than they run. */
+  BITS_A_SECOND = 128_000,
   ONE_DAY = 86400;
+/** How long a recording counts for against the day's minutes: its size at
+ * BITS_A_SECOND, rounded up, at least a second. A file can run longer than
+ * that says; the 30 recordings a day still bound it. */
+export const seconds = (bytes: number) => Math.max(1, Math.ceil((Math.max(0, bytes) * 8) / BITS_A_SECOND));
 export const FORMATS: Record<string, string> = {
   'audio/mp4': 'm4a',
   'audio/mpeg': 'mp3',
@@ -88,22 +94,20 @@ export async function start(note: NoteRecord, user: string, s: Services): Promis
           (h) => h.size,
           () => MAX_BYTES
         )),
-      length = await audioSeconds(type, size, async (from, to) => {
-        return (await s.objects.get(key, { range: `bytes=${from}-${to - 1}`, maxBytes: to - from })).body;
-      });
-    if (length.seconds > MINUTES_A_DAY * 60) {
-      s.log?.({ event: 'transcribe-too-long', user, seconds: length.seconds, from: length.from });
+      length = seconds(size);
+    if (length > MINUTES_A_DAY * 60) {
+      s.log?.({ event: 'transcribe-too-long', user, seconds: length });
       continue;
     }
     const now = Math.floor((s.clock ?? (() => Date.now() / 1000))());
     if (
       !(await s.store.claimProcessing('transcribe', user, day, id, n, key, type, owner, now, {
-        seconds: length.seconds,
+        seconds: length,
         secondsADay: MINUTES_A_DAY * 60,
         startsADay: MAX_A_DAY
       }))
     ) {
-      s.log?.({ event: 'transcribe-not-claimed', user, seconds: length.seconds, from: length.from });
+      s.log?.({ event: 'transcribe-not-claimed', user, seconds: length });
       continue;
     }
     // The transaction authorizes this work; a fresh read also catches a stop

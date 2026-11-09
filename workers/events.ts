@@ -4,7 +4,7 @@
  * A stop goes in the owner's activity log, with its reason and nothing of
  * the notification. */
 import { createHash } from 'node:crypto';
-import { bounceKey, normalEmail } from '../packages/backend/auth.ts';
+import { normalEmail } from '../packages/backend/auth.ts';
 import type { Store, Item } from '../packages/backend/store.ts';
 import type { Log } from '../packages/backend/services.ts';
 import { activityLog, recordActivity } from '../packages/backend/activity.ts';
@@ -106,26 +106,14 @@ export async function handler(
       continue;
     }
     const [reason, rawAddresses] = recipients(msg),
-      kind = mailKind(msg),
       users: (string | null)[] = [];
     const snsId = record.Sns?.MessageId;
-    for (const [place, raw] of rawAddresses.entries()) {
+    for (const raw of rawAddresses) {
       const parsed = await addresses([raw]),
         email = parsed.length === 1 ? normalEmail(parsed[0]) : null,
         user = email ? await services.store.userForEmail(email) : null;
       users.push(user);
       if (!user) {
-        // A sign-in email to an address with no account bounced: it counts
-        // against the address's domain for the UTC day, and at
-        // DOMAIN_BOUNCES_A_DAY sign-in mail there stops (sessions.ts).
-        // Once per notification and recipient, so a redelivery or a retry after
-        // a failed publish doesn't count it again.
-        if (reason === 'bounce' && email && kind === 'account' && snsId)
-          await services.store.countBounce(
-            bounceKey(email),
-            createHash('sha256').update(`${snsId}#${place}`).digest('hex'),
-            now
-          );
         log({ event: 'mail-event', reason, outcome: 'no-account' });
         continue;
       }

@@ -67,7 +67,7 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.22.0';
+export const API_VERSION = '1.22.1';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The exceptions are 1.8.0, which withdrew 1.6.0's
@@ -76,6 +76,12 @@ export const API_VERSION = '1.22.0';
  * 2026-11-08, product call 9 of the security audit). A new version starts
  * with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.22.1',
+    date: '2026-11-09',
+    summary:
+      "Signing in: POST /oauth/register counts every new client against the one 200 an hour for everyone again, the Changelog app's too, since 1.21.5's separate count went by redirect URIs any client can claim. Each network's own limits, an IPv6 /48's among them, are unchanged. No request changed."
+  },
   {
     version: '1.22.0',
     date: '2026-11-08',

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Release Notes deploy identity - the GitHub Actions deploy role and the CloudFormation service role
+Description: Release Notes deploy identity - the GitHub Actions deploy role, the CloudFormation service role and the function boundary
 
 # A separate small stack (yvn-release-notes-deploy), never the application
 # stack: it holds who may deploy. Applied by hand with the cloud-engineer
@@ -8,7 +8,7 @@ Description: Release Notes deploy identity - the GitHub Actions deploy role and 
 #   aws cloudformation deploy --stack-name yvn-release-notes-deploy \
 #     --template-file infra/github-deploy-role.yaml --capabilities CAPABILITY_NAMED_IAM
 #
-# Two resources that matter:
+# Three resources that matter:
 # - ReleaseNotesGitHubDeploy: assumed only by this repository's `production`
 #   GitHub environment through the account's OIDC provider. It may call
 #   exactly what the release steps (scripts/release.sh and the release tool
@@ -18,9 +18,12 @@ Description: Release Notes deploy identity - the GitHub Actions deploy role and 
 #   application stack, scoped to the resource names that template makes.
 #   Once a stack update names it, the stack keeps it; scripts/release.sh
 #   names it on every run, from CI and from the Mac's deploy.sh alike.
+# - ReleaseNotesFunctionBoundary: the permissions boundary every application
+#   role carries, the most any of them may do whatever its own policy says.
+#   The service role makes a role only with it.
 #
-# Neither role name starts with yvn-release-notes-, so the service role,
-# which manages yvn-release-notes-* roles, cannot edit them.
+# No name here starts with yvn-release-notes-, so the service role, which
+# manages yvn-release-notes-* roles, cannot edit them.
 #
 # The receipts bucket of the retired phased release left this stack on
 # 2026-10-20 (Jamie: "remove the receipts bucket and its grants"); a release
@@ -48,6 +51,103 @@ Resources:
       Url: https://token.actions.githubusercontent.com
       ClientIdList: [sts.amazonaws.com]
 
+  # The 2026-11-08 security audit (AWS-1): without a boundary, a template
+  # change on main could add a role with Action "*" and a trust naming another
+  # account, and the service role would make it. With it, an application role
+  # reaches only the services the nine function roles use, on this app's own
+  # names. Whole services on those names, so a role's policy can grow inside
+  # the app without a change here; where a service has no app name (listing
+  # streams, the suppression list, starting a transcription, sending mail),
+  # the exact actions, and mail only from yourversionnumber.com. A new service
+  # or a name outside the app's needs this policy changed and this stack
+  # applied before the merge that uses it. tests-node/infra/function-boundary.test.ts
+  # holds every role statement in infra/template.yaml inside it.
+  FunctionBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: ReleaseNotesFunctionBoundary
+      Description: Permissions boundary for the yvn-release-notes application roles
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AppTable
+            Effect: Allow
+            Action: dynamodb:*
+            Resource:
+              - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ApplicationStackName}"
+              - !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ApplicationStackName}/*"
+          - Sid: AppTableStreams
+            Effect: Allow
+            Action: dynamodb:ListStreams
+            Resource: "*"
+          - Sid: AppBuckets
+            Effect: Allow
+            Action: s3:*
+            Resource:
+              - !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-*"
+              - !Sub "arn:${AWS::Partition}:s3:::${ApplicationStackName}-*/*"
+          - Sid: AppLogs
+            Effect: Allow
+            Action: logs:*
+            Resource:
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ApplicationStackName}-*"
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda-web/${ApplicationStackName}-*"
+          - Sid: AppFunctions
+            Effect: Allow
+            Action: lambda:*
+            Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationStackName}-*"
+          - Sid: AppQueues
+            Effect: Allow
+            Action: sqs:*
+            Resource: !Sub "arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ApplicationStackName}-*"
+          - Sid: AppTopics
+            Effect: Allow
+            Action: sns:*
+            Resource: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ApplicationStackName}-*"
+          - Sid: AppSecret
+            Effect: Allow
+            Action: secretsmanager:*
+            Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ApplicationStackName}-*"
+          - Sid: Places
+            Effect: Allow
+            Action: [geo-places:*, geo-maps:*]
+            Resource:
+              - !Sub "arn:${AWS::Partition}:geo-places:${AWS::Region}::provider/default"
+              - !Sub "arn:${AWS::Partition}:geo-maps:${AWS::Region}::provider/default"
+          # SES checks the sending identity and any recipient that is itself an
+          # identity, so identity/* here as in the roles; the From address is
+          # what keeps a role to this app's domain.
+          - Sid: SendMail
+            Effect: Allow
+            Action: [ses:SendEmail, ses:SendRawEmail]
+            Resource:
+              - !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+              - !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ApplicationStackName}"
+            Condition:
+              StringLike:
+                ses:FromAddress: ["*@yourversionnumber.com", "*<*@yourversionnumber.com>"]
+          - Sid: Suppression
+            Effect: Allow
+            Action: ses:DeleteSuppressedDestination
+            Resource: "*"
+          - Sid: StartTranscription
+            Effect: Allow
+            Action: transcribe:StartTranscriptionJob
+            Resource: "*"
+            Condition:
+              StringLike:
+                transcribe:OutputBucketName: !Sub "${ApplicationStackName}-*"
+          - Sid: TranscriptionJobs
+            Effect: Allow
+            Action: transcribe:*
+            Resource: !Sub "arn:${AWS::Partition}:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/release-notes.*"
+          # Nothing above allows these; the deny keeps it that way if a statement
+          # is ever widened.
+          - Sid: NothingAboveTheApp
+            Effect: Deny
+            Action: [iam:*, sts:AssumeRole, organizations:*]
+            Resource: "*"
+
   CloudFormationRole:
     Type: AWS::IAM::Role
     Properties:
@@ -67,7 +167,8 @@ Resources:
         # domain). Whole-service actions on those names, so a new property in
         # the template does not fail a deploy halfway, and a rollback can undo
         # what an update did. Its IAM reach is the template's generated
-        # <stack>-<Logical>Role-<suffix> roles, inline policies only.
+        # <stack>-<Logical>Role-<suffix> roles, inline policies only, each
+        # made with the function boundary above.
         - PolicyName: application-stack
           PolicyDocument:
             Version: "2012-10-17"
@@ -90,7 +191,6 @@ Resources:
               - Sid: Roles
                 Effect: Allow
                 Action:
-                  - iam:CreateRole
                   - iam:DeleteRole
                   - iam:GetRole
                   - iam:UpdateRole
@@ -104,6 +204,21 @@ Resources:
                   - iam:UntagRole
                   - iam:ListRoleTags
                   - iam:PassRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApplicationStackName}-*Role-*"
+              # A role is made only with the function boundary, and a role's
+              # boundary is only ever set to it.
+              - Sid: RolesTakeTheBoundary
+                Effect: Allow
+                Action: [iam:CreateRole, iam:PutRolePermissionsBoundary]
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApplicationStackName}-*Role-*"
+                Condition:
+                  StringEquals: { "iam:PermissionsBoundary": !Ref FunctionBoundary }
+              # Only while the nine roles take the boundary (2026-11-08): if the
+              # deploy that sets it fails, its rollback takes it off again. A
+              # deny replaces this once main's roles carry it.
+              - Sid: BoundaryRollback
+                Effect: Allow
+                Action: iam:DeleteRolePermissionsBoundary
                 Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApplicationStackName}-*Role-*"
               - Sid: Table
                 Effect: Allow
@@ -266,14 +381,13 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                # The name form and the immutable-id form (owner 5351,
-                # repository 1408586441; the repository uses the id form
-                # today), as Drop's role does, so a change to the repository's
-                # OIDC subject setting does not lock CI out. Only the
-                # production environment, which admits only main, ever gets
-                # one of these subjects.
+                # The immutable-id form only (owner 5351, repository
+                # 1408586441), which the repository's OIDC subject setting
+                # uses: a renamed or re-created repository of the same name
+                # gets a different subject. The name form left 2026-11-08
+                # (SUPPLY-7 in that day's audit). Only the production
+                # environment, which admits only main, ever gets it.
                 token.actions.githubusercontent.com:sub:
-                  - repo:jthingelstad/yvn-release-notes:environment:production
                   - repo:jthingelstad@5351/yvn-release-notes@1408586441:environment:production
       Policies:
         # Derived from the release scripts, call by call; nothing else.
@@ -403,3 +517,5 @@ Outputs:
     Value: !GetAtt DeployRole.Arn
   CloudFormationRoleArn:
     Value: !GetAtt CloudFormationRole.Arn
+  FunctionBoundaryArn:
+    Value: !Ref FunctionBoundary

@@ -140,8 +140,15 @@ Where things are (each module's design comment has its contract):
   bundle with no cloud credentials, `scripts/release.sh` releases it, and
   `deploy.sh` is the Mac's path to both.
 - `infra/template.yaml` is the stack. `infra/github-deploy-role.yaml` is the
-  `yvn-release-notes-deploy` stack (the deploy role and the CloudFormation
-  service role), applied by hand from its header.
+  `yvn-release-notes-deploy` stack (the deploy role, the CloudFormation
+  service role and the function boundary), applied by hand from its header.
+- Every role in the stack carries `ReleaseNotesFunctionBoundary`, and the
+  service role makes no role without it (2026-11-08). It allows the services
+  the roles use, on this app's names only. A role that needs a new service or
+  a name outside `yvn-release-notes-*` fails
+  `tests-node/infra/function-boundary.test.ts` until the boundary allows it,
+  and the deploy stack must be applied with the new boundary before that
+  change merges.
 - The distribution sits behind the account's shared `edge` web ACL
   (projects-sysadmin's `edge-waf` stack, since 2026-11-02; its rules count
   and none blocks yet). CloudFront reads that web ACL as the caller on every

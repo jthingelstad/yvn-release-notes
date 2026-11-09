@@ -193,6 +193,8 @@ function productNews(row: Item): ProductUpdate {
   return update as unknown as ProductUpdate;
 }
 
+/** The rate row counting a day's tries at commentary (books.ts). */
+const TRIES = 'commentary-tries:';
 export class Store {
   readonly client: DocumentSender;
   readonly tableName: string;
@@ -2167,13 +2169,15 @@ export class Store {
     await this.put({ ...fields, ...key(user, slot), id, status: 'building', started_at: now, expires_at: expires });
   }
   /** `counted`: a finished book with commentary, counted against that
-   * release (age) in the same write. */
+   * release (age) in the same write; `tried`, the UTC day its try at
+   * commentary was counted, given back in it too. */
   async finishExportGuarded(
     user: string,
     id: string,
     fields: Item,
     slot: ExportSlot = 'EXPORT',
-    counted?: number
+    counted?: number,
+    tried?: number
   ): Promise<boolean> {
     return this.provedTransaction([
       this.profileProof(user),
@@ -2190,8 +2194,33 @@ export class Store {
                 ExpressionAttributeValues: { ':one': 1 }
               }
             }
+          ]),
+      ...(tried === undefined
+        ? []
+        : [
+            {
+              Update: {
+                TableName: this.tableName,
+                Key: { pk: `RATE#${TRIES}${user}#${tried}`, sk: 'RATE' },
+                UpdateExpression: 'ADD n :less SET expires_at = if_not_exists(expires_at, :exp)',
+                ExpressionAttributeValues: { ':less': -1, ':exp': (tried + 2) * 86400 }
+              }
+            }
           ])
     ]);
+  }
+  /** One more book or zip started this UTC day, the two together; answers
+   * the day's count with this one. */
+  async countBuild(user: string, now: number): Promise<number> {
+    return this.count(`builds:${user}`, Math.floor(now / 86400), 86400);
+  }
+  /** Tries at commentary counted on a UTC day and not given back by a book
+   * that finished: those that failed, and one building. */
+  async commentaryTries(user: string, day: number): Promise<number> {
+    return this.peek(`${TRIES}${user}`, day);
+  }
+  async tryCommentary(user: string, day: number): Promise<void> {
+    await this.count(`${TRIES}${user}`, day, 86400);
   }
   /** How many finished books with commentary a release (age) has had. Read
    * strongly: this is the only check of the ceiling, and a book asked for as

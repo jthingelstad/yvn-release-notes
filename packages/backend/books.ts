@@ -16,8 +16,10 @@ import { earnedBy, freshEvent } from './badges.ts';
 import { activityKey, activityTime } from '../domain/activity.ts';
 import { defaultTitle } from '../book/data.ts';
 import {
+  BUILDS_A_DAY,
   COMMENTARY_DAYS,
   COMMENTARY_PER_RELEASE,
+  COMMENTARY_TRIES_A_DAY,
   MAX_PHOTOS,
   MAX_TITLE,
   isPageSize,
@@ -117,6 +119,13 @@ export async function bookRoutes(
     const held = await counted(service, uid, from, to);
     if (!held.days) reject(400, 'book-empty');
     if (held.photos > MAX_PHOTOS) reject(400, 'book-photos', { photos: held.photos, max_photos: MAX_PHOTOS });
+    // A try at commentary is counted until its book finishes, which gives it
+    // back (workers/export.ts); the day's books and zips count every start.
+    const tried = Math.floor(ctx.now / 86400);
+    if (annotate && (await store.commentaryTries(uid, tried)) >= COMMENTARY_TRIES_A_DAY)
+      reject(429, 'book-commentary-tries', { max: COMMENTARY_TRIES_A_DAY });
+    if ((await store.countBuild(uid, ctx.now)) > BUILDS_A_DAY) reject(429, 'build-limit');
+    if (annotate) await store.tryCommentary(uid, tried);
     if (found?.export_key && String(found.export_key).startsWith(`exports/${uid}/`))
       await ctx.objects.remove(String(found.export_key));
     const id = randomUUID().replace(/-/g, '');
@@ -125,7 +134,7 @@ export async function bookRoutes(
       to,
       page,
       ...(title ? { title } : {}),
-      ...(annotate ? { commentary: true, release } : {})
+      ...(annotate ? { commentary: true, release, tried } : {})
     });
     try {
       await ctx.invocations.invoke(ctx.exportFunction, { user_id: uid, id, kind: 'book' }, true);

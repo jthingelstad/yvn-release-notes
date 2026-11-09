@@ -2,6 +2,9 @@
  * capture. Rendering keeps provenance; stored keys/coordinates are private. */
 import { pythonTrim } from './unicode.ts';
 export const MAX_NOTE = 20_000;
+/** Notes an account writes on the web in a UTC day (the 2026-11-08 security
+ * audit: each save reads the whole account for badges; /v1 has its own). */
+export const WEB_NOTES_A_DAY = 200;
 export const SOURCES = ['email', 'web', 'import', 'agent', 'api'] as const;
 export interface PlaceRecord {
   label?: string;

@@ -13,7 +13,7 @@ import { localDay, iso, validTimezone } from '../../packages/domain/dates.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
 import { noteTags, tagFields } from '../../packages/domain/tags.ts';
 import { isRich, RICH } from '../../packages/domain/rich.ts';
-import { noteWords, type NoteRecord } from '../../packages/domain/notes.ts';
+import { WEB_NOTES_A_DAY, noteWords, type NoteRecord } from '../../packages/domain/notes.ts';
 import { again, badgeEvents, recordActivity } from '../../packages/backend/activity.ts';
 import type { ActivityEvent } from '../../packages/domain/activity.ts';
 import { json, body, dayFrom, tagsFrom, textFrom } from './requests.ts';
@@ -76,6 +76,8 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
     );
   }
   if (pattern === '/api/days/{date}/notes') {
+    if ((await store.count(`webnotes:${uid}`, Math.floor(ctx.now / 86400), 86400)) > WEB_NOTES_A_DAY)
+      reject(429, 'note-limit');
     const b = await body(service.request),
       text = textFrom(b, Boolean(b.uploads)),
       // Checked before any file is claimed.

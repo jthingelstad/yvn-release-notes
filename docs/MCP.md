@@ -3,9 +3,9 @@
 Add a custom remote MCP connector in Claude with
 `https://notes.yourversionnumber.com/mcp`. Sign in with your usual Release
 Notes email link or code, preferably using the code in the approval tab.
-The approval page names the client (a name supplied by that client), shows
-the signed-in address, and asks whether photos and recordings can be read
-as well. Connect only when you initiated it. Approving shares your archive
+The approval page names the client (a name supplied by that client), says
+where Allow sends you (the callback's host), shows the signed-in address,
+and asks whether photos and recordings can be read as well. Connect only when you initiated it. Approving shares your archive
 with that service under its privacy and retention policies: the notes, and
 since 1.4.0 the rest of the account too (badges, releases, the mail log of
 the last 30 days and your settings, never your email address or private
@@ -289,7 +289,7 @@ Public protocol routes, separate from `/api` cookie authentication:
 | `GET /.well-known/oauth-protected-resource/mcp` | Resource and authorization server discovery. The root variant also works. |
 | `GET /.well-known/oauth-protected-resource/v1` | The API's resource, which an app signs in to (docs/API.md, Phase 5), with the token scopes. |
 | `GET /.well-known/oauth-authorization-server` | OAuth endpoints and supported scopes/grants/PKCE. |
-| `POST /oauth/register` | Public clients, exact HTTPS, loopback HTTP or reverse-DNS private-use (RFC 8252) redirects, no secret. |
+| `POST /oauth/register` | Public clients, exact HTTPS, loopback HTTP or reverse-DNS private-use (RFC 8252) redirects, no secret. A name that reads as Changelog, Claude or ChatGPT is `invalid_client_metadata` unless every redirect is that client's own or loopback. |
 | `GET /oauth/authorize` | Validate registered redirect, resource, scope and S256 challenge; create ten-minute pending request, redirect to `/connect/#request=…`. |
 | `POST /oauth/token` | Form-encoded code or refresh exchange, resource and client id required. |
 | `POST /oauth/revoke` | Form-encoded token and matching client id; idempotent family revocation, or an app's signed-in API token. |
@@ -303,7 +303,16 @@ it in place from Settings ("Allow files for ..."). "Turn off adding" removes
 both. Approval is only through `POST /api/mcp/authorize` with
 an email-verified browser session and the site's Origin. Bearer tokens
 cannot authenticate existing web routes. Denying consumes the request and
-returns access_denied to the validated redirect. An agent's resource is
+answers access_denied for the validated redirect. The page goes straight
+back only to an app's own scheme or a loopback program; for a website it
+says "Nothing was shared" and links back, so the site's own domain is never
+a registered client's redirect (2026-11-08 security audit). A client's name
+is its own word, so registration refuses one that reads as Changelog,
+Claude or ChatGPT (folded for case, spacing and look-alike letters) unless
+every redirect is that client's own: Changelog's
+`com.yourversionnumber.changelog:` scheme, `https://claude.ai/` or
+`https://claude.com/`, `https://chatgpt.com/` or `https://chat.openai.com/`,
+or loopback, which Claude Code uses. An agent's resource is
 exactly `https://notes.yourversionnumber.com/mcp`; `/v1` is an app's
 sign-in, which makes an API token instead of a connection (docs/API.md,
 Phase 5), and its code, bearer and grant never open `/mcp`. Tokens are 256-bit opaque values

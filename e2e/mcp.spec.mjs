@@ -19,7 +19,7 @@ test.beforeEach(async ({ context }) => {
 
 async function pending(request, baseURL, scope = 'notes:read media:read') {
   const registration = await request.post('/oauth/register', {
-    data: { client_name: 'Claude test', redirect_uris: [callback] }
+    data: { client_name: 'Agent test', redirect_uris: [callback] }
   });
   expect(registration.status()).toBe(201);
   const { client_id } = await registration.json();
@@ -77,7 +77,7 @@ for (const [name, viewport] of [
       });
       await page.goto(p.url);
       await signIn(page, request);
-      await expect(page.getByRole('heading', { name: 'Claude test wants to read your notes' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Agent test wants to read your notes' })).toBeVisible();
       await expect(page.getByText('Connected as ada@example.com.', { exact: false })).toBeVisible();
       const media = page.getByRole('checkbox', { name: 'Also allow photos and recordings' });
       await expect(media).not.toBeChecked();
@@ -124,12 +124,12 @@ for (const [name, viewport] of [
       await page.locator('#agent-connections > summary').click();
       await page.locator('#agent-activity > summary').click();
       await expect(page.getByRole('heading', { name: 'Connected agents' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Disconnect Claude test', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Disconnect Agent test', exact: true })).toBeVisible();
       await expect(page.getByText(/notes_context · ok/).first()).toBeVisible();
       await page.locator('#agent-connections').scrollIntoViewIfNeeded();
       await page.screenshot({ path: `/tmp/yvn-mcp-qa/settings-${name}.png`, fullPage: true });
-      await page.getByRole('button', { name: 'Disconnect Claude test', exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Disconnect Claude test', exact: true })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Disconnect Agent test', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Disconnect Agent test', exact: true })).toHaveCount(0);
       expect((await read()).status()).toBe(401);
       expect(errors).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
@@ -196,7 +196,7 @@ for (const [name, viewport] of [
       const args = { text: 'A fictional evening walk #Evening', idempotency_key: 'capture-ui' };
       const first = await rpc('notes_create', args);
       expect(first.note.author).toBe('assistant');
-      expect(first.note.client).toBe('Claude test');
+      expect(first.note.client).toBe('Agent test');
       expect((await rpc('notes_create', args)).replayed).toBe(true);
       const append = await rpc('notes_append', {
         date: first.note.date,
@@ -206,13 +206,13 @@ for (const [name, viewport] of [
       });
       expect(append.note.text).toBe(args.text + '\n\nThen tea.');
       await page.goto('/day/?d=' + first.note.date);
-      await expect(page.getByText(/added by Claude test/).first()).toBeVisible();
+      await expect(page.getByText(/added by Agent test/).first()).toBeVisible();
       await expect(page.getByText(/Then tea\./).first()).toBeVisible();
       await page.screenshot({ path: `/tmp/yvn-capture-qa/note-${name}.png`, fullPage: true });
       await page.goto('/settings/');
       await page.locator('#agent-connections > summary').click();
       await page.locator('#agent-activity > summary').click();
-      const off = page.getByRole('button', { name: 'Turn off adding for Claude test', exact: true });
+      const off = page.getByRole('button', { name: 'Turn off adding for Agent test', exact: true });
       await expect(off).toBeVisible();
       await expect(page.getByText(/notes_create · ok/).first()).toBeVisible();
       await page.locator('#agent-connections').scrollIntoViewIfNeeded();
@@ -224,21 +224,23 @@ for (const [name, viewport] of [
       // The Upcoming permission is added to this same connection in place (no reconnect).
       expect((await rpc('upcoming_list')).error).toBe('scope_required');
       page.once('dialog', (dialog) => dialog.accept());
-      const allow = page.getByRole('button', { name: 'Allow Upcoming for Claude test', exact: true });
+      const allow = page.getByRole('button', { name: 'Allow Upcoming for Agent test', exact: true });
       await allow.click();
       await expect(allow).toHaveCount(0);
       await expect(page.getByText('Can read and change your Upcoming dates.', { exact: true })).toBeVisible();
       expect((await rpc('notes_context')).scope).toContain('upcoming');
       expect((await rpc('upcoming_list')).total).toBe(0);
-      await page.getByRole('button', { name: 'Disconnect Claude test', exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Disconnect Claude test', exact: true })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Disconnect Agent test', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Disconnect Agent test', exact: true })).toHaveCount(0);
       expect(errors).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
     });
   });
 }
 
-test('cancel returns access_denied without creating a connection', async ({ page, request, baseURL }) => {
+// A website's Cancel stops on this domain with a link back, so the real
+// domain is never a registered site's redirect (2026-11-08 security audit).
+test('cancel makes no connection and links back with access_denied', async ({ page, request, baseURL }) => {
   const p = await pending(request, baseURL);
   let returned;
   await page.route(callback + '**', (route) => {
@@ -247,7 +249,11 @@ test('cancel returns access_denied without creating a connection', async ({ page
   });
   await page.goto(p.url);
   await signIn(page, request);
+  await expect(page.locator('p', { hasText: 'Allowing sends you to client.example.com.' })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Nothing was shared' })).toBeVisible();
+  expect(returned).toBeUndefined();
+  await page.getByRole('link', { name: 'client.example.com', exact: true }).click();
   await expect(page).toHaveURL(/client.example.com\/callback/);
   expect(returned.searchParams.get('error')).toBe('access_denied');
   expect(returned.searchParams.has('code')).toBe(false);

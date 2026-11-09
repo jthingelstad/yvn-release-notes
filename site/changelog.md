@@ -15,6 +15,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 - A remembered place can be ignored: tick **Ignore this location** under Check-ins in Settings, and no stop there is kept from then on. The check-ins already there are hidden, not deleted, and come back when you untick it. **Delete existing check-ins here** deletes them instead, once it has told you how many. [Check-ins](/guide/check-ins/) has more, and [the API](/guide/api/check-ins/) can do the same.
 - The Map has **Trails**: tick it, and a line joins your check-ins in the order you stopped, and a dotted one your notes in the order you wrote them, through whatever the filters keep. [Places and the map](/guide/places-and-map/) has more.
 - Apps on [the API](/guide/api/archive/) can put a search on their own map: the pins of the notes with the words or the tag you're looking for. Each pin says when its note was written, so an app can join your notes in the order you wrote them.
+- When an app or agent asks to connect, the page says where Allow sends you, under the name the app gave itself. Only the real Changelog, Claude and ChatGPT can use those names now, and Cancel no longer sends you on to the website that asked.
 
 ## 0.0.30 · November 6
 

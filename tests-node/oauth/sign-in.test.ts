@@ -137,7 +137,14 @@ test("a sign-in makes one API token, the owner's choice, that opens /v1 and neve
     service = new OAuthService(ctx),
     { id } = await request(ctx);
   const asked = await service.authorize('u', { request: id });
-  assert.deepEqual(asked, { client_name: 'Changelog', scope: ALL, resource: '/v1', name: 'Changelog' });
+  assert.deepEqual(asked, {
+    client_name: 'Changelog',
+    scope: ALL,
+    resource: '/v1',
+    name: 'Changelog',
+    to: 'com.yourversionnumber.changelog',
+    to_kind: 'app'
+  });
   // Nothing is made until the code is spent.
   await service.authorize('u', {
     request: id,

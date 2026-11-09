@@ -567,7 +567,8 @@ subject, mail words, another sender or a settings value.
   each answer or naming the spot again on every write would add a cost and
   a way to fail for no one's protection (Jamie, 2026-10-30, case 5 of the
   API edge cases). Both need `notes:write`. Each Here is a paid lookup, so an account names 100 spots
-  a UTC day through its tokens.
+  a UTC day, through its tokens and the web's Here together (since the
+  2026-11-08 security audit).
 - **The one infrastructure change, flagged.** Signed forms and the attach
   step after them run in the web server today, under a session. The MCP
   function's roles were built without upload rights. Phase 3 lets the

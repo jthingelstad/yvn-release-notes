@@ -6,6 +6,10 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 import ipaddr from 'ipaddr.js';
 
 export const LOGIN_TTL = 900;
+/** How long a session for an address with no account yet lasts, to finish
+ * signing up in (SIGNIN-4; an hour since the 2026-11-09 audit). Never renewed;
+ * sign-up gives it a whole session. */
+export const SIGNUP_TTL = 3600;
 export const MAX_CODE_ATTEMPTS = 5;
 export const MAX_WRONG_CODES_A_DAY = 20;
 export const SESSION_IDLE = 14 * 86400;
@@ -20,9 +24,6 @@ export const LIMIT_PER_NETWORK48 = 60;
 /** Sign-in emails an hour to addresses with no account, all together. A
  * member's mail never counts toward it, so members can always sign in. */
 export const LIMIT_TOTAL = 200;
-/** Sign-in emails to addresses with no account that bounce from one domain in
- * a UTC day before mail to such addresses there stops until the day turns. */
-export const DOMAIN_BOUNCES_A_DAY = 5;
 export const SIGNIN = 'signin';
 export const DELETE = 'delete';
 
@@ -85,10 +86,6 @@ export function limitAddress(email: string): string {
     local = email.slice(0, i),
     bare = local.split('+')[0] || local;
   return `${domain === 'gmail.com' ? bare.replaceAll('.', '') || bare : bare}@${domain}`;
-}
-/** The counter of a UTC day's sign-in bounces from an address's domain. */
-export function bounceKey(email: string): string {
-  return 'bounces:' + digest(mailDomain(email));
 }
 export function network(viewer: string, prefix = 64): string {
   try {

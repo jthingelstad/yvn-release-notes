@@ -124,8 +124,9 @@ export async function bookRoutes(
     const tried = Math.floor(ctx.now / 86400);
     if (annotate && (await store.commentaryTries(uid, tried)) >= COMMENTARY_TRIES_A_DAY)
       reject(429, 'book-commentary-tries', { max: COMMENTARY_TRIES_A_DAY });
-    if ((await store.countBuild(uid, ctx.now)) > BUILDS_A_DAY) reject(429, 'build-limit');
-    if (annotate) await store.tryCommentary(uid, tried);
+    // Counts, on the plain table: the book's own start proves the session.
+    if ((await service.rawStore.countBuild(uid, ctx.now)) > BUILDS_A_DAY) reject(429, 'build-limit');
+    if (annotate) await service.rawStore.tryCommentary(uid, tried);
     if (found?.export_key && String(found.export_key).startsWith(`exports/${uid}/`))
       await ctx.objects.remove(String(found.export_key));
     const id = randomUUID().replace(/-/g, '');

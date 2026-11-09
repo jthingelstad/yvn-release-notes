@@ -52,7 +52,8 @@ export async function exportRoutes(
   }
   if (service.request.method === 'POST') {
     if (status === 'building') return json({ status }, 202);
-    if ((await store.countBuild(uid, ctx.now)) > BUILDS_A_DAY) reject(429, 'build-limit');
+    // A count, on the plain table: the export's own start proves the session.
+    if ((await service.rawStore.countBuild(uid, ctx.now)) > BUILDS_A_DAY) reject(429, 'build-limit');
     if (found?.export_key && String(found.export_key).startsWith(`exports/${uid}/`))
       await ctx.objects.remove(String(found.export_key));
     const id = randomUUID().replace(/-/g, '');

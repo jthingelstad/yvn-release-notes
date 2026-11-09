@@ -129,9 +129,8 @@ export function destination(uri: string): { to: string; to_kind: 'app' | 'comput
  * name, so a name that reads as one of these is refused unless every
  * callback is that client's own, or a program on the member's computer
  * (Claude Code signs in through loopback). */
-const CHANGELOG = /^com\.yourversionnumber\.changelog:\//;
 const KNOWN: readonly [string, RegExp][] = [
-  ['changelog', CHANGELOG],
+  ['changelog', /^com\.yourversionnumber\.changelog:\//],
   ['claude', /^https:\/\/(claude\.ai|claude\.com)\//],
   ['chatgpt', /^https:\/\/(chatgpt\.com|chat\.openai\.com)\//]
 ];
@@ -667,17 +666,10 @@ export async function publicOAuth(
         impersonates(name, uris)
       )
         fail('invalid_client_metadata');
-      // 200 new clients an hour from everywhere. The Changelog app registers
-      // one each time it signs in, so its own count apart, and a flood of
-      // others can't stop it signing in (SIGNIN-7).
-      const app = uris.every((uri) => CHANGELOG.test(uri));
-      if (
-        (await context.store.count(
-          app ? 'oauth:register:changelog' : 'oauth:register:total',
-          Math.floor(context.now / 3600),
-          3600
-        )) > 200
-      )
+      // 200 new clients an hour from everywhere, the Changelog app's among
+      // them: its redirect URIs are ones any client can claim, so they buy no
+      // count of their own (2026-11-09).
+      if ((await context.store.count('oauth:register:total', Math.floor(context.now / 3600), 3600)) > 200)
         fail('rate_limited', 429);
       const cid = newToken(),
         client = row('OAUTHCLIENT#' + cid, {

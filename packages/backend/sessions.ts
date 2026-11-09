@@ -76,7 +76,7 @@ export class SessionService {
     const profile = s.user_id ? await this.rawStore.mcpProfile(String(s.user_id)) : null;
     if (s.user_id && !profile) return null;
     const answer: Item = { ...s, hash };
-    // A session with no account yet keeps its sign-in window (SIGNIN-4).
+    // A session with no account yet keeps its hour to sign up (SIGNIN-4).
     if (s.user_id && !profile?.mcp_deleting && this.context.now - Number(s.seen_at ?? 0) >= auth.SESSION_TOUCH) {
       const expires = auth.sessionExpiry(this.context.now, Number(s.created_at));
       if (!(await this.rawStore.renewSession(hash, s.user_id ? String(s.user_id) : null, this.context.now, expires)))
@@ -102,16 +102,9 @@ export class SessionService {
   }
   /** Spends a sign-in or deletion email from the hour's limits, or refuses
    * with 429. A member's mail (the address has an account) never counts
-   * toward the total and never stops for its domain's bounces, so made-up
-   * addresses can't keep a member from signing in. */
+   * toward the total, so made-up addresses can't keep a member from signing
+   * in. */
   async reserveMail(email: string, viewer: string | undefined, member: boolean): Promise<void> {
-    if (!member) {
-      const day = Math.floor(this.context.now / 86400);
-      if ((await this.context.store.peek(auth.bounceKey(email), day)) >= auth.DOMAIN_BOUNCES_A_DAY) {
-        this.log({ event: 'mail-limited', limit: 'domain-bounces' });
-        reject(429, 'limited');
-      }
-    }
     const hour = Math.floor(this.context.now / 3600),
       checks = [
         { name: 'address', key: 'email:' + auth.digest(auth.limitAddress(email)), limit: auth.LIMIT_PER_ADDRESS }

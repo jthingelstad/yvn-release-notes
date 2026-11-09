@@ -423,9 +423,10 @@ notes.yourversionnumber.com
   revoked-session and deleting-account races. Existing email links, codes,
   sessions and accounts keep their wire/storage formats. A session for an
   address with no account yet is in no account's list, so neither deleting
-  an account nor "Sign out other devices" could end it: it lasts the
-  15-minute sign-in window, is never renewed, and sign-up gives it a whole
-  session (SIGNIN-4 of the 2026-11-08 security audit).
+  an account nor "Sign out other devices" could end it: it lasts an hour
+  (`SIGNUP_TTL`) to sign up in, is never renewed, and sign-up gives it a
+  whole session (SIGNIN-4 of the 2026-11-08 security audit; an hour, not the
+  link's 15 minutes, since 2026-11-09).
 - **Export downloads come only from this site:** `/api/export*` answers 403
   `origin` when the browser's `Sec-Fetch-Site` names another site, since a
   download is a plain link and the cookie is `SameSite=Lax`; `same-origin`,
@@ -474,13 +475,10 @@ notes.yourversionnumber.com
   (an IPv4 address or an IPv6 /64), 60 per IPv6 /48 and 200 in all to
   addresses with no account, each per hour; past one, the answer is 429. A
   member's mail never counts toward the 200, so made-up addresses can't keep
-  members from signing in. When 5 sign-in emails to addresses with no
-  account bounce from one domain in a UTC day (`DOMAIN_BOUNCES_A_DAY`,
-  counted by the events function), mail to new addresses there stops until
-  the day turns (`mail-limited` with `domain-bounces`), to keep bounces off
-  SES (2026-11-08). While the total or a domain's stop holds, a 429 for one
-  address and a 202 for another says which has an account. They are checked narrowest
-  first and only an email that goes counts, so one network past its own
+  members from signing in. While the total holds, a 429 for one address and
+  a 202 for another says which has an account. The 2026-11-08 stop on a
+  domain's sign-in bounces was removed on 2026-11-09. They are checked
+  narrowest first and only an email that goes counts, so one network past its own
   limit cannot use up the total (2026-10-09); the metric
   `ReleaseNotes/SignInTotalLimited` counts each time the total is reached. The
   network comes from CloudFront's `CloudFront-Viewer-Address`, which the

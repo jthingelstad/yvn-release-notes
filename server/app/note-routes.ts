@@ -76,7 +76,8 @@ export async function noteRoutes(service: SessionService, pattern: string, args:
     );
   }
   if (pattern === '/api/days/{date}/notes') {
-    if ((await store.count(`webnotes:${uid}`, Math.floor(ctx.now / 86400), 86400)) > WEB_NOTES_A_DAY)
+    // A count, on the plain table: the note's own write proves the session.
+    if ((await service.rawStore.count(`webnotes:${uid}`, Math.floor(ctx.now / 86400), 86400)) > WEB_NOTES_A_DAY)
       reject(429, 'note-limit');
     const b = await body(service.request),
       text = textFrom(b, Boolean(b.uploads)),

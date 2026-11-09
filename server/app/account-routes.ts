@@ -159,14 +159,14 @@ export async function accountRoutes(
       token = auth.newToken();
     // A session for an address with no account yet is in no account's list,
     // so neither deleting an account nor signing out other devices ends it;
-    // it lasts the sign-in window, and sign-up gives it a whole session
-    // (2026-11-08, SIGNIN-4).
+    // it lasts an hour to sign up in, and sign-up gives it a whole session
+    // (2026-11-08, SIGNIN-4; an hour since 2026-11-09).
     if (
       !(await store.createSession(auth.digest(token), {
         user_id: uid,
         email: uid ? null : email,
         now: ctx.now,
-        expires: uid ? auth.sessionExpiry(ctx.now) : ctx.now + auth.LOGIN_TTL
+        expires: uid ? auth.sessionExpiry(ctx.now) : ctx.now + auth.SIGNUP_TTL
       }))
     )
       reject(403, 'no-account');

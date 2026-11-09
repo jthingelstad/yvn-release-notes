@@ -270,6 +270,19 @@ test('a day takes three tries at commentary that don’t finish, and ten books a
     await fail();
   }
   assert.equal(rate('commentary-tries'), COMMENTARY_TRIES_A_DAY);
+  // Both counts are plain UpdateItems, never proved transactions (2026-11-09).
+  for (const counter of ['RATE#commentary-tries:', 'RATE#builds:'])
+    assert.deepEqual(
+      [
+        ...new Set(
+          store.memory.calls
+            .filter(({ name, input }) => name !== 'GetCommand' && String(input.Key?.pk ?? '').startsWith(counter))
+            .map(({ name }) => name)
+        )
+      ],
+      ['UpdateCommand'],
+      counter
+    );
   const tries = await book(true);
   assert.deepEqual([tries.status, tries.data.error, tries.data.max], [429, 'book-commentary-tries', 3]);
   // A refused try starts nothing and counts no build; without commentary it goes ahead.

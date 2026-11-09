@@ -311,20 +311,26 @@ export async function file(
   // (media.others). A retry after the note was filed counts nothing: its
   // files were counted the first time, and the duplicate path below must
   // still find them to tag (Codex on #339). A retry from before then counts
-  // them again, erring towards fewer.
-  let limited = 0;
+  // them again, erring towards fewer. Each file keeps its number in the email
+  // whichever were counted, so every attempt, and a second copy of the mail
+  // arriving at once, writes a file under its own key alone (Codex on #340).
+  let limited = 0,
+    numbers = photos.map((_, i) => i + 1);
   if (!(await s.store.note(sub.user_id, seen.day!, mail.messageId, true))) {
     const counted: typeof photos = [],
+      countedNumbers: number[] = [],
       utcDay = Math.floor(received(mail) / 86400);
     for (const [i, photo] of photos.entries()) {
-      if (await s.store.countUpload(sub.user_id, utcDay, photo[1].length, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY))
+      if (await s.store.countUpload(sub.user_id, utcDay, photo[1].length, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY)) {
         counted.push(photo);
-      else {
+        countedNumbers.push(i + 1);
+      } else {
         limited++;
         if (files[cameFrom[i]!]) files[cameFrom[i]!]!.refused = true;
       }
     }
     photos = counted;
+    numbers = countedNumbers;
   }
   const day = seen.day!,
     version = seen.version!,
@@ -337,7 +343,8 @@ export async function file(
       sub.user_id,
       day,
       mail.messageId,
-      photos
+      photos,
+      numbers
     ),
     tagged = textTags(text),
     note: Item = {

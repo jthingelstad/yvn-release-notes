@@ -5,7 +5,7 @@ import { simpleParser } from 'mailparser';
 import { FakeStore } from '../../packages/testing/store.ts';
 import { FakeObjects, FakeMail } from '../../packages/testing/services.ts';
 import * as media from '../../packages/backend/media.ts';
-import { UPLOADS_A_DAY } from '../../packages/backend/uploads.ts';
+import { UPLOAD_BYTES_A_DAY, UPLOADS_A_DAY } from '../../packages/backend/uploads.ts';
 import { Subscriber, type Item } from '../../packages/backend/store.ts';
 import * as sender from '../../workers/send.ts';
 import * as inbound from '../../workers/inbound.ts';
@@ -726,6 +726,34 @@ test("a retry after the note was filed keeps its files, though the day's uploads
     false
   );
   assert.equal(f.store.memory.all().find((i) => i.pk === rate)?.n, UPLOADS_A_DAY);
+});
+test('an emailed file keeps its number in the email when the day refused one before it, through a retry', async () => {
+  const big = '%PDF-' + 'x'.repeat(200),
+    raw =
+      'From: ada@example.com\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nTwo menus\r\n' +
+      `--b\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=a.pdf\r\n\r\n${big}\r\n` +
+      '--b\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=b.pdf\r\n\r\n%PDF-test\r\n--b--',
+    f = await replyFixture(raw),
+    rate = `RATE#upload:u#${Math.floor(Date.parse('2026-10-13T12:00:00Z') / 1000 / 86400)}`,
+    prefix = 'media/u/2026-10-11/synthetic-id/',
+    tag = f.objects.tag.bind(f.objects);
+  // Room for the small second file, not the large first.
+  f.store.seed({ pk: rate, sk: 'RATE', n: 0, bytes: UPLOAD_BYTES_A_DAY - 50 });
+  f.objects.tag = async (key, tags) => {
+    if (key.startsWith('media/')) throw new Error('tag failed');
+    return tag(key, tags);
+  };
+  await assert.rejects(() => inbound.process(ses(), f.services), /tag failed/);
+  f.objects.tag = tag;
+  await inbound.process(ses(), f.services);
+  const [n] = await f.store.dayNotes('u', '2026-10-11');
+  assert.deepEqual(
+    (n!.media as Item[]).map((m) => [m.n, m.name, m.key]),
+    [[2, 'b.pdf', prefix + '2.pdf']]
+  );
+  assert.deepEqual(await f.objects.list(prefix), [prefix + '2.pdf']);
+  assert.equal((await f.objects.get(prefix + '2.pdf')).body.toString().trim(), '%PDF-test');
+  assert.equal((await f.objects.tags(prefix + '2.pdf')).outcome, 'note');
 });
 test('media storage failure retries before note commit, stable copies produce one kept note', async () => {
   const audio = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(1200)]).toString('base64'),

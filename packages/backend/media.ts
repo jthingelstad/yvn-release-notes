@@ -224,13 +224,17 @@ export async function storeFiles(
   user: string,
   day: string,
   id: string,
-  files: readonly (readonly [string, Buffer, string?])[]
+  files: readonly (readonly [string, Buffer, string?])[],
+  // Each file's number, when not its place in `files` (inbound mail: its
+  // place in the email, so every attempt keys a file alike).
+  numbers: readonly number[] = files.map((_, i) => i + 1)
 ): Promise<MediaEntry[]> {
   const entries: MediaEntry[] = [];
   for (const [i, [type, data, name]] of files.entries()) {
-    const k = key(user, day, id, i + 1, type);
+    const n = numbers[i]!,
+      k = key(user, day, id, n, type);
     await objects.put(k, data, { type, disposition: 'inline' });
-    entries.push({ n: i + 1, kind: kind(type), type, size: data.length, key: k, ...(name ? { name } : {}) });
+    entries.push({ n, kind: kind(type), type, size: data.length, key: k, ...(name ? { name } : {}) });
   }
   return entries;
 }

@@ -188,6 +188,8 @@ test('the web role grants every request each route and the OAuth endpoints make'
   await call('GET', '/api/sample?birthday=1981-06-14');
   await call('POST', '/api/auth/start', { email: 'ada@example.com', turnstile_token: 't'.repeat(40) }, 202);
   const link = /#t=([A-Za-z0-9_-]{43})/.exec(await lastMail())![1]!;
+  // The link's page reads whose account it opens first (SIGNIN-3).
+  await call('POST', '/api/auth/link', { token: link });
   await call('POST', '/api/auth/verify', { token: link });
   await call('GET', '/api/me');
   // A bounced account restarts: its address leaves the suppression list.

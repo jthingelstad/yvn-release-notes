@@ -7,7 +7,7 @@ import type { Item, Key } from './store-types.ts';
 import { chosen, clean, notePlaceOf } from './places.ts';
 import { iso, localDay, validDay, addDays, daysBetween } from '../domain/dates.ts';
 import { profileView, pauseStart } from './views.ts';
-import { validCode, digest, clearCookie } from './auth.ts';
+import { validCode, digest, clearCookie, sessionExpiry } from './auth.ts';
 import { keys, thumbKeys } from './media.ts';
 import { OAuthService } from './oauth.ts';
 import { badges } from './badges.ts';
@@ -175,7 +175,7 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
         : {};
     let uid = randomUUID().replace(/-/g, ''),
       p: Item = { birthday, send_time: time, status: 'active', created_at: iso(ctx.now), ...fields, ...standing };
-    if (!(await store.createSubscriberVerified(uid, email, p, String(s.hash), ctx.now, Number(s.expires_at)))) {
+    if (!(await store.createSubscriberVerified(uid, email, p, String(s.hash), ctx.now, sessionExpiry(ctx.now)))) {
       const existing = await store.userForEmail(email);
       if (!existing) reject(409, 'try-again');
       uid = existing;
@@ -197,7 +197,7 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
         ...givingEvents({ birthday }, member ? today : null)
       ]);
     }
-    if (!(await store.claimVerifiedSession(String(s.hash), uid, email, ctx.now, Number(s.expires_at))))
+    if (!(await store.claimVerifiedSession(String(s.hash), uid, email, ctx.now, sessionExpiry(ctx.now))))
       reject(401, 'signed-out');
     service.log({ event: 'signup', user: uid });
     return profileView({ email, ...p }, ctx.now, ctx.inboundDomain);

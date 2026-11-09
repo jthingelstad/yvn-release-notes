@@ -75,7 +75,7 @@ async function setup() {
 }
 test('every existing route is declared; unknown paths/private queries never logged; Origin precedes body or writes', async () => {
   const s = await setup();
-  assert.equal(ROUTES.length, 102);
+  assert.equal(ROUTES.length, 103);
   const missing = await s.call('GET', '/secret-note?q=token');
   assert.equal(missing.r.status, 404);
   assert.equal(missing.r.headers.get('cache-control'), 'no-store');
@@ -418,6 +418,50 @@ test('export words and zip status/download keep owner-private wire contracts', a
   assert.deepEqual([over.r.status, (over.b as Item).error], [429, 'build-limit']);
   assert.equal((await s.store.export('u'))!.id, build.id);
   assert.equal(s.invocations.calls.length, 1);
+});
+test('a sign-in link’s page learns whose account it opens, and which this browser is in, without using it (SIGNIN-3)', async () => {
+  const s = await setup(),
+    link = async (token: string, email: string, purpose?: 'delete', ttl = 900) => {
+      await s.store.putLogin(auth.digest(token), email, auth.digest(email), auth.digest('111111'), now, ttl, purpose);
+      return token;
+    },
+    eve = await link('e'.repeat(43), 'eve@example.com');
+  const seen = await s.call('POST', '/api/auth/link', { token: eve });
+  assert.deepEqual([seen.r.status, seen.b], [200, { email: 'eve@example.com', signed_in_as: 'ada@example.com' }]);
+  assert.deepEqual((await s.call('POST', '/api/auth/link', { token: eve }, '')).b, {
+    email: 'eve@example.com',
+    signed_in_as: null
+  });
+  // Looking used nothing up: it still signs in, once, and then says nothing.
+  assert.equal((await s.call('POST', '/api/auth/verify', { token: eve }, '')).r.status, 200);
+  for (const token of [
+    eve,
+    await link('d'.repeat(43), 'ada@example.com', 'delete'),
+    await link('x'.repeat(43), 'old@example.com', undefined, 0),
+    'short',
+    'n'.repeat(43)
+  ]) {
+    const r = await s.call('POST', '/api/auth/link', { token }, '');
+    assert.deepEqual([r.r.status, (r.b as Item).error], [400, 'link-used-or-expired'], token);
+  }
+  // A POST from another site is refused before anything is read.
+  assert.equal((await s.call('POST', '/api/auth/link', { token: eve }, '', false)).r.status, 403);
+  assert.ok(!JSON.stringify(s.logs).includes('eve@example.com'));
+});
+test('an export starts only from this site, or typed in; another site’s link logs nothing (SIGNIN-6)', async () => {
+  const s = await setup(),
+    get = (path: string, site?: string) =>
+      s.app.request(path, {
+        headers: { cookie: auth.COOKIE + '=' + s.token, ...(site ? { 'sec-fetch-site': site } : {}) }
+      });
+  for (const site of ['cross-site', 'same-site'])
+    for (const path of ['/api/export', '/api/export?format=md', '/api/export/zip', '/api/export/zip/file']) {
+      const r = await get(path, site);
+      assert.deepEqual([r.status, ((await r.json()) as Item).error], [403, 'origin'], `${site} ${path}`);
+    }
+  assert.ok(!(await s.store.activityAll('u')).some((a) => String(a.sk).includes('#export.')));
+  for (const site of ['same-origin', 'none', undefined]) assert.equal((await get('/api/export', site)).status, 200);
+  assert.equal((await s.store.activityAll('u')).filter((a) => String(a.sk).includes('#export.')).length, 3);
 });
 test('an account writes WEB_NOTES_A_DAY notes a UTC day on the web; past that nothing is kept', async () => {
   const s = await setup(),

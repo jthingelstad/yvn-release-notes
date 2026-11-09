@@ -76,7 +76,8 @@ export class SessionService {
     const profile = s.user_id ? await this.rawStore.mcpProfile(String(s.user_id)) : null;
     if (s.user_id && !profile) return null;
     const answer: Item = { ...s, hash };
-    if (!profile?.mcp_deleting && this.context.now - Number(s.seen_at ?? 0) >= auth.SESSION_TOUCH) {
+    // A session with no account yet keeps its sign-in window (SIGNIN-4).
+    if (s.user_id && !profile?.mcp_deleting && this.context.now - Number(s.seen_at ?? 0) >= auth.SESSION_TOUCH) {
       const expires = auth.sessionExpiry(this.context.now);
       if (!(await this.rawStore.renewSession(hash, s.user_id ? String(s.user_id) : null, this.context.now, expires)))
         return null;

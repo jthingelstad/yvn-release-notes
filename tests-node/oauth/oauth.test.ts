@@ -86,8 +86,22 @@ test('PKCE/resource/client/redirect, code single use and expiry without TTL', as
     await assert.rejects(service.exchange({ ...body, ...changed }), OAuthError);
   const token = await service.exchange(body);
   assert.ok(await service.bearer(String(token.access_token)));
+  // The code coming back ends what it made, refresh token and all (SIGNIN-5).
   await assert.rejects(service.exchange(body), OAuthError);
-  assert.equal(await new OAuthService({ ...ctx, now: NOW + 3600 }).bearer(String(token.access_token)), null);
+  assert.equal(await service.bearer(String(token.access_token)), null);
+  await assert.rejects(
+    service.exchange({
+      grant_type: 'refresh_token',
+      refresh_token: String(token.refresh_token),
+      client_id: body.client_id!,
+      resource: ORIGIN + '/mcp'
+    }),
+    OAuthError
+  );
+  // An access token lasts an hour.
+  const fresh = await service.exchange(await consent(ctx));
+  assert.ok(await new OAuthService({ ...ctx, now: NOW + 3599 }).bearer(String(fresh.access_token)));
+  assert.equal(await new OAuthService({ ...ctx, now: NOW + 3600 }).bearer(String(fresh.access_token)), null);
   const expired = await consent(ctx);
   await assert.rejects(new OAuthService({ ...ctx, now: NOW + 300 }).exchange(expired), OAuthError);
   const opaque = String(token.access_token);
@@ -419,4 +433,32 @@ test("a known client's name registers only with its own callbacks; consent says 
     to: 'client.example',
     to_kind: 'web'
   });
+});
+test('registration counts each /64 and its /48, and the Changelog app apart from the total (SIGNIN-7)', async () => {
+  const ctx = fixture(),
+    hour = Math.floor(NOW / 3600),
+    register = async (viewer: string, uri = 'https://client.example/cb', name = 'Agent') =>
+      (
+        await publicOAuth(
+          ctx,
+          new Request(ORIGIN + '/oauth/register', {
+            method: 'POST',
+            body: JSON.stringify({ client_name: name, redirect_uris: [uri] })
+          }),
+          { viewer }
+        )
+      ).status;
+  // Sixty /64s in one /48 register once each; the sixty-first is refused there.
+  for (let n = 0; n < 60; n++) assert.equal(await register(`2001:db8:1:${n.toString(16)}::1`), 201, String(n));
+  assert.equal(await register('2001:db8:1:ff::1'), 429);
+  assert.equal(await register('2001:db8:2::1'), 201);
+  // An IPv4 address is its own network, with no wider step.
+  for (let n = 0; n < 20; n++) assert.equal(await register('198.51.100.7'), 201);
+  assert.equal(await register('198.51.100.7'), 429);
+  // The total for everyone is full: others wait, the Changelog app does not.
+  ctx.store.seed({ pk: `RATE#oauth:register:total#${hour}`, sk: 'RATE', n: 200, expires_at: (hour + 2) * 3600 });
+  assert.equal(await register('2001:db8:3::1'), 429);
+  assert.equal(await register('2001:db8:3::2', 'com.yourversionnumber.changelog:/oauth', 'Changelog'), 201);
+  ctx.store.seed({ pk: `RATE#oauth:register:changelog#${hour}`, sk: 'RATE', n: 200, expires_at: (hour + 2) * 3600 });
+  assert.equal(await register('2001:db8:3::3', 'com.yourversionnumber.changelog:/oauth', 'Changelog'), 429);
 });

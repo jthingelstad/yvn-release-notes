@@ -2315,6 +2315,13 @@ export class Store {
     if (!item || Number(item.expires_at ?? 0) <= now || (item.purpose ?? 'signin') !== purpose) return 'gone';
     return Object.hasOwn(item, 'used_at') ? 'used' : 'attempts';
   }
+  /** The address a sign-in link signs in, while it still can, without using
+   * it up: the link's page shows it before the tap (2026-11-08, SIGNIN-3). */
+  async loginEmail(hash: string, now: number): Promise<string | null> {
+    const item = await this.get({ pk: `LOGIN#${hash}`, sk: 'LOGIN' }, { ConsistentRead: true });
+    if (!item || Object.hasOwn(item, 'used_at') || Number(item.expires_at ?? 0) <= now) return null;
+    return (item.purpose ?? 'signin') === 'signin' ? String(item.email) : null;
+  }
   async burnLogin(hash: string, now: number, purpose: Purpose = 'signin') {
     try {
       return (

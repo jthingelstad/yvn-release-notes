@@ -7,7 +7,7 @@ description: Export everything you've kept as a zip, files and all, or the words
 
 In **You**, then **Settings**, under **Keep a copy**, **Export everything** puts together every note you've kept, with its day and version, every photo, recording and PDF, and your settings, in one zip. With lots of photos it can take a few minutes, and you can leave the page and come back.
 
-When it's ready, **Download the zip**. It's there for a day; **Make a fresh one** replaces it with a new one.
+When it's ready, **Download the zip**. It's there for a day; **Make a fresh one** replaces it with a new one. An account makes up to 10 books and zips a day, the two together.
 
 ## What's inside
 

@@ -1,5 +1,12 @@
 // What the pages say for each error the API (or the page) gives.
-import { COMMENTARY_PER_RELEASE, MAX_PHOTOS, MAX_TITLE } from '../../../packages/book/limits.ts';
+import {
+  BUILDS_A_DAY,
+  COMMENTARY_PER_RELEASE,
+  COMMENTARY_TRIES_A_DAY,
+  MAX_PHOTOS,
+  MAX_TITLE
+} from '../../../packages/book/limits.ts';
+import { WEB_NOTES_A_DAY } from '../../../packages/domain/notes.ts';
 import { MEMBERS_URL } from './weekly-thing.ts';
 import { isRefusal, TAG_SAY } from './tags.ts';
 
@@ -78,6 +85,7 @@ export const SAY: Record<string, Line> = {
   'too-many-files': 'A note holds up to 20 files.',
   'last-file': 'A note with no words keeps its last file. Delete the note instead.',
   'upload-limit': 'That’s more files than one day takes. Try again tomorrow.',
+  'note-limit': `That’s ${WEB_NOTES_A_DAY} notes written here today, the most one day takes. Try again tomorrow.`,
   busy: 'That note just changed. Reload the page and try again.',
   microphone:
     'Release Notes can’t use the microphone. Allow it for this site in your browser’s settings, then try again.',
@@ -106,6 +114,8 @@ export const SAY: Record<string, Line> = {
   ],
   'book-commentary-days': 'Claude comments on up to a year of days at once. Pick fewer days, or leave it off.',
   'book-commentary-left': `That’s this release’s ${COMMENTARY_PER_RELEASE} books with commentary. More come with your birthday.`,
+  'book-commentary-tries': `Claude’s commentary didn’t finish ${COMMENTARY_TRIES_A_DAY} times today. Try again tomorrow, or make the book without it.`,
+  'build-limit': `That’s ${BUILDS_A_DAY} books and zips today, the most one day makes. Try again tomorrow.`,
   title: `A title is one line of at most ${MAX_TITLE} characters.`
 };
 

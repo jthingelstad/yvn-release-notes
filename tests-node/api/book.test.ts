@@ -10,6 +10,7 @@ import * as auth from '../../packages/backend/auth.ts';
 import type { ApiContext } from '../../packages/backend/sessions.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { bookKey } from '../../workers/export.ts';
+import { BUILDS_A_DAY, COMMENTARY_TRIES_A_DAY } from '../../packages/book/limits.ts';
 
 const now = Date.parse('2026-10-13T17:00:00Z') / 1000,
   origin = 'https://notes.example.com';
@@ -250,6 +251,44 @@ test('a book that could not start, or ran past the worker, says it failed', asyn
   assert.equal((await call('GET', '/api/book')).data.reason, 'empty');
 });
 
+test('a day takes three tries at commentary that don’t finish, and ten books and zips together', async () => {
+  const { store, call, ctx, invocations } = await fixture();
+  const day = Math.floor(now / 86400),
+    book = (commentary: boolean) =>
+      call('POST', '/api/book', { from: '2026-10-12', to: '2026-10-12', ...(commentary ? { commentary: true } : {}) }),
+    fail = async () =>
+      store.finishExport(
+        'u',
+        String((await store.export('u', 'BOOK'))!.id),
+        { status: 'failed', reason: 'commentary', finished_at: ctx.now },
+        'BOOK'
+      ),
+    rate = (name: string, on = day) => store.memory.read({ pk: `RATE#${name}:u#${on}`, sk: 'RATE' })?.n;
+  for (let i = 0; i < COMMENTARY_TRIES_A_DAY; i++) {
+    assert.equal((await book(true)).status, 202);
+    assert.equal((await store.export('u', 'BOOK'))!.tried, day);
+    await fail();
+  }
+  assert.equal(rate('commentary-tries'), COMMENTARY_TRIES_A_DAY);
+  const tries = await book(true);
+  assert.deepEqual([tries.status, tries.data.error, tries.data.max], [429, 'book-commentary-tries', 3]);
+  // A refused try starts nothing and counts no build; without commentary it goes ahead.
+  assert.equal(rate('builds'), COMMENTARY_TRIES_A_DAY);
+  assert.equal((await book(false)).status, 202);
+  assert.equal((await store.export('u', 'BOOK'))!.tried, undefined);
+  await fail();
+  // A book that finished gave its try back (workers/export.ts), as the next UTC day starts afresh.
+  ctx.now = (day + 1) * 86400 + 60;
+  assert.equal((await book(true)).status, 202);
+  assert.equal(rate('commentary-tries', day + 1), 1);
+  await fail();
+  // Ten builds a day, books and zips together.
+  store.seed({ pk: `RATE#builds:u#${day + 1}`, sk: 'RATE', n: BUILDS_A_DAY, expires_at: (day + 3) * 86400 });
+  const calls = invocations.calls.length;
+  for (const r of [await book(false), await call('POST', '/api/export/zip', {})])
+    assert.deepEqual([r.status, r.data.error], [429, 'build-limit']);
+  assert.equal(invocations.calls.length, calls);
+});
 test('a Supporting Member may ask for Claude’s commentary on up to a year, ten finished books a release', async () => {
   const { store, call, invocations, ctx } = await fixture({ u: 'member', b: 'subscriber' });
   const book = (extra: Item, token = 'u') =>

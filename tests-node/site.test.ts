@@ -22,6 +22,7 @@ import { build } from 'vite';
 import { MAX_PAUSE_DAYS } from '../packages/backend/accounts.ts';
 import { MAX_FILES, MAX_UPLOAD } from '../packages/backend/media.ts';
 import { NEARBY_MAX } from '../packages/backend/places.ts';
+import { TILES_A_DAY } from '../packages/backend/maps.ts';
 import { MAX_A_DAY } from '../packages/backend/transcribe.ts';
 import { FORM_SECONDS, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY } from '../packages/backend/uploads.ts';
 import {
@@ -34,10 +35,17 @@ import {
 } from '../packages/backend/tokens.ts';
 import { LOGIN_TTL, SESSION_IDLE } from '../packages/backend/auth.ts';
 import { SCOPES as GRANTED } from '../packages/backend/oauth.ts';
-import { COMMENTARY_DAYS, COMMENTARY_PER_RELEASE, MAX_PHOTOS, PAGE_SIZES } from '../packages/book/limits.ts';
+import {
+  BUILDS_A_DAY,
+  COMMENTARY_DAYS,
+  COMMENTARY_PER_RELEASE,
+  COMMENTARY_TRIES_A_DAY,
+  MAX_PHOTOS,
+  PAGE_SIZES
+} from '../packages/book/limits.ts';
 import { BADGES } from '../packages/domain/badges.ts';
 import { SCREENSHOTS_MAX } from '../packages/domain/feedback.ts';
-import { MAX_NOTE } from '../packages/domain/notes.ts';
+import { MAX_NOTE, WEB_NOTES_A_DAY } from '../packages/domain/notes.ts';
 import { SEARCH_DAYS } from '../packages/domain/search.ts';
 import { MAX_TAG, MAX_TAGS } from '../packages/domain/tags.ts';
 import { PINS_MAX, RECENT_DAYS, RECENT_MAX } from '../packages/backend/tag-row.ts';
@@ -328,6 +336,10 @@ async function checkedPhrases() {
     `within ${FORM_SECONDS / 60} minutes`,
     `${UPLOADS_A_DAY} files and ${UPLOAD_BYTES_A_DAY / 1024 ** 3} GB a day`,
     `past the day’s ${UPLOADS_A_DAY}`,
+    `up to ${BUILDS_A_DAY} books and zips a day`,
+    `fails ${COMMENTARY_TRIES_A_DAY} times in a day`,
+    `up to ${WEB_NOTES_A_DAY} notes a day on the web`,
+    `up to ${TILES_A_DAY.toLocaleString('en-US')} pieces of the map a day`,
     `up to ${NEARBY_MAX} businesses`,
     `up to ${V1_UPCOMING_MAX} dates a request`,
     `up to ${REMINDER_DAYS_MAX} days ahead`,

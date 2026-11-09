@@ -18,3 +18,12 @@ export const isPageSize = (value: unknown): value is PageSize => PAGE_SIZES.incl
 export const COMMENTARY_PER_RELEASE = 10;
 /** Claude comments on at most a year of days at once. */
 export const COMMENTARY_DAYS = 366;
+/** Books with commentary an account may start in a UTC day that don't
+ * finish (the 2026-11-08 security audit: each try is a paid call to Claude,
+ * and a failed book doesn't count against the release's ten). One that
+ * finishes gives its try back. */
+export const COMMENTARY_TRIES_A_DAY = 3;
+/** Books and zips an account starts in a UTC day, the two together (the
+ * 2026-11-08 security audit: the export worker builds two at once for
+ * everyone, so one account restarting builds could keep a slot all day). */
+export const BUILDS_A_DAY = 10;

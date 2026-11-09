@@ -191,7 +191,10 @@ export async function runBook(
     from = String(found?.from ?? ''),
     to = String(found?.to ?? ''),
     // The release it counts against, set when it was asked for (books.ts).
-    release = found?.commentary === true && Number.isInteger(found.release) ? Number(found.release) : null;
+    release = found?.commentary === true && Number.isInteger(found.release) ? Number(found.release) : null,
+    // The UTC day its try at commentary was counted (books.ts), given back
+    // if it finishes.
+    tried = release !== null && Number.isInteger(found!.tried) ? Number(found!.tried) : undefined;
   if (
     !found ||
     found.id !== id ||
@@ -312,7 +315,8 @@ export async function runBook(
       { status: 'ready', finished_at: finished, export_key: key, size, ...made, expires_at: finished + READY_FOR },
       'BOOK',
       // A finished book with commentary counts against its release.
-      release ?? undefined
+      release ?? undefined,
+      tried
     ))
   ) {
     await objects.remove(key);

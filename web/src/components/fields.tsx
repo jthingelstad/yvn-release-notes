@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, get } from '../lib/api.ts';
 import { clock, megabytes, SEND_TIMES } from '../lib/format.ts';
+import { SAY } from '../lib/say.ts';
 import type { ZipStatus } from '../lib/types.ts';
 import { Icon } from './icon.tsx';
 
@@ -164,7 +165,7 @@ export function ZipExport({ secondary = false }: { secondary?: boolean }) {
     meta: { bounce: false }
   });
   const [starting, setStarting] = useState(false);
-  const [couldNot, setCouldNot] = useState(false);
+  const [couldNot, setCouldNot] = useState<string | null>(null);
   const z = zip.data;
   const state = z?.status || 'none';
 
@@ -173,15 +174,17 @@ export function ZipExport({ secondary = false }: { secondary?: boolean }) {
     const r = await api<ZipStatus>('POST', '/api/export/zip');
     setStarting(false);
     if (r.status === 202) {
-      setCouldNot(false);
+      setCouldNot(null);
       client.setQueryData(['zip'], r.data);
       return;
     }
-    setCouldNot(true);
+    setCouldNot(
+      r.status === 429 ? String(SAY['build-limit']) : 'Couldn’t start the export just now. Try again in a minute.'
+    );
   };
 
   let status = '';
-  if (couldNot) status = 'Couldn’t start the export just now. Try again in a minute.';
+  if (couldNot) status = couldNot;
   else if (state === 'building')
     status =
       'Putting it together. With lots of photos it can take a few minutes, and you can leave this page and come back.';

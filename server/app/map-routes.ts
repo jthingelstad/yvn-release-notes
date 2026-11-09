@@ -1,7 +1,7 @@
 /** The Map page: the owner's placed notes, and the base map it is drawn on,
  * passed through from Amazon Location (packages/backend/maps.ts). */
 import { SessionService, reject } from '../../packages/backend/sessions.ts';
-import { ownStyle, pins, type MapFile, type Scheme } from '../../packages/backend/maps.ts';
+import { TILES_A_DAY, ownStyle, pins, type MapFile, type Scheme } from '../../packages/backend/maps.ts';
 import { writtenAt, type NoteRecord } from '../../packages/domain/notes.ts';
 import { searchedText } from '../../packages/domain/search.ts';
 import { body, json, searchFrom } from './requests.ts';
@@ -60,6 +60,8 @@ export async function mapRoutes(service: SessionService, pattern: string, args: 
   if (pattern === '/api/map/tiles/{z}/{x}/{y}') {
     const [z, x, y] = args.map(Number) as [number, number, number];
     if (z > 22 || x >= 2 ** z || y >= 2 ** z) reject(404, 'not-found');
+    if ((await ctx.store.count(`tiles:${uid}`, Math.floor(ctx.now / 86400), 86400)) > TILES_A_DAY)
+      reject(429, 'map-limit');
     return served(await maps.tile(z, x, y));
   }
   if (pattern === '/api/map/glyphs/{fonts}/{range}') {

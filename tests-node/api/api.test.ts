@@ -12,6 +12,9 @@ import * as auth from '../../packages/backend/auth.ts';
 import { withWebProof } from '../../packages/backend/guarded-store.ts';
 import { sameDayBefore } from '../../packages/domain/version.ts';
 import { V1_LIMITS } from '../../packages/backend/tokens.ts';
+import { TILES_A_DAY } from '../../packages/backend/maps.ts';
+import { WEB_NOTES_A_DAY } from '../../packages/domain/notes.ts';
+import { BUILDS_A_DAY } from '../../packages/book/limits.ts';
 const origin = 'https://notes.example.com',
   now = Date.parse('2026-10-13T12:00:00Z') / 1000,
   profile = {
@@ -407,6 +410,29 @@ test('export words and zip status/download keep owner-private wire contracts', a
   assert.equal(file.r.status, 302);
   assert.equal(file.r.headers.get('cache-control'), 'no-store');
   assert.ok(file.r.headers.get('location')?.includes('seconds=300'));
+  // Books and zips count together, BUILDS_A_DAY a UTC day (the 2026-11-08
+  // security audit); past that nothing is built and the last zip stays.
+  const day = Math.floor(s.ctx.now / 86400);
+  s.store.seed({ pk: `RATE#builds:u#${day}`, sk: 'RATE', n: BUILDS_A_DAY, expires_at: (day + 2) * 86400 });
+  const over = await s.call('POST', '/api/export/zip', {});
+  assert.deepEqual([over.r.status, (over.b as Item).error], [429, 'build-limit']);
+  assert.equal((await s.store.export('u'))!.id, build.id);
+  assert.equal(s.invocations.calls.length, 1);
+});
+test('an account writes WEB_NOTES_A_DAY notes a UTC day on the web; past that nothing is kept', async () => {
+  const s = await setup(),
+    day = Math.floor(s.ctx.now / 86400);
+  s.store.seed({ pk: `RATE#webnotes:u#${day}`, sk: 'RATE', n: WEB_NOTES_A_DAY - 1, expires_at: (day + 2) * 86400 });
+  assert.equal((await s.call('POST', '/api/days/2026-10-13/notes', { text: 'The last today' })).r.status, 201);
+  const over = await s.call('POST', '/api/days/2026-10-13/notes', { text: 'One too many' });
+  assert.deepEqual([over.r.status, (over.b as Item).error], [429, 'note-limit']);
+  assert.deepEqual(
+    (await s.store.allNotes('u')).map((n) => n.text),
+    ['The last today']
+  );
+  // The next UTC day starts again.
+  s.ctx.now += 86400;
+  assert.equal((await s.call('POST', '/api/days/2026-10-13/notes', { text: 'Tomorrow' })).r.status, 201);
 });
 
 test('a deleting account blocks ordinary writes but an existing live owner session can finish confirmed deletion', async () => {
@@ -1379,6 +1405,14 @@ test('the map pins notes with a place of their own and passes the base map throu
   ])
     assert.equal((await s.call('GET', path)).r.status, 404, path);
   assert.equal(asked.length, 5);
+  // An account draws TILES_A_DAY tiles a UTC day; past that Amazon Location
+  // isn't asked (the 2026-11-08 security audit).
+  const day = Math.floor(s.ctx.now / 86400);
+  s.store.seed({ pk: `RATE#tiles:u#${day}`, sk: 'RATE', n: TILES_A_DAY - 1, expires_at: (day + 2) * 86400 });
+  assert.equal((await s.call('GET', '/api/map/tiles/3/2/2')).r.status, 200);
+  const over = await s.call('GET', '/api/map/tiles/3/2/2');
+  assert.deepEqual([over.r.status, (over.b as Item).error], [429, 'map-limit']);
+  assert.equal(asked.length, 6);
 });
 test("each map pin says when its note was written, for the Map's Trails, or null when nothing says", async () => {
   const s = await setup(),

@@ -54,9 +54,12 @@ test('the export role grants every request a build, a replaced build, a failed b
       from: '2026-10-12',
       to: '2026-10-12',
       commentary: true,
-      release: 45
+      release: 45,
+      tried: Math.floor(now / 86400)
     })
   );
+  // Its try at commentary, counted when it was asked for (books.ts).
+  await aws.aside(store, null, () => store.tryCommentary('u1', Math.floor(now / 86400)));
   const secrets = {
       async send(command: { input: { SecretId: string } }) {
         aws.add(
@@ -75,6 +78,8 @@ test('the export role grants every request a build, a replaced build, a failed b
   const book = { ...context, writer: claudeFrom(aws.env.SECRET!, secrets as never, () => opus) };
   assert.equal(await runBook(book, 'u1', 'book-a'), 'ready');
   assert.equal(store.memory.read({ pk: 'USER#u1', sk: 'COMMENTARY#45' })?.made, 1);
+  // Finished, it gives that try back in the same write.
+  assert.equal(store.memory.read({ pk: `RATE#commentary-tries:u1#${Math.floor(now / 86400)}`, sk: 'RATE' })?.n, 0);
   files.get = async () => {
     throw new Error('Unavailable');
   };

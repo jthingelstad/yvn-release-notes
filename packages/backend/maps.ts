@@ -21,6 +21,10 @@ import { blocks, flat, isRich } from '../domain/rich.ts';
 export type Scheme = 'Light' | 'Dark';
 export const STYLE = 'Standard',
   TILESET = 'vector.basemap';
+/** Base map tiles an account draws in a UTC day (the 2026-11-08 security
+ * audit: each tile the browser hasn't kept is a paid GetTile). A busy visit
+ * to the Map is a few hundred. */
+export const TILES_A_DAY = 5000;
 export interface MapFile {
   body: Uint8Array;
   type: string;

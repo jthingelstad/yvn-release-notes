@@ -67,13 +67,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.21.6';
+export const API_VERSION = '1.21.7';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.21.7',
+    date: '2026-11-08',
+    summary:
+      'POST /v1/check-ins keeps no spot or time in its 7-day Idempotency-Key receipt that the answer shows as the request sent (`lat`, `lon`, `accuracy_m`, `arrived`, `left`, `at`): a replay, which has the same request, fills them back in. So a stop at an ignored place, or one deleted since, leaves no spot or time behind. A replay answers exactly as before, and no request changed.'
+  },
   {
     version: '1.21.6',
     date: '2026-11-08',

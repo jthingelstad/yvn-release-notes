@@ -127,7 +127,7 @@ export const UPCOMING_HINTS: Record<string, string> = {
   'upcoming-email': 'email is true or false.',
   'upcoming-reminders': 'reminders are up to six different days from 0 to 365.',
   'upcoming-limit': `The account can hold ${UPCOMING_MAX} saved dates.`,
-  'upcoming-batch': 'Send at most 50 entries per call.'
+  'upcoming-batch': `Send at most ${UPCOMING_MAX} entries per call.`
 };
 
 /** A refusal's hint, the tags field's own reason first. */

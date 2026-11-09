@@ -124,8 +124,9 @@ and 103 Upcoming dates. It printed counts only, never a tag or a person.
   `tag` stays, since every writer still keeps it for this release.
 
 Each write is conditional on the words and tags read, with the account proof,
-so anything changed since is counted and left. Every reader still names an
-unnamed tag from its note's hashtags, or by its key.
+so anything changed since is counted and left. A dry run on 2026-11-09 found
+nothing left to write, and the tool was removed (it is in git history). A
+reader names a tag that has no stored name by its key.
 
 ## Jamie's calls
 

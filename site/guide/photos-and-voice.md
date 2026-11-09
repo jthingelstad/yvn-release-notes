@@ -25,7 +25,7 @@ Each photo gets a small copy for the email, so photos travel inside the email it
 
 In **You**, then **Settings**, under **Recordings**, turn on **Write out what I say** and each voice memo gets written out as text underneath it, so you can skim it and search it. It takes a minute or two. Turning it on writes out the ones you already have, too.
 
-The recordings are sent to Amazon Transcribe to do it, up to 30 recordings a day. It's off until you turn it on.
+The recordings are sent to Amazon Transcribe to do it, up to 30 recordings a day and 120 minutes of them. A recording too long to fit in a day isn't written out. It's off until you turn it on.
 
 ## Describe my photos
 

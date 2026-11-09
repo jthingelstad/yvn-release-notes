@@ -278,3 +278,44 @@ test('a job for a removed recording finishes on nothing, not on the recording ad
   assert.equal(file!.transcript, undefined);
   assert.equal(await s.store.processing('u', 'transcribe', day, id, n), null);
 });
+test('120 minutes of recordings a UTC day; a longer recording is never sent', async () => {
+  // WAV headers that say how long each runs: 1,000 bytes a second.
+  const wav = (seconds: number) => {
+    const b = Buffer.alloc(44);
+    b.write('RIFF', 0, 'latin1');
+    b.write('WAVE', 8, 'latin1');
+    b.write('fmt ', 12, 'latin1');
+    b.writeUInt32LE(16, 16);
+    b.writeUInt32LE(1000, 28);
+    b.write('data', 36, 'latin1');
+    b.writeUInt32LE(1000 * seconds, 40);
+    return b;
+  };
+  const recording = (n: number, seconds: number) => ({
+    ...audio(n),
+    key: `media/u/${day}/${id}/${n}.wav`,
+    type: 'audio/wav',
+    size: 44 + 1000 * seconds
+  });
+  const s = configured(),
+    media = [recording(0, 50 * 60), recording(1, 50 * 60), recording(2, 50 * 60), recording(3, 3 * 3600)];
+  for (const m of media) await s.objects.put(m.key, wav((m.size - 44) / 1000), { type: 'audio/wav' });
+  s.store.seed({ ...s.note, media });
+  assert.equal(await t.start((await s.store.note('u', day, id))!, 'u', s.services), 2);
+  assert.deepEqual(
+    s.starts.map((j) => j.key),
+    [media[0]!.key, media[1]!.key]
+  );
+  const rate = s.store.memory.read({ pk: `RATE#transcribe:u#${Math.floor(now / 86400)}`, sk: 'RATE' })!;
+  assert.equal(rate.secs, 2 * 50 * 60);
+  assert.equal(rate.n, 2);
+  // The third would pass 120 minutes; the 3-hour one never fits a day.
+  assert.ok(s.logs.some((l) => l.event === 'transcribe-not-claimed' && l.seconds === 3000));
+  assert.ok(s.logs.some((l) => l.event === 'transcribe-too-long' && l.seconds === 3 * 3600));
+  assert.equal(await s.store.processing('u', 'transcribe', day, id, 2), null);
+  assert.equal(await s.store.processing('u', 'transcribe', day, id, 3), null);
+  // The next UTC day has room again.
+  s.services.clock = () => now + 86400;
+  assert.equal(await t.start((await s.store.note('u', day, id))!, 'u', s.services), 1);
+  assert.equal(s.starts.at(-1)!.key, media[2]!.key);
+});

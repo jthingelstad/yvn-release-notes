@@ -699,6 +699,34 @@ test("emailed files count against the day's uploads; past it the note is filed a
     ['media/u/2026-10-11/synthetic-id/1.pdf']
   );
 });
+test("a retry after the note was filed keeps its files, though the day's uploads were spent filing it", async () => {
+  const raw =
+      'From: ada@example.com\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nA menu\r\n' +
+      '--b\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=a.pdf\r\n\r\n%PDF-test\r\n--b--',
+    f = await replyFixture(raw),
+    rate = `RATE#upload:u#${Math.floor(Date.parse('2026-10-13T12:00:00Z') / 1000 / 86400)}`,
+    file = 'media/u/2026-10-11/synthetic-id/1.pdf',
+    tag = f.objects.tag.bind(f.objects);
+  f.store.seed({ pk: rate, sk: 'RATE', n: UPLOADS_A_DAY - 1, bytes: 0 });
+  f.objects.tag = async (key, tags) => {
+    if (key.startsWith('media/')) throw new Error('tag failed');
+    return tag(key, tags);
+  };
+  await assert.rejects(() => inbound.process(ses(), f.services), /tag failed/);
+  f.objects.tag = tag;
+  await inbound.process(ses(), f.services);
+  const [n] = await f.store.dayNotes('u', '2026-10-11');
+  assert.deepEqual(
+    (n!.media as Item[]).map((m) => m.key),
+    [file]
+  );
+  assert.equal((await f.objects.tags(file)).outcome, 'note');
+  assert.equal(
+    f.objects.calls.some((c) => c.operation === 'remove' && c.key === file),
+    false
+  );
+  assert.equal(f.store.memory.all().find((i) => i.pk === rate)?.n, UPLOADS_A_DAY);
+});
 test('media storage failure retries before note commit, stable copies produce one kept note', async () => {
   const audio = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(1200)]).toString('base64'),
     raw = `From: ada@example.com\r\nContent-Type: audio/mpeg\r\nContent-Disposition: attachment; filename=memo.mp3\r\nContent-Transfer-Encoding: base64\r\n\r\n${audio}`,

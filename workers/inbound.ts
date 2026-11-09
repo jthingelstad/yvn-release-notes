@@ -308,19 +308,24 @@ export async function file(
   // web's and every token's (the 2026-11-08 security audit: email had no
   // count, and each photo is a description and maybe a paid place lookup).
   // Past it the note is still filed, and those files show as in the email
-  // (media.others). A retry counts its files again, erring towards fewer.
+  // (media.others). A retry after the note was filed counts nothing: its
+  // files were counted the first time, and the duplicate path below must
+  // still find them to tag (Codex on #339). A retry from before then counts
+  // them again, erring towards fewer.
   let limited = 0;
-  const counted: typeof photos = [],
-    utcDay = Math.floor(received(mail) / 86400);
-  for (const [i, photo] of photos.entries()) {
-    if (await s.store.countUpload(sub.user_id, utcDay, photo[1].length, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY))
-      counted.push(photo);
-    else {
-      limited++;
-      if (files[cameFrom[i]!]) files[cameFrom[i]!]!.refused = true;
+  if (!(await s.store.note(sub.user_id, seen.day!, mail.messageId, true))) {
+    const counted: typeof photos = [],
+      utcDay = Math.floor(received(mail) / 86400);
+    for (const [i, photo] of photos.entries()) {
+      if (await s.store.countUpload(sub.user_id, utcDay, photo[1].length, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY))
+        counted.push(photo);
+      else {
+        limited++;
+        if (files[cameFrom[i]!]) files[cameFrom[i]!]!.refused = true;
+      }
     }
+    photos = counted;
   }
-  photos = counted;
   const day = seen.day!,
     version = seen.version!,
     found = text ? await collect(text, { named, fetch: s.titleFetch }) : [],

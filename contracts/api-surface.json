@@ -40,10 +40,15 @@
   },
   "info": {
     "title": "Release Notes API",
-    "version": "1.21.7",
+    "version": "1.22.0",
     "summary": "Add notes to Release Notes and read them back, from a terminal, a script or an app.",
     "description": "Make a token in Release Notes under Settings, API tokens, and send it as `Authorization: Bearer rn_...`. An app can sign in instead, with OAuth for the resource /v1: the owner chooses the token it gets. Notes come from the owner, shown with “via <token name>”. With `media:write`, a note takes photos, recordings and PDFs, uploaded first to a signed form, and a new note can have a place. With the `upcoming` scope, a token keeps Upcoming dates too, and reads the reminders each morning carries. With `notes:read`, a token reads the whole archive and writes nothing (1.15.0). The guide is at /guide/api/, all of it in one file for agents at /guide/api/llms.txt, and what each version added at /guide/api/changelog/.\n\nBodies are JSON in UTF-8, at most 256 KB, which holds the longest note with every character escaped. With `Accept: text/plain`, any answer is text instead: a line, or a line for each thing a list holds, and a note’s words as they are.\n\nEvery write but an upload form and Here takes an optional `Idempotency-Key`; its receipt answers the same request again for 7 days, sent through any token of the account. A write that counts toward a limit says where it stands in `RateLimit-*`; a replay counts nothing.\n\nA day in UTC, an account may add 100 notes, make 200 other changes, save Upcoming 50 times and name 100 spots across its tokens, and upload 200 files with the web's; each token may read 2,000 times.",
     "x-changes": [
+      {
+        "version": "1.22.0",
+        "date": "2026-11-08",
+        "summary": "GET /v1/tags, the tag row, needs a token that adds or reads notes: `notes:write` or `notes:read` (`notes:all` comes with `notes:write`). A token for Upcoming or the activity log alone now gets `scope_required`, where before any token could read the recent tag names. Changelog and every app that adds notes are unchanged. This is the second exception to `/v1` only gaining things, after 1.8.0."
+      },
       {
         "version": "1.21.7",
         "date": "2026-11-08",
@@ -1598,7 +1603,7 @@
         ],
         "operationId": "getTags",
         "summary": "The tag row: pinned tags, then the most used lately",
-        "description": "The pinned tags, then the tags used most in the last 30 days that aren't pinned, ties broken by last use. Any token may read it.",
+        "description": "The pinned tags, then the tags used most in the last 30 days that aren't pinned, ties broken by last use. A token that adds or reads notes may read it (any token before 1.22.0).",
         "responses": {
           "200": {
             "description": "OK",
@@ -1622,11 +1627,29 @@
         },
         "security": [
           {
-            "token": []
+            "token": [
+              "notes:write"
+            ]
           },
           {
-            "signIn": []
+            "signIn": [
+              "notes:write"
+            ]
+          },
+          {
+            "token": [
+              "notes:read"
+            ]
+          },
+          {
+            "signIn": [
+              "notes:read"
+            ]
           }
+        ],
+        "x-scope": "notes:write",
+        "x-scope-also": [
+          "notes:read"
         ]
       }
     },
@@ -4077,7 +4100,7 @@
           },
           "api_version": {
             "type": "string",
-            "example": "1.21.7"
+            "example": "1.22.0"
           }
         }
       },

@@ -25,7 +25,7 @@ What a token may do is ticked when you make it. [API tokens](/guide/tokens/) has
 | `upcoming` | Read and change your Upcoming dates, all of them, not only the ones it added. No other token reaches them. |
 | `activity` | Read the activity log and your check-ins. |
 
-Any token may read `GET /v1/me` and `GET /v1/tags`, and revoke itself with `DELETE /v1/token`.
+Any token may read `GET /v1/me` and revoke itself with `DELETE /v1/token`. `GET /v1/tags` needs a token that adds or reads notes.
 
 ## Errors
 

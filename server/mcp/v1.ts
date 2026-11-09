@@ -67,13 +67,21 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.21.7';
+export const API_VERSION = '1.22.0';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
- * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
- * `moment` before any released app sent one (Jamie, 2026-10-30). A new
- * version starts with its entry. */
+ * here with its date. The exceptions are 1.8.0, which withdrew 1.6.0's
+ * `moment` before any released app sent one (Jamie, 2026-10-30), and 1.22.0,
+ * which closed GET /v1/tags to tokens that neither add nor read notes (Jamie,
+ * 2026-11-08, product call 9 of the security audit). A new version starts
+ * with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.22.0',
+    date: '2026-11-08',
+    summary:
+      'GET /v1/tags, the tag row, needs a token that adds or reads notes: `notes:write` or `notes:read` (`notes:all` comes with `notes:write`). A token for Upcoming or the activity log alone now gets `scope_required`, where before any token could read the recent tag names. Changelog and every app that adds notes are unchanged. This is the second exception to `/v1` only gaining things, after 1.8.0.'
+  },
   {
     version: '1.21.7',
     date: '2026-11-08',
@@ -319,7 +327,8 @@ const NOTE = /^\/v1\/notes\/([^/]{1,40})\/([A-Za-z0-9_.-]{1,80})$/,
 const ARCHIVE = { scope: 'notes:read', also: ['notes:all'] } as const;
 
 /** Every route: method, path, name, and the scope it needs (none: any token),
- * or any one of `scope` and `also`. */
+ * or any one of `scope` and `also`, with the sentence a refusal says when the
+ * scope's own would mislead. */
 export const V1_ROUTES: readonly {
   method: string;
   path: RegExp;
@@ -327,6 +336,7 @@ export const V1_ROUTES: readonly {
   name: string;
   scope: string | null;
   also?: readonly string[];
+  refusal?: string;
 }[] = [
   { method: 'GET', path: /^\/v1\/me$/, template: '/v1/me', name: 'me', scope: null },
   {
@@ -408,7 +418,15 @@ export const V1_ROUTES: readonly {
     name: 'places.here',
     scope: 'notes:write'
   },
-  { method: 'GET', path: /^\/v1\/tags$/, template: '/v1/tags', name: 'tags', scope: null },
+  {
+    method: 'GET',
+    path: /^\/v1\/tags$/,
+    template: '/v1/tags',
+    name: 'tags',
+    scope: 'notes:write',
+    also: ['notes:read'],
+    refusal: "This token can't read your tags. Make a token that may add or read notes."
+  },
   {
     method: 'PUT',
     path: /^\/v1\/tags\/pinned$/,
@@ -918,7 +936,12 @@ export async function handleV1(request: Request, options: McpOptions): Promise<R
       params = (route.path.exec(path) ?? []).slice(1);
     uid = String(token.user_id);
     if (route.scope && ![route.scope, ...(route.also ?? [])].some((s) => scopes.includes(s)))
-      return refuse('scope_required', asText, headers, SCOPE_REFUSALS[route.also ? 'notes:read' : route.scope]);
+      return refuse(
+        'scope_required',
+        asText,
+        headers,
+        route.refusal ?? SCOPE_REFUSALS[route.also ? 'notes:read' : route.scope]
+      );
 
     // Writes go on to the capture function, which proves the token again.
     if (route.method !== 'GET') {

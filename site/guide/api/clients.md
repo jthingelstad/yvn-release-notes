@@ -73,7 +73,7 @@ The API sends no CORS headers and refuses a request that carries another site's 
 
 ## What can change
 
-The API's `/v1/openapi.json` describes every request and answer, for tools that make clients from it, and its `x-changes` lists what each version added. The API only ever gains things: a new request, a new optional field, a new error code. Anything that would break a client would come at a new address, `/v2`, never under `/v1`.
+The API's `/v1/openapi.json` describes every request and answer, for tools that make clients from it, and its `x-changes` lists what each version added. The API only ever gains things: a new request, a new optional field, a new error code. Anything that would break a client would come at a new address, `/v2`, with the two exceptions [the changelog](/guide/api/changelog/) names.
 
 ## Try it without an account
 

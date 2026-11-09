@@ -97,5 +97,5 @@ Send photos as JPEG, PNG or WebP where you can. A HEIC photo is kept as it is, w
 
 ## Tags
 
-- `GET /v1/tags`: your tag row, the pinned tags and then up to 20 recent ones, the tags used most in the last 30 days. Any token may ask. Each has its key and, from version 1.21.0, its name: `pinned_names` beside `pinned`, and a `name` on each recent one.
+- `GET /v1/tags`: your tag row, the pinned tags and then up to 20 recent ones, the tags used most in the last 30 days. A token that adds or reads notes may ask. Each has its key and, from version 1.21.0, its name: `pinned_names` beside `pinned`, and a `name` on each recent one.
 - `PUT /v1/tags/pinned`: replace your pinned tags, with `{"pinned": ["house", "Road Trip"]}`, up to 12 tags, by name, in any language's letters, like `Москва` or `東京`. They're the same ones the web shows under the note box.

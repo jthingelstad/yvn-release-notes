@@ -18,6 +18,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 - When an app or agent asks to connect, the page says where Allow sends you, under the name the app gave itself. Only the real Changelog, Claude and ChatGPT can use those names now, and Cancel no longer sends you on to the website that asked.
 - Files you email count toward an account's 200 files and 2 GB a day, as files added on the web and through apps do. Past that, an email's files stay in the email, and its note is still kept. [Photos, voice memos and PDFs](/guide/photos-and-voice/) has more.
 - An account writes up to 200 notes a day on the web, makes up to 10 books and zips a day, and draws up to 5,000 pieces of the map a day. If a book's commentary fails 3 times in a day, it waits until the next day. [Make a book](/guide/book/) has more.
+- Members can always get a sign-in email, even while Release Notes is turning away a flood of them for addresses with no account. Signing up takes a plain email address, and if sign-in emails to new addresses at one email provider keep bouncing, sign-ups there wait until the next day.
 
 ## 0.0.30 · November 6
 

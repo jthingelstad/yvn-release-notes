@@ -1197,6 +1197,8 @@ test('events skip unparseable records and no-account addresses without private l
     bounce: { bounceType: 'Permanent', bouncedRecipients: [{ emailAddress: 'Nobody@Example.com' }] }
   };
   await events.handler(sns(signin, 'signin-1'), null, s);
+  // SNS delivers it again: counted once.
+  await events.handler(sns(signin, 'signin-1'), null, s);
   await events.handler(sns({ ...signin, bounce: { bounceType: 'Transient', bouncedRecipients: [] } }, 'soft'), null, s);
   await events.handler(
     sns(
@@ -1211,6 +1213,8 @@ test('events skip unparseable records and no-account addresses without private l
     s
   );
   assert.equal(await f.store.peek(bounceKey('unknown@example.com'), today), 1);
+  await events.handler(sns(signin, 'signin-2'), null, s);
+  assert.equal(await f.store.peek(bounceKey('unknown@example.com'), today), 2);
   assert.ok(!JSON.stringify(f.logs).includes('@'));
 });
 

@@ -528,6 +528,35 @@ test('a book build is its own row beside the zip, with exact native SDK requests
   assert.equal((await s.export('u'))?.id, 'zip');
   assert.equal((await s.export('u', 'BOOK'))?.pages, 9);
 });
+test('a sign-in bounce counts against its domain once per receipt, in one write with the receipt', async () => {
+  const s = setup(),
+    now = 20400 * 86400 + 3600;
+  assert.equal(await s.countBounce('bounces:d', 'r1', now), true);
+  const items = (s.memory.calls.at(-1)!.input as { TransactItems?: unknown[] }).TransactItems!;
+  assert.deepEqual(items, [
+    {
+      Update: {
+        TableName: 'T',
+        Key: { pk: 'BOUNCE#r1', sk: 'BOUNCE' },
+        UpdateExpression: 'SET expires_at = :exp',
+        ConditionExpression: 'attribute_not_exists(pk)',
+        ExpressionAttributeValues: { ':exp': 20402 * 86400 }
+      }
+    },
+    {
+      Update: {
+        TableName: 'T',
+        Key: { pk: 'RATE#bounces:d#20400', sk: 'RATE' },
+        UpdateExpression: 'ADD n :one SET expires_at = :exp',
+        ExpressionAttributeValues: { ':one': 1, ':exp': 20402 * 86400 }
+      }
+    }
+  ]);
+  assert.equal(await s.countBounce('bounces:d', 'r1', now), false);
+  assert.equal(await s.peek('bounces:d', 20400), 1);
+  assert.equal(await s.countBounce('bounces:d', 'r2', now), true);
+  assert.equal(await s.peek('bounces:d', 20400), 2);
+});
 test('a finished book with commentary is counted against its release in the same write', async () => {
   const s = setup();
   assert.equal(await s.commentaryMade('u', 45), 0);

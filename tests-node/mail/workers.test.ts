@@ -10,6 +10,7 @@ import { Subscriber, type Item } from '../../packages/backend/store.ts';
 import * as sender from '../../workers/send.ts';
 import * as inbound from '../../workers/inbound.ts';
 import * as events from '../../workers/events.ts';
+import { bounceKey } from '../../packages/backend/auth.ts';
 import { parseHeaders } from '../../packages/mail/parse.ts';
 import { noticeText } from '../../packages/mail/compose.ts';
 import { computeVersion } from '../../packages/domain/version.ts';
@@ -1186,6 +1187,30 @@ test('events skip unparseable records and no-account addresses without private l
     s
   );
   assert.equal(lines[0]?.users instanceof Array, true);
+  // A daily email's bounce doesn't count against the domain; a sign-in
+  // email's (no List-Unsubscribe) does, for the UTC day, once per record.
+  const today = Math.floor(now / 86400);
+  assert.equal(await f.store.peek(bounceKey('unknown@example.com'), today), 0);
+  const signin = {
+    ...bounce(),
+    mail: { ...(bounce().mail as Item), headers: [{ name: 'Subject', value: 'secret code' }] },
+    bounce: { bounceType: 'Permanent', bouncedRecipients: [{ emailAddress: 'Nobody@Example.com' }] }
+  };
+  await events.handler(sns(signin, 'signin-1'), null, s);
+  await events.handler(sns({ ...signin, bounce: { bounceType: 'Transient', bouncedRecipients: [] } }, 'soft'), null, s);
+  await events.handler(
+    sns(
+      {
+        ...signin,
+        eventType: 'Complaint',
+        complaint: { complainedRecipients: [{ emailAddress: 'nobody@example.com' }] }
+      },
+      'complaint-new'
+    ),
+    null,
+    s
+  );
+  assert.equal(await f.store.peek(bounceKey('unknown@example.com'), today), 1);
   assert.ok(!JSON.stringify(f.logs).includes('@'));
 });
 

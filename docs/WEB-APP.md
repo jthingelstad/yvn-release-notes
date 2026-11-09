@@ -455,9 +455,19 @@ notes.yourversionnumber.com
 
   SES production access is account-wide and shared with Elixir's sign-in
   mail, so these limits protect both.
-  The limits are 5 sign-in emails per address (without any +tag), 20 per
-  network (an IPv4 address or an IPv6 /64), 60 per IPv6 /48 and 200 in all,
-  each per hour; past one, the answer is 429. They are checked narrowest
+  Only plain addresses are accepted (an ASCII dot-atom at a domain name, no
+  quotes, display names or lists), so one mailbox can't be written many
+  ways. The limits are 5 sign-in emails per address (without any +tag, and
+  at Gmail without dots, with googlemail.com as gmail.com), 20 per network
+  (an IPv4 address or an IPv6 /64), 60 per IPv6 /48 and 200 in all to
+  addresses with no account, each per hour; past one, the answer is 429. A
+  member's mail never counts toward the 200, so made-up addresses can't keep
+  members from signing in. When 5 sign-in emails to addresses with no
+  account bounce from one domain in a UTC day (`DOMAIN_BOUNCES_A_DAY`,
+  counted by the events function), mail to new addresses there stops until
+  the day turns (`mail-limited` with `domain-bounces`), to keep bounces off
+  SES (2026-11-08). While the total or a domain's stop holds, a 429 for one
+  address and a 202 for another says which has an account. They are checked narrowest
   first and only an email that goes counts, so one network past its own
   limit cannot use up the total (2026-10-09); the metric
   `ReleaseNotes/SignInTotalLimited` counts each time the total is reached. The

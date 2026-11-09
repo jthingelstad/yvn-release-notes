@@ -108,7 +108,7 @@ export async function accountRoutes(
       ...turnstileClient(b)
     });
     if (!turnstile.allowed) reject(403, 'turnstile');
-    await service.reserveMail(email, viewer);
+    await service.reserveMail(email, viewer, (await store.userForEmail(email)) !== null);
     const login = await service.newLogin(email);
     try {
       await ctx.mail.send(
@@ -225,7 +225,7 @@ export async function accountRoutes(
   if (pattern === '/api/me/weekly-thing') return json(await subscribeWeeklyThing(service));
   if (pattern === '/api/me/delete-code') {
     const { uid, profile: p } = await service.account(true);
-    await service.reserveMail(String(p.email));
+    await service.reserveMail(String(p.email), undefined, true);
     const { code } = await service.newLogin(String(p.email), 'delete');
     try {
       await ctx.mail.send(await deleteMessage({ to: String(p.email), fromAddr: ctx.from, code }), String(p.email));

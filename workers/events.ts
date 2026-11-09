@@ -4,7 +4,7 @@
  * A stop goes in the owner's activity log, with its reason and nothing of
  * the notification. */
 import { createHash } from 'node:crypto';
-import { normalEmail } from '../packages/backend/auth.ts';
+import { bounceKey, normalEmail } from '../packages/backend/auth.ts';
 import type { Store, Item } from '../packages/backend/store.ts';
 import type { Log } from '../packages/backend/services.ts';
 import { activityLog, recordActivity } from '../packages/backend/activity.ts';
@@ -106,6 +106,7 @@ export async function handler(
       continue;
     }
     const [reason, rawAddresses] = recipients(msg),
+      kind = mailKind(msg),
       users: (string | null)[] = [];
     for (const raw of rawAddresses) {
       const parsed = await addresses([raw]),
@@ -113,6 +114,11 @@ export async function handler(
         user = email ? await services.store.userForEmail(email) : null;
       users.push(user);
       if (!user) {
+        // A sign-in email to an address with no account bounced: it counts
+        // against the address's domain for the UTC day, and at
+        // DOMAIN_BOUNCES_A_DAY sign-in mail there stops (sessions.ts).
+        if (reason === 'bounce' && email && kind === 'account')
+          await services.store.count(bounceKey(email), Math.floor(now / 86400), 86400);
         log({ event: 'mail-event', reason, outcome: 'no-account' });
         continue;
       }

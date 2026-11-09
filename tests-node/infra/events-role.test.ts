@@ -54,8 +54,18 @@ test('the events role grants every request a mail event makes', async () => {
     services
   );
   await events.handler(sns('DeliveryDelay', 'four'), null, services);
+  // A sign-in email (no List-Unsubscribe) to an address with no account
+  // bounced: counted against its domain.
+  await events.handler(
+    sns('Bounce', 'five', {
+      mail: { headers: [] },
+      bounce: { bounceType: 'Permanent', bouncedRecipients: [{ emailAddress: 'nobody@example.com' }] }
+    }),
+    null,
+    services
+  );
   assert.equal(store.memory.read({ pk: 'USER#u', sk: 'PROFILE' })?.stopped_reason, 'complaint');
-  assert.equal(lines.length, 4);
+  assert.equal(lines.length, 5);
 
   const made = aws.granted();
   assert.deepEqual([...new Set(made.map((r) => r.action))].sort(), [

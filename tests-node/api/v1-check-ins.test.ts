@@ -845,3 +845,28 @@ test('the check-ins at a place are counted, hidden or not, and deleted for that 
     'not_found'
   );
 });
+
+test('an Add notes token is not told the tags a stop took from a remembered place, only those it set (AUTHZ-2)', async () => {
+  const s = setup(),
+    owner = await make(s),
+    writer = await make(s, ['notes:write'], 'Writer'),
+    reader = await make(s, ['notes:write', 'activity'], 'Reader');
+  const made = await call(s, owner.token, 'POST', '/v1/check-ins/places', { name: 'Home', ...HOME, tags: ['family'] });
+  assert.equal(made.status, 201, JSON.stringify(made.json));
+  const first = await call(s, writer.token, 'POST', '/v1/check-ins', report(), 'authz2'),
+    again = await call(s, writer.token, 'POST', '/v1/check-ins', report(), 'authz2');
+  assert.equal(first.status, 201, JSON.stringify(first.json));
+  assert.deepEqual([shown(first).tags, shown(first).tag_names, shown(first).label], [[], [], 'Uptown, Springfield']);
+  assert.deepEqual(again.json, first.json);
+  // The stop still took them; a token that reads the log sees them.
+  assert.deepEqual(checkIns(s)[0]!.tags, ['family']);
+  const seen = await call(s, reader.token, 'POST', '/v1/check-ins', report({ arrived: '2026-10-13T14:00:00Z' }));
+  assert.deepEqual([shown(seen).tags, shown(seen).label], [['family'], 'Home']);
+  // Naming its stop shows none still; tags it sends are the stop's own.
+  const id = String(shown(first).id),
+    named = await call(s, writer.token, 'PATCH', `/v1/check-ins/${id}`, { name: 'Lunch', revision: 1 });
+  assert.equal(named.status, 200, JSON.stringify(named.json));
+  assert.deepEqual([shown(named).tags, shown(named).tag_names], [[], []]);
+  const tagged = await call(s, writer.token, 'PATCH', `/v1/check-ins/${id}`, { tags: ['work'], revision: 2 });
+  assert.deepEqual(shown(tagged).tags, ['work']);
+});

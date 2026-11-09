@@ -758,9 +758,11 @@ export async function writeApi(
     return members;
   };
   // Remembered places are the account's, read with the log. A token that may
-  // only add its own stops sees what it sent, and no name it could probe for.
-  const namesFor = (places: readonly NamedPlace[]) =>
-    scopesOf(token).some((scope) => scope === 'activity' || scope === 'notes:all') ? places : [];
+  // only add its own stops sees what it sent, and no name it could probe for,
+  // nor the tags a stop took from a place (2026-11-08, AUTHZ-2).
+  const seesPlaces = scopesOf(token).some((scope) => scope === 'activity' || scope === 'notes:all'),
+    namesFor = (places: readonly NamedPlace[]) => (seesPlaces ? places : []),
+    ownTags = <T extends object>(view: T): T => (seesPlaces ? view : { ...view, tags: [], tag_names: [] });
   const stayProof = (members: readonly CheckIn[]) =>
     store.tokenProof(
       token,
@@ -901,7 +903,7 @@ export async function writeApi(
           changed = kept && (!same || same.left !== left),
           status = same || !kept ? 200 : 201,
           body = {
-            check_in: stayView([(changed || !kept ? item : same) as CheckIn], namesFor(places)),
+            check_in: ownTags(stayView([(changed || !kept ? item : same) as CheckIn], namesFor(places))),
             kept
           };
         Object.assign(rate, { lookups: lookups + (paid ? 1 : 0) });
@@ -954,7 +956,9 @@ export async function writeApi(
             revision: Number(m.revision) + 1
           })),
           retagged = tagging !== null && stayTagged(members, tagging).length > 0,
-          body = { check_in: stayView(named, namesFor(places)) };
+          view = stayView(named, namesFor(places)),
+          // Tags it sent are the stay's whole list, so they show as sent.
+          body = { check_in: tagging ? view : ownTags(view) };
         landed = await store.checkInWrites(
           uid,
           members.map((old, i) => ({ next: named[i]!, old })),

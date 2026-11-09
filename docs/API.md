@@ -243,7 +243,9 @@ There is no new DNS record, certificate or function.
   the key on them). Receipts last **7 days** on `/v1`, against
   24 hours on MCP, because a phone can be offline for a weekend.
   - The same key with the same request answers the first result again,
-    with `Idempotent-Replayed: true`.
+    with `Idempotent-Replayed: true`. A check-in's receipt keeps none of the
+    spot and times its request sent, and fills them back in from the replay
+    (docs/CHECK-INS.md).
   - The same key with a different request is a 422,
     `idempotency_mismatch`.
   - The key is optional, so a one-off curl still works. The client guide

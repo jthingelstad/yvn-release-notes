@@ -461,6 +461,46 @@ function checkInReport(args: Arguments, now: number, birthday: string, tz: strin
     });
   return { arrived, left, at, day, source, time_zone: zone ?? tz, ...spot };
 }
+/** The spot and times a check-in report sent, as checkInReport reads them.
+ * A receipt keeps none that the answer shows as sent, and a replay, which
+ * has the same request (its hash must match), puts them back. So a stop at
+ * an ignored place, or one deleted since, leaves no spot or time in its
+ * receipt for the week it is kept (2026-11-08, AUTHZ-3). */
+const SENT_FIELDS = ['lat', 'lon', 'accuracy_m', 'arrived', 'left', 'at'] as const;
+function sentFields(args: Arguments): OAuthRow {
+  const spot = spotOf(args),
+    when = (raw: unknown) =>
+      typeof raw === 'string' && Number.isFinite(Date.parse(raw)) ? new Date(Date.parse(raw)).toISOString() : null,
+    arrived = when(args.arrived),
+    left = when(args.left);
+  // With neither time a stop is at the moment it came in, which a replay can't know.
+  return {
+    lat: spot?.lat,
+    lon: spot?.lon,
+    accuracy_m: spot?.accuracy_m ?? null,
+    arrived,
+    left,
+    at: arrived ?? left ?? undefined
+  };
+}
+function leanReceipt(status: number, body: OAuthRow, args: Arguments) {
+  const view = body.check_in as OAuthRow,
+    sent = sentFields(args),
+    refilled = SENT_FIELDS.filter((field) => sent[field] !== undefined && view[field] === sent[field]);
+  return {
+    status,
+    body: { ...body, check_in: { ...view, ...Object.fromEntries(refilled.map((f) => [f, null])) } },
+    refilled
+  };
+}
+function replayed(saved: { body: OAuthRow | null; refilled?: string[] }, args: Arguments): OAuthRow | null {
+  if (!saved.body || !saved.refilled?.length) return saved.body;
+  const sent = sentFields(args);
+  return {
+    ...saved.body,
+    check_in: { ...(saved.body.check_in as OAuthRow), ...Object.fromEntries(saved.refilled.map((f) => [f, sent[f]])) }
+  };
+}
 /** `ignored` as sent for a place: true or false, or undefined when left out. */
 function ignoredFrom(args: Arguments): boolean | undefined {
   if (!Object.hasOwn(args, 'ignored')) return undefined;
@@ -806,8 +846,12 @@ export async function writeApi(
             'idempotency_mismatch',
             'That Idempotency-Key went with a different request. Use a new key for a new request.'
           );
-        const saved = JSON.parse(String(receipt.result)) as { status: number; body: OAuthRow | null };
-        return { status: saved.status, body: saved.body, replayed: true };
+        const saved = JSON.parse(String(receipt.result)) as {
+          status: number;
+          body: OAuthRow | null;
+          refilled?: string[];
+        };
+        return { status: saved.status, body: replayed(saved, args), replayed: true };
       }
       const previous = await store.mcpGet('MCPMETA#' + uid, rateKey),
         count = Number(previous?.n ?? 0);
@@ -843,11 +887,11 @@ export async function writeApi(
           ...fields,
           expires_at: now + 14 * 86400
         }),
-        receiptFor = (status: number, body: OAuthRow | null) => ({
+        receiptFor = (status: number, body: OAuthRow | null, lean = false) => ({
           pk: 'USER#' + uid,
           sk: receiptKey,
           request_hash: hash,
-          result: JSON.stringify({ status, body }),
+          result: JSON.stringify(lean && body ? leanReceipt(status, body, args) : { status, body }),
           expires_at: now + V1_RECEIPT_SECONDS
         });
 
@@ -912,7 +956,7 @@ export async function writeApi(
           changed ? [{ next: item, ...(same ? { old: same } : {}) }] : [],
           stayProof(same ? [same] : []),
           [
-            ...store.agentReceipts(receiptFor(status, body), audit({ checkin: id }), rate, previous, now),
+            ...store.agentReceipts(receiptFor(status, body, true), audit({ checkin: id }), rate, previous, now),
             ...legacyGuard()
           ]
         );

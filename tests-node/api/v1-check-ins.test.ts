@@ -8,7 +8,7 @@ import { STAY_WRITE_MAX } from '../../packages/domain/check-ins.ts';
 import assert from 'node:assert/strict';
 import { createMcpApp, type McpOptions } from '../../server/mcp/app.ts';
 import { captureNote, type CaptureContext } from '../../workers/capture.ts';
-import { Tokens, V1_LIMITS } from '../../packages/backend/tokens.ts';
+import { apiReceiptKey, Tokens, V1_LIMITS } from '../../packages/backend/tokens.ts';
 import { build, markdown } from '../../packages/backend/export.ts';
 import { checkInKey } from '../../packages/domain/check-ins.ts';
 import type { OAuthRow } from '../../packages/backend/oauth.ts';
@@ -869,4 +869,43 @@ test('an Add notes token is not told the tags a stop took from a remembered plac
   assert.deepEqual([shown(named).tags, shown(named).tag_names], [[], []]);
   const tagged = await call(s, writer.token, 'PATCH', `/v1/check-ins/${id}`, { tags: ['work'], revision: 2 });
   assert.deepEqual(shown(tagged).tags, ['work']);
+});
+
+test('a check-in receipt keeps no spot or time its request sent, and a replay puts them back (AUTHZ-3)', async () => {
+  const s = setup(),
+    t = await make(s),
+    receipt = (key: string) => {
+      const row = s.base.store.memory.all().find((r) => r.sk === apiReceiptKey(key))!;
+      return JSON.parse(String(row.result)) as { body: { check_in: OAuthRow }; refilled?: string[] };
+    },
+    again = async (body: OAuthRow, key: string, first: Awaited<ReturnType<typeof call>>) => {
+      const replay = await call(s, t.token, 'POST', '/v1/check-ins', body, key);
+      assert.equal(replay.response.headers.get('idempotent-replayed'), 'true', key);
+      assert.deepEqual([replay.status, replay.json], [first.status, first.json], key);
+    };
+  await call(s, t.token, 'POST', '/v1/check-ins/places', { name: 'Home', ...HOME, ignored: true });
+  // A stop at an ignored place: nothing kept, and its receipt has no spot or time.
+  const home = report({ left: LEAVE }),
+    ignored = await call(s, t.token, 'POST', '/v1/check-ins', home, 'home');
+  assert.deepEqual([ignored.status, ignored.json.kept, shown(ignored).lat], [200, false, HOME.lat]);
+  const kept = receipt('home');
+  assert.deepEqual(kept.refilled, ['lat', 'lon', 'accuracy_m', 'arrived', 'left', 'at']);
+  for (const field of kept.refilled!) assert.equal(kept.body.check_in[field], null, field);
+  assert.equal(kept.body.check_in.day, '2026-10-12');
+  await again(home, 'home', ignored);
+  // A stop deleted since: the replay answers as before, from the request.
+  const shop = report({ ...SHOP, left: LEAVE }),
+    made = await call(s, t.token, 'POST', '/v1/check-ins', shop, 'shop');
+  assert.equal(made.status, 201, JSON.stringify(made.json));
+  assert.equal((await call(s, t.token, 'DELETE', `/v1/check-ins/${String(shown(made).id)}`)).status, 204);
+  assert.ok(!JSON.stringify(receipt('shop')).includes(String(SHOP.lon)));
+  await again(shop, 'shop', made);
+  // A report that goes on with a stop shows the stop's own spot, which stays.
+  const open = await call(s, t.token, 'POST', '/v1/check-ins', report({ ...SHOP, arrived: '2026-10-13T14:00:00Z' })),
+    moved = report({ ...SHOP, lat: SHOP.lat + 0.0001, arrived: '2026-10-13T14:00:00Z', left: '2026-10-13T15:00:00Z' }),
+    closed = await call(s, t.token, 'POST', '/v1/check-ins', moved, 'moved');
+  assert.deepEqual([closed.status, shown(closed).id, shown(closed).lat], [200, shown(open).id, SHOP.lat]);
+  assert.deepEqual(receipt('moved').refilled, ['lon', 'accuracy_m', 'arrived', 'left', 'at']);
+  assert.equal(receipt('moved').body.check_in.lat, SHOP.lat);
+  await again(moved, 'moved', closed);
 });

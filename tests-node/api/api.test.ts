@@ -11,6 +11,7 @@ import type { Item } from '../../packages/backend/store-types.ts';
 import * as auth from '../../packages/backend/auth.ts';
 import { withWebProof } from '../../packages/backend/guarded-store.ts';
 import { sameDayBefore } from '../../packages/domain/version.ts';
+import { V1_LIMITS } from '../../packages/backend/tokens.ts';
 const origin = 'https://notes.example.com',
   now = Date.parse('2026-10-13T12:00:00Z') / 1000,
   profile = {
@@ -1012,6 +1013,24 @@ test("Here names the device's spot; a note keeps the spot exact and its neighbou
   };
   assert.equal((await s.call('POST', '/api/places/here', spot)).r.status, 502);
   s.ctx.nameSpot = naming;
+  // Each is a paid lookup (the 2026-11-08 security audit): a session that has
+  // verified an address but made no account is refused before any lookup,
+  // and an account's spots count against the day's 100, the row /v1 keeps,
+  // counted before the lookup, so the miss and the failure above count too.
+  const unclaimed = auth.newToken();
+  await s.store.putSession(auth.digest(unclaimed), { email: 'bea@example.com', now, expires: now + auth.SESSION_IDLE });
+  const lookups = asked.length,
+    refused = await s.call('POST', '/api/places/here', spot, unclaimed);
+  assert.deepEqual([refused.r.status, refused.b], [403, { error: 'no-account' }]);
+  assert.equal(asked.length, lookups);
+  const day = `WRITERATE#v1-here#${Math.floor(now / 86400)}`,
+    count = s.store.memory.all().find((r) => r.pk === 'MCPMETA#u' && r.sk === day)!;
+  assert.equal(count.n, 3);
+  s.store.seed({ ...count, n: V1_LIMITS.here });
+  const spent = await s.call('POST', '/api/places/here', spot);
+  assert.deepEqual([spent.r.status, spent.b], [429, { error: 'here-limit' }]);
+  assert.equal(asked.length, lookups);
+  assert.equal(s.store.memory.all().find((r) => r.pk === 'MCPMETA#u' && r.sk === day)!.n, V1_LIMITS.here);
 
   // A note written there keeps the spot; it shows by name, mapped to the spot.
   const added = await s.call('POST', '/api/days/2026-10-07/notes', {

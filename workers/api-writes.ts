@@ -38,6 +38,7 @@ import {
   spotOf,
   type SpotNames
 } from '../packages/backend/places.ts';
+import { spendHere } from '../packages/backend/here-budget.ts';
 import { keepDay, placeOf, type WeatherStore } from '../packages/backend/weather.ts';
 import { errorFields, safeLog } from '../packages/backend/services.ts';
 import { ApiError } from '../packages/backend/sessions.ts';
@@ -572,28 +573,15 @@ export async function writeApi(
       throw new ApiRefusal('invalid_request', 'Send lat and lon in degrees, and accuracy_m in metres if you have it.', {
         field: 'lat'
       });
-    const hereKey = `WRITERATE#v1-here#${Math.floor(now / 86400)}`,
-      cap = V1_LIMITS.here;
-    let remaining = -1;
-    for (let attempt = 0; attempt < 5 && remaining < 0; attempt++) {
-      const previous = await store.mcpGet('MCPMETA#' + uid, hereKey),
-        count = Number(previous?.n ?? 0);
-      if (count >= cap)
-        throw new ApiRefusal(
-          'rate_limited',
-          `That's today's ${cap} spots named through tokens. Try again after midnight UTC.`,
-          { retry_after: untilUtcMidnight(now) }
-        );
-      const row = {
-        pk: 'MCPMETA#' + uid,
-        sk: hereKey,
-        n: count + 1,
-        expires_at: (Math.floor(now / 86400) + 2) * 86400
-      };
-      if (await store.mcpCommit([[row, previous ? Number(previous.revision) : null]], uid)) remaining = cap - count - 1;
-      else await stillLive();
-    }
-    if (remaining < 0) throw new ApiRefusal('busy', 'Try again shortly.');
+    const cap = V1_LIMITS.here,
+      remaining = await spendHere(store, uid, now, stillLive);
+    if (remaining === 'limit')
+      throw new ApiRefusal(
+        'rate_limited',
+        `That's today's ${cap} spots named, on the web and through tokens. Try again after midnight UTC.`,
+        { retry_after: untilUtcMidnight(now) }
+      );
+    if (remaining === 'busy') throw new ApiRefusal('busy', 'Try again shortly.');
     let named: SpotNames | null;
     try {
       named = await (context.nameSpot ?? ((s) => nameSpot(s, (geo ??= new GeoPlacesClient({})))))(spot);

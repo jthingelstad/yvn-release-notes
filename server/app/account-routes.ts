@@ -23,6 +23,7 @@ import { checkTurnstile, turnstileClient, turnstileToken } from '../../packages/
 import { ACTIVITY_FAMILIES, activityId, activityView, familyOf, titled } from '../../packages/domain/activity.ts';
 import { eventId, recordActivity } from '../../packages/backend/activity.ts';
 import { spotOf, type SpotNames } from '../../packages/backend/places.ts';
+import { spendHere } from '../../packages/backend/here-budget.ts';
 import { photoLink, removePhoto, setPhoto } from '../../packages/backend/profile-photo.ts';
 import { findEgg } from '../../packages/backend/eggs.ts';
 import { json, body } from './requests.ts';
@@ -280,10 +281,15 @@ export async function accountRoutes(
   if (pattern === '/api/places/here') {
     // The device's spot, named for a note (AGENTS.md, Where a note was):
     // the city, the neighbourhood, and businesses near enough to offer.
-    // Coordinates travel in the body, never a logged URL.
-    await service.signedIn();
+    // Coordinates travel in the body, never a logged URL. Each is a paid
+    // lookup, so it takes an account and counts against the day's spots,
+    // shared with /v1 (here-budget.ts).
+    const { uid } = await service.account();
     const spot = spotOf(await body(service.request));
     if (!spot) reject(400, 'place');
+    const left = await spendHere(service.context.store, uid, ctx.now);
+    if (left === 'limit') reject(429, 'here-limit');
+    if (left === 'busy') reject(409, 'try-again');
     let named: SpotNames | null;
     try {
       named = await service.nameSpot(spot);

@@ -85,6 +85,7 @@ export const SAY: Record<string, Line> = {
   'location-denied':
     'Release Notes can’t use your location. Allow it for this site in your browser’s settings, then try again.',
   'place-unnamed': 'Couldn’t find a city for where you are. Pick one instead.',
+  'here-limit': 'That’s as many spots as one day names. Pick a city instead, or try again tomorrow.',
   'weekly-thing': 'Release Notes comes with the Weekly Thing, and this address isn’t subscribed yet.',
   'weekly-thing-unconfirmed':
     'Your Weekly Thing subscription isn’t confirmed yet. Open the email it sent you, confirm, then try again.',

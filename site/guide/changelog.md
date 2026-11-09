@@ -39,7 +39,7 @@ It numbers itself the way Release Notes numbers you. It started on October 29, 2
 - **Check in now** on Log adds where you are with a tap, with the switch on or off.
 - **In Activity:** a check-in has its row and its own filter. A row opens a page to name the place, once or for good, write about it or delete it. Settings keeps the places you remember.
 - A stop that can't go yet waits on the phone and goes once you're back online.
-- **A map of your check-ins:** **Map of check-ins** in Activity has one pin for each place you've stopped. A pin lists your stops there, and each one opens.
+- **A map of your check-ins:** **Map** in Activity has a ring for each place you've stopped. A ring lists your stops there, and each one opens.
 - **A Check In control:** add it to Control Center, the Lock Screen or the Action Button. It opens Changelog and checks in where you are.
 
 ## 0.0.7 · November 5

@@ -8,6 +8,7 @@ Release Notes numbers itself the way it numbers you. It shipped on October 7, 20
 ## 0.0.33 · November 9
 
 - Email to Release Notes must come encrypted now, as Gmail, iCloud, Outlook and every major provider already send it. A reply from a server that can't is bounced back to you.
+- Signing in lasts 90 days at most, however often you visit, and then the web asks you to sign in again. Apps and API tokens keep their own expiry.
 
 ## 0.0.32 · November 8
 

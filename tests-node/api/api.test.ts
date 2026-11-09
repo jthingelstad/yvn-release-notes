@@ -320,6 +320,29 @@ test('concurrent requests retain distinct identities, renewed cookies and transa
   assert.equal((await s.store.allNotes('v'))[0]!.text, 'Second account');
   assert.equal(s.ctx.store, s.store);
 });
+test('a session ends 90 days after it signed in, however much it is used', async () => {
+  const s = await setup();
+  // Signed in 87 days ago and used every day: renewal stops at day 90.
+  await s.store.putSession(auth.digest(s.token), {
+    user_id: 'u',
+    now: now - auth.SESSION_MAX + 3 * 86400,
+    expires: now + 100
+  });
+  const renewed = await s.call('GET', '/api/me');
+  assert.equal(renewed.r.status, 200);
+  assert.match(renewed.r.headers.get('set-cookie')!, new RegExp(`Max-Age=${3 * 86400};`));
+  assert.equal(Number((await s.store.getSession(auth.digest(s.token)))!.expires_at), now + 3 * 86400);
+  // At 90 days it is over, even with time left on its row.
+  const old = await setup();
+  await old.store.putSession(auth.digest(old.token), {
+    user_id: 'u',
+    now: now - auth.SESSION_MAX,
+    expires: now + 86400
+  });
+  assert.equal((await old.call('GET', '/api/me')).r.status, 401);
+  assert.equal(auth.sessionExpiry(now), now + auth.SESSION_IDLE);
+  assert.equal(auth.sessionExpiry(now, now - auth.SESSION_MAX + 60), now + 60);
+});
 test('revocation at attachment commit removes copied media; renewal never resurrects revoked sessions', async () => {
   const s = await setup(),
     upload = (await s.call('POST', '/api/uploads', { name: 'a.pdf', type: 'application/pdf', size: 12 })).b as Item;

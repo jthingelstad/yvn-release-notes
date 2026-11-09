@@ -37,7 +37,7 @@ You can connect an agent such as Claude or ChatGPT to your notes. It asks for ea
 
 ## No tracking
 
-The email counts no opens and no clicks. Pages are counted with Tinylytics, without cookies and without anything that names you. The sign-in cookie only keeps you signed in, for 14 days from your last visit.
+The email counts no opens and no clicks. Pages are counted with Tinylytics, without cookies and without anything that names you. The sign-in cookie only keeps you signed in, for 14 days from your last visit and never more than 90 days from when you signed in.
 
 ## Taking it with you, and leaving
 

@@ -9,6 +9,9 @@ export const LOGIN_TTL = 900;
 export const MAX_CODE_ATTEMPTS = 5;
 export const MAX_WRONG_CODES_A_DAY = 20;
 export const SESSION_IDLE = 14 * 86400;
+/** However much it's used, a session ends this long after it signed in
+ * (Jamie, 2026-11-08, product call 2 of the security audit). */
+export const SESSION_MAX = 90 * 86400;
 export const SESSION_TOUCH = 86400;
 export const COOKIE = '__Host-rn';
 export const LIMIT_PER_ADDRESS = 5;
@@ -98,8 +101,8 @@ export function network(viewer: string, prefix = 64): string {
     return viewer;
   }
 }
-export function sessionCookie(token: string): string {
-  return `${COOKIE}=${token}; Path=/; Max-Age=${SESSION_IDLE}; Secure; HttpOnly; SameSite=Lax`;
+export function sessionCookie(token: string, maxAge = SESSION_IDLE): string {
+  return `${COOKIE}=${token}; Path=/; Max-Age=${Math.max(0, Math.floor(maxAge))}; Secure; HttpOnly; SameSite=Lax`;
 }
 export function clearCookie(): string {
   return `${COOKIE}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax`;
@@ -112,6 +115,12 @@ export function cookieToken(cookies: string[]): string | null {
   }
   return null;
 }
-export function sessionExpiry(now: number): number {
-  return now + SESSION_IDLE;
+/** 14 days from now, but never past 90 days from when the session signed in. */
+export function sessionExpiry(now: number, created = now): number {
+  return Math.min(now + SESSION_IDLE, created + SESSION_MAX);
+}
+/** Whether a session has reached its 90 days. One with no sign-in time
+ * counts as having reached them. */
+export function sessionTooOld(session: Record<string, unknown>, now: number): boolean {
+  return now - Number(session.created_at ?? 0) >= SESSION_MAX;
 }

@@ -673,6 +673,14 @@ a sign-in. Built 2026-10-29 (`packages/backend/oauth.ts`, `tokens.ts`,
 - **Discovery:** `/.well-known/oauth-protected-resource/v1`, and the
   authorization server's metadata lists every scope. The OpenAPI file
   describes the flow as the `signIn` scheme (API 1.3.0).
+- **The approval page says where Allow goes** (2026-11-08 security
+  audit): the app's own scheme ("Allowing opens the app for
+  com.yourversionnumber.changelog"), a loopback program, or a website's
+  host. Cancel goes straight back to an app or a loopback program; a
+  website gets "Nothing was shared" and a link back carrying
+  `access_denied`. Registration refuses a name that reads as Changelog,
+  Claude or ChatGPT unless every redirect is that client's own or loopback
+  (docs/MCP.md), so only the real app is called Changelog.
 - **Pasted tokens stay,** for the dev server, scripts and anyone who
   prefers them.
 

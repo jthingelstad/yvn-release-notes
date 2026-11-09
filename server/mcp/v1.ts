@@ -67,13 +67,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.21.1';
+export const API_VERSION = '1.21.2';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.21.2',
+    date: '2026-11-08',
+    summary:
+      "Signing in: POST /oauth/register answers invalid_client_metadata for a client_name that reads as Changelog, Claude or ChatGPT unless every redirect is that client's own (Changelog's com.yourversionnumber.changelog scheme, claude.ai or claude.com, chatgpt.com or chat.openai.com) or loopback, since the approval page leads with the name. The approval page also says where Allow sends the answer, and for a website's redirect Cancel links back with access_denied instead of going there. An app's own scheme gets access_denied straight back, as before."
+  },
   {
     version: '1.21.1',
     date: '2026-11-08',

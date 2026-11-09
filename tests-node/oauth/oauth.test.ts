@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
-import { OAuthError, OAuthService, publicOAuth, validRedirect } from '../../packages/backend/oauth.ts';
+import { destination, OAuthError, OAuthService, publicOAuth, validRedirect } from '../../packages/backend/oauth.ts';
 import { fixture, pending, consent, connected, ORIGIN, NOW } from './fixtures.ts';
 test('discovery, exact safe redirects, public clients, duplicate form keys and no metadata leaks', async () => {
   const ctx = fixture(),
@@ -185,7 +185,9 @@ test('the upcoming scope is granted only when ticked, even when the client asked
   const { id } = await pending(ctx, 'notes:read media:read notes:write upcoming');
   assert.deepEqual(await service.authorize('u', { request: id }), {
     client_name: 'Assistant',
-    scope: 'media:read notes:read notes:write upcoming'
+    scope: 'media:read notes:read notes:write upcoming',
+    to: 'client.example',
+    to_kind: 'web'
   });
   const granted = await service.authorize('u', { request: id, approve: true, upcoming: true });
   const code = new URL(String(granted.redirect)).searchParams.get('code')!;
@@ -352,4 +354,69 @@ test("connections added, changed and ended are in the owner's activity log, neve
   const { id } = await pending(ctx);
   await new OAuthService(ctx).authorize('u', { request: id, approve: false });
   assert.equal(log().length, 8);
+});
+
+// The 2026-11-08 security audit: registration is open and the approval page
+// leads with the client's own name, so a name members know registers only
+// with that client's callbacks (or a program on the member's computer), and
+// the page says where Allow sends the answer.
+test("a known client's name registers only with its own callbacks; consent says where the answer goes", async () => {
+  const ctx = fixture();
+  let n = 0;
+  const register = async (client_name: string, redirect_uris: string[]) => {
+    const r = await publicOAuth(
+      ctx,
+      new Request(ORIGIN + '/oauth/register', {
+        method: 'POST',
+        body: JSON.stringify({ client_name, redirect_uris })
+      }),
+      { viewer: `192.0.2.${++n}:12345` }
+    );
+    return { status: r.status, error: r.status === 201 ? undefined : ((await r.json()) as { error: string }).error };
+  };
+  const site = ['https://client.example/callback'];
+  for (const [name, uris] of [
+    ['Claude', ['https://claude-ai.client.example/api/mcp/auth_callback']],
+    ['Claude', ['https://claude.ai.client.example/api/mcp/auth_callback']],
+    ['Claude', ['https://claude.ai/api/mcp/auth_callback', 'https://client.example/callback']],
+    ['ChatGPT', ['https://chatgpt.com.client.example/connector/oauth/x']],
+    ['Changelog', site],
+    ['Changelog', ['com.example.changelog:/oauth']],
+    ['My Changelog app', site],
+    ['C l a u d e', site],
+    ['CIaude', site],
+    ['\u0421laude', site],
+    ['\uff23\uff4c\uff41\uff55\uff44\uff45', site],
+    ['Chat GPT', site],
+    ['ChatGPT for notes', site]
+  ] as [string, string[]][]) {
+    assert.deepEqual(await register(name, uris), { status: 400, error: 'invalid_client_metadata' }, name);
+  }
+  for (const [name, uris] of [
+    ['Claude', ['https://claude.ai/api/mcp/auth_callback']],
+    ['Claude', ['https://claude.com/api/mcp/auth_callback']],
+    ['Claude Code (release-notes)', ['http://localhost:52123/callback']],
+    ['ChatGPT', ['https://chatgpt.com/connector/oauth/abc123']],
+    ['Changelog', ['com.yourversionnumber.changelog:/oauth']],
+    ['Assistant', site]
+  ] as [string, string[]][]) {
+    assert.deepEqual(await register(name, uris), { status: 201, error: undefined }, name);
+  }
+  assert.deepEqual(destination('https://client.example/callback'), { to: 'client.example', to_kind: 'web' });
+  assert.deepEqual(destination('https://client.example:8443/cb'), { to: 'client.example:8443', to_kind: 'web' });
+  assert.deepEqual(destination('http://localhost:8989/cb'), { to: 'localhost:8989', to_kind: 'computer' });
+  assert.deepEqual(destination('http://[::1]/cb'), { to: '[::1]', to_kind: 'computer' });
+  assert.deepEqual(destination('com.yourversionnumber.changelog:/oauth'), {
+    to: 'com.yourversionnumber.changelog',
+    to_kind: 'app'
+  });
+  // A look-alike host is shown as the browser will reach it.
+  assert.match(destination('https://cl\u0430ude.ai/cb').to, /^xn--/);
+  const p = await pending(ctx, 'notes:read');
+  assert.deepEqual(await new OAuthService(ctx).authorize('u', { request: p.id }), {
+    client_name: 'Assistant',
+    scope: 'notes:read',
+    to: 'client.example',
+    to_kind: 'web'
+  });
 });

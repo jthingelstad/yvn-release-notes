@@ -15,7 +15,17 @@ interface RequestInfo {
   // An app's sign-in: the API, and a name for its token no other has.
   resource?: '/v1';
   name?: string;
+  // Where Allow sends the answer: a site's host, a program on this
+  // computer, or a native app's own scheme.
+  to?: string;
+  to_kind?: 'app' | 'computer' | 'web';
 }
+
+// Cancel goes straight back only to an app or a program on this computer.
+// A website gets a link instead (the 2026-11-08 security audit): any site
+// can register, so sending the visitor on would make this domain its
+// redirect.
+const goesHome = (info?: RequestInfo) => info?.to_kind === 'app' || info?.to_kind === 'computer';
 
 export function Connect() {
   const request = useHashParam('request');
@@ -31,6 +41,7 @@ export function Connect() {
   const [write, setWrite] = useState(false);
   const [files, setFiles] = useState(false);
   const [upcoming, setUpcoming] = useState(false);
+  const [cancelled, setCancelled] = useState<string | null>(null);
   const [busy, run] = useBusy();
   const problem = useProblem();
   const decide = (approve: boolean) =>
@@ -46,6 +57,7 @@ export function Connect() {
       });
       if (!r.ok)
         return problem.show('This connection request expired or could not be approved. Start again from your agent.');
+      if (!approve && !goesHome(info.data)) return setCancelled(r.data.redirect);
       window.location.assign(r.data.redirect);
     });
   return (
@@ -68,12 +80,14 @@ export function Connect() {
       {info.data?.resource === '/v1' && request && (
         <AppSignIn info={info.data} request={request} email={me.data?.email} />
       )}
-      {info.data && info.data.resource !== '/v1' && (
+      {info.data && cancelled && <Cancelled href={cancelled} to={info.data.to} />}
+      {info.data && info.data.resource !== '/v1' && !cancelled && (
         <section className="agent-content connect-request">
           <p className="kicker">Approval request</p>
           <h1>{info.data.client_name} wants to read your notes</h1>
+          <SendsTo info={info.data} />
           <p className="hint">
-            Connected as {me.data?.email}. The client supplied this name; connect only if you started this request.
+            Connected as {me.data?.email}. The client supplied its name; connect only if you started this request there.
           </p>
           <h2 className="connect-shared">Shared</h2>
           <ul className="connect-list">
@@ -169,6 +183,7 @@ export function AppSignIn({ info, request, email }: { info: RequestInfo; request
   const [name, setName] = useState(info.name ?? '');
   const [scopes, setScopes] = useState<string[]>(asked.map(([s]) => s));
   const [expiry, setExpiry] = useState('1y');
+  const [cancelled, setCancelled] = useState<string | null>(null);
   const [busy, run] = useBusy();
   const problem = useProblem();
   const form = useRef<HTMLFormElement>(null);
@@ -180,15 +195,18 @@ export function AppSignIn({ info, request, email }: { info: RequestInfo; request
         '/api/mcp/authorize',
         approve ? { request, approve, name, scopes, expiry } : { request, approve }
       );
+      if (r.ok && !approve && !goesHome(info)) return setCancelled(r.data.redirect);
       if (r.ok) return window.location.assign(r.data.redirect);
       if (r.data?.error === 'request_expired' || !approve)
         return problem.show('This sign-in request expired. Start again from the app.');
       problem.show(r.data, null, form.current);
     });
+  if (cancelled) return <Cancelled href={cancelled} to={info.to} />;
   return (
     <section className="agent-content connect-request">
       <p className="kicker">Sign-in request</p>
       <h1>{info.client_name} wants to sign in</h1>
+      <SendsTo info={info} />
       <p className="hint">
         Signed in as {email}. The app supplied this name; allow it only if you started this from the app.
       </p>
@@ -258,6 +276,36 @@ export function AppSignIn({ info, request, email }: { info: RequestInfo; request
         </div>
       </form>
       <ErrorLine line={problem.line} />
+    </section>
+  );
+}
+
+// Where Allow sends the answer, under the name the client chose for itself
+// (the 2026-11-08 security audit).
+function SendsTo({ info }: { info: RequestInfo }) {
+  if (!info.to) return null;
+  if (info.to_kind === 'app')
+    return (
+      <p>
+        Allowing opens the app for <strong>{info.to}</strong>.
+      </p>
+    );
+  return (
+    <p>
+      Allowing sends you to <strong>{info.to}</strong>
+      {info.to_kind === 'computer' ? ', a program on this computer' : ''}.
+    </p>
+  );
+}
+
+function Cancelled({ href, to }: { href: string; to?: string }) {
+  return (
+    <section className="agent-content connect-request">
+      <p className="kicker">Cancelled</p>
+      <h1>Nothing was shared</h1>
+      <p>
+        You can close this page, or go back to <a href={href}>{to ?? 'where you started'}</a>.
+      </p>
     </section>
   );
 }

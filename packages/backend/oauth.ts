@@ -113,6 +113,56 @@ export function validRedirect(uri: unknown): uri is string {
   }
 }
 
+const LOOPBACK = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?([/?]|$)/i;
+/** Where approving sends the code, for the approval page (the 2026-11-08
+ * security audit: the name is whatever the client chose, so the page also
+ * says where the answer goes). `app` is a native app's own scheme,
+ * `computer` a loopback program, `web` any other site, by its host as the
+ * URL parser writes it (an international name in its xn-- form). */
+export function destination(uri: string): { to: string; to_kind: 'app' | 'computer' | 'web' } {
+  if (!/^https?:/i.test(uri)) return { to: uri.slice(0, uri.indexOf(':')), to_kind: 'app' };
+  return { to: new URL(uri).host, to_kind: LOOPBACK.test(uri) ? 'computer' : 'web' };
+}
+/** The clients members know by name, and the callbacks each really uses
+ * (the 2026-11-08 registrations: Changelog's own scheme, claude.ai and
+ * chatgpt.com). Registration is open and the approval page leads with the
+ * name, so a name that reads as one of these is refused unless every
+ * callback is that client's own, or a program on the member's computer
+ * (Claude Code signs in through loopback). */
+const KNOWN: readonly [string, RegExp][] = [
+  ['changelog', /^com\.yourversionnumber\.changelog:\//],
+  ['claude', /^https:\/\/(claude\.ai|claude\.com)\//],
+  ['chatgpt', /^https:\/\/(chatgpt\.com|chat\.openai\.com)\//]
+];
+/** Letters that pass for Latin ones in a name, lowercased, folded before
+ * the check (a capital I, which passes for an l, is folded first). */
+const LOOKALIKE: Record<string, string> = {
+  а: 'a',
+  с: 'c',
+  е: 'e',
+  һ: 'h',
+  і: 'i',
+  ӏ: 'l',
+  о: 'o',
+  р: 'p',
+  ԛ: 'q',
+  у: 'y',
+  α: 'a',
+  ο: 'o',
+  '1': 'l',
+  '|': 'l',
+  '0': 'o'
+};
+export function impersonates(name: string, uris: readonly string[]): boolean {
+  const folded = [...name.normalize('NFKC').replace(/I/g, 'l').toLowerCase()]
+    .map((c) => LOOKALIKE[c] ?? c)
+    .join('')
+    .replace(/[^a-z]/g, '');
+  return KNOWN.some(
+    ([known, own]) => folded.includes(known) && !uris.every((uri) => own.test(uri) || LOOPBACK.test(uri))
+  );
+}
+
 export class OAuthService {
   constructor(readonly context: OAuthContext) {}
   get resource(): string {
@@ -250,7 +300,8 @@ export class OAuthService {
         : null;
     if (!live(item, now) || item.used) fail('request_expired');
     if (item.resource === this.appResource) return this.signIn(uid, item, body);
-    if (!Object.hasOwn(body, 'approve')) return { client_name: item.client_name, scope: item.scope };
+    if (!Object.hasOwn(body, 'approve'))
+      return { client_name: item.client_name, scope: item.scope, ...destination(String(item.redirect_uri)) };
     if (
       typeof body.approve !== 'boolean' ||
       typeof (Object.hasOwn(body, 'media') ? body.media : false) !== 'boolean' ||
@@ -318,7 +369,8 @@ export class OAuthService {
         client_name: item.client_name,
         scope: item.scope,
         resource: '/v1',
-        name: await tokens.nameFor(uid, item.client_name)
+        name: await tokens.nameFor(uid, item.client_name),
+        ...destination(String(item.redirect_uri))
       };
     if (typeof body.approve !== 'boolean') fail();
     const code = newToken(),
@@ -604,7 +656,12 @@ export async function publicOAuth(
       )
         fail('invalid_client_metadata');
       const name = b.client_name ?? 'Agent';
-      if (typeof name !== 'string' || codePointLength(name) > 100 || [...name].some((c) => c.codePointAt(0)! < 32))
+      if (
+        typeof name !== 'string' ||
+        codePointLength(name) > 100 ||
+        [...name].some((c) => c.codePointAt(0)! < 32) ||
+        impersonates(name, uris)
+      )
         fail('invalid_client_metadata');
       const cid = newToken(),
         client = row('OAUTHCLIENT#' + cid, {

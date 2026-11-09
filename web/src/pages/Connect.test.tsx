@@ -9,7 +9,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function serve(answer: Response) {
+const APP = { to: 'com.yourversionnumber.changelog', to_kind: 'app' } as const;
+function serve(answer: Response, sendsTo: { to: string; to_kind: 'app' | 'computer' | 'web' } = APP) {
   const fetch = vi.fn(async () => answer.clone());
   vi.stubGlobal('fetch', fetch);
   const assign = vi.fn();
@@ -20,7 +21,8 @@ function serve(answer: Response) {
         client_name: 'Changelog',
         scope: 'notes:write media:write activity',
         resource: '/v1',
-        name: 'Changelog 2'
+        name: 'Changelog 2',
+        ...sendsTo
       }}
       request={'r'.repeat(43)}
       email="ada@example.com"
@@ -38,6 +40,9 @@ describe('AppSignIn', () => {
       new Response(JSON.stringify({ redirect: 'com.yourversionnumber.changelog:/oauth?code=c' }), { status: 200 })
     );
     expect(screen.getByRole('heading', { name: 'Changelog wants to sign in' })).toBeTruthy();
+    expect(screen.getByText(/^Allowing opens the app for/).textContent).toBe(
+      'Allowing opens the app for com.yourversionnumber.changelog.'
+    );
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Name' }).value).toBe('Changelog 2');
     expect(box(/^Add notes/).checked).toBe(true);
     expect(box(/^Add files/).checked).toBe(true);
@@ -69,5 +74,27 @@ describe('AppSignIn', () => {
       request: 'r'.repeat(43),
       approve: false
     });
+  });
+
+  it('Cancel goes straight back to an app', async () => {
+    const back = 'com.yourversionnumber.changelog:/oauth?error=access_denied&state=s';
+    const { assign } = serve(new Response(JSON.stringify({ redirect: back }), { status: 200 }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(back));
+  });
+
+  // 2026-11-08 security audit: a website's Cancel links back instead, so
+  // this domain is never a registered site's redirect.
+  it("says where a website's Allow goes, and its Cancel stops here with a link back", async () => {
+    const back = 'https://app.example/callback?error=access_denied&state=s';
+    const { assign } = serve(new Response(JSON.stringify({ redirect: back }), { status: 200 }), {
+      to: 'app.example',
+      to_kind: 'web'
+    });
+    expect(screen.getByText(/^Allowing sends you to/).textContent).toBe('Allowing sends you to app.example.');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Nothing was shared' })).toBeTruthy());
+    expect(screen.getByRole('link', { name: 'app.example' }).getAttribute('href')).toBe(back);
+    expect(assign).not.toHaveBeenCalled();
   });
 });

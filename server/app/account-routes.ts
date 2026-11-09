@@ -127,6 +127,17 @@ export async function accountRoutes(
     service.log({ event: 'signin-sent' });
     return json({ ok: true }, 202);
   }
+  if (pattern === '/api/auth/link') {
+    // Someone can send a member their own link, and one tap would sign the
+    // member in to the sender's account. The page says whose account a link
+    // opens, and which this browser is in now (2026-11-08, SIGNIN-3).
+    const token = auth.validToken((await body(service.request)).token),
+      email = token ? await store.loginEmail(auth.digest(token), ctx.now) : null;
+    if (!email) reject(400, 'link-used-or-expired');
+    const s = await service.session(),
+      current = s?.user_id ? await store.profile(String(s.user_id)) : null;
+    return json({ email, signed_in_as: current?.email ? String(current.email) : null });
+  }
   if (pattern === '/api/auth/verify') {
     const b = await body(service.request);
     let login: Item, how: string;
@@ -146,12 +157,16 @@ export async function accountRoutes(
     const email = String(login.email),
       uid = await store.userForEmail(email),
       token = auth.newToken();
+    // A session for an address with no account yet is in no account's list,
+    // so neither deleting an account nor signing out other devices ends it;
+    // it lasts the sign-in window, and sign-up gives it a whole session
+    // (2026-11-08, SIGNIN-4).
     if (
       !(await store.createSession(auth.digest(token), {
         user_id: uid,
         email: uid ? null : email,
         now: ctx.now,
-        expires: auth.sessionExpiry(ctx.now)
+        expires: uid ? auth.sessionExpiry(ctx.now) : ctx.now + auth.LOGIN_TTL
       }))
     )
       reject(403, 'no-account');

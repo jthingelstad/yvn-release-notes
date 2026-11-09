@@ -1,5 +1,7 @@
 // The emailed link lands here. A button, not an automatic sign-in: mail
 // scanners open links, and opening this page must not use up the link.
+// It says whose account the link opens, and warns when this browser is in
+// another: someone can send a member their own link (SIGNIN-3).
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { AppLink, Bar, ErrorLine, useBusy, useFocusLater, useProblem, useTitle } from '../components/common.tsx';
@@ -18,6 +20,7 @@ export function SignIn() {
   const problem = useProblem();
   const focusLater = useFocusLater();
   const again = useRef<HTMLAnchorElement>(null);
+  const [link, setLink] = useState<LinkFor | null>(null);
 
   // A link that can't sign in: say why and offer a new one.
   const spent = (p: Problem) => {
@@ -30,6 +33,11 @@ export function SignIn() {
     // Keep the token out of history and anything copied from the bar.
     navigate({ to: '/signin/', replace: true });
     if (!token) spent({ error: 'link-used-or-expired' });
+    else
+      void api<LinkFor>('POST', '/api/auth/link', { token }).then((r) => {
+        if (r.ok) setLink(r.data);
+        else if (r.data.error === 'link-used-or-expired') spent(r.data);
+      });
     // Once, as the page opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -51,6 +59,7 @@ export function SignIn() {
       <Bar nav={false} />
       <h1 className="top">Sign in to Release Notes.</h1>
       <p className="lede">One tap finishes signing in on this device.</p>
+      {link && !isSpent && <LinkAccount {...link} />}
       <form id="link-form" onSubmit={submit}>
         <button className="go" type="submit" hidden={isSpent} disabled={busy}>
           Sign in
@@ -62,6 +71,28 @@ export function SignIn() {
           </AppLink>
         )}
       </form>
+    </>
+  );
+}
+
+interface LinkFor {
+  email: string;
+  signed_in_as: string | null;
+}
+/** Whose account the link opens, and a warning when this browser is in
+ * another one. */
+export function LinkAccount({ email, signed_in_as }: LinkFor) {
+  return (
+    <>
+      <p className="hint" data-link-email="">
+        This link signs in as <strong>{email}</strong>.
+      </p>
+      {signed_in_as && signed_in_as !== email && (
+        <p className="hint" role="alert">
+          This browser is signed in as <strong>{signed_in_as}</strong>. Signing in here switches it to {email}. If you
+          didn’t ask for this link, don’t use it.
+        </p>
+      )}
     </>
   );
 }

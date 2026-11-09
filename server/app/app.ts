@@ -22,6 +22,7 @@ export const ROUTES: [string, string][] = [
   ['GET', '/api/health'],
   ['GET', '/api/sample'],
   ['POST', '/api/auth/start'],
+  ['POST', '/api/auth/link'],
   ['POST', '/api/auth/verify'],
   ['POST', '/api/auth/signout'],
   ['POST', '/api/auth/signout-others'],

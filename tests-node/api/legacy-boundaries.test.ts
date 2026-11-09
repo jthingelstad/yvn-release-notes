@@ -144,6 +144,42 @@ test('restart unsuppresses bounce/complaint only; SES failure retains stopped st
   assert.ok(s.logs.some((l) => l.event === 'first-email-failed'));
   assert.ok(!JSON.stringify(s.logs).includes('private-provider-error'));
 });
+test('a session with no account lasts the sign-in window, and sign-up makes it whole (SIGNIN-4)', async () => {
+  const s = await setup(),
+    signUp = (cookie: string) =>
+      s.call(
+        'PUT',
+        '/api/me',
+        {
+          birthday: '1981-06-14',
+          send_time: '06:00',
+          place: { name: 'Home', country: 'United States', tz: 'America/Chicago', lat: 44, lon: -93 }
+        },
+        cookie
+      ),
+    verify = async (email: string) => {
+      const login = await s.login(email),
+        verified = await s.call('POST', '/api/auth/verify', { token: login.token });
+      assert.equal(verified.data.new, true);
+      const cookie = verified.response.headers.get('set-cookie')!.split(';')[0]!.split('=')[1]!;
+      return { cookie, hash: auth.digest(cookie) };
+    };
+  // Left past the window: signed out, and it can't sign up or claim anything.
+  const left = await verify('cleo@example.com');
+  assert.equal((await s.store.getSession(left.hash))!.expires_at, initial + auth.LOGIN_TTL);
+  s.setNow(initial + auth.LOGIN_TTL);
+  assert.equal((await s.call('GET', '/api/me', undefined, left.cookie)).response.status, 401);
+  assert.equal((await signUp(left.cookie)).response.status, 401);
+  assert.equal(await s.store.userForEmail('cleo@example.com'), null);
+  // Signed up inside it: a whole session from then, in the new account's list.
+  const kept = await verify('bea@example.com');
+  s.setNow(initial + auth.LOGIN_TTL + 600);
+  assert.equal((await signUp(kept.cookie)).response.status, 200);
+  const uid = (await s.store.userForEmail('bea@example.com'))!,
+    session = (await s.store.getSession(kept.hash))!;
+  assert.deepEqual([session.user_id, session.expires_at], [uid, auth.sessionExpiry(initial + auth.LOGIN_TTL + 600)]);
+  assert.ok(s.store.memory.read({ pk: `USER#${uid}`, sk: `SESSION#${kept.hash}` }));
+});
 test('HTTP admission rejects bad bodies, empty or out-of-calendar notes and unsafe upload forms before media moves', async () => {
   const s = await setup(),
     cookie = await s.session();

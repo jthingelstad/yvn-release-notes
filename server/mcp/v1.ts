@@ -67,13 +67,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.21.4';
+export const API_VERSION = '1.21.5';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.21.5',
+    date: '2026-11-08',
+    summary:
+      "Signing in: an authorization code that comes back to POST /oauth/token after it was spent ends the connection it made, refresh token and all (RFC 6749, 4.1.2), as an app's code already did. The OAuth requests count an IPv6 /48 as well as each /64, at three times the /64's limit, and the Changelog app's registrations count apart from the 200 new clients an hour for everyone. No request changed."
+  },
   {
     version: '1.21.4',
     date: '2026-11-08',

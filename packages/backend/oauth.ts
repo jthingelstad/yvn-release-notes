@@ -129,8 +129,9 @@ export function destination(uri: string): { to: string; to_kind: 'app' | 'comput
  * name, so a name that reads as one of these is refused unless every
  * callback is that client's own, or a program on the member's computer
  * (Claude Code signs in through loopback). */
+const CHANGELOG = /^com\.yourversionnumber\.changelog:\//;
 const KNOWN: readonly [string, RegExp][] = [
-  ['changelog', /^com\.yourversionnumber\.changelog:\//],
+  ['changelog', CHANGELOG],
   ['claude', /^https:\/\/(claude\.ai|claude\.com)\//],
   ['chatgpt', /^https:\/\/(chatgpt\.com|chat\.openai\.com)\//]
 ];
@@ -262,8 +263,11 @@ export class OAuthService {
       prefix + digest(body[kind === 'authorization_code' ? 'code' : 'refresh_token'] ?? '')
     );
     if (!item || item.client_id !== body.client_id) fail('invalid_grant');
+    // A code or refresh token that comes back used may have been stolen, so
+    // the connection it made ends (RFC 6749, 4.1.2 and 10.4; a code since
+    // 2026-11-08, SIGNIN-5, as an app's code already did).
     if (item.used) {
-      if (kind === 'refresh_token') await this.revoke(String(item.family), String(item.user_id), 'token-reuse');
+      await this.revoke(String(item.family), String(item.user_id), 'token-reuse');
       fail('invalid_grant');
     }
     const family = await this.familyFor(item);
@@ -541,14 +545,16 @@ export class OAuthService {
       ...[...refs, ...metadata].map((i) => ({ pk: String(i.pk), sk: String(i.sk) }))
     ]);
   }
+  /** Requests an hour from one network: an IPv4 address, or an IPv6 /64,
+   * and the /48 around it at three times that (one site can hold 65,536
+   * /64s; 2026-11-08, SIGNIN-7), as the sign-in email's limits do. */
   async limited(viewer: string, kind: string, ceiling: number): Promise<void> {
-    if (
-      (await this.context.store.count(
-        `oauth:${kind}:${digest(network(viewer))}`,
-        Math.floor(this.context.now / 3600),
-        3600
-      )) > ceiling
-    )
+    const hour = Math.floor(this.context.now / 3600),
+      net = network(viewer),
+      wide = network(viewer, 48);
+    if ((await this.context.store.count(`oauth:${kind}:${digest(net)}`, hour, 3600)) > ceiling)
+      fail('rate_limited', 429);
+    if (wide !== net && (await this.context.store.count(`oauth:${kind}:48:${digest(wide)}`, hour, 3600)) > ceiling * 3)
       fail('rate_limited', 429);
   }
 }
@@ -631,8 +637,6 @@ export async function publicOAuth(
       });
     if (request.method === 'POST' && path === '/oauth/register') {
       await service.limited(options.viewer, 'register', 20);
-      if ((await context.store.count('oauth:register:total', Math.floor(context.now / 3600), 3600)) > 200)
-        fail('rate_limited', 429);
       let b: OAuthRow;
       try {
         b = JSON.parse((await boundedText(request, 64 * 1024)) || '{}') as OAuthRow;
@@ -663,6 +667,18 @@ export async function publicOAuth(
         impersonates(name, uris)
       )
         fail('invalid_client_metadata');
+      // 200 new clients an hour from everywhere. The Changelog app registers
+      // one each time it signs in, so its own count apart, and a flood of
+      // others can't stop it signing in (SIGNIN-7).
+      const app = uris.every((uri) => CHANGELOG.test(uri));
+      if (
+        (await context.store.count(
+          app ? 'oauth:register:changelog' : 'oauth:register:total',
+          Math.floor(context.now / 3600),
+          3600
+        )) > 200
+      )
+        fail('rate_limited', 429);
       const cid = newToken(),
         client = row('OAUTHCLIENT#' + cid, {
           client_id: cid,

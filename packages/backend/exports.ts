@@ -12,6 +12,13 @@ export async function exportRoutes(
   query: URLSearchParams
 ): Promise<Response | null> {
   if (!pattern.startsWith('/api/export')) return null;
+  // A download is a plain link, and the session cookie is SameSite=Lax, so
+  // another site's link would start one and log a false export. The browser
+  // names who started it: only this site, or the person typing or opening a
+  // bookmark (none). An old browser that sends nothing goes ahead (2026-11-08,
+  // SIGNIN-6).
+  const site = service.request.headers.get('sec-fetch-site');
+  if (site && site !== 'same-origin' && site !== 'none') reject(403, 'origin');
   const { uid } = await service.account(),
     ctx = service.context,
     store = ctx.store;

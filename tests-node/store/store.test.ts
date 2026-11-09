@@ -560,6 +560,47 @@ test('a finished book with commentary is counted against its release in the same
   assert.equal(await s.commentaryMade('u', 45), 1);
   assert.equal(await s.commentaryMade('u', 46), 0);
 });
+test('a day’s tries at commentary are read strongly, and a finished book gives its try back in the same write', async () => {
+  const s = setup();
+  await s.tryCommentary('u', 20400);
+  assert.deepEqual(s.memory.calls.at(-1), {
+    name: 'UpdateCommand',
+    input: {
+      TableName: 'T',
+      Key: { pk: 'RATE#commentary-tries:u#20400', sk: 'RATE' },
+      UpdateExpression: 'ADD n :one SET expires_at = :exp',
+      ExpressionAttributeValues: { ':one': 1, ':exp': 20402 * 86400 },
+      ReturnValues: 'UPDATED_NEW'
+    }
+  });
+  assert.equal(await s.commentaryTries('u', 20400), 1);
+  assert.deepEqual(s.memory.calls.at(-1), {
+    name: 'GetCommand',
+    input: { TableName: 'T', Key: { pk: 'RATE#commentary-tries:u#20400', sk: 'RATE' }, ConsistentRead: true }
+  });
+  await s.startExport('u', 'book', 2, 102, 'BOOK', { commentary: true, release: 45, tried: 20400 });
+  s.memory.calls.length = 0;
+  assert.equal(await s.finishExportGuarded('u', 'book', { status: 'ready' }, 'BOOK', 45, 20400), true);
+  const items = (s.memory.calls[0]!.input as { TransactItems?: unknown[] }).TransactItems!;
+  assert.equal(items.length, 4);
+  assert.deepEqual(items[3], {
+    Update: {
+      TableName: 'T',
+      Key: { pk: 'RATE#commentary-tries:u#20400', sk: 'RATE' },
+      UpdateExpression: 'ADD n :less SET expires_at = if_not_exists(expires_at, :exp)',
+      ExpressionAttributeValues: { ':less': -1, ':exp': 20402 * 86400 }
+    }
+  });
+  assert.equal(await s.commentaryTries('u', 20400), 0);
+  // A finish that loses its race gives nothing back.
+  await s.tryCommentary('u', 20400);
+  assert.equal(await s.finishExportGuarded('u', 'book', { status: 'ready' }, 'BOOK', 45, 20400), false);
+  assert.equal(await s.commentaryTries('u', 20400), 1);
+  // A failed book's finish, without `tried`, keeps it.
+  await s.startExport('u', 'book-2', 3, 103, 'BOOK', { commentary: true, release: 45, tried: 20400 });
+  assert.equal(await s.finishExportGuarded('u', 'book-2', { status: 'failed' }, 'BOOK'), true);
+  assert.equal(await s.commentaryTries('u', 20400), 1);
+});
 test('login purpose isolation, newest-code indexing and legacy signin compatibility', async () => {
   const s = setup();
   await s.putLogin('s', 'ada@example.com', 'eh', 'ch', 10, 50);

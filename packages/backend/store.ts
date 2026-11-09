@@ -2215,9 +2215,13 @@ export class Store {
     return this.count(`builds:${user}`, Math.floor(now / 86400), 86400);
   }
   /** Tries at commentary counted on a UTC day and not given back by a book
-   * that finished: those that failed, and one building. */
+   * that finished: those that failed, and one building. Read strongly, as
+   * commentaryMade is: a book asked for as soon as one finishes must see its
+   * try given back, and as soon as one fails, the try it kept. */
   async commentaryTries(user: string, day: number): Promise<number> {
-    return this.peek(`${TRIES}${user}`, day);
+    return Number(
+      (await this.get({ pk: `RATE#${TRIES}${user}#${day}`, sk: 'RATE' }, { ConsistentRead: true }))?.n ?? 0
+    );
   }
   async tryCommentary(user: string, day: number): Promise<void> {
     await this.count(`${TRIES}${user}`, day, 86400);

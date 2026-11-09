@@ -286,6 +286,36 @@ test('members sign in past the hour’s total and their domain’s bounces; five
   assert.equal((await s.call('POST', '/api/auth/start', { email: 'new@example.com' })).response.status, 202);
   assert.ok(!JSON.stringify(s.logs).includes('@'));
 });
+test('Sign out other devices ends every other session of the account and keeps this one', async () => {
+  const s = await setup(),
+    here = await s.session(),
+    phone = await s.session(),
+    laptop = await s.session(),
+    stale = auth.newToken();
+  // A session already past its expiry is cleared without counting.
+  await s.store.createSession(auth.digest(stale), {
+    user_id: 'u',
+    now: initial - 30 * 86400,
+    expires: initial - 86400
+  });
+  const answer = await s.call('POST', '/api/auth/signout-others', {}, here);
+  assert.equal(answer.response.status, 200);
+  assert.deepEqual(answer.data, { ended: 2 });
+  for (const gone of [phone, laptop])
+    assert.equal((await s.call('GET', '/api/me', undefined, gone)).response.status, 401);
+  assert.equal((await s.call('GET', '/api/me', undefined, here)).response.status, 200);
+  assert.deepEqual(
+    s.store.memory
+      .all()
+      .filter((i) => String(i.pk).startsWith('SESSION#') || String(i.sk).startsWith('SESSION#'))
+      .map((i) => `${i.pk} ${i.sk}`)
+      .sort(),
+    [`SESSION#${auth.digest(here)} SESSION`, `USER#u SESSION#${auth.digest(here)}`]
+  );
+  assert.deepEqual((await s.call('POST', '/api/auth/signout-others', {}, here)).data, { ended: 0 });
+  assert.equal((await s.call('POST', '/api/auth/signout-others', {})).response.status, 401);
+  assert.ok(s.logs.some((row) => row.event === 'signout-others' && row.ended === 2));
+});
 test('sessions renew at daily boundary with USER index, expire idle, replace on sign-in and revoke on signout', async () => {
   const s = await setup(),
     old = await s.session();

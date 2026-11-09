@@ -457,6 +457,7 @@ test('the web role grants every request each route and the OAuth endpoints make'
   });
   await call('DELETE', '/api/days/2026-10-12/notes/mail');
   assert.ok(files.calls.some((c) => c.operation === 'remove' && c.key === 'raw/mail'));
+  await call('POST', '/api/auth/signout-others', {});
   await call('POST', '/api/auth/signout', {});
 
   // A new address signs up by code, then deletes the account with its files.

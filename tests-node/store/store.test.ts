@@ -557,6 +557,46 @@ test('a sign-in bounce counts against its domain once per receipt, in one write 
   assert.equal(await s.countBounce('bounces:d', 'r2', now), true);
   assert.equal(await s.peek('bounces:d', 20400), 2);
 });
+test('ending other sessions deletes each with its list row in one write, and counts those still in force', async () => {
+  const s = setup();
+  for (const [hash, expires] of [
+    ['keep', 200],
+    ['old', 50],
+    ['live', 200]
+  ] as const) {
+    s.seed({ pk: 'USER#u', sk: `SESSION#${hash}`, expires_at: expires });
+    s.seed({ pk: `SESSION#${hash}`, sk: 'SESSION', user_id: 'u', expires_at: expires });
+  }
+  s.memory.calls.length = 0;
+  assert.equal(await s.endOtherSessions('u', 'keep', 100), 1);
+  const query = s.memory.calls[0]!;
+  assert.equal(query.name, 'QueryCommand');
+  assert.equal((query.input as { ConsistentRead?: boolean }).ConsistentRead, true);
+  const writes = s.memory.calls
+    .filter((c) => c.name === 'TransactWriteCommand')
+    .map((c) => (c.input as { TransactItems: unknown[] }).TransactItems);
+  assert.deepEqual(
+    writes.find((w) => JSON.stringify(w).includes('SESSION#live')),
+    [
+      {
+        Delete: {
+          TableName: 'T',
+          Key: { pk: 'SESSION#live', sk: 'SESSION' },
+          ConditionExpression: 'attribute_not_exists(pk) OR user_id = :u',
+          ExpressionAttributeValues: { ':u': 'u' }
+        }
+      },
+      { Delete: { TableName: 'T', Key: { pk: 'USER#u', sk: 'SESSION#live' } } }
+    ]
+  );
+  assert.equal(writes.length, 2);
+  assert.ok(s.memory.read({ pk: 'SESSION#keep', sk: 'SESSION' }));
+  assert.ok(s.memory.read({ pk: 'USER#u', sk: 'SESSION#keep' }));
+  for (const hash of ['old', 'live']) {
+    assert.equal(s.memory.read({ pk: `SESSION#${hash}`, sk: 'SESSION' }), null);
+    assert.equal(s.memory.read({ pk: 'USER#u', sk: `SESSION#${hash}` }), null);
+  }
+});
 test('a finished book with commentary is counted against its release in the same write', async () => {
   const s = setup();
   assert.equal(await s.commentaryMade('u', 45), 0);

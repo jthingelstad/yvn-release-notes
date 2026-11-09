@@ -541,7 +541,8 @@ subject, mail words, another sender or a settings value.
 
 - **`POST /v1/uploads`** `{name, type, size}`, `media:write`. One signed S3
   form for one file, under the web's limits: 50 MB a file, 20 files a note,
-  200 uploads and 2 GB a day per account (one count with the web's), each
+  200 uploads and 2 GB a day per account (one count with the web's and,
+  since the 2026-11-08 security audit, emailed files), each
   form good for five minutes. It answers 201 with the `upload` id, its
   `type`, the form's `url` and `fields`, and `expires_in`. It has no
   receipt: a retry gets a new form, and an unused one expires. A client

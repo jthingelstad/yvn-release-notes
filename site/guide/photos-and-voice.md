@@ -9,13 +9,13 @@ Signed in, **Today** has **Add files** under the box for a note: pick photos, re
 
 Every day's page has the same box, so a photo can go on the day it was taken. A note you've already saved has its own **Add files** button, too.
 
-A note holds up to 20 files, at most 50 MB a file. Photos can be JPEG, PNG, GIF, WebP or HEIC, the iPhone's own format. Recordings can be most audio formats, an iPhone's voice memos included.
+A note holds up to 20 files, at most 50 MB a file. An account adds up to 200 files and 2 GB a day, by email, on the web and through apps together. Photos can be JPEG, PNG, GIF, WebP or HEIC, the iPhone's own format. Recordings can be most audio formats, an iPhone's voice memos included.
 
 ## By email
 
 Attach photos, voice memos and PDFs to a reply, or to a note mailed to [your own address](/guide/address/), as you would to any email. They're kept with the note. Tiny pictures, like the logos in a signature, are left out.
 
-Any other kind of file attached to an email stays in the original email, which is kept whole, and the note says it had an attachment.
+Any other kind of file attached to an email stays in the original email, which is kept whole, and the note says it had an attachment. So do files past the day's 200.
 
 ## In the morning email
 

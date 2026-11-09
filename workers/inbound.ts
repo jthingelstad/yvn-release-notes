@@ -10,6 +10,7 @@
  * the inbound failed queue (gaveUp) for its failed row and notice. */
 import type { Store, Subscriber, Item } from '../packages/backend/store.ts';
 import * as media from '../packages/backend/media.ts';
+import { UPLOAD_BYTES_A_DAY, UPLOADS_A_DAY } from '../packages/backend/uploads.ts';
 import type { Objects, Mail, Log } from '../packages/backend/services.ts';
 import { collect, type TitleFetcher } from '../packages/backend/links.ts';
 import { tagFields, textTags } from '../packages/domain/tags.ts';
@@ -284,6 +285,7 @@ export async function file(
     files: ReturnType<typeof attachments>,
     named: Record<string, string>,
     photos: ReturnType<typeof media.found>;
+  const cameFrom: number[] = [];
   try {
     const msg = await parseMessage(raw);
     text = seen.text = codePointSlice(noteWords(noteText(msg)), 0, MAX_NOTE);
@@ -294,13 +296,31 @@ export async function file(
       leaves(msg)
         .filter((p) => p.disposition === 'attachment' || !p.type.startsWith('text/'))
         .map((p) => ({ type: p.type, filename: p.filename, data: p.content })),
-      refused
+      refused,
+      cameFrom
     );
     for (const n of refused) if (files[n]) files[n]!.refused = true;
   } catch (e) {
     return ignored('unparseable', { error: errorName(e) });
   }
   if (!text && !files.length) return ignored('empty');
+  // Emailed files count against the account's uploads a UTC day, with the
+  // web's and every token's (the 2026-11-08 security audit: email had no
+  // count, and each photo is a description and maybe a paid place lookup).
+  // Past it the note is still filed, and those files show as in the email
+  // (media.others). A retry counts its files again, erring towards fewer.
+  let limited = 0;
+  const counted: typeof photos = [],
+    utcDay = Math.floor(received(mail) / 86400);
+  for (const [i, photo] of photos.entries()) {
+    if (await s.store.countUpload(sub.user_id, utcDay, photo[1].length, UPLOADS_A_DAY, UPLOAD_BYTES_A_DAY))
+      counted.push(photo);
+    else {
+      limited++;
+      if (files[cameFrom[i]!]) files[cameFrom[i]!]!.refused = true;
+    }
+  }
+  photos = counted;
   const day = seen.day!,
     version = seen.version!,
     found = text ? await collect(text, { named, fetch: s.titleFetch }) : [],
@@ -364,6 +384,7 @@ export async function file(
       attachments: files.length,
       links: found.length,
       media: kept.length,
+      ...(limited ? { over_daily_files: limited } : {}),
       duplicate: stored === 'duplicate',
       ...(standing ? { via: 'address' } : {})
     }

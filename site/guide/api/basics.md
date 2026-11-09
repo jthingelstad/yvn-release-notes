@@ -74,6 +74,6 @@ Each day, from midnight UTC, across all its tokens, an account may:
 - name 100 spots with Here
 - report 1,000 check-ins, of which it will look up 100 check-ins a day. A check-in past that is still saved, with no neighbourhood.
 
-Each token may read 2,000 times a day. An Upcoming dry run and a city search count as reads. Uploads count with the web's: 200 files and 2 GB a day.
+Each token may read 2,000 times a day. An Upcoming dry run and a city search count as reads. Uploads count with the web's and emailed files: 200 files and 2 GB a day.
 
 Past a limit the answer is `rate_limited`, with `Retry-After`. Every write that counts says where it stands in `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`. A repeat answered from its `Idempotency-Key` counts nothing, and says nothing.

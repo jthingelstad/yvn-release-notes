@@ -36,18 +36,24 @@ test('the service role makes a role only with the function boundary (AWS-1)', ()
     service = template.slice(template.indexOf('  CloudFormationRole:'), template.indexOf('  DeployRole:'));
   assert.doesNotMatch(
     statement('Roles'),
-    /iam:CreateRole|iam:PutRolePermissionsBoundary|iam:DeleteRolePermissionsBoundary/
+    /iam:(CreateRole|PutRolePermissionsBoundary|DeleteRolePermissionsBoundary|PutRolePolicy|DeleteRolePolicy)\b/
   );
+  // A role's own policy is written or removed only while it carries the boundary.
   const boundary = statement('RolesTakeTheBoundary');
-  assert.match(boundary, /Action: \[iam:CreateRole, iam:PutRolePermissionsBoundary\]/);
+  assert.deepEqual(
+    [...boundary.matchAll(/^\s+- (iam:\w+)$/gm)].map((m) => m[1]),
+    ['iam:CreateRole', 'iam:PutRolePermissionsBoundary', 'iam:PutRolePolicy', 'iam:DeleteRolePolicy']
+  );
   assert.ok(boundary.includes(pattern));
   assert.match(boundary, /StringEquals: \{ "iam:PermissionsBoundary": !Ref FunctionBoundary \}/);
-  assert.equal(template.match(/iam:CreateRole/g)?.length, 1);
-  assert.equal(template.match(/iam:PutRolePermissionsBoundary/g)?.length, 1);
-  // Until main's roles carry the boundary, a failed deploy may take it off again.
-  const rollback = statement('BoundaryRollback');
-  assert.match(rollback, /Effect: Allow\n\s+Action: iam:DeleteRolePermissionsBoundary\n/);
-  assert.ok(rollback.includes(pattern));
+  for (const action of ['CreateRole', 'PutRolePermissionsBoundary', 'PutRolePolicy', 'DeleteRolePolicy'])
+    assert.equal(template.match(new RegExp(`iam:${action}\\b`, 'g'))?.length, 1, action);
+  // A boundary never comes off any role.
+  assert.match(
+    statement('BoundaryStays'),
+    /Effect: Deny\n\s+Action: iam:DeleteRolePermissionsBoundary\n\s+Resource: "\*"$/
+  );
+  assert.equal(template.match(/iam:DeleteRolePermissionsBoundary/g)?.length, 1);
   // It never touches a managed policy, the boundary included, or attaches one.
   assert.doesNotMatch(service, /iam:(\*|\w*Polic(y|ies)Version|CreatePolicy|DeletePolicy\b|Attach|Detach|SetDefault)/);
   assert.match(template, /ManagedPolicyName: ReleaseNotesFunctionBoundary\n/);

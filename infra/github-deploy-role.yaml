@@ -195,8 +195,6 @@ Resources:
                   - iam:GetRole
                   - iam:UpdateRole
                   - iam:UpdateAssumeRolePolicy
-                  - iam:PutRolePolicy
-                  - iam:DeleteRolePolicy
                   - iam:GetRolePolicy
                   - iam:ListRolePolicies
                   - iam:ListAttachedRolePolicies
@@ -205,21 +203,25 @@ Resources:
                   - iam:ListRoleTags
                   - iam:PassRole
                 Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApplicationStackName}-*Role-*"
-              # A role is made only with the function boundary, and a role's
-              # boundary is only ever set to it.
+              # A role is made only with the function boundary, a role's
+              # boundary is only ever set to it, and a role's own policy is
+              # written or removed only while the role carries it.
               - Sid: RolesTakeTheBoundary
                 Effect: Allow
-                Action: [iam:CreateRole, iam:PutRolePermissionsBoundary]
+                Action:
+                  - iam:CreateRole
+                  - iam:PutRolePermissionsBoundary
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
                 Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApplicationStackName}-*Role-*"
                 Condition:
                   StringEquals: { "iam:PermissionsBoundary": !Ref FunctionBoundary }
-              # Only while the nine roles take the boundary (2026-11-08): if the
-              # deploy that sets it fails, its rollback takes it off again. A
-              # deny replaces this once main's roles carry it.
-              - Sid: BoundaryRollback
-                Effect: Allow
+              # A boundary never comes off: a template that drops one from a
+              # role fails its deploy instead.
+              - Sid: BoundaryStays
+                Effect: Deny
                 Action: iam:DeleteRolePermissionsBoundary
-                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApplicationStackName}-*Role-*"
+                Resource: "*"
               - Sid: Table
                 Effect: Allow
                 Action: dynamodb:*

@@ -1043,6 +1043,30 @@ test('a failure record whose row cannot be written stays on the queue, and the n
   assert.equal(f.mail.messages.length, 1);
   assert.deepEqual(forwarded, [body]);
 });
+test('a failure record whose owner cannot be looked up stays on the queue; a sender check that fails keeps no subject', async () => {
+  const f = await replyFixture(),
+    { forwarded, services } = forwarding(f),
+    getToken = f.store.getToken.bind(f.store),
+    body = gaveUpRecord();
+  f.store.getToken = async () => {
+    throw Object.assign(new Error('private'), { name: 'ProvisionedThroughputExceededException' });
+  };
+  await assert.rejects(() => inbound.handler({ Records: [{ body }] }, null, services));
+  assert.deepEqual(forwarded, []);
+  assert.deepEqual(await mailLog(f), []);
+  f.store.getToken = getToken;
+  // Whose it is is known, but its email can't be read: logged, without the subject.
+  const get = f.services.objects.get.bind(f.services.objects);
+  services.objects.get = async () => {
+    throw Object.assign(new Error('private'), { name: 'AccessDenied' });
+  };
+  await inbound.handler({ Records: [{ body }] }, null, services);
+  const [r] = await mailLog(f);
+  assert.deepEqual([r!.outcome, r!.attempts, r!.subject], ['failed', 3, '']);
+  assert.equal(f.mail.messages.length, 1);
+  assert.deepEqual(forwarded, [body]);
+  services.objects.get = get;
+});
 test('a failure record for no one, a stopped owner or no record at all is still handed on; without a queue it stays', async () => {
   const f = await replyFixture(),
     { forwarded, services } = forwarding(f),

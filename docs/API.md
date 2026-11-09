@@ -478,7 +478,8 @@ A token with `notes:all`, which comes only beside `notes:write`:
   `media:write`, after the ones the note had when read.
 - Never another account's: every key is the token's own account.
 
-**`GET /v1/tags`**, any scope. The tag row:
+**`GET /v1/tags`**, `notes:write` or `notes:read` (any scope before 1.22.0).
+The tag row:
 
 ```json
 {

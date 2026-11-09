@@ -66,6 +66,8 @@ test('notes:read stands alone: it reads the whole archive and writes nothing', a
   assert.equal((await get(app, `/v1/notes/${TODAY}/w-lake`, reader.token)).status, 200);
   assert.deepEqual((await get(app, `/v1/notes?from=${TODAY}&mine=true`, reader.token)).json!.items, []);
   for (const route of ARCHIVE) assert.equal((await get(app, pathOf(route), reader.token)).status, 200, route.name);
+  // The tag row is a notes token's (1.22.0), reading ones included.
+  assert.equal((await get(app, '/v1/tags', reader.token)).status, 200);
 
   const posted = await app.request(ORIGIN + '/v1/notes', {
     method: 'POST',
@@ -96,6 +98,9 @@ test('the archive opens to notes:all too, and notes:write alone still reads only
     own = await make(ctx, ['notes:write'], 'Own'),
     other = await make(ctx, ['activity'], 'Other');
   note(ctx, 'w-lake', 'The lake', TODAY, { source: 'web' });
+  assert.equal((await get(app, '/v1/tags', own.token)).status, 200);
+  assert.equal((await get(app, '/v1/tags', all.token)).status, 200);
+  assert.equal((await get(app, '/v1/tags', other.token)).status, 403);
   for (const route of ARCHIVE) {
     assert.equal((await get(app, pathOf(route), all.token)).status, 200, route.name);
     const refused = await get(app, pathOf(route), own.token);

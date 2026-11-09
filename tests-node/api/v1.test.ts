@@ -254,9 +254,12 @@ test('routes, methods and scopes', async () => {
   assert.equal(anon.error.code, 'not_found');
   assert.equal(anon.response.headers.get('release-notes-version'), null);
   assert.equal((await call(app, 'GET', '/v1/nothing', { token: 'rn_nope' })).status, 404);
-  // Any token reads /v1/me and the tags, and can sign itself out.
+  // Any token reads /v1/me and can sign itself out. The tag row needs a token
+  // that adds or reads notes (1.22.0): an Upcoming-only one is refused below.
   assert.equal((await call(app, 'GET', '/v1/me', { token: bare.token })).status, 200);
-  assert.equal((await call(app, 'GET', '/v1/tags', { token: bare.token })).status, 200);
+  const tagless = await call(app, 'GET', '/v1/tags', { token: bare.token });
+  assert.equal(tagless.status, 403);
+  assert.match(String(tagless.error.message), /add or read notes/);
   for (const route of V1_ROUTES.filter((r) => r.scope)) {
     const path = route.template
         .replace('{date}', TODAY)
@@ -867,10 +870,10 @@ test('2,000 reads a token a UTC day', async () => {
   assert.equal((await call(app, 'GET', '/v1/me', { token: b.token })).status, 200);
 });
 
-test('pinned tags and the recent tags row, the same on every token', async () => {
+test('pinned tags and the recent tags row, the same on every notes token', async () => {
   const { ctx, app } = setup(),
     a = await make(ctx),
-    b = await make(ctx, { name: 'Other', scopes: ['activity'] });
+    b = await make(ctx, { name: 'Other', scopes: ['notes:read'] });
   note(ctx, 'w-1', 'Run #running #trip', '2026-10-12', { tags: ['running', 'trip'] });
   note(ctx, 'w-2', 'Run #running', '2026-10-10', { tags: ['running'] });
   note(ctx, 'w-3', 'Old #ancient', '2026-09-01', { tags: ['ancient'] });

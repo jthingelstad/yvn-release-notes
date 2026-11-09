@@ -621,7 +621,7 @@ const OPERATIONS: Record<string, Doc> = {
   tags: {
     operationId: 'getTags',
     summary: 'The tag row: pinned tags, then the most used lately',
-    description: `The pinned tags, then the tags used most in the last ${RECENT_DAYS} days that aren't pinned, ties broken by last use. Any token may read it.`,
+    description: `The pinned tags, then the tags used most in the last ${RECENT_DAYS} days that aren't pinned, ties broken by last use. A token that adds or reads notes may read it (any token before 1.22.0).`,
     responses: { '200': answer('TagRow', '#house #work #running') }
   },
   'tags.pinned': {

@@ -33,7 +33,7 @@ import {
   V1_RECEIPT_SECONDS,
   V1_UPCOMING_MAX
 } from '../packages/backend/tokens.ts';
-import { LOGIN_TTL, SESSION_IDLE } from '../packages/backend/auth.ts';
+import { LOGIN_TTL, SESSION_IDLE, SESSION_MAX } from '../packages/backend/auth.ts';
 import { SCOPES as GRANTED } from '../packages/backend/oauth.ts';
 import {
   BUILDS_A_DAY,
@@ -296,6 +296,8 @@ async function checkedPhrases() {
     `${MAX_NOTE.toLocaleString('en-US')} characters`,
     `${LOGIN_TTL / 60} minutes`,
     `${SESSION_IDLE / 86400} days from your last visit`,
+    `${SESSION_MAX / 86400} days from when you signed in`,
+    `Signing in lasts ${SESSION_MAX / 86400} days at most`,
     `${DOTS} dots`,
     `up to ${PHOTOS_A_DAY} for a day and ${PHOTOS_AN_EMAIL} in all`,
     `up to ${UPCOMING_SHOWN} at a time`,

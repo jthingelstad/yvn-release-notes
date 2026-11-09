@@ -72,17 +72,17 @@ export class SessionService {
     if (!token) return null;
     const hash = auth.digest(token),
       s = await this.rawStore.getSession(hash, true);
-    if (!s || Number(s.expires_at) <= this.context.now) return null;
+    if (!s || Number(s.expires_at) <= this.context.now || auth.sessionTooOld(s, this.context.now)) return null;
     const profile = s.user_id ? await this.rawStore.mcpProfile(String(s.user_id)) : null;
     if (s.user_id && !profile) return null;
     const answer: Item = { ...s, hash };
     // A session with no account yet keeps its sign-in window (SIGNIN-4).
     if (s.user_id && !profile?.mcp_deleting && this.context.now - Number(s.seen_at ?? 0) >= auth.SESSION_TOUCH) {
-      const expires = auth.sessionExpiry(this.context.now);
+      const expires = auth.sessionExpiry(this.context.now, Number(s.created_at));
       if (!(await this.rawStore.renewSession(hash, s.user_id ? String(s.user_id) : null, this.context.now, expires)))
         return null;
       answer.expires_at = expires;
-      this.renewedCookie = auth.sessionCookie(token);
+      this.renewedCookie = auth.sessionCookie(token, expires - this.context.now);
     }
     return answer;
   }

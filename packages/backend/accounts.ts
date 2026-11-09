@@ -175,7 +175,16 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
         : {};
     let uid = randomUUID().replace(/-/g, ''),
       p: Item = { birthday, send_time: time, status: 'active', created_at: iso(ctx.now), ...fields, ...standing };
-    if (!(await store.createSubscriberVerified(uid, email, p, String(s.hash), ctx.now, sessionExpiry(ctx.now)))) {
+    if (
+      !(await store.createSubscriberVerified(
+        uid,
+        email,
+        p,
+        String(s.hash),
+        ctx.now,
+        sessionExpiry(ctx.now, Number(s.created_at))
+      ))
+    ) {
       const existing = await store.userForEmail(email);
       if (!existing) reject(409, 'try-again');
       uid = existing;
@@ -197,7 +206,15 @@ export async function updateAccount(service: SessionService, b: Item): Promise<I
         ...givingEvents({ birthday }, member ? today : null)
       ]);
     }
-    if (!(await store.claimVerifiedSession(String(s.hash), uid, email, ctx.now, sessionExpiry(ctx.now))))
+    if (
+      !(await store.claimVerifiedSession(
+        String(s.hash),
+        uid,
+        email,
+        ctx.now,
+        sessionExpiry(ctx.now, Number(s.created_at))
+      ))
+    )
       reject(401, 'signed-out');
     service.log({ event: 'signup', user: uid });
     return profileView({ email, ...p }, ctx.now, ctx.inboundDomain);

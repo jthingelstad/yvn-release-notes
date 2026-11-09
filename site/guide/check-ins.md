@@ -13,7 +13,7 @@ In [Activity](/activity/), each one is a row like "Checked in at Home", with whe
 
 On [the Map](/map/), a check-in is a ring and a note is a dot, each kind with its own numbered groups, and the **Show** menu picks notes, check-ins or both. A release narrows both, and a tag keeps the notes and check-ins that have it. Words keep notes alone, since a check-in has none. Choose a mark or a group to list what's there.
 
-In Changelog, **Map of check-ins** in Activity has one pin for each place. Choose a pin to list your stops there.
+In Changelog, **Map** in Activity draws them the same way: a ring for each place you've stopped, beside your notes' dots. Tap a ring to list your stops there.
 
 Stops right after one another at the same place read as one, so a phone that reports a stay twice doesn't make two rows.
 

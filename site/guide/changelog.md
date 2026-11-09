@@ -15,11 +15,23 @@ Changelog is in testing on TestFlight, Apple's app for trying an app before it's
 
 ## How it works
 
-Changelog is the fast way in, with your notes along. Search and looking back, your account and your settings stay on the web. You sign it in with Release Notes, which asks you to name the [API token](/guide/tokens/) it keeps and choose what it may do, and it talks to Release Notes through [the API](/guide/api/), as any app you write yourself can. Its code is open, [on GitHub](https://github.com/jthingelstad/changelog-ios).
+Changelog is the fast way in, with your notes along. Your account and its settings stay on the web. You sign it in with Release Notes, which asks you to name the [API token](/guide/tokens/) it keeps and choose what it may do, and it talks to Release Notes through [the API](/guide/api/), as any app you write yourself can. Its code is open, [on GitHub](https://github.com/jthingelstad/changelog-ios).
 
 ## Version by version
 
 It numbers itself the way Release Notes numbers you. It started on October 29, 2026, so that day is 0.0.0, and the foot of its Settings names the version and the build. Newest first.
+
+## 0.0.10 · November 8
+
+- **Search your notes:** a box at the top of Notes searches every note as the web does: all the words, a "quoted phrase", or one #tag on its own.
+- **On this day:** under Today in Notes, the same day in each earlier year, with its first notes and a link to the whole day.
+- **Tags you can see:** tags show as chips while you write, the #words you type included, and a tag can be a name like Road Trip. Editing a note shows its tags. Upcoming dates, check-ins and remembered places take tags too, and tagging a place offers to tag the check-ins already there.
+- **A page for each tag:** **Tags** in Notes lists every tag, and a tag's page has its notes, Upcoming dates and check-ins.
+- **Files when you edit:** a note's Edit lists its files to take off, and adds photos, a camera shot or a recording.
+- **Voice memos play on the note's page,** and a recording's words appear there once they're written.
+- **The Map:** **Map** in Activity shows your notes as dots and your check-ins as rings, as [the web's Map](/guide/places-and-map/) does. Turn either on or off, pick a year, search for words or a tag, and draw trails that join them in the order they happened.
+- **Ignore this location:** in Settings, under Remembered places, an ignored place keeps no new check-ins, and the ones already there are hidden until you turn it off. You can delete a place's check-ins there too.
+- **More private:** with Lock reading on, the app switcher's cover now hides an open sheet or photo too. Copy the words copies to this phone only, for a short while, and a token you paste to sign in leaves the clipboard once it works.
 
 ## 0.0.8 · November 6
 

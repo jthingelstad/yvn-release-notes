@@ -284,7 +284,9 @@ was promised, and all of it can change with no data to rewrite except the first.
   From another token it makes its own check-in, which reads as one stay with the
   first, so an app signed in again loses nothing and a token can't reach what it
   didn't send. Likewise a token with neither `activity` nor `notes:all` sees no
-  remembered place's name in an answer, so it can't probe spots for them.
+  remembered place's name in an answer, nor the tags a stop took from one, so it
+  can't probe spots for them (tags since 2026-11-08, AUTHZ-2). Tags it sets on
+  its stop are the stop's whole list, so those it sees.
 - **Naming lands whole or not at all,** so a stay of more than 90 check-ins
   (`STAY_WRITE_MAX`, what one transaction holds) can't take one name, and is
   refused with nothing changed. Deleting goes in steps, since a retry finishes

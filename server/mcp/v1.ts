@@ -67,13 +67,19 @@ import {
 } from './reader.ts';
 import type { McpOptions } from './app.ts';
 
-export const API_VERSION = '1.21.5';
+export const API_VERSION = '1.21.6';
 /** What each version changed, newest first, served as the OpenAPI file's
  * `x-changes`: `/v1` only ever gains things, and a deprecation is announced
  * here with its date. The one exception is 1.8.0, which withdrew 1.6.0's
  * `moment` before any released app sent one (Jamie, 2026-10-30). A new
  * version starts with its entry. */
 export const API_CHANGES: readonly { version: string; date: string; summary: string }[] = [
+  {
+    version: '1.21.6',
+    date: '2026-11-08',
+    summary:
+      "POST /v1/check-ins and PATCH /v1/check-ins/{id} answer a token with neither `activity` nor `notes:all` with empty `tags` and `tag_names` when a stop took them from a remembered place, as they already hid the place's name. Tags the token sends in the PATCH show as sent. The stop keeps its tags, and a token that reads the log sees them. No request changed."
+  },
   {
     version: '1.21.5',
     date: '2026-11-08',

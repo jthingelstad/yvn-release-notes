@@ -13,7 +13,7 @@ Send each stop as the phone reports it, with `POST /v1/check-ins` and an `Idempo
 
 A later report from the same token with the same `source` and arrival, to the second, is the same stay. It fills in what was missing, so an arrival and then a departure, or the same report twice, land in one check-in and your app keeps no ids. A `tap` is never filled in.
 
-Each answer has its `check_in` and `kept`, which is false when the stop is at a place you ignore: nothing is kept, and the `check_in` shows what it would have been, with an `id` that names nothing. Each answer's `check_in` has its `id`, `at`, `day`, `arrived` and `left` (either can be null), `lat`, `lon`, `accuracy_m`, `time_zone`, `source`, `revision`, and the name it shows as `label`. A token that can't read the log or all your notes isn't told a remembered place's name. A name is worked out when it's read, the first of these that fits:
+Each answer has its `check_in` and `kept`, which is false when the stop is at a place you ignore: nothing is kept, and the `check_in` shows what it would have been, with an `id` that names nothing. Each answer's `check_in` has its `id`, `at`, `day`, `arrived` and `left` (either can be null), `lat`, `lon`, `accuracy_m`, `time_zone`, `source`, `revision`, and the name it shows as `label`. A token that can't read the log or all your notes isn't told a remembered place's name, or the tags a stop took from it; it sees the tags it sets itself. A name is worked out when it's read, the first of these that fits:
 
 1. Its own `name`, given once.
 2. A remembered place, the nearest within 100 m of its spot, whose id is `place`.

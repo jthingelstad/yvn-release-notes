@@ -291,7 +291,10 @@ test('Sign out other devices ends every other session of the account and keeps t
     here = await s.session(),
     phone = await s.session(),
     laptop = await s.session(),
+    left = await s.session(),
     stale = auth.newToken();
+  // Signed out in its own browser, which leaves its row in the list.
+  assert.equal((await s.call('POST', '/api/auth/signout', {}, left)).response.status, 200);
   // A session already past its expiry is cleared without counting.
   await s.store.createSession(auth.digest(stale), {
     user_id: 'u',

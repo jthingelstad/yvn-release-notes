@@ -329,6 +329,9 @@ Resources:
                   - ses:DescribeReceiptRuleSet
                   - ses:CreateReceiptRule
                   - ses:UpdateReceiptRule
+                  # CloudFormation calls it on every update of a rule, and
+                  # on rolling one back, to keep the rule where After puts it.
+                  - ses:SetReceiptRulePosition
                   - ses:DeleteReceiptRule
                   - ses:DescribeReceiptRule
                   - ses:DescribeActiveReceiptRuleSet

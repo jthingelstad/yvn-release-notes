@@ -5,6 +5,10 @@ description: Everything Release Notes has learned to do, one release at a time.
 
 Release Notes numbers itself the way it numbers you. It shipped on October 7, 2026, so that day is 0.0.0. Newest first. Changelog, the iPhone app, keeps [its own](/guide/changelog/).
 
+## 0.0.33 · November 9
+
+- Email to Release Notes must come encrypted now, as Gmail, iCloud, Outlook and every major provider already send it. A reply from a server that can't is bounced back to you.
+
 ## 0.0.32 · November 8
 
 - Tags are their own field now. Under the box where you write a note, type a tag in **Tags** and press Enter: it can have spaces and emoji, like Road Trip or 🚗 Lake, with or without a #. A #word in a note is still a tag, and taking off its chip takes it out of the words. Road Trip, road trip and road-trip are one tag. [Tags and search](/guide/tags-and-search/) has more.

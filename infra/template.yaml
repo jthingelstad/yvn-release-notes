@@ -658,7 +658,9 @@ Resources:
         Name: replies
         Enabled: true
         ScanEnabled: true
-        TlsPolicy: Optional
+        # Mail that arrives without TLS bounces (Jamie, 2026-11-08, product
+        # call 6 of the security audit): every major provider sends with it.
+        TlsPolicy: Require
         Recipients: [!Ref InboundDomain]
         Actions:
           - S3Action:

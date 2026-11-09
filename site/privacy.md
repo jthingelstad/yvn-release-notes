@@ -17,7 +17,7 @@ You can. So can Jamie Thingelstad, who runs Release Notes: as its operator, he c
 
 Only what each job needs:
 
-- **Email** is sent and received through Amazon.
+- **Email** is sent and received through Amazon. Mail to Release Notes must come encrypted, as every major email provider sends it, and mail that doesn't is bounced.
 - **Your city** goes to Open-Meteo for the weather. Never your notes.
 - **Places:** "Here" and "Add where I am" send the spot where you saved a note to Amazon Location, to name the neighbourhood and nearby places. A photo that carries its own location sends that spot the same way, and so does a check-in, once as it arrives and again if you ask for the businesses nearby. Only the spot, never the note.
 - **Signing in** checks for bots with Cloudflare Turnstile.

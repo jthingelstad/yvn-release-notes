@@ -108,7 +108,8 @@ export async function handler(
     const [reason, rawAddresses] = recipients(msg),
       kind = mailKind(msg),
       users: (string | null)[] = [];
-    for (const raw of rawAddresses) {
+    const snsId = record.Sns?.MessageId;
+    for (const [place, raw] of rawAddresses.entries()) {
       const parsed = await addresses([raw]),
         email = parsed.length === 1 ? normalEmail(parsed[0]) : null,
         user = email ? await services.store.userForEmail(email) : null;
@@ -117,12 +118,17 @@ export async function handler(
         // A sign-in email to an address with no account bounced: it counts
         // against the address's domain for the UTC day, and at
         // DOMAIN_BOUNCES_A_DAY sign-in mail there stops (sessions.ts).
-        if (reason === 'bounce' && email && kind === 'account')
-          await services.store.count(bounceKey(email), Math.floor(now / 86400), 86400);
+        // Once per notification and recipient, so a redelivery or a retry after
+        // a failed publish doesn't count it again.
+        if (reason === 'bounce' && email && kind === 'account' && snsId)
+          await services.store.countBounce(
+            bounceKey(email),
+            createHash('sha256').update(`${snsId}#${place}`).digest('hex'),
+            now
+          );
         log({ event: 'mail-event', reason, outcome: 'no-account' });
         continue;
       }
-      const snsId = record.Sns?.MessageId;
       // Real SNS records always name their message; refusing an absent ID avoids
       // silently falling back to an unsafe stop/tally pair.
       if (!snsId) throw new TypeError('SNS MessageId required for account event');

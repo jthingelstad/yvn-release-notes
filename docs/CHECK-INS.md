@@ -141,6 +141,14 @@ the phone alone; that app moves its spot to a remembered place, ignored.
   it would have been, whose id names nothing, so an older client reads it as
   done. A report filling in a stop kept before the place was ignored still
   lands, hidden.
+- **A check-in's receipt keeps no spot or time its request sent** (2026-11-08,
+  AUTHZ-3). Its `lat`, `lon`, `accuracy_m`, `arrived`, `left` and `at` are
+  stored as null when the answer shows them as sent. A replay has the same
+  request (its hash must match), so it puts them back and answers exactly as
+  before. A stop at an ignored place, or one deleted since, then leaves only
+  its id, day, name and token in the receipt for the week the receipt lives.
+  A report that goes on with a stop shows the stop's own spot, which isn't the
+  request's, and keeps it, since the stop is still there.
 - **The ones there already are hidden, not deleted.** A stay is at the place
   nearest its first check-in, as its name is. While that place is ignored the
   stay is left out of `GET /v1/check-ins`, a read of one (404), the web's Map and

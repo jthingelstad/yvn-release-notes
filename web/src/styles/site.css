@@ -754,6 +754,12 @@ label.picker input {
   color: var(--orange-ink);
   font-variant-numeric: tabular-nums;
 }
+.record-wave {
+  color: var(--orange-ink);
+  width: 120px;
+  height: 32px;
+  align-self: center;
+}
 label.picker:focus-within {
   outline: 2px solid var(--orange);
   outline-offset: 4px;

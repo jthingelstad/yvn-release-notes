@@ -21,6 +21,7 @@ import type { Place, Unlocked } from '../lib/types.ts';
 import { ErrorLine, useBusy, useProblem } from './common.tsx';
 import { useRefresh } from './notelist.tsx';
 import { canRecord, recordClock, useRecorder } from './recorder.ts';
+import { RecordWave } from './recordwave.tsx';
 import { Icon } from './icon.tsx';
 import { UnlockLine } from './unlock.tsx';
 import { NoteWhere } from './where.tsx';
@@ -290,6 +291,7 @@ export function NoteForm({ day, label, placeholder, submit, initialTags = [], he
           >
             <Icon name="record" /> {rec.seconds === null ? 'Record' : `Stop · ${recordClock(rec.seconds)}`}
           </button>
+          {rec.analyser && <RecordWave analyser={rec.analyser} />}
           <NoteWhere
             key={round}
             place={place}

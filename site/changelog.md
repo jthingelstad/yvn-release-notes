@@ -5,6 +5,10 @@ description: Everything Release Notes has learned to do, one release at a time.
 
 Release Notes numbers itself the way it numbers you. It shipped on October 7, 2026, so that day is 0.0.0. Newest first. Changelog, the iPhone app, keeps [its own](/guide/changelog/).
 
+## 0.0.34 · November 10
+
+- While you record a voice memo on a note, bars beside **Stop** rise and fall with your voice, so you can see the microphone hears you. They lie flat when it hears nothing.
+
 ## 0.0.33 · November 9
 
 - Email to Release Notes must come encrypted now, as Gmail, iCloud, Outlook and every major provider already send it. A reply from a server that can't is bounced back to you.

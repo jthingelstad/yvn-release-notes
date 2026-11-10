@@ -1,7 +1,8 @@
 // The note form's Record button: the microphone through MediaRecorder
 // (Jamie, 2026-10-09), each recording kept on the page, to listen to or
 // remove, until the note is saved. files() stops one still going and gives
-// them all as files to send.
+// them all as files to send. While one is going, `analyser` listens to the
+// same microphone for RecordWave's bars, so you can see it hears you.
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // In the first of these the browser records: Safari and newer Chrome make
@@ -20,6 +21,7 @@ export const canRecord = () =>
 export function useRecorder(onRefused: () => void) {
   const [kept, setKept] = useState<Kept[]>([]);
   const [seconds, setSeconds] = useState<number | null>(null); // null: not recording
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const keptRef = useRef<Kept[]>([]);
   const live = useRef<{ rec: MediaRecorder; done: Promise<void> } | null>(null);
 
@@ -39,12 +41,15 @@ export function useRecorder(onRefused: () => void) {
     const type = RECORD_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
     const rec = new MediaRecorder(stream, type ? { mimeType: type } : {});
     const chunks: Blob[] = [];
+    const ear = listen(stream);
     const started = Date.now();
     const elapsed = () => Math.round((Date.now() - started) / 1000);
     const done = new Promise<void>((resolve) =>
       rec.addEventListener('stop', () => {
         clearInterval(tick);
         stream.getTracks().forEach((t) => t.stop());
+        void ear?.context.close().catch(() => {});
+        setAnalyser(null);
         const t = rec.mimeType || type || 'audio/webm';
         if (chunks.length) {
           const ext = t.startsWith('audio/mp4') ? 'm4a' : t.startsWith('audio/ogg') ? 'ogg' : 'webm';
@@ -63,6 +68,7 @@ export function useRecorder(onRefused: () => void) {
     rec.start(1000);
     live.current = { rec, done };
     setSeconds(0);
+    setAnalyser(ear?.analyser ?? null);
     const tick = setInterval(() => {
       setSeconds(elapsed());
       if (elapsed() >= MAX_RECORDING) rec.stop();
@@ -101,7 +107,24 @@ export function useRecorder(onRefused: () => void) {
   // Leaving the page stops the microphone.
   useEffect(() => () => live.current?.rec.stop(), []);
 
-  return { kept, seconds, toggle, remove, files, clear, unsaved: () => !!live.current || !!keptRef.current.length };
+  return { kept, seconds, analyser, toggle, remove, files, clear, unsaved: () => !!live.current || !!keptRef.current.length };
+}
+
+// The microphone's level, for the bars only: nothing it hears goes anywhere.
+// A browser without Web Audio, or one that refuses it, records the same,
+// just without bars.
+function listen(stream: MediaStream): { context: AudioContext; analyser: AnalyserNode } | null {
+  if (!window.AudioContext) return null;
+  try {
+    const context = new AudioContext();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 1024;
+    context.createMediaStreamSource(stream).connect(analyser);
+    void context.resume().catch(() => {});
+    return { context, analyser };
+  } catch {
+    return null;
+  }
 }
 
 export const recordClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;

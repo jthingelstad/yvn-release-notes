@@ -259,8 +259,20 @@ test('a recording made on the page plays back, then goes with the note', async (
   await record.click();
   await expect(record).toHaveAttribute('aria-pressed', 'true');
   await expect(record).toHaveText('Stop · 0:02', { timeout: 5000 });
+  // The bars hear the fake microphone's tone: some stand well above the
+  // dots silence draws across the middle.
+  const wave = form.locator('canvas.record-wave');
+  await expect(wave).toBeVisible();
+  const tall = () =>
+    wave.evaluate((c) => {
+      const row = Math.floor(c.height * 0.3);
+      const { data } = c.getContext('2d').getImageData(0, row, c.width, 1);
+      return data.some((v, i) => i % 4 === 3 && v > 0);
+    });
+  await expect.poll(tall).toBe(true);
   await record.click();
   await expect(record).toHaveText('Record');
+  await expect(wave).toHaveCount(0);
   const preview = form.locator('.recordings audio');
   await expect(preview).toHaveCount(1);
   expect(await preview.getAttribute('src')).toMatch(/^blob:/);

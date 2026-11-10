@@ -746,7 +746,10 @@ or new CSP exception.
   the microphone up to 30 minutes, as MP4 where the browser makes it
   (Safari, newer Chrome) else WebM or Ogg. Each recording plays back from
   a `blob:` URL and can be removed before the note is added; adding the
-  note sends it like a chosen file. The Permissions-Policy allows the
+  note sends it like a chosen file. While it records, bars beside Stop
+  (`recordwave.tsx`) show the microphone's level, read through a Web Audio
+  analyser on the same stream that goes nowhere else; without Web Audio it
+  records the same, without bars. The Permissions-Policy allows the
   microphone and the location to the page itself and turns off the camera,
   payment and USB. The e2e test records Chromium's fake microphone.
 - **Inherited place**: a note with no place of its own shows the day's city

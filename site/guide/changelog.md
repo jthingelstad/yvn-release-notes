@@ -21,6 +21,10 @@ Changelog is the fast way in, with your notes along. Your account and its settin
 
 It numbers itself the way Release Notes numbers you. It started on October 29, 2026, so that day is 0.0.0, and the foot of its Settings names the version and the build. Newest first.
 
+## 0.0.12 · November 10
+
+- **See your voice memo listening:** while you record, bars under the clock rise and fall with your voice, newest at the right. They lie flat as dots when the microphone hears nothing.
+
 ## 0.0.11 · November 9
 
 - **A check-in link asks first:** a link that opens Changelog to check in now asks **Check in here?** before it sends where you are. The Check In control and Siri still check in with one tap.

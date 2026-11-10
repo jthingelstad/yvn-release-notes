@@ -107,7 +107,16 @@ export function useRecorder(onRefused: () => void) {
   // Leaving the page stops the microphone.
   useEffect(() => () => live.current?.rec.stop(), []);
 
-  return { kept, seconds, analyser, toggle, remove, files, clear, unsaved: () => !!live.current || !!keptRef.current.length };
+  return {
+    kept,
+    seconds,
+    analyser,
+    toggle,
+    remove,
+    files,
+    clear,
+    unsaved: () => !!live.current || !!keptRef.current.length
+  };
 }
 
 // The microphone's level, for the bars only: nothing it hears goes anywhere.

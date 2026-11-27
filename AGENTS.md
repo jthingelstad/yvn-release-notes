@@ -5,7 +5,7 @@ gets one email a day whose subject is their version number ("You're 5.2.113
 today"). Whatever they reply, or write at `notes.yourversionnumber.com`,
 becomes the release notes for that version.
 
-It is its own repo and stack, separate from `~/Projects/yourversionnumber.com`
+It is its own repo and stack, separate from `~/Projects/release-notes/yourversionnumber.com`
 (the birthday and work sites). Those sites keep everything in the URL because
 that was a fun way to build them, not because of a rule (Jamie, 2026-10-08:
 "This is a hobby project. It's just fun."). This product stores data.

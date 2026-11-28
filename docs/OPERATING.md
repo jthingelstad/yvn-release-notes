@@ -132,6 +132,26 @@ write need Jamie's go for a live run (`AGENTS.md`, Operating).
   `error:<code>`, `loading-timeout`, `solving-timeout`,
   `interactive-timeout`, `no-slot` (`web/src/lib/turnstile.ts`), with
   `client_wait_ms` beside it.
+- `codes` holds Cloudflare's siteverify codes, plus our own:
+  `hostname-mismatch` and `action-mismatch` (Cloudflare said success, but for
+  a host other than notes.yourversionnumber.com or an action other than
+  `signin`: a `fail`), `token-other-address`, `token-used-up`,
+  `token-expired` (the kept verdict), and `secret-lookup`, `http-<status>` or
+  a timeout name (an `error`). Cloudflare's `internal-error` is an `error`
+  too, so it goes ahead in every mode (Jamie: "I'll accept risk when
+  Cloudflare is down").
+- `client` says which kind of caller sent the request: `page` (the current
+  sign-in page, which the apps and the MCP consent flow open too),
+  `old-page` (a tab still running page code from 2026-10-14 to 10-20),
+  `browser` (no page fields, but a browser's `Sec-Fetch-Site`) or `script`
+  (neither). `fetch_site` is that header (`same-origin`, `same-site`,
+  `cross-site`, `none` or `other`). Like the reason, both are logged and
+  never trusted. Who sent the token-less requests:
+  `filter message.event = "turnstile" and message.result = "missing" | stats count() by message.client, message.fetch_site, message.client_reason`.
+- After a Cloudflare error that a retry can mend, the page resets the widget
+  a second later, at most twice in a row, inside its usual wait
+  (`retry: 'never'` turns off Cloudflare's own retry, which comes after eight
+  seconds); a later send tries once more.
 - The widget is "Release Notes sign-in" (managed, site key
   `0x4AAAAAAFW0y7cvQQshNAwH`, public, domain notes.yourversionnumber.com),
   made with the `cf` CLI. One token serves one address for five minutes and

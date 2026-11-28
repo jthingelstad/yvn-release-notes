@@ -14,6 +14,15 @@
 // has answered, the box collapses ("quiet") rather than leave "Success!"
 // sitting on the next step.
 //
+// Cloudflare's error-callback is not the end. Most of its errors are worth
+// another try (its error-code table; one real sign-in was lost to 600010,
+// 2026-10-30), but its own retry comes eight seconds later, after the five
+// second wait. So the widget renders with `retry: 'never'`, and an error worth
+// retrying resets it a second later, at most twice in a row; a request waiting
+// keeps its usual wait (five seconds, or two minutes while a checkbox shows)
+// and, if that runs out, goes without a token, the last error as its reason.
+// Returning true tells Cloudflare the error was handled (no console warning).
+//
 // A token is single-use at Cloudflare, but the server keeps its verdict for
 // five minutes and three uses, bound to the address it came with, so one
 // token covers the first email and a resend. A new address, a fourth use or
@@ -28,16 +37,26 @@ const QUIET_WAIT_MS = 5000;
 const INTERACTIVE_WAIT_MS = 120000;
 const MAX_USES = 3;
 const MAX_AGE_MS = 270000;
+const RETRY_AFTER_MS = 1000;
+const MAX_RETRIES = 2;
+
+// Cloudflare's error codes that a retry cannot mend: a bad, unknown or
+// disabled site key, a domain the widget does not list, a wrong clock
+// (troubleshooting/client-side-errors/error-codes). Every other code is tried
+// again.
+const FINAL_ERRORS = /^(1101(00|10)|110200|200100|4000(20|21|70))$/;
+export const retryable = (code: string) => !FINAL_ERRORS.test(code);
 
 interface RenderOptions {
   sitekey: string;
   action: string;
   appearance: 'interaction-only';
   'refresh-expired': 'auto';
+  retry: 'never';
   callback: (token: string) => void;
   'expired-callback': () => void;
   'before-interactive-callback': () => void;
-  'error-callback': (code?: string) => void;
+  'error-callback': (code?: string) => boolean;
 }
 export interface TurnstileApi {
   render(container: HTMLElement, options: RenderOptions): string;
@@ -120,6 +139,9 @@ export function attachTurnstile(
   let lastReason: TurnstileReason = '';
   let lastWaitMs = 0;
   let waiters: (() => void)[] = [];
+  // Resets since the last token, and the one waiting to happen.
+  let retries = 0;
+  let retryTimer: number | undefined;
 
   const settle = () => {
     const pending = waiters;
@@ -146,9 +168,11 @@ export function attachTurnstile(
           action,
           appearance: 'interaction-only',
           'refresh-expired': 'auto',
+          retry: 'never',
           callback: (value) => {
             token = value;
             failure = '';
+            retries = 0;
             issuedAt = Date.now();
             uses = 0;
             boundEmail = '';
@@ -165,14 +189,19 @@ export function attachTurnstile(
           },
           'error-callback': (code) => {
             token = '';
-            failure = `error:${
+            const clean =
               String(code ?? '')
                 .replace(/[^a-z0-9]/gi, '')
-                .slice(0, 12) || 'unknown'
-            }`;
+                .slice(0, 12) || 'unknown';
+            failure = `error:${clean}`;
             interactive = false;
             showing(false);
+            if (retryable(clean) && retries < MAX_RETRIES) {
+              retries += 1;
+              retryLater();
+            }
             settle();
+            return true;
           }
         });
       },
@@ -187,11 +216,9 @@ export function attachTurnstile(
     );
   }
 
-  function reset() {
-    token = '';
-    failure = '';
-    uses = 0;
-    boundEmail = '';
+  function resetWidget() {
+    window.clearTimeout(retryTimer);
+    retryTimer = undefined;
     if (api && widgetId !== null && widgetId !== 'pending') {
       try {
         api.reset(widgetId);
@@ -199,6 +226,21 @@ export function attachTurnstile(
         // A widget that is gone renders afresh on the next warm().
       }
     }
+  }
+
+  // Cloudflare's own retry, sooner: the failure stays the reason until a
+  // token comes.
+  function retryLater() {
+    window.clearTimeout(retryTimer);
+    retryTimer = window.setTimeout(resetWidget, RETRY_AFTER_MS);
+  }
+
+  function reset() {
+    token = '';
+    failure = '';
+    uses = 0;
+    boundEmail = '';
+    resetWidget();
   }
 
   const fresh = (email: string) =>
@@ -209,6 +251,12 @@ export function attachTurnstile(
     const email = raw.trim().toLowerCase();
     warm();
     if (token && !fresh(email)) reset();
+    // An error left over from earlier, with its retries spent or not worth
+    // one: this request gets one more try, inside its own wait.
+    else if (!token && failure.startsWith('error:') && retryTimer === undefined) {
+      retries = MAX_RETRIES;
+      resetWidget();
+    }
     return new Promise((resolve) => {
       const started = Date.now();
       const finish = (timedOut = false) => {

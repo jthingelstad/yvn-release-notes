@@ -1,6 +1,6 @@
 // The sign-in page's Turnstile handle, with a stand-in for Cloudflare's script.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { attachTurnstile, SITE_KEY, type TurnstileApi } from './turnstile.ts';
+import { attachTurnstile, retryable, SITE_KEY, type TurnstileApi } from './turnstile.ts';
 
 type Options = Parameters<TurnstileApi['render']>[1];
 
@@ -29,7 +29,12 @@ describe('attachTurnstile', () => {
     await Promise.resolve();
     expect(s.load).toHaveBeenCalledTimes(1);
     expect(s.renders).toHaveLength(1);
-    expect(s.renders[0]).toMatchObject({ sitekey: SITE_KEY, action: 'signin', appearance: 'interaction-only' });
+    expect(s.renders[0]).toMatchObject({
+      sitekey: SITE_KEY,
+      action: 'signin',
+      appearance: 'interaction-only',
+      retry: 'never'
+    });
   });
 
   it('shows the slot only while Cloudflare asks, and collapses it once answered', async () => {
@@ -177,6 +182,79 @@ describe('attachTurnstile', () => {
     const t = attachTurnstile(() => document.createElement('div'), 'signin', s.load);
     const waiting = t.tokenFor('ada@example.com');
     await vi.advanceTimersByTimeAsync(0);
+    s.renders[0]!['before-interactive-callback']();
+    await vi.advanceTimersByTimeAsync(30000);
+    s.renders[0]!.callback('tok-after-checkbox');
+    expect(await waiting).toBe('tok-after-checkbox');
+  });
+
+  it('retries a retryable error within the usual wait, and tells Cloudflare it was handled', async () => {
+    vi.useFakeTimers();
+    const s = standIn();
+    const t = attachTurnstile(() => document.createElement('div'), 'signin', s.load);
+    const waiting = t.fieldsFor('ada@example.com');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.renders[0]!['error-callback']('600010')).toBe(true);
+    expect(s.api.reset).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(s.api.reset).toHaveBeenCalledWith('w1');
+    s.renders[0]!.callback('tok-after-retry');
+    const fields = await waiting;
+    expect(fields).toMatchObject({ turnstile_token: 'tok-after-retry' });
+    expect(fields).not.toHaveProperty('turnstile_reason');
+    expect(fields.turnstile_wait_ms).toBeLessThan(5000);
+  });
+
+  it('retries at most twice in a row, never past the five seconds, and sends the last error', async () => {
+    vi.useFakeTimers();
+    const s = standIn();
+    const t = attachTurnstile(() => document.createElement('div'), 'signin', s.load);
+    const waiting = t.fieldsFor('ada@example.com');
+    await vi.advanceTimersByTimeAsync(0);
+    s.renders[0]!['error-callback']('600010');
+    await vi.advanceTimersByTimeAsync(1000);
+    s.renders[0]!['error-callback']('300030');
+    await vi.advanceTimersByTimeAsync(1000);
+    s.renders[0]!['error-callback']('600010');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(s.api.reset).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2300);
+    const fields = await waiting;
+    expect(fields).toMatchObject({ turnstile_token: '', turnstile_reason: 'error:600010' });
+    expect(fields.turnstile_wait_ms).toBeGreaterThanOrEqual(5000);
+    expect(fields.turnstile_wait_ms).toBeLessThan(5600);
+  });
+
+  it('does not retry an error a retry cannot mend, but tries once more on the next send', async () => {
+    vi.useFakeTimers();
+    expect(retryable('600010')).toBe(true);
+    expect(retryable('110600')).toBe(true);
+    expect(retryable('unknown')).toBe(true);
+    for (const code of ['110100', '110110', '110200', '200100', '400020', '400021', '400070'])
+      expect(retryable(code)).toBe(false);
+    const s = standIn();
+    const t = attachTurnstile(() => document.createElement('div'), 'signin', s.load);
+    t.warm();
+    await vi.advanceTimersByTimeAsync(0);
+    s.renders[0]!['error-callback']('110200');
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(s.api.reset).not.toHaveBeenCalled();
+    const next = t.fieldsFor('ada@example.com');
+    expect(s.api.reset).toHaveBeenCalledTimes(1);
+    s.renders[0]!['error-callback']('110200');
+    await vi.advanceTimersByTimeAsync(5300);
+    expect(s.api.reset).toHaveBeenCalledTimes(1);
+    expect(await next).toMatchObject({ turnstile_token: '', turnstile_reason: 'error:110200' });
+  });
+
+  it('a checkbox after a retry keeps the two-minute wait', async () => {
+    vi.useFakeTimers();
+    const s = standIn();
+    const t = attachTurnstile(() => document.createElement('div'), 'signin', s.load);
+    const waiting = t.tokenFor('ada@example.com');
+    await vi.advanceTimersByTimeAsync(0);
+    s.renders[0]!['error-callback']('600010');
+    await vi.advanceTimersByTimeAsync(1000);
     s.renders[0]!['before-interactive-callback']();
     await vi.advanceTimersByTimeAsync(30000);
     s.renders[0]!.callback('tok-after-checkbox');

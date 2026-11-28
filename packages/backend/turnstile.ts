@@ -12,9 +12,15 @@
  * - `observe` checks and logs every token and never refuses anyone.
  * - `enforce` refuses only a token that is missing or that Cloudflare
  *   rejected. A Cloudflare script outage also means a missing token, so
- *   enforce is its own later decision. Cloudflare unreachable (`error`) or
- *   no secret (`unconfigured`) always goes ahead.
+ *   enforce is its own later decision. Cloudflare unreachable or answering
+ *   `internal-error` (`error`: "I'll accept risk when Cloudflare is down",
+ *   Jamie) or no secret (`unconfigured`) always goes ahead.
  * - `off` skips the check.
+ *
+ * Cloudflare's success is a pass only for this widget's own sign-in: a token
+ * solved on another hostname or for another action fails as
+ * `hostname-mismatch` / `action-mismatch` (codes of ours, apart from
+ * Cloudflare's), as Cloudflare's siteverify docs ask (2026-11-28).
  *
  * One token serves one address for five minutes, three times. A token is
  * single-use at Cloudflare and the page reuses it for "send it again", so the
@@ -27,6 +33,9 @@ import type { Store } from './store.ts';
 
 /** Widget "Release Notes sign-in" (managed, notes.yourversionnumber.com). Public. */
 export const TURNSTILE_SITE_KEY = '0x4AAAAAAFW0y7cvQQshNAwH';
+/** What a pass must carry: the page's host and its `action` (`Home.tsx`). */
+export const TURNSTILE_HOSTNAME = 'notes.yourversionnumber.com';
+export const TURNSTILE_ACTION = 'signin';
 export const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 /** Flip to 'enforce' only once the observe numbers show people pass. */
 export const DEFAULT_TURNSTILE_MODE: TurnstileMode = 'observe';
@@ -98,6 +107,38 @@ export function turnstileClient(body: Record<string, unknown>): { client_reason?
   };
 }
 
+/**
+ * Which kind of caller sent a sign-in email request, from what it already
+ * sends: nothing that names a person (no address, token, user agent or IP).
+ * - `page`: the current sign-in page, which always sends `turnstile_wait_ms`
+ *   (since 2026-10-20). The apps' sign-in and the MCP consent flow open this
+ *   same page in a browser, so they are `page` too.
+ * - `old-page`: a `turnstile_token` field but no wait, page code from
+ *   2026-10-14 to 2026-10-20 still open in a tab.
+ * - `browser`: no page fields, but the browser's own `Sec-Fetch-Site`
+ *   (a tab from before 2026-10-14, the console, an extension).
+ * - `script`: neither (curl, a bot, the apps' dev-server UI tests).
+ * `fetch_site` is that header's value when it is one of the four the Fetch
+ * Metadata spec defines (`other` otherwise), so a cross-site post shows.
+ * Logged only, never trusted: any caller can send any of it.
+ */
+export function turnstileCaller(
+  body: Record<string, unknown>,
+  headers: Headers
+): { client: 'page' | 'old-page' | 'browser' | 'script'; fetch_site?: string } {
+  const raw = headers.get('sec-fetch-site'),
+    site = raw === null ? undefined : ['same-origin', 'same-site', 'cross-site', 'none'].includes(raw) ? raw : 'other',
+    client =
+      typeof body.turnstile_wait_ms === 'number'
+        ? 'page'
+        : 'turnstile_token' in body
+          ? 'old-page'
+          : site
+            ? 'browser'
+            : 'script';
+  return { client, ...(site ? { fetch_site: site } : {}) };
+}
+
 async function siteverify(
   fetcher: typeof fetch,
   secret: string,
@@ -123,14 +164,20 @@ async function siteverify(
     const codes = Array.isArray(data['error-codes'])
       ? data['error-codes'].map((code) => String(code).slice(0, 40)).slice(0, 5)
       : [];
-    // A rejected secret is our fault, not the visitor's.
-    if (data.success !== true && codes.some((code) => code.includes('secret'))) return { result: 'error', codes };
-    return {
-      result: data.success === true ? 'pass' : 'fail',
-      codes,
-      ...(typeof data.hostname === 'string' ? { hostname: data.hostname.slice(0, 253) } : {}),
-      ...(typeof data.action === 'string' ? { action: data.action.slice(0, 32) } : {})
-    };
+    // A rejected secret is our fault, not the visitor's, and Cloudflare's own
+    // `internal-error` is Cloudflare being down: both go ahead in every mode.
+    if (data.success !== true && codes.some((code) => code.includes('secret') || code === 'internal-error'))
+      return { result: 'error', codes };
+    const hostname = typeof data.hostname === 'string' ? data.hostname.slice(0, 253) : undefined,
+      action = typeof data.action === 'string' ? data.action.slice(0, 32) : undefined,
+      seen = { ...(hostname !== undefined ? { hostname } : {}), ...(action !== undefined ? { action } : {}) };
+    if (data.success !== true) return { result: 'fail', codes, ...seen };
+    // A token solved somewhere else, or for another widget action, is not ours.
+    const mismatches = [
+      ...(hostname === TURNSTILE_HOSTNAME ? [] : ['hostname-mismatch']),
+      ...(action === TURNSTILE_ACTION ? [] : ['action-mismatch'])
+    ];
+    return mismatches.length ? { result: 'fail', codes: mismatches, ...seen } : { result: 'pass', codes, ...seen };
   } catch (error) {
     return { result: 'error', codes: [(error as Error)?.name || 'Error'] };
   }
@@ -172,6 +219,8 @@ export async function checkTurnstile(input: {
     emailHash = digest(input.email);
   try {
     const cached = await input.store.turnstileVerdict(tokenHash);
+    // A kept pass was checked for hostname and action before it was kept, and a
+    // kept mismatch is a fail with its code.
     if (cached && Number(cached.verified_at) > input.now - TOKEN_SECONDS) {
       if (cached.email_hash !== emailHash) return done('fail', ['token-other-address'], true);
       if (!(await input.store.useTurnstileVerdict(tokenHash, emailHash, MAX_TOKEN_USES)))

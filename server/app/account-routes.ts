@@ -19,7 +19,7 @@ import { computeVersion } from '../../packages/domain/version.ts';
 import { pythonTrim, codePointLength } from '../../packages/domain/unicode.ts';
 import type { Item } from '../../packages/backend/store-types.ts';
 import { signinMessage, deleteMessage } from '../../packages/mail/auth.ts';
-import { checkTurnstile, turnstileClient, turnstileToken } from '../../packages/backend/turnstile.ts';
+import { checkTurnstile, turnstileCaller, turnstileClient, turnstileToken } from '../../packages/backend/turnstile.ts';
 import { ACTIVITY_FAMILIES, activityId, activityView, familyOf, titled } from '../../packages/domain/activity.ts';
 import { eventId, recordActivity } from '../../packages/backend/activity.ts';
 import { spotOf, type SpotNames } from '../../packages/backend/places.ts';
@@ -105,7 +105,8 @@ export async function accountRoutes(
       codes: turnstile.codes.join(','),
       ...(turnstile.hostname ? { hostname: turnstile.hostname } : {}),
       ...(turnstile.action ? { action: turnstile.action } : {}),
-      ...turnstileClient(b)
+      ...turnstileClient(b),
+      ...turnstileCaller(b, service.request.headers)
     });
     if (!turnstile.allowed) reject(403, 'turnstile');
     await service.reserveMail(email, viewer, (await store.userForEmail(email)) !== null);

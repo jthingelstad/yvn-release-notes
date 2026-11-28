@@ -780,7 +780,12 @@ Where things are (each module's design comment has its contract):
   the token before any limit or mail and logs one line per request, never
   the address or token. The page's `client_wait_ms` and `client_reason`
   (2026-10-20, after the first week's four `missing` were all real people)
-  are its word, logged and never trusted: a reason lets nothing through.
+  are its word, logged and never trusted: a reason lets nothing through, and
+  neither does the `client` class beside them (2026-11-28: the page, an old
+  tab, another browser request or a script). A Cloudflare success counts only
+  for notes.yourversionnumber.com and the `signin` action
+  (`hostname-mismatch`, `action-mismatch`); Cloudflare's `internal-error`
+  goes ahead like an outage.
   `observe` (the default) refuses nobody, `off` skips the check, and
   `enforce` refuses `fail` and `missing`; since a Cloudflare outage also
   means `missing`, enforcing is its own decision, made from the observe

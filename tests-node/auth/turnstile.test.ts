@@ -11,10 +11,12 @@ import * as auth from '../../packages/backend/auth.ts';
 import {
   checkTurnstile,
   turnstileAllows,
+  turnstileCaller,
   turnstileClient,
   turnstileMode,
   turnstileToken,
   SITEVERIFY_URL,
+  TURNSTILE_ACTION,
   TURNSTILE_SITE_KEY,
   type TurnstileConfig
 } from '../../packages/backend/turnstile.ts';
@@ -22,6 +24,8 @@ import type { ApiContext } from '../../packages/backend/sessions.ts';
 import type { Item } from '../../packages/backend/store.ts';
 
 const now = Date.parse('2026-10-14T12:00:00Z') / 1000;
+/** Cloudflare's success for this widget's own sign-in. */
+const ours = { success: true, hostname: 'notes.yourversionnumber.com', action: 'signin' };
 
 function cloudflare(answer: Item | (() => never), status = 200) {
   const calls: URLSearchParams[] = [];
@@ -78,7 +82,7 @@ test('missing, unconfigured, off and a secret that cannot be read never ask Clou
 
 test('Cloudflare is asked once; the verdict serves the same address three times in five minutes', async () => {
   const store = new FakeStore([]),
-    cf = cloudflare({ success: true, hostname: 'notes.yourversionnumber.com', action: 'signin' });
+    cf = cloudflare(ours);
   const first = await check(store, 'tok-1', configured(cf.fetcher));
   assert.deepEqual(
     { result: first.result, reused: first.reused, hostname: first.hostname, action: first.action },
@@ -103,7 +107,7 @@ test('Cloudflare is asked once; the verdict serves the same address three times 
 
 test('a kept token fails for another address and once five minutes pass', async () => {
   const store = new FakeStore([]),
-    cf = cloudflare({ success: true });
+    cf = cloudflare(ours);
   await check(store, 'tok-2', configured(cf.fetcher));
   const other = await check(store, 'tok-2', configured(cf.fetcher), 'victim@example.com');
   assert.deepEqual([other.result, other.codes], ['fail', ['token-other-address']]);
@@ -120,7 +124,7 @@ test('a rejected token is kept as a fail; an outage or a bad secret is error and
     configured(cloudflare({ success: false, 'error-codes': ['invalid-input-response'] }).fetcher, 'enforce')
   );
   assert.deepEqual([rejected.result, rejected.codes, rejected.allowed], ['fail', ['invalid-input-response'], false]);
-  const repeat = await check(store, 'tok-3', configured(cloudflare({ success: true }).fetcher, 'enforce'));
+  const repeat = await check(store, 'tok-3', configured(cloudflare(ours).fetcher, 'enforce'));
   assert.deepEqual([repeat.result, repeat.reused], ['fail', true]);
 
   const outage = await check(store, 'tok-4', configured(cloudflare({}, 503).fetcher, 'enforce'));
@@ -144,9 +148,55 @@ test('a rejected token is kept as a fail; an outage or a bad secret is error and
   assert.deepEqual([badSecret.result, badSecret.allowed], ['error', true]);
   // Errors are not kept, so the next try asks Cloudflare again.
   assert.equal(await store.turnstileVerdict(auth.digest('tok-4')), null);
+
+  // Cloudflare's own internal-error is Cloudflare down: it goes ahead, even
+  // in enforce, and is not kept ("I'll accept risk when Cloudflare is down").
+  const down = await check(
+    store,
+    'tok-7',
+    configured(cloudflare({ success: false, 'error-codes': ['internal-error'] }).fetcher, 'enforce')
+  );
+  assert.deepEqual([down.result, down.codes, down.allowed], ['error', ['internal-error'], true]);
+  assert.equal(await store.turnstileVerdict(auth.digest('tok-7')), null);
 });
 
-function app(turnstile?: TurnstileConfig) {
+test('a success from another hostname or for another action fails with our own code, and is kept so', async () => {
+  const store = new FakeStore([]);
+  const elsewhere = await check(
+    store,
+    'tok-h',
+    configured(cloudflare({ ...ours, hostname: 'evil.example.com' }).fetcher, 'enforce')
+  );
+  assert.deepEqual(
+    [elsewhere.result, elsewhere.codes, elsewhere.allowed, elsewhere.hostname],
+    ['fail', ['hostname-mismatch'], false, 'evil.example.com']
+  );
+  const otherAction = await check(store, 'tok-a', configured(cloudflare({ ...ours, action: 'login' }).fetcher));
+  assert.deepEqual(
+    [otherAction.result, otherAction.codes, otherAction.allowed, otherAction.action],
+    ['fail', ['action-mismatch'], true, 'login'],
+    'observe still refuses nobody'
+  );
+  const neither = await check(store, 'tok-n', configured(cloudflare({ success: true }).fetcher));
+  assert.deepEqual([neither.result, neither.codes], ['fail', ['hostname-mismatch', 'action-mismatch']]);
+  // The kept verdict says the same on "send it again", without asking Cloudflare.
+  const cf = cloudflare(ours);
+  const again = await check(store, 'tok-h', configured(cf.fetcher, 'enforce'), 'ada@example.com', now + 60);
+  assert.deepEqual(
+    [again.result, again.codes, again.reused, again.allowed],
+    ['fail', ['hostname-mismatch'], true, false]
+  );
+  assert.equal(cf.calls.length, 0);
+  // A rejected token keeps Cloudflare's codes, not ours.
+  const rejected = await check(
+    store,
+    'tok-r',
+    configured(cloudflare({ success: false, 'error-codes': ['timeout-or-duplicate'] }).fetcher)
+  );
+  assert.deepEqual(rejected.codes, ['timeout-or-duplicate']);
+});
+
+function app(turnstile?: TurnstileConfig, headers: Record<string, string> = {}) {
   const store = new FakeStore([]),
     mail = new FakeMail(),
     logs: Item[] = [];
@@ -168,7 +218,7 @@ function app(turnstile?: TurnstileConfig) {
   const start = (value: Item) =>
     http.request('/api/auth/start', {
       method: 'POST',
-      headers: { origin: 'https://notes.example.com' },
+      headers: { origin: 'https://notes.example.com', ...headers },
       body: JSON.stringify(value)
     });
   return { start, mail, logs, store };
@@ -180,7 +230,15 @@ test('every sign-in email request logs its Turnstile outcome, without the addres
   assert.equal(unconfigured.mail.messages.length, 1);
   assert.deepEqual(
     unconfigured.logs.find((l) => l.event === 'turnstile'),
-    { event: 'turnstile', result: 'missing', mode: 'observe', allowed: true, reused: false, codes: '' }
+    {
+      event: 'turnstile',
+      result: 'missing',
+      mode: 'observe',
+      allowed: true,
+      reused: false,
+      codes: '',
+      client: 'script'
+    }
   );
 
   const failing = app(configured(cloudflare({ success: false, 'error-codes': ['invalid-input-response'] }).fetcher));
@@ -205,7 +263,8 @@ test('the page says why it sent no token and how long it waited, logged but neve
       reused: false,
       codes: '',
       client_reason: 'script-blocked',
-      client_wait_ms: 13
+      client_wait_ms: 13,
+      client: 'page'
     }
   );
 
@@ -231,6 +290,24 @@ test('the page says why it sent no token and how long it waited, logged but neve
   assert.equal(enforced.mail.messages.length, 0);
 });
 
+test('the log tells the page, an old tab, another browser request and a script apart', async () => {
+  const caller = async (value: Item, headers: Record<string, string> = {}) => {
+    const a = app(undefined, headers);
+    await a.start({ email: 'ada@example.com', ...value });
+    const line = a.logs.find((l) => l.event === 'turnstile')!;
+    assert.ok(!JSON.stringify(a.logs).includes('ada@example.com'));
+    return [line.client, line.fetch_site];
+  };
+  const browser = { 'sec-fetch-site': 'same-origin' };
+  assert.deepEqual(await caller({ turnstile_token: '', turnstile_wait_ms: 5001 }, browser), ['page', 'same-origin']);
+  assert.deepEqual(await caller({ turnstile_token: '' }, browser), ['old-page', 'same-origin']);
+  assert.deepEqual(await caller({}, browser), ['browser', 'same-origin']);
+  assert.deepEqual(await caller({}, { 'sec-fetch-site': 'cross-site' }), ['browser', 'cross-site']);
+  assert.deepEqual(await caller({}, { 'sec-fetch-site': 'Mozilla/5.0 (fictional)' }), ['browser', 'other']);
+  assert.deepEqual(await caller({}), ['script', undefined]);
+  assert.deepEqual(turnstileCaller({ turnstile_wait_ms: '5' }, new Headers()), { client: 'script' });
+});
+
 test('enforce refuses a missing or failed token before any limit or mail, and passes the rest', async () => {
   const refused = app(configured(cloudflare({ success: false }).fetcher, 'enforce'));
   for (const body of [{ email: 'ada@example.com' }, { email: 'ada@example.com', turnstile_token: 'bad' }]) {
@@ -242,7 +319,7 @@ test('enforce refuses a missing or failed token before any limit or mail, and pa
   assert.equal(await refused.store.peek('all', Math.floor(now / 3600)), 0, 'no limit spent');
   assert.equal(refused.logs.filter((l) => l.event === 'mail-limited').length, 0);
 
-  const passing = app(configured(cloudflare({ success: true }).fetcher, 'enforce'));
+  const passing = app(configured(cloudflare(ours).fetcher, 'enforce'));
   assert.equal((await passing.start({ email: 'ada@example.com', turnstile_token: 'good' })).status, 202);
   assert.equal((await passing.start({ email: 'ada@example.com', turnstile_token: 'good' })).status, 202);
   assert.equal(passing.mail.messages.length, 2, 'send it again reuses the verdict');
@@ -314,4 +391,6 @@ test('the stack points the web function, describer and export worker at the runt
   );
   const web = await readFile(new URL('../../web/src/lib/turnstile.ts', import.meta.url), 'utf8');
   assert.ok(web.includes(`'${TURNSTILE_SITE_KEY}'`), 'the page and the server name the same widget');
+  const home = await readFile(new URL('../../web/src/pages/Home.tsx', import.meta.url), 'utf8');
+  assert.ok(home.includes(`useTurnstile('${TURNSTILE_ACTION}')`), 'the page solves for the action the server expects');
 });
